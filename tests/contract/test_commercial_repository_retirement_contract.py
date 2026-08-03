@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FACADE_PATH = ROOT / "app/adapters/repositories/commercial_repository.py"
 AUDIT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_audit_mixin.py"
 SUPPORT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_support_mixin.py"
+ADMIN_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_admin_mixin.py"
 
 ALLOWED_FACADE_BASES = {
     "CommercialAccessRepository",
@@ -188,3 +189,48 @@ def test_support_mixin_uses_explicit_support_access_and_audit_repositories() -> 
         isinstance(node, ast.Name) and node.id == "CommercialRepository"
         for node in ast.walk(tree)
     )
+
+
+def test_admin_identity_flows_use_explicit_domain_repositories() -> None:
+    tree = _tree(ADMIN_MIXIN_PATH)
+    selected_methods = {
+        "upsert_platform_admin_grant",
+        "resolve_platform_admin_grant",
+        "delete_platform_admin_grant",
+        "list_admin_portal_users",
+        "get_admin_portal_user_audit",
+        "disable_admin_portal_user",
+        "batch_disable_admin_portal_users",
+        "list_admin_platform_admin_grants",
+        "_build_admin_identity_projections",
+    }
+    methods = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name in selected_methods
+    }
+    assert methods.keys() == selected_methods
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "CommercialRepository"
+        for method in methods.values()
+        for node in ast.walk(method)
+    )
+
+    expected_constructions = {
+        "CommercialAccessRepository": 10,
+        "CommercialAccountSiteRepository": 1,
+        "CommercialIdentityRepository": 11,
+        "CommercialServiceAuditRepository": 5,
+        "CommercialSubscriptionRepository": 1,
+    }
+    constructions = [
+        ast.unparse(node.func)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) in expected_constructions
+    ]
+    assert {
+        repository: constructions.count(repository)
+        for repository in expected_constructions
+    } == expected_constructions

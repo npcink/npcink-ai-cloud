@@ -8,7 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_identity_repository import (
+    CommercialIdentityRepository,
+)
 from app.core.db import dispose_engine, get_session
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
@@ -312,11 +314,11 @@ def test_admin_portal_users_filters_counts_and_paginates_in_repository(
         )
         session.commit()
 
-    original_list_principals = CommercialRepository.list_principals
+    original_list_principals = CommercialIdentityRepository.list_principals
     hydrated_principal_ids: list[list[str]] = []
 
     def record_page_hydration(
-        repository: CommercialRepository,
+        repository: CommercialIdentityRepository,
         **kwargs: Any,
     ) -> list[Principal]:
         principal_ids = kwargs.get("principal_ids")
@@ -324,7 +326,7 @@ def test_admin_portal_users_filters_counts_and_paginates_in_repository(
         return original_list_principals(repository, **kwargs)
 
     monkeypatch.setattr(
-        CommercialRepository,
+        CommercialIdentityRepository,
         "list_principals",
         record_page_hydration,
     )

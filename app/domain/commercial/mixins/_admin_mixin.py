@@ -9,7 +9,20 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
+from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
+from app.adapters.repositories.commercial_identity_repository import (
+    CommercialIdentityRepository,
+)
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
+from app.adapters.repositories.commercial_subscription_repository import (
+    CommercialSubscriptionRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -156,14 +169,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "principal id is required",
             )
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            principal = repository.upsert_principal_identity(
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            principal = identity_repository.upsert_principal_identity(
                 principal_id=normalized_principal_id,
                 email=normalized_email,
                 status=PRINCIPAL_STATUS_ACTIVE,
                 metadata_json={"source": "platform_admin_grant"},
             )
-            identity = repository.upsert_platform_admin_grant(
+            identity = access_repository.upsert_platform_admin_grant(
                 grant_id=f"pad_{uuid4().hex}",
                 principal_id=normalized_principal_id,
                 provider=normalized_provider,
@@ -175,7 +190,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )
             payload = self._serialize_platform_admin_grant(identity, principal=principal)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="platform_admin_grant.upsert",
                 outcome="succeeded",
@@ -200,8 +215,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "principal id is required",
             )
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identity = repository.get_platform_admin_grant(principal_id=normalized_principal_id)
+            access_repository = CommercialAccessRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            identity = access_repository.get_platform_admin_grant(
+                principal_id=normalized_principal_id
+            )
             if identity is None:
                 if not allow_bootstrap:
                     raise CommercialNotFoundError(
@@ -231,7 +249,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "service.platform_admin_disabled",
                     f"platform admin '{normalized_principal_id}' is disabled",
                 )
-            principal = repository.get_principal_identity_by_ref(
+            principal = identity_repository.get_principal_identity_by_ref(
                 principal_id=normalized_principal_id,
             )
             return self._serialize_platform_admin_grant(identity, principal=principal)
@@ -249,20 +267,24 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "principal id is required",
             )
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identity = repository.get_platform_admin_grant(principal_id=normalized_principal_id)
+            access_repository = CommercialAccessRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            identity = access_repository.get_platform_admin_grant(
+                principal_id=normalized_principal_id
+            )
             if identity is None:
                 raise CommercialNotFoundError(
                     "service.platform_admin_not_found",
                     f"platform admin '{normalized_principal_id}' was not found",
                 )
-            principal = repository.get_principal_identity_by_ref(
+            principal = identity_repository.get_principal_identity_by_ref(
                 principal_id=normalized_principal_id,
             )
             payload = self._serialize_platform_admin_grant(identity, principal=principal)
-            repository.delete_platform_admin_grant(principal_id=normalized_principal_id)
+            access_repository.delete_platform_admin_grant(principal_id=normalized_principal_id)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="platform_admin_grant.delete",
                 outcome="succeeded",
@@ -703,7 +725,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         normalized_offset = max(0, int(offset or 0))
 
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
             tier_package_aliases = [
                 (
                     tier_id,
@@ -711,7 +736,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 )
                 for tier_id, template in PLAN_TIER_REGISTRY.items()
             ]
-            directory_page = repository.query_admin_portal_user_directory_page(
+            directory_page = identity_repository.query_admin_portal_user_directory_page(
                 q=normalized_q,
                 source=normalized_source,
                 status=normalized_status,
@@ -730,15 +755,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ),
             )
             principal_ids = list(directory_page["principal_ids"])
-            principals = repository.list_principals(
+            principals = identity_repository.list_principals(
                 principal_ids=principal_ids,
                 limit=resolved_limit,
             )
-            memberships = repository.list_account_user_memberships(
+            memberships = access_repository.list_account_user_memberships(
                 principal_ids=principal_ids,
                 statuses=None,
             )
-            qq_bindings = repository.list_identity_provider_bindings(
+            qq_bindings = identity_repository.list_identity_provider_bindings(
                 principal_ids=principal_ids,
                 provider="qq",
                 statuses=None,
@@ -750,9 +775,12 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     if str(membership.account_id or "").strip()
                 }
             )
-            accounts = repository.list_accounts(account_ids=account_ids, limit=None)
-            sites = repository.list_sites(account_ids=account_ids, limit=None)
-            subscriptions = repository.list_subscriptions(account_ids=account_ids, limit=None)
+            accounts = account_site_repository.list_accounts(account_ids=account_ids, limit=None)
+            sites = account_site_repository.list_sites(account_ids=account_ids, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_ids=account_ids,
+                limit=None,
+            )
 
         memberships_by_principal: dict[str, list[Any]] = defaultdict(list)
         for membership in memberships:
@@ -943,8 +971,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )
         resolved_limit = min(max(int(limit or 50), 1), 100)
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identity = repository.get_principal_identity_by_ref(
+            identity_repository = CommercialIdentityRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            identity = identity_repository.get_principal_identity_by_ref(
                 principal_id=normalized_principal_id,
             )
             if identity is None:
@@ -952,7 +981,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "service.principal_not_found",
                     f"principal '{normalized_principal_id}' was not found",
                 )
-            events = repository.list_service_audit_events_for_principal(
+            events = audit_repository.list_service_audit_events_for_principal(
                 principal_id=normalized_principal_id,
                 limit=resolved_limit,
             )
@@ -1018,8 +1047,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "portal user disable reason is required",
             )
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identity = repository.get_principal_identity_by_ref(
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            identity = identity_repository.get_principal_identity_by_ref(
                 principal_id=normalized_principal_id,
             )
             if identity is None:
@@ -1033,15 +1064,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             identity.status = PRINCIPAL_STATUS_DISABLED
             if not was_disabled:
                 identity = (
-                    repository.increment_principal_session_version(
+                    identity_repository.increment_principal_session_version(
                         principal_id=normalized_principal_id,
                     )
                     or identity
                 )
-            revoked_memberships = repository.revoke_account_user_memberships(
+            revoked_memberships = access_repository.revoke_account_user_memberships(
                 principal_id=normalized_principal_id,
             )
-            revoked_bindings = repository.revoke_identity_provider_bindings(
+            revoked_bindings = identity_repository.revoke_identity_provider_bindings(
                 principal_id=normalized_principal_id,
                 provider="qq",
             )
@@ -1056,7 +1087,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "outcome": "already_disabled" if was_disabled else "disabled",
             }
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="portal_user.disable",
                 outcome="succeeded",
@@ -1109,9 +1140,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "revoked_identity_provider_bindings": 0,
         }
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
             for normalized_principal_id in normalized_principal_ids:
-                identity = repository.get_principal_identity_by_ref(
+                identity = identity_repository.get_principal_identity_by_ref(
                     principal_id=normalized_principal_id,
                 )
                 if identity is None:
@@ -1132,15 +1165,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 identity.status = PRINCIPAL_STATUS_DISABLED
                 if not was_disabled:
                     identity = (
-                        repository.increment_principal_session_version(
+                        identity_repository.increment_principal_session_version(
                             principal_id=normalized_principal_id,
                         )
                         or identity
                     )
-                revoked_memberships = repository.revoke_account_user_memberships(
+                revoked_memberships = access_repository.revoke_account_user_memberships(
                     principal_id=normalized_principal_id,
                 )
-                revoked_bindings = repository.revoke_identity_provider_bindings(
+                revoked_bindings = identity_repository.revoke_identity_provider_bindings(
                     principal_id=normalized_principal_id,
                     provider="qq",
                 )
@@ -1160,7 +1193,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 }
                 items.append(item_payload)
                 self._record_service_audit_in_session(
-                    repository=repository,
+                    repository=audit_repository,
                     audit_context=audit_context,
                     event_kind="portal_user.disable",
                     outcome="succeeded",
@@ -1181,7 +1214,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "principal_ids": normalized_principal_ids,
             }
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="portal_user.batch_disable",
                 outcome="succeeded" if totals["failed"] == 0 else "partial",
@@ -1201,10 +1234,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
     def _build_admin_identity_projections(
         self,
         *,
-        repository: CommercialRepository,
+        identity_repository: CommercialIdentityRepository,
+        access_repository: CommercialAccessRepository,
         account_ids: list[str],
     ) -> dict[str, dict[str, object]]:
-        memberships = repository.list_account_user_memberships(
+        memberships = access_repository.list_account_user_memberships(
             account_ids=account_ids,
             statuses=None,
         )
@@ -1215,11 +1249,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 if str(membership.principal_id or "").strip()
             }
         )
-        principals = repository.list_principals(
+        principals = identity_repository.list_principals(
             principal_ids=principal_ids,
             limit=None,
         )
-        qq_bindings = repository.list_identity_provider_bindings(
+        qq_bindings = identity_repository.list_identity_provider_bindings(
             principal_ids=principal_ids,
             provider="qq",
             statuses=None,
@@ -1407,8 +1441,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ],
             )
             subscriptions = repository.list_subscriptions(account_ids=account_ids, limit=None)
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
             identity_projections = self._build_admin_identity_projections(
-                repository=repository,
+                identity_repository=identity_repository,
+                access_repository=access_repository,
                 account_ids=account_ids,
             )
 
@@ -1579,8 +1616,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             latest_billing_by_site = repository.get_latest_billing_snapshots_by_site(
                 site_ids=site_ids,
             )
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
             identity_projections = self._build_admin_identity_projections(
-                repository=repository,
+                identity_repository=identity_repository,
+                access_repository=access_repository,
                 account_ids=account_ids,
             )
 
@@ -1890,8 +1930,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 site_ids=[site.site_id for site in sites],
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
             )
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
             identity_projection = self._build_admin_identity_projections(
-                repository=repository,
+                identity_repository=identity_repository,
+                access_repository=access_repository,
                 account_ids=[account_id],
             ).get(
                 account_id,
@@ -3232,8 +3275,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 100,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identities = repository.list_platform_admin_grants(
+            access_repository = CommercialAccessRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            identities = access_repository.list_platform_admin_grants(
                 status=status,
                 role=role,
                 provider=provider,
@@ -3242,7 +3286,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             items = [
                 self._serialize_platform_admin_grant(
                     identity,
-                    principal=repository.get_principal_identity_by_ref(
+                    principal=identity_repository.get_principal_identity_by_ref(
                         principal_id=str(identity.principal_id)
                     ),
                 )
