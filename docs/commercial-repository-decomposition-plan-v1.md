@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6E M4 accepted；Phase 6F local verified
+状态：Phase 0 至 Phase 6F M4 accepted；Phase 6G local verified
 
 日期：2026-08-03
 
@@ -1655,6 +1655,47 @@ mypy 284 个源文件无问题。门面当前为 259 行、7 个自有方法，�
 Decision 业务方法，其余为 `__init__` 与两个 helper。M4 candidate、PR/CI、merged
 source 与 clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
 
+### 17.32 Phase 6F 合并与 M4 accepted
+
+Phase 6F 由 PR #489 合并为
+`81cab8e05668d5d266bdbf7a4b09fc94779d8d1c`；required `backend-targeted`
+为 8 分 33 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=489`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`3cc0f011082ad970f60c25c7f2d7143d35788b429b4b839506ba765cbb202ae9`；
+聚焦 Service Audit repository smoke 为 2 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，
+且未调用付费 Provider。
+
+### 17.33 Phase 6G Commercial Decision repository
+
+Phase 6G 在 current
+`origin/master@81cab8e05668d5d266bdbf7a4b09fc94779d8d1c` 上新增
+`CommercialDecisionRepository`，原样迁移四个 Commercial Decision 业务方法与两个
+direct-instantiation helper：
+
+- `record_commercial_decision_event`
+- `list_commercial_decision_events`
+- `count_commercial_decision_events`
+- `summarize_commercial_decision_events`
+- `_commercial_decision_filters`
+- `_serialize_datetime`
+
+保持 decision event `add + flush`、UTC `created_at`、site/subscription/decision/code/
+request kind/since 过滤、created/id 稳定倒序、`limit=None` 不限量、count 零值、汇总分组、
+limit 下限与 UTC `Z` 序列化。repository 不 commit/rollback，不取得行锁；facade 通过继承
+保持调用方式。API/domain/worker 调用方、schema、权限、Provider、Production、WordPress
+与 facade 删除均不在本批迁移。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
+2 passed。AST 对比确认四个业务方法与两个 helper 的签名和方法体和 current-master
+完全一致。Commercial runtime defaults、Service commercial/admin read 与 runtime
+diagnostics 调用图回归合计 14 passed，只有既有 Starlette deprecation warning；Ruff
+通过，全量 mypy 285 个源文件无问题。门面当前为 60 行、仅有 `__init__` 一个自有方法，
+业务职责已全部进入领域 repository/query，但 facade 仍是调用方依赖的临时聚合类型。
+M4 candidate、PR/CI、merged source 与 clean-master M4 accepted 继续分别记录，不以
+本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1753,6 +1794,10 @@ Phase 6F 只允许恢复五个 Service Audit 业务方法与 audit filter helper
 Service Audit repository 与聚焦 characterization；facade 自有时间序列化 helper 继续
 保留给 Commercial Decision。不得修改 audit 数据、执行事务补偿，或把 Commercial
 Decision、调用方迁移、API/权限纳入回滚。
+
+Phase 6G 只允许恢复四个 Commercial Decision 业务方法与两个 helper 到门面、移除
+Commercial Decision repository 与聚焦 characterization。不得修改 decision 数据、
+执行事务补偿，或把调用方迁移、facade 删除、API/权限纳入回滚。
 
 ## 19. 后续批次启动规则
 
