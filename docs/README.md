@@ -61,6 +61,8 @@ deleting the old decision history.
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
 - [Engineering Command Inventory Standard](engineering-command-inventory-standard-v1.md)
 - [Structural Remediation Delivery Standard](structural-remediation-delivery-standard-v1.md)
+- [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
+- [Repository Hygiene Cleanup Closeout and Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
 - [Python Type Checking Standard](python-type-checking-standard.md)
@@ -171,6 +173,12 @@ documentation cleanup targets.
 The 2026-08-03 baseline contained 309 tracked Markdown documents: 250 had an
 early status marker and 59 did not. These counts are an inventory snapshot, not
 a deletion quota.
+
+Apply the
+[Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
+to every batch in this queue. The
+[first cleanup retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
+records the evidence and corrections that produced that standard.
 
 Review in bounded batches:
 
