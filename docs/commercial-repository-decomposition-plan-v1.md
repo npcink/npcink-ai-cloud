@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7H M4 accepted；Phase 7I local verified；7I 后暂停继续拆分
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7I M4 accepted；CommercialRepository 继续拆分已暂停
 
 日期：2026-08-03
 
@@ -2018,6 +2018,19 @@ SubscriptionCommerce 等高价值商业主链已经脱离通用 facade，剩余�
 业务方法或扩大 importer/构造/引用/注解上限；只有剩余 facade 明确阻塞商业实验、造成真实
 缺陷或显著拖慢高频开发时，才以单独证据重新启动。
 
+Phase 7I 由 PR #499 squash merge 为
+`23438194c891e6edffda57f71eeff6932057adae`；required `backend-targeted`
+为 8 分 18 秒通过，且无有效 review 变更请求。clean current `origin/master`
+source-only promotion 显示 `acceptance_state=accepted`、`promotion_pr=499`、
+`source_branch=master`、`source_dirty=false`，accepted source bundle 为
+`b255ecebce8517ffde7e2fcd7e7b99d7df6e79287c933da978ba6bf51277e5df`；
+post-merge retirement 与完整 SubscriptionCommerce smoke 为 26 passed。Cloud lane、shared
+M4 与 Phase 7I task worktree lock 均已释放。
+
+后续默认主线转为商业可行性验证：选择一个明确 ICP 与高频付费场景，缩短首次成功结果的
+时间，获得真实试用、复用与付费意愿证据。工程工作只优先处理阻断该闭环的缺陷、可信度问题
+和显著交付摩擦；没有真实业务流量时记录为未测量/N/A，不为制造观察数据调用付费 Provider。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -2158,9 +2171,11 @@ Phase 7I 只允许恢复 SubscriptionCommerce mixin 的七个 facade 构造与 h
 trial start 的显式 Access owner，并移除本批聚焦 characterization。不得修改试用、套餐、
 订单、支付、退款、reconciliation 或 commit 语义。
 
-## 19. 后续批次启动规则
+## 19. 暂停与重新启动规则
 
-Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
+本计划已在 Phase 7I 收口，Billing、Payment、Portal、Site、Runtime caller 迁移和 facade
+删除均不再作为默认下一批。只有真实商业实验或高频交付证据表明剩余 facade 已成为阻塞，
+并且预期收益高于同周期的客户验证工作，才允许重新启动。重新启动的每批都必须：
 
 1. fetch 并核对 current `origin/master`；
 2. 盘点 open human PR、worktree、conflict domain、Cloud lane 和 M4 owner；
