@@ -8,7 +8,11 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
+from app.adapters.repositories.commercial_plan_repository import CommercialPlanRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     PLAN_STATUS_ACTIVE,
@@ -1445,7 +1449,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _ensure_free_version_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
     ) -> tuple[str, str]:
         tier_id = "free"
         baseline = PLAN_TIER_REGISTRY[tier_id]
@@ -1516,7 +1520,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _ensure_plan_tier_version_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         tier_id: str,
     ) -> tuple[str, str]:
         if tier_id == "free":
@@ -1869,7 +1873,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _bind_subscription_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription_id: str,
         account_id: str,
         plan_id: str,
@@ -2066,7 +2070,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _ensure_current_subscription_period_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription: AccountSubscription,
         now: datetime,
     ) -> tuple[AccountSubscription, AccountEntitlementSnapshot | None, bool]:
@@ -2498,7 +2502,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
 
     def _resolve_current_subscription_plan_version(
         self,
-        repository: CommercialRepository,
+        repository: CommercialPlanRepository,
         subscription: AccountSubscription | None,
     ) -> PlanVersion | None:
         if subscription is None:
@@ -3134,7 +3138,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _upsert_current_period_billing_snapshot_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         site_id: str,
         subscription: AccountSubscription,
         period_start_at: datetime,
@@ -3274,7 +3278,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _refresh_subscription_billing_snapshots_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription: AccountSubscription,
         covered_sites: list[Site],
         period_start_at: datetime,
