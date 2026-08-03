@@ -14,10 +14,14 @@
 
 实施与验收遵循：
 
+- [结构整改交付规范](structural-remediation-delivery-standard-v1.md)
 - [开发验证运行模型](development-validation-operating-model-v1.md)
 - [并行 AI 协作规范](parallel-ai-collaboration-standard-v1.md)
 - [M4 Preview AI 开发规范](m4-preview-ai-development-standard-v1.md)
 - [生产发布策略](cloud-production-release-policy-v1.md)
+
+阶段结果、收益复核、低效根因与商业验证交接见
+[CommercialRepository 拆分收口与开发复盘](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
 
 ## 2. 当前事实
 
