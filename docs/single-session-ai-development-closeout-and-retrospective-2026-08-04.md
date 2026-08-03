@@ -147,9 +147,9 @@ than running no router at all.
 ### 5.1 Admit one task
 
 State the focused module, desired outcome, non-goals, public contracts, expected
-files, forbidden areas, verification gates, external systems that must remain
-unchanged, and rollback. Do not admit a second unrelated module merely because
-the first task has a waiting step.
+files, verification gates, and rollback. Add forbidden-area, external-system,
+or cross-repository detail only when the task touches those seams. Do not admit
+a second unrelated module merely because the first task has a waiting step.
 
 ### 5.2 Preserve and isolate
 
