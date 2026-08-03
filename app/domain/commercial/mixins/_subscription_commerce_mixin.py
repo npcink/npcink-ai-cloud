@@ -8,7 +8,7 @@ from typing import Any, cast
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
 from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
     CommercialSubscriptionLifecycleRepository,
 )
@@ -90,7 +90,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         now = cast(Any, self).now_factory()
         tier_order = ("free", "plus", "pro", "agency")
         with get_session(cast(Any, self).database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
             offers_by_tier = {
                 str(offer.tier_id): offer
                 for offer in repository.list_plan_offers(
@@ -205,7 +205,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def list_account_plan_offers(self, *, account_id: str) -> dict[str, object]:
         now = cast(Any, self).now_factory()
         with get_session(cast(Any, self).database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
             self._require_commerce_account(repository, account_id)
             self._ensure_standard_plan_offers_in_session(repository)
             accessible_offers = repository.list_plan_offers(
@@ -295,7 +295,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "Agency trial credit limit must be between 0 and 20000",
             )
         with get_session(service.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
             if repository.get_account_for_update(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -366,7 +366,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             )
         idempotency_key = audit_context.idempotency_key if audit_context else ""
         with get_session(service.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
             if repository.get_account_for_update(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -559,7 +559,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         service = cast(Any, self)
         now = service.now_factory()
         with get_session(service.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
             if repository.get_account_for_update(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -674,7 +674,8 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "Agency trials require platform administrator approval",
             )
         with get_session(service.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
+            access_repository = CommercialAccessRepository(session)
             if repository.get_account_for_update(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -685,7 +686,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 resolved_principal_id = next(
                     (
                         membership.principal_id
-                        for membership in repository.list_account_user_memberships(
+                        for membership in access_repository.list_account_user_memberships(
                             account_ids=[account_id],
                             statuses=["active"],
                         )
@@ -850,7 +851,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         service = cast(Any, self)
         now = service.now_factory()
         with get_session(service.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSubscriptionLifecycleRepository(session)
             if repository.get_account_for_update(account_id) is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -1165,7 +1166,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _reconcile_pending_subscription_orders_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
     ) -> None:
@@ -1193,7 +1194,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     @staticmethod
     def _cancel_subscription_order_for_payment_in_session(
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         payment_order_id: str,
     ) -> None:
         subscription_order = repository.get_subscription_order_by_payment_order(payment_order_id)
@@ -1206,7 +1207,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     @staticmethod
     def _assert_subscription_order_refundable_in_session(
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         payment_order: PaymentOrder,
     ) -> None:
         subscription_order = repository.get_subscription_order_by_payment_order(
@@ -1311,7 +1312,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _restore_subscription_order_after_full_refund_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         order: PaymentOrder,
         now: datetime,
     ) -> object | None:
@@ -1371,7 +1372,10 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         restored_payload = cast(dict[str, object], restored.get("subscription") or {})
         return repository.get_subscription(str(restored_payload.get("subscription_id") or ""))
 
-    def _ensure_standard_plan_offers_in_session(self, repository: CommercialRepository) -> None:
+    def _ensure_standard_plan_offers_in_session(
+        self,
+        repository: CommercialSubscriptionLifecycleRepository,
+    ) -> None:
         service = cast(Any, self)
         for tier_id in STANDARD_PLAN_OFFERS:
             plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
@@ -1388,7 +1392,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
 
     def _sync_standard_plan_offer_in_session(
         self,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         *,
         tier_id: str,
         plan_id: str,
@@ -1578,7 +1582,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
 
     @staticmethod
     def _resolve_trial_site_domain(
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         *,
         account_id: str,
         requested: str,
@@ -1592,7 +1596,10 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         return str(parsed.hostname or "").strip().lower()
 
     @staticmethod
-    def _require_commerce_account(repository: CommercialRepository, account_id: str) -> None:
+    def _require_commerce_account(
+        repository: CommercialSubscriptionLifecycleRepository,
+        account_id: str,
+    ) -> None:
         if repository.get_account(account_id) is None:
             raise CommercialNotFoundError(
                 "service.account_not_found",
