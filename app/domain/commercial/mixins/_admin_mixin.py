@@ -2116,8 +2116,13 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 site_ids=site_ids,
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
             )
-            active_runs_by_site = runtime_knowledge_queries.count_active_runs_by_site(
-                site_ids=site_ids
+            interactive_runs_by_site = runtime_knowledge_queries.count_active_runs_by_site(
+                site_ids=site_ids,
+                execution_patterns=("inline",),
+            )
+            background_runs_by_site = runtime_knowledge_queries.count_active_runs_by_site(
+                site_ids=site_ids,
+                execution_patterns=("step_offload", "whole_run_offload"),
             )
             knowledge_counts = runtime_knowledge_queries.summarize_site_knowledge_current_counts(
                 site_ids=site_ids
@@ -2146,7 +2151,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         active_key_site_count = sum(
             1 for site_id in site_ids if int(active_key_counts.get(site_id, 0) or 0) > 0
         )
-        active_run_count = sum(int(value or 0) for value in active_runs_by_site.values())
+        active_run_count = sum(
+            int(value or 0)
+            for runs_by_site in (interactive_runs_by_site, background_runs_by_site)
+            for value in runs_by_site.values()
+        )
         indexed_document_count = sum(
             int(item.get("documents") or 0) for item in knowledge_counts.values()
         )
@@ -2159,6 +2168,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         )
         concurrency = service._normalize_concurrency(
             getattr(plan_version, "concurrency_json", None)
+        )
+        active_run_capacity = (
+            service._coerce_int(concurrency.get("max_active_runs"))
+            * active_site_count
+            * 2
         )
         vector_document_limit = cast(Any, self)._resolve_account_vector_documents_limit(
             snapshot=None,
@@ -2229,7 +2243,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 key="concurrent_runs",
                 label="Concurrent runs",
                 used=active_run_count,
-                limit=service._coerce_int(concurrency.get("max_active_runs")),
+                limit=active_run_capacity,
                 unit="run",
             ),
             self._quota_metric(

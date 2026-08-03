@@ -258,10 +258,11 @@ git diff --check -- app/dev/production_wordpress_ai_connector_smoke.py tests/dev
 
 ## Failure Notes
 
-`commercial.concurrency_exceeded` means the site has an active queued,
-processing, or running Cloud run. Inspect production run state before retrying.
-Cancel only confirmed stale dev/smoke runs through the approved runtime
-operations path.
+`commercial.concurrency_exceeded` means the site has exhausted the active-run
+limit for the request's concurrency pool. Interactive `inline` work is isolated
+from background `step_offload` and `whole_run_offload` work. Inspect runs in the
+same pool before retrying. Cancel only confirmed stale dev/smoke runs through
+the approved runtime operations path.
 
 `auth.invalid_key` means the site key is missing, revoked, expired, signed with
 the wrong secret, or pointed at the wrong Cloud environment.

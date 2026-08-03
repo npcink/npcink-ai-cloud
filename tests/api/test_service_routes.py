@@ -1571,6 +1571,7 @@ def test_service_routes_removed_platform_admin_grant_routes(tmp_path: Path) -> N
 
 def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url, client = _build_client(tmp_path)
     seed_site_auth(
@@ -1582,6 +1583,24 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
             "max_runs_per_period": 10,
             "max_tokens_per_period": 5000,
         },
+        concurrency={"max_active_runs": 1},
+    )
+    concurrency_queries: list[tuple[str, ...] | None] = []
+
+    def count_active_runs_by_site(
+        _self: object,
+        *,
+        site_ids: list[str],
+        execution_patterns: tuple[str, ...] | None = None,
+    ) -> dict[str, int]:
+        assert site_ids == ["site_quota"]
+        concurrency_queries.append(execution_patterns)
+        return {"site_quota": 1}
+
+    monkeypatch.setattr(
+        "app.adapters.repositories.commercial_runtime_knowledge_queries."
+        "CommercialRuntimeKnowledgeQueries.count_active_runs_by_site",
+        count_active_runs_by_site,
     )
     now = datetime.now(UTC)
     with get_session(database_url) as session:
@@ -1685,6 +1704,13 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
     resource_limits = {item["key"]: item for item in data["resource_limits"]}
     assert resource_limits["bound_sites"]["used"] == 1.0
     assert resource_limits["active_api_key_sites"]["used"] == 1.0
+    assert resource_limits["concurrent_runs"]["used"] == 2.0
+    assert resource_limits["concurrent_runs"]["limit"] == 2.0
+    assert resource_limits["concurrent_runs"]["status"] == "limited"
+    assert concurrency_queries == [
+        ("inline",),
+        ("step_offload", "whole_run_offload"),
+    ]
     assert resource_limits["vector_documents"]["unit"] == "document"
     assert resource_limits["vector_documents"]["limit"] == 100.0
     assert data["coverage"]["active_key_site_count"] == 1

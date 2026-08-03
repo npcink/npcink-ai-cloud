@@ -19,7 +19,14 @@ from app.core.models import (
 )
 
 
-def _run_record(run_id: str, site_id: str, *, status: str, now: datetime) -> RunRecord:
+def _run_record(
+    run_id: str,
+    site_id: str,
+    *,
+    status: str,
+    now: datetime,
+    execution_pattern: str = "inline",
+) -> RunRecord:
     return RunRecord(
         run_id=run_id,
         site_id=site_id,
@@ -34,7 +41,7 @@ def _run_record(run_id: str, site_id: str, *, status: str, now: datetime) -> Run
         channel="openapi",
         execution_kind="site_knowledge",
         execution_tier="cloud",
-        execution_pattern="inline",
+        execution_pattern=execution_pattern,
         data_classification="public_site_content",
         profile_id="site-knowledge.managed",
         canonical_run_id=None,
@@ -137,17 +144,39 @@ def test_commercial_repository_preserves_runtime_and_knowledge_query_semantics(
 
         runs = [
             _run_record("run_queued", "site_runtime_primary", status="queued", now=now),
-            _run_record("run_running", "site_runtime_primary", status="running", now=now),
+            _run_record(
+                "run_running",
+                "site_runtime_primary",
+                status="running",
+                now=now,
+                execution_pattern="whole_run_offload",
+            ),
             _run_record("run_succeeded", "site_runtime_primary", status="succeeded", now=now),
             _run_record("run_other", "site_runtime_other", status="running", now=now),
         ]
         session.add_all(runs)
         session.flush()
         assert repository.count_active_runs("site_runtime_primary") == 2
+        assert repository.count_active_runs(
+            "site_runtime_primary",
+            execution_patterns=("inline",),
+        ) == 1
+        assert repository.count_active_runs(
+            "site_runtime_primary",
+            execution_patterns=("step_offload", "whole_run_offload"),
+        ) == 1
         assert repository.count_active_runs("site_runtime_other") == 1
         assert repository.count_active_runs_by_site(
             site_ids=["site_runtime_primary", "site_runtime_other", "missing"]
         ) == {"site_runtime_primary": 2, "site_runtime_other": 1}
+        assert repository.count_active_runs_by_site(
+            site_ids=["site_runtime_primary", "site_runtime_other"],
+            execution_patterns=("inline",),
+        ) == {"site_runtime_primary": 1, "site_runtime_other": 1}
+        assert repository.count_active_runs_by_site(
+            site_ids=["site_runtime_primary", "site_runtime_other"],
+            execution_patterns=("step_offload", "whole_run_offload"),
+        ) == {"site_runtime_primary": 1}
 
         session.add_all(
             [

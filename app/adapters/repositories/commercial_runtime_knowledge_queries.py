@@ -19,7 +19,12 @@ class CommercialRuntimeKnowledgeQueries:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def count_active_runs(self, site_id: str) -> int:
+    def count_active_runs(
+        self,
+        site_id: str,
+        *,
+        execution_patterns: tuple[str, ...] | None = None,
+    ) -> int:
         statement = (
             select(func.count())
             .select_from(RunRecord)
@@ -28,9 +33,16 @@ class CommercialRuntimeKnowledgeQueries:
                 RunRecord.status.in_(("queued", "running")),
             )
         )
+        if execution_patterns is not None:
+            statement = statement.where(RunRecord.execution_pattern.in_(execution_patterns))
         return int(self.session.scalar(statement) or 0)
 
-    def count_active_runs_by_site(self, *, site_ids: list[str]) -> dict[str, int]:
+    def count_active_runs_by_site(
+        self,
+        *,
+        site_ids: list[str],
+        execution_patterns: tuple[str, ...] | None = None,
+    ) -> dict[str, int]:
         if not site_ids:
             return {}
         statement = (
@@ -42,6 +54,8 @@ class CommercialRuntimeKnowledgeQueries:
             )
             .group_by(RunRecord.site_id)
         )
+        if execution_patterns is not None:
+            statement = statement.where(RunRecord.execution_pattern.in_(execution_patterns))
         return {
             str(site_id or ""): int(count or 0)
             for site_id, count in self.session.execute(statement)
