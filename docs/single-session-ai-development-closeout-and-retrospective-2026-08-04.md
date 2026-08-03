@@ -281,4 +281,3 @@ evidence, all relevant Git ranges, and actual execution of changed tests.
 The next step is observation, not another governance refactor. Use the standard
 on three to five real tasks, collect the measurements in Section 7, and revise
 only the rule or command that a repeated, evidenced failure shows to be wrong.
-
