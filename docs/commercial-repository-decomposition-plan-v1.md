@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 5H M4 accepted；Phase 6A local verified
+状态：Phase 0 至 Phase 6A M4 accepted；Phase 6B local verified
 
 日期：2026-08-03
 
@@ -1465,6 +1465,50 @@ ledger 调用图回归合计 56 passed，只有既有 Starlette deprecation warn
 门面当前为 940 行、30 个自有方法。M4 candidate、PR/CI、merged source 与 clean-master
 M4 accepted 继续分别记录，不以本地绿色替代后续证据。
 
+### 17.22 Phase 6A 合并与 M4 accepted
+
+Phase 6A 由 PR #484 合并为
+`266508d9a8e27c0025b4c643ff416bf8249314a0`；required `backend-targeted`
+为 8 分 43 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=484`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`8af1a2cd9cf275eccd842017eacf95d92104e37c193a3147ccc3a005beb06da0`；
+聚焦 Credit Ledger queries smoke 为 4 passed。Cloud lane、shared M4 与 task worktree
+lock 均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，且未调用
+付费 Provider。
+
+### 17.23 Phase 6B Credit repository
+
+Phase 6B 在 current
+`origin/master@266508d9a8e27c0025b4c643ff416bf8249314a0` 上确认并迁移六个 Credit
+写入、PaidCreditGrant 查询/锁/写入方法：
+
+- `record_credit_ledger_entry`
+- `get_paid_credit_grant_by_order`
+- `upsert_paid_credit_grant`
+- `list_available_paid_credit_grants`
+- `consume_paid_credit_grants`
+- `refund_paid_credit_grant`
+
+新增 `CommercialCreditRepository` 并继承 `CommercialCreditLedgerQueries`；facade 改为
+继承这一聚合层保持公共调用。保持 ledger idempotency、consume 整数 credit 校验、六位
+归一化、PaidCreditGrant upsert 幂等、`expires_at asc, created_at asc` 消耗顺序、可选
+`FOR UPDATE`、consume/refund 上限与余额更新，以及 add/flush 语义。repository 不拥有
+commit/rollback，不新增 advisory lock 或事务边界。
+
+`record_usage_meter_event` 明确留给后续 Usage repository；Admin usage/run/provider/
+billing、Audit/Decision、调用方、权限/API、schema、支付状态机、Provider、Production
+与 WordPress 均排除。
+
+迁移前 facade characterization 为 2 passed；迁移后 facade/direct Credit repository 与
+既有 Credit Ledger characterization 为 8 passed。AST 对比确认六个方法的签名和方法体
+与 current-master 完全一致，PostgreSQL characterization 同时确认两个可选锁读取生成
+`FOR UPDATE`。Payment、runtime defaults、SubscriptionCommerce、Portal/Admin credit
+与 Entitlement 调用图回归合计 70 passed，只有既有 Starlette deprecation warning；
+Ruff 通过，全量 mypy 280 个源文件无问题，`check:anti-drift` 与 `git diff --check`
+通过。门面当前为 763 行、24 个自有方法。M4 candidate、PR/CI、merged source 与
+clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1542,6 +1586,10 @@ API/runtime 行为纳入回滚。
 Phase 6A 只允许恢复六个 Credit Ledger 查询到门面、移除 query class 与聚焦
 characterization。不得把 PaidCreditGrant、Usage 写入、Admin usage/provider/billing、
 Audit/Decision、事务补偿或数据修改纳入回滚。
+
+Phase 6B 只允许恢复六个 Credit/PaidCreditGrant 方法到门面、恢复 facade 对 Credit
+Ledger queries 的直接继承，并移除新 repository/characterization。不得修改账本或
+grant 数据、执行事务补偿，或把 Usage、Billing、Audit/Decision 纳入回滚。
 
 ## 19. 后续批次启动规则
 
