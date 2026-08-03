@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FACADE_PATH = ROOT / "app/adapters/repositories/commercial_repository.py"
+AUDIT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_audit_mixin.py"
 
 ALLOWED_FACADE_BASES = {
     "CommercialAccessRepository",
@@ -122,3 +123,36 @@ def test_commercial_repository_production_dependency_can_only_shrink() -> None:
     assert constructions <= MAX_PRODUCTION_CONSTRUCTIONS
     assert references <= MAX_PRODUCTION_REFERENCES
     assert annotations <= MAX_PRODUCTION_ANNOTATIONS
+
+
+def test_audit_mixin_uses_explicit_audit_and_decision_repositories() -> None:
+    tree = _tree(AUDIT_MIXIN_PATH)
+    assert not _imports_facade(tree)
+
+    imported_names = {
+        name.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for name in node.names
+    }
+    assert {
+        "CommercialDecisionRepository",
+        "CommercialServiceAuditRepository",
+    } <= imported_names
+
+    constructions = [
+        ast.unparse(node.func)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func)
+        in {
+            "CommercialDecisionRepository",
+            "CommercialServiceAuditRepository",
+        }
+    ]
+    assert constructions.count("CommercialDecisionRepository") == 2
+    assert constructions.count("CommercialServiceAuditRepository") == 3
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "CommercialRepository"
+        for node in ast.walk(tree)
+    )
