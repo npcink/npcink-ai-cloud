@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6B M4 accepted；Phase 6C local verified
+状态：Phase 0 至 Phase 6C M4 accepted；Phase 6D local verified
 
 日期：2026-08-03
 
@@ -1553,6 +1553,35 @@ defaults、Billing rebuild、Site monitoring、Admin read 与 Usage service 调�
 自有方法。M4 candidate、PR/CI、merged source 与 clean-master M4 accepted 继续分别
 记录，不以本地绿色替代后续证据。
 
+### 17.26 Phase 6C 合并与 M4 accepted
+
+Phase 6C 由 PR #486 合并为
+`aefc84677d5ffc5f4b6fa5776ced8eea88764b78`；required `backend-targeted`
+为 8 分 41 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=486`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`7c2fca96d63c2a13597b16bb897656e7adce0a30470def9276488902b748bde2`；
+聚焦 Usage queries smoke 为 2 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，且未调用付费
+Provider。
+
+### 17.27 Phase 6D Usage repository
+
+Phase 6D 在 current
+`origin/master@aefc84677d5ffc5f4b6fa5776ced8eea88764b78` 上新增
+`CommercialUsageRepository(CommercialUsageQueries)`，原样迁移
+`record_usage_meter_event`。保持 dedupe key 查询、既有对象早返回、首次字段不覆盖、
+UTC `created_at`、`add + flush` 与调用方事务所有权；新 repository 不 commit/rollback，
+不取得行锁。facade 改为继承 repository，五个实际 domain 调用点不在本批迁移。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct repository 与七个
+query 的聚焦 characterization 为 4 passed。Runtime provider usage、非 fallback 错误
+usage evidence、Agent Feedback 幂等与 Site Knowledge index usage 调用图回归合计
+4 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy 282 个源文件
+无问题。门面当前为 543 行、16 个自有方法，其中 12 个为 Billing/Audit/Decision
+业务方法，其余为 `__init__` 与三个 helper。M4 candidate、PR/CI、merged source 与
+clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1638,6 +1667,10 @@ grant 数据、执行事务补偿，或把 Usage、Billing、Audit/Decision 纳�
 Phase 6C 只允许恢复七个 Usage/Run/Provider 查询到门面、移除 query class 与聚焦
 characterization。不得把 Usage 写入、BillingSnapshot、Audit/Decision、数据修改或
 事务补偿纳入回滚。
+
+Phase 6D 只允许恢复 `record_usage_meter_event` 到门面、恢复 facade 对 Usage queries
+的直接继承，并移除新 repository/characterization。不得修改 Usage 数据、执行事务
+补偿，或把 BillingSnapshot、Audit/Decision 与调用方迁移纳入回滚。
 
 ## 19. 后续批次启动规则
 

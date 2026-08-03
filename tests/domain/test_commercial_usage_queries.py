@@ -7,6 +7,7 @@ import pytest
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.adapters.repositories.commercial_usage_queries import CommercialUsageQueries
+from app.adapters.repositories.commercial_usage_repository import CommercialUsageRepository
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import ProviderCallRecord, RunRecord, Site, UsageMeterEvent
 
@@ -279,5 +280,81 @@ def test_usage_queries_preserve_filters_order_limits_joins_and_summaries(
                 "last_seen_at": "2026-08-03T12:00:00Z",
             },
         }
+
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "repository_type",
+    [CommercialRepository, CommercialUsageRepository],
+)
+def test_usage_repository_preserves_record_dedupe_and_flush_semantics(
+    tmp_path: Path,
+    repository_type: type[CommercialUsageRepository],
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / f'{repository_type.__name__}.sqlite3'}"
+    init_schema(database_url)
+    now = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
+
+    with get_session(database_url) as session:
+        session.add(
+            Site(
+                site_id="site-usage-record",
+                account_id=None,
+                name="Usage Record",
+                status="active",
+                site_url="https://usage-record.example.test",
+                metadata_json=None,
+                provisioned_at=now,
+            )
+        )
+        session.flush()
+        repository = repository_type(session)
+
+        event = repository.record_usage_meter_event(
+            account_id="account-usage-record",
+            site_id="site-usage-record",
+            subscription_id="subscription-usage-record",
+            plan_version_id="usage-v1",
+            run_id=None,
+            provider_call_id=None,
+            event_kind="provider_usage",
+            meter_key="tokens_in",
+            quantity=2.5,
+            ability_family="text",
+            channel="openapi",
+            execution_kind="generation",
+            execution_tier="cloud",
+            data_classification="internal",
+            currency=None,
+            dedupe_key="usage-record-dedupe",
+            payload_json={"source": "first"},
+        )
+        duplicate = repository.record_usage_meter_event(
+            account_id="different-account",
+            site_id="site-usage-record",
+            subscription_id=None,
+            plan_version_id=None,
+            run_id=None,
+            provider_call_id=None,
+            event_kind="different",
+            meter_key="images",
+            quantity=99.0,
+            ability_family=None,
+            channel=None,
+            execution_kind=None,
+            execution_tier=None,
+            data_classification=None,
+            currency="CNY",
+            dedupe_key="usage-record-dedupe",
+            payload_json={"source": "duplicate"},
+        )
+
+        assert event.id is not None
+        assert duplicate is event
+        assert event.account_id == "account-usage-record"
+        assert event.quantity == 2.5
+        assert event.payload_json == {"source": "first"}
+        assert repository.list_usage_meter_events("site-usage-record") == [event]
 
     dispose_engine(database_url)
