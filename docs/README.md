@@ -63,6 +63,7 @@ deleting the old decision history.
 - [Structural Remediation Delivery Standard](structural-remediation-delivery-standard-v1.md)
 - [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 - [Repository Hygiene Cleanup Closeout and Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
+- [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
 - [Python Type Checking Standard](python-type-checking-standard.md)
