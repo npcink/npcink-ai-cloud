@@ -9,6 +9,7 @@ from app.adapters.repositories.commercial_decision_repository import (
     CommercialDecisionRepository,
 )
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_usage_queries import CommercialUsageQueries
 from app.core.db import dispose_engine, get_session, init_schema
 
 
@@ -47,8 +48,14 @@ def _record(
 )
 def test_commercial_decision_repository_preserves_write_filters_order_and_summary(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     repository_type: type[CommercialDecisionRepository],
 ) -> None:
+    monkeypatch.setattr(
+        CommercialUsageQueries,
+        "_serialize_datetime",
+        lambda self, value: "wrong-domain-helper",
+    )
     database_url = f"sqlite+pysqlite:///{tmp_path / f'{repository_type.__name__}.sqlite3'}"
     init_schema(database_url)
     with get_session(database_url) as session:

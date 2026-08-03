@@ -1638,7 +1638,7 @@ direct-instantiation helper：
 - `count_service_audit_events`
 - `summarize_service_audit_events`
 - `_service_audit_filters`
-- `_serialize_datetime`
+- `_serialize_decision_datetime`
 
 保持 audit event `add + flush`、UTC `created_at`、site/account/site_ids 组合过滤与空列表
 语义、principal exact/suffix 匹配与空值早返回、时间/结果过滤、稳定倒序、limit 下限、
@@ -1683,13 +1683,15 @@ direct-instantiation helper：
 
 保持 decision event `add + flush`、UTC `created_at`、site/subscription/decision/code/
 request kind/since 过滤、created/id 稳定倒序、`limit=None` 不限量、count 零值、汇总分组、
-limit 下限与 UTC `Z` 序列化。repository 不 commit/rollback，不取得行锁；facade 通过继承
+limit 下限与 UTC `Z` 序列化。时间 helper 使用 Decision 专属命名，避免 facade 多继承时
+被更早的 Usage helper 截获；repository 不 commit/rollback，不取得行锁；facade 通过继承
 保持调用方式。API/domain/worker 调用方、schema、权限、Provider、Production、WordPress
 与 facade 删除均不在本批迁移。
 
 迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
-2 passed。AST 对比确认四个业务方法与两个 helper 的签名和方法体和 current-master
-完全一致。Commercial runtime defaults、Service commercial/admin read 与 runtime
+2 passed。AST 对比确认四个业务方法的公共签名、SQL/过滤/排序/写入结构与
+current-master 一致；唯一有意变化是把内部时间 helper 绑定为 Decision 专属名称，以
+消除 facade MRO 歧义。Commercial runtime defaults、Service commercial/admin read 与 runtime
 diagnostics 调用图回归合计 14 passed，只有既有 Starlette deprecation warning；Ruff
 通过，全量 mypy 285 个源文件无问题。门面当前为 60 行、仅有 `__init__` 一个自有方法，
 业务职责已全部进入领域 repository/query，但 facade 仍是调用方依赖的临时聚合类型。

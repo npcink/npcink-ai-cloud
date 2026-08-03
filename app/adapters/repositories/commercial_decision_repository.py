@@ -174,8 +174,8 @@ class CommercialDecisionRepository:
                     "decision": str(decision_value or ""),
                     "decision_code": str(decision_code_value or ""),
                     "count": int(count or 0),
-                    "first_seen_at": self._serialize_datetime(first_seen),
-                    "last_seen_at": self._serialize_datetime(last_seen),
+                    "first_seen_at": self._serialize_decision_datetime(first_seen),
+                    "last_seen_at": self._serialize_decision_datetime(last_seen),
                 }
             )
         return items
@@ -205,7 +205,7 @@ class CommercialDecisionRepository:
             filters.append(CommercialDecisionEvent.created_at >= since)
         return filters
 
-    def _serialize_datetime(self, value: datetime | None) -> str | None:
+    def _serialize_decision_datetime(self, value: datetime | None) -> str | None:
         if value is None:
             return None
         normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
