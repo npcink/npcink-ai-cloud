@@ -181,6 +181,8 @@ boundaries, status text, or accessible table structure.
 ## 5. Tables And Toolbars
 
 - Comparison-heavy queues default to a semantic `<table>`.
+- A queue keeps its table or task list at the full available working width while
+  contextual follow-up is closed.
 - Tables include a visible header row and an explicit empty or filtered-empty
   state.
 - Identity, status, reason, and next action remain scannable in one pass.
@@ -197,10 +199,25 @@ boundaries, status text, or accessible table structure.
 Use the accepted admin table frame and status primitives instead of creating a
 new route-local table shell.
 
-## 6. Dialogs And Configuration
+## 6. Drawers, Dialogs, And Configuration
 
-- Create and edit use a dialog or drawer while the list remains the primary
-  task.
+- Use an on-demand right drawer for row inspection, risk reasoning, low-frequency
+  evidence, related-object navigation, and choosing the next action.
+- Opening or closing the drawer must not reset filters, pagination, row
+  selection, or scroll position. Closing returns focus to the meaningful row
+  trigger.
+- Do not permanently narrow a queue with a default-visible inspector column.
+  Existing persistent inspectors may migrate one route at a time; this rule
+  does not authorize an Admin-wide rewrite.
+- Use a shared dialog for bounded create, edit, test, save, and confirmation
+  tasks while the list remains primary.
+- Do not use a dialog for routine evidence browsing or repeated queue triage.
+  Do not let a drawer grow into a multi-step editor or substitute detail page.
+- If the task needs several durable tabs, a shareable URL, or a long independent
+  workflow, use the existing contextual detail route.
+- Before the first route adopts an on-demand drawer, introduce and visually
+  verify one project-owned shared drawer primitive. Do not create route-local
+  drawer overlays, focus management, or geometry.
 - Use the shared workbench dialog; do not create another route-local modal
   overlay.
 - The dialog must trap focus, close with `Escape` when safe, and return focus
@@ -253,6 +270,12 @@ shared geometry, or dashed empty-state framing.
 Existing route-local dialogs are recorded as migration debt by the executable
 gate. New route-local dialogs are rejected; migrate one existing dialog at a
 time instead of widening the exception list.
+
+Existing persistent queue inspectors are transition state. Migrate them only
+through a bounded queue pilot that preserves the accepted toolbar, table
+density, selection, responsive behavior, and return path. A shared drawer pilot
+must add focused keyboard, focus-return, close, and queue-state preservation
+coverage before it becomes the reference for other routes.
 
 Existing route-local credential fields are recorded separately in the same
 manifest. New credential work must use `AdminCredentialField`; migrate one

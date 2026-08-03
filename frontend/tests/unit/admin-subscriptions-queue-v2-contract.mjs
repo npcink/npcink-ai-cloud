@@ -23,6 +23,7 @@ assert.match(source, /role="list"[\s\S]*data-ui="subscription-queue-item"/, 'sub
 assert.doesNotMatch(source, /<table/, 'the primary subscription queue must not depend on a desktop table');
 assert.match(source, /aria-controls="subscription-inspector"[\s\S]*id="subscription-inspector"/, 'row inspection must have an explicit accessible inspector target');
 assert.match(source, /focus: subscription\.subscription_id/, 'inspector focus must persist in the URL');
+assert.match(source, /currentQueueHref[\s\S]*return_to=\$\{encodeURIComponent\(currentQueueHref\)\}/, 'subscription detail links must preserve the current filtered queue return path');
 
 assert.match(source, /params\.set\('limit'[\s\S]*params\.set\('offset'[\s\S]*<ListPagination/, 'server-filtered results must keep pagination');
 assert.match(source, /Status filters are applied by the service API[\s\S]*current page of records/, 'the UI must state the scope of client-side risk sorting honestly');

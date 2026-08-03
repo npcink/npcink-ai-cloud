@@ -217,6 +217,24 @@ Route files must not independently choose cache timing, retry policy, table
 empty states, pagination copy, destructive selection behavior, or field error
 geometry.
 
+Contextual follow-up surfaces also use project-owned adapters:
+
+- the existing `AdminWorkbenchDialog` owns bounded create, edit, test, save,
+  and confirmation tasks;
+- an on-demand right drawer for queue inspection must enter through one shared
+  Admin primitive introduced by a bounded pilot;
+- route files must not implement their own overlay, focus trap, focus return,
+  escape handling, body scroll locking, responsive geometry, or drawer
+  transition.
+
+The closed drawer state leaves the queue at full working width. Drawer-open
+state is ephemeral UI state; shareable object identity belongs in the URL or a
+detail route. Opening and closing contextual follow-up must preserve
+server-owned filters and pagination, table selection, and meaningful focus.
+If the surface accumulates a long-lived form draft, several task tabs, or its
+own navigation hierarchy, stop and move the work to the shared dialog or
+contextual detail route according to the Admin information architecture.
+
 Default query posture for an internal operator surface:
 
 - use stable hierarchical query keys;
@@ -259,7 +277,7 @@ The test strategy must distinguish four layers.
 
 Keep source contracts for:
 
-- forbidden route-local dialogs or credential implementations;
+- forbidden route-local dialogs, drawers, or credential implementations;
 - route-manifest completeness;
 - Cloud/WordPress boundary rules;
 - required shared primitives and geometry tokens;
@@ -334,7 +352,9 @@ The accepted first candidate is `/admin/portal-users`.
    sorting, filtering, pagination, or selection logic. Current inspection does
    not justify it for this pilot.
 3. Keep the accepted responsive task list, status badges, toolbar, copy,
-   inspector, and geometry.
+   inspector behavior, and geometry. A later bounded visual pilot may replace
+   the persistent inspector with the standard full-width queue and on-demand
+   right drawer; the Query pilot alone does not authorize that redesign.
 4. Move DTOs, query keys, directory models, and filters into one feature
    module.
 5. Preserve behavior and appearance; this is an engineering pilot, not a

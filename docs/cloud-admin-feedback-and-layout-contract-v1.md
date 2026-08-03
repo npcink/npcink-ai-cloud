@@ -30,8 +30,9 @@ Admin pages should follow this order when the content exists:
 1. compact page title and primary cross-page actions;
 2. optional compact summary metrics;
 3. task toolbar with tabs, search, filters, and create actions;
-4. primary table, list, or focused working surface;
-5. contextual drawer or dialog for create, edit, inspect, and audit detail.
+4. full-width primary table, list, or focused working surface;
+5. on-demand right drawer for contextual inspection, evidence, and navigation;
+6. shared dialog for bounded create, edit, test, save, and confirmation tasks.
 
 The page title or summary panel must not become a catch-all container for
 mutation notices, receipts, forms, diagnostics, and secondary help.
@@ -85,16 +86,23 @@ The receipt is durable follow-up evidence, not a second success banner.
 
 ## 5. Interaction Rules
 
-- Create and edit flows use a dialog or drawer when the list remains the main
-  task.
+- Queue inspection uses an on-demand right drawer while the queue remains the
+  main task. Its closed state must not leave a permanently reserved inspector
+  column.
+- Create, edit, test, save, and confirmation flows use the shared dialog when
+  the list remains the main task.
+- Drawer and dialog state must not reset unrelated filters, pagination, scroll
+  position, or row context.
+- A task that needs durable tabs, a shareable URL, or a long independent
+  workflow uses a detail route instead of an oversized drawer or dialog.
 - Successful mutations refresh the affected row without resetting unrelated
   filters or scroll position.
 - Destructive actions require confirmation and identify the affected object.
 - Loading, empty, error, success, and disabled states must remain distinct.
 - Feedback must be announced with the appropriate `status` or `alert` live
   region without announcing normal page content as an error.
-- Keyboard focus must remain in the active dialog and return to a meaningful
-  trigger after close when the shared dialog primitive supports it.
+- Keyboard focus must remain in the active overlay and return to a meaningful
+  trigger after close. Shared drawer and dialog primitives own this behavior.
 
 ## 6. Visual Rules
 

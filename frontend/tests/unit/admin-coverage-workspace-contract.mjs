@@ -8,8 +8,8 @@ const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8
 
 assert.match(
   coverageSource,
-  /title=\{t\('admin\.coverage_surface_title'[\s\S]*Service risk queue/,
-  'Coverage surface must be framed as the canonical service risk queue'
+  /title=\{t\('admin\.coverage_surface_title'[\s\S]*Customer service risk queue/,
+  'Coverage surface must be framed as the canonical customer service risk queue'
 );
 
 assert.match(
@@ -80,7 +80,7 @@ assert.match(
 
 assert.match(
   i18nSource,
-  /'admin\.coverage_surface_title': '服务风险队列'/,
+  /'admin\.coverage_surface_title': '客户服务风险队列'/,
   'Coverage queue must provide task-specific Simplified Chinese title copy'
 );
 

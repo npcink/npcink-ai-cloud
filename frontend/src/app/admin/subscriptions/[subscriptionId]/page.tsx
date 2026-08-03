@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -129,11 +129,31 @@ type SubscriptionBillingSnapshotRebuildResult = {
 
 const subscriptionDetailClient = createApiClient({ idempotencyPrefix: 'admin_subscription_detail' });
 
+function normalizeSubscriptionReturnTo(value: string | null): string {
+  if (!value) {
+    return '/admin/subscriptions';
+  }
+  try {
+    const parsed = new URL(value, 'https://admin.local');
+    if (
+      parsed.origin === 'https://admin.local' &&
+      parsed.pathname === '/admin/subscriptions'
+    ) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch {
+    // Fall through to the canonical subscription queue.
+  }
+  return '/admin/subscriptions';
+}
+
 function SubscriptionDetailContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
   const { subscriptionId } = params as { subscriptionId: string };
+  const returnTo = normalizeSubscriptionReturnTo(searchParams.get('return_to'));
   const [detail, setDetail] = useState<SubscriptionDetailPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -497,6 +517,12 @@ function SubscriptionDetailContent() {
           </div>
         </details>
       </BackofficePrimaryPanel>
+
+      <div className="flex">
+        <Link href={returnTo} className="btn btn-secondary">
+          {t('admin.back_to_subscriptions', {}, 'Back to subscription risk')}
+        </Link>
+      </div>
 
       <BackofficeDisclosure
         summary={t('admin.subscription_detail.advanced_operational_evidence', {}, 'Advanced subscription evidence')}

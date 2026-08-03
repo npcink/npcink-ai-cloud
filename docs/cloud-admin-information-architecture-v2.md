@@ -48,14 +48,19 @@ responsive, and accessibility contracts.
 3. Put state before explanation.
 4. Put the primary task before low-frequency evidence.
 5. Use one primary action per section by default.
-6. Keep create and edit work in a drawer or dialog when a list remains primary.
-7. Keep dangerous actions out of the default action row.
-8. Preserve audit receipts without rendering them as permanent success cards.
-9. Distinguish loading, empty, filtered-empty, error, success, and disabled.
-10. Load low-frequency evidence and large candidate sets on demand.
-11. Keep desktop density without making mobile depend on horizontal scrolling
+6. Keep a queue at full working width until the operator requests contextual
+   follow-up.
+7. Use an on-demand right drawer to inspect evidence, judge risk, and navigate
+   related objects without turning inspection into a write flow.
+8. Use a shared dialog for bounded create, edit, test, save, and confirmation
+   tasks that require focused completion.
+9. Keep dangerous actions out of the default action row.
+10. Preserve audit receipts without rendering them as permanent success cards.
+11. Distinguish loading, empty, filtered-empty, error, success, and disabled.
+12. Load low-frequency evidence and large candidate sets on demand.
+13. Keep desktop density without making mobile depend on horizontal scrolling
     for the core task.
-12. Prefer utility copy over product, architecture, or boundary essays.
+14. Prefer utility copy over product, architecture, or boundary essays.
 
 ## 4. Navigation Domains
 
@@ -130,10 +135,27 @@ Required order:
 2. optional compact queue metrics;
 3. stable toolbar with tabs, search, filters, and create action;
 4. table or task list;
-5. contextual inspector or drawer.
+5. on-demand contextual right drawer.
 
 Filter state should survive detail navigation and refresh. Row content shows
 state, reason, and next action; low-frequency evidence belongs in the inspector.
+
+The closed state of a queue keeps the table or task list at the full available
+working width. It must not permanently reserve a desktop column for an
+inspector. Selecting `inspect` or an equivalent row action opens a contextual
+right drawer while preserving the selected row, filters, pagination, and scroll
+position.
+
+The drawer answers `what is this object, why is it here, and where should I go
+next?`. It may show read-only evidence, related objects, recommended follow-up,
+and bounded non-destructive navigation. It is not the default owner of a
+multi-step form or an audit-sensitive mutation draft.
+
+A shared dialog answers `what bounded change am I completing now?`. Create,
+edit, test, save, and impact-specific confirmation use the dialog when the queue
+remains the primary task. If inspection requires several durable tabs, a
+shareable URL, or a long independent workflow, use the object's detail route
+instead of expanding either the drawer or dialog into a page inside a page.
 
 ### 5.3 `detail`
 
@@ -147,8 +169,10 @@ Required order:
 4. task-oriented tabs;
 5. related objects and audit entry.
 
-Detail pages must not render all edit forms at once. Mutations use contextual
-drawers or dialogs and return focus to their trigger.
+Detail pages must not render all edit forms at once. A contextual drawer may
+preserve reference material while the operator inspects a related object; a
+shared dialog owns a bounded create, edit, test, save, or confirmation task.
+Both return focus to their trigger.
 
 ### 5.4 `configuration`
 

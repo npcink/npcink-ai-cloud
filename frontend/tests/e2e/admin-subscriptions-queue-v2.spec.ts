@@ -109,7 +109,7 @@ test('subscription risk queue persists server filters and inspector focus while 
   });
 
   await page.goto('/admin/subscriptions');
-  await expect(page.getByRole('heading', { name: /^Service risk queue$|^服务风险队列$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Subscription risk$|^订阅风险$/i })).toBeVisible();
   await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(3);
   await expect(page.locator('table')).toHaveCount(0);
   expect(requestCount).toBe(1);
@@ -137,6 +137,10 @@ test('subscription risk queue persists server filters and inspector focus while 
   await inspectButton.press('Enter');
   await expect(page).toHaveURL(/focus=sub_stale/);
   await expect(page.locator('#subscription-inspector')).toContainText('Beta Customer');
+
+  const detailLink = page.locator('#subscription-inspector a[href^="/admin/subscriptions/sub_stale?return_to="]');
+  await expect(detailLink).toHaveCount(1);
+  await expect(detailLink).toHaveAttribute('href', /return_to=%2Fadmin%2Fsubscriptions%3F/);
 
   await page.reload();
   await expect(page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i)).toHaveValue('acct_beta');

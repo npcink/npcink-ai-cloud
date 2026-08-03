@@ -116,5 +116,6 @@ test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', 
   await expect(lanes.locator('a[href="/admin/media-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/vector-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/agent-feedback"]')).toBeVisible();
+  await expect(lanes.locator('a[href="/admin/ai-advisor"]')).toBeVisible();
   await expect(page.getByText(/Groups|分组/)).toHaveCount(0);
 });

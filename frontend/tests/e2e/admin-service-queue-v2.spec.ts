@@ -6,7 +6,7 @@ test('service risk queue keeps filters and inspector focus in the URL on PC', as
   await installAdminMocks(page);
 
   await page.goto('/admin/coverage');
-  await expect(page.getByRole('heading', { name: /^Service risk queue$|^服务风险队列$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Customer service risk queue$|^客户服务风险队列$/i })).toBeVisible();
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
   await expect(page.locator('table')).toHaveCount(0);
 
