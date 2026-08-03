@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6D M4 accepted；Phase 6E local verified
+状态：Phase 0 至 Phase 6E M4 accepted；Phase 6F local verified
 
 日期：2026-08-03
 
@@ -1613,6 +1613,48 @@ AST 对比确认三个方法签名和方法体与 current-master 完全一致。
 `__init__` 与三个 helper。M4 candidate、PR/CI、merged source 与 clean-master M4
 accepted 继续分别记录，不以本地绿色替代后续证据。
 
+### 17.30 Phase 6E 合并与 M4 accepted
+
+Phase 6E 由 PR #488 合并为
+`79e398bf278657a39faaa33611d05c20cd130602`；required `backend-targeted`
+为 8 分 08 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=488`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`96ed4d14e5b8158ac1a93fa8a8c06669637945d903cbeac0102aadfc6ec45bb6`；
+聚焦 Billing repository smoke 为 2 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，且未调用付费
+Provider。
+
+### 17.31 Phase 6F Service Audit repository
+
+Phase 6F 在 current
+`origin/master@79e398bf278657a39faaa33611d05c20cd130602` 上新增
+`CommercialServiceAuditRepository`，原样迁移五个 Service Audit 业务方法与两个
+direct-instantiation helper：
+
+- `record_service_audit_event`
+- `list_service_audit_events`
+- `list_service_audit_events_for_principal`
+- `count_service_audit_events`
+- `summarize_service_audit_events`
+- `_service_audit_filters`
+- `_serialize_datetime`
+
+保持 audit event `add + flush`、UTC `created_at`、site/account/site_ids 组合过滤与空列表
+语义、principal exact/suffix 匹配与空值早返回、时间/结果过滤、稳定倒序、limit 下限、
+group/count 和 UTC `Z` 序列化。repository 不 commit/rollback，不取得行锁；facade 通过
+继承保持调用方式，并暂留自己的 `_serialize_datetime` 供未迁移的 Commercial Decision
+汇总使用。API/domain/worker 调用方、Decision、schema、权限、Provider、Production 与
+WordPress 均不在本批迁移。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
+2 passed。AST 对比确认五个业务方法与两个 helper 的签名和方法体和 current-master
+完全一致。Health、Service observability、Ops cadence、Portal audit 与 Service commercial
+调用图回归合计 17 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量
+mypy 284 个源文件无问题。门面当前为 259 行、7 个自有方法，其中四个为 Commercial
+Decision 业务方法，其余为 `__init__` 与两个 helper。M4 candidate、PR/CI、merged
+source 与 clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1706,6 +1748,11 @@ Phase 6D 只允许恢复 `record_usage_meter_event` 到门面、恢复 facade �
 Phase 6E 只允许恢复三个 BillingSnapshot 方法到门面、移除 Billing repository 与聚焦
 characterization。不得修改 billing 数据、执行事务补偿，或把 Service Audit、
 Commercial Decision 与调用方迁移纳入回滚。
+
+Phase 6F 只允许恢复五个 Service Audit 业务方法与 audit filter helper 到门面、移除
+Service Audit repository 与聚焦 characterization；facade 自有时间序列化 helper 继续
+保留给 Commercial Decision。不得修改 audit 数据、执行事务补偿，或把 Commercial
+Decision、调用方迁移、API/权限纳入回滚。
 
 ## 19. 后续批次启动规则
 
