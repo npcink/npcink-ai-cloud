@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6A M4 accepted；Phase 6B local verified
+状态：Phase 0 至 Phase 6B M4 accepted；Phase 6C local verified
 
 日期：2026-08-03
 
@@ -1509,6 +1509,50 @@ Ruff 通过，全量 mypy 280 个源文件无问题，`check:anti-drift` 与 `gi
 通过。门面当前为 763 行、24 个自有方法。M4 candidate、PR/CI、merged source 与
 clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
 
+### 17.24 Phase 6B 合并与 M4 accepted
+
+Phase 6B 由 PR #485 合并为
+`7a469427b24edfb15cab9171be353a418ab242d0`；required `backend-targeted`
+为 8 分 29 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=485`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`a4ad6e26d7d76c7b4f6c4ec4ceff600778c83930daf405f7ca9fac7eafffd5c8`；
+聚焦 Credit repository smoke 为 4 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，且未调用付费
+Provider。
+
+### 17.25 Phase 6C Usage queries
+
+Phase 6C 在 current
+`origin/master@7a469427b24edfb15cab9171be353a418ab242d0` 上确认并迁移七个
+Usage/Run/Provider 无锁纯查询：
+
+- `list_usage_meter_events`
+- `list_usage_meter_events_for_admin`
+- `summarize_usage_meter_events_for_admin`
+- `list_run_records_for_admin`
+- `list_run_records_by_ids`
+- `list_provider_call_records_for_admin`
+- `summarize_usage_meter_by_site`
+
+新增只读 `CommercialUsageQueries`；facade 通过继承保持公共调用。保持 site/account/
+subscription/ability/meter/run/since 过滤，空列表早返回，created/start 时间与稳定 ID
+排序，正 limit 规则，meter totals、site totals 与 UTC `Z` 时间序列化。新 query class
+原样包含 direct-instantiation 所需的 `_serialize_datetime`；facade 暂留同名 helper 供
+尚未迁移的 Audit/Decision 汇总使用，不在本批抽公共 utility。
+
+query class 不 add/flush/commit/rollback，不取得行锁；`record_usage_meter_event`、
+BillingSnapshot、Audit/Decision、调用方、权限/API、schema、Provider、Production 与
+WordPress 均排除。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
+2 passed。AST 对比确认七个方法的签名和方法体与 current-master 完全一致。Runtime
+defaults、Billing rebuild、Site monitoring、Admin read 与 Usage service 调用图回归合计
+21 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy 281 个源文件
+无问题，`check:anti-drift` 与 `git diff --check` 通过。门面当前为 595 行、17 个
+自有方法。M4 candidate、PR/CI、merged source 与 clean-master M4 accepted 继续分别
+记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1590,6 +1634,10 @@ Audit/Decision、事务补偿或数据修改纳入回滚。
 Phase 6B 只允许恢复六个 Credit/PaidCreditGrant 方法到门面、恢复 facade 对 Credit
 Ledger queries 的直接继承，并移除新 repository/characterization。不得修改账本或
 grant 数据、执行事务补偿，或把 Usage、Billing、Audit/Decision 纳入回滚。
+
+Phase 6C 只允许恢复七个 Usage/Run/Provider 查询到门面、移除 query class 与聚焦
+characterization。不得把 Usage 写入、BillingSnapshot、Audit/Decision、数据修改或
+事务补偿纳入回滚。
 
 ## 19. 后续批次启动规则
 
