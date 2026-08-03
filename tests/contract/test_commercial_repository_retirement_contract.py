@@ -12,6 +12,9 @@ AUDIT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_audit_mixin.py"
 SUPPORT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_support_mixin.py"
 ADMIN_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_admin_mixin.py"
 ACCOUNT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_account_mixin.py"
+SUBSCRIPTION_COMMERCE_MIXIN_PATH = (
+    ROOT / "app/domain/commercial/mixins/_subscription_commerce_mixin.py"
+)
 
 ALLOWED_FACADE_BASES = {
     "CommercialAccessRepository",
@@ -392,3 +395,27 @@ def test_account_mixin_uses_explicit_domain_and_lifecycle_repositories() -> None
         repository: constructions.count(repository)
         for repository in expected_constructions
     } == expected_constructions
+
+
+def test_subscription_commerce_mixin_uses_lifecycle_transaction_repository() -> None:
+    tree = _tree(SUBSCRIPTION_COMMERCE_MIXIN_PATH)
+    assert not _imports_facade(tree)
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "CommercialRepository"
+        for node in ast.walk(tree)
+    )
+
+    imported_names = {
+        name.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for name in node.names
+    }
+    assert "CommercialSubscriptionLifecycleRepository" in imported_names
+    constructions = [
+        ast.unparse(node.func)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "CommercialSubscriptionLifecycleRepository"
+    ]
+    assert len(constructions) == 7

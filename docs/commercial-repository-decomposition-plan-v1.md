@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7G M4 accepted；Phase 7H local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7H M4 accepted；Phase 7I local verified；7I 后暂停继续拆分
 
 日期：2026-08-03
 
@@ -1986,6 +1986,38 @@ Account service、identity membership limit、default Free 与 billing snapshot 
 Provider、Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-master
 M4 accepted 继续分层记录。
 
+Phase 7H 随后由 PR #498 squash merge 为
+`b4283495f49fe9b05bcd7fd0e10b67e0f18bfd65`；required `backend-targeted`
+为 8 分 38 秒通过，且无有效 review 变更请求。clean current `origin/master`
+source-only promotion 显示 `acceptance_state=accepted`、`promotion_pr=498`、
+`source_branch=master`、`source_dirty=false`，accepted source bundle 为
+`834e07e6baf8b1c66e260caaec82ff91e3e93ccb45792ec8abe756c90153ca09`；
+post-merge Account smoke 为 12 passed，只有既有 Starlette deprecation warning。
+Cloud lane、shared M4 与 task worktree lock 均已释放。
+
+### 17.45 Phase 7I SubscriptionCommerce caller 与暂停点
+
+Phase 7I 在 current
+`origin/master@b4283495f49fe9b05bcd7fd0e10b67e0f18bfd65` 上迁移
+SubscriptionCommerce mixin 的七个 facade 构造与全部 facade helper 注解。试用、公开套餐、
+agency quote、checkout、upgrade/downgrade/renewal/refund 的写事务统一使用已建立并验证的
+`CommercialSubscriptionLifecycleRepository`；trial start 额外使用同 Session 的
+`CommercialAccessRepository` 读取 active membership，不把 Access 膨胀进 lifecycle
+repository 的九 owner 合同。
+
+首轮完整 SubscriptionCommerce 测试真实发现 lifecycle repository 不拥有 membership
+query，五个 trial 场景以同一 `AttributeError` 失败；修正为显式 Access owner 后，retirement
+characterization 与完整 SubscriptionCommerce 行为共 26 passed。Ruff 通过，全量 mypy
+286 个源文件无问题。production facade importer 从 6 降至 5，构造点从 78 降至 71，
+名称引用从 112 降至 97，helper 注解从 34 降至 26，均由 AST 扫描核定。
+
+Phase 7I 完成 accepted 后，本计划暂停继续迁移 Billing、Payment、Portal、Site 与 Runtime
+caller，也不自动删除 facade。原因是项目仍处于商业可行性前期验证：Admin、Account、
+SubscriptionCommerce 等高价值商业主链已经脱离通用 facade，剩余拆分主要改善内部结构，
+短期不改变获客、激活、付费、留存或交付证据。retirement contract 继续禁止 facade 新增
+业务方法或扩大 importer/构造/引用/注解上限；只有剩余 facade 明确阻塞商业实验、造成真实
+缺陷或显著拖慢高频开发时，才以单独证据重新启动。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -2121,6 +2153,10 @@ characterization。不得修改 reconciliation/paid-credit/quota 业务语义、
 Phase 7H 只允许恢复 Account mixin 的五个 facade 构造与两个 helper 注解，并移除本批
 聚焦 characterization。不得修改账户锁、identity/membership、subscription lifecycle、
 audit/commit 语义、数据、API/权限，或把 SubscriptionCommerce 纳入回滚。
+
+Phase 7I 只允许恢复 SubscriptionCommerce mixin 的七个 facade 构造与 helper 注解，移除
+trial start 的显式 Access owner，并移除本批聚焦 characterization。不得修改试用、套餐、
+订单、支付、退款、reconciliation 或 commit 语义。
 
 ## 19. 后续批次启动规则
 
