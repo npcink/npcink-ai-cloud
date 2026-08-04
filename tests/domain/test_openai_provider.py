@@ -169,6 +169,29 @@ def test_openai_adapter_classifies_bge_catalog_models_as_embeddings() -> None:
     assert snapshot.models[0].instances[0].capability_tags == ["embedding", "default"]
 
 
+def test_openai_adapter_classifies_kolors_catalog_models_as_image_generation() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": "Kwai-Kolors/Kolors"}]})
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        model_namespace_prefix="siliconflow",
+        transport=httpx.MockTransport(handler),
+    )
+
+    model = adapter.fetch_catalog().models[0]
+
+    assert model.model_id == "siliconflow/Kwai-Kolors/Kolors"
+    assert model.feature == "image_generation"
+    assert model.instances[0].endpoint_variant == "image_generations"
+    assert model.instances[0].capability_tags == [
+        "image_generation",
+        "default",
+        "quality",
+    ]
+
+
 def test_openai_adapter_rejects_sample_catalog_when_fallback_is_disabled() -> None:
     adapter = OpenAIProviderAdapter(
         allow_sample_catalog=False,
