@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Any, BinaryIO, Protocol
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.core.models import MediaArtifact, RunRecord
 from app.domain.image_generation.contracts import IMAGE_GENERATION_RESULT_CONTRACT
 from app.domain.image_generation.provider_fetch import (
@@ -49,6 +51,7 @@ IMAGE_GENERATION_MAX_CANDIDATES = 4
 
 _PILLOW_FORMATS = frozenset({"AVIF", "JPEG", "PNG", "WEBP"})
 _BINARY_CONTENT_TYPES = frozenset({"", "application/octet-stream", "binary/octet-stream"})
+_LOGGER = get_logger(__name__)
 
 
 class ProviderMediaCandidateLike(Protocol):
@@ -145,6 +148,7 @@ def materialize_image_generation_candidates(
     stored_batch: list[ArtifactStorageMetadata] = []
     artifacts: list[MediaArtifact] = []
     run_io_bytes = 0
+    provider_image_host = ""
     savepoint = session.begin_nested()
 
     try:
@@ -154,6 +158,7 @@ def materialize_image_generation_candidates(
             try:
                 content_bytes = getattr(candidate, "content_bytes", None)
                 source_url = str(getattr(candidate, "source_url", None) or "").strip()
+                provider_image_host = _safe_provider_image_hostname(source_url)
                 if bool(content_bytes) == bool(source_url):
                     raise ImageGenerationArtifactMaterializationError(
                         "generated image candidate must have exactly one source"
@@ -262,8 +267,22 @@ def materialize_image_generation_candidates(
         if isinstance(error, ImageGenerationArtifactMaterializationError):
             raise
         if isinstance(error, ProviderImageFetchError):
+            _LOGGER.warning(
+                "provider image fetch failed run_id=%s site_id=%s reason=%s host=%s",
+                run.run_id,
+                run.site_id,
+                error.reason_code,
+                provider_image_host,
+                extra={
+                    "run_id": run.run_id,
+                    "site_id": run.site_id,
+                    "error_code": error.error_code,
+                    "provider_image_fetch_reason": error.reason_code,
+                    "provider_image_host": provider_image_host,
+                },
+            )
             raise ImageGenerationArtifactMaterializationError(
-                "provider image could not be materialized"
+                error.message
             ) from error
         if isinstance(error, ArtifactStoreError):
             raise ImageGenerationArtifactMaterializationError(
@@ -281,6 +300,17 @@ def materialize_image_generation_candidates(
         "suggestion_only": True,
         "requires_local_review": True,
     }
+
+
+def _safe_provider_image_hostname(source_url: str) -> str:
+    try:
+        parsed = urlsplit(str(source_url or "").strip())
+        hostname = str(parsed.hostname or "").strip().rstrip(".").lower()
+        if not hostname or "%" in hostname or len(hostname) > 253:
+            return ""
+        return hostname.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return ""
 
 
 def clean_provider_image(

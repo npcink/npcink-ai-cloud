@@ -21,6 +21,30 @@ ProviderHostResolver = Callable[[str, int], Iterable[str]]
 MonotonicClock = Callable[[], float]
 
 _PROVIDER_IMAGE_TIMEOUT_MESSAGE = "provider image download exceeded the time limit"
+_PROVIDER_IMAGE_FETCH_REASON_BY_MESSAGE = {
+    "provider image fetch capacity is exhausted": "capacity_exhausted",
+    "provider image fetch did not complete": "incomplete",
+    _PROVIDER_IMAGE_TIMEOUT_MESSAGE: "timeout",
+    "provider image host could not be resolved": "host_resolution_failed",
+    "provider image redirects are forbidden": "redirect_forbidden",
+    "provider image request was unsuccessful": "http_status_rejected",
+    "provider image exceeds the byte limit": "image_too_large",
+    "provider image response was empty": "empty_response",
+    "provider image could not be fetched": "fetch_failed",
+    "provider image timeout is invalid": "invalid_timeout",
+    "provider image URL is invalid": "invalid_url",
+    "provider image URL must use HTTPS": "https_required",
+    "provider image URL credentials are forbidden": "credentials_forbidden",
+    "provider image URL must use port 443": "port_forbidden",
+    "provider image URL fragments are forbidden": "fragment_forbidden",
+    "provider image host is not allowlisted": "host_not_allowlisted",
+    "provider image host is invalid": "host_invalid",
+    "provider image host resolved unexpectedly": "host_resolution_invalid",
+    "provider image host is not publicly routable": "host_not_public",
+    "provider image host did not resolve": "host_unresolved",
+    "provider image content length is invalid": "content_length_invalid",
+}
+_PROVIDER_IMAGE_GENERIC_FETCH_MESSAGE = "provider image could not be fetched"
 _PROVIDER_IMAGE_FETCH_SLOTS = threading.BoundedSemaphore(
     PROVIDER_IMAGE_MAX_CONCURRENT_FETCHES
 )
@@ -30,8 +54,14 @@ class ProviderImageFetchError(RuntimeError):
     error_code = "image_generation.provider_fetch_failed"
 
     def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
+        safe_message = (
+            message
+            if message in _PROVIDER_IMAGE_FETCH_REASON_BY_MESSAGE
+            else _PROVIDER_IMAGE_GENERIC_FETCH_MESSAGE
+        )
+        super().__init__(safe_message)
+        self.message = safe_message
+        self.reason_code = _PROVIDER_IMAGE_FETCH_REASON_BY_MESSAGE[safe_message]
 
 
 @dataclass(frozen=True, slots=True)
