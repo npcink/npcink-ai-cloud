@@ -199,3 +199,64 @@ def test_operational_ready_endpoint_requires_fresh_workers_and_cadence(tmp_path)
     assert payload["error_code"] == "health.operational_not_ready"
     assert payload["data"]["checks"]["providers.fresh"] is False
     dispose_engine(database_url)
+
+
+def test_operational_ready_endpoint_rejects_degraded_provider_health(monkeypatch) -> None:
+    services = StubServices()
+
+    def build_summary(self, *, ready_report, recent_minutes, backlog_limit, now):
+        return {
+            "workers": {
+                "items": [
+                    {"worker_id": worker_id, "freshness": "fresh"}
+                    for worker_id in ("runtime_queue", "callback_dispatch", "ops_cadence")
+                ]
+            },
+            "cadence": {
+                "items": [
+                    {"task_id": task_id, "freshness": "fresh"}
+                    for task_id in (
+                        "retention_cleanup",
+                        "plugin_observability_cleanup",
+                        "usage_rollup",
+                        "router_diagnostics_summary",
+                        "latency_probe_summary",
+                        "alert_provider_degradation",
+                        "provider_health_scan",
+                    )
+                ]
+            },
+            "providers": {
+                "freshness": "fresh",
+                "providers_total": 1,
+                "instances_total": 114,
+                "status_counts": {
+                    "healthy": 113,
+                    "degraded": 1,
+                    "unhealthy": 0,
+                    "unknown": 0,
+                },
+                "degraded_provider_ids": ["openai"],
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.domain.observability.service.ObservabilityService.build_summary",
+        build_summary,
+    )
+    client = TestClient(create_app(services))
+
+    response = client.get(
+        "/health/operational-ready",
+        headers=build_internal_headers(
+            internal_token=TEST_INTERNAL_AUTH_TOKEN,
+            trace_id="healthopdegraded0001000000000000",
+        ),
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["error_code"] == "health.operational_not_ready"
+    assert payload["data"]["checks"]["providers.fresh"] is True
+    assert payload["data"]["checks"]["providers.operational"] is False
+    assert "degraded=1" in payload["data"]["details"]["providers.operational"]
