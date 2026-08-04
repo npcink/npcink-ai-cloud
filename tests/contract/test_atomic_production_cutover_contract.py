@@ -521,6 +521,7 @@ def _run_remote_cutover(
     drift_previous_runtime_network_after_failure: bool = False,
     pending_first_install: bool = False,
     pending_repair: bool = False,
+    refresh_providers: bool = True,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -733,7 +734,7 @@ def _run_remote_cutover(
                         if previous_runtime_network_contract
                         else ""
                     ),
-                    "REFRESH_PROVIDERS": "1",
+                    "REFRESH_PROVIDERS": "1" if refresh_providers else "0",
                     "WITH_OPERATIONAL_READY": "0",
                     "FIRST_INSTALL_PENDING_REPAIR": "1" if pending_repair else "0",
                     "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": (
@@ -1763,6 +1764,7 @@ def test_explicit_pending_first_install_repair_preserves_acceptance_boundary(
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
+        refresh_providers=False,
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -1802,6 +1804,7 @@ def test_failed_pending_first_install_repair_restores_original_marker(
         fail_at=fail_at,
         pending_first_install=True,
         pending_repair=True,
+        refresh_providers=False,
     )
 
     assert completed.returncode != 0
@@ -1817,6 +1820,24 @@ def test_failed_pending_first_install_repair_restores_original_marker(
         / "rollback-images.tsv"
     )
     assert Path(marker["rollback_image_map"]).is_file()
+
+
+def test_pending_first_install_repair_rejects_provider_refresh_before_mutation(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        refresh_providers=True,
+    )
+
+    assert completed.returncode != 0
+    assert "repair forbids provider projection refresh" in completed.stderr
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    assert not log_path.exists() or "load:prepare-only" not in log_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_internal_one_off_cleanup_failure_retains_both_recovery_locks(

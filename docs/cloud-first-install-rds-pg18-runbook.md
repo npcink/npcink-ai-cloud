@@ -193,6 +193,9 @@ rollback release/images. Re-run the originally blocked acceptance only; finalize
 after the complete acceptance evidence exists. If migration started and the
 repair fails, keep public/write services stopped and use the recorded RDS backup
 with the matched release instead of automatically restarting old code.
+The repair command must not include `--refresh-providers` or set
+`NPCINK_CLOUD_REFRESH_PROVIDERS=1`; provider projection refresh is unrelated to
+the acceptance blocker and is rejected before deployment mutation.
 Do not run `first-install-rollback.sh` for this complete-state repair: that
 helper is intentionally limited to the pre-Setup `installation_state=pending`
 contract. A repair rollback restores the recorded RDS backup and matched

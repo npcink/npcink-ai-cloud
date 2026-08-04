@@ -286,6 +286,10 @@ if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
 		echo "[fail] Pending first-install repair requires the exact operator approval sentence." >&2
 		exit 1
 	fi
+	if [ "${REFRESH_PROVIDERS}" = "1" ]; then
+		echo "[fail] Pending first-install repair forbids provider projection refresh." >&2
+		exit 1
+	fi
 elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
 	echo "[fail] Pending first-install repair approval is invalid without --first-install-pending-repair." >&2
 	exit 1
@@ -858,6 +862,10 @@ PY
 		if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
 			if [ "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" != "Approved for first-install pending repair by operator." ]; then
 				echo "[fail] Protected pending first-install repair approval is invalid." >&2
+				exit 1
+			fi
+			if [ "${REFRESH_PROVIDERS}" = "1" ]; then
+				echo "[fail] Protected pending first-install repair forbids provider projection refresh." >&2
 				exit 1
 			fi
 		elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then

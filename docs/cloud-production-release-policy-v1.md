@@ -148,6 +148,8 @@ Failure after migration starts remains fail-closed and requires the recorded RDS
 backup plus the matched release; it never auto-starts old code against a changed
 database. The repair must remain scoped to the acceptance blocker and does not
 authorize unrelated application, Admin, provider, or product changes.
+It therefore rejects `--refresh-providers` and
+`NPCINK_CLOUD_REFRESH_PROVIDERS=1` before deployment mutation.
 Because the authenticated Setup transaction has already committed
 `installation_state=complete`, `first-install-rollback.sh` intentionally remains
 unavailable for this exception. Repair rollback is a separate matched recovery:
