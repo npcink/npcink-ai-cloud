@@ -259,13 +259,6 @@ def materialize_image_generation_candidates(
     except Exception as error:
         if savepoint.is_active:
             savepoint.rollback()
-        _cleanup_failed_batch(
-            session=session,
-            artifact_store=artifact_store,
-            stored_batch=stored_batch,
-        )
-        if isinstance(error, ImageGenerationArtifactMaterializationError):
-            raise
         if isinstance(error, ProviderImageFetchError):
             _LOGGER.warning(
                 "provider image fetch failed run_id=%s site_id=%s reason=%s host=%s",
@@ -281,6 +274,14 @@ def materialize_image_generation_candidates(
                     "provider_image_host": provider_image_host,
                 },
             )
+        _cleanup_failed_batch(
+            session=session,
+            artifact_store=artifact_store,
+            stored_batch=stored_batch,
+        )
+        if isinstance(error, ImageGenerationArtifactMaterializationError):
+            raise
+        if isinstance(error, ProviderImageFetchError):
             raise ImageGenerationArtifactMaterializationError(
                 error.message
             ) from error

@@ -319,6 +319,69 @@ def test_url_fetch_failure_preserves_safe_reason_and_logs_hostname_only(
     assert _stored_paths(artifact_root) == []
 
 
+def test_url_fetch_failure_logs_safe_evidence_before_uncertain_cleanup(
+    artifact_context: tuple[str, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database_url, artifact_root = artifact_context
+    delegate = LocalVolumeArtifactStore(artifact_root)
+    signed_url = (
+        "https://images.provider.test/generated/image.png"
+        "?signature=TOPSECRET&token=ABC"
+    )
+
+    class DeleteFailureStore:
+        chunk_size = delegate.chunk_size
+
+        def put(self, *args: object, **kwargs: object) -> ArtifactStorageMetadata:
+            return delegate.put(*args, **kwargs)  # type: ignore[arg-type]
+
+        def delete(self, storage_key: str) -> None:
+            raise ArtifactStoreError("injected delete failure")
+
+    def rejected_fetch(source_url: str, **kwargs: object) -> ProviderFetchedImage:
+        assert source_url == signed_url
+        assert kwargs["allowed_hosts"] == ("images.expected.test",)
+        raise ProviderImageFetchError("provider image host is not allowlisted")
+
+    caplog.set_level(logging.WARNING)
+    with get_session(database_url) as session:
+        run = _create_run(session, run_id="run_image_fetch_cleanup_uncertain")
+        with pytest.raises(ImageGenerationArtifactCleanupUncertainError):
+            materialize_image_generation_candidates(
+                session=session,
+                artifact_store=DeleteFailureStore(),  # type: ignore[arg-type]
+                run=run,
+                media_candidates=(
+                    ProviderMediaCandidate(
+                        index=1,
+                        content_bytes=_png_bytes(),
+                        claimed_mime_type="image/png",
+                    ),
+                    ProviderMediaCandidate(
+                        index=2,
+                        source_url=signed_url,
+                        image_output_hosts=("images.expected.test",),
+                        claimed_mime_type="image/png",
+                    ),
+                ),
+                provider_output={"candidate_count": 2},
+                url_fetcher=rejected_fetch,
+            )
+
+    matching_record = next(
+        record
+        for record in caplog.records
+        if record.message.startswith("provider image fetch failed")
+    )
+    assert matching_record.provider_image_fetch_reason == "host_not_allowlisted"
+    assert matching_record.provider_image_host == "images.provider.test"
+    assert matching_record.run_id == "run_image_fetch_cleanup_uncertain"
+    assert "TOPSECRET" not in caplog.text
+    assert "token=ABC" not in caplog.text
+    assert signed_url not in caplog.text
+
+
 @pytest.mark.parametrize(
     ("provider_output", "candidates"),
     [
