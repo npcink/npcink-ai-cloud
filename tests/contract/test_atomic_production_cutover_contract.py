@@ -24,9 +24,23 @@ def _remote_deploy_body() -> str:
     # The real remote entry is root-only and requires uid/gid 999 projections.
     # This portable subprocess fixture already replaces `id`/`stat`; replace
     # the Python ownership tuple as well without weakening production code.
-    return body.replace(
+    body = body.replace(
         "(metadata.st_uid, metadata.st_gid) != (\n        999,\n        999,\n    )",
         "(metadata.st_uid, metadata.st_gid) != (os.geteuid(), os.getegid())",
+    )
+    body = body.replace(
+        "(metadata.st_uid, metadata.st_gid) != (0, 0)",
+        "(metadata.st_uid, metadata.st_gid) != (os.geteuid(), os.getegid())",
+    )
+    body = body.replace(
+        "(rollback_metadata.st_uid, rollback_metadata.st_gid) != (0, 0)",
+        "(rollback_metadata.st_uid, rollback_metadata.st_gid) "
+        "!= (os.geteuid(), os.getegid())",
+    )
+    return body.replace(
+        "(snapshot_metadata.st_uid, snapshot_metadata.st_gid) != (0, 0)",
+        "(snapshot_metadata.st_uid, snapshot_metadata.st_gid) "
+        "!= (os.geteuid(), os.getegid())",
     )
 
 
@@ -505,6 +519,10 @@ def _run_remote_cutover(
     previous_runtime_network_contract: bool = False,
     runtime_network_state_variant: str = "valid",
     drift_previous_runtime_network_after_failure: bool = False,
+    pending_first_install: bool = False,
+    pending_repair: bool = False,
+    refresh_providers: bool = True,
+    fail_marker_directory_fsync: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -570,6 +588,34 @@ def _run_remote_cutover(
     )
     (previous / ".env.deploy").chmod(0o600)
     (previous / "docker-compose.prod.yml").write_text("services: {}\n", encoding="utf-8")
+    if pending_first_install:
+        (remote_dir / ".installation-complete").unlink()
+        pending_rollback_map = remote_dir / ".release-state" / previous.name / "rollback-images.tsv"
+        pending_rollback_map.parent.mkdir(parents=True, exist_ok=True)
+        (remote_dir / ".release-state").chmod(0o700)
+        pending_rollback_map.parent.chmod(0o700)
+        pending_rollback_map.write_text("fixture\n", encoding="utf-8")
+        pending_rollback_map.chmod(0o600)
+        pending_marker = remote_dir / ".first-install-pending.json"
+        pending_marker.write_text(
+            json.dumps(
+                {
+                    "contract": "first_install_pending.v1",
+                    "created_at": "2026-08-05T00:00:00Z",
+                    "release": str(previous),
+                    "previous_release": "",
+                    "previous_env_file": "",
+                    "previous_compose_file": "",
+                    "previous_compose_project": "",
+                    "rollback_image_map": str(pending_rollback_map),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        pending_marker.chmod(0o600)
     if previous_runtime_network_contract:
         partial_compose = runtime_network_state_variant == "partial-compose"
         (previous / "docker-compose.runtime.yml").write_text(
@@ -635,7 +681,20 @@ def _run_remote_cutover(
             archive.add(item, arcname=item.relative_to(bundle_source))
 
     remote_body = tmp_path / "remote-deploy-body.sh"
-    _write(remote_body, _remote_deploy_body(), executable=True)
+    remote_body_source = _remote_deploy_body()
+    if fail_marker_directory_fsync:
+        original = (
+            "    os.replace(temporary, marker)\n"
+            "    directory_fd = os.open(marker.parent, os.O_RDONLY)\n"
+        )
+        injected = (
+            "    os.replace(temporary, marker)\n"
+            "    raise OSError('injected marker directory fsync failure')\n"
+            "    directory_fd = os.open(marker.parent, os.O_RDONLY)\n"
+        )
+        assert remote_body_source.count(original) == 1
+        remote_body_source = remote_body_source.replace(original, injected, 1)
+    _write(remote_body, remote_body_source, executable=True)
 
     uploaded_env = ""
     if new_project_name is not None or new_env_sentinel:
@@ -689,8 +748,14 @@ def _run_remote_cutover(
                         if previous_runtime_network_contract
                         else ""
                     ),
-                    "REFRESH_PROVIDERS": "1",
+                    "REFRESH_PROVIDERS": "1" if refresh_providers else "0",
                     "WITH_OPERATIONAL_READY": "0",
+                    "FIRST_INSTALL_PENDING_REPAIR": "1" if pending_repair else "0",
+                    "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": (
+                        "Approved for first-install pending repair by operator."
+                        if pending_repair
+                        else ""
+                    ),
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -1690,6 +1755,129 @@ def test_preexisting_one_off_lock_blocks_deploy_without_mutation(
     assert "docker:stop" not in log
     assert "docker:rm" not in log
     assert "left it untouched" in completed.stderr
+
+
+def test_pending_first_install_still_rejects_ordinary_second_deploy(tmp_path: Path) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+    )
+
+    assert completed.returncode != 0
+    assert "another deployment is forbidden" in completed.stderr
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    assert not log_path.exists() or "load:prepare-only" not in log_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_explicit_pending_first_install_repair_preserves_acceptance_boundary(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, _log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        refresh_providers=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "installation_state=pending" in completed.stdout
+    assert (remote_dir / "current").resolve() == remote_dir / "release-next"
+    assert not (remote_dir / ".installation-complete").exists()
+    marker = json.loads(
+        (remote_dir / ".first-install-pending.json").read_text(encoding="utf-8")
+    )
+    assert marker["contract"] == "first_install_pending.v1"
+    assert Path(marker["release"]) == remote_dir / "release-next"
+    assert Path(marker["previous_release"]) == remote_dir / "release-previous"
+    assert Path(marker["rollback_image_map"]) == (
+        remote_dir / ".release-state" / "release-next" / "rollback-images.tsv"
+    )
+    assert not (
+        remote_dir
+        / ".release-state"
+        / "release-previous"
+        / "rollback-images.tsv"
+    ).exists()
+    assert not (
+        remote_dir
+        / ".release-state"
+        / "release-next"
+        / "previous-first-install-pending.json"
+    ).exists()
+
+
+@pytest.mark.parametrize("fail_at", ["data-only", "migrate"])
+def test_failed_pending_first_install_repair_restores_original_marker(
+    tmp_path: Path,
+    fail_at: str,
+) -> None:
+    completed, remote_dir, _log_path = _run_remote_cutover(
+        tmp_path,
+        fail_at=fail_at,
+        pending_first_install=True,
+        pending_repair=True,
+        refresh_providers=False,
+    )
+
+    assert completed.returncode != 0
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    marker = json.loads(
+        (remote_dir / ".first-install-pending.json").read_text(encoding="utf-8")
+    )
+    assert Path(marker["release"]) == remote_dir / "release-previous"
+    assert Path(marker["rollback_image_map"]) == (
+        remote_dir
+        / ".release-state"
+        / "release-previous"
+        / "rollback-images.tsv"
+    )
+    assert Path(marker["rollback_image_map"]).is_file()
+
+
+def test_pending_first_install_repair_rejects_provider_refresh_before_mutation(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        refresh_providers=True,
+    )
+
+    assert completed.returncode != 0
+    assert "repair forbids provider projection refresh" in completed.stderr
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    assert not log_path.exists() or "load:prepare-only" not in log_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_pending_repair_restores_snapshot_after_marker_replace_fsync_failure(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, _log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        refresh_providers=False,
+        fail_marker_directory_fsync=True,
+    )
+
+    assert completed.returncode != 0
+    assert "injected marker directory fsync failure" in completed.stderr
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    marker = json.loads(
+        (remote_dir / ".first-install-pending.json").read_text(encoding="utf-8")
+    )
+    assert Path(marker["release"]) == remote_dir / "release-previous"
+    assert Path(marker["rollback_image_map"]) == (
+        remote_dir
+        / ".release-state"
+        / "release-previous"
+        / "rollback-images.tsv"
+    )
 
 
 def test_internal_one_off_cleanup_failure_retains_both_recovery_locks(
