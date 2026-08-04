@@ -1670,6 +1670,7 @@ class OpenAIProviderAdapter:
             "grok-imagine",
             "image-quality",
             "gpt-image",
+            "kolors",
             "qwen-image",
             "z-image",
             "ernie-image",
