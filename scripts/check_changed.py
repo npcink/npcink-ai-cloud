@@ -239,23 +239,28 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
 
     if kinds["admin"]:
         followups.append(
-            "Run the focused target-route PC browser gate; run pnpm run check:admin-ui at closeout when the manifest or shared seam requires it."
+            "Run the focused target-route PC browser gate; run pnpm run check:admin-ui "
+            "at closeout when the manifest or shared seam requires it."
         )
     if kinds["build_runtime"]:
         followups.append(
-            "Potential build/runtime inputs changed: inspect the manifest diff, then use the L2 lane and m4:preview:deploy only when a dependency or runtime fingerprint changed."
+            "Potential build/runtime inputs changed: inspect the manifest diff, then use the "
+            "L2 lane and m4:preview:deploy only when a dependency or runtime fingerprint changed."
         )
     elif kinds["cloud_source"]:
         followups.append(
-            "Cloud source changed: use m4:preview:sync after local gates when runtime behavior is in scope."
+            "Cloud source changed: use m4:preview:sync after local gates when runtime behavior "
+            "is in scope."
         )
     if kinds["migration"]:
         followups.append(
-            "Migration changed: use source sync plus migration-head, persistence, and rollback evidence; do not cold-build unless a fingerprint input also changed."
+            "Migration changed: use source sync plus migration-head, persistence, and rollback "
+            "evidence; do not cold-build unless a fingerprint input also changed."
         )
     if not any(kinds.values()):
         followups.append(
-            "No specialized lane matched; select one focused test for the changed seam before closeout."
+            "No specialized lane matched; select one focused test for the changed seam before "
+            "closeout."
         )
 
     return {"paths": paths, "classification": kinds, "commands": commands, "followups": followups}
