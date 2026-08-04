@@ -512,5 +512,7 @@ def test_first_install_cve_probe_is_protected_and_precedes_host_mutation() -> No
     assert "--controlled-cve-risk-acceptance" in source
     assert "--controlled-cve-risk-acceptance-checksum" in source
     assert "FIRST_INSTALL_CVE_GATE_ARGS" in source
+    assert "missing|pending|complete)" in source
+    assert "Production host mutation is forbidden" in source
     assert source.index("Stage-only upload is forbidden") < source.index(first_mutation)
     assert source.index(probe) < source.index(gate) < source.index(first_mutation)

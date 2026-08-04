@@ -500,11 +500,11 @@ print(state)
 PY
 	)"
 	case "${REMOTE_INSTALLATION_STATE}" in
-		missing|pending)
+		missing|pending|complete)
 			"${LOCAL_RELEASE_TOOL_PYTHON}" \
 				"${ROOT_DIR}/scripts/check-first-install-cve-gate.py" \
 				"${FIRST_INSTALL_CVE_GATE_ARGS[@]}" >/dev/null || {
-				echo "[fail] First-install host mutation is forbidden while the exact release retains the Python 3.14.6 CVE exceptions." >&2
+				echo "[fail] Production host mutation is forbidden while the exact release retains the Python 3.14.6 CVE exceptions." >&2
 				exit 1
 			}
 			;;
@@ -512,7 +512,6 @@ PY
 			echo "[fail] Remote first installation is initializing; deployment will not mutate the host." >&2
 			exit 1
 			;;
-		complete) ;;
 	esac
 fi
 

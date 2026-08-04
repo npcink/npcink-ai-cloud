@@ -90,9 +90,9 @@ Before any production-host image, database, Edge, or release mutation:
 4. Run the repository's single-command same-bundle double replay successfully.
 5. Recheck the three NVD records and this decision's expiry and stop conditions.
 6. Manually create the bundle-external operator acceptance below and its
-   separate SHA-256 checksum file. The first-install gate must compare both to
-   the bundle manifest, outer checksum, scan index, API scan receipt, and
-   embedded allowlist before any host mutation.
+   separate SHA-256 checksum file. The production-host deployment gate must
+   compare both to the bundle manifest, outer checksum, scan index, API scan
+   receipt, and embedded allowlist before any host mutation.
 
 The acceptance contract is
 `npcink.controlled_production_cve_risk_acceptance.v1`. It records a human risk
@@ -165,7 +165,8 @@ file that contains only the 64-character lowercase digest.
 The receipt cannot contain a self-digest because that would create a circular
 value. The release operator manually compares all bound values before
 continuing. `scripts/check-first-install-cve-gate.py` then consumes the two
-external files only for the first-install deploy path. It rejects stale or
+external files for every stage-only, pending-installation, and completed-host
+deployment path. It rejects stale or
 rebound evidence, unexpected fields, unsafe ownership/mode, partial CVE sets,
 and any mismatch with the exact Linux/AMD64 bundle. Image-scan and P1-E06
 tooling do not consume this acceptance.
