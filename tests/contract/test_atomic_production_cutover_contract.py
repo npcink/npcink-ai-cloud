@@ -227,6 +227,67 @@ OLD_POSTGRES_IMAGE_ID="sha256:00000000000000000000000000000000000000000000000000
 OLD_REDIS_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000007"
 WRONG_RECOVERY_IMAGE_ID="sha256:8888888888888888888888888888888888888888888888888888888888888888"
 printf 'docker:%s\n' "$*" >>"${CUTOVER_LOG}"
+if [ "${1:-}" = "network" ] && [ "${2:-}" = "ls" ]; then
+    case "${RUNTIME_NETWORK_LIVE_VARIANT:-unique}" in
+        unique|invalid-subnet|invalid-gateway|proxy-ambiguous)
+            printf 'cccccccccccc\n'
+            ;;
+        multiple)
+            printf 'cccccccccccc\ndddddddddddd\n'
+            ;;
+        none)
+            ;;
+        *) exit 78 ;;
+    esac
+    exit 0
+fi
+if [ "${1:-}" = "network" ] && [ "${2:-}" = "inspect" ]; then
+    format="${4:-}"
+    case "${format}" in
+        '{{.Driver}}') printf 'bridge\n' ;;
+        '{{.Internal}}') printf 'false\n' ;;
+        '{{len .IPAM.Config}}') printf '1\n' ;;
+        '{{(index .IPAM.Config 0).Subnet}}')
+            if [ "${RUNTIME_NETWORK_LIVE_VARIANT:-}" = "invalid-subnet" ]; then
+                printf '172.28.0.0/33\n'
+            else
+                printf '172.28.0.0/24\n'
+            fi
+            ;;
+        '{{(index .IPAM.Config 0).Gateway}}')
+            if [ "${RUNTIME_NETWORK_LIVE_VARIANT:-}" = "invalid-gateway" ]; then
+                printf '172.29.0.1\n'
+            else
+                printf '172.28.0.1\n'
+            fi
+            ;;
+        '{{range $id, $container := .Containers}}'* )
+            printf 'aaaaaaaaaaaa|172.28.0.10/24\n'
+            printf 'bbbbbbbbbbbb|172.28.0.2/24\n'
+            if [ "${RUNTIME_NETWORK_LIVE_VARIANT:-}" = "proxy-ambiguous" ]; then
+                printf 'eeeeeeeeeeee|172.28.0.11/24\n'
+            fi
+            ;;
+        *) exit 79 ;;
+    esac
+    exit 0
+fi
+if [ "${1:-}" = "inspect" ] && [ "${2:-}" = "--format" ] && \
+    [[ "${4:-}" =~ ^(aaaaaaaaaaaa|bbbbbbbbbbbb|eeeeeeeeeeee)$ ]]; then
+    case "${3:-}" in
+        '{{index .Config.Labels "com.docker.compose.project"}}')
+            printf '%s\n' "${ACTUAL_CONTAINER_PROJECT_NAME:-npcink-ai-cloud}"
+            ;;
+        '{{index .Config.Labels "com.docker.compose.service"}}')
+            case "${4:-}" in
+                aaaaaaaaaaaa|eeeeeeeeeeee) printf 'proxy\n' ;;
+                bbbbbbbbbbbb) printf 'api\n' ;;
+            esac
+            ;;
+        *) exit 80 ;;
+    esac
+    exit 0
+fi
 if [ "${1:-}" = "compose" ]; then
     env_file=""
     previous_arg=""
@@ -518,6 +579,7 @@ def _run_remote_cutover(
     preexisting_one_off_lock: bool = False,
     previous_runtime_network_contract: bool = False,
     runtime_network_state_variant: str = "valid",
+    runtime_network_live_variant: str = "unique",
     drift_previous_runtime_network_after_failure: bool = False,
     pending_first_install: bool = False,
     pending_repair: bool = False,
@@ -620,6 +682,11 @@ def _run_remote_cutover(
             _runtime_compose_source(partial=partial_compose),
             encoding="utf-8",
         )
+        if runtime_network_state_variant == "missing-file-compose-symlink":
+            (previous / "docker-compose.runtime.yml").unlink()
+            (previous / "docker-compose.runtime.yml").symlink_to(
+                previous / "docker-compose.prod.yml"
+            )
         nginx_source = (
             "events {}\n"
             "http {\n"
@@ -629,7 +696,7 @@ def _run_remote_cutover(
         _write(previous / "deploy/nginx.prod.conf", nginx_source)
         if runtime_network_state_variant != "missing":
             previous_state = remote_dir / ".release-state" / previous.name
-            previous_state.mkdir(parents=True)
+            previous_state.mkdir(parents=True, exist_ok=True)
             (remote_dir / ".release-state").chmod(0o700)
             previous_state.chmod(0o700)
             project_name = old_project_name
@@ -640,23 +707,35 @@ def _run_remote_cutover(
                 project_name = "another-project"
             elif runtime_network_state_variant == "invalid-ipv4":
                 subnet = "10.255.1.0/33"
-            state_file = previous_state / "runtime-network.env"
-            state_file.write_text(
-                "NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT=" f"{project_name}\n"
-                "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET=" f"{subnet}\n"
-                "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY=" f"{gateway}\n"
-                "NPCINK_CLOUD_RUNTIME_PROXY_IPV4=" f"{proxy_ipv4}\n",
-                encoding="utf-8",
-            )
-            state_file.chmod(0o600)
-            rendered_nginx = nginx_source.replace("172.28.0.1", gateway)
-            if runtime_network_state_variant == "nginx-mismatch":
-                rendered_nginx = nginx_source
-            nginx_file = previous_state / "nginx.runtime.conf"
-            nginx_file.write_text(rendered_nginx, encoding="utf-8")
-            nginx_file.chmod(0o600)
-            if runtime_network_state_variant == "state-mode":
-                state_file.chmod(0o644)
+            if runtime_network_state_variant not in {
+                "missing-file",
+                "missing-file-compose-symlink",
+                "missing-file-nginx-symlink",
+                "missing-file-state-dir-mode",
+            }:
+                state_file = previous_state / "runtime-network.env"
+                state_file.write_text(
+                    "NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT=" f"{project_name}\n"
+                    "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET=" f"{subnet}\n"
+                    "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY=" f"{gateway}\n"
+                    "NPCINK_CLOUD_RUNTIME_PROXY_IPV4=" f"{proxy_ipv4}\n",
+                    encoding="utf-8",
+                )
+                state_file.chmod(0o600)
+                rendered_nginx = nginx_source.replace("172.28.0.1", gateway)
+                if runtime_network_state_variant == "nginx-mismatch":
+                    rendered_nginx = nginx_source
+                nginx_file = previous_state / "nginx.runtime.conf"
+                nginx_file.write_text(rendered_nginx, encoding="utf-8")
+                nginx_file.chmod(0o600)
+                if runtime_network_state_variant == "state-mode":
+                    state_file.chmod(0o644)
+            elif runtime_network_state_variant == "missing-file-nginx-symlink":
+                (previous_state / "nginx.runtime.conf").symlink_to(
+                    previous / "deploy/nginx.prod.conf"
+                )
+            elif runtime_network_state_variant == "missing-file-state-dir-mode":
+                previous_state.chmod(0o755)
     current_target = previous
     if current_kind == "broken":
         current_target = remote_dir / "missing-release"
@@ -801,6 +880,7 @@ def _run_remote_cutover(
                 if drift_previous_runtime_network_after_failure
                 else ""
             ),
+            "RUNTIME_NETWORK_LIVE_VARIANT": runtime_network_live_variant,
         }
     )
     fake_config = {
@@ -818,6 +898,7 @@ def _run_remote_cutover(
         "RECOVERY_DOCKER_PS_FAIL": "1" if recovery_docker_ps_fail else "0",
         "RECOVERY_STILL_RUNNING": "1" if recovery_still_running else "0",
         "ROLLBACK_REFERENCE_REMOVED": str(rollback_reference_removed),
+        "RUNTIME_NETWORK_LIVE_VARIANT": runtime_network_live_variant,
     }
     _write(
         tmp_path / "fake-docker-config",
@@ -1524,6 +1605,120 @@ def test_parameterized_previous_compose_uses_frozen_network_for_inspection_and_r
     assert any(line == f"compose-network:recovery:{expected_suffix}" for line in network_lines)
     assert all(line.endswith(expected_suffix) for line in network_lines)
     assert all("172.28.0." not in line and ":unset" not in line for line in network_lines)
+
+
+def test_pending_repair_bootstraps_missing_previous_runtime_network_state_from_live_network(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    state_dir = remote_dir / ".release-state" / "release-previous"
+    assert (state_dir / "runtime-network.env").read_text(encoding="utf-8") == (
+        "NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT=npcink-ai-cloud\n"
+        "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET=172.28.0.0/24\n"
+        "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY=172.28.0.1\n"
+        "NPCINK_CLOUD_RUNTIME_PROXY_IPV4=172.28.0.10\n"
+    )
+    assert (state_dir / "runtime-network.env").stat().st_mode & 0o777 == 0o600
+    assert "set_real_ip_from 172.28.0.1;" in (
+        state_dir / "nginx.runtime.conf"
+    ).read_text(encoding="utf-8")
+    assert "reconstructed the previous runtime network contract" in completed.stdout
+    log = log_path.read_text(encoding="utf-8")
+    assert "docker:network ls --quiet" in log
+    assert "load:prepare-only" in log
+
+
+def test_ordinary_deploy_does_not_bootstrap_missing_previous_runtime_network_state(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+    )
+
+    assert completed.returncode != 0
+    assert "runtime-network.env" in completed.stderr
+    assert not (
+        remote_dir / ".release-state" / "release-previous" / "runtime-network.env"
+    ).exists()
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "docker:network ls" not in log
+    assert "load:prepare-only" not in log
+
+
+@pytest.mark.parametrize(
+    ("live_variant", "expected_error"),
+    [
+        ("none", "default network is not unique"),
+        ("multiple", "default network is not unique"),
+        ("proxy-ambiguous", "exactly one proxy endpoint"),
+        ("invalid-subnet", "IPv4 contract is invalid"),
+        ("invalid-gateway", "gateway is outside its usable subnet"),
+    ],
+)
+def test_pending_repair_runtime_network_bootstrap_fails_closed_on_ambiguous_live_facts(
+    tmp_path: Path,
+    live_variant: str,
+    expected_error: str,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+        runtime_network_live_variant=live_variant,
+    )
+
+    assert completed.returncode != 0
+    assert expected_error in completed.stderr
+    assert not (
+        remote_dir / ".release-state" / "release-previous" / "runtime-network.env"
+    ).exists()
+    marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
+    assert "outcome=validation_failed_before_mutation" in marker
+    log = log_path.read_text(encoding="utf-8")
+    assert "load:prepare-only" not in log
+    assert "docker:stop" not in log
+    assert "docker:rm" not in log
+
+
+@pytest.mark.parametrize(
+    ("state_variant", "expected_error"),
+    [
+        ("missing-file-nginx-symlink", "runtime NGINX state is unsafe"),
+        ("missing-file-compose-symlink", "owner-controlled regular file"),
+        ("missing-file-state-dir-mode", "mode-0700 release state directory"),
+    ],
+)
+def test_pending_repair_runtime_network_bootstrap_rejects_unsafe_protected_state(
+    tmp_path: Path,
+    state_variant: str,
+    expected_error: str,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant=state_variant,
+    )
+
+    assert completed.returncode != 0
+    assert expected_error in completed.stderr
+    marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
+    assert "outcome=validation_failed_before_mutation" in marker
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "load:prepare-only" not in log
 
 
 @pytest.mark.parametrize(
