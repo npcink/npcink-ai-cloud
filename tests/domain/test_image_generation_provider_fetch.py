@@ -93,6 +93,16 @@ def test_fetch_never_logs_signed_provider_url_at_application_info_level(
     assert source_url not in caplog.text
 
 
+def test_fetch_error_normalizes_unknown_messages_to_safe_reason() -> None:
+    error = ProviderImageFetchError(
+        "unexpected upstream detail containing token=TOPSECRET"
+    )
+
+    assert error.message == "provider image could not be fetched"
+    assert error.reason_code == "fetch_failed"
+    assert "TOPSECRET" not in str(error)
+
+
 @pytest.mark.parametrize(
     "source_url",
     [
