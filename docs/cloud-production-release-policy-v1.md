@@ -131,6 +131,29 @@ still pending or explicitly finalizes a completed, accepted install. Finalize
 publishes the permanent completion sentinel before idempotent cleanup and keeps
 pruning blocked until cleanup finishes.
 
+One bounded repair exception is available when a defect in the active
+first-install release itself prevents completion of a required acceptance
+round trip. It is not an ordinary second deployment. The operator must first
+record a current RDS backup, protected configuration backup, active release and
+image identities, and the exact rollback boundary. The deployment then requires
+`--first-install-pending-repair` plus the exact protected approval sentence
+`Approved for first-install pending repair by operator.`. The remote guard only
+accepts a root-owned mode-0600 `first_install_pending.v1` marker matching the
+active managed release, `installation_state=complete`, no permanent completion
+sentinel, and an existing active release. The repair snapshots the original
+marker, establishes the active release as the candidate's matched rollback
+release before migration, preserves rollback images and the replacement pending
+marker after success, and continues to report `installation_state=pending`.
+Failure after migration starts remains fail-closed and requires the recorded RDS
+backup plus the matched release; it never auto-starts old code against a changed
+database. The repair must remain scoped to the acceptance blocker and does not
+authorize unrelated application, Admin, provider, or product changes.
+Because the authenticated Setup transaction has already committed
+`installation_state=complete`, `first-install-rollback.sh` intentionally remains
+unavailable for this exception. Repair rollback is a separate matched recovery:
+restore the recorded RDS backup, the previous release/configuration, and the
+repair rollback images while public/write services remain stopped.
+
 After installation, the ordinary deployment order is:
 
 ```text

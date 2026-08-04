@@ -41,6 +41,8 @@ WITH_PORTAL_SMOKE=0
 REFRESH_PROVIDERS="${NPCINK_CLOUD_REFRESH_PROVIDERS:-0}"
 WITH_OPERATIONAL_READY="${NPCINK_CLOUD_WITH_OPERATIONAL_READY:-0}"
 SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
+FIRST_INSTALL_PENDING_REPAIR="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR:-0}"
+FIRST_INSTALL_PENDING_REPAIR_APPROVAL="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR_APPROVAL:-}"
 STAGE_ONLY_DISALLOWED_CLI=()
 
 while [ "$#" -gt 0 ]; do
@@ -205,6 +207,11 @@ while [ "$#" -gt 0 ]; do
 			SKIP_FRONTEND_IMAGE=1
 			shift
 			;;
+		--first-install-pending-repair)
+			STAGE_ONLY_DISALLOWED_CLI+=("$1")
+			FIRST_INSTALL_PENDING_REPAIR=1
+			shift
+			;;
 		*)
 			echo "[fail] Unknown argument: $1" >&2
 			exit 1
@@ -270,6 +277,17 @@ if [ "${STAGE_ONLY}" != "1" ] && \
 	{ [ "${SKIP_SEED}" != "1" ] || [ "${SKIP_SMOKE}" != "1" ]; } && \
 	[ -z "${SECRET}" ]; then
 	echo "[fail] NPCINK_CLOUD_SECRET is required unless both runtime seed and signed smoke are skipped." >&2
+	exit 1
+fi
+
+FIRST_INSTALL_PENDING_REPAIR_APPROVAL_TEXT="Approved for first-install pending repair by operator."
+if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
+	if [ "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" != "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL_TEXT}" ]; then
+		echo "[fail] Pending first-install repair requires the exact operator approval sentence." >&2
+		exit 1
+	fi
+elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
+	echo "[fail] Pending first-install repair approval is invalid without --first-install-pending-repair." >&2
 	exit 1
 fi
 
@@ -636,6 +654,8 @@ if [ "${STAGE_ONLY}" != "1" ]; then
 	NPCINK_INPUT_REMOTE_COMPOSE_FILE="${REMOTE_COMPOSE_FILE}" \
 	NPCINK_INPUT_REFRESH_PROVIDERS="${REFRESH_PROVIDERS}" \
 	NPCINK_INPUT_WITH_OPERATIONAL_READY="${WITH_OPERATIONAL_READY}" \
+	NPCINK_INPUT_FIRST_INSTALL_PENDING_REPAIR="${FIRST_INSTALL_PENDING_REPAIR}" \
+	NPCINK_INPUT_FIRST_INSTALL_PENDING_REPAIR_APPROVAL="${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" \
 		"${LOCAL_RELEASE_TOOL_PYTHON}" - "${LOCAL_DEPLOY_INPUT_PATH}" <<'PY'
 from __future__ import annotations
 
@@ -757,6 +777,8 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		REMOTE_COMPOSE_FILE=""
 		REFRESH_PROVIDERS=0
 		WITH_OPERATIONAL_READY=0
+		FIRST_INSTALL_PENDING_REPAIR=0
+		FIRST_INSTALL_PENDING_REPAIR_APPROVAL=""
 		STAGE_ONLY=1
 		;;
 	deploy)
@@ -811,6 +833,8 @@ mapping = {
     "REMOTE_COMPOSE_FILE": "REMOTE_COMPOSE_FILE",
     "REFRESH_PROVIDERS": "REFRESH_PROVIDERS",
     "WITH_OPERATIONAL_READY": "WITH_OPERATIONAL_READY",
+    "FIRST_INSTALL_PENDING_REPAIR": "FIRST_INSTALL_PENDING_REPAIR",
+    "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": "FIRST_INSTALL_PENDING_REPAIR_APPROVAL",
 }
 if not isinstance(payload, dict) or set(payload) != set(mapping):
     raise SystemExit("[fail] Protected deployment input schema mismatch.")
@@ -827,6 +851,19 @@ PY
 		eval "${REMOTE_INPUT_ASSIGNMENTS}"
 		unset REMOTE_INPUT_ASSIGNMENTS
 		export -n SECRET 2>/dev/null || true
+		if [ "${FIRST_INSTALL_PENDING_REPAIR}" != "0" ] && [ "${FIRST_INSTALL_PENDING_REPAIR}" != "1" ]; then
+			echo "[fail] Protected pending first-install repair flag must be 0 or 1." >&2
+			exit 1
+		fi
+		if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
+			if [ "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" != "Approved for first-install pending repair by operator." ]; then
+				echo "[fail] Protected pending first-install repair approval is invalid." >&2
+				exit 1
+			fi
+		elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
+			echo "[fail] Protected pending first-install repair approval is unexpected." >&2
+			exit 1
+		fi
 		if ! rm -f -- "${REMOTE_DEPLOY_INPUT_PATH}" || \
 			[ -e "${REMOTE_DEPLOY_INPUT_PATH}" ] || [ -L "${REMOTE_DEPLOY_INPUT_PATH}" ]; then
 			echo "[fail] Protected deployment input cleanup did not complete." >&2
@@ -882,6 +919,9 @@ FIRST_INSTALL_PENDING_MARKER="${REMOTE_DIR}/.first-install-pending.json"
 INSTALLATION_COMPLETE_MARKER="${REMOTE_DIR}/.installation-complete"
 INSTALLATION_STATE=""
 FIRST_INSTALL_PENDING=0
+FIRST_INSTALL_REPAIR=0
+FIRST_INSTALL_PENDING_MARKER_SNAPSHOT=""
+FIRST_INSTALL_PENDING_MARKER_REWRITTEN=0
 FRESH_PG18_INSTALL=0
 INSTALL_LOCK_HELD=0
 APPLICATIONS_STOPPED=0
@@ -1116,13 +1156,14 @@ restore_release_image_tags() {
 }
 
 discard_rollback_image_tags() {
+	local rollback_map="${1:-${ROLLBACK_IMAGE_MAP}}"
 	local _target_reference=""
 	local rollback_reference=""
 	local _previous_image_id=""
 	local cleanup_failed=0
 	local rollback_tag_present=0
-	if [ ! -f "${ROLLBACK_IMAGE_MAP}" ]; then
-		echo "[fail] Rollback image map is missing during post-commit cleanup: ${ROLLBACK_IMAGE_MAP}" >&2
+	if [ ! -f "${rollback_map}" ]; then
+		echo "[fail] Rollback image map is missing during post-commit cleanup: ${rollback_map}" >&2
 		return 1
 	fi
 	while IFS=$'\t' read -r _target_reference rollback_reference _previous_image_id; do
@@ -1146,7 +1187,7 @@ discard_rollback_image_tags() {
 				cleanup_failed=1
 			fi
 		fi
-	done <"${ROLLBACK_IMAGE_MAP}"
+	done <"${rollback_map}"
 	return "${cleanup_failed}"
 }
 
@@ -1212,7 +1253,8 @@ try:
         stream.flush()
         os.fsync(stream.fileno())
     os.chmod(temporary, 0o600, follow_symlinks=False)
-    os.chown(temporary, 0, 0, follow_symlinks=False)
+    if os.geteuid() == 0:
+        os.chown(temporary, 0, 0, follow_symlinks=False)
     os.replace(temporary, marker)
     directory_fd = os.open(marker.parent, os.O_RDONLY)
     try:
@@ -1225,6 +1267,154 @@ finally:
     except FileNotFoundError:
         pass
 PY
+}
+
+snapshot_first_install_pending_marker() {
+	[ "${FIRST_INSTALL_REPAIR}" = "1" ] || return 0
+	FIRST_INSTALL_PENDING_MARKER_SNAPSHOT="${RELEASE_STATE_DIR}/previous-first-install-pending.json"
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${FIRST_INSTALL_PENDING_MARKER}" \
+		"${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" <<'PY'
+from __future__ import annotations
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+source, target = map(Path, sys.argv[1:])
+metadata = source.lstat()
+if (
+    source.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or (metadata.st_uid, metadata.st_gid) != (0, 0)
+):
+    raise SystemExit("[fail] Pending first-install marker snapshot source is unsafe.")
+descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+try:
+    payload = os.read(descriptor, 1024 * 1024 + 1)
+finally:
+    os.close(descriptor)
+if len(payload) > 1024 * 1024:
+    raise SystemExit("[fail] Pending first-install marker exceeds the snapshot limit.")
+target_descriptor = os.open(
+    target,
+    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+    0o600,
+)
+try:
+    with os.fdopen(target_descriptor, "wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    if os.geteuid() == 0:
+        os.chown(target, 0, 0, follow_symlinks=False)
+    os.chmod(target, 0o600, follow_symlinks=False)
+finally:
+    pass
+PY
+}
+
+restore_first_install_pending_marker_snapshot() {
+	[ "${FIRST_INSTALL_REPAIR}" = "1" ] || return 0
+	[ -n "${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" ] || return 1
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" \
+		"${FIRST_INSTALL_PENDING_MARKER}" <<'PY'
+from __future__ import annotations
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+source, target = map(Path, sys.argv[1:])
+metadata = source.lstat()
+if (
+    source.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or (metadata.st_uid, metadata.st_gid) != (0, 0)
+):
+    raise SystemExit("[fail] Pending first-install marker recovery snapshot is unsafe.")
+payload = source.read_bytes()
+temporary = target.with_name(f".{target.name}.restore.{os.getpid()}")
+descriptor = os.open(
+    temporary,
+    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+    0o600,
+)
+try:
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    if os.geteuid() == 0:
+        os.chown(temporary, 0, 0, follow_symlinks=False)
+    os.chmod(temporary, 0o600, follow_symlinks=False)
+    os.replace(temporary, target)
+    directory = os.open(target.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    try:
+        temporary.unlink()
+    except FileNotFoundError:
+        pass
+PY
+}
+
+discard_superseded_first_install_rollback_assets() {
+	local superseded_map=""
+	[ "${FIRST_INSTALL_REPAIR}" = "1" ] || return 0
+	superseded_map="$("${RELEASE_TOOL_PYTHON}" - \
+		"${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" \
+		"${REMOTE_DIR_CANONICAL}" "${ROLLBACK_IMAGE_MAP}" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+snapshot, managed_root, active_map = map(Path, sys.argv[1:])
+snapshot_metadata = snapshot.lstat()
+if (
+    snapshot.is_symlink()
+    or not stat.S_ISREG(snapshot_metadata.st_mode)
+    or stat.S_IMODE(snapshot_metadata.st_mode) != 0o600
+    or (snapshot_metadata.st_uid, snapshot_metadata.st_gid) != (0, 0)
+):
+    raise SystemExit("[fail] Pending-repair snapshot is unsafe during superseded cleanup.")
+payload = json.loads(snapshot.read_text(encoding="utf-8"))
+superseded = Path(str(payload.get("rollback_image_map") or ""))
+if (
+    not superseded.is_absolute()
+    or managed_root not in superseded.parents
+    or superseded == active_map
+):
+    raise SystemExit("[fail] Superseded first-install rollback map path is invalid.")
+metadata = superseded.lstat()
+if (
+    superseded.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or (metadata.st_uid, metadata.st_gid) != (0, 0)
+):
+    raise SystemExit("[fail] Superseded first-install rollback map is unsafe.")
+print(superseded)
+PY
+)" || return 1
+	discard_rollback_image_tags "${superseded_map}" || return 1
+	if ! rm -f -- "${superseded_map}" || \
+		[ -e "${superseded_map}" ] || [ -L "${superseded_map}" ]; then
+		echo "[fail] Superseded first-install rollback map cleanup did not complete." >&2
+		return 1
+	fi
 }
 
 restore_rollback_image_map_snapshot() {
@@ -1879,6 +2069,10 @@ on_deploy_exit() {
 		recover_failed_cutover || recovery_status=$?
 		if [ "${recovery_status}" -eq 0 ] && [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
 			rm -f -- "${FIRST_INSTALL_PENDING_MARKER}" || recovery_status=1
+		elif [ "${recovery_status}" -eq 0 ] && \
+			[ "${FIRST_INSTALL_REPAIR}" = "1" ] && \
+			[ "${FIRST_INSTALL_PENDING_MARKER_REWRITTEN}" = "1" ]; then
+			restore_first_install_pending_marker_snapshot || recovery_status=1
 		fi
 	fi
 	if [ "${CUTOVER_MUTATION_STARTED}" = "1" ] && \
@@ -1931,7 +2125,7 @@ on_deploy_exit() {
 	fi
 	if [ "${exit_status}" -eq 0 ] && [ "${DEPLOY_SUCCEEDED}" = "1" ]; then
 		echo "[ok] Remote release ready at ${RELEASE_DIR}"
-		if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
+		if [ "${FIRST_INSTALL_PENDING}" = "1" ] || [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
 			printf 'installation_state=pending\n'
 		else
 			printf 'installation_state=complete\n'
@@ -1984,9 +2178,9 @@ npcink_ai_cloud_start_install_lock_broker \
 	exit 1
 }
 INSTALL_LOCK_HELD=1
+FIRST_INSTALL_PENDING_MARKER_PRESENT=0
 if [ -e "${FIRST_INSTALL_PENDING_MARKER}" ] || [ -L "${FIRST_INSTALL_PENDING_MARKER}" ]; then
-	echo "[fail] A first-install release awaits explicit finalize or rollback; another deployment is forbidden." >&2
-	exit 1
+	FIRST_INSTALL_PENDING_MARKER_PRESENT=1
 fi
 
 INSTALLATION_STATE="$("${RELEASE_TOOL_PYTHON}" - "${CONFIG_DIR_HOST}/install-state.json" <<'PY'
@@ -2023,6 +2217,74 @@ case "${INSTALLATION_STATE}" in
 	complete)
 		;;
 esac
+
+if [ "${FIRST_INSTALL_PENDING_MARKER_PRESENT}" = "1" ]; then
+	if [ "${FIRST_INSTALL_PENDING_REPAIR}" != "1" ]; then
+		echo "[fail] A first-install release awaits explicit finalize or rollback; another deployment is forbidden." >&2
+		exit 1
+	fi
+	if [ "${INSTALLATION_STATE}" != "complete" ]; then
+		echo "[fail] Pending first-install repair requires installation_state=complete." >&2
+		exit 1
+	fi
+	if [ -e "${INSTALLATION_COMPLETE_MARKER}" ] || [ -L "${INSTALLATION_COMPLETE_MARKER}" ]; then
+		echo "[fail] Pending first-install repair is forbidden after permanent finalize acceptance." >&2
+		exit 1
+	fi
+	if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
+		echo "[fail] Pending first-install repair requires an active managed release." >&2
+		exit 1
+	fi
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${FIRST_INSTALL_PENDING_MARKER}" "${PREVIOUS_RELEASE_DIR}" \
+		"${REMOTE_DIR_CANONICAL}" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+marker_raw, current_raw, managed_root_raw = sys.argv[1:]
+marker = Path(marker_raw)
+current = Path(current_raw)
+managed_root = Path(managed_root_raw)
+metadata = marker.lstat()
+if (
+    marker.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or (metadata.st_uid, metadata.st_gid) != (0, 0)
+):
+    raise SystemExit("[fail] Pending first-install repair marker protection is unsafe.")
+descriptor = os.open(marker, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+try:
+    payload = json.loads(os.read(descriptor, 1024 * 1024 + 1).decode("utf-8"))
+finally:
+    os.close(descriptor)
+if payload.get("contract") != "first_install_pending.v1":
+    raise SystemExit("[fail] Pending first-install repair marker contract is invalid.")
+if Path(str(payload.get("release") or "")) != current:
+    raise SystemExit("[fail] Pending first-install repair marker does not match current.")
+rollback_map = Path(str(payload.get("rollback_image_map") or ""))
+if not rollback_map.is_absolute() or managed_root not in rollback_map.parents:
+    raise SystemExit("[fail] Pending first-install repair rollback map escapes managed root.")
+rollback_metadata = rollback_map.lstat()
+if (
+    rollback_map.is_symlink()
+    or not stat.S_ISREG(rollback_metadata.st_mode)
+    or stat.S_IMODE(rollback_metadata.st_mode) != 0o600
+    or (rollback_metadata.st_uid, rollback_metadata.st_gid) != (0, 0)
+):
+    raise SystemExit("[fail] Pending first-install repair rollback map is unsafe.")
+PY
+	FIRST_INSTALL_REPAIR=1
+	echo "[ok] Explicit pending first-install repair approval accepted for the active release."
+elif [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
+	echo "[fail] Pending first-install repair was requested without a protected pending marker." >&2
+	exit 1
+fi
 
 if [ -n "${PREVIOUS_RELEASE_DIR}" ]; then
 	PREVIOUS_ENV_FILE="$(NPCINK_CLOUD_ENV_FILE= npcink_ai_cloud_resolve_env_file "${PREVIOUS_RELEASE_DIR}")"
@@ -2223,6 +2485,9 @@ freeze_previous_runtime_network_contract
 assert_previous_writer_project_alignment
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
 	echo "[ok] First-install deployment defers empty PostgreSQL 18 initialization to setup."
+elif [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
+	FRESH_PG18_INSTALL=1
+	echo "[ok] Pending first-install repair retains the pending acceptance boundary while using the complete PostgreSQL 18 runtime contract."
 else
 	FRESH_PG18_INSTALL=1
 	assert_fresh_pg18_install_gate
@@ -2245,9 +2510,11 @@ remote_run_timed "remote load and up" \
 	NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX="${ROLLBACK_TAG_SUFFIX}" \
 	bash deploy/remote-load-and-up.sh </dev/null
 
-if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
+if [ "${FIRST_INSTALL_PENDING}" = "1" ] || [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
 	CUTOVER_PHASE="publish-first-install-recovery-contract"
+	snapshot_first_install_pending_marker
 	write_first_install_pending_marker
+	FIRST_INSTALL_PENDING_MARKER_REWRITTEN=1
 fi
 
 if [ "${FRESH_PG18_INSTALL}" = "1" ]; then
@@ -2401,7 +2668,7 @@ if ! rm -rf -- "${REMOTE_INCOMING_DIR}" || \
 	exit 1
 fi
 CUTOVER_PHASE="finalize-rollback-image-tags"
-if [ "${FIRST_INSTALL_PENDING}" != "1" ]; then
+if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${FIRST_INSTALL_REPAIR}" != "1" ]; then
 	if ! discard_rollback_image_tags; then
 		record_post_commit_cleanup_failure \
 			"Release activated, but rollback image tag cleanup could not be proved."
@@ -2418,7 +2685,7 @@ if ! rm -f "${FAILURE_MARKER}" || \
 	exit 1
 fi
 CUTOVER_PHASE="finalize-rollback-image-map"
-if [ "${FIRST_INSTALL_PENDING}" != "1" ]; then
+if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${FIRST_INSTALL_REPAIR}" != "1" ]; then
 	if ! exec 9<"${ROLLBACK_IMAGE_MAP}"; then
 		record_post_commit_cleanup_failure \
 			"Release activated, but rollback image map snapshot could not be opened: ${ROLLBACK_IMAGE_MAP}"
@@ -2433,6 +2700,21 @@ if [ "${FIRST_INSTALL_PENDING}" != "1" ]; then
 	fi
 else
 	echo "[ok] First-install rollback map remains protected until explicit post-install finalize."
+fi
+CUTOVER_PHASE="finalize-first-install-repair-marker-snapshot"
+if [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
+	if ! discard_superseded_first_install_rollback_assets; then
+		record_post_commit_cleanup_failure \
+			"Release activated, but superseded first-install rollback cleanup did not complete."
+		exit 1
+	fi
+	if ! rm -f -- "${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" || \
+		[ -e "${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" ] || \
+		[ -L "${FIRST_INSTALL_PENDING_MARKER_SNAPSHOT}" ]; then
+		record_post_commit_cleanup_failure \
+			"Release activated, but the pending-repair marker snapshot could not be removed."
+		exit 1
+	fi
 fi
 CUTOVER_PHASE="finalize-current-release"
 EOF
