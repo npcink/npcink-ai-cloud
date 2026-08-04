@@ -171,6 +171,33 @@ because the browser reported success; it is the operator acceptance boundary.
 The permanent sentinel is `/opt/npcink-ai-cloud/.installation-complete`; the
 protected pending/finalizing marker remains until every cleanup step succeeds.
 
+### Acceptance-blocking release repair
+
+If the active first-install application release contains a defect that makes a
+required WordPress acceptance round trip impossible, do not finalize merely to
+unlock an ordinary deploy. Before repair, record and checksum a protected
+configuration archive, create and identify a current RDS backup, record the
+active release, running image IDs, Alembic revision, pending marker, health, and
+rollback boundary. Then deploy only the reviewed blocker fix with:
+
+```bash
+NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR_APPROVAL='Approved for first-install pending repair by operator.' \
+  bash deploy/deploy-to-ssh-host.sh --first-install-pending-repair <normal approved arguments>
+```
+
+The command remains fail-closed unless the pending marker matches the active
+release, installation state is already `complete`, the permanent completion
+sentinel is absent, and a matched previous release can be preserved. A
+successful repair deliberately leaves the lifecycle pending and pins its
+rollback release/images. Re-run the originally blocked acceptance only; finalize
+after the complete acceptance evidence exists. If migration started and the
+repair fails, keep public/write services stopped and use the recorded RDS backup
+with the matched release instead of automatically restarting old code.
+Do not run `first-install-rollback.sh` for this complete-state repair: that
+helper is intentionally limited to the pre-Setup `installation_state=pending`
+contract. A repair rollback restores the recorded RDS backup and matched
+previous release/config/images under the deploy lock before traffic returns.
+
 ## 7. Rollback
 
 While installation remains `pending`, restore the preserved previous release
