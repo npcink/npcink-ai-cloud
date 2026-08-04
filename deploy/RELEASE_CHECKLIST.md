@@ -265,8 +265,9 @@ plus its fail-closed bootstrap correction in
   SHA-256 file are operator-owned mode `0600`, fresh, unexpired, and bind the
   exact Linux/AMD64 source, bundle, allowlist, passed scan, API receipt, and
   exact finding set; in either case the fresh exact-image scan is green
-- [ ] while any governed entry remains, the machine-executable first-install
-  gate consumes and validates both external evidence files before remote mkdir,
+- [ ] while any governed entry remains, the machine-executable production-host
+  deployment gate consumes and validates both external evidence files before
+  remote mkdir,
   upload, deployment lock, image, container, or database mutation; absence,
   partial matches, changed threat intelligence, changed scan evidence, unsafe
   protection, or any binding mismatch fails closed and there is no skip flag

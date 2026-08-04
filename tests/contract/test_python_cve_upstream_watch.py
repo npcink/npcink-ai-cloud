@@ -62,7 +62,7 @@ def test_unchanged_candidate_fails_after_exception_expiry() -> None:
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "1" * 64,
         python_version="3.14.6",
-        today=date(2026, 8, 6),
+        today=date(2026, 8, 12),
     )
 
     assert status == "exception_expired"

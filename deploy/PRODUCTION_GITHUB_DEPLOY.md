@@ -452,12 +452,13 @@ Linux/AMD64 source, bundle, embedded allowlist, passed scan index, API receipt,
 finding set, current `exploitation:none` check, operator, and expiry. There is
 no generic skip. A missing or mismatched pair fails before upload or mutation.
 
-This temporary first-install path may be run from the trusted operator
+This temporary controlled-validation path may be run from the trusted operator
 workstation only after the exact `production` commit is CI-green and the
 production-promotion PR records the standard approval sentence. It exists
 because the acceptance is created after and binds the final local exact bundle.
-It expires no later than 2026-08-05, authorizes no GA or real-user rollout, and
-cannot be used for ordinary deployments after the completion sentinel exists.
+It expires no later than 2026-08-11, authorizes no GA or real-user rollout, and
+must also gate ordinary deployments after the completion sentinel exists while
+any governed Python 3.14.6 exception remains.
 See the risk decision and PostgreSQL 18 runbook for the two explicit evidence
 environment variables.
 
