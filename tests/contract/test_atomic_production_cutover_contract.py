@@ -682,6 +682,11 @@ def _run_remote_cutover(
             _runtime_compose_source(partial=partial_compose),
             encoding="utf-8",
         )
+        if runtime_network_state_variant == "missing-file-compose-symlink":
+            (previous / "docker-compose.runtime.yml").unlink()
+            (previous / "docker-compose.runtime.yml").symlink_to(
+                previous / "docker-compose.prod.yml"
+            )
         nginx_source = (
             "events {}\n"
             "http {\n"
@@ -704,6 +709,7 @@ def _run_remote_cutover(
                 subnet = "10.255.1.0/33"
             if runtime_network_state_variant not in {
                 "missing-file",
+                "missing-file-compose-symlink",
                 "missing-file-nginx-symlink",
                 "missing-file-state-dir-mode",
             }:
@@ -1690,6 +1696,7 @@ def test_pending_repair_runtime_network_bootstrap_fails_closed_on_ambiguous_live
     ("state_variant", "expected_error"),
     [
         ("missing-file-nginx-symlink", "runtime NGINX state is unsafe"),
+        ("missing-file-compose-symlink", "owner-controlled regular file"),
         ("missing-file-state-dir-mode", "mode-0700 release state directory"),
     ],
 )

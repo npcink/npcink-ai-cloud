@@ -1620,6 +1620,11 @@ bootstrap_previous_runtime_network_contract_for_pending_repair() {
 
 	[ "${FIRST_INSTALL_REPAIR}" = "1" ] || return 0
 	[ -n "${PREVIOUS_RELEASE_DIR}" ] || return 0
+	[ -f "${PREVIOUS_COMPOSE_FILE}" ] && [ ! -L "${PREVIOUS_COMPOSE_FILE}" ] && \
+		[ -O "${PREVIOUS_COMPOSE_FILE}" ] || {
+		echo "[fail] Pending first-install repair previous runtime Compose must be an owner-controlled regular file." >&2
+		return 1
+	}
 	while IFS= read -r line || [ -n "${line}" ]; do
 		case "${line}" in
 			*'NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET'*|\
