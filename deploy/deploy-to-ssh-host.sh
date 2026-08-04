@@ -2521,8 +2521,8 @@ remote_run_timed "remote load and up" \
 if [ "${FIRST_INSTALL_PENDING}" = "1" ] || [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
 	CUTOVER_PHASE="publish-first-install-recovery-contract"
 	snapshot_first_install_pending_marker
-	write_first_install_pending_marker
 	FIRST_INSTALL_PENDING_MARKER_REWRITTEN=1
+	write_first_install_pending_marker
 fi
 
 if [ "${FRESH_PG18_INSTALL}" = "1" ]; then

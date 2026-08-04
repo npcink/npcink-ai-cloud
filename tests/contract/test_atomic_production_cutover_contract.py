@@ -522,6 +522,7 @@ def _run_remote_cutover(
     pending_first_install: bool = False,
     pending_repair: bool = False,
     refresh_providers: bool = True,
+    fail_marker_directory_fsync: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -680,7 +681,20 @@ def _run_remote_cutover(
             archive.add(item, arcname=item.relative_to(bundle_source))
 
     remote_body = tmp_path / "remote-deploy-body.sh"
-    _write(remote_body, _remote_deploy_body(), executable=True)
+    remote_body_source = _remote_deploy_body()
+    if fail_marker_directory_fsync:
+        original = (
+            "    os.replace(temporary, marker)\n"
+            "    directory_fd = os.open(marker.parent, os.O_RDONLY)\n"
+        )
+        injected = (
+            "    os.replace(temporary, marker)\n"
+            "    raise OSError('injected marker directory fsync failure')\n"
+            "    directory_fd = os.open(marker.parent, os.O_RDONLY)\n"
+        )
+        assert remote_body_source.count(original) == 1
+        remote_body_source = remote_body_source.replace(original, injected, 1)
+    _write(remote_body, remote_body_source, executable=True)
 
     uploaded_env = ""
     if new_project_name is not None or new_env_sentinel:
@@ -1837,6 +1851,32 @@ def test_pending_first_install_repair_rejects_provider_refresh_before_mutation(
     assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
     assert not log_path.exists() or "load:prepare-only" not in log_path.read_text(
         encoding="utf-8"
+    )
+
+
+def test_pending_repair_restores_snapshot_after_marker_replace_fsync_failure(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, _log_path = _run_remote_cutover(
+        tmp_path,
+        pending_first_install=True,
+        pending_repair=True,
+        refresh_providers=False,
+        fail_marker_directory_fsync=True,
+    )
+
+    assert completed.returncode != 0
+    assert "injected marker directory fsync failure" in completed.stderr
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    marker = json.loads(
+        (remote_dir / ".first-install-pending.json").read_text(encoding="utf-8")
+    )
+    assert Path(marker["release"]) == remote_dir / "release-previous"
+    assert Path(marker["rollback_image_map"]) == (
+        remote_dir
+        / ".release-state"
+        / "release-previous"
+        / "rollback-images.tsv"
     )
 
 
