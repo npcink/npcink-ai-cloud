@@ -42,8 +42,15 @@ Every command inherits these fields from exactly one inventory group:
 | `evidence` | Existing repository paths supporting the declared ownership or usage. |
 
 The checker also derives `observed_usage` and `observed_evidence` from exact
-tracked `pnpm run ...` / `npm run ...` callers. `manual` means no tracked
-package-alias caller was found; it does not mean the underlying script or
+`pnpm run ...` / `npm run ...` callers. In a Git worktree, `git ls-files`
+remains the authoritative file list and untracked files do not affect the
+result. In the controlled M4 source bundle, where `.git` is intentionally
+absent, the checker uses a deterministic repository-root-bounded filesystem
+fallback. That fallback excludes dependency, build, cache, test-report, and
+temporary directories; rejects paths that escape the repository or cannot be
+classified safely; and must not turn an unreadable command surface into a
+silent skip. `manual` means no caller was found through the authoritative file
+list available in that environment; it does not mean the underlying script or
 operator workflow is automatically safe to delete. The Markdown report shows
 this observed value so declared intent and actual repository callers are not
 confused.

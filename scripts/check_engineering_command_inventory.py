@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -50,10 +52,204 @@ ROOT_COMMAND_PATTERN = re.compile(r"\b(?:pnpm|npm)\s+run\s+([A-Za-z0-9:_.-]+)")
 FRONTEND_COMMAND_PATTERN = re.compile(
     r"\bpnpm\s+(?:--dir|-C)\s+frontend\s+run\s+([A-Za-z0-9:_.-]+)"
 )
+FILESYSTEM_EXCLUDED_DIRECTORIES = {
+    ".cache",
+    ".git",
+    ".mypy_cache",
+    ".next",
+    ".nox",
+    ".pnpm-store",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".runtime",
+    ".tmp",
+    ".tox",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "htmlcov",
+    "node_modules",
+    "playwright-report",
+    "test-results",
+}
+FILESYSTEM_EXCLUDED_FILE_SUFFIXES = {
+    ".db",
+    ".gif",
+    ".gz",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".mp3",
+    ".mp4",
+    ".otf",
+    ".pdf",
+    ".png",
+    ".sqlite",
+    ".tar",
+    ".tgz",
+    ".ttf",
+    ".webm",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".zip",
+}
 
 
 class InventoryError(ValueError):
     """Raised when command inventory metadata is incomplete or inconsistent."""
+
+
+def _relative_path(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _validate_repository_root() -> None:
+    required_files = (
+        ROOT / "README.md",
+        ROOT / "package.json",
+        ROOT / "frontend" / "package.json",
+        INVENTORY_PATH,
+        ROOT / "scripts" / "check_engineering_command_inventory.py",
+    )
+    for path in required_files:
+        if path.is_symlink() or not path.is_file():
+            raise InventoryError(
+                f"not a trusted repository root; missing plain file: {_relative_path(path)}"
+            )
+
+    try:
+        root_package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        frontend_package = json.loads(
+            (ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
+        )
+        inventory = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise InventoryError(
+            "not a trusted repository root; canonical JSON anchors are invalid"
+        ) from exc
+    if (
+        root_package.get("name") != "npcink-ai-cloud"
+        or frontend_package.get("name") != "frontend"
+        or inventory.get("schema_version") != 1
+    ):
+        raise InventoryError("not a trusted repository root; canonical anchors do not match")
+
+
+def _git_tracked_paths() -> list[str] | None:
+    git_metadata_present = os.path.lexists(ROOT / ".git")
+    try:
+        top_level = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "--show-toplevel"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        if git_metadata_present:
+            raise InventoryError("git is required when repository metadata is present") from exc
+        return None
+
+    if top_level.returncode != 0:
+        if git_metadata_present:
+            raise InventoryError("git metadata is present but the repository root is unavailable")
+        return None
+
+    try:
+        observed_root = Path(top_level.stdout.strip()).resolve(strict=True)
+        expected_root = ROOT.resolve(strict=True)
+    except OSError as exc:
+        raise InventoryError("unable to resolve the Git repository root") from exc
+    if observed_root != expected_root:
+        raise InventoryError(
+            "not a trusted repository root; Git top level does not match checker root"
+        )
+
+    try:
+        tracked_output = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        decoded = tracked_output.decode("utf-8")
+    except FileNotFoundError as exc:
+        raise InventoryError(
+            "git ls-files is required when repository metadata is present"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise InventoryError("git ls-files failed while repository metadata is present") from exc
+    except UnicodeDecodeError as exc:
+        raise InventoryError("git ls-files returned a non-UTF-8 path") from exc
+    return sorted(path for path in decoded.split("\0") if path)
+
+
+def _filesystem_paths() -> list[str]:
+    paths: list[str] = []
+    root_resolved = ROOT.resolve(strict=True)
+
+    def fail_walk(error: OSError) -> None:
+        raise InventoryError(f"filesystem fallback cannot walk repository: {error.filename}")
+
+    for current_root, directory_names, file_names in os.walk(
+        ROOT, topdown=True, onerror=fail_walk, followlinks=False
+    ):
+        current = Path(current_root)
+        safe_directories: list[str] = []
+        for name in sorted(directory_names):
+            candidate = current / name
+            if name in FILESYSTEM_EXCLUDED_DIRECTORIES or name.endswith(".egg-info"):
+                continue
+            if candidate.is_symlink():
+                raise InventoryError(
+                    "filesystem fallback refuses a directory symlink: "
+                    f"{_relative_path(candidate)}"
+                )
+            safe_directories.append(name)
+        directory_names[:] = safe_directories
+
+        for name in sorted(file_names):
+            candidate = current / name
+            try:
+                mode = candidate.lstat().st_mode
+            except OSError as exc:
+                raise InventoryError(
+                    f"filesystem fallback cannot inspect: {_relative_path(candidate)}"
+                ) from exc
+            if stat.S_ISLNK(mode):
+                try:
+                    resolved = candidate.resolve(strict=True)
+                    resolved.relative_to(root_resolved)
+                except (OSError, ValueError) as exc:
+                    raise InventoryError(
+                        "filesystem fallback refuses a file symlink outside the "
+                        f"repository root: {_relative_path(candidate)}"
+                    ) from exc
+                if not resolved.is_file():
+                    raise InventoryError(
+                        "filesystem fallback cannot classify symlink target: "
+                        f"{_relative_path(candidate)}"
+                    )
+            elif not stat.S_ISREG(mode):
+                raise InventoryError(
+                    "filesystem fallback refuses a non-regular source path: "
+                    f"{_relative_path(candidate)}"
+                )
+            if candidate.suffix.lower() in FILESYSTEM_EXCLUDED_FILE_SUFFIXES:
+                continue
+            paths.append(candidate.relative_to(ROOT).as_posix())
+    return sorted(paths)
+
+
+def _source_paths() -> tuple[list[str], bool]:
+    tracked_paths = _git_tracked_paths()
+    if tracked_paths is not None:
+        return tracked_paths, True
+    return _filesystem_paths(), False
 
 
 def _read_json(path: Path) -> Any:
@@ -241,32 +437,27 @@ def _usage_kind(path: str) -> str:
 
 
 def scan_observed_usage() -> dict[tuple[str, str], dict[str, list[str]]]:
-    try:
-        tracked_output = subprocess.run(
-            ["git", "ls-files", "-z"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-        ).stdout
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-        raise InventoryError("git ls-files is required to classify command usage") from exc
-
     observed: dict[tuple[str, str], set[str]] = {}
     evidence: dict[tuple[str, str], set[str]] = {}
-    for raw_path in tracked_output.decode("utf-8").split("\0"):
-        if not raw_path:
-            continue
+    root_resolved = ROOT.resolve(strict=True)
+    source_paths, git_authority = _source_paths()
+    for raw_path in source_paths:
         file_path = ROOT / raw_path
+        try:
+            file_path.resolve(strict=True).relative_to(root_resolved)
+        except FileNotFoundError:
+            continue
+        except ValueError as exc:
+            raise InventoryError(f"source path escapes the repository root: {raw_path}") from exc
         if not file_path.is_file():
             continue
         try:
             source = file_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        matches = [
-            ("frontend", name)
-            for name in FRONTEND_COMMAND_PATTERN.findall(source)
-        ]
+        except (OSError, UnicodeDecodeError) as exc:
+            if git_authority:
+                continue
+            raise InventoryError(f"unable to read UTF-8 source path: {raw_path}") from exc
+        matches = [("frontend", name) for name in FRONTEND_COMMAND_PATTERN.findall(source)]
         matches.extend(("root", name) for name in ROOT_COMMAND_PATTERN.findall(source))
         usage_kind = _usage_kind(raw_path)
         for key in matches:
@@ -283,6 +474,7 @@ def scan_observed_usage() -> dict[tuple[str, str], dict[str, list[str]]]:
 
 
 def inventory_payload() -> dict[str, Any]:
+    _validate_repository_root()
     profiles, entries = load_inventory()
     counts = validate_package_coverage(entries)
     observed = scan_observed_usage()
