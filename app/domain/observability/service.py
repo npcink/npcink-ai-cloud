@@ -102,10 +102,10 @@ class ObservabilityService:
         }
         providers = self._dict_value(summary.get("providers"))
         provider_status_counts = self._dict_value(providers.get("status_counts"))
-        provider_instances_total = int(providers.get("instances_total") or 0)
-        degraded_instances = int(provider_status_counts.get("degraded") or 0)
-        unhealthy_instances = int(provider_status_counts.get("unhealthy") or 0)
-        unknown_instances = int(provider_status_counts.get("unknown") or 0)
+        provider_instances_total = self._int_value(providers.get("instances_total"))
+        degraded_instances = self._int_value(provider_status_counts.get("degraded"))
+        unhealthy_instances = self._int_value(provider_status_counts.get("unhealthy"))
+        unknown_instances = self._int_value(provider_status_counts.get("unknown"))
         providers_operational = (
             provider_instances_total > 0
             and degraded_instances == 0
@@ -249,3 +249,17 @@ class ObservabilityService:
         if not isinstance(value, list):
             return []
         return [self._dict_value(item) for item in value if isinstance(item, dict)]
+
+    def _int_value(self, value: object) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return 0
+        return 0
