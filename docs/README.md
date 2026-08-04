@@ -62,6 +62,7 @@ deleting the old decision history.
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
 - [Engineering Command Inventory Standard](engineering-command-inventory-standard-v1.md)
+- [Engineering Command Inventory M4 Source Bundle Closeout and Retrospective](engineering-command-inventory-m4-source-bundle-closeout-and-retrospective-2026-08-04.md)
 - [Structural Remediation Delivery Standard](structural-remediation-delivery-standard-v1.md)
 - [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 - [Repository Hygiene Cleanup Closeout and Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
