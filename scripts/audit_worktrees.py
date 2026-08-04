@@ -97,7 +97,9 @@ def classify_entry(
         reason = "long-lived runtime or operations role"
     else:
         classification = "manual_review"
-        reason = "clean unlocked auxiliary; ancestry, PR, task, and inactivity evidence still required"
+        reason = (
+            "clean unlocked auxiliary; ancestry, PR, task, and inactivity evidence still required"
+        )
 
     return {
         "path": str(path),
