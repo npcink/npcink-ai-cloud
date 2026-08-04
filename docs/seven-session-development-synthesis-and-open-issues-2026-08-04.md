@@ -207,3 +207,8 @@ plan、active standard 或代码合同中更新；本文不追踪逐次候选和
 
 当阶段 A-C 完成时，新增一份 production validation evidence/closeout，并在这里追加 successor
 链接即可。不要把本文重写成实时状态页，也不要删除七个原会话或历史 closeout 来制造整洁感。
+
+Issue #406 第一段 preparation/canary 的后续证据见
+[Issue #406 Controlled Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)。
+它记录 exact bundle、只读生产盘点、first-install lifecycle blocker 和 localhost-only
+canary/browser 证据；不表示阶段 C、production validation、human acceptance 或 GA 已完成。

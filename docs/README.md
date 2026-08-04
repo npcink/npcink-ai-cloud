@@ -72,6 +72,7 @@ deleting the old decision history.
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
 - [Python Type Checking Standard](python-type-checking-standard.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
+- [Production-host Localhost Candidate Canary Standard](production-host-localhost-candidate-canary-standard-v1.md)
 
 ## Architecture and Refactor
 
@@ -124,6 +125,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [First-install PostgreSQL 18 Runbook](cloud-first-install-rds-pg18-runbook.md)
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
+- [Issue #406 Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
+  — dated evidence; canary/browser completion is not production validation
 - [Frontend Public/Portal Release Checklist](frontend-public-portal-release-checklist-v1.md)
 - [P5 Local Backup/Restore Drill](p5-b5-local-backup-restore-drill-v1.md)
 - [Runtime Stability and Performance Evidence Plan](runtime-stability-performance-evidence-v1.md)
