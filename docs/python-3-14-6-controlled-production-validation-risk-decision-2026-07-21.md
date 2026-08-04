@@ -112,14 +112,14 @@ decision; it is not a scanner receipt and must use
       "package": "python",
       "package_version": "3.14.6",
       "severity": "high",
-      "fix_state": "unknown"
+      "fix_state": "fixed"
     },
     {
       "vulnerability_id": "CVE-2026-11972",
       "package": "python",
       "package_version": "3.14.6",
       "severity": "high",
-      "fix_state": "unknown"
+      "fix_state": "fixed"
     },
     {
       "vulnerability_id": "CVE-2026-15308",
