@@ -143,6 +143,8 @@ def _validate_repository_root() -> None:
 
 def _git_tracked_paths() -> list[str] | None:
     git_metadata_present = os.path.lexists(ROOT / ".git")
+    if not git_metadata_present:
+        return None
     try:
         top_level = subprocess.run(
             ["git", "-C", str(ROOT), "rev-parse", "--show-toplevel"],
@@ -151,14 +153,10 @@ def _git_tracked_paths() -> list[str] | None:
             text=True,
         )
     except FileNotFoundError as exc:
-        if git_metadata_present:
-            raise InventoryError("git is required when repository metadata is present") from exc
-        return None
+        raise InventoryError("git is required when repository metadata is present") from exc
 
     if top_level.returncode != 0:
-        if git_metadata_present:
-            raise InventoryError("git metadata is present but the repository root is unavailable")
-        return None
+        raise InventoryError("git metadata is present but the repository root is unavailable")
 
     try:
         observed_root = Path(top_level.stdout.strip()).resolve(strict=True)

@@ -133,6 +133,21 @@ def test_checker_uses_filesystem_fallback_without_git_metadata(tmp_path: Path) -
     assert _command(payload, "alpha")["observed_evidence"] == ["README.md"]
 
 
+def test_no_git_bundle_nested_in_outer_worktree_uses_filesystem_fallback(
+    tmp_path: Path,
+) -> None:
+    outer = tmp_path / "outer-worktree"
+    outer.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=outer, check=True)
+    checker = _write_synthetic_bundle(outer / "bundle")
+
+    completed = _run_checker(checker)
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert _command(payload, "alpha")["observed_evidence"] == ["README.md"]
+
+
 def test_git_worktree_keeps_git_ls_files_authority_for_untracked_files(
     tmp_path: Path,
 ) -> None:
