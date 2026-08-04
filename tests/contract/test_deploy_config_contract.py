@@ -2863,14 +2863,14 @@ def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound(
                 "package": "python",
                 "package_version": "3.14.6",
                 "severity": "high",
-                "fix_state": "unknown",
+                "fix_state": "fixed",
             },
             {
                 "vulnerability_id": "CVE-2026-11972",
                 "package": "python",
                 "package_version": "3.14.6",
                 "severity": "high",
-                "fix_state": "unknown",
+                "fix_state": "fixed",
             },
             {
                 "vulnerability_id": "CVE-2026-15308",

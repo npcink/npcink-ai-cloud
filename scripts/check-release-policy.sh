@@ -292,7 +292,6 @@ for marker in \
 	'"vulnerability_id": "CVE-2026-15308"' \
 	'"package_version": "3.14.6"' \
 	'"severity": "high"' \
-	'"fix_state": "unknown"' \
 	'"fix_state": "fixed"' \
 	'"cisa_ssvc_exploitation"' \
 	'"cisa_ssvc_checked_at_utc": "<RFC3339-UTC>"' \
