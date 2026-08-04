@@ -482,7 +482,7 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
         ("api", "CVE-2026-15308", "python", "3.14.6"),
     ]
     assert {entry["owner"] for entry in entries} == {"Muze"}
-    assert {entry["expires_on"] for entry in entries} == {"2026-08-05"}
+    assert {entry["expires_on"] for entry in entries} == {"2026-08-11"}
     reason_prefix = (
         "Temporary exception for P5 engineering scan, exact-bundle rehearsal, and "
         "operator-authorized controlled production validation only; no GA, customer "

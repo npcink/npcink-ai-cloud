@@ -516,7 +516,8 @@ else
 
 	http_request "GET" "${BASE_URL%/}/portal/login" ""
 	assert_status "${HTTP_STATUS}" "200" "portal login page should succeed"
-	assert_body_contains "${HTTP_BODY}" "连接后激活 Free" "portal login page should contain the current activation contract"
+	assert_body_contains "${HTTP_BODY}" 'name="npcink-portal-activation-contract"' "portal login page should expose the activation contract marker"
+	assert_body_contains "${HTTP_BODY}" 'content="addon-verified-free-activation-v1"' "portal login page should expose the current activation contract"
 
 	http_request "GET" "${BASE_URL%/}/help" ""
 	assert_status "${HTTP_STATUS}" "200" "public help page should succeed"

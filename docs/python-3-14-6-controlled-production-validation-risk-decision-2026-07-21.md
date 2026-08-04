@@ -6,7 +6,9 @@
 >
 > Decision date: 2026-07-21
 >
-> Exception expiry: 2026-08-05
+> Amended by operator: 2026-08-04
+>
+> Exception expiry: 2026-08-11
 >
 > GA is not authorized.
 
@@ -38,6 +40,16 @@ On 2026-07-21 those NVD records displayed CISA Vulnrichment SSVC
 `exploitation: none` for all three entries. That value is current threat
 intelligence, not proof that exploitation is impossible, and it must be
 rechecked immediately before the operator signs an acceptance.
+
+On 2026-08-04 the operator explicitly extended this controlled-validation-only
+decision through 2026-08-11 so that production validation could continue
+without authorizing GA or real users. A fresh CVE.org CISA-ADP check still
+reported SSVC `Exploitation: none` for all three entries at
+`2026-08-04T06:45:41Z`. The fresh exact-image scan now reports
+`fix_state=fixed` for all three findings. In this receipt,
+`fixed` means the scanner knows a fix version; it does not mean the bundled
+Python 3.14.6 package contains that fix. The official `python:3.14-alpine` tag
+still resolved to the pinned Python 3.14.6 image at the amendment checkpoint.
 
 The earlier engineering reachability review is recorded in
 [P5-B7 Python API Image CVE Exception](p5-b7-python-api-image-cve-exception-2026-07-19.md).
@@ -112,14 +124,14 @@ decision; it is not a scanner receipt and must use
       "package": "python",
       "package_version": "3.14.6",
       "severity": "high",
-      "fix_state": "unknown"
+      "fix_state": "fixed"
     },
     {
       "vulnerability_id": "CVE-2026-11972",
       "package": "python",
       "package_version": "3.14.6",
       "severity": "high",
-      "fix_state": "unknown"
+      "fix_state": "fixed"
     },
     {
       "vulnerability_id": "CVE-2026-15308",
@@ -135,7 +147,7 @@ decision; it is not a scanner receipt and must use
     "CVE-2026-15308": "none"
   },
   "cisa_ssvc_checked_at_utc": "<RFC3339-UTC>",
-  "exception_expires_on": "2026-08-05",
+  "exception_expires_on": "2026-08-11",
   "ga_authorized": false,
   "authorized_by": "Muze",
   "authorized_at_utc": "<RFC3339-UTC>"
@@ -177,7 +189,7 @@ receipt substitutes for the other.
 
 Controlled validation stops if any of the following is true:
 
-- the current date is after 2026-08-05;
+- the current date is after 2026-08-11;
 - NVD/CISA intelligence no longer reports `exploitation: none` for all three;
 - a vulnerability, package version, severity, fix state, finding count, scan
   status, platform, commit, tree, bundle digest, scan digest, or allowlist digest

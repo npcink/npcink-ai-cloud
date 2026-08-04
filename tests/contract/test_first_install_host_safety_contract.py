@@ -194,7 +194,7 @@ def _controlled_acceptance_fixture(
         "allowlisted_findings": module.EXPECTED_FINDINGS,
         "cisa_ssvc_exploitation": {cve: "none" for cve in sorted(module.BLOCKED)},
         "cisa_ssvc_checked_at_utc": "2026-07-22T11:00:00Z",
-        "exception_expires_on": "2026-08-05",
+        "exception_expires_on": "2026-08-11",
         "ga_authorized": False,
         "authorized_by": "Muze",
         "authorized_at_utc": "2026-07-22T11:05:00Z",

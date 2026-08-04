@@ -90,7 +90,7 @@ the following are true:
   the work remains controlled production validation with no real users.
 
 This is not a second ordinary deployment route. It expires no later than
-2026-08-05, cannot be used after installation finalization, and disappears as
+2026-08-11, cannot be used after installation finalization, and disappears as
 soon as the three allowlist entries are removed. Pushes still never deploy.
 Ordinary deployments continue to require the manually dispatched GitHub
 workflow and Environment approval.

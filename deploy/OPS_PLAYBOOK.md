@@ -488,7 +488,7 @@ operator evidence store. It must be owner-only mode `0600`, use
 and bind the final commit, tree, outer bundle checksum, scan-index checksum,
 API scan-receipt checksum, allowlist checksum, exact three findings, zero
 unallowlisted blocking findings, fresh NVD/CISA check, operator, time, and
-2026-08-05 expiry. Record the acceptance file's SHA-256 separately.
+2026-08-11 expiry. Record the acceptance file's SHA-256 separately.
 
 The operator must manually compare those values with the bundle manifest,
 outer checksum, `release/image-scan/scan-index.json`,

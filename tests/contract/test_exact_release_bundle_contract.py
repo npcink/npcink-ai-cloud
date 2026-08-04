@@ -1596,6 +1596,7 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     loader = (ROOT / "deploy/remote-load-and-up.sh").read_text(encoding="utf-8")
     ssh_deploy = (ROOT / "deploy/deploy-to-ssh-host.sh").read_text(encoding="utf-8")
     smoke = (ROOT / "scripts/cloud-deploy-bundle-smoke-flow.sh").read_text(encoding="utf-8")
+    remote_smoke = (ROOT / "deploy/remote-smoke.sh").read_text(encoding="utf-8")
     bundle_contract = (ROOT / "docs/p5-b5-exact-release-bundle-v1.md").read_text(
         encoding="utf-8"
     )
@@ -1619,6 +1620,8 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert 'exit "${exit_status}"' in bundle
     assert "dist/worker.tar.gz" not in bundle
     assert "deploy-bundle.tgz.sha256" in bundle
+    assert 'name="npcink-portal-activation-contract"' in remote_smoke
+    assert 'content="addon-verified-free-activation-v1"' in remote_smoke
     assert 'INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-1}"' in bundle
     assert "must include every locked external image" in bundle
     assert "must include the frontend image" in bundle

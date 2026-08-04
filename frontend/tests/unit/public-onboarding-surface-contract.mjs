@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 const read = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const home = read('src/app/page.tsx');
 const login = read('src/app/portal/login/page.tsx');
+const loginLayout = read('src/app/portal/login/layout.tsx');
 const register = read('src/app/portal/register/page.tsx');
 const health = read('src/app/api/health/route.ts');
 const publicShell = read('src/components/public/PublicSiteShell.tsx');
@@ -42,6 +43,11 @@ assert.match(
 );
 assert.match(login, /<QqLoginButton/, 'login must expose the QQ login entry');
 assert.match(register, /<QqLoginButton/, 'registration must expose the QQ login entry');
+assert.match(
+  loginLayout,
+  /npcink-portal-activation-contract['"]:\s*['"]addon-verified-free-activation-v1/,
+  'portal login metadata must expose a server-rendered activation contract for release smoke'
+);
 assert.match(proxy, /X-Robots-Tag[\s\S]*noindex/, 'admin responses must opt out of indexing');
 
 assert.match(health, /status: 'healthy'/, 'machine health must retain a stable status field');
