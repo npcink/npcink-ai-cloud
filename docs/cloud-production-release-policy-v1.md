@@ -101,6 +101,33 @@ Recommended repository gate:
 pnpm run check:release-policy
 ```
 
+## Optional Production-host Localhost Candidate Canary
+
+An explicitly authorized production-host localhost canary may rehearse an exact
+candidate before production promotion when it follows the
+[Production-host Localhost Candidate Canary Standard](production-host-localhost-candidate-canary-standard-v1.md).
+
+This optional lane must use a unique Compose project, candidate-specific image
+identities, a disposable unpublished PostgreSQL database, isolated network and
+volumes, and one loopback-only proxy binding. It must not connect to production
+RDS, consume production protected configuration, modify `current`, recreate a
+production service, or change DNS, Cloudflare, public traffic, or first-install
+lifecycle artifacts.
+
+Every Compose invocation, including a single-service recreate, must repeat the
+complete canary interpolation envelope and re-prove actual image identity and
+published ports. Candidate SHA change, production-state reference, non-loopback
+binding, non-candidate image, or production baseline drift stops the run.
+
+A passing localhost canary is host-compatibility and synthetic-journey evidence
+only. It never completes a Required release-checklist item unless that item
+explicitly names this evidence class, and it never implies production
+validation, production human acceptance, external-user acceptance, or GA.
+
+Cleanup is part of the gate: remove exact canary resources, stop the tunnel,
+and re-prove the production pointer, container identities, and health before
+closing the receipt.
+
 ## Current PostgreSQL 18 Release Contract
 
 The current production database contract is a fresh external Alibaba Cloud RDS

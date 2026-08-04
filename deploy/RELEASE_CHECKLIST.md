@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-07-27
+> Updated: 2026-08-04
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -685,6 +685,20 @@ initialization.
 
 - [ ] run `pnpm run check:e2e:deploy-bundle:smoke` before deploy; its loopback
   plain-HTTP path is a local artifact-replay exception, not a production origin
+- [ ] when the operator explicitly authorizes a production-host localhost
+  candidate canary, follow the
+  [Production-host Localhost Candidate Canary Standard](../docs/production-host-localhost-candidate-canary-standard-v1.md)
+  and record:
+    - frozen candidate SHA, tree, bundle digest, image identities, and migration head
+    - unique Compose project and disposable unpublished PostgreSQL 18
+    - exactly one loopback-only proxy binding
+    - no production RDS, protected config, `current`, service, DNS, or Cloudflare change
+    - actual image and port revalidation after every recreate
+    - exact resource cleanup plus unchanged production pointer/container identities
+- [ ] classify a localhost canary and synthetic browser inspection as
+  non-production evidence; do not use either to check off formal smoke,
+  production RDS, WordPress reconnect/revoke, OTLP, payment, observation,
+  production human acceptance, or GA
 - [ ] run remote portal smoke for a real invited user admin after deploy
 - [ ] verify one non-empty commercial/admin page:
   - `/admin/plans`
