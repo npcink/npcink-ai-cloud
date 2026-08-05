@@ -1629,6 +1629,7 @@ def test_pending_repair_bootstraps_missing_previous_runtime_network_state_from_l
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
+        refresh_providers=False,
         previous_runtime_network_contract=True,
         runtime_network_state_variant="missing-file",
     )
@@ -1689,6 +1690,7 @@ def test_pending_repair_runtime_network_bootstrap_fails_closed_on_ambiguous_live
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
+        refresh_providers=False,
         previous_runtime_network_contract=True,
         runtime_network_state_variant="missing-file",
         runtime_network_live_variant=live_variant,
@@ -1724,6 +1726,7 @@ def test_pending_repair_runtime_network_bootstrap_rejects_unsafe_protected_state
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
+        refresh_providers=False,
         previous_runtime_network_contract=True,
         runtime_network_state_variant=state_variant,
     )
