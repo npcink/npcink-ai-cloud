@@ -99,13 +99,22 @@ For the already-finalized installation, one narrower internal-validation
 exception may be used through 2026-08-11 only while the operator confirms that
 there are no external users. It replaces only the bundle-external acceptance
 file and checksum with `--no-user-internal-validation` plus the exact protected
-operator approval environment value. The gate still requires the exact three
-Python 3.14.6 findings, a fresh passed Linux/AMD64 scan, zero unallowlisted
-blocking findings, and an embedded source revision/tree matching the clean
+operator approval environment value. The gate still requires exactly the three
+governed Python 3.14.6 findings plus frontend Node `CVE-2026-58043`, a fresh
+passed Linux/AMD64 scan, zero unallowlisted blocking findings, and an embedded
+source revision/tree matching the clean
 checked-out `production` source. It hard-fails when combined with the external
 acceptance path, after expiry, for GA or external-user use, or when any evidence
 drifts. It does not authorize broader rollout or bypass any other deploy,
 migration, health, rollback, or smoke gate.
+
+The Node exception is bounded to the current frontend command
+`node frontend/server.js`. The affected Node Permission Model is not enabled:
+the image does not start Node with `--permission` and does not set
+`NODE_OPTIONS`. The exception must be removed or the release stopped if that
+reachability fact changes, external users appear, CISA exploitation changes
+from `none`, a fixed supported Node 22 Alpine image becomes available, or the
+2026-08-11 expiry is reached.
 
 Recommended repository gate:
 
