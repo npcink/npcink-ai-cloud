@@ -76,6 +76,13 @@ while index < len(args):
         url = value
     index += 1
 
+request_header_capture = os.environ.get("CURL_REQUEST_HEADER_CAPTURE", "")
+if request_header_path and request_header_capture:
+    Path(request_header_capture).write_text(
+        Path(request_header_path).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
 if not output_path and not write_status:
     raise SystemExit(0)
 
@@ -1185,9 +1192,13 @@ raise SystemExit(64)
     assert "--member-role" not in docker_argv
 
     operational_environment = base_environment.copy()
+    operational_header_capture = tmp_path / "operational-headers"
     operational_environment.update(
         {
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "operational-token-sentinel",
+            "NPCINK_CLOUD_DOMAIN_NAME": "cloud.npc.ink",
+            "NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST": "wrong.example",
+            "CURL_REQUEST_HEADER_CAPTURE": str(operational_header_capture),
             "FORBIDDEN_CURL_ENV_KEYS": "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN",
         }
     )
@@ -1196,7 +1207,7 @@ raise SystemExit(64)
             "/bin/bash",
             str(fixture / "deploy/remote-operational-ready.sh"),
             "--base-url",
-            "http://cloud.example.test",
+            "http://127.0.0.1:8010",
         ],
         cwd=fixture,
         env=operational_environment,
@@ -1205,6 +1216,9 @@ raise SystemExit(64)
         check=False,
     )
     assert operational.returncode == 0, f"{operational.stdout}\n{operational.stderr}"
+    assert operational_header_capture.read_text(encoding="utf-8").splitlines()[0] == (
+        "Host: cloud.npc.ink"
+    )
 
     portal_environment = base_environment.copy()
     portal_environment.update(

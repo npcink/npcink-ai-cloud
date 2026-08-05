@@ -242,6 +242,26 @@ INTERNAL_AUTH_TOKEN="${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN}"
 npcink_ai_cloud_require_cmd curl
 npcink_ai_cloud_require_cmd mktemp
 unset NPCINK_CLOUD_INTERNAL_AUTH_TOKEN
+READINESS_HOST="$("${RELEASE_TOOL_PYTHON}" - "${BASE_URL}" <<'PY'
+from __future__ import annotations
+
+import os
+import re
+import sys
+from urllib.parse import urlsplit
+
+base_url = sys.argv[1]
+domain_name = os.getenv("NPCINK_CLOUD_DOMAIN_NAME", "").strip()
+trusted_hosts = os.getenv("NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST", "")
+trusted_host = next((item.strip() for item in trusted_hosts.split(",") if item.strip()), "")
+host = domain_name or trusted_host or (urlsplit(base_url).netloc or "127.0.0.1")
+if host.startswith("*."):
+    host = host[2:]
+if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?", host):
+    raise SystemExit("[fail] Operational readiness Host is invalid.")
+print(host)
+PY
+)"
 umask 077
 REQUEST_DIR="$(mktemp -d)"
 REQUEST_HEADERS="${REQUEST_DIR}/headers"
@@ -262,9 +282,11 @@ cleanup_request_dir() {
 }
 trap cleanup_request_dir EXIT
 chmod 0700 "${REQUEST_DIR}"
-printf '%s\n' "X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}" >"${REQUEST_HEADERS}"
+printf '%s\n%s\n' \
+	"Host: ${READINESS_HOST}" \
+	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}" >"${REQUEST_HEADERS}"
 chmod 0600 "${REQUEST_HEADERS}"
-unset INTERNAL_AUTH_TOKEN
+unset INTERNAL_AUTH_TOKEN READINESS_HOST
 curl -fsS \
 	--header "@${REQUEST_HEADERS}" \
 	"${BASE_URL%/}/health/operational-ready" >/dev/null
