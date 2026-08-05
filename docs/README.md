@@ -128,6 +128,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Issue #406 Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
   — dated evidence; canary/browser completion is not production validation
 - [Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md)
+- [Production Internal-Validation Active-Soak Evidence — 2026-08-05](production-internal-validation-active-soak-evidence-2026-08-05.md)
+- [Python 3.14.6 Controlled-Validation Operator Worksheet — 2026-08-05](python-3-14-6-controlled-validation-operator-worksheet-2026-08-05.md)
   — one-operator, one-budget production evidence, exact quota/ledger assertions,
   WordPress-write boundaries, and fixture cleanup
 - [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)

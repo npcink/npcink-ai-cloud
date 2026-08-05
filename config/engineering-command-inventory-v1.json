@@ -175,10 +175,12 @@
       "evidence": [
         "docs/production-wordpress-roundtrip-validation-runbook-v1.md",
         "deploy/wordpress-roundtrip-readiness-to-ssh-host.sh",
-        "scripts/production_wordpress_roundtrip_readiness.py"
+        "scripts/production_wordpress_roundtrip_readiness.py",
+        "scripts/production_internal_validation_active_soak.py"
       ],
       "commands": {
-        "production:wordpress-roundtrip:readiness": "Collect read-only production lifecycle, identity, entitlement, quota, ledger, run, and artifact evidence."
+        "production:wordpress-roundtrip:readiness": "Collect read-only production lifecycle, identity, entitlement, quota, ledger, run, and artifact evidence.",
+        "production:internal-validation:active-soak": "Collect a bounded no-user, zero-call active-soak receipt from repeated production readiness samples."
       }
     },
     {

@@ -470,12 +470,15 @@ connection and CA, and capture the one-time administrator key. The browser UI
 uses `/setup`; `/setup/v1/` remains the API namespace.
 
 After independent release smoke, WordPress text/image round trips, RDS restore,
-and the 24–72 hour observation pass, run `deploy/first-install-finalize.sh` from
+and either the ordinary 24–72 hour observation pass or the governed no-user
+30–60 minute active-soak receipt, run `deploy/first-install-finalize.sh` from
 the active direct managed release. Finalization publishes the permanent
 root-owned mode-`0600` `.installation-complete` sentinel. Every ordinary deploy
 and mutating `safe-prune` requires that positive sentinel plus current protected
 `complete`, `pg18_empty_initialization.v1`, and runtime-config digest evidence.
 Deleting a pending marker or losing database connectivity never reopens setup.
+The active-soak receipt is internal-validation evidence only and never replaces
+the controlled CVE gate or the separate explicit operator finalize decision.
 
 ## Promotion Flow
 

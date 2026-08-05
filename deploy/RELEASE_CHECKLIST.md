@@ -74,7 +74,7 @@ Current open blockers:
 | schema drift baseline | operator required | database owner | historical `alembic check` index-name differences are resolved or recorded as reviewed |
 | historical user-site ownership | operator required | database owner | read-only counts prove no ambiguous multi-user site ownership, or every ambiguous site remains unbound and the release stops before real-user access |
 | external OTLP sink | operator required | release operator | exporter and query URLs are explicit and a fresh Cloud trace is queryable in the configured production sink |
-| 24-hour observation | operator required | release operator | health, workers, cadence, SMTP, callback, and runtime remain stable for 24 hours |
+| 24-hour observation / internal active-soak evidence | operator required | release operator | with external users or natural traffic, health/workers/cadence/SMTP/callback/runtime remain stable for at least 24 hours; in declared no-user internal validation only, the governed 30–60 minute zero-call active-soak receipt may satisfy this item |
 | QQ login, when enabled | service settings required | release operator | real QQ login and `/open/auth/qq/callback` pass; otherwise QQ remains disabled |
 
 ## 3. Required Production Environment Checks

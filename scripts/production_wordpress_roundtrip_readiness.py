@@ -15,7 +15,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -214,6 +214,39 @@ def _public_health(base_url: str) -> dict[str, Any]:
             return {"status": response.status, "ok": response.status == 200, "body": payload}
     except (OSError, ValueError, urllib.error.URLError) as error:
         return {"status": 0, "ok": False, "error": type(error).__name__}
+
+
+def _operational_ready(
+    release: Path,
+    base_url: str,
+    containers: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    worker_cutoff = min(
+        _parse_utc(containers[service]["started_at"], f"{service} started_at")
+        for service in ("worker", "callback-worker", "ops-worker")
+    ) - timedelta(seconds=1)
+    cutoff_text = worker_cutoff.isoformat().replace("+00:00", "Z")
+    try:
+        output = _run(
+            [
+                "env",
+                "NPCINK_CLOUD_RELEASE_TOOL_PYTHON=/usr/bin/python3.11",
+                "NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL=1",
+                "bash",
+                str(release / "deploy/remote-operational-ready.sh"),
+                "--base-url",
+                base_url,
+                "--worker-cutoff",
+                cutoff_text,
+            ]
+        )
+    except ReadinessError as error:
+        return {"ok": False, "worker_cutoff": cutoff_text, "error": str(error)}
+    return {
+        "ok": True,
+        "worker_cutoff": cutoff_text,
+        "checks": [line for line in output.splitlines() if line],
+    }
 
 
 CONTAINER_PAYLOAD = r"""
@@ -507,6 +540,7 @@ def main(argv: list[str] | None = None) -> int:
             container_id = _container_for_service(service)
             container_ids[service] = container_id
             containers[service] = _container_state(container_id)
+            containers[service]["container_id"] = container_id
 
         release_images = _release_image_evidence(release, target_images, container_ids)
         source_revision = release_images["source_revision"]
@@ -519,6 +553,7 @@ def main(argv: list[str] | None = None) -> int:
             run_id=run_id,
         )
         public_health = _public_health(args.base_url)
+        operational_ready = _operational_ready(release, args.base_url, containers)
 
         blockers: list[str] = []
         if (managed_root / ".deploy-lock").exists():
@@ -538,6 +573,8 @@ def main(argv: list[str] | None = None) -> int:
             blockers.append("one or more required containers do not match current release images")
         if not public_health.get("ok"):
             blockers.append("public live health did not return HTTP 200")
+        if not operational_ready.get("ok"):
+            blockers.append("internal operational readiness did not pass")
         if len(cloud.get("migration_revisions") or []) != 1:
             blockers.append("database does not have exactly one Alembic revision")
         identity = cloud.get("identity") or {}
@@ -645,11 +682,12 @@ def main(argv: list[str] | None = None) -> int:
             "lifecycle": lifecycle,
             "containers": containers,
             "public_health": public_health,
+            "operational_ready": operational_ready,
             "cloud": cloud,
             "manual_gates_required": [
                 "operator reviews WordPress adoption and cleanup receipt",
                 "operator confirms rollback and backup evidence",
-                "operator confirms observation-window evidence",
+                "operator confirms applicable passive-window or internal active-soak evidence",
                 "operator separately authorizes first-install finalize",
             ],
             "claims": {
