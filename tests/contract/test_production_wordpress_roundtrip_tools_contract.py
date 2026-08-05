@@ -89,6 +89,8 @@ def test_active_soak_freezes_zero_call_and_finalization_boundaries() -> None:
         '"commercial_viability": False',
         '"non_health_502_count": "not measured"',
         "duration minutes must be between 30 and 60",
+        "readiness sample exceeded",
+        "active-soak collected too few repeated samples",
     ):
         assert marker in source
 
@@ -113,6 +115,8 @@ def test_active_soak_freezes_zero_call_and_finalization_boundaries() -> None:
     assert module._compare_fingerprints(baseline, changed, 1) == [
         "sample 1: totals changed during active soak"
     ]
+    assert module._minimum_sample_count(30, 60, 45) == 18
+    assert module._minimum_sample_count(30, 300, 45) == 6
 
 
 def test_cleanup_requires_exact_identity_approval_and_preserves_audit() -> None:

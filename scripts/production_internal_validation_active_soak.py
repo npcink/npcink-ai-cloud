@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import time
@@ -175,8 +176,29 @@ def _readiness_command(args: argparse.Namespace) -> list[str]:
     return command
 
 
-def _collect_readiness(command: list[str]) -> dict[str, Any]:
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+def _minimum_sample_count(
+    duration_minutes: float,
+    sample_interval_seconds: int,
+    sample_timeout_seconds: int,
+) -> int:
+    duration_seconds = duration_minutes * 60
+    maximum_sample_span = sample_interval_seconds + sample_timeout_seconds
+    return max(2, math.ceil(duration_seconds / maximum_sample_span))
+
+
+def _collect_readiness(command: list[str], *, timeout_seconds: int) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ActiveSoakError(
+            f"readiness sample exceeded {timeout_seconds} seconds"
+        ) from error
     output = result.stdout.strip()
     if not output:
         detail = result.stderr.strip() or f"readiness exited {result.returncode}"
@@ -217,6 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-provider-calls", type=int, required=True)
     parser.add_argument("--duration-minutes", type=float, default=30.0)
     parser.add_argument("--sample-interval-seconds", type=int, default=60)
+    parser.add_argument("--sample-timeout-seconds", type=int, default=45)
     parser.add_argument("--approval", required=True)
     return parser
 
@@ -238,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ActiveSoakError("duration minutes must be between 30 and 60")
         if not 30 <= args.sample_interval_seconds <= 300:
             raise ActiveSoakError("sample interval seconds must be between 30 and 300")
+        if not 10 <= args.sample_timeout_seconds <= 120:
+            raise ActiveSoakError("sample timeout seconds must be between 10 and 120")
         if not args.readiness_wrapper.is_file():
             raise ActiveSoakError("readiness wrapper does not exist")
         if args.identity_file and not args.identity_file.is_file():
@@ -245,10 +270,18 @@ def main(argv: list[str] | None = None) -> int:
 
         command = _readiness_command(args)
         deadline = started_monotonic + args.duration_minutes * 60
+        minimum_samples = _minimum_sample_count(
+            args.duration_minutes,
+            args.sample_interval_seconds,
+            args.sample_timeout_seconds,
+        )
         sample_index = 0
         while True:
             observed_at = _utc_now()
-            readiness = _collect_readiness(command)
+            readiness = _collect_readiness(
+                command,
+                timeout_seconds=args.sample_timeout_seconds,
+            )
             current = _fingerprint(readiness)
             if baseline is None:
                 baseline = current
@@ -268,7 +301,21 @@ def main(argv: list[str] | None = None) -> int:
     duration_complete = elapsed_seconds >= args.duration_minutes * 60
     if not duration_complete and not blockers:
         blockers.append("active-soak duration did not complete")
-    outcome = "pass" if duration_complete and not blockers else "blocked"
+    minimum_samples = _minimum_sample_count(
+        args.duration_minutes,
+        args.sample_interval_seconds,
+        args.sample_timeout_seconds,
+    )
+    if len(samples) < minimum_samples and not blockers:
+        blockers.append(
+            "active-soak collected too few repeated samples: "
+            f"required {minimum_samples}, observed {len(samples)}"
+        )
+    outcome = (
+        "pass"
+        if duration_complete and len(samples) >= minimum_samples and not blockers
+        else "blocked"
+    )
     receipt = {
         "contract_version": CONTRACT_VERSION,
         "outcome": outcome,
@@ -285,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
             "required_minutes": args.duration_minutes,
             "elapsed_seconds": round(elapsed_seconds, 3),
             "sample_interval_seconds": args.sample_interval_seconds,
+            "sample_timeout_seconds": args.sample_timeout_seconds,
+            "minimum_sample_count": minimum_samples,
             "sample_count": len(samples),
         },
         "baseline": baseline,

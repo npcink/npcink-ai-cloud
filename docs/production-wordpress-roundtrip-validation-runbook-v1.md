@@ -147,8 +147,10 @@ fails when release, migration, lifecycle, container identity/start time,
 restart count, image identity, site/account, entitlement, quota, ledger, run,
 or Provider-call totals change. Every sample also reuses the governed internal
 operational-readiness helper to check the required worker heartbeats, worker
-container stability, and `/health/operational-ready`. It makes no Provider request and does not
-contact WordPress. The receipt records non-health `502` evidence as `not
+container stability, and `/health/operational-ready`. Every readiness sample
+has a hard timeout, and the receipt cannot pass without the duration-derived
+minimum repeated-sample count. It makes no Provider request and does not contact
+WordPress. The receipt records non-health `502` evidence as `not
 measured` unless a separate governed log query supplies it; absence of that
 measurement must not be presented as a zero count.
 
