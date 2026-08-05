@@ -15,6 +15,8 @@ REMOTE_DIR="${NPCINK_CLOUD_DEPLOY_REMOTE_DIR:-/opt/npcink-ai-cloud}"
 BUNDLE_PATH="${NPCINK_CLOUD_DEPLOY_BUNDLE_PATH:-${ROOT_DIR}/dist/deploy-bundle.tgz}"
 CONTROLLED_CVE_RISK_ACCEPTANCE="${NPCINK_CLOUD_CONTROLLED_CVE_RISK_ACCEPTANCE:-}"
 CONTROLLED_CVE_RISK_ACCEPTANCE_CHECKSUM="${NPCINK_CLOUD_CONTROLLED_CVE_RISK_ACCEPTANCE_CHECKSUM:-}"
+NO_USER_INTERNAL_VALIDATION="${NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION:-0}"
+NO_USER_INTERNAL_VALIDATION_APPROVAL="${NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL:-}"
 ENV_FILE="${NPCINK_CLOUD_ENV_FILE:-}"
 IMAGE_PLATFORM="${NPCINK_CLOUD_IMAGE_PLATFORM:-}"
 BASE_URL="${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}"
@@ -85,6 +87,10 @@ while [ "$#" -gt 0 ]; do
 		--controlled-cve-risk-acceptance-checksum)
 			CONTROLLED_CVE_RISK_ACCEPTANCE_CHECKSUM="$2"
 			shift 2
+			;;
+		--no-user-internal-validation)
+			NO_USER_INTERNAL_VALIDATION=1
+			shift
 			;;
 		--env-file)
 			STAGE_ONLY_DISALLOWED_CLI+=("$1")
@@ -302,7 +308,22 @@ if { [ -n "${CONTROLLED_CVE_RISK_ACCEPTANCE}" ] && [ -z "${CONTROLLED_CVE_RISK_A
 	exit 1
 fi
 
-for command_name in bash ssh scp tar mktemp; do
+NO_USER_INTERNAL_VALIDATION_APPROVAL_TEXT="Approved for no-external-user internal production validation; CISA SSVC exploitation remains none; GA is not authorized."
+if [ "${NO_USER_INTERNAL_VALIDATION}" = "1" ]; then
+	if [ -n "${CONTROLLED_CVE_RISK_ACCEPTANCE}" ]; then
+		echo "[fail] No-user internal validation cannot be combined with controlled CVE acceptance." >&2
+		exit 1
+	fi
+	if [ "${NO_USER_INTERNAL_VALIDATION_APPROVAL}" != "${NO_USER_INTERNAL_VALIDATION_APPROVAL_TEXT}" ]; then
+		echo "[fail] No-user internal validation requires the exact operator approval sentence." >&2
+		exit 1
+	fi
+elif [ -n "${NO_USER_INTERNAL_VALIDATION_APPROVAL}" ]; then
+	echo "[fail] No-user internal-validation approval is invalid without --no-user-internal-validation." >&2
+	exit 1
+fi
+
+for command_name in bash git ssh scp tar mktemp; do
 	npcink_ai_cloud_require_cmd "${command_name}"
 done
 LOCAL_RELEASE_TOOL_PYTHON="$(npcink_ai_cloud_release_tool_python)"
@@ -429,6 +450,24 @@ if [ -n "${CONTROLLED_CVE_RISK_ACCEPTANCE}" ]; then
 	FIRST_INSTALL_CVE_GATE_ARGS+=(
 		--controlled-risk-acceptance "${CONTROLLED_CVE_RISK_ACCEPTANCE}"
 		--controlled-risk-acceptance-checksum "${CONTROLLED_CVE_RISK_ACCEPTANCE_CHECKSUM}"
+	)
+fi
+if [ "${NO_USER_INTERNAL_VALIDATION}" = "1" ]; then
+	if [ -n "$(git -C "${ROOT_DIR}" status --porcelain)" ]; then
+		echo "[fail] No-user internal validation requires a clean production checkout." >&2
+		exit 1
+	fi
+	EXPECTED_SOURCE_REVISION="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+	EXPECTED_SOURCE_TREE="$(git -C "${ROOT_DIR}" rev-parse HEAD^{tree})"
+	EXPECTED_PRODUCTION_REVISION="$(git -C "${ROOT_DIR}" rev-parse origin/production)"
+	if [ "${EXPECTED_SOURCE_REVISION}" != "${EXPECTED_PRODUCTION_REVISION}" ]; then
+		echo "[fail] No-user internal validation requires HEAD to equal origin/production." >&2
+		exit 1
+	fi
+	FIRST_INSTALL_CVE_GATE_ARGS+=(
+		--no-user-internal-validation
+		--expected-source-revision "${EXPECTED_SOURCE_REVISION}"
+		--expected-source-tree "${EXPECTED_SOURCE_TREE}"
 	)
 fi
 

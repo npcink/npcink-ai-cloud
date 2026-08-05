@@ -319,6 +319,20 @@ require_marker "deploy/image-lock/cve-allowlist.json" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/OPS_PLAYBOOK.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker "deploy/deploy-to-ssh-host.sh" \
+	'--no-user-internal-validation'
+require_marker "scripts/check-first-install-cve-gate.py" \
+	'NO_USER_INTERNAL_VALIDATION_EXPIRES_ON = date(2026, 8, 11)'
+require_marker "scripts/check-first-install-cve-gate.py" \
+	'mode=no_user_internal_validation'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'no external users'
+require_marker "deploy/OPS_PLAYBOOK.md" \
+	'no-external-user internal-validation'
+require_marker "deploy/OPS_PLAYBOOK.md" \
+	'NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'no-external-user internal-validation mode'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker ".github/workflows/python-cve-upstream-watch.yml" \
