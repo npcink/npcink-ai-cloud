@@ -480,6 +480,7 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
         ("api", "CVE-2026-11940", "python", "3.14.6"),
         ("api", "CVE-2026-11972", "python", "3.14.6"),
         ("api", "CVE-2026-15308", "python", "3.14.6"),
+        ("frontend", "CVE-2026-58043", "node", "22.23.1"),
     ]
     assert {entry["owner"] for entry in entries} == {"Muze"}
     assert {entry["expires_on"] for entry in entries} == {"2026-08-11"}
@@ -514,12 +515,28 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
         "production validation if reachability changes."
     )
     for entry in entries:
-        assert entry["reason"] == (
-            reason_prefix
-            + reachability_by_cve[entry["vulnerability_id"]]
-            + " "
-            + upgrade_and_stop
-        )
+        if entry["vulnerability_id"] in reachability_by_cve:
+            assert entry["reason"] == (
+                reason_prefix
+                + reachability_by_cve[entry["vulnerability_id"]]
+                + " "
+                + upgrade_and_stop
+            )
+        else:
+            assert entry["reason"] == (
+                "Temporary exception only for operator-authorized no-external-user "
+                "internal production validation; no GA, customer rollout, or general "
+                "production authorization. CVE-2026-58043 affects Node.js Permission "
+                "Model radix-tree path boundaries only when Node starts with "
+                "`--permission`; the production frontend starts as "
+                "`node frontend/server.js`, does not set `NODE_OPTIONS`, and does not "
+                "enable the Permission Model. NVD records a local, high-complexity, "
+                "low-privilege attack vector and CISA SSVC exploitation=none. Upgrade "
+                "to the first supported Node 22 Alpine image that removes this finding, "
+                "repin its exact digest, rebuild and rescan, then remove this entry; stop "
+                "internal validation immediately if the frontend enables `--permission`, "
+                "external users appear, exploitation changes, or this exception expires."
+            )
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
@@ -818,11 +835,11 @@ def _write_release_receipt(
         },
     )
     report = _scan_report(severity=severity, built=built, image_key=key)
-    if key == "api":
-        canonical_allowlist = json.loads((ROOT / lock["scan_policy"]["allowlist_file"]).read_text())
-        matches = report["matches"]
-        assert isinstance(matches, list)
-        for entry in canonical_allowlist["entries"]:
+    canonical_allowlist = json.loads((ROOT / lock["scan_policy"]["allowlist_file"]).read_text())
+    matches = report["matches"]
+    assert isinstance(matches, list)
+    for entry in canonical_allowlist["entries"]:
+        if entry["image"] == key:
             matches.append(
                 {
                     "vulnerability": {
