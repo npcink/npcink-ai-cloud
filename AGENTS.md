@@ -6,12 +6,14 @@ Every AI development session should start with:
 
 1. Run `git status --short --branch`.
 2. Read `README.md`.
-3. Read `docs/parallel-ai-collaboration-standard-v1.md`. When another session
-   may be active, inspect worktrees, open human PRs, and available task
-   ownership, then report the conflict-domain owner, merge-lane intent, and
-   shared-runtime intent before editing.
+3. Assume one active AI development session unless the operator explicitly
+   declares a multi-session queue. Only in that declared mode, read
+   `docs/parallel-ai-collaboration-standard-v1.md` and report its coordination
+   declaration before editing.
 4. For feature, bug-fix, M4, or CI work, read
-   `docs/development-validation-operating-model-v1.md`.
+   `docs/development-validation-operating-model-v1.md` and
+   `docs/ai-development-validation-tiers-v1.md`. Classify the change as L0,
+   L1, or L2 before selecting preview and closeout gates.
 5. Read the relevant boundary docs before editing:
    - `docs/cloud-content-generation-boundary-v1.md`
    - `docs/cloud-task-pack-boundary-v1.md`
@@ -44,10 +46,10 @@ prompt/router/preset local truth, or WordPress write owner.
 
 ## AI Development Rules
 
-- Write a compact change envelope before editing: target repositories, focused
-  module, intended change, explicit non-goals, public contracts touched,
-  expected files, files or areas that must not change, required gates,
-  cross-repo matrix requirement, and rollback plan.
+- Write a compact change envelope before editing: focused module, intended
+  outcome, explicit non-goals, public contracts touched, expected files, and
+  verification plus rollback. Add external-system, cross-repository, or
+  forbidden-file detail only when the task actually touches those seams.
 - Treat elapsed time, paid Provider calls, full-gate executions, image builds,
   and shared-runtime operations as bounded task resources. Declare the relevant
   budget before using them, reuse valid evidence for the same revision, and do
@@ -55,11 +57,26 @@ prompt/router/preset local truth, or WordPress write owner.
   After two consecutive failures with the same external-transfer signature,
   stop automatic retries, preserve the evidence, and either use a documented
   recovery lane or report the blocker to the operator.
-- When sessions run in parallel, follow the Three Uniques in
+- When the operator explicitly declares sessions to be running in parallel,
+  follow the Three Uniques in
   `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
   conflict domain, one human-authored PR in the protected merge lane, and one
   shared-runtime operation owner. Parallel investigation and disjoint local
   work remain allowed.
+- Whenever an AI session creates an auxiliary linked worktree, it must
+  immediately run
+  `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
+  verify the `locked codex:<task-id>` entry with
+  `git worktree list --porcelain`. Keep the worktree locked while the task,
+  review, or merge is still open. Unlock it only after the task has ended, its
+  PR is confirmed merged, and the worktree is clean, subject to the
+  no-deliverable and recovery rules in
+  `docs/single-session-worktree-lifecycle-v1.md`.
+- In the default single-session mode, prefer one clean development worktree,
+  the stable M4 operations worktree, and at most one auxiliary AI task
+  worktree. Use `pnpm run worktree:audit` for read-only inventory and follow
+  `docs/single-session-worktree-lifecycle-v1.md`; never treat an audit candidate
+  as deletion authorization.
 - Keep changes scoped to one module per session.
 - Before staging, inspect `git status --short --branch` and `git diff --stat`.
   Stage only files changed for the current task. Do not use `git add -A` in a
@@ -93,6 +110,20 @@ prompt/router/preset local truth, or WordPress write owner.
   production body without it.
 - The cross-repository contract is
   `/Users/muze/gitee/npcink-workflow-toolbox/docs/platform/pr-publishing-standard-v1.md`.
+
+## Optional Local Code Navigation
+
+- CodeGraph is an optional local navigation aid, not repository, test, runtime,
+  or acceptance truth.
+- When an indexed clean reference worktree is available, use it only for
+  architecture discovery, call-path exploration, and initial impact analysis.
+- Before editing, testing, staging, or reviewing, verify every relevant file
+  and relationship against the active worktree.
+- Do not initialize CodeGraph in every worktree or install it in CI, M4,
+  production, release, or shared runtime environments.
+- CodeGraph output never replaces native search, tests, Git diff, required
+  checks, runtime smoke, cross-repository contract verification, or M4
+  acceptance. A missing or unavailable index must not block development.
 
 ## AI Production Operation Rules
 
@@ -186,7 +217,8 @@ whitespace or quiet solid dividers as defined by
 - A user-authorized Cloud source or build/runtime task also authorizes the
   corresponding candidate preview action. After a coherent task checkpoint
   and the narrowest useful local source/static gate, run `m4:preview:sync` or
-  `m4:preview:deploy` without waiting for the user to ask again.
+  `m4:preview:deploy` without waiting for the user to ask again. A declared
+  multi-session queue follows the separate parallel standard instead.
 - Automatic checkpoint dispatch means an explicit agent action in the active
   task. Do not add per-save watchers, background daemons, Git hooks, or
   GitHub-hosted M4 deployment credentials. Batch related edits into a coherent

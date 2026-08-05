@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
@@ -138,6 +139,70 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
         "ai_credit_ledger": "/portal/usage/credits",
     }
     assert "recent_items" not in ai_credit_usage_detail
+
+    dispose_engine(database_url)
+
+
+def test_current_entitlement_uses_gross_consumption_for_ai_credit_summary(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        subscription = session.get(AccountSubscription, "sub_site_alpha_pro")
+        assert subscription is not None
+        subscription.current_period_start_at = now - timedelta(days=1)
+        subscription.current_period_end_at = now + timedelta(days=29)
+        repository = CommercialRepository(session)
+        for event_type, source_id, delta in (
+            ("grant", "entitlement-credit-grant", 900.0),
+            ("adjustment", "entitlement-credit-adjustment", 100.0),
+            ("consume", "entitlement-credit-consumption", -8.0),
+        ):
+            repository.record_credit_ledger_entry(
+                account_id=subscription.account_id,
+                site_id="site_alpha",
+                subscription_id=subscription.subscription_id,
+                plan_version_id=subscription.plan_version_id,
+                run_id="run-entitlement-credit" if event_type == "consume" else None,
+                provider_call_id=None,
+                event_type=event_type,
+                source_type=(
+                    "tokens_total"
+                    if event_type == "consume"
+                    else "operator_credit_adjustment"
+                ),
+                source_id=source_id,
+                ai_credit_delta=delta,
+                quantity=abs(delta),
+                unit="ai_credits",
+                rate=1,
+                rate_unit=None,
+                rate_version="ai-credit-ledger-v2",
+                idempotency_key=f"{source_id}-001",
+                created_at=now,
+            )
+        session.commit()
+
+    query = "object_type=site&object_id=site_alpha"
+    response = client.get(
+        f"/v1/entitlements/current?{query}",
+        headers=build_auth_headers(
+            "GET",
+            "/v1/entitlements/current",
+            site_id="site_alpha",
+            query=query,
+        ),
+    )
+
+    assert response.status_code == 200
+    summary = response.json()["data"]["quota_summary"]["ai_credit_usage_detail"][
+        "summary"
+    ]
+    assert summary["used"] == 8.0
+    assert summary["limit"] == 11000.0
+    assert summary["remaining"] == 10992.0
+    assert summary["unit"] == "ai_credits"
 
     dispose_engine(database_url)
 

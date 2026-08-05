@@ -14,14 +14,43 @@ const architectureSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-i
 const agentsSource = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
 const pullRequestTemplateSource = readFileSync(join(repositoryRoot, '.github/pull_request_template.md'), 'utf8');
 const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'), 'utf8');
+const tailwindConfigSource = readFileSync(fromFrontendRoot('tailwind.config.ts'), 'utf8');
 const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
 const workbenchSource = readFileSync(fromFrontendRoot('src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const configurationTableSource = readFileSync(fromFrontendRoot('src/components/admin/AdminConfigurationTable.tsx'), 'utf8');
 const emptyStateSource = readFileSync(fromFrontendRoot('src/components/admin/AdminEmptyState.tsx'), 'utf8');
+const backofficeScaffoldSource = readFileSync(fromFrontendRoot('src/components/backoffice/BackofficeScaffold.tsx'), 'utf8');
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
 const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
+const subscriptionsPageSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/page.tsx'), 'utf8');
+const subscriptionDetailPageSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
+const troubleshootingPageSource = readFileSync(fromFrontendRoot('src/app/admin/troubleshooting/page.tsx'), 'utf8');
+const vectorSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/vector-settings/page.tsx'), 'utf8');
+const runtimeProfilesPageSource = readFileSync(fromFrontendRoot('src/app/admin/runtime-profiles/page.tsx'), 'utf8');
 const serviceSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
+const creditPacksPageSource = readFileSync(fromFrontendRoot('src/app/admin/credit-packs/page.tsx'), 'utf8');
+const siteCompliancePageSource = readFileSync(fromFrontendRoot('src/app/admin/site-compliance/page.tsx'), 'utf8');
+const unifiedOperationalHeaderSources = [
+  ['overview', 'src/app/admin/page.tsx'],
+  ['accounts', 'src/app/admin/accounts/page.tsx'],
+  ['account detail', 'src/app/admin/accounts/[accountId]/page.tsx'],
+  ['AI resources', 'src/app/admin/ai-resources/page.tsx'],
+  ['AI advisor', 'src/app/admin/ai-advisor/page.tsx'],
+  ['coverage', 'src/app/admin/coverage/page.tsx'],
+  ['plans', 'src/app/admin/plans/page.tsx'],
+  ['site detail', 'src/app/admin/sites/[siteId]/page.tsx'],
+  ['subscriptions', 'src/app/admin/subscriptions/page.tsx'],
+  ['subscription detail', 'src/app/admin/subscriptions/[subscriptionId]/page.tsx'],
+  ['support queue', 'src/features/admin/support-requests/SupportRequestsWorkspace.tsx'],
+  ['support detail', 'src/app/admin/support-requests/[requestId]/page.tsx'],
+  ['external services', 'src/app/admin/external-services/page.tsx'],
+  ['troubleshooting', 'src/app/admin/troubleshooting/page.tsx'],
+  ['agent feedback', 'src/app/admin/agent-feedback/page.tsx'],
+  ['media observability', 'src/app/admin/media-observability/page.tsx'],
+  ['plugin observability', 'src/app/admin/plugin-observability/page.tsx'],
+  ['vector observability', 'src/app/admin/vector-observability/page.tsx'],
+].map(([name, path]) => [name, readFileSync(fromFrontendRoot(path), 'utf8')]);
 
 function listFiles(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -39,7 +68,12 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 4, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 7, 'admin UI manifest version must be explicit');
+assert.match(
+  tailwindConfigSource,
+  /\.\/src\/features\/\*\*\/\*\.\{js,ts,jsx,tsx,mdx\}/,
+  'Tailwind must compile utility classes owned by feature modules'
+);
 assert.equal(manifest.referenceRoute, '/admin/ai-resources', 'the accepted provider queue must remain the reference route');
 assert.equal(manifest.routes[manifest.referenceRoute], 'queue', 'the reference route must remain a queue page');
 assert.deepEqual(
@@ -47,8 +81,9 @@ assert.deepEqual(
   {
     queue: '/admin/ai-resources',
     configuration: '/admin/external-services',
+    diagnostic: '/admin/troubleshooting',
   },
-  'accepted reference routes must cover the queue and configuration models'
+  'accepted reference routes must cover the queue, configuration, and diagnostic models'
 );
 assert.deepEqual(
   manifest.pageModels,
@@ -146,6 +181,7 @@ assert.doesNotMatch(
 );
 
 for (const primitive of [
+  'AdminActionMenu',
   'AdminConfigurationTable',
   'AdminDataTableFrame',
   'AdminEmptyState',
@@ -193,6 +229,45 @@ assert.match(
   externalServicesPageSource,
   /AdminWorkbenchDialog[\s\S]*AdminConfigurationTable[\s\S]*AdminCredentialField/,
   'the reference configuration page must reuse workbench, configuration-table, and credential primitives'
+);
+assert.match(
+  backofficeScaffoldSource,
+  /export function BackofficePageHeader[\s\S]*descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"[\s\S]*export function BackofficeConfigurationHeader[\s\S]*<BackofficePageHeader/,
+  'the shared page header must own compact geometry, hint disclosure, action placement, and summary density while keeping the configuration alias'
+);
+for (const [name, source] of [
+  ['vector settings', vectorSettingsPageSource],
+  ['runtime profiles', runtimeProfilesPageSource],
+  ['credit packs', creditPacksPageSource],
+  ['service settings', serviceSettingsPageSource],
+  ['site compliance', siteCompliancePageSource],
+]) {
+  assert.match(source, /<BackofficeConfigurationHeader/, `${name} must use the shared configuration header`);
+  assert.doesNotMatch(source, /<BackofficePrimaryPanel/, `${name} must not fork configuration-header geometry`);
+  assert.match(source, /summaryItems=\{(?:\[|metrics)/, `${name} must project its readiness facts through the shared summary slot`);
+}
+assert.match(
+  externalServicesPageSource,
+  /<BackofficePageHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
+  'external services must use the shared page header and keep diagnostics secondary to row-level configuration work'
+);
+for (const [name, source] of unifiedOperationalHeaderSources) {
+  assert.match(source, /<BackofficePageHeader/, `${name} must use the shared top-level page header`);
+}
+assert.match(
+  standardSource,
+  /Every non-authentication Admin route uses `BackofficePageHeader`[\s\S]*`BackofficeConfigurationHeader` remains the[\s\S]*compatibility alias[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,
+  'the Admin UI standard must distinguish the page header from nested section headers'
+);
+assert.match(
+  vectorSettingsPageSource,
+  /<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/vector-observability"[\s\S]*summaryItems=\{\[/,
+  'vector settings must keep diagnostics secondary to configuration work'
+);
+assert.match(
+  runtimeProfilesPageSource,
+  /data-page-model="configuration"[\s\S]*<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/ai-resources"[\s\S]*primaryAction=\{[\s\S]*saveProfiles\(\)[\s\S]*summaryItems=\{\[[\s\S]*summaryAside=/,
+  'runtime profiles must declare its page model and keep supplier navigation secondary to the one save action'
 );
 assert.match(
   configurationTableSource,

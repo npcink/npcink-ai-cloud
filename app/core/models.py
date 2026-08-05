@@ -619,7 +619,7 @@ class AccountUserMembership(Base):
             "account_id",
             name="uq_account_user_memberships_principal_account",
         ),
-        CheckConstraint("role IN ('user')", name="ck_account_user_memberships_role"),
+        CheckConstraint("role IN ('owner')", name="ck_account_user_memberships_role"),
         Index(
             "ix_account_user_memberships_principal_status_account",
             "principal_id",
@@ -634,7 +634,7 @@ class AccountUserMembership(Base):
         index=True,
     )
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.account_id"), index=True)
-    role: Mapped[str] = mapped_column(String(64), default="user", index=True)
+    role: Mapped[str] = mapped_column(String(64), default="owner", index=True)
     status: Mapped[str] = mapped_column(
         String(32),
         default=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
@@ -660,6 +660,10 @@ class SupportRequest(Base):
             "status IN ('open', 'in_progress', 'resolved', 'closed')",
             name="ck_support_requests_status",
         ),
+        CheckConstraint(
+            "waiting_on IN ('operator', 'customer', 'none')",
+            name="ck_support_requests_waiting_on",
+        ),
     )
 
     request_id: Mapped[str] = mapped_column(String(191), primary_key=True)
@@ -678,6 +682,28 @@ class SupportRequest(Base):
     source_path: Mapped[str] = mapped_column(String(191), default="")
     admin_note: Mapped[str | None] = mapped_column(Text)
     context_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    first_operator_response_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    last_customer_activity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    last_operator_public_activity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    waiting_on: Mapped[str] = mapped_column(
+        String(32),
+        default="operator",
+        server_default="operator",
+        index=True,
+    )
+    waiting_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(

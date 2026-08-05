@@ -69,7 +69,10 @@ Before changing this repository, an AI agent MUST:
 4. preserve all existing user changes;
 5. create a clean `codex/*` worktree from current `origin/master` when the
    active worktree is dirty, on another branch, or not synchronized;
-6. report a compact change envelope before editing.
+6. immediately lock any auxiliary worktree created by the session with
+   `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
+   verify its reason in `git worktree list --porcelain`;
+7. report a compact change envelope before editing.
 
 The change envelope MUST state:
 
@@ -86,6 +89,15 @@ The change envelope MUST state:
 An agent MUST NOT use `reset`, `stash`, checkout-based cleanup, or overwrite
 user changes merely to obtain a clean worktree.
 
+This Git worktree lock protects the task's authoring state from accidental
+cleanup; it is not the M4 operation lock and does not grant shared-runtime
+ownership. Keep it while the task or PR is open. Unlock it only after the task
+has ended, the PR is confirmed merged, and the worktree is clean, using the
+no-deliverable, handoff, and stale-lock recovery rules in
+[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md).
+Explicit parallel handoffs add the coordination rules in the parallel
+collaboration standard.
+
 ## 4. Select the Smallest Valid Lane
 
 M4 Preview is an integration runtime, not a mandatory inner loop. Classify the
@@ -97,7 +109,8 @@ change before selecting commands.
 | Cloud source | ordinary `app/**`, `frontend/**`, worker, migration, or runtime integration behavior | focused local gate, then `pnpm run m4:preview:sync` |
 | Build/runtime | dependency manifests or locks; Dockerfiles; Compose, proxy, base-image, or M4 deployment-script inputs | focused local gate, then `pnpm run m4:preview:deploy` |
 
-Frontend-only visual work MAY use an ephemeral frontend slot instead of
+When the operator explicitly enables the parallel collaboration mode,
+frontend-only visual work MAY use an ephemeral frontend slot instead of
 replacing the primary candidate when all of these are true:
 
 - the change needs no API, migration, worker, persistence, dependency, image,
@@ -317,6 +330,14 @@ replace, or take over that listener; the standard Ollama.app handoff requires
 explicit operator approval, and an unknown process requires read-only
 investigation.
 
+M4 source application MUST validate the fully extracted incoming Compose and
+Nginx inputs before changing the live source mirror. A configuration failure
+MUST retain the previous complete bind-mounted configuration and running
+services. The Nginx bind-mount source MUST be committed by same-filesystem
+atomic rename rather than live rsync overwrite; existing deployment, relay,
+slot, candidate/accepted, promotion, and post-commit fail-closed boundaries
+remain in force.
+
 Production validation, Cloudflare configuration, and external WordPress
 acceptance require separate explicit authorization.
 
@@ -470,8 +491,9 @@ Cloud integration runtime while:
   working day;
 - the full gate is reserved for closeout or high-risk changes;
 - single-operator use does not create material queueing.
-- two normal frontend-only visual slots absorb bounded UI concurrency without
-  multiplying the backend, database, workers, or accepted-state authority.
+- explicitly enabled parallel work may use the two bounded frontend-only
+  visual slots without multiplying the backend, database, workers, or
+  accepted-state authority.
 
 Reassess the setup when the thresholds are repeatedly exceeded, M4 downtime
 costs more than 30-60 minutes per week, multiple developers need concurrent
@@ -514,6 +536,7 @@ Never collapse these into a single unqualified "done".
 
 ```text
 [ ] Worktree state inspected; user changes preserved
+[ ] Every auxiliary task worktree created by this session was immediately locked as codex:<task-id>
 [ ] README, AGENTS, this standard, and relevant boundaries read
 [ ] Change envelope reported
 [ ] Change classified as local-only, Cloud source, or build/runtime
@@ -526,6 +549,7 @@ Never collapse these into a single unqualified "done".
 [ ] Candidate behavior and status verified
 [ ] Diff reviewed; only task files staged
 [ ] Focused commit pushed; PR reviewed and CI green
+[ ] Task worktree stayed locked while its PR was open and was unlocked only after documented closeout
 [ ] Merged master promoted with status/relevant smoke when M4 acceptance is required
 [ ] Accepted status matches clean current origin/master
 [ ] Production, Cloudflare, unrelated M4 workloads, and secrets untouched

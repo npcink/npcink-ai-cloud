@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.adapters.providers.base import (
     ProviderAdapter,
@@ -234,10 +234,11 @@ def _search_payload(
     current_post_id: int = 0,
     intent: str = "internal_links",
     source_types: list[str] | None = None,
+    post_types: list[str] | None = None,
     result_granularity: str | None = None,
 ) -> dict[str, object]:
     filters: dict[str, object] = {
-        "post_types": ["post", "page"],
+        "post_types": post_types or ["post", "page"],
         "status": ["publish"],
         "language": "zh-CN",
     }
@@ -283,14 +284,14 @@ def test_site_knowledge_search_input_helpers_bound_user_controlled_lists() -> No
     ) == ["post", "page", "comment"]
     assert _normalize_result_granularity(None) == "chunk"
     assert _normalize_result_granularity("document") == "document"
-    assert _embedding_space_readiness(
-        indexed_embedding_models=["tei:BAAI/bge-m3"],
-        query_embedding_model="tei:BAAI/bge-m3",
-    )["status"] == "ready"
     assert (
-        _embedding_space_id(provider_id="TEI", model_id="BAAI/bge-m3")
-        == "tei:BAAI/bge-m3"
+        _embedding_space_readiness(
+            indexed_embedding_models=["tei:BAAI/bge-m3"],
+            query_embedding_model="tei:BAAI/bge-m3",
+        )["status"]
+        == "ready"
     )
+    assert _embedding_space_id(provider_id="TEI", model_id="BAAI/bge-m3") == "tei:BAAI/bge-m3"
     assert _embedding_space_readiness(
         indexed_embedding_models=["tei:BAAI/bge-m3"],
         query_embedding_model="openai:BAAI/bge-m3",
@@ -408,6 +409,171 @@ def test_sync_remains_available_after_ordinary_ai_credits_are_exhausted(
     assert sync_credit_entries == []
 
 
+def test_media_projection_sync_and_natural_language_search(tmp_path: Path) -> None:
+    embedding_provider = _FakeEmbeddingProvider()
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True,
+            "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3",
+        },
+        providers={"tei": embedding_provider},
+    )
+    _execute(client, _sync_payload(), idempotency_key="legacy-post-space-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={"tei": embedding_provider},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+    with get_session(database_url) as session:
+        session.execute(
+            update(SiteKnowledgeChunk)
+            .where(SiteKnowledgeChunk.source_type == "post")
+            .values(embedding_model="deterministic:BAAI/bge-m3")
+        )
+        session.commit()
+
+    media_item = {
+        "attachment_id": 501,
+        "mime_type": "image/jpeg",
+        "title": "Mountain lake at sunrise",
+        "url": "https://example.test/uploads/mountain-lake.jpg",
+        "modified_gmt": "2026-07-29 08:00:00",
+        "alt": "",
+        "caption": "",
+        "description": "",
+        "visual_summary": "清晨金色阳光照亮雪山和安静湖面",
+        "visible_text": [],
+        "subject_tags": ["雪山", "湖泊", "日出", "自然风景"],
+        "alt_text_basis": "雪山、湖泊和金色晨光",
+        "media_fingerprint": "media-501-revision-1",
+        "vision_contract_version": "image_context_evidence.v1",
+        "vision_source": "cloud_vision_model",
+        "vision_model_id": "mqzj/gpt-5.4-mini",
+        "vision_run_id": "run_vision_501",
+        "confidence": 0.91,
+        "uncertainty_flags": ["文字区域较小"],
+    }
+
+    def sync_media(*, idempotency_key: str) -> dict[str, object]:
+        payload = _sync_payload()
+        payload["input"] = {
+            "contract_version": "site_knowledge_sync.v1",
+            "sync_mode": "refresh",
+            "post_ids": [501],
+            "media_items": [media_item],
+            "write_posture": "suggestion_only",
+            "direct_wordpress_write": False,
+        }
+        sync_result = _execute(client, payload, idempotency_key=idempotency_key)
+        run_id = sync_result["json"]["data"]["run_id"]
+        RuntimeService(
+            database_url,
+            settings=settings,
+            providers={"tei": embedding_provider},
+            runtime_queue=runtime_queue,
+        ).process_next_queued_run(timeout_seconds=0)
+        return RuntimeService(
+            database_url,
+            settings=settings,
+            providers={"tei": embedding_provider},
+        ).get_run_result(run_id, site_id="site_alpha")
+
+    worker_result = sync_media(idempotency_key="media-library-sync")
+    assert worker_result["result"]["sync"]["indexed_documents"] == 1
+    first_embedding_request_count = len(embedding_provider.requests)
+    assert first_embedding_request_count >= 1
+
+    status_result = _execute(
+        client,
+        {
+            "ability_name": "npcink-cloud/site-knowledge-status",
+            "contract_version": "site_knowledge_status.v1",
+            "execution_pattern": "inline",
+            "data_classification": "public_site_content",
+            "storage_mode": "result_only",
+            "input": {
+                "contract_version": "site_knowledge_status.v1",
+                "media_attachment_ids": [501],
+                "write_posture": "suggestion_only",
+            },
+        },
+        idempotency_key="media-evidence-status",
+    )["json"]["data"]["result"]
+    evidence_item = status_result["media_evidence_items"][0]
+    assert evidence_item["attachment_id"] == 501
+    assert evidence_item["media_fingerprint"] == "media-501-revision-1"
+    assert evidence_item["visual_evidence"] == {
+        "status": "ready",
+        "contract_version": "image_context_evidence.v1",
+        "source": "cloud_vision_model",
+        "model_id": "mqzj/gpt-5.4-mini",
+        "run_id": "run_vision_501",
+        "visual_summary": "清晨金色阳光照亮雪山和安静湖面",
+        "alt_text_basis": "雪山、湖泊和金色晨光",
+        "visible_text": [],
+        "subject_tags": ["雪山", "湖泊", "日出", "自然风景"],
+        "confidence": 0.91,
+        "uncertainty_flags": ["文字区域较小"],
+        "requires_human_visual_check": True,
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+
+    unchanged_result = sync_media(idempotency_key="media-library-sync-unchanged")
+    assert unchanged_result["result"]["sync"]["indexed_documents"] == 0
+    assert unchanged_result["result"]["sync"]["unchanged_documents"] == 1
+    assert len(embedding_provider.requests) == first_embedding_request_count
+
+    previous_content_hash = evidence_item["content_hash"]
+    media_item["alt"] = "清晨金色阳光下的雪山与湖泊"
+    changed_result = sync_media(idempotency_key="media-library-sync-alt-change")
+    assert changed_result["result"]["sync"]["indexed_documents"] == 1
+    assert changed_result["result"]["sync"]["unchanged_documents"] == 0
+    assert len(embedding_provider.requests) > first_embedding_request_count
+
+    changed_status = _execute(
+        client,
+        {
+            "ability_name": "npcink-cloud/site-knowledge-status",
+            "contract_version": "site_knowledge_status.v1",
+            "execution_pattern": "inline",
+            "data_classification": "public_site_content",
+            "storage_mode": "result_only",
+            "input": {
+                "contract_version": "site_knowledge_status.v1",
+                "media_attachment_ids": [501],
+                "write_posture": "suggestion_only",
+            },
+        },
+        idempotency_key="media-evidence-status-after-alt-change",
+    )["json"]["data"]["result"]["media_evidence_items"][0]
+    assert changed_status["media_fingerprint"] == "media-501-revision-1"
+    assert changed_status["content_hash"] != previous_content_hash
+
+    result = _execute(
+        client,
+        _search_payload(
+            "清晨雪山湖泊",
+            intent="media_library_search",
+            source_types=["media"],
+            post_types=["attachment"],
+            result_granularity="document",
+        ),
+        idempotency_key="media-library-search",
+    )["json"]["data"]["result"]
+
+    assert result["status"] == "ready"
+    assert result["intent"] == "media_library_search"
+    assert result["results"][0]["source_type"] == "media"
+    assert result["results"][0]["source_id"] == 501
+    assert result["results"][0]["suggested_use"] == "media_library_candidate"
+    assert result["results"][0]["url"].endswith("/mountain-lake.jpg")
+
+
 def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     database_url, settings, runtime_queue, client = _build_client(tmp_path)
     sync_result = _execute(client, _sync_payload(), idempotency_key="sync-then-search")
@@ -477,9 +643,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
             )
         )
         assert document is not None
-        assert document.metadata_json["excerpt"] == (
-            "Notes about Cloud managed site knowledge."
-        )
+        assert document.metadata_json["excerpt"] == ("Notes about Cloud managed site knowledge.")
         assert document.metadata_json["taxonomies"] == {
             "category": ["Cloud Runtime", "WordPress AI"],
             "post_tag": ["Site Knowledge", "Writing"],
@@ -605,8 +769,8 @@ def test_document_search_returns_each_post_once_with_bounded_chunk_refs(
     assert len(result["results"]) == 1
     assert result["results"][0]["post_id"] == 123
     assert result["results"][0]["matched_chunk_count"] > 1
-    assert len(result["results"][0]["matched_chunks"]) == (
-        result["results"][0]["matched_chunk_count"]
+    assert (
+        len(result["results"][0]["matched_chunks"]) == (result["results"][0]["matched_chunk_count"])
     )
     assert result["result_grouping"]["strategy"] == "best_ranked_chunk_per_document"
     assert result["result_grouping"]["duplicate_chunks_collapsed"] > 0
@@ -650,6 +814,71 @@ def test_search_fails_closed_when_index_and_query_embedding_spaces_differ(
         "action": "rebuild_index_with_current_embedding_model",
     }
     assert result["result_grouping"]["returned_count"] == 0
+
+
+def test_media_search_rejects_deterministic_placeholder_embeddings(
+    tmp_path: Path,
+) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    payload = _sync_payload()
+    payload["input"] = {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "refresh",
+        "post_ids": [501],
+        "media_items": [
+            {
+                "attachment_id": 501,
+                "mime_type": "image/jpeg",
+                "title": "Cat on a windowsill",
+                "url": "https://example.test/uploads/cat.jpg",
+                "modified_gmt": "2026-07-29 08:00:00",
+                "visual_summary": "一只猫咪坐在窗台上",
+                "subject_tags": ["猫咪", "宠物"],
+                "media_fingerprint": "media-501-cat",
+            }
+        ],
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+    _execute(client, payload, idempotency_key="deterministic-media-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+
+    result = _execute(
+        client,
+        _search_payload(
+            "猫咪",
+            intent="media_library_search",
+            source_types=["media"],
+            post_types=["attachment"],
+            result_granularity="document",
+        ),
+        idempotency_key="deterministic-media-search",
+    )["json"]["data"]["result"]
+
+    assert result["status"] == "not_ready"
+    assert result["results"] == []
+    assert result["evidence_gate"]["status"] == "insufficient_evidence"
+    assert result["rerank"] == {
+        "status": "skipped",
+        "reason": "semantic_embedding_required",
+        "candidate_count": 0,
+    }
+    assert result["retrieval_readiness"] == {
+        "status": "semantic_embedding_required",
+        "query_embedding_model": "deterministic:BAAI/bge-m3",
+        "indexed_embedding_models": ["deterministic:BAAI/bge-m3"],
+        "action": "configure_semantic_embedding_and_rebuild_index",
+    }
+    assert result["result_grouping"]["returned_count"] == 0
+    assert result["result_grouping"]["duplicate_media_collapsed"] == 0
+    assert (
+        result["result_grouping"]["ranking_strategy"]
+        == "semantic_plus_bounded_lexical"
+    )
 
 
 def test_site_knowledge_postgres_fallback_search_uses_chunk_limit(
@@ -1283,10 +1512,7 @@ def test_sync_strips_style_script_noise_before_indexing(tmp_path: Path) -> None:
         "title": "AI 摘要 &#8211; 页面",
         "url": "https://example.test/ai-summary",
         "modified_gmt": "2026-06-03 02:00:00",
-        "excerpt": (
-            "<StYlE data-source='untrusted'>STYLE_SECRET_TEXT</STYLE   >"
-            "AI 摘要页面说明"
-        ),
+        "excerpt": ("<StYlE data-source='untrusted'>STYLE_SECRET_TEXT</STYLE   >AI 摘要页面说明"),
         "content_excerpt": (
             "<ScRiPt type='text/javascript'>SCRIPT_SECRET_TEXT"
             "</sCrIpT\t\n data-tail='untrusted'>"

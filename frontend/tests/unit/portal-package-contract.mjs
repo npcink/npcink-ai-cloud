@@ -12,6 +12,8 @@ const paymentReturnNoticePath = resolve(root, 'src/components/portal/PortalPayme
 const paymentOrdersHookPath = resolve(root, 'src/hooks/usePortalPaymentOrders.ts');
 const portalClientPath = resolve(root, 'src/lib/portal-client.ts');
 const siteRecordPath = resolve(root, 'src/app/portal/sites/[siteId]/page.tsx');
+const usagePagePath = resolve(root, 'src/app/portal/usage/page.tsx');
+const utilsPath = resolve(root, 'src/lib/utils.ts');
 
 const packageDisplaySource = readFileSync(packageDisplayPath, 'utf8');
 assert.match(
@@ -44,6 +46,8 @@ const paymentOrdersHookSource = readFileSync(paymentOrdersHookPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEntitlementUsage.tsx');
 const entitlementComponentSource = readFileSync(entitlementComponentPath, 'utf8');
+const usagePageSource = readFileSync(usagePagePath, 'utf8');
+const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
   packagePanelSource,
   /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
@@ -120,6 +124,36 @@ assert.match(
   'Portal package page must poll the canonical order and render confirmed payment state'
 );
 assert.match(
+  billingPageSource,
+  /<PortalPaymentReturnNotice[\s\S]*locale=\{locale\}/,
+  'the payment return notice must receive the current application locale explicitly'
+);
+assert.match(
+  paymentReturnNoticeSource,
+  /formatDateTime\(nextExpiry, locale\)/,
+  'the payment return notice must preserve the paid-credit cutoff time with the current application locale'
+);
+assert.match(
+  entitlementComponentSource,
+  /paidExpiryDate[\s\S]*formatDateOnly\(metric\.paid_next_expires_at, locale\)/,
+  'the entitlement summary must format paid-credit expiry with the current application locale'
+);
+assert.doesNotMatch(
+  entitlementComponentSource,
+  /toLocaleDateString/,
+  'the entitlement summary must not fall back to the browser default locale'
+);
+assert.match(
+  usagePageSource,
+  /formatDateTime\(nextPaidCreditExpiry, locale\)/,
+  'the usage overview must preserve the paid-credit cutoff time with the current application locale'
+);
+assert.match(
+  utilsSource,
+  /formatDateTime[\s\S]*resolvedLocale === 'en' \? 'en-US' : 'zh-CN'[\s\S]*formatDateOnly[\s\S]*resolvedLocale === 'en' \? 'en-US' : 'zh-CN'/,
+  'the shared date formatters must map supported application locales explicitly'
+);
+assert.match(
   paymentReturnNoticeSource,
   /reconciled[\s\S]*data-payment-return-metric="credited"[\s\S]*data-payment-return-metric="total-available"[\s\S]*data-payment-return-metric="next-expiry"/,
   'Confirmed credit-pack payment notice must show credited amount, total available, and expiry after reconciliation'
@@ -128,6 +162,16 @@ assert.match(
   paymentReturnNoticeSource,
   /shouldPoll[\s\S]*visible[\s\S]*order/,
   'Payment success notice must remain visible after return query parameters are cleaned'
+);
+assert.match(
+  paymentReturnNoticeSource,
+  /isPaidPaymentStatus[\s\S]*isClosedPaymentStatus[\s\S]*Promise\.allSettled/,
+  'Payment return polling must use explicit terminal states and tolerate partial refresh failure'
+);
+assert.doesNotMatch(
+  paymentReturnNoticeSource,
+  /status && status !== 'pending'/,
+  'Payment return polling must not treat every unknown non-pending status as terminal'
 );
 assert.match(
   packagePanelSource,

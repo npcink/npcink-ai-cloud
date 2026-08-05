@@ -85,6 +85,14 @@ test('fixed service directory uses a table and one configuration workbench', asy
   await page.setViewportSize({ width: 1440, height: 1050 });
   const writes = await installExternalServicesHarness(page);
   await page.goto('/admin/external-services');
+  const pageHeader = page.locator('[data-ui="backoffice-page-header"]');
+  await expect(pageHeader).toBeVisible();
+  const headerScreenshotPath = testInfo.outputPath('admin-external-services-unified-header-pc.png');
+  await pageHeader.screenshot({ path: headerScreenshotPath });
+  await testInfo.attach('admin-external-services-unified-header-pc', {
+    path: headerScreenshotPath,
+    contentType: 'image/png',
+  });
 
   await expect(page.locator('[data-ui="external-service-table"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="tavily"]')).toBeVisible();
@@ -97,6 +105,12 @@ test('fixed service directory uses a table and one configuration workbench', asy
     caret: 'hide',
     scale: 'css',
     maxDiffPixelRatio: 0.015,
+  });
+  const pageScreenshotPath = testInfo.outputPath('admin-external-services-page-pc.png');
+  await page.screenshot({ path: pageScreenshotPath, fullPage: true, animations: 'disabled' });
+  await testInfo.attach('admin-external-services-page-pc', {
+    path: pageScreenshotPath,
+    contentType: 'image/png',
   });
 
   await page.getByRole('tab', { name: /Image sources|图库来源/i }).click();

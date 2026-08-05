@@ -149,7 +149,14 @@ Before accepting the validation environment:
   `verify-full` with the submitted CA;
 - complete WordPress text and image round trips from
   `https://magick-ai.local/` without Cloud writing CMS content directly;
-- observe the host and RDS for 24 to 72 hours;
+- follow the bounded evidence, Provider-budget, zero-write, and exact-cleanup
+  procedure in the
+  [Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md);
+- observe the host and RDS for 24 to 72 hours when external users or natural
+  traffic exist; for a declared no-user, no-natural-traffic internal validation,
+  the bounded 30–60 minute zero-call active-soak receipt in the Production
+  WordPress Round-Trip Validation Runbook may satisfy only this observation
+  item;
 - run one RDS backup restore drill to a separate validation target;
 - keep the old PostgreSQL 16 volume offline for seven days, then delete it only
   after the evidence and rollback decision are recorded.
@@ -168,6 +175,9 @@ Finalize atomically creates the root-owned permanent installation sentinel,
 removes any setup-auth residue, retires the old local PostgreSQL container, and
 only then releases rollback assets for later pruning. Do not run it merely
 because the browser reported success; it is the operator acceptance boundary.
+The internal active-soak substitution never authorizes this command by itself;
+the controlled CVE gate, restore/rollback evidence, WordPress acceptance, and a
+new explicit operator authorization must still pass.
 The permanent sentinel is `/opt/npcink-ai-cloud/.installation-complete`; the
 protected pending/finalizing marker remains until every cleanup step succeeds.
 
@@ -193,9 +203,6 @@ rollback release/images. Re-run the originally blocked acceptance only; finalize
 after the complete acceptance evidence exists. If migration started and the
 repair fails, keep public/write services stopped and use the recorded RDS backup
 with the matched release instead of automatically restarting old code.
-The repair command must not include `--refresh-providers` or set
-`NPCINK_CLOUD_REFRESH_PROVIDERS=1`; provider projection refresh is unrelated to
-the acceptance blocker and is rejected before deployment mutation.
 Do not run `first-install-rollback.sh` for this complete-state repair: that
 helper is intentionally limited to the pre-Setup `installation_state=pending`
 contract. A repair rollback restores the recorded RDS backup and matched

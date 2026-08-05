@@ -102,6 +102,10 @@ Optional fields:
 - `operator_note`
 - `local_proposal_id`
 - `evidence_ref_ids`
+- `source_action_id`
+- `source_object_type`
+- `source_object_id`
+- `source_reason_codes`
 - `redaction_status`
 - `retention_class`
 
@@ -149,6 +153,16 @@ execute, approve, publish, or mutate the customer site.
 - `visual_quality_low`
 - `operator_confidence_high`
 - `operator_confidence_low`
+- `media_search_has_results`
+- `media_search_no_results`
+- `media_search_runtime_error`
+- `media_candidate_adopted`
+- `alt_suggestion_applied`
+- `alt_saved_unchanged`
+- `alt_saved_edited`
+- `alt_saved_decorative`
+- `alt_saved_cleared`
+- `alt_suggestion_not_saved`
 
 Labels should be additive. Do not overload one label to mean both quality and
 governance state.
@@ -191,6 +205,8 @@ Must not be used as default cross-tenant training data:
 - unredacted operator notes
 - raw prompt text when it includes site-private details
 - final edited post content
+- raw natural-language media search queries
+- suggested, edited, or saved ALT text
 
 If operator notes are sent to Cloud, they must be treated as tenant-scoped
 quality feedback by default. Cross-tenant use requires redaction or explicit
@@ -224,6 +240,33 @@ feedback event
 Cloud may recommend improvements, but local or operator-controlled review must
 decide whether a changed prompt, profile, router, or workflow contract is
 adopted.
+
+## Media Recommendation Quality
+
+Site-media search and contextual ALT flows reuse this contract instead of
+creating a second analytics endpoint or table.
+
+- One random, short-lived `media_search_session` object id correlates a search
+  completion with a later candidate-adoption action.
+- Search events store only `media_search_has_results`,
+  `media_search_no_results`, or `media_search_runtime_error`, plus a coarse
+  result-count reason code. The query is never stored in feedback.
+- Candidate adoption counts only a real use action such as featured-image
+  adoption, paragraph media selection, or governed import. Candidate inspection
+  is not adoption.
+- Contextual ALT events correlate one editor occurrence from
+  `alt_suggestion_applied` to a successful, non-autosave WordPress post save.
+  The saved outcome is `alt_saved_unchanged`, `alt_saved_edited`,
+  `alt_saved_decorative`, `alt_saved_cleared`, or
+  `alt_suggestion_not_saved`.
+- ALT text is compared locally and never sent to Cloud.
+- The first rollup covers saved `core/image` block ALT only. It does not claim
+  that media-library attachment ALT was written.
+
+The read-only summary exposes `media_quality` with search success, candidate
+adoption, saved ALT modification, sample sufficiency, and featured/paragraph
+surface splits. Runtime failures are reported separately and do not lower the
+search-result quality rate.
 
 ## Site Knowledge First Scenario
 

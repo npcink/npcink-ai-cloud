@@ -18,7 +18,7 @@ from app.adapters.providers.minimax import (
 )
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import CatalogRevision
+from app.core.models import CatalogRevision, ProviderConnection, RoutingBinding
 from app.domain.catalog.service import CatalogService
 from app.domain.hosted_model_defaults import (
     AUDIO_NARRATION_MODEL_ID,
@@ -210,6 +210,113 @@ def test_free_gpt55_profile_filters_to_free_hosted_model(tmp_path: Path) -> None
     dispose_engine(database_url)
 
 
+def test_wordpress_text_profile_ignores_embedding_only_provider_candidates(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    with get_session(database_url) as session:
+        session.add_all(
+            [
+                ProviderConnection(
+                    connection_id="mqzj",
+                    provider_type="openai_compatible",
+                    display_name="Hosted text",
+                    enabled=True,
+                    base_url="https://provider.example.test/v1",
+                    config_json={
+                        "provider_id": "openai",
+                        "kind": "openai_compatible",
+                        "capability_ids": ["text_generation"],
+                        "model_ids": ["gpt-5.5"],
+                    },
+                    secret_ciphertext="configured-in-test",
+                    status="ready",
+                    source_role="execution_source",
+                    metadata_json={},
+                ),
+                ProviderConnection(
+                    connection_id="ollama_embedding",
+                    provider_type="openai_compatible",
+                    display_name="Embedding only",
+                    enabled=True,
+                    base_url="http://127.0.0.1:11434/v1",
+                    config_json={
+                        "provider_id": "ollama-embedding",
+                        "kind": "openai_compatible",
+                        "capability_ids": ["embedding"],
+                        "model_ids": ["qwen2.5:1.5b"],
+                        "secretless": True,
+                    },
+                    secret_ciphertext=None,
+                    status="ready",
+                    source_role="execution_source",
+                    metadata_json={},
+                ),
+            ]
+        )
+        session.commit()
+
+    hosted_snapshot = ProviderCatalogSnapshot(
+        provider_id="openai",
+        display_name="Hosted text",
+        adapter_type="openai",
+        models=[
+            CatalogModelSeed(
+                model_id="gpt-5.5",
+                family="gpt-5.5",
+                feature="text",
+                status="available",
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="openai-global-free-gpt55",
+                        endpoint_variant="responses",
+                        region="global",
+                        capability_tags=["text", "quality", "free-gpt55", "hosted-free"],
+                        weight=140,
+                    )
+                ],
+            )
+        ],
+    )
+    embedding_snapshot = ProviderCatalogSnapshot(
+        provider_id="ollama-embedding",
+        display_name="Embedding only",
+        adapter_type="openai",
+        models=[
+            CatalogModelSeed(
+                model_id="ollama-embedding/qwen2.5:1.5b",
+                family="qwen2.5",
+                feature="text",
+                status="available",
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="ollama-embedding-global-qwen2-5-1-5b",
+                        endpoint_variant="chat_completions",
+                        region="global",
+                        capability_tags=["text", "balanced"],
+                        weight=100,
+                    )
+                ],
+            )
+        ],
+    )
+    CatalogService(
+        database_url,
+        providers={
+            "openai": SequenceCatalogProvider([hosted_snapshot]),
+            "ollama-embedding": SequenceCatalogProvider([embedding_snapshot]),
+        },
+    ).refresh_catalog()
+
+    with get_session(database_url) as session:
+        binding = session.get(RoutingBinding, "wp-ai.short-text")
+        assert binding is not None
+        assert binding.candidate_instance_ids == ["openai-global-free-gpt55"]
+
+    dispose_engine(database_url)
+
+
 def test_text_ai_profile_filters_to_hosted_free_model_without_exact_model_pin(
     tmp_path: Path,
 ) -> None:
@@ -252,9 +359,7 @@ def test_text_ai_profile_filters_to_hosted_free_model_without_exact_model_pin(
 
     models = service.list_models(recommended_for=TEXT_AI_PROFILE_ID)
 
-    assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["model_ids"] == [
-        "gpt-hosted-free-next"
-    ]
+    assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["model_ids"] == ["gpt-hosted-free-next"]
     assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["instance_ids"] == [
         "openai-global-hosted-free-next"
     ]
@@ -354,9 +459,7 @@ def test_audio_narration_profile_filters_to_minimax_audio_model(tmp_path: Path) 
                     "openapi": "3.1.0",
                     "components": {
                         "schemas": {
-                            "Request": {
-                                "properties": {"model": {"type": "string", "enum": []}}
-                            }
+                            "Request": {"properties": {"model": {"type": "string", "enum": []}}}
                         }
                     },
                 },

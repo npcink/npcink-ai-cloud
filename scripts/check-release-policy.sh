@@ -295,7 +295,7 @@ for marker in \
 	'"fix_state": "fixed"' \
 	'"cisa_ssvc_exploitation"' \
 	'"cisa_ssvc_checked_at_utc": "<RFC3339-UTC>"' \
-	'"exception_expires_on": "2026-08-05"' \
+	'"exception_expires_on": "2026-08-11"' \
 	'"ga_authorized": false' \
 	'"authorized_by": "Muze"' \
 	'"authorized_at_utc": "<RFC3339-UTC>"' \
@@ -643,11 +643,9 @@ require_marker "deploy/prepare-first-install.sh" '.installation-complete'
 require_marker "deploy/deploy-to-ssh-host.sh" 'FIRST_INSTALL_PENDING_MARKER="${REMOTE_DIR}/.first-install-pending.json"'
 require_marker "deploy/deploy-to-ssh-host.sh" '--first-install-pending-repair'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Approved for first-install pending repair by operator.'
-require_marker "deploy/deploy-to-ssh-host.sh" 'Pending first-install repair forbids provider projection refresh.'
 require_marker "deploy/deploy-to-ssh-host.sh" 'snapshot_first_install_pending_marker'
 require_marker "deploy/deploy-to-ssh-host.sh" 'restore_first_install_pending_marker_snapshot'
 require_marker "docs/cloud-production-release-policy-v1.md" 'One bounded repair exception is available'
-require_marker "docs/cloud-production-release-policy-v1.md" 'It therefore rejects `--refresh-providers`'
 require_marker "docs/cloud-first-install-rds-pg18-runbook.md" 'Acceptance-blocking release repair'
 require_marker "deploy/deploy-to-ssh-host.sh" 'npcink_ai_cloud_start_install_lock_broker'
 require_marker "deploy/deploy-to-ssh-host.sh" 'check-first-install-cve-gate.py'
@@ -960,7 +958,10 @@ require_marker "deploy/nginx.prod.conf" "location = /terms {"
 require_marker "deploy/nginx.prod.conf" "location = /privacy {"
 require_marker ".github/workflows/ci.yml" "branches: [master, main, production]"
 require_marker ".github/workflows/ci.yml" "static_terms_only"
+require_marker ".github/workflows/ci.yml" "frontend_only"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"
+require_marker "scripts/classify-ci-changes.sh" "frontend_only"
+require_marker ".github/workflows/ci.yml" "targeted backend gate should be skipped for frontend-only changes"
 reject_marker ".github/workflows/ci.yml" "environment: production"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"

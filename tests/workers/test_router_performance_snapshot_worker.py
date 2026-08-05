@@ -9,7 +9,9 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
 from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.callback_security import RuntimeCallbackTargetValidationError
 from app.core.config import Settings
@@ -145,7 +147,7 @@ def test_router_performance_snapshot_worker_dispatches_optional_callback_when_co
     seed_site_auth(database_url, site_id="site_alpha", scopes=["stats:read"])
 
     with get_session(database_url) as session:
-        site = CommercialRepository(session).get_site("site_alpha")
+        site = CommercialAccountSiteRepository(session).get_site("site_alpha")
         assert site is not None
         site.metadata_json = {
             "public_base_url": "https://wp.example.test",

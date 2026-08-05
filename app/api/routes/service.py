@@ -135,8 +135,9 @@ def _coerce_int(value: object, *, default: int) -> int:
 
 
 class AccountPayload(BaseModel):
-    account_id: str
+    account_id: str = ""
     name: str
+    primary_email: str = ""
     status: str = "active"
     metadata: dict[str, Any] = Field(default_factory=dict)
     bind_default_free: bool = False
@@ -147,12 +148,12 @@ class AccountStatusPayload(BaseModel):
 
 
 class PortalUserDisablePayload(BaseModel):
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
 class PortalUsersBatchDisablePayload(BaseModel):
     principal_ids: list[str] = Field(default_factory=list)
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
 class AdminSupportRequestUpdatePayload(BaseModel):
@@ -237,6 +238,19 @@ class PlanVersionPayload(BaseModel):
     policy: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     sales_price_cny: float | None = Field(default=None, ge=0)
+
+
+class AdminPlanParametersPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monthly_included_points: float = Field(ge=0)
+    site_limit: int = Field(ge=1)
+    max_vector_documents: int = Field(ge=0)
+    max_cost_cny_per_period: float = Field(ge=0)
+    sales_price_cny: float = Field(ge=0)
+    max_active_runs: int = Field(ge=0)
+    max_batch_items: int = Field(ge=0)
+    grace_period_days: int = Field(ge=0)
 
 
 class SubscriptionPayload(BaseModel):
@@ -1324,6 +1338,7 @@ async def upsert_account(
         result = service.upsert_account(
             account_id=payload.account_id,
             name=payload.name,
+            primary_email=payload.primary_email,
             status=payload.status,
             metadata_json=payload.metadata,
             bind_default_free=payload.bind_default_free,
@@ -2838,6 +2853,11 @@ async def list_admin_support_requests(
     status: str = Query(default="", max_length=32),
     topic: str = Query(default="", max_length=64),
     q: str = Query(default="", max_length=191),
+    attention: str = Query(
+        default="",
+        pattern="^(|waiting_for_operator|overdue)$",
+    ),
+    sort: str = Query(default="risk", pattern="^(risk|updated_at)$"),
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> Any:
@@ -2849,6 +2869,8 @@ async def list_admin_support_requests(
             status=status,
             topic=topic,
             query=q,
+            attention=attention,
+            sort=sort,
             limit=limit,
             offset=offset,
         )
@@ -2858,7 +2880,7 @@ async def list_admin_support_requests(
         status="ok",
         message="support requests loaded",
         data=result,
-        revision="m6",
+        revision="m7",
     )
 
 
@@ -3243,6 +3265,12 @@ async def disable_admin_portal_user(
             payload_json=_build_audit_payload(payload),
         )
         return _service_error_response(error, request=request)
+    disable_outcome = str(result.get("outcome") or "disabled")
+    effective_summary = (
+        f"Principal {principal_id} was already disabled; active portal access remains revoked."
+        if disable_outcome == "already_disabled"
+        else f"Principal {principal_id} was disabled and active portal access was revoked."
+    )
     return build_envelope(
         status="ok",
         message="admin portal user disabled",
@@ -3253,9 +3281,7 @@ async def disable_admin_portal_user(
                 scope_kind="principal",
                 scope_id=principal_id,
                 outcome="succeeded",
-                effective_summary=(
-                    f"Principal {principal_id} was disabled and active portal access was revoked."
-                ),
+                effective_summary=effective_summary,
             ),
         ),
         revision="m6",
@@ -3472,6 +3498,10 @@ async def list_admin_subscriptions(
     account_id: str | None = Query(default=None),
     plan_id: str | None = Query(default=None),
     expires_before: datetime | None = Query(default=None),  # noqa: B008
+    risk: Literal["all", "needs_action", "critical", "warning", "monitor", "stable"] = Query(
+        default="all"
+    ),
+    sort: Literal["priority", "expiry", "customer"] = Query(default="priority"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
@@ -3484,6 +3514,8 @@ async def list_admin_subscriptions(
             account_id=account_id,
             plan_id=plan_id,
             expires_before=expires_before,
+            risk=risk,
+            sort=sort,
             offset=offset,
             limit=limit,
         )
@@ -3628,6 +3660,50 @@ async def get_admin_plan(
         status="ok",
         message="admin plan loaded",
         data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/plans/{plan_id}")
+async def update_admin_plan_parameters(
+    request: Request,
+    plan_id: str,
+    payload: AdminPlanParametersPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).update_admin_plan_parameters(
+            plan_id=plan_id,
+            monthly_included_points=payload.monthly_included_points,
+            site_limit=payload.site_limit,
+            max_vector_documents=payload.max_vector_documents,
+            max_cost_cny_per_period=payload.max_cost_cny_per_period,
+            sales_price_cny=payload.sales_price_cny,
+            max_active_runs=payload.max_active_runs,
+            max_batch_items=payload.max_batch_items,
+            grace_period_days=payload.grace_period_days,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="admin plan parameters updated",
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind="plan_version.publish",
+                scope_kind="plan_version",
+                scope_id=str(result.get("plan_version_id") or ""),
+                outcome="succeeded",
+                effective_summary=(
+                    f"Plan {plan_id} structured parameters are now published. "
+                    "Unexposed commercial policy fields were preserved."
+                ),
+            ),
+        ),
         revision="m6",
     )
 

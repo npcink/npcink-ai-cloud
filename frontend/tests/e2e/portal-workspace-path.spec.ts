@@ -113,6 +113,9 @@ async function installPortalMocks(
   page: Page,
   options: {
     paymentReturnFlow?: boolean;
+    paymentReturnProcessingStep?: boolean;
+    delaySessionRefresh?: boolean;
+    failPaymentReturnEntitlements?: boolean;
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
     delayInitialEntitlements?: boolean;
@@ -124,6 +127,8 @@ async function installPortalMocks(
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
+  let paymentReturnEntitlementsFailed = false;
+  let sessionRequestCount = 0;
   let accountProjectionRequestCount = 0;
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
@@ -131,6 +136,10 @@ async function installPortalMocks(
   let releaseInitialEntitlementsGate: (() => void) | null = null;
   const initialEntitlementsGate = new Promise<void>((resolve) => {
     releaseInitialEntitlementsGate = resolve;
+  });
+  let releaseSessionRefreshGate: (() => void) | null = null;
+  const sessionRefreshGate = new Promise<void>((resolve) => {
+    releaseSessionRefreshGate = resolve;
   });
 
   await page.context().addCookies([
@@ -154,6 +163,10 @@ async function installPortalMocks(
     const pathname = url.pathname.replace(/^\/api\/portal/, '').replace(/^\/portal\/v1/, '');
 
     if (pathname === '/session') {
+      sessionRequestCount += 1;
+      if (options.delaySessionRefresh && sessionRequestCount > 1) {
+        await sessionRefreshGate;
+      }
       const portalSession = buildPortalSession(selectedSiteId);
       await fulfillJson(route, options.withoutSelectedContext
         ? { ...portalSession, selected_context: null }
@@ -222,6 +235,15 @@ async function installPortalMocks(
 
     if (pathname === '/account/entitlements') {
       const requestSiteId = selectedSiteId;
+      if (
+        options.failPaymentReturnEntitlements
+        && paymentReturnConfirmed
+        && !paymentReturnEntitlementsFailed
+      ) {
+        paymentReturnEntitlementsFailed = true;
+        await fulfillError(route, 'service.entitlements_temporarily_unavailable');
+        return;
+      }
       if (options.failInitialEntitlements && !initialEntitlementsFailed) {
         initialEntitlementsFailed = true;
         await fulfillError(route, 'service.entitlements_temporarily_unavailable');
@@ -597,7 +619,11 @@ async function installPortalMocks(
       const orderId = decodeURIComponent(paymentOrderDetail[1]);
       if (options.paymentReturnFlow && orderId === 'pay_return_polling') {
         paymentReturnPollCount += 1;
-        const status = paymentReturnPollCount >= 2 ? 'paid' : 'pending';
+        const status = paymentReturnPollCount === 1
+          ? 'pending'
+          : options.paymentReturnProcessingStep && paymentReturnPollCount === 2
+            ? 'processing'
+            : 'paid';
         paymentReturnConfirmed = status === 'paid';
         await fulfillJson(route, {
           account_id: 'acct_portal',
@@ -731,7 +757,6 @@ async function installPortalMocks(
         comparison_tiers: [
           {
             tier_id: 'free', label: 'Free', plan_id: 'free', plan_version_id: 'free_v1',
-            monthly_points: 300, site_limit: 1, knowledge_article_limit: 100, concurrency_limit: 1, batch_item_limit: 5,
             comparison_rights: {
               monthly_points: { state: 'limited', value: 300 }, site_limit: { state: 'limited', value: 1 },
               knowledge_article_limit: { state: 'limited', value: 100 }, concurrency_limit: { state: 'limited', value: 1 },
@@ -741,7 +766,6 @@ async function installPortalMocks(
           },
           {
             tier_id: 'plus', label: 'Plus', plan_id: 'plus', plan_version_id: 'plus_v1',
-            monthly_points: 3000, site_limit: 3, knowledge_article_limit: null, concurrency_limit: 2, batch_item_limit: 15,
             comparison_rights: {
               monthly_points: { state: 'limited', value: 3000 }, site_limit: { state: 'limited', value: 3 },
               knowledge_article_limit: { state: 'unconfigured', value: null }, concurrency_limit: { state: 'limited', value: 2 },
@@ -751,7 +775,6 @@ async function installPortalMocks(
           },
           {
             tier_id: 'pro', label: 'Pro', plan_id: 'pro', plan_version_id: 'pro_v1',
-            monthly_points: 10000, site_limit: 5, knowledge_article_limit: 2000, concurrency_limit: 3, batch_item_limit: 25,
             comparison_rights: {
               monthly_points: { state: 'limited', value: 10000 }, site_limit: { state: 'limited', value: 5 },
               knowledge_article_limit: { state: 'limited', value: 2000 }, concurrency_limit: { state: 'limited', value: 3 },
@@ -1515,6 +1538,8 @@ async function installPortalMocks(
     accountProjectionRequestCount: () => accountProjectionRequestCount,
     delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
+    sessionRequestCount: () => sessionRequestCount,
+    releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
   };
 }
 
@@ -1666,7 +1691,49 @@ test('portal workspace interaction path: account overview to site detail and ser
 test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
   page,
 }) => {
-  await installPortalMocks(page, { paymentReturnFlow: true });
+  const calls = await installPortalMocks(page, {
+    paymentReturnFlow: true,
+    paymentReturnProcessingStep: true,
+    delaySessionRefresh: true,
+  });
+
+  await page.goto(
+    '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
+  );
+
+  const notice = page.locator('[data-ui="payment-return-notice"]');
+  await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 15_000 });
+  await expect.poll(calls.sessionRequestCount).toBe(2);
+  await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
+  await expect(page).toHaveURL('/portal/billing');
+  calls.releaseSessionRefresh();
+  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
+  const expiryMetric = notice.locator('[data-payment-return-metric="next-expiry"]');
+  const expiryAt = new Date('2027-04-07T10:00:00Z');
+  const expiryFormatOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  };
+  const expectedChineseExpiry = new Intl.DateTimeFormat('zh-CN', expiryFormatOptions).format(expiryAt);
+  const expectedEnglishExpiry = new Intl.DateTimeFormat('en-US', expiryFormatOptions).format(expiryAt);
+  await expect(expiryMetric).toContainText(expectedChineseExpiry);
+  await page.getByRole('button', { name: /Language|语言/i }).click();
+  await page.getByRole('option', { name: 'English' }).click();
+  await expect(expiryMetric).toContainText(expectedEnglishExpiry);
+  await expect(page).toHaveURL('/portal/billing');
+});
+
+test('confirmed Alipay return can retry when account totals fail to refresh', async ({
+  page,
+}) => {
+  await installPortalMocks(page, {
+    paymentReturnFlow: true,
+    failPaymentReturnEntitlements: true,
+  });
 
   await page.goto(
     '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
@@ -1674,10 +1741,23 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 10_000 });
-  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
-  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
-  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
   await expect(page).toHaveURL('/portal/billing');
+  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
+    /Not available|暂无数据|不适用/i
+  );
+  await expect(
+    notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
+  ).toBeVisible();
+  await notice.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
+    '12,419'
+  );
+  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
+  await expect(
+    notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
+  ).toHaveCount(0);
+  await expect(notice.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
 });
 
 test('portal account page hides internal identifiers and duplicate summary metrics', async ({ page }) => {

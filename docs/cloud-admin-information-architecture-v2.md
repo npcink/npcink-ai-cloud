@@ -12,6 +12,10 @@ This document is the authoritative migration contract for
 mutation feedback and receipt handling; this document defines the larger
 information architecture and page-model system around it.
 
+The customer directory, service problem queue, and customer-detail composition
+are further specified by
+[Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md).
+
 ## 1. Product Boundary
 
 The admin workspace is a bounded `platform_admin` service-plane surface. It may
@@ -68,14 +72,32 @@ The primary navigation is organized into four domains.
 ### 4.2 Customer Operations
 
 - Customers (`/admin/accounts`)
-- Service queue (`/admin/coverage`)
+- Service operations (`/admin/coverage`)
+- Subscription operations (`/admin/subscriptions`)
 - Tickets (`/admin/support-requests`)
-- Packages and credits (`/admin/plans`)
-- Portal users (`/admin/portal-users`)
+- Package catalog (`/admin/plans`)
+- AI credit packs (`/admin/credit-packs`)
 
-`/admin/subscriptions` is a service-queue view. `/admin/credit-packs` is a
-package-and-credit view. They may keep stable routes during migration, but they
-must share their parent workspace navigation and visual model.
+Customer login identity, membership, access, and audit evidence are inspected
+inside the Customers workspace. The validation-stage product must not expose a
+second Portal-users customer directory; see ADR-036 and
+`customer-account-identity-stage-standard-v1.md`.
+
+Customers is the customer-information directory. Service operations owns the
+cross-customer service-status and impact queue. The two routes must not be
+merged or reproduce each other's default ordering, reasons, or actions; see
+ADR-037.
+
+Subscription operations owns the commercial lifecycle and billing-evidence
+queue. It keeps its own top-level navigation entry, URL-owned filters, risk
+ordering, and detail return path instead of presenting itself as a child of
+Service operations.
+Package catalog owns package definition, limits, and package-scoped
+subscription follow-up. AI credit packs owns the purchasable credit-pack
+configuration, including price, credits, validity, visibility, and package
+fit. Each keeps its own top-level navigation entry and page model; their
+commercial relationship stays contextual rather than being expressed as
+parent-child navigation.
 
 ### 4.3 Runtime Operations
 
@@ -207,17 +229,16 @@ consolidation.
 | --- | --- | --- | --- | --- |
 | `/admin` | Overview | `overview` | Overview | Keep; remove duplicated full-page evidence |
 | `/admin/login` | Authentication | `authentication` | None | Keep as a single-task page |
-| `/admin/accounts` | Customer Operations | `queue` | Customers | Keep as customer register |
-| `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Rebuild around overview, commercial, credits, sites, audit tabs |
+| `/admin/accounts` | Customer Operations | `queue` | Customers | Canonical customer directory; no risk queue or row inspector |
+| `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Overview, commercial, credits, sites, access, and audit tabs |
 | `/admin/sites/[siteId]` | Customer Operations | `detail` | Customers | Rebuild around health, coverage, runtime, usage, keys/audit tabs |
-| `/admin/coverage` | Customer Operations | `queue` | Service queue | Canonical service follow-up queue |
-| `/admin/subscriptions` | Customer Operations | `queue` | Service queue | Keep route; render as subscription-risk view of service queue |
-| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Service queue | Keep; one reconciliation action and contextual evidence |
+| `/admin/coverage` | Customer Operations | `queue` | Service operations | Canonical full-width cross-customer problem queue; needs-action default; read-only evidence opens on demand in the shared drawer |
+| `/admin/subscriptions` | Customer Operations | `queue` | Subscription operations | Independent full-width subscription lifecycle and billing-risk queue; defaults to server-filtered needs-action records, keeps normal records behind explicit All, has no default selection, and opens read-only context in the shared drawer |
+| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Subscription operations | Keep; one reconciliation action, contextual evidence, and filtered-queue return |
 | `/admin/support-requests` | Customer Operations | `queue` | Tickets | Keep; split customer conversation from internal handling |
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Tickets | Keep; timeline-first ticket detail |
-| `/admin/plans` | Customer Operations | `queue` | Packages and credits | Canonical catalog plus shared package-management workbench |
-| `/admin/credit-packs` | Customer Operations | `configuration` | Packages and credits | Keep route; edit one pack at a time |
-| `/admin/portal-users` | Customer Operations | `queue` | Portal users | Add as stable secondary navigation entry |
+| `/admin/plans` | Customer Operations | `queue` | Package catalog | Canonical catalog plus shared package-management workbench |
+| `/admin/credit-packs` | Customer Operations | `configuration` | AI credit packs | Independent purchasable credit-pack directory; edit one pack at a time |
 | `/admin/ai-resources` | Runtime Operations | `queue` | Model suppliers | Keep model-provider connections and model visibility together |
 | `/admin/external-services` | Runtime Operations | `configuration` | Search and images | Fixed Cloud runtime service directory for web search and stock-image sources |
 | `/admin/vector-settings` | Runtime Operations | `configuration` | Providers | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
@@ -384,7 +405,8 @@ move lines between files.
 ### Phase B: three representative pilots
 
 1. Customer detail: `detail` plus governed/destructive actions.
-2. Service queue: `queue` plus filters, prioritization, and inspector.
+2. Service queue: semantic table plus filters, prioritization, and contextual
+   detail links.
 3. Service settings: `configuration` plus dirty state, validation, test, save.
 
 Each pilot must pass desktop/mobile, light/dark, state, keyboard, mutation, and

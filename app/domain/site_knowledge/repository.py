@@ -62,6 +62,30 @@ class SiteKnowledgeRepository:
             + self._rowcount(comment_document_result)
         )
 
+    def delete_source_index(
+        self,
+        *,
+        site_id: str,
+        source_type: str,
+        source_id: int,
+    ) -> int:
+        chunk_result = self.session.execute(
+            delete(SiteKnowledgeChunk).where(
+                SiteKnowledgeChunk.site_id == site_id,
+                SiteKnowledgeChunk.source_type == source_type,
+                SiteKnowledgeChunk.source_id == source_id,
+            )
+        )
+        document_result = self.session.execute(
+            delete(SiteKnowledgeDocument).where(
+                SiteKnowledgeDocument.site_id == site_id,
+                SiteKnowledgeDocument.source_type == source_type,
+                SiteKnowledgeDocument.source_id == source_id,
+            )
+        )
+        self.session.flush()
+        return self._rowcount(chunk_result) + self._rowcount(document_result)
+
     def upsert_document_with_chunks(
         self,
         *,
@@ -172,14 +196,21 @@ class SiteKnowledgeRepository:
             or 0
         )
 
-    def list_embedding_models(self, site_id: str) -> list[str]:
+    def list_embedding_models(
+        self,
+        site_id: str,
+        *,
+        source_types: list[str] | None = None,
+    ) -> list[str]:
+        statement = select(SiteKnowledgeChunk.embedding_model).where(
+            SiteKnowledgeChunk.site_id == site_id
+        )
+        if source_types:
+            statement = statement.where(SiteKnowledgeChunk.source_type.in_(source_types))
         return [
             str(model)
             for model in self.session.scalars(
-                select(SiteKnowledgeChunk.embedding_model)
-                .where(SiteKnowledgeChunk.site_id == site_id)
-                .distinct()
-                .order_by(SiteKnowledgeChunk.embedding_model.asc())
+                statement.distinct().order_by(SiteKnowledgeChunk.embedding_model.asc())
             )
             if str(model or "").strip()
         ]
@@ -195,6 +226,46 @@ class SiteKnowledgeRepository:
             )
         )
         return int(count or 0) > 0
+
+    def document_content_hash(
+        self,
+        *,
+        site_id: str,
+        source_type: str,
+        source_id: int,
+    ) -> str:
+        value = self.session.scalar(
+            select(SiteKnowledgeDocument.content_hash).where(
+                SiteKnowledgeDocument.site_id == site_id,
+                SiteKnowledgeDocument.source_type == source_type,
+                SiteKnowledgeDocument.source_id == source_id,
+            )
+        )
+        return str(value or "")
+
+    def media_evidence_documents(
+        self,
+        *,
+        site_id: str,
+        attachment_ids: list[int],
+    ) -> list[SiteKnowledgeDocument]:
+        normalized_ids = list(
+            dict.fromkeys(attachment_id for attachment_id in attachment_ids if attachment_id > 0)
+        )
+        if not normalized_ids:
+            return []
+        return list(
+            self.session.scalars(
+                select(SiteKnowledgeDocument)
+                .where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.source_type == "media",
+                    SiteKnowledgeDocument.source_id.in_(normalized_ids),
+                    SiteKnowledgeDocument.post_status == "publish",
+                )
+                .order_by(SiteKnowledgeDocument.source_id.asc())
+            )
+        )
 
     def count_chunks_for_source(self, *, site_id: str, source_type: str, source_id: int) -> int:
         return int(

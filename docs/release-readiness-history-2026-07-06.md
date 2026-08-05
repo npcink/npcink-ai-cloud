@@ -97,8 +97,11 @@ This cleanup stayed inside the existing Cloud responsibility boundary:
 
 ### Smoke and anti-drift repair
 
-- Added `task-contract-release-readiness-cleanup-2026-07-06.json` so
-  anti-drift can classify this cleanup as an explicit Cloud detail change.
+- Added the now-archived
+  [`task-contract-release-readiness-cleanup-2026-07-06.json`](history/task-contract-release-readiness-cleanup-2026-07-06.json)
+  so anti-drift could classify this completed cleanup as an explicit Cloud
+  detail change. It is historical evidence, not the current repository-wide
+  default contract.
 - Refreshed `scripts/local-alpha-smoke.sh` to match current contracts:
   - WordPress addon page detection now checks the stable addon admin shell
     instead of old English `Cloud API Key` copy.

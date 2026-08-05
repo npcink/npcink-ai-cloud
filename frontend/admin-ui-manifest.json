@@ -1,10 +1,11 @@
 {
-  "version": 4,
+  "version": 7,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
     "queue": "/admin/ai-resources",
-    "configuration": "/admin/external-services"
+    "configuration": "/admin/external-services",
+    "diagnostic": "/admin/troubleshooting"
   },
   "viewport": {
     "width": 1440,
@@ -22,6 +23,73 @@
     "dialogBoundary": "solid",
     "formControlBoundary": "solid",
     "dashedBoundaryPrimitive": "AdminEmptyState"
+  },
+  "visualGovernance": {
+    "version": 1,
+    "receiptSchema": "admin-visual-receipt.schema.json",
+    "resultStates": [
+      "pass",
+      "fail",
+      "review_required",
+      "not_applicable",
+      "unmeasured"
+    ],
+    "riskTiers": {
+      "low": "copy, data labels, or non-visual logic with no geometry or interaction change",
+      "material": "route layout, table, form, state, action hierarchy, dialog, or inspector change",
+      "shared": "Admin shell, shared primitive, geometry token, or cross-route interaction change"
+    },
+    "rules": [
+      { "id": "declared-page-model", "authority": "hard_gate" },
+      { "id": "pc-viewport", "authority": "hard_gate" },
+      { "id": "horizontal-overflow", "authority": "hard_gate" },
+      { "id": "single-page-title", "authority": "hard_gate" },
+      { "id": "working-surface-first-viewport", "authority": "hard_gate" },
+      { "id": "single-primary-action", "authority": "hard_gate" },
+      { "id": "textual-status", "authority": "hard_gate" },
+      { "id": "action-object-proximity", "authority": "hard_gate" },
+      { "id": "distinct-interaction-states", "authority": "hard_gate" },
+      { "id": "dialog-focus-recovery", "authority": "hard_gate" },
+      { "id": "context-stability", "authority": "hard_gate" },
+      { "id": "browser-runtime-errors", "authority": "hard_gate" }
+    ],
+    "pilotRoutes": {
+      "/admin/ai-resources": {
+        "pageModel": "queue",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"model-supplier-directory\"]",
+        "requiredStates": ["ready", "selected", "filtered", "operation_error", "dialog"]
+      },
+      "/admin/service-settings": {
+        "pageModel": "configuration",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"admin-settings-workbench\"]",
+        "requiredStates": ["ready", "invalid", "dirty", "save_error", "saved", "dialog"]
+      },
+      "/admin/troubleshooting": {
+        "pageModel": "diagnostic",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"runtime-diagnostic-table-frame\"]",
+        "requiredStates": ["ready", "selected", "partial_error", "disclosure"]
+      },
+      "/admin/support-requests": {
+        "pageModel": "queue",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"support-request-table\"]",
+        "requiredStates": ["ready", "filtered", "selected", "returned"]
+      },
+      "/admin/support-requests/[requestId]": {
+        "pageModel": "detail",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"support-request-detail-workspace\"]",
+        "requiredStates": ["ready", "action_error", "action_success", "return_context"]
+      }
+    },
+    "browserLanes": {
+      "local": "required for every material or shared Admin visual change",
+      "m4": "required for a new reference pattern, Admin shell, shared primitive, or major cross-route visual change"
+    },
+    "humanAcceptance": "required for new golden baselines and material shared visual patterns"
   },
   "pageModels": [
     "overview",
@@ -44,7 +112,6 @@
     "/admin/support-requests/[requestId]": "detail",
     "/admin/plans": "queue",
     "/admin/credit-packs": "configuration",
-    "/admin/portal-users": "queue",
     "/admin/ai-resources": "queue",
     "/admin/external-services": "configuration",
     "/admin/vector-settings": "configuration",

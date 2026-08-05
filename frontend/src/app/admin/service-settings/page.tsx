@@ -3,10 +3,9 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
   BackofficePageStack,
-  BackofficePrimaryPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import {
@@ -1229,24 +1228,29 @@ export default function AdminServiceSettingsPage() {
   if (!data) {
     return (
       <BackofficePageStack>
-        <BackofficePrimaryPanel
+        <BackofficeConfigurationHeader
           eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
           title={t('admin.service_settings_title', {}, 'Service settings')}
           description={t('admin.service_settings.load_shell_desc', {}, 'The service-settings shell remains available while this bounded configuration read is retried.')}
-        >
-          <BackofficeDiagnosticNotice
-            message={error || t('admin.service_settings.load_failed', {}, 'Failed to load service settings.')}
-            retryLabel={t('common.retry')}
-            onRetry={() => void loadSettings()}
-          />
-        </BackofficePrimaryPanel>
+          summaryItems={[{
+            label: t('common.status', {}, 'Status'),
+            value: statusLabel('error', t),
+            toneClassName: statusTone('error'),
+            size: 'compact',
+          }]}
+        />
+        <BackofficeDiagnosticNotice
+          message={error || t('admin.service_settings.load_failed', {}, 'Failed to load service settings.')}
+          retryLabel={t('common.retry')}
+          onRetry={() => void loadSettings()}
+        />
       </BackofficePageStack>
     );
   }
 
   return (
     <BackofficePageStack className="space-y-3">
-      <BackofficePrimaryPanel
+      <BackofficeConfigurationHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.service_settings_title', {}, 'Service settings')}
         description={t(
@@ -1254,9 +1258,7 @@ export default function AdminServiceSettingsPage() {
           {},
           'Configure Cloud-owned Portal login, QQ quick login, email delivery, and payment. Values are stored in Cloud runtime storage; .env fallback is no longer read.'
         )}
-        descriptionDisplay="hint"
-        summary={<BackofficeSummaryStrip items={metrics} density="compact" />}
-        summaryClassName="px-5 py-2.5 md:px-7 md:py-2.5"
+        summaryItems={metrics}
       />
 
       <AdminSettingsWorkbench
@@ -1969,11 +1971,12 @@ export default function AdminServiceSettingsPage() {
           </div>
         )}
         density="compact"
+        contentMode="contained"
         onClose={() => setEmailPreviewOpen(false)}
         onSubmit={() => void loadEmailPreview()}
       >
-            <div className="grid h-[calc(100vh-10rem)] min-h-0 overflow-hidden lg:grid-cols-[16rem_1fr]">
-              <aside className="space-y-3 overflow-auto border-b border-slate-200 pr-4 dark:border-slate-800 lg:border-b-0 lg:border-r">
+            <div data-ui="email-preview-workspace-scroll" className="grid min-h-0 flex-1 overflow-y-auto overscroll-contain lg:grid-cols-[16rem_1fr] lg:overflow-hidden">
+              <aside data-ui="email-preview-settings-scroll" className="space-y-3 border-b border-slate-200 pr-4 dark:border-slate-800 lg:overflow-auto lg:border-b-0 lg:border-r">
                 <label className={labelClassName()}>
                   {t('admin.service_settings.email_preview_type_label', {}, '邮件类型')}
                   <select
@@ -2025,7 +2028,7 @@ export default function AdminServiceSettingsPage() {
                 </div>
               </aside>
 
-              <div className="flex min-h-0 flex-col overflow-hidden pl-4">
+              <div className="flex min-h-[24rem] flex-col overflow-hidden pl-4 lg:min-h-0">
                 <div className="flex items-center justify-between border-b border-slate-200 bg-white pb-2 dark:border-slate-800 dark:bg-slate-950">
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                     {emailPreviewMode === 'html'
@@ -2058,7 +2061,7 @@ export default function AdminServiceSettingsPage() {
                       srcDoc={emailPreview.html}
                     />
                   ) : (
-                    <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap bg-white p-5 text-sm leading-6 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                    <pre data-ui="email-preview-content-scroll" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap bg-white p-5 text-sm leading-6 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
                       {emailPreview.text}
                     </pre>
                   )

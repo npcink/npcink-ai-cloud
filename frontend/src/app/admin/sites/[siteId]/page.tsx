@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
   BackofficeLayer,
   BackofficeMetricStrip,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
@@ -33,6 +34,12 @@ import {
   formatCurrency,
   formatNumber as formatInteger,
 } from '@/lib/utils';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  ADMIN_RETURN_TO_PARAM,
+  buildAdminAccountDetailPathname,
+  normalizeAdminAccountSiteReturnTo,
+} from '@/lib/admin-return-context';
 
 interface SiteDetail {
   site_id: string;
@@ -196,6 +203,7 @@ function siteRuntimeExplanationText(
 
 function SiteDetailContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
   const { siteId } = params as { siteId: string };
@@ -438,6 +446,22 @@ function SiteDetailContent() {
     );
   }
 
+  let parentAccountPathname = null;
+  try {
+    parentAccountPathname = buildAdminAccountDetailPathname(site.account_id);
+  } catch {
+    parentAccountPathname = null;
+  }
+  const returnTo = parentAccountPathname
+    ? normalizeAdminAccountSiteReturnTo(
+        searchParams.get(ADMIN_RETURN_TO_PARAM),
+        {
+          parentPathname: parentAccountPathname,
+          fallback: ADMIN_QUEUE_PATHNAMES.accounts,
+        }
+      )
+    : ADMIN_QUEUE_PATHNAMES.accounts;
+
   const subscriptionStatus = site.subscription?.status || 'inactive';
   const graceActive = Boolean(site.subscription_grace?.active);
   const runBudget = site.budget_state?.runs || {};
@@ -489,7 +513,7 @@ function SiteDetailContent() {
               : t('admin.site_detail.healthy_desc', undefined, 'Commercial coverage, runtime signal, and key inventory are all readable from this surface.');
   const nextStep = site.status === 'suspended'
     ? {
-        href: `/admin/accounts/${site.account_id}`,
+        href: returnTo,
         label: t('admin.site_detail.open_account_action', undefined, 'Open account follow-up'),
         description: t('admin.site_detail.open_account_desc', undefined, 'Inspect the parent account before changing traffic or support posture for this site.'),
       }
@@ -507,12 +531,12 @@ function SiteDetailContent() {
           }
         : hasKeyCoverageGap
           ? {
-              href: `/admin/accounts/${site.account_id}`,
+              href: returnTo,
               label: t('admin.site_detail.review_account_access_action', undefined, 'Review account access'),
               description: t('admin.site_detail.review_account_access_desc', undefined, 'Use the account surface to confirm support posture and site access before rotating keys.'),
             }
           : {
-              href: `/admin/accounts/${site.account_id}`,
+              href: returnTo,
               label: t('admin.site_detail.review_parent_account_action', undefined, 'Review parent account'),
               description: t('admin.site_detail.review_parent_account_desc', undefined, 'The site is stable; move up one level only if you need broader account coverage or support context.'),
             };
@@ -586,11 +610,11 @@ function SiteDetailContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={t('admin.site_health')}
         title={site.site_name || site.site_id}
         description={postureDescription}
-        actions={site.status === 'provisioning' ? (
+        primaryAction={site.status === 'provisioning' ? (
               <button
                 type="button"
                 onClick={handleActivateSite}
@@ -602,61 +626,58 @@ function SiteDetailContent() {
                   : t('admin.site_detail.activate_action', undefined, 'Activate site')}
               </button>
             ) : undefined}
-        summary={(
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_1.45fr]">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.site_detail.summary_title', undefined, 'Site operator summary')}
-              </p>
-              <BackofficeIdentifier value={site.site_id} className="mt-2 block text-xs text-gray-500 dark:text-gray-400" />
-              <div className="mt-3 flex flex-wrap gap-2">
-                <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
-                <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
-                {site.subscription ? (
-                  <BackofficeStatusBadge
-                    status={site.subscription.status}
-                    label={translateStatusLabel(site.subscription.status, t)}
-                  />
-                ) : null}
-              </div>
-              {site.status === 'provisioning' ? (
-                <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                  {t(
-                    'admin.site_detail.provisioning_warning',
-                    undefined,
-                    'This site record exists, but hosted runtime is still blocked until the site is activated.'
-                  )}
-                </p>
-              ) : null}
-              {siteActionError ? (
-                <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-                  {siteActionError}
-                </p>
-              ) : null}
-            </div>
-            <BackofficeMetricStrip
-              items={[
-                {
-                  label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
-                  value: t('common.enabled', undefined, 'Enabled'),
-                },
-                { label: t('common.keys'), value: formatInteger(site.key_count) },
-                {
-                  label: t('admin.failed_runs'),
-                  value: formatInteger(failedRuns),
-                  toneClassName: hasRuntimeRisk ? 'text-red-600 dark:text-red-400' : undefined,
-                },
-                {
-                  label: t('admin.period_end'),
-                  value: site.subscription?.current_period_end
-                    ? formatDate(site.subscription.current_period_end)
-                    : t('common.not_found'),
-                },
-              ]}
-            />
+        secondaryAction={(
+          <Link href={returnTo} className="btn btn-secondary">
+            {t('common.back', {}, 'Back')}
+          </Link>
+        )}
+        summaryItems={[
+          {
+            label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
+            value: t('common.enabled', undefined, 'Enabled'),
+          },
+          { label: t('common.keys'), value: formatInteger(site.key_count) },
+          {
+            label: t('admin.failed_runs'),
+            value: formatInteger(failedRuns),
+            toneClassName: hasRuntimeRisk ? 'text-red-600 dark:text-red-400' : undefined,
+          },
+          {
+            label: t('admin.period_end'),
+            value: site.subscription?.current_period_end
+              ? formatDate(site.subscription.current_period_end)
+              : t('common.not_found'),
+          },
+        ]}
+        summaryAside={(
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <BackofficeIdentifier value={site.site_id} className="text-xs text-gray-500 dark:text-gray-400" />
+            <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
+            <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
+            {site.subscription ? (
+              <BackofficeStatusBadge
+                status={site.subscription.status}
+                label={translateStatusLabel(site.subscription.status, t)}
+              />
+            ) : null}
           </div>
         )}
-      >
+      />
+      <BackofficeSectionPanel className="space-y-4" data-ui="site-primary-workspace">
+        {site.status === 'provisioning' ? (
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            {t(
+              'admin.site_detail.provisioning_warning',
+              undefined,
+              'This site record exists, but hosted runtime is still blocked until the site is activated.'
+            )}
+          </p>
+        ) : null}
+        {siteActionError ? (
+          <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {siteActionError}
+          </p>
+        ) : null}
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -697,7 +718,7 @@ function SiteDetailContent() {
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               {site.related_surfaces?.account_href ? (
-                <Link href={site.related_surfaces.account_href} className="btn btn-secondary">
+                <Link href={returnTo} className="btn btn-secondary">
                   {t('common.account', {}, 'Customer')}
                 </Link>
               ) : null}
@@ -889,7 +910,7 @@ function SiteDetailContent() {
             />
           </div>
         </details>
-      </BackofficePrimaryPanel>
+      </BackofficeSectionPanel>
 
       <BackofficeDisclosure
         summary={t('admin.site_detail.advanced_operational_evidence', undefined, 'Advanced site operational evidence')}

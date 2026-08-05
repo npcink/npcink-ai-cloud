@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-07-27
+> Updated: 2026-08-04
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -74,7 +74,7 @@ Current open blockers:
 | schema drift baseline | operator required | database owner | historical `alembic check` index-name differences are resolved or recorded as reviewed |
 | historical user-site ownership | operator required | database owner | read-only counts prove no ambiguous multi-user site ownership, or every ambiguous site remains unbound and the release stops before real-user access |
 | external OTLP sink | operator required | release operator | exporter and query URLs are explicit and a fresh Cloud trace is queryable in the configured production sink |
-| 24-hour observation | operator required | release operator | health, workers, cadence, SMTP, callback, and runtime remain stable for 24 hours |
+| 24-hour observation / internal active-soak evidence | operator required | release operator | with external users or natural traffic, health/workers/cadence/SMTP/callback/runtime remain stable for at least 24 hours; in declared no-user internal validation only, the governed 30–60 minute zero-call active-soak receipt may satisfy this item |
 | QQ login, when enabled | service settings required | release operator | real QQ login and `/open/auth/qq/callback` pass; otherwise QQ remains disabled |
 
 ## 3. Required Production Environment Checks
@@ -265,8 +265,9 @@ plus its fail-closed bootstrap correction in
   SHA-256 file are operator-owned mode `0600`, fresh, unexpired, and bind the
   exact Linux/AMD64 source, bundle, allowlist, passed scan, API receipt, and
   exact finding set; in either case the fresh exact-image scan is green
-- [ ] while any governed entry remains, the machine-executable first-install
-  gate consumes and validates both external evidence files before remote mkdir,
+- [ ] while any governed entry remains, the machine-executable production-host
+  deployment gate consumes and validates both external evidence files before
+  remote mkdir,
   upload, deployment lock, image, container, or database mutation; absence,
   partial matches, changed threat intelligence, changed scan evidence, unsafe
   protection, or any binding mismatch fails closed and there is no skip flag
@@ -684,6 +685,20 @@ initialization.
 
 - [ ] run `pnpm run check:e2e:deploy-bundle:smoke` before deploy; its loopback
   plain-HTTP path is a local artifact-replay exception, not a production origin
+- [ ] when the operator explicitly authorizes a production-host localhost
+  candidate canary, follow the
+  [Production-host Localhost Candidate Canary Standard](../docs/production-host-localhost-candidate-canary-standard-v1.md)
+  and record:
+    - frozen candidate SHA, tree, bundle digest, image identities, and migration head
+    - unique Compose project and disposable unpublished PostgreSQL 18
+    - exactly one loopback-only proxy binding
+    - no production RDS, protected config, `current`, service, DNS, or Cloudflare change
+    - actual image and port revalidation after every recreate
+    - exact resource cleanup plus unchanged production pointer/container identities
+- [ ] classify a localhost canary and synthetic browser inspection as
+  non-production evidence; do not use either to check off formal smoke,
+  production RDS, WordPress reconnect/revoke, OTLP, payment, observation,
+  production human acceptance, or GA
 - [ ] run remote portal smoke for a real invited user admin after deploy
 - [ ] verify one non-empty commercial/admin page:
   - `/admin/plans`

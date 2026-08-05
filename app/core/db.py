@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
@@ -10,6 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.models import Base
 from app.core.redaction import safe_exception_type
+
+
+def build_postgres_advisory_lock_material(*parts: str) -> str:
+    """Encode lock-key parts as PostgreSQL-safe, unambiguous text."""
+    return json.dumps(parts, ensure_ascii=True, separators=(",", ":"))
 
 
 @lru_cache(maxsize=8)

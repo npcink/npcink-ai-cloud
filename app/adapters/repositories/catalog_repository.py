@@ -13,6 +13,7 @@ from app.core.models import (
     CatalogRevision,
     HealthSnapshot,
     ProviderCallRecord,
+    ProviderConnection,
     RoutingBinding,
     RoutingProfile,
     RunRecord,
@@ -29,6 +30,14 @@ class CatalogRepository:
             CatalogRevision.id.desc(),
         )
         return self.session.scalar(statement)
+
+    def list_enabled_provider_connections(self) -> list[ProviderConnection]:
+        statement = (
+            select(ProviderConnection)
+            .where(ProviderConnection.enabled.is_(True))
+            .order_by(ProviderConnection.connection_id.asc())
+        )
+        return list(self.session.scalars(statement))
 
     def list_models(
         self,

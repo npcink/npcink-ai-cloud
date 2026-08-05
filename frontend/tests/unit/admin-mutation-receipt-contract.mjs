@@ -4,13 +4,7 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const receiptSource = readFileSync(fromFrontendRoot('src/components/admin/AdminMutationReceipt.tsx'), 'utf8');
 const accountDetailSource = readFileSync(fromFrontendRoot('src/app/admin/accounts/[accountId]/page.tsx'), 'utf8');
-const portalUsersSource = [
-  readFileSync(fromFrontendRoot('src/app/admin/portal-users/page.tsx'), 'utf8'),
-  readFileSync(
-    fromFrontendRoot('src/features/admin/portal-users/PortalUsersWorkspace.tsx'),
-    'utf8'
-  ),
-].join('\n');
+const customerAccessSource = readFileSync(fromFrontendRoot('src/features/admin/accounts/CustomerAccessPanel.tsx'), 'utf8');
 const subscriptionDetailSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
 const aiResourcesSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const supplierToolbarSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierToolbar.tsx'), 'utf8');
@@ -69,15 +63,15 @@ assert.match(
 );
 
 assert.match(
-  portalUsersSource,
+  customerAccessSource,
   /AdminMutationReceipt[\s\S]*AdminMutationReceiptPayload/,
-  'Portal user disable writes must render the shared admin mutation receipt'
+  'Customer identity disable writes must render the shared admin mutation receipt'
 );
 
 assert.match(
-  portalUsersSource,
-  /setLastReceipt\(data\.receipt \|\| null\)/,
-  'Portal user disable writes must store the backend receipt instead of only showing a toast'
+  customerAccessSource,
+  /setReceipt\(payload\.receipt \|\| null\)/,
+  'Customer identity disable writes must store the customer-detail backend receipt instead of only showing a toast'
 );
 
 assert.match(
@@ -155,20 +149,21 @@ assert.match(
   'Hosted runtime profile writes must store the backend receipt'
 );
 
-for (const [source, label] of [
-  [aiResourcesSource, 'AI resources'],
-  [serviceSettingsSource, 'Service settings'],
-]) {
-  assert.match(
-    source,
-    /descriptionDisplay="hint"/,
-    `${label} must collect low-frequency top-level descriptions behind an info hint`
-  );
-}
+assert.match(
+  aiResourcesSource,
+  /<BackofficePageHeader/,
+  'AI resources must delegate low-frequency top-level descriptions to the shared page header info hint'
+);
+
+assert.match(
+  serviceSettingsSource,
+  /<BackofficeConfigurationHeader/,
+  'Service settings must delegate low-frequency top-level descriptions to the shared configuration header info hint'
+);
 
 assert.match(
   runtimeProfilesSource,
-  /<BackofficePrimaryPanel[\s\S]*description=\{copy\('description'/,
+  /<BackofficeConfigurationHeader[\s\S]*description=\{copy\('description'/,
   'Hosted runtime profiles must keep the Cloud runtime boundary visible in the compact workspace header'
 );
 

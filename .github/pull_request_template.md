@@ -54,6 +54,11 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 - Secondary action:
 - Destructive action and confirmation:
 - Low-frequency detail moved behind:
+- Visual risk tier (`low`, `material`, or `shared`):
+- Required browser states:
+- Visual receipt artifact:
+- Rule results (`pass` / `fail` / `review_required` / `not_applicable` / `unmeasured`):
+- Human visual acceptance (`pending`, `not_required`, `accepted`, or `rejected`):
 - PC evidence:
 
 - [ ] The route remains classified in `frontend/admin-ui-manifest.json`.
@@ -61,6 +66,8 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 - [ ] No new route-local dialog or credential reveal implementation was added.
 - [ ] `pnpm run check:admin-ui` passed.
 - [ ] `pnpm run check:admin-ui:visual` passed when layout, tables, dialogs, or shared primitives changed.
+- [ ] Material/shared visual changes produced a structured receipt; no receipt is reported as `unmeasured`.
+- [ ] New golden baselines or shared visual patterns have explicit human visual acceptance.
 
 ## Deployment Impact
 

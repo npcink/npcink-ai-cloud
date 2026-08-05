@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import base64
 import binascii
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_access_repository import (
+    CommercialAccessRepository,
+)
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
+from app.adapters.repositories.commercial_support_repository import (
+    CommercialSupportRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
@@ -48,6 +57,8 @@ SUPPORT_REQUEST_TOPICS = {
     "usage",
     "account",
 }
+SUPPORT_REQUEST_SORTS = {"risk", "updated_at"}
+SUPPORT_REQUEST_ATTENTION_FILTERS = {"", "waiting_for_operator", "overdue"}
 SUPPORT_REQUEST_MESSAGE_VISIBILITIES = {
     SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC,
     SUPPORT_REQUEST_MESSAGE_VISIBILITY_INTERNAL,
@@ -74,6 +85,26 @@ def _normalize_support_status(value: str, *, allow_empty: bool = False) -> str:
         raise CommercialValidationError(
             "service.support_request_status_invalid",
             "support request status is not supported",
+        )
+    return normalized
+
+
+def _normalize_support_sort(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in SUPPORT_REQUEST_SORTS:
+        raise CommercialValidationError(
+            "service.support_request_sort_invalid",
+            "support request sort is not supported",
+        )
+    return normalized
+
+
+def _normalize_support_attention(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in SUPPORT_REQUEST_ATTENTION_FILTERS:
+        raise CommercialValidationError(
+            "service.support_request_attention_invalid",
+            "support request attention filter is not supported",
         )
     return normalized
 
@@ -203,7 +234,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         profile = self.get_portal_principal_profile(principal_id=normalized_principal_id)
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.create_support_request(
                 request_id=f"sr_{uuid4().hex}",
                 account_id=normalized_account_id,
@@ -217,6 +248,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 priority="normal",
                 source_path=_trim_support_text(source_path, max_length=191),
                 context_json=dict(context_json or {}),
+                activity_at=now,
             )
             repository.create_support_request_message(
                 message_id=f"srm_{uuid4().hex}",
@@ -227,10 +259,12 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 email=str(profile.get("email") or ""),
                 body=normalized_description,
                 metadata_json={"source": "initial_description"},
+                activity_at=now,
             )
             payload = self._serialize_portal_support_request(request)
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.created",
                 outcome="succeeded",
@@ -268,7 +302,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         safe_limit = max(1, min(100, int(limit or 20)))
         safe_offset = max(0, int(offset or 0))
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             items = repository.list_support_requests(
                 account_id=normalized_account_id,
                 principal_id=normalized_principal_id,
@@ -309,7 +343,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_principal_id = str(principal_id or "").strip()
         normalized_account_id = str(account_id or "").strip()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if (
                 request is None
@@ -320,8 +354,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -355,19 +390,27 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         status: str = "",
         topic: str = "",
         query: str = "",
+        attention: str = "",
+        sort: str = "risk",
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, object]:
         normalized_status = _normalize_support_status(status, allow_empty=True)
         normalized_topic = _normalize_support_topic(topic) if str(topic or "").strip() else ""
+        normalized_attention = _normalize_support_attention(attention)
+        normalized_sort = _normalize_support_sort(sort)
         safe_limit = max(1, min(200, int(limit or 100)))
         safe_offset = max(0, int(offset or 0))
+        risk_as_of = datetime.now(UTC)
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             items = repository.list_support_requests(
                 status=normalized_status or None,
                 topic=normalized_topic or None,
                 query=query,
+                attention=normalized_attention or None,
+                sort=normalized_sort,
+                risk_as_of=risk_as_of,
                 limit=safe_limit,
                 offset=safe_offset,
             )
@@ -375,10 +418,15 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 status=normalized_status or None,
                 topic=normalized_topic or None,
                 query=query,
+                attention=normalized_attention or None,
+                risk_as_of=risk_as_of,
             )
-            open_count = repository.count_support_requests(status=SUPPORT_REQUEST_STATUS_OPEN)
-            in_progress_count = repository.count_support_requests(
-                status=SUPPORT_REQUEST_STATUS_IN_PROGRESS
+            summary = repository.summarize_support_request_queue(
+                status=normalized_status or None,
+                topic=normalized_topic or None,
+                query=query,
+                attention=normalized_attention or None,
+                risk_as_of=risk_as_of,
             )
         return {
             "items": [self._serialize_support_request(item) for item in items],
@@ -388,10 +436,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "total": total,
                 "has_more": safe_offset + len(items) < total,
             },
-            "summary": {
-                "open": open_count,
-                "in_progress": in_progress_count,
-            },
+            "summary": summary,
         }
 
     def get_admin_support_request(
@@ -400,7 +445,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         request_id: str,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -447,15 +492,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None or request.principal_id != normalized_principal_id:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -475,13 +521,15 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 email=str(request.email or ""),
                 body=normalized_body,
                 metadata_json={"source": "portal_reply"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
                 "message": self._serialize_portal_support_request_message(message),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.message_created",
                 outcome="succeeded",
@@ -518,7 +566,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -540,13 +588,15 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 email="",
                 body=normalized_body,
                 metadata_json={"source": "admin_reply"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.message_created",
                 outcome="succeeded",
@@ -584,15 +634,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_message_id = str(message_id or "").strip()
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None or request.principal_id != normalized_principal_id:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -630,13 +681,15 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 content_type=normalized_content_type,
                 content_bytes=content,
                 metadata_json={"source": "portal_upload"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
                 "attachment": self._serialize_portal_support_request_attachment(attachment),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.attachment_created",
                 outcome="succeeded",
@@ -674,7 +727,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_message_id = str(message_id or "").strip()
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -703,13 +756,15 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 content_type=normalized_content_type,
                 content_bytes=content,
                 metadata_json={"source": "admin_upload"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "attachment": self._serialize_support_request_attachment(attachment),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.attachment_created",
                 outcome="succeeded",
@@ -738,7 +793,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         normalized_principal_id = str(principal_id or "").strip()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
@@ -754,8 +809,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "service.support_request_attachment_not_found",
                     "support request attachment was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -773,7 +829,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         attachment_id: str,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
@@ -805,15 +861,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_comment = _trim_support_text(comment, max_length=2000)
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None or request.principal_id != normalized_principal_id:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -830,6 +887,13 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
             request.closed_at = now if bool(resolved) else None
             request.resolved_at = request.resolved_at if bool(resolved) else None
+            if bool(resolved):
+                repository.mark_support_request_complete(request)
+            else:
+                repository.mark_support_request_waiting_for_operator(
+                    request,
+                    activity_at=now,
+                )
             feedback = repository.upsert_support_request_feedback(
                 feedback_id=f"srf_{uuid4().hex}",
                 request=request,
@@ -839,13 +903,15 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 rating=normalized_rating,
                 comment=normalized_comment,
                 metadata_json={"source": "portal_close_evaluation"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
                 "feedback": self._serialize_portal_support_request_feedback(feedback),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.feedback_submitted",
                 outcome="succeeded",
@@ -877,7 +943,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_note = _trim_support_text(admin_note, max_length=2000)
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -893,6 +959,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 request.closed_at = (
                     now if normalized_status == SUPPORT_REQUEST_STATUS_CLOSED else None
                 )
+                if normalized_status in {
+                    SUPPORT_REQUEST_STATUS_RESOLVED,
+                    SUPPORT_REQUEST_STATUS_CLOSED,
+                }:
+                    repository.mark_support_request_complete(request)
+                elif previous_status in {
+                    SUPPORT_REQUEST_STATUS_RESOLVED,
+                    SUPPORT_REQUEST_STATUS_CLOSED,
+                }:
+                    repository.restore_support_request_waiting_state(request)
             if normalized_note:
                 request.admin_note = normalized_note
                 repository.create_support_request_message(
@@ -904,11 +980,13 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     email="",
                     body=normalized_note,
                     metadata_json={"source": "admin_status_update"},
+                    activity_at=now,
                 )
             session.flush()
             payload = self._serialize_support_request(request)
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.updated",
                 outcome="succeeded",
@@ -933,7 +1011,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         account_id: str,
     ) -> None:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
                 repository=repository,
                 principal_id=principal_id,
@@ -943,7 +1021,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
     def _assert_portal_account_access_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialAccessRepository,
         principal_id: str,
         account_id: str,
     ) -> None:
@@ -988,6 +1066,17 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             "source_path": str(request.source_path or ""),
             "admin_note": str(request.admin_note or ""),
             "context": request.context_json if isinstance(request.context_json, dict) else {},
+            "first_operator_response_at": self._serialize_datetime(
+                request.first_operator_response_at
+            ),
+            "last_customer_activity_at": self._serialize_datetime(
+                request.last_customer_activity_at
+            ),
+            "last_operator_public_activity_at": self._serialize_datetime(
+                request.last_operator_public_activity_at
+            ),
+            "waiting_on": str(request.waiting_on or "operator"),
+            "waiting_since": self._serialize_datetime(request.waiting_since),
             "created_at": self._serialize_datetime(request.created_at),
             "updated_at": self._serialize_datetime(request.updated_at),
             "resolved_at": self._serialize_datetime(request.resolved_at),

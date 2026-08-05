@@ -192,12 +192,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
-          href: '/admin/portal-users',
-          labelKey: 'admin.nav_portal_users',
-          fallback: 'Portal Users',
-          secondary: true,
-        },
-        {
           href: '/admin/support-requests',
           labelKey: 'admin.nav_support_requests',
           fallback: 'Tickets',
@@ -205,14 +199,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         {
           href: '/admin/coverage',
           labelKey: 'admin.nav_coverage',
-          fallback: 'Service Status',
-          activePrefixes: ['/admin/coverage', '/admin/subscriptions'],
+          fallback: 'Service Operations',
+          activePrefixes: ['/admin/coverage'],
+        },
+        {
+          href: '/admin/subscriptions',
+          labelKey: 'admin.nav_subscriptions',
+          fallback: 'Subscription Operations',
+          activePrefixes: ['/admin/subscriptions'],
         },
         {
           href: '/admin/plans',
           labelKey: 'admin.nav_plan_catalog',
           fallback: 'Package Catalog',
-          activePrefixes: ['/admin/plans', '/admin/credit-packs'],
+          activePrefixes: ['/admin/plans'],
+        },
+        {
+          href: '/admin/credit-packs',
+          labelKey: 'admin.nav_credit_packs',
+          fallback: 'AI Credit Packs',
+          activePrefixes: ['/admin/credit-packs'],
         },
       ],
     },

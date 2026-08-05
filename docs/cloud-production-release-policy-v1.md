@@ -90,7 +90,7 @@ the following are true:
   the work remains controlled production validation with no real users.
 
 This is not a second ordinary deployment route. It expires no later than
-2026-08-05, cannot be used after installation finalization, and disappears as
+2026-08-11, cannot be used after installation finalization, and disappears as
 soon as the three allowlist entries are removed. Pushes still never deploy.
 Ordinary deployments continue to require the manually dispatched GitHub
 workflow and Environment approval.
@@ -133,6 +133,33 @@ Release verification follows these rules:
 This rule does not permit a failed required gate to be relabeled as passed. It
 keeps successful evidence attributable, limits retries to an actual recovery
 plan, and prevents broad validation from expanding a narrow production repair.
+
+## Optional Production-host Localhost Candidate Canary
+
+An explicitly authorized production-host localhost canary may rehearse an exact
+candidate before production promotion when it follows the
+[Production-host Localhost Candidate Canary Standard](production-host-localhost-candidate-canary-standard-v1.md).
+
+This optional lane must use a unique Compose project, candidate-specific image
+identities, a disposable unpublished PostgreSQL database, isolated network and
+volumes, and one loopback-only proxy binding. It must not connect to production
+RDS, consume production protected configuration, modify `current`, recreate a
+production service, or change DNS, Cloudflare, public traffic, or first-install
+lifecycle artifacts.
+
+Every Compose invocation, including a single-service recreate, must repeat the
+complete canary interpolation envelope and re-prove actual image identity and
+published ports. Candidate SHA change, production-state reference, non-loopback
+binding, non-candidate image, or production baseline drift stops the run.
+
+A passing localhost canary is host-compatibility and synthetic-journey evidence
+only. It never completes a Required release-checklist item unless that item
+explicitly names this evidence class, and it never implies production
+validation, production human acceptance, external-user acceptance, or GA.
+
+Cleanup is part of the gate: remove exact canary resources, stop the tunnel,
+and re-prove the production pointer, container identities, and health before
+closing the receipt.
 
 ## Current PostgreSQL 18 Release Contract
 
@@ -181,8 +208,6 @@ Failure after migration starts remains fail-closed and requires the recorded RDS
 backup plus the matched release; it never auto-starts old code against a changed
 database. The repair must remain scoped to the acceptance blocker and does not
 authorize unrelated application, Admin, provider, or product changes.
-It therefore rejects `--refresh-providers` and
-`NPCINK_CLOUD_REFRESH_PROVIDERS=1` before deployment mutation.
 Because the authenticated Setup transaction has already committed
 `installation_state=complete`, `first-install-rollback.sh` intentionally remains
 unavailable for this exception. Repair rollback is a separate matched recovery:

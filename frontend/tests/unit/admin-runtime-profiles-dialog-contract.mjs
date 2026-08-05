@@ -185,8 +185,8 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /section className="grid gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
-  'candidate context and self-labelled compact controls must share one balanced toolbar above readable table widths'
+  /contentMode="contained"[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
+  'candidate context and self-labelled compact controls must share one balanced toolbar above the workbench sole vertical scroll region'
 );
 
 assert.doesNotMatch(

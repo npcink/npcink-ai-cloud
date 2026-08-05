@@ -8,7 +8,11 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
+from app.adapters.repositories.commercial_plan_repository import CommercialPlanRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     PLAN_STATUS_ACTIVE,
@@ -27,7 +31,6 @@ from app.core.models import (
 from app.domain.commercial.currency import (
     SERVICE_SETTING_ACCOUNTING_FX,
     AccountingFxRate,
-    convert_usd_to_cny,
     resolve_accounting_fx_rate,
 )
 from app.domain.commercial.errors import (
@@ -94,6 +97,18 @@ DEFAULT_RUNTIME_COMMERCIAL_POLICY = {
     },
 }
 SHADOW_PRICING_TARIFF_VERSION = "shadow-pricing-v1"
+ADMIN_SUBSCRIPTION_RISK_RANK = {
+    "critical": 0,
+    "warning": 1,
+    "monitor": 2,
+    "stable": 3,
+}
+ADMIN_SUBSCRIPTION_SORTS = frozenset({"priority", "expiry", "customer"})
+ADMIN_SUBSCRIPTION_RISK_FILTERS = frozenset(
+    {"all", "needs_action", "critical", "warning", "monitor", "stable"}
+)
+ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS = 500
+ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES = 500
 SHADOW_PRICING_TARIFF_REGISTRY: dict[str, dict[str, dict[str, float | str]]] = {
     "ability": {
         "npcink-abilities-toolkit/build-article-block-plan": {
@@ -556,11 +571,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             totals = self._aggregate_meter_events(meter_events)
-            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
-            totals.update(self._aggregate_accounting_costs(meter_events, accounting_fx))
+            totals.update(self._aggregate_accounting_costs(meter_events))
             budgets = self._resolve_effective_subscription_budgets(
                 plan_version=plan_version,
                 subscription=subscription,
@@ -637,13 +648,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             ledger_totals = self._aggregate_meter_events(meter_events)
-            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
-            ledger_totals.update(
-                self._aggregate_accounting_costs(meter_events, accounting_fx)
-            )
+            ledger_totals.update(self._aggregate_accounting_costs(meter_events))
             snapshots = repository.list_billing_snapshots(site_id)
             current_snapshot = next(
                 (
@@ -898,7 +903,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             items.append(
                 {
                     "plan": self._serialize_plan(plan),
-                    "versions": serialized_versions,
                     "tier_summary": tier_summary,
                     "latest_version": latest_version,
                     "published_version_count": sum(
@@ -958,7 +962,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         )
         return {
             "plan": self._serialize_plan(plan),
-            "versions": serialized_versions,
             "tier_summary": tier_summary,
             "latest_version": latest_version,
             "sales_offer": sales_offer,
@@ -984,6 +987,69 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             ],
         }
 
+    def update_admin_plan_parameters(
+        self,
+        *,
+        plan_id: str,
+        monthly_included_points: float,
+        site_limit: int,
+        max_vector_documents: int,
+        max_cost_cny_per_period: float,
+        sales_price_cny: float,
+        max_active_runs: int,
+        max_batch_items: int,
+        grace_period_days: int,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        def _copy_mapping(value: object) -> dict[str, object]:
+            return dict(value) if isinstance(value, dict) else {}
+
+        detail = self.get_admin_plan(plan_id)
+        latest_version = _copy_mapping(detail.get("latest_version"))
+        if not latest_version:
+            raise CommercialNotFoundError(
+                "service.plan_version_not_found",
+                f"plan '{plan_id}' has no current version to update",
+            )
+
+        budgets = _copy_mapping(latest_version.get("budgets"))
+        budgets.update(
+            {
+                "max_ai_credits_per_period": monthly_included_points,
+                "max_cost_cny_per_period": max_cost_cny_per_period,
+            }
+        )
+        concurrency = _copy_mapping(latest_version.get("concurrency"))
+        concurrency["max_active_runs"] = max_active_runs
+        policy = _copy_mapping(latest_version.get("policy"))
+        subscription_policy = _copy_mapping(policy.get("subscription"))
+        subscription_policy["grace_period_days"] = grace_period_days
+        policy["subscription"] = subscription_policy
+        metadata = _copy_mapping(latest_version.get("metadata"))
+        metadata.update(
+            {
+                "monthly_included_points": monthly_included_points,
+                "site_limit": site_limit,
+                "max_vector_documents": max_vector_documents,
+                "max_batch_items": max_batch_items,
+            }
+        )
+
+        return self.publish_plan_version(
+            plan_id=plan_id,
+            plan_version_id=str(latest_version.get("plan_version_id") or ""),
+            version_label=str(latest_version.get("version_label") or ""),
+            status=str(latest_version.get("status") or PLAN_VERSION_STATUS_PUBLISHED),
+            currency=str(latest_version.get("currency") or "CNY"),
+            entitlements_json=_copy_mapping(latest_version.get("entitlements")),
+            budgets_json=budgets,
+            concurrency_json=concurrency,
+            policy_json=policy,
+            metadata_json=metadata,
+            sales_price_cny=sales_price_cny,
+            audit_context=audit_context,
+        )
+
     def list_admin_subscriptions(
         self,
         *,
@@ -991,11 +1057,26 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         account_id: str | None = None,
         plan_id: str | None = None,
         expires_before: datetime | None = None,
+        risk: str = "all",
+        sort: str = "priority",
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, object]:
         normalized_offset = max(0, int(offset or 0))
         resolved_limit = max(1, int(limit or 100))
+        normalized_sort = str(sort or "priority").strip().lower()
+        if normalized_sort not in ADMIN_SUBSCRIPTION_SORTS:
+            raise CommercialValidationError(
+                "service.admin_subscription_sort_invalid",
+                "subscription sort must be one of: priority, expiry, customer",
+            )
+        normalized_risk = str(risk or "all").strip().lower()
+        if normalized_risk not in ADMIN_SUBSCRIPTION_RISK_FILTERS:
+            raise CommercialValidationError(
+                "service.admin_subscription_risk_invalid",
+                "subscription risk must be one of: all, needs_action, critical, warning, monitor, stable",
+            )
+        now = self._normalize_datetime(self.now_factory())
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             total = repository.count_subscriptions(
@@ -1004,20 +1085,33 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 plan_id=plan_id,
                 current_period_end_before=expires_before,
             )
+            if total > ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS:
+                raise CommercialValidationError(
+                    "service.admin_subscription_queue_scope_too_broad",
+                    "subscription queue scope exceeds 500 records; narrow the filters",
+                )
             subscriptions = repository.list_subscriptions(
                 status=status,
                 account_id=account_id,
                 plan_id=plan_id,
                 current_period_end_before=expires_before,
-                offset=normalized_offset,
-                limit=resolved_limit,
+                limit=ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS,
             )
             account_ids = [subscription.account_id for subscription in subscriptions]
             accounts = {
                 account.account_id: account
                 for account in repository.list_accounts(account_ids=account_ids, limit=None)
             }
-            sites = repository.list_sites(account_ids=account_ids, limit=None)
+            site_counts = repository.count_sites_by_account(account_ids=account_ids)
+            if sum(site_counts.values()) > ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES:
+                raise CommercialValidationError(
+                    "service.admin_subscription_queue_site_scope_too_broad",
+                    "subscription queue site scope exceeds 500 records; narrow the filters",
+                )
+            sites = repository.list_sites(
+                account_ids=account_ids,
+                limit=ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES,
+            )
             sites_by_account: dict[str, list[Site]] = defaultdict(list)
             for site in sites:
                 if site.account_id:
@@ -1026,56 +1120,183 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 site_ids=[site.site_id for site in sites],
             )
 
-        items = []
-        now = self.now_factory()
+        enriched_items: list[tuple[dict[str, object], AccountSubscription]] = []
         for subscription in subscriptions:
             account_sites = sites_by_account.get(subscription.account_id, [])
             period_start_at, period_end_at = self._resolve_period(subscription, now)
-            items.append(
-                {
-                    "subscription": self._serialize_subscription(subscription),
-                    "account": cast(Any, self)._serialize_account(accounts[subscription.account_id])
-                    if subscription.account_id in accounts
-                    else None,
-                    "covered_sites": [
-                        cast(Any, self)._serialize_site(site) for site in account_sites
-                    ],
-                    "coverage": self._build_subscription_coverage_summary(
-                        subscription,
-                        site_count=len(account_sites),
-                    ),
-                    "expiry": self._serialize_expiry_state(subscription),
-                    "latest_billing_snapshots": [
-                        self._serialize_billing_snapshot(latest_billing_by_site[site.site_id])
-                        for site in account_sites
-                        if site.site_id in latest_billing_by_site
-                    ],
-                    "billing_snapshot_status": self._build_subscription_billing_snapshot_status(
-                        subscription=subscription,
-                        sites=account_sites,
-                        latest_billing_snapshots=latest_billing_by_site,
-                        period_start_at=period_start_at,
-                        period_end_at=period_end_at,
-                    ),
-                }
+            billing_snapshot_status = self._build_subscription_billing_snapshot_status(
+                subscription=subscription,
+                sites=account_sites,
+                latest_billing_snapshots=latest_billing_by_site,
+                period_start_at=period_start_at,
+                period_end_at=period_end_at,
             )
+            operator_risk = self._build_admin_subscription_operator_risk(
+                subscription=subscription,
+                billing_snapshot_status=billing_snapshot_status,
+                now=now,
+            )
+            enriched_items.append(
+                (
+                    {
+                        "subscription": self._serialize_subscription(subscription),
+                        "account": (
+                            cast(Any, self)._serialize_account(accounts[subscription.account_id])
+                            if subscription.account_id in accounts
+                            else None
+                        ),
+                        "covered_sites": [
+                            cast(Any, self)._serialize_site(site) for site in account_sites
+                        ],
+                        "coverage": self._build_subscription_coverage_summary(
+                            subscription,
+                            site_count=len(account_sites),
+                        ),
+                        "expiry": self._serialize_expiry_state(subscription),
+                        "latest_billing_snapshots": [
+                            self._serialize_billing_snapshot(latest_billing_by_site[site.site_id])
+                            for site in account_sites
+                            if site.site_id in latest_billing_by_site
+                        ],
+                        "billing_snapshot_status": billing_snapshot_status,
+                        "operator_risk": operator_risk,
+                    },
+                    subscription,
+                )
+            )
+
+        def _expiry_sort_value(subscription: AccountSubscription) -> float:
+            period_end_at = subscription.current_period_end_at
+            if period_end_at is None:
+                return float("inf")
+            return self._normalize_datetime(period_end_at).timestamp()
+
+        def _customer_sort_value(item: dict[str, object]) -> tuple[str, str]:
+            account = item.get("account")
+            account_mapping = account if isinstance(account, dict) else {}
+            subscription = item.get("subscription")
+            subscription_mapping = subscription if isinstance(subscription, dict) else {}
+            account_id_value = str(subscription_mapping.get("account_id") or "")
+            customer_value = str(account_mapping.get("name") or account_id_value)
+            return customer_value.casefold(), account_id_value.casefold()
+
+        def _sort_key(
+            entry: tuple[dict[str, object], AccountSubscription],
+        ) -> tuple[object, ...]:
+            item, subscription = entry
+            customer_name, account_id_value = _customer_sort_value(item)
+            subscription_id = str(subscription.subscription_id or "")
+            expiry_value = _expiry_sort_value(subscription)
+            if normalized_sort == "customer":
+                return customer_name, account_id_value, subscription_id
+            if normalized_sort == "expiry":
+                return expiry_value, customer_name, account_id_value, subscription_id
+            operator_risk = item.get("operator_risk")
+            operator_risk_mapping = operator_risk if isinstance(operator_risk, dict) else {}
+            risk_level = str(operator_risk_mapping.get("level") or "monitor")
+            return (
+                ADMIN_SUBSCRIPTION_RISK_RANK.get(risk_level, 2),
+                expiry_value,
+                customer_name,
+                account_id_value,
+                subscription_id,
+            )
+
+        enriched_items.sort(key=_sort_key)
+        summary_counts = Counter(
+            str(cast(dict[str, object], item["operator_risk"]).get("level") or "monitor")
+            for item, _subscription in enriched_items
+        )
+        if normalized_risk == "needs_action":
+            filtered_items = [
+                entry
+                for entry in enriched_items
+                if str(cast(dict[str, object], entry[0]["operator_risk"]).get("level") or "monitor")
+                in {"critical", "warning", "monitor"}
+            ]
+        elif normalized_risk == "all":
+            filtered_items = enriched_items
+        else:
+            filtered_items = [
+                entry
+                for entry in enriched_items
+                if str(cast(dict[str, object], entry[0]["operator_risk"]).get("level") or "monitor")
+                == normalized_risk
+            ]
+        filtered_total = len(filtered_items)
+        items = [
+            item
+            for item, _subscription in filtered_items[
+                normalized_offset : normalized_offset + resolved_limit
+            ]
+        ]
         return {
             "filters": {
                 "status": status or "",
                 "account_id": account_id or "",
                 "plan_id": plan_id or "",
                 "expires_before": self._serialize_datetime(expires_before),
+                "risk": normalized_risk,
+                "sort": normalized_sort,
                 "offset": normalized_offset,
                 "limit": resolved_limit,
             },
+            "summary": {
+                "critical": summary_counts["critical"],
+                "warning": summary_counts["warning"],
+                "monitor": summary_counts["monitor"],
+                "stable": summary_counts["stable"],
+            },
             "items": items,
-            "total": total,
+            "total": filtered_total,
             "pagination": {
                 "offset": normalized_offset,
                 "limit": resolved_limit,
-                "total": total,
-                "has_more": normalized_offset + len(items) < total,
+                "total": filtered_total,
+                "has_more": normalized_offset + len(items) < filtered_total,
             },
+        }
+
+    def _build_admin_subscription_operator_risk(
+        self,
+        *,
+        subscription: AccountSubscription,
+        billing_snapshot_status: dict[str, object],
+        now: datetime,
+    ) -> dict[str, str]:
+        subscription_status = str(subscription.status or "").strip().lower()
+        snapshot_status = str(billing_snapshot_status.get("status") or "unknown").strip().lower()
+        if subscription_status in {"past_due", "expired", "suspended"}:
+            return {
+                "level": "critical",
+                "reason_code": subscription_status,
+            }
+        if snapshot_status in {"stale", "missing"}:
+            return {
+                "level": "warning",
+                "reason_code": f"snapshot_{snapshot_status}",
+            }
+        period_end_at = subscription.current_period_end_at
+        if period_end_at is not None:
+            seconds_until_end = (self._normalize_datetime(period_end_at) - now).total_seconds()
+            if 0 <= seconds_until_end <= 14 * 86400:
+                return {
+                    "level": "warning",
+                    "reason_code": "expiring",
+                }
+        if subscription_status in {"trialing", "canceled"}:
+            return {
+                "level": "monitor",
+                "reason_code": subscription_status,
+            }
+        if snapshot_status == "unknown":
+            return {
+                "level": "monitor",
+                "reason_code": "snapshot_unknown",
+            }
+        return {
+            "level": "stable",
+            "reason_code": "stable",
         }
 
     def get_admin_subscription(self, subscription_id: str) -> dict[str, object]:
@@ -1128,7 +1349,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 rate_row.config_json if rate_row is not None and rate_row.enabled else None
             )
             usage_totals.update(
-                self._aggregate_accounting_costs(meter_events, accounting_fx)
+                self._aggregate_accounting_costs(meter_events)
             )
             budget_state = self._build_budget_policy_state(
                 repository=repository,
@@ -1214,7 +1435,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 rate_row.config_json if rate_row is not None and rate_row.enabled else None
             )
             totals = self._aggregate_meter_events(all_events)
-            totals.update(self._aggregate_accounting_costs(all_events, accounting_fx))
+            totals.update(self._aggregate_accounting_costs(all_events))
             return {
                 "site_id": site_id,
                 "subscription_id": subscription.subscription_id if subscription else "",
@@ -1228,7 +1449,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _ensure_free_version_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
     ) -> tuple[str, str]:
         tier_id = "free"
         baseline = PLAN_TIER_REGISTRY[tier_id]
@@ -1299,7 +1520,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _ensure_plan_tier_version_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         tier_id: str,
     ) -> tuple[str, str]:
         if tier_id == "free":
@@ -1652,7 +1873,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _bind_subscription_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription_id: str,
         account_id: str,
         plan_id: str,
@@ -1849,7 +2070,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _ensure_current_subscription_period_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription: AccountSubscription,
         now: datetime,
     ) -> tuple[AccountSubscription, AccountEntitlementSnapshot | None, bool]:
@@ -1928,32 +2149,34 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _aggregate_accounting_costs(
         self,
         events: Sequence[object],
-        accounting_fx: AccountingFxRate,
     ) -> dict[str, float]:
-        snapshotted_provider_calls = {
-            int(getattr(event, "provider_call_id", 0) or 0)
-            for event in events
-            if str(getattr(event, "meter_key", "") or "") == "cost_cny"
-            and int(getattr(event, "provider_call_id", 0) or 0) > 0
-        }
         cost_usd = 0.0
         snapshotted_cost_cny = 0.0
-        legacy_cost_usd = 0.0
+        cost_provider_calls: set[int] = set()
+        snapshotted_provider_calls: set[int] = set()
+        cost_events_without_provider_call = 0
         for event in events:
             meter_key = str(getattr(event, "meter_key", "") or "")
             quantity = max(0.0, float(getattr(event, "quantity", 0.0) or 0.0))
             provider_call_id = int(getattr(event, "provider_call_id", 0) or 0)
             if meter_key == "cost":
                 cost_usd += quantity
-                if provider_call_id not in snapshotted_provider_calls:
-                    legacy_cost_usd += quantity
+                if provider_call_id > 0:
+                    cost_provider_calls.add(provider_call_id)
+                else:
+                    cost_events_without_provider_call += 1
             elif meter_key == "cost_cny":
                 snapshotted_cost_cny += quantity
-        converted_legacy_cost = float(convert_usd_to_cny(legacy_cost_usd, accounting_fx))
+                if provider_call_id > 0:
+                    snapshotted_provider_calls.add(provider_call_id)
+        missing_snapshot_count = (
+            len(cost_provider_calls - snapshotted_provider_calls)
+            + cost_events_without_provider_call
+        )
         return {
             "cost_usd": round(cost_usd, 6),
-            "cost_cny": round(snapshotted_cost_cny + converted_legacy_cost, 6),
-            "legacy_cost_usd_converted": round(legacy_cost_usd, 6),
+            "cost_cny": round(snapshotted_cost_cny, 6),
+            "cost_cny_snapshot_missing_count": float(missing_snapshot_count),
         }
 
     def _aggregate_meter_breakdown(self, events: Sequence[object]) -> dict[str, object]:
@@ -2279,7 +2502,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
 
     def _resolve_current_subscription_plan_version(
         self,
-        repository: CommercialRepository,
+        repository: CommercialPlanRepository,
         subscription: AccountSubscription | None,
     ) -> PlanVersion | None:
         if subscription is None:
@@ -2915,7 +3138,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _upsert_current_period_billing_snapshot_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         site_id: str,
         subscription: AccountSubscription,
         period_start_at: datetime,
@@ -2934,7 +3157,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         accounting_fx = resolve_accounting_fx_rate(
             rate_row.config_json if rate_row is not None and rate_row.enabled else None
         )
-        totals.update(self._aggregate_accounting_costs(events, accounting_fx))
+        totals.update(self._aggregate_accounting_costs(events))
         breakdown["accounting_fx"] = accounting_fx.as_dict()
         return repository.upsert_billing_snapshot(
             snapshot_id=self._build_billing_snapshot_id(
@@ -3055,7 +3278,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _refresh_subscription_billing_snapshots_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription: AccountSubscription,
         covered_sites: list[Site],
         period_start_at: datetime,

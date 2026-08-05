@@ -15,6 +15,14 @@ function readErrorDetail(details: unknown, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readPositiveErrorNumber(details: unknown, key: string): number {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) {
+    return 0;
+  }
+  const value = Number((details as Record<string, unknown>)[key]);
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 0;
+}
+
 export function formatPortalErrorReference(error: unknown): string {
   if (!(error instanceof ApiError)) {
     return '';
@@ -49,12 +57,24 @@ export function formatPortalErrorMessage(
     switch (error.errorCode) {
       case 'portal.login_code_rate_limited':
       case 'portal.oauth_state_rate_limited':
-      case 'portal.email_change_rate_limited':
+      case 'portal.email_change_rate_limited': {
+        const retryAfterSeconds = readPositiveErrorNumber(
+          error.details,
+          'retry_after_seconds'
+        );
+        if (retryAfterSeconds > 0) {
+          return t(
+            'error.portal_rate_limited_retry',
+            { seconds: String(retryAfterSeconds) },
+            `Too many requests. Try again in ${retryAfterSeconds} seconds.`
+          );
+        }
         return t(
           'error.portal_rate_limited',
           { minutes: '15' },
           'Too many portal requests were sent in a short window. Wait a few minutes and try again.'
         );
+      }
       case 'auth.portal_login_code_invalid':
       case 'auth.portal_login_code_required':
       case 'auth.portal_email_change_code_invalid':

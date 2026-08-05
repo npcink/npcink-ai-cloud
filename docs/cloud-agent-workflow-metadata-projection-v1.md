@@ -90,7 +90,7 @@ duplicating independent copies of the metadata shape.
 
 Use these checks for metadata projection drift:
 
-- `.venv/bin/python -m pytest tests/api/test_service_routes.py::test_admin_agent_workflow_metadata_projection_is_read_only`
-- `.venv/bin/python -m pytest tests/api/test_service_routes.py::test_internal_ai_advisor_routes_are_internal_and_evidence_backed`
+- `.venv/bin/python -m pytest tests/api/test_service_advisor_routes.py::test_admin_agent_workflow_metadata_projection_is_read_only`
+- `.venv/bin/python -m pytest tests/api/test_service_advisor_routes.py::test_internal_ai_advisor_routes_are_internal_and_evidence_backed`
 - `pnpm run test:anti-drift`
 - `pnpm run check:agent-workflow-metadata`

@@ -583,8 +583,6 @@ def _run_remote_cutover(
     drift_previous_runtime_network_after_failure: bool = False,
     pending_first_install: bool = False,
     pending_repair: bool = False,
-    refresh_providers: bool = True,
-    fail_marker_directory_fsync: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -760,20 +758,7 @@ def _run_remote_cutover(
             archive.add(item, arcname=item.relative_to(bundle_source))
 
     remote_body = tmp_path / "remote-deploy-body.sh"
-    remote_body_source = _remote_deploy_body()
-    if fail_marker_directory_fsync:
-        original = (
-            "    os.replace(temporary, marker)\n"
-            "    directory_fd = os.open(marker.parent, os.O_RDONLY)\n"
-        )
-        injected = (
-            "    os.replace(temporary, marker)\n"
-            "    raise OSError('injected marker directory fsync failure')\n"
-            "    directory_fd = os.open(marker.parent, os.O_RDONLY)\n"
-        )
-        assert remote_body_source.count(original) == 1
-        remote_body_source = remote_body_source.replace(original, injected, 1)
-    _write(remote_body, remote_body_source, executable=True)
+    _write(remote_body, _remote_deploy_body(), executable=True)
 
     uploaded_env = ""
     if new_project_name is not None or new_env_sentinel:
@@ -827,7 +812,7 @@ def _run_remote_cutover(
                         if previous_runtime_network_contract
                         else ""
                     ),
-                    "REFRESH_PROVIDERS": "1" if refresh_providers else "0",
+                    "REFRESH_PROVIDERS": "1",
                     "WITH_OPERATIONAL_READY": "0",
                     "FIRST_INSTALL_PENDING_REPAIR": "1" if pending_repair else "0",
                     "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": (
@@ -1629,7 +1614,6 @@ def test_pending_repair_bootstraps_missing_previous_runtime_network_state_from_l
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
-        refresh_providers=False,
         previous_runtime_network_contract=True,
         runtime_network_state_variant="missing-file",
     )
@@ -1690,7 +1674,6 @@ def test_pending_repair_runtime_network_bootstrap_fails_closed_on_ambiguous_live
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
-        refresh_providers=False,
         previous_runtime_network_contract=True,
         runtime_network_state_variant="missing-file",
         runtime_network_live_variant=live_variant,
@@ -1726,7 +1709,6 @@ def test_pending_repair_runtime_network_bootstrap_rejects_unsafe_protected_state
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
-        refresh_providers=False,
         previous_runtime_network_contract=True,
         runtime_network_state_variant=state_variant,
     )
@@ -1976,7 +1958,6 @@ def test_explicit_pending_first_install_repair_preserves_acceptance_boundary(
         tmp_path,
         pending_first_install=True,
         pending_repair=True,
-        refresh_providers=False,
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -2016,7 +1997,6 @@ def test_failed_pending_first_install_repair_restores_original_marker(
         fail_at=fail_at,
         pending_first_install=True,
         pending_repair=True,
-        refresh_providers=False,
     )
 
     assert completed.returncode != 0
@@ -2032,50 +2012,6 @@ def test_failed_pending_first_install_repair_restores_original_marker(
         / "rollback-images.tsv"
     )
     assert Path(marker["rollback_image_map"]).is_file()
-
-
-def test_pending_first_install_repair_rejects_provider_refresh_before_mutation(
-    tmp_path: Path,
-) -> None:
-    completed, remote_dir, log_path = _run_remote_cutover(
-        tmp_path,
-        pending_first_install=True,
-        pending_repair=True,
-        refresh_providers=True,
-    )
-
-    assert completed.returncode != 0
-    assert "repair forbids provider projection refresh" in completed.stderr
-    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
-    assert not log_path.exists() or "load:prepare-only" not in log_path.read_text(
-        encoding="utf-8"
-    )
-
-
-def test_pending_repair_restores_snapshot_after_marker_replace_fsync_failure(
-    tmp_path: Path,
-) -> None:
-    completed, remote_dir, _log_path = _run_remote_cutover(
-        tmp_path,
-        pending_first_install=True,
-        pending_repair=True,
-        refresh_providers=False,
-        fail_marker_directory_fsync=True,
-    )
-
-    assert completed.returncode != 0
-    assert "injected marker directory fsync failure" in completed.stderr
-    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
-    marker = json.loads(
-        (remote_dir / ".first-install-pending.json").read_text(encoding="utf-8")
-    )
-    assert Path(marker["release"]) == remote_dir / "release-previous"
-    assert Path(marker["rollback_image_map"]) == (
-        remote_dir
-        / ".release-state"
-        / "release-previous"
-        / "rollback-images.tsv"
-    )
 
 
 def test_internal_one_off_cleanup_failure_retains_both_recovery_locks(

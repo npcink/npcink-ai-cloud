@@ -14,10 +14,10 @@ from fastapi.responses import JSONResponse
 from jwt import InvalidTokenError
 from sqlalchemy import text
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.api.envelope import build_envelope
 from app.core.config import Settings
-from app.core.db import get_session
+from app.core.db import build_postgres_advisory_lock_material, get_session
 from app.core.models import PRINCIPAL_STATUS_ACTIVE
 from app.core.security import (
     PUBLIC_REPLAY_POLICY_METHOD_DEFAULT,
@@ -77,11 +77,19 @@ class PortalAuthContext:
 
 
 class PortalBearerTokenError(ValueError):
-    def __init__(self, status_code: int, error_code: str, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        message: str,
+        *,
+        retry_after_seconds: int = 0,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.message = message
+        self.retry_after_seconds = max(0, int(retry_after_seconds))
 
 
 def normalize_portal_site_id(value: object) -> str:
@@ -469,7 +477,7 @@ def validate_portal_principal_session(
             "invalid portal bearer token",
         )
     with get_session(settings.database_url) as session:
-        repository = CommercialRepository(session)
+        repository = CommercialIdentityRepository(session)
         identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
         current_session_version = getattr(identity, "session_version", None)
         if (
@@ -515,17 +523,32 @@ def _enforce_portal_request_rate_limit(
                             "hashtextextended(:lock_material, 0)"
                             ")"
                         ),
-                        {"lock_material": f"{scope_kind}\0{scope_id}"},
+                        {
+                            "lock_material": build_postgres_advisory_lock_material(
+                                scope_kind,
+                                scope_id,
+                            )
+                        },
                     )
+            rate_limit_error: RequestAuthError | None = None
             for scope_kind, scope_id, max_requests in bounded_scopes:
-                _enforce_short_window_rate_limit(
-                    session=session,
-                    scope_kind=scope_kind,
-                    scope_id=scope_id,
-                    now=now,
-                    window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
-                    max_requests=max_requests,
-                )
+                try:
+                    _enforce_short_window_rate_limit(
+                        session=session,
+                        scope_kind=scope_kind,
+                        scope_id=scope_id,
+                        now=now,
+                        window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
+                        max_requests=max_requests,
+                    )
+                except RequestAuthError as error:
+                    if (
+                        rate_limit_error is None
+                        or error.retry_after_seconds > rate_limit_error.retry_after_seconds
+                    ):
+                        rate_limit_error = error
+            if rate_limit_error is not None:
+                raise rate_limit_error
             for scope_kind, scope_id, _max_requests in bounded_scopes:
                 _reserve_replay_receipt(
                     session=session,
@@ -544,6 +567,7 @@ def _enforce_portal_request_rate_limit(
             429,
             error_code,
             error.message,
+            retry_after_seconds=error.retry_after_seconds,
         ) from error
 
 

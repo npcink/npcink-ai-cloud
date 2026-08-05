@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
   BackofficePageStack,
-  BackofficePrimaryPanel,
+  BackofficePageHeader,
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
@@ -15,6 +15,10 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  normalizeAdminReturnTo,
+} from '@/lib/admin-return-context';
 
 type SupportRequestStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
@@ -184,7 +188,15 @@ function authorLabel(authorKind: string, visibility: string, t: ReturnType<typeo
 
 export default function AdminSupportRequestDetailPage() {
   const params = useParams<{ requestId?: string }>();
+  const searchParams = useSearchParams();
   const requestId = String(params?.requestId || '');
+  const returnPath = normalizeAdminReturnTo(
+    searchParams.get('return_to'),
+    {
+      allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
+      fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
+    }
+  );
   const { t } = useLocale();
   const [supportRequest, setSupportRequest] = useState<SupportRequest | null>(null);
   const [messages, setMessages] = useState<SupportRequestMessage[]>([]);
@@ -322,12 +334,17 @@ export default function AdminSupportRequestDetailPage() {
   }
 
   return (
-    <BackofficePageStack>
-      <BackofficePrimaryPanel
+    <BackofficePageStack data-ui="support-request-detail-workspace">
+      <BackofficePageHeader
         eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={supportRequest?.title || t('admin.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
-        aside={
+        summaryItems={supportRequest ? [
+          { label: t('admin.support_requests_priority', {}, 'Priority'), value: supportRequest.priority },
+          { label: t('common.account', {}, 'Account'), value: supportRequest.account_id },
+          { label: t('common.updated_at', {}, 'Updated'), value: supportRequest.updated_at ? formatDate(supportRequest.updated_at) : t('common.unknown', {}, 'Unknown') },
+        ] : []}
+        summaryAside={
           supportRequest ? (
             <BackofficeStatusBadge
               status={statusTone(supportRequest.status)}
@@ -335,8 +352,8 @@ export default function AdminSupportRequestDetailPage() {
             />
           ) : null
         }
-        actions={
-          <Link href="/admin/support-requests" className="btn btn-secondary">
+        secondaryAction={
+          <Link href={returnPath} className="btn btn-secondary">
             {t('common.back', {}, 'Back')}
           </Link>
         }
@@ -357,8 +374,12 @@ export default function AdminSupportRequestDetailPage() {
         <BackofficeSectionPanel>
           <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-4">
             <span>{supportRequest.email}</span>
-            <span>{supportRequest.account_id}</span>
-            <span>{supportRequest.site_id || t('portal.support_request_no_site', {}, 'Account-level issue')}</span>
+            <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(supportRequest.account_id)}`}>{supportRequest.account_id}</Link>
+            {supportRequest.site_id ? (
+              <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(supportRequest.site_id)}`}>{supportRequest.site_id}</Link>
+            ) : (
+              <span>{t('portal.support_request_no_site', {}, 'Account-level issue')}</span>
+            )}
             <span>{t(`portal.support_topic_${supportRequest.topic}`, {}, supportRequest.topic)}</span>
           </div>
         </BackofficeSectionPanel>

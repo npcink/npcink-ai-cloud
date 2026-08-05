@@ -1,17 +1,17 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   BackofficeInfoHint,
   BackofficeEmptyState,
   BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
@@ -72,7 +72,6 @@ type TierSummary = {
 
 type PlanListItem = {
   plan: PlanRecord;
-  versions: PlanVersionRecord[];
   tier_summary: TierSummary;
   latest_version?: PlanVersionRecord | null;
   published_version_count: number;
@@ -95,14 +94,8 @@ type PlanCatalogPayload = {
 
 const PLAN_CATALOG_LOAD_TIMEOUT_MS = 10_000;
 type PlanCatalogState = 'missing' | 'unpublished' | 'ready';
-type PlanCatalogSort = 'attention' | 'tier' | 'subscriptions';
-const PLAN_SORTS = new Set<PlanCatalogSort>(['attention', 'tier', 'subscriptions']);
 const TIER_ORDER = new Map([['free', 0], ['plus', 1], ['pro', 2], ['agency', 3]]);
 const plansClient = createApiClient({ idempotencyPrefix: 'admin_plans' });
-
-function normalizePlanSort(value: string | null): PlanCatalogSort {
-  return value && PLAN_SORTS.has(value as PlanCatalogSort) ? (value as PlanCatalogSort) : 'attention';
-}
 
 function catalogState(entry: CanonicalTierCoverageItem): PlanCatalogState {
   if (!entry.item) return 'missing';
@@ -110,19 +103,12 @@ function catalogState(entry: CanonicalTierCoverageItem): PlanCatalogState {
   return 'ready';
 }
 
-function catalogStateRank(entry: CanonicalTierCoverageItem): number {
-  return { missing: 0, unpublished: 1, ready: 2 }[catalogState(entry)];
-}
-
-function sortCatalog(entries: CanonicalTierCoverageItem[], sort: PlanCatalogSort): CanonicalTierCoverageItem[] {
-  return [...entries].sort((left, right) => {
-    if (sort === 'subscriptions') {
-      return Number(right.item?.subscription_counts?.active || 0) - Number(left.item?.subscription_counts?.active || 0);
-    }
-    const tierDifference = (TIER_ORDER.get(left.shell.tier_id) ?? 99) - (TIER_ORDER.get(right.shell.tier_id) ?? 99);
-    if (sort === 'tier') return tierDifference;
-    return catalogStateRank(left) - catalogStateRank(right) || tierDifference;
-  });
+function sortCatalogByTier(entries: CanonicalTierCoverageItem[]): CanonicalTierCoverageItem[] {
+  return [...entries].sort(
+    (left, right) =>
+      (TIER_ORDER.get(left.shell.tier_id) ?? 99) -
+      (TIER_ORDER.get(right.shell.tier_id) ?? 99)
+  );
 }
 
 function catalogStateToneClassName(state: PlanCatalogState): string {
@@ -176,20 +162,15 @@ function findCanonicalShellPlan(plans: PlanListItem[], tierId: string): PlanList
 function PlansContent() {
   const { t } = useLocale();
   const toast = useToast();
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-  const appliedQuery = searchParams.get('q') || '';
-  const appliedState = searchParams.get('state') || '';
-  const sort = normalizePlanSort(searchParams.get('sort'));
-  const focusedTierId = searchParams.get('focus') || '';
+  const [focusedTierId, setFocusedTierId] = useState(searchParams.get('focus') || '');
   const [plans, setPlans] = useState<PlanListItem[]>([]);
   const [tierTemplates, setTierTemplates] = useState<TierSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [queryDraft, setQueryDraft] = useState(appliedQuery);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -206,12 +187,21 @@ function PlansContent() {
   const updateCatalogUrl = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParamsKey);
     Object.entries(changes).forEach(([key, value]) => {
-      if (!value || (key === 'sort' && value === 'attention')) params.delete(key);
+      if (!value) params.delete(key);
       else params.set(key, value);
+      if (key === 'focus') setFocusedTierId(value || '');
     });
     const next = params.toString();
-    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
-  }, [pathname, router, searchParamsKey]);
+    window.history.replaceState(
+      window.history.state,
+      '',
+      next ? `${pathname}?${next}` : pathname
+    );
+  }, [pathname, searchParamsKey]);
+
+  useEffect(() => {
+    setFocusedTierId(new URLSearchParams(searchParamsKey).get('focus') || '');
+  }, [searchParamsKey]);
 
   const loadPlans = useCallback(async (force = false) => {
     if (!force && activeRequestRef.current) return;
@@ -250,10 +240,6 @@ function PlansContent() {
   useEffect(() => {
     void loadPlans();
   }, [loadPlans]);
-
-  useEffect(() => {
-    setQueryDraft(appliedQuery);
-  }, [appliedQuery]);
 
   const handleCreatePlan = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -396,35 +382,20 @@ function PlansContent() {
       isPresent: Boolean(item && Number(item.published_version_count || 0) > 0),
     };
   });
-  const visibleCanonicalPlans = canonicalTierCoverage.filter((entry) => entry.item).length;
+  const readyPackageCount = canonicalTierCoverage.filter((entry) => entry.isPresent).length;
   const activeSubscriptions = canonicalTierCoverage.reduce(
     (sum, entry) => sum + Number(entry.item?.subscription_counts?.active || 0),
     0
   );
   const missingShellCount = canonicalTierCoverage.filter((entry) => !entry.isPresent).length;
-  const filteredCatalog = sortCatalog(
-    canonicalTierCoverage.filter((entry) => {
-      const state = catalogState(entry);
-      const queryBlob = [
-        entry.shell.tier_id,
-        entry.shell.label,
-        entry.shell.package_alias,
-        entry.item?.plan?.plan_id,
-        entry.item?.plan?.name,
-        entry.item?.plan?.description,
-      ].join(' ').toLowerCase();
-      return (!appliedState || state === appliedState) && (!appliedQuery || queryBlob.includes(appliedQuery.toLowerCase()));
-    }),
-    sort
-  );
+  const orderedCatalog = sortCatalogByTier(canonicalTierCoverage);
   const selectedEntry = focusedTierId
-    ? filteredCatalog.find((entry) => entry.shell.tier_id === focusedTierId) || null
+    ? orderedCatalog.find((entry) => entry.shell.tier_id === focusedTierId) || null
     : null;
-  const hasFilters = Boolean(appliedQuery || appliedState || sort !== 'attention');
 
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.nav_plan_catalog', {}, 'Package Catalog')}
         title={t('admin.coverage_package_catalog_title', {}, 'Coverage package catalog')}
         description={t(
@@ -432,111 +403,40 @@ function PlansContent() {
           {},
           'Read the active Free, Plus, Pro, and Agency package posture first. Open detail only when price, limits, or release state needs maintenance.'
         )}
-        actions={(
-          <>
-            <button type="button" className="btn btn-secondary" disabled={isRefreshing} onClick={() => void loadPlans(true)}>{isRefreshing ? t('common.loading', {}, 'Loading...') : t('admin.plans.refresh_action', {}, 'Refresh catalog')}</button>
-            <Link href="/admin/credit-packs" className="btn btn-secondary">{t('admin.plans.open_credit_packs', {}, 'Open AI credit packs')}</Link>
-          </>
+        secondaryAction={(
+          <button type="button" className="btn btn-secondary" disabled={isRefreshing} onClick={() => void loadPlans(true)}>{isRefreshing ? t('common.loading', {}, 'Loading...') : t('admin.plans.refresh_action', {}, 'Refresh catalog')}</button>
         )}
+        summaryItems={[
+          { label: t('admin.managed_packages', {}, 'Managed packages'), value: formatInteger(tierTemplates.length) },
+          { label: t('admin.ready_packages', {}, 'Ready packages'), value: formatInteger(readyPackageCount), toneClassName: readyPackageCount === tierTemplates.length ? 'text-emerald-600 dark:text-emerald-300' : undefined },
+          { label: t('admin.plans.needs_attention_metric', {}, 'Needs attention'), value: formatInteger(missingShellCount), toneClassName: missingShellCount ? 'text-rose-600 dark:text-rose-300' : undefined },
+          { label: t('admin.active_subscriptions'), value: formatInteger(activeSubscriptions) },
+          { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
+        ]}
       />
 
       {error ? <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between"><span>{error}{plans.length > 0 ? <span className="mt-1 block text-xs">{t('admin.plans.retained_notice', {}, 'Showing the last successfully loaded catalog.')}</span> : null}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadPlans(true)}>{t('common.retry')}</button></div> : null}
-
-      <BackofficeSummaryStrip items={[
-        { label: t('admin.managed_packages', {}, 'Managed packages'), value: formatInteger(tierTemplates.length) },
-        { label: t('admin.ready_packages', {}, 'Ready packages'), value: formatInteger(visibleCanonicalPlans), toneClassName: visibleCanonicalPlans === tierTemplates.length ? 'text-emerald-600 dark:text-emerald-300' : undefined },
-        { label: t('admin.plans.needs_attention_metric', {}, 'Needs attention'), value: formatInteger(missingShellCount), toneClassName: missingShellCount ? 'text-rose-600 dark:text-rose-300' : undefined },
-        { label: t('admin.active_subscriptions'), value: formatInteger(activeSubscriptions) },
-        { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
-      ]} />
 
       <div className="min-w-0">
           <AdminDataTableFrame
             title={t('admin.plans.directory_title', {}, 'Standard package catalog')}
             resultLabel={t(
               'admin.plans.result_count',
-              { visible: formatInteger(filteredCatalog.length), total: formatInteger(canonicalTierCoverage.length) },
-              `${formatInteger(filteredCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`
+              { visible: formatInteger(orderedCatalog.length), total: formatInteger(canonicalTierCoverage.length) },
+              `${formatInteger(orderedCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`
             )}
             dataUi="plan-catalog-table"
             density="compact"
-            headerActions={(
-              <div className="flex flex-wrap gap-1.5" aria-label={t('admin.plans.state_filter_label', {}, 'Package readiness')}>
-                {['', 'ready', 'unpublished', 'missing'].map((state) => (
-                  <button
-                    key={state || 'all'}
-                    type="button"
-                    aria-pressed={appliedState === state}
-                    onClick={() => updateCatalogUrl({ state: state || null, focus: null })}
-                    className={cn(
-                      'cursor-pointer rounded border px-2.5 py-1 text-xs font-medium transition',
-                      appliedState === state
-                        ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-600'
-                    )}
-                  >
-                    {state ? t(`admin.plans.state_${state}`, {}, state) : t('common.all', {}, 'All')}
-                  </button>
-                ))}
-              </div>
-            )}
+            headerVisibility="sr-only"
           >
             <p className="sr-only" role="status" aria-live="polite">
               {t(
                 'admin.plans.result_count',
-                { visible: formatInteger(filteredCatalog.length), total: formatInteger(canonicalTierCoverage.length) },
-                `${formatInteger(filteredCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`
+                { visible: formatInteger(orderedCatalog.length), total: formatInteger(canonicalTierCoverage.length) },
+                `${formatInteger(orderedCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`
               )}
             </p>
-            <div className="border-b border-slate-200 bg-slate-50/55 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/25">
-              <form
-                className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_minmax(9rem,0.55fr)_auto]"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  updateCatalogUrl({ q: queryDraft.trim() || null, focus: null });
-                }}
-              >
-                <label className="text-xs text-slate-600 dark:text-slate-300">
-                  <span className="sr-only">{t('admin.plans.search_label', {}, 'Search packages')}</span>
-                  <input
-                    type="search"
-                    className="input input-sm w-full"
-                    value={queryDraft}
-                    onChange={(event) => setQueryDraft(event.target.value)}
-                    placeholder={t('admin.plans.search_placeholder', {}, 'Package name or ID')}
-                  />
-                </label>
-                <label className="text-xs text-slate-600 dark:text-slate-300">
-                  <span className="sr-only">{t('admin.plans.sort_label', {}, 'Sort')}</span>
-                  <select
-                    className="input input-sm w-full"
-                    value={sort}
-                    aria-label={t('admin.plans.sort_label', {}, 'Sort')}
-                    onChange={(event) => updateCatalogUrl({ sort: normalizePlanSort(event.target.value), focus: null })}
-                  >
-                    <option value="attention">{t('admin.plans.sort_attention', {}, 'Needs attention')}</option>
-                    <option value="tier">{t('admin.plans.sort_tier', {}, 'Tier order')}</option>
-                    <option value="subscriptions">{t('admin.plans.sort_subscriptions', {}, 'Active subscriptions')}</option>
-                  </select>
-                </label>
-                <div className="flex gap-2">
-                  <button type="submit" className="btn btn-secondary btn-sm">{t('common.apply', {}, 'Apply')}</button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={!hasFilters && !queryDraft}
-                    onClick={() => {
-                      setQueryDraft('');
-                      updateCatalogUrl({ q: null, state: null, sort: null, focus: null });
-                    }}
-                  >
-                    {t('common.clear_filters', {}, 'Clear filters')}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {filteredCatalog.length ? (
+            {orderedCatalog.length ? (
               <table className="w-full min-w-[48rem] table-fixed text-left text-xs" aria-label={t('admin.plans.list_label', {}, 'Package list')}>
                 <thead className="bg-slate-50/70 text-slate-500 dark:bg-slate-900/35 dark:text-slate-400">
                   <tr>
@@ -549,10 +449,10 @@ function PlansContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCatalog.map((entry) => {
+                  {orderedCatalog.map((entry) => {
                     const { shell, item } = entry;
                     const state = catalogState(entry);
-                    const latestVersion = item?.latest_version || item?.versions?.[0] || null;
+                    const latestVersion = item?.latest_version || null;
                     const concurrency = (latestVersion?.concurrency || shell.concurrency_template || {}) as Record<string, unknown>;
                     const sourceTier = item?.tier_summary || shell;
                     const packageAlias = localizePackageAlias(t, shell.tier_id, sourceTier.package_alias);
@@ -581,9 +481,6 @@ function PlansContent() {
                           <div className="flex items-center gap-2">
                             <span className={cn('inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold', catalogStateToneClassName(state))}>
                               {t(`admin.plans.state_${state}`, {}, state)}
-                            </span>
-                            <span className="text-[0.68rem] text-slate-500 dark:text-slate-400">
-                              {formatInteger(item?.published_version_count || 0)} {t('admin.plans.published_versions_short', {}, 'published')}
                             </span>
                           </div>
                           {attentionReason ? <p className="mt-1 line-clamp-2 leading-4 text-slate-600 dark:text-slate-300">{attentionReason}</p> : null}
@@ -643,20 +540,8 @@ function PlansContent() {
             ) : (
               <BackofficeEmptyState
                 className="m-4"
-                title={t('admin.plans.empty_title', {}, 'No packages match these filters')}
-                description={t('admin.plans.empty_desc', {}, 'Clear the package name, readiness, or sort filters. No package record has been changed.')}
-                action={hasFilters ? (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setQueryDraft('');
-                      updateCatalogUrl({ q: null, state: null, sort: null, focus: null });
-                    }}
-                  >
-                    {t('common.clear_filters', {}, 'Clear filters')}
-                  </button>
-                ) : null}
+                title={t('admin.plans.empty_title', {}, 'No standard packages are available')}
+                description={t('admin.plans.empty_desc', {}, 'Refresh the catalog, then initialize any missing standard packages.')}
               />
             )}
           </AdminDataTableFrame>
@@ -666,6 +551,7 @@ function PlansContent() {
         <PlanManagementWorkbench
           open
           planId={selectedEntry.item.plan.plan_id}
+          activeSubscriptionCount={Number(selectedEntry.item.subscription_counts?.active || 0)}
           fallbackName={localizePackageAlias(
             t,
             selectedEntry.shell.tier_id,

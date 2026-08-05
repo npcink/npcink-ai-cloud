@@ -35,7 +35,6 @@
     "test:visual:marketing:baseline": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/marketing-home.spec.ts --update-snapshots",
     "test:visual:baseline": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/visual-baseline.spec.ts --update-snapshots",
     "test:unit": "vitest run",
-    "test:unit:coverage:portal-users": "vitest run --config vitest.portal-users-coverage.config.ts tests/vitest/admin-portal-users-query.test.ts --coverage",
     "test:unit:watch": "vitest"
   },
   "keywords": [
@@ -66,7 +65,7 @@
     "autoprefixer": "10.4.20",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.9",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.18",
     "tailwindcss": "3.4.17",
     "typescript": "^5.9.3",
     "vite": "7.3.5",

@@ -67,7 +67,7 @@ from app.domain.commercial.errors import (
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_USER,
     USER_ALLOWED_ACTION_PROVISION_SITES,
-    USER_ROLE_USER,
+    USER_ROLE_OWNER,
     _extract_site_url,
     _normalize_portal_site_url,
     _slugify_portal_site_segment,
@@ -1821,7 +1821,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.principal_site_access_required",
                     f"principal '{principal_id}' is not bound to site '{site_id}'",
                 )
-            role = normalize_user_role(str(membership.role or USER_ROLE_USER))
+            role = normalize_user_role(str(membership.role or USER_ROLE_OWNER))
             allowed_actions = [
                 str(action).strip()
                 for action in (membership.allowed_actions_json or [])
@@ -1863,7 +1863,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                             for action in (membership.allowed_actions_json or [])
                             if str(action).strip()
                         ],
-                        "role": USER_ROLE_USER,
+                        "role": USER_ROLE_OWNER,
                         "membership_status": membership.status,
                         "site": self._serialize_site(site),
                     }

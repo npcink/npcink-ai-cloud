@@ -2654,7 +2654,7 @@ def test_execute_route_allows_budget_grace_with_runtime_downgrade(tmp_path: Path
     dispose_engine(database_url)
 
 
-def test_execute_route_rejects_concurrency_exhaustion(tmp_path: Path) -> None:
+def test_execute_route_isolates_interactive_and_background_concurrency(tmp_path: Path) -> None:
     runtime_queue = InMemoryRuntimeQueue()
     database_url, client = _build_client(tmp_path, runtime_queue=runtime_queue)
     seed_site_auth(
@@ -2693,6 +2693,18 @@ def test_execute_route_rejects_concurrency_exhaustion(tmp_path: Path) -> None:
     first_body = json.dumps(payload).encode("utf-8")
     second_payload = {**payload, "idempotency_key": "idem-concurrency-002"}
     second_body = json.dumps(second_payload).encode("utf-8")
+    interactive_payload = {
+        **payload,
+        "ability_name": "npcink-abilities-toolkit/build-article-block-plan",
+        "ability_family": "workflow",
+        "skill_id": "content_summary_seo",
+        "workflow_id": "content_summary_seo_completion",
+        "execution_pattern": "inline",
+        "idempotency_key": "idem-concurrency-inline-001",
+        "task_backend": {"enabled": False},
+        "input": {"messages": [{"role": "user", "content": "serve the editor"}]},
+    }
+    interactive_body = json.dumps(interactive_payload).encode("utf-8")
 
     first_response = client.post(
         "/v1/runtime/execute",
@@ -2705,6 +2717,20 @@ def test_execute_route_rejects_concurrency_exhaustion(tmp_path: Path) -> None:
                 idempotency_key="idem-concurrency-001",
                 trace_id="traceconcurrency001000000000",
                 body=first_body,
+            )
+        ),
+    )
+    interactive_response = client.post(
+        "/v1/runtime/execute",
+        content=interactive_body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key="idem-concurrency-inline-001",
+                trace_id="traceconcurrencyinline00100000",
+                body=interactive_body,
             )
         ),
     )
@@ -2725,6 +2751,9 @@ def test_execute_route_rejects_concurrency_exhaustion(tmp_path: Path) -> None:
 
     assert first_response.status_code == 200
     assert first_response.json()["data"]["status"] == "queued"
+    assert interactive_response.status_code == 200, interactive_response.text
+    assert interactive_response.json()["data"]["status"] == "succeeded"
+    assert interactive_response.json()["data"]["run_lifecycle"]["queue_mode"] == "inline"
     assert second_response.status_code == 429
     assert second_response.json()["error_code"] == "commercial.concurrency_exceeded"
 

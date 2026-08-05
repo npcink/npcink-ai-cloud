@@ -1,21 +1,26 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { frontendRoot } from './_paths.mjs';
 
-const coverageSource = readFileSync(resolve(process.cwd(), 'src/app/admin/coverage/page.tsx'), 'utf8');
-const layoutSource = readFileSync(resolve(process.cwd(), 'src/app/admin/layout.tsx'), 'utf8');
-const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
-
-assert.match(
-  coverageSource,
-  /title=\{t\('admin\.coverage_surface_title'[\s\S]*Service risk queue/,
-  'Coverage surface must be framed as the canonical service risk queue'
+const coverageSource = readFileSync(resolve(frontendRoot, 'src/app/admin/coverage/page.tsx'), 'utf8');
+const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
+const i18nSource = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
+const serviceSource = readFileSync(
+  resolve(frontendRoot, '../app/domain/commercial/mixins/_admin_mixin.py'),
+  'utf8'
 );
 
 assert.match(
   coverageSource,
-  /useSearchParams\(\)[\s\S]*updateQueueUrl[\s\S]*status[\s\S]*reason[\s\S]*sort[\s\S]*focus/,
-  'Coverage filters, sort, and inspector focus must survive refresh and detail navigation through the URL'
+  /title=\{t\('admin\.coverage_surface_title'[\s\S]*Service status/,
+  'Coverage surface must use the direct service-status title'
+);
+
+assert.match(
+  coverageSource,
+  /useSearchParams\(\)[\s\S]*updateQueueUrl[\s\S]*status[\s\S]*reason[\s\S]*sort/,
+  'Coverage filters and sort must survive refresh and detail navigation through the URL'
 );
 
 assert.match(
@@ -26,14 +31,68 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /visibleItems\.find\(\(item\) => queueItemKey\(item\) === selectedKey\)[\s\S]*admin\.coverage\.select_inspector_action/,
-  'Coverage inspector must follow an explicit operator selection instead of always taking the first row'
+  /AdminInspectorDrawer[\s\S]*focusedCoverageKey[\s\S]*selectedCoverageItem/,
+  'Coverage workspace must use an on-demand shared evidence drawer'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /common\.actions|<td className="px-4 py-3 text-right">/,
+  'Coverage rows must not duplicate selection with a generic action column'
 );
 
 assert.match(
   coverageSource,
-  /admin\.coverage\.inspector_title[\s\S]*selectedQueueItem[\s\S]*admin\.coverage\.inspector_boundary/,
-  'Coverage workspace must show a right-side customer inspector with a boundary note'
+  /item\.severity === 'error' \|\| item\.severity === 'warning'[\s\S]*href=\{item\.action_href\}[\s\S]*translateActionLabel/,
+  'Coverage table must expose one contextual action only for warning or error rows'
+);
+
+assert.match(
+  coverageSource,
+  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*data-ui="coverage-queue-item"[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}/,
+  'Coverage rows must show direct account-detail links without a competing row-selection interaction'
+);
+
+assert.match(
+  coverageSource,
+  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
+  'Coverage defaults to customers needing action and the clear action restores that URL-owned default'
+);
+
+assert.match(
+  coverageSource + serviceSource,
+  /primary_identity\?[\s\S]*customer_identity_missing[\s\S]*customer_identity_conflict[\s\S]*customer_access_disabled[\s\S]*#customer-access/,
+  'Coverage must search customer login identity and route identity problems to customer access'
+);
+
+assert.match(
+  serviceSource,
+  /missing_package_coverage[\s\S]*#coverage-actions[\s\S]*subscription_lifecycle_risk[\s\S]*\/admin\/subscriptions\/[\s\S]*billing_snapshot_follow_up[\s\S]*\/admin\/subscriptions\/[\s\S]*site_status_follow_up[\s\S]*#site-footprint/,
+  'Coverage actions must route package, subscription, billing, and site problems to their owning work surfaces'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /tabIndex=\{0\}|aria-selected=/,
+  'Coverage table must not turn rows into a second keyboard-selection model'
+);
+
+assert.match(
+  coverageSource,
+  /focus: itemKey[\s\S]*onClose=\{\(\) => updateQueueUrl\(\{ focus: null \}\)\}/,
+  'Coverage evidence focus must be addressable and closing it must preserve queue filters'
+);
+
+assert.match(
+  coverageSource,
+  /href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}/,
+  'Coverage customer identities must open account detail directly'
+);
+
+assert.match(
+  coverageSource,
+  /item\.severity === 'error' \|\| item\.severity === 'warning'[\s\S]*translateReasonCode[\s\S]*\) : null/,
+  'Coverage rows must reserve issue copy for warning and error items'
 );
 
 assert.doesNotMatch(
@@ -42,10 +101,10 @@ assert.doesNotMatch(
   'Coverage workspace must not reintroduce the duplicate package overview tab or fetch the package catalog directly'
 );
 
-assert.match(
+assert.doesNotMatch(
   coverageSource,
-  /href="\/admin\/subscriptions"[\s\S]*admin\.coverage_open_subscription_queue_action/,
-  'Coverage workspace must expose subscription risk as a secondary entry'
+  /actions=\{\([\s\S]*admin\.coverage_open_subscription_queue_action/,
+  'Coverage header must not duplicate the subscription action already owned by each queue item'
 );
 
 assert.match(
@@ -54,40 +113,34 @@ assert.match(
   'Coverage queue must deduplicate initial loading and expose a bounded refresh action'
 );
 
+assert.match(
+  coverageSource,
+  /overflow-x-auto[\s\S]*<table[\s\S]*common\.package[\s\S]*common\.subscription[\s\S]*common\.sites[\s\S]*admin\.coverage\.table_issue[\s\S]*admin\.coverage\.table_impact/,
+  'The service queue must use one full-width semantic table with package, subscription, sites, issue, and impact'
+);
+
 assert.doesNotMatch(
   coverageSource,
-  /AdminHorizontalScroll|<table|min-w-\[64rem\]/,
-  'The core service queue must not depend on a horizontally scrolling desktop table on mobile'
+  /admin\.account_detail\.active_api_keys_label|admin\.subscriptions\.snapshot_status_metric|coverage-technical-info|admin\.coverage\.account_id_label/,
+  'Coverage table must leave key, billing, and internal identifier diagnostics to customer detail'
 );
 
 assert.match(
-  coverageSource,
-  /role="list"[\s\S]*data-ui="coverage-queue-item"[\s\S]*aria-controls="coverage-inspector"/,
-  'Coverage queue must use a responsive task list with an explicitly connected inspector'
-);
-
-assert.doesNotMatch(
   layoutSource,
-  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'/,
-  'Subscription risk must not return as a top-level admin sidebar entry'
-);
-
-assert.match(
-  coverageSource,
-  /admin\.coverage\.inspector_boundary[\s\S]*checkout, payment, or WordPress write controls/,
-  'Coverage inspector must not become customer-facing checkout, payment, or WordPress write control'
+  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
+  'Service risks and subscriptions must be independent top-level sidebar destinations'
 );
 
 assert.match(
   i18nSource,
-  /'admin\.coverage_surface_title': '服务风险队列'/,
-  'Coverage queue must provide task-specific Simplified Chinese title copy'
+  /'admin\.coverage_surface_title': '服务状态'/,
+  'Coverage queue must provide direct Simplified Chinese title copy'
 );
 
 assert.match(
   i18nSource,
-  /'admin\.coverage\.refresh_action': '刷新队列'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.inspector_boundary': '这个检查器只打开现有客户、订阅、站点和套餐界面，不创建客户侧 checkout、支付或 WordPress 写入控制。'/,
-  'Coverage toolbar and inspector must provide Simplified Chinese utility copy'
+  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.unnamed_customer': '未命名客户'[\s\S]*'admin\.coverage\.customer_position': '\{\{name\}\} · \{\{index\}\}\/\{\{total\}\}'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
+  'Coverage toolbar and table must provide Simplified Chinese utility copy'
 );
 
 assert.doesNotMatch(

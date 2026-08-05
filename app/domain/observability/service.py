@@ -101,6 +101,17 @@ class ObservabilityService:
             if isinstance(item, dict)
         }
         providers = self._dict_value(summary.get("providers"))
+        provider_status_counts = self._dict_value(providers.get("status_counts"))
+        provider_instances_total = self._int_value(providers.get("instances_total"))
+        degraded_instances = self._int_value(provider_status_counts.get("degraded"))
+        unhealthy_instances = self._int_value(provider_status_counts.get("unhealthy"))
+        unknown_instances = self._int_value(provider_status_counts.get("unknown"))
+        providers_operational = (
+            provider_instances_total > 0
+            and degraded_instances == 0
+            and unhealthy_instances == 0
+            and unknown_instances == 0
+        )
 
         required_worker_ids = expected_worker_ids(self.settings)
         worker_checks = {
@@ -114,6 +125,7 @@ class ObservabilityService:
         checks = {
             "dependencies.ready": ready_report.ok,
             "providers.fresh": str(providers.get("freshness") or "") == "fresh",
+            "providers.operational": providers_operational,
             **worker_checks,
             **cadence_checks,
         }
@@ -123,6 +135,11 @@ class ObservabilityService:
             else "database or redis dependency checks failed",
             "providers.fresh": (
                 f"provider health freshness={str(providers.get('freshness') or 'missing')}"
+            ),
+            "providers.operational": (
+                f"provider instances={provider_instances_total}; "
+                f"degraded={degraded_instances}; unhealthy={unhealthy_instances}; "
+                f"unknown={unknown_instances}"
             ),
         }
         for worker_id in required_worker_ids:
@@ -232,3 +249,17 @@ class ObservabilityService:
         if not isinstance(value, list):
             return []
         return [self._dict_value(item) for item in value if isinstance(item, dict)]
+
+    def _int_value(self, value: object) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return 0
+        return 0

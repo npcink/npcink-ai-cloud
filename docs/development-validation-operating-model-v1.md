@@ -37,11 +37,13 @@ rehearsal after every edit.
 
 The authoritative details are:
 
+- [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md);
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md);
 - [M4 Preview Development Workflow](m4-preview-development-v1.md);
 - [ADR-023: Candidate and Accepted Promotion](decisions/023-m4-preview-candidate-acceptance-promotion.md);
 - [ADR-024: Risk-Tiered Validation Authority](decisions/024-risk-tiered-development-validation-authority.md);
 - [ADR-025: Source-Only Authoring and AI Checkpoint Dispatch](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md);
+- [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md);
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md);
 - [Release CI Open-Source Patterns](release-ci-open-source-patterns-2026-07.md).
 
@@ -52,6 +54,7 @@ Every task moves through explicit evidence states:
 | State | What it proves | What it does not prove |
 | --- | --- | --- |
 | `local verified` | the changed source seam passed its narrow local check | Docker/runtime behavior or merge eligibility |
+| `local-ready` | a parallel builder produced a clean focused commit and complete handoff receipt | current-base integration, PR checks, M4 behavior, or merge eligibility |
 | `candidate validated on M4` | the current worktree behaved in the M4 integration runtime | the source was committed, reviewed, or merged |
 | `PR verified` | the pushed revision passed required GitHub checks | the change is in `master` or visible on M4 |
 | `merged into master` | the reviewed change is integration truth | M4 is running that merged revision |
@@ -75,24 +78,52 @@ Before editing:
 3. fetch `origin` when the current integration baseline matters;
 4. preserve all existing user changes;
 5. create a clean `codex/*` worktree from current `origin/master` when the
-   active checkout is dirty, stale, or on unrelated work;
-6. state the change envelope before modifying files.
+   active checkout is dirty, stale, or on unrelated work; otherwise reuse the
+   clean current task worktree;
+6. immediately lock any auxiliary worktree created by the session with
+   `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
+   verify its reason in `git worktree list --porcelain`;
+7. state the change envelope before modifying files.
 
-The change envelope records:
+The default change envelope records:
 
 - focused repository and module;
 - intended outcome;
 - explicit non-goals;
 - public contracts touched;
-- expected and forbidden files;
-- environments and external systems that must not change;
-- narrow and integration gates;
-- cross-repository matrix requirement;
-- rollback.
+- expected files;
+- verification and rollback.
+
+Add forbidden files, external systems, cross-repository matrix requirements,
+or environment restrictions only when the task actually touches those seams.
+
+For `pnpm run check:anti-drift`, contract selection is deterministic:
+
+1. `--contract <path>` selects an explicit task contract;
+2. otherwise, exactly one root `task-contract-*.json` selects the active task
+   contract;
+3. with no root task contract, the checker uses
+   `config/cloud-anti-drift-default-contract-v1.json`;
+4. multiple root task contracts are ambiguous and fail closed until the caller
+   passes `--contract` or archives completed contracts under `docs/history/`.
+
+The default contract is the repository-wide boundary baseline. A dated task
+contract is a temporary change envelope and must not remain at the repository
+root after that task closes.
 
 Never obtain a clean tree by resetting, stashing, checking out over, or broadly
 staging user work. A clean focused worktree is cheaper than reconstructing
 ownership after unrelated changes are mixed.
+
+The worktree lock is a lifecycle guard against accidental automation or
+operator cleanup. Keep it through implementation, review, and merge. Unlock
+only after the task has ended, the PR is confirmed merged, and the worktree is
+clean. No-deliverable closeout and stale-lock recovery follow the
+[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md);
+path names and modification times are not cleanup authority. Explicit parallel
+handoffs add the rules in the parallel collaboration standard.
+The default topology and read-only audit command are defined in
+[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md).
 
 ## 4. Select the Smallest Valid Development Lane
 
@@ -105,12 +136,67 @@ ownership after unrelated changes are mixed.
 | Migration, persistence, worker, recovery, or network behavior | focused contract plus risk-specific checks | M4 runtime evidence; full gate only when justified |
 | CI-only change | focused script/contract replay | GitHub Actions is the runtime; do not deploy M4 |
 
-For a frontend-only appearance change, an owned ephemeral slot may replace the
-primary `sync` checkpoint when it needs no mutation, dependency, API,
-migration, worker, persistence, proxy, or runtime-config change. The slot must
-attach to a clean accepted primary runtime and use its foreground loopback
-tunnel. This is a concurrency exception for rendering only, not a second
-integration stack.
+### Optional local structural index
+
+A local structural index such as CodeGraph may accelerate architecture
+discovery in a large Python and TypeScript repository. It remains advisory:
+
+1. Prefer one clean, current `origin/master` reference worktree instead of
+   indexing every feature, preview, or temporary worktree.
+2. Do not assume the reference index represents the active feature worktree.
+   Re-read the exact active-worktree files before changing code.
+3. Use native search and direct file inspection for string-based routes,
+   dynamic configuration, generated contracts, cross-repository seams, and
+   any relationship the index cannot prove.
+4. Do not use index results as test-selection, merge, release, runtime, or
+   acceptance authority.
+5. Keep the index local, ignored, reversible, and absent from CI, M4,
+   production, release, and shared runtime environments.
+6. Treat a missing, stale, or unavailable index as a navigation fallback, not
+   a development blocker.
+
+In explicitly enabled parallel mode, a frontend-only appearance change may use
+the bounded ephemeral-slot exception defined by the M4 standard. Single-session
+work uses its focused local/browser lane and the primary M4 lane only when its
+declared risk requires M4.
+
+### Appearance-only preview-first lane
+
+The authoritative L0/L1/L2 classification, upward-reclassification triggers,
+and preview-versus-closeout receipts are defined in
+[AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md).
+The guidance below explains the appearance-only application of that standard.
+
+For a bounded Admin appearance change, separate two clocks:
+
+1. **Visible preview** answers whether the operator wants the composition. Aim
+   to provide a route-focused PC preview within 15 minutes of a coherent edit.
+2. **Engineering closeout** answers whether the chosen composition may merge,
+   become M4 accepted, or ship. It may continue after visual direction is
+   confirmed and remains subject to the required GitHub, M4, and release gates.
+
+This lane applies only when the diff changes copy, spacing, color, iconography,
+or route-local composition and does not change shared primitives, geometry
+tokens, action hierarchy, interaction behavior, state ownership, API/data
+contracts, credentials, destructive actions, dependencies, or runtime inputs.
+
+The preview checkpoint is:
+
+```text
+exact source/static check
+  -> focused target-route PC browser check
+  -> visible candidate for operator review
+```
+
+Do not block that visible candidate on the whole Admin visual matrix, unrelated
+backend CI, PR merge, or clean-master M4 promotion. Those controls still run at
+the closeout stage required by the declared risk and requested outcome. If the
+focused browser check exposes overflow, broken states, console/network errors,
+or a shared-seam change, stop using this lane and reclassify the work as
+`material` or `shared` under the Admin UI standard.
+
+The 15-minute target is a feedback objective, not evidence that the change is
+merged, accepted, deployed, or human-approved. Record those states separately.
 
 `sync` is the default for ordinary source. It must fail closed when a changed
 fingerprint requires `deploy`. Do not choose a cold rebuild merely because it
@@ -140,6 +226,27 @@ Do not commit every experimental save, and do not wait until after merge to
 discover whether the feature works in the real integration runtime. Candidate
 validation is intentionally before merge; accepted promotion is intentionally
 after merge.
+
+### Optional parallel builder and integrator variation
+
+Only when the operator explicitly declares a multi-session queue, split this
+loop at the
+`local-ready` boundary:
+
+1. each builder performs steps 1-4 in one owned conflict domain, inspects and
+   exactly stages the diff, commits it, verifies a clean worktree, and sends
+   the standard local-ready receipt;
+2. the builder stops changing that domain and does not publish a merge-ready
+   PR or mutate shared M4;
+3. the single integrator accepts at most two waiting ready items, admits one
+   item at a time, refreshes it against current `origin/master`, and performs
+   the remaining runtime, PR, CI, merge, and acceptance steps;
+4. failures return to the named builder through an explicit handback, or the
+   integrator owns the repair after an acknowledged ownership transfer.
+
+This variation shortens the critical delivery path by keeping parallel work
+away from the serialized merge and shared-runtime lanes. It does not weaken
+the evidence required by any later state.
 
 ## 6. Consumer Paths Must Stay Separate
 
@@ -179,6 +286,17 @@ The inner loop and the acceptance loop answer different questions:
 4. post-merge promotion answers whether visible M4 runtime source equals clean
    reviewed `master`;
 5. a full M4 suite answers an additional M4-specific high-risk question.
+
+Use the local changed-file router when the correct first gate is not obvious:
+
+```bash
+pnpm run check:changed -- --plan
+pnpm run check:changed
+```
+
+The plan is read-only. Execution runs only local focused gates; it reports M4
+sync/deploy and browser work as explicit follow-ups and never mutates M4,
+production, Cloudflare, Provider budgets, or external systems automatically.
 
 The normal bug-fix target is:
 
@@ -384,6 +502,8 @@ Before reporting a feature or fix complete:
 
 - [ ] focused module and product boundary remained intact;
 - [ ] unrelated dirty work was preserved;
+- [ ] every auxiliary task worktree created by this session recorded
+      `locked codex:<task-id>` immediately after creation;
 - [ ] the narrowest meaningful gate passed;
 - [ ] candidate M4 behavior was verified when the Cloud runtime was involved;
 - [ ] the actual browser, worker, API, or WordPress consumer was checked;
@@ -392,9 +512,39 @@ Before reporting a feature or fix complete:
 - [ ] GitHub required checks passed and the PR merged into `master`;
 - [ ] current clean `master` was promoted when M4 acceptance was required;
 - [ ] status shows the expected revision, clean source, and acceptance state;
+- [ ] the task worktree remained locked while its PR was open, or was unlocked
+      only after the documented merged/clean closeout conditions were met;
 - [ ] production and external human acceptance were reported separately;
 - [ ] known limitations and rollback were recorded.
 
 For a documentation-only closeout, M4 candidate and promotion steps are
 normally not applicable. Validate the document links, repository contracts,
 formatting, and protected docs-only CI instead.
+
+## 13. Development-Stage Closeout
+
+Task completion and development-stage completion are different scopes. In the
+default single-session mode, a stage closes after its admitted tasks are
+merged or explicitly withdrawn, required clean-master M4 acceptance is
+complete, no stage candidate remains active, and remaining work or rollback is
+recorded.
+
+When the operator explicitly declares a multi-session queue, the additional
+ownership, double-release, scheduling, and release-handoff rules are normative
+in [Parallel AI Collaboration Standard Section 11](parallel-ai-collaboration-standard-v1.md#11-development-stage-closeout-and-release-handoff).
+
+Before declaring a development stage closed:
+
+1. inventory every batch already admitted to that stage;
+2. confirm that each batch is merged, explicitly withdrawn, or handed to a
+   later stage;
+3. confirm clean-current-`master` M4 acceptance where required;
+4. confirm that no stage candidate remains active;
+5. record local-only candidates, retained worktrees, blockers, rollback, and
+   next work;
+6. record the operator decision that selects the next priority.
+
+If the next queue is controlled production validation, create a durable
+handoff but do not treat that record as deployment authorization. Freeze the
+exact candidate only after the stage-close conditions hold, then follow the
+current production release policy and checklist.

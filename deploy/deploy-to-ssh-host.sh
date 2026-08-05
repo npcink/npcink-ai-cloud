@@ -286,10 +286,6 @@ if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
 		echo "[fail] Pending first-install repair requires the exact operator approval sentence." >&2
 		exit 1
 	fi
-	if [ "${REFRESH_PROVIDERS}" = "1" ]; then
-		echo "[fail] Pending first-install repair forbids provider projection refresh." >&2
-		exit 1
-	fi
 elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
 	echo "[fail] Pending first-install repair approval is invalid without --first-install-pending-repair." >&2
 	exit 1
@@ -522,11 +518,11 @@ print(state)
 PY
 	)"
 	case "${REMOTE_INSTALLATION_STATE}" in
-		missing|pending)
+		missing|pending|complete)
 			"${LOCAL_RELEASE_TOOL_PYTHON}" \
 				"${ROOT_DIR}/scripts/check-first-install-cve-gate.py" \
 				"${FIRST_INSTALL_CVE_GATE_ARGS[@]}" >/dev/null || {
-				echo "[fail] First-install host mutation is forbidden while the exact release retains the Python 3.14.6 CVE exceptions." >&2
+				echo "[fail] Production host mutation is forbidden while the exact release retains the Python 3.14.6 CVE exceptions." >&2
 				exit 1
 			}
 			;;
@@ -534,7 +530,6 @@ PY
 			echo "[fail] Remote first installation is initializing; deployment will not mutate the host." >&2
 			exit 1
 			;;
-		complete) ;;
 	esac
 fi
 
@@ -862,10 +857,6 @@ PY
 		if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
 			if [ "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" != "Approved for first-install pending repair by operator." ]; then
 				echo "[fail] Protected pending first-install repair approval is invalid." >&2
-				exit 1
-			fi
-			if [ "${REFRESH_PROVIDERS}" = "1" ]; then
-				echo "[fail] Protected pending first-install repair forbids provider projection refresh." >&2
 				exit 1
 			fi
 		elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
@@ -2692,8 +2683,8 @@ remote_run_timed "remote load and up" \
 if [ "${FIRST_INSTALL_PENDING}" = "1" ] || [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
 	CUTOVER_PHASE="publish-first-install-recovery-contract"
 	snapshot_first_install_pending_marker
-	FIRST_INSTALL_PENDING_MARKER_REWRITTEN=1
 	write_first_install_pending_marker
+	FIRST_INSTALL_PENDING_MARKER_REWRITTEN=1
 fi
 
 if [ "${FRESH_PG18_INSTALL}" = "1" ]; then

@@ -11,6 +11,7 @@ This document composes with:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
+- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md);
 - [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md).
 
@@ -36,6 +37,19 @@ accessibility, preserve the stronger boundary first.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
+
+The customer operations workspace provides two bounded references:
+
+- `/admin/accounts` is the customer-directory `queue`: shared create dialog,
+  dominant search, bounded filters, one semantic customer table, and one
+  Detail row action;
+- `/admin/accounts/[accountId]` is the customer `detail`: six task tabs,
+  compact current-state summaries, semantic tables for repeated comparison,
+  one outer action row per active task, shared drawers for long read-only
+  evidence, and shared dialogs for bounded comparison or mutation work.
+
+`/admin/coverage` remains the separate needs-action service queue. It is not a
+second customer directory and must not be merged into the Accounts route.
 
 `/admin/external-services` is the accepted PC reference for a
 `configuration` page:
@@ -64,6 +78,22 @@ candidate-chain configuration page:
 7. contract identity, revision, and other low-frequency evidence outside the
    default working table.
 
+The three primary runtime-configuration routes form one visual family without
+sharing an identical body layout:
+
+- `/admin/external-services` summarizes ready services before the active
+  service directory;
+- `/admin/vector-settings` summarizes the fixed profile and readiness before
+  its connection table;
+- `/admin/runtime-profiles` summarizes configured and needs-attention counts
+  before the candidate-chain directory.
+
+Use `Ready` / `已就绪` for an operable runtime object, `Needs config` /
+`待配置` for an incomplete object, and `Configuration saved` / `配置已保存`
+only for page-draft persistence. Keep each route's operator-specific working
+surface; visual consistency does not require wrapping all three routes in the
+same extra panel or adding another shared component.
+
 `/admin/service-settings` is the accepted PC reference for a compact
 multi-group settings page:
 
@@ -83,6 +113,23 @@ workbench keep policy and candidate selection in continuous tables, show normal
 metadata inline, and reserve secondary identifiers for tooltips or
 low-frequency evidence. Other routes remain on standard density until their
 own operator workflow is reviewed and accepted.
+
+`/admin/troubleshooting` is the accepted PC reference for a `diagnostic`
+page:
+
+1. one compact scope, time-window control, and independently fresh remote
+   sources;
+2. one explicit runtime conclusion before the evidence surfaces;
+3. one bounded semantic anomaly queue with severity, issue, scope, count, and
+   one inspect action;
+4. one contextual inspector for evidence code, affected runs, scope, and the
+   next diagnostic step;
+5. one compact quality summary that keeps sample sufficiency separate from
+   the presence or absence of a review candidate;
+6. low-frequency quality detail, evidence lanes, and runtime guidance behind
+   default-collapsed disclosures;
+7. no mutation, routing, provider, prompt, approval, or WordPress write
+   authority.
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
@@ -137,6 +184,55 @@ Every admin route declares exactly one model in
 | `authentication` | identity scope, credential, error, submit |
 
 Do not change an API or data owner merely to make two routes look alike.
+
+### 3.1 Diagnostic Operator Density
+
+A diagnostic page is an evidence workbench, not a raw telemetry dump. Its
+default PC view must answer, in order:
+
+1. What is the current conclusion?
+2. Which anomaly should be inspected first?
+3. What is its affected scope and frequency?
+4. Which narrow evidence view or next step matches it?
+
+Use these rules:
+
+- Keep the conclusion in a dedicated, non-truncated line. A badge names the
+  state; it does not replace the conclusion.
+- Use a semantic table when anomalies repeat the same comparison fields.
+  Keep raw evidence codes, long identifiers, affected-run counts, and
+  explanatory detail in the selected inspector unless they are needed to rank
+  every row.
+- A queue beside an inspector must align to the start of the grid. A short
+  queue must not stretch to the inspector height.
+- Bound long queues with a shared `--admin-*` maximum-height token and a
+  sticky header. The manifest PC viewport must not acquire page-level
+  horizontal overflow.
+- Keep selected-row and disclosure state local unless a shareable URL is an
+  explicit operator requirement. Do not copy remote diagnostic data into
+  local state merely to render it.
+- When a page reads more than one remote source, preserve each source's
+  loading, error, and freshness state. The page may project a composite
+  refresh state, but one failed source must not erase successful evidence from
+  another source or pretend that all data is current.
+- Disable the composite refresh action until all required source requests are
+  idle. Show partial failure separately from total failure.
+- Sample sufficiency, collection stage, review-candidate count, and final
+  quality conclusion are different facts. In particular, an insufficient
+  sample with zero candidates is not a successful "no issue" conclusion.
+- Put raw lanes, schema guidance, debug identifiers, and historical detail
+  behind explicit disclosures. The closed summary must still show the state,
+  key count, sample stage, and freshness needed for the next decision.
+- Inspect the selected anomaly and open matching evidence is the primary
+  operator path. Refresh and time-window changes are secondary actions. A
+  diagnostic page has no destructive default action and must not gain mutation
+  authority for visual convenience.
+
+Focused behavior evidence must cover ready, partial-failure, total-failure,
+refresh, row-to-inspector selection, default-collapsed disclosures, expansion,
+and insufficient-sample semantics. PC evidence must also verify start
+alignment, bounded scrolling, sticky headers, long localized text, and the
+absence of page-level horizontal overflow.
 
 ## 4. Visual Hierarchy
 
@@ -200,6 +296,43 @@ boundaries, status text, or accessible table structure.
 Use the accepted admin table frame and status primitives instead of creating a
 new route-local table shell.
 
+### 5.1 Support and conversation queues
+
+A support queue ranks conversation work, not merely database status values.
+For `/admin/support-requests` and any future bounded conversation queue:
+
+- Use the full queue width for repeated comparison. Open inspection or editing
+  on demand in the shared drawer, workbench, or dedicated detail route; do not
+  reserve a permanently empty inspector column.
+- Keep the default row answerable in one scan: priority, waiting object,
+  waiting age, customer or ticket identity, workflow status, scope, freshness,
+  and one clear follow-up action.
+- Treat workflow status (`open`, `in_progress`, `resolved`, `closed`) and
+  waiting object (`operator`, `customer`, `none`) as separate facts. Do not
+  infer one from the other in the browser when the service owns a canonical
+  projection.
+- Rank and filter before pagination on the service. The browser must not sort
+  one fetched page and present it as the global risk order.
+- “Overdue” requires a server-owned waiting start and an explicit threshold.
+  Generic `updated_at`, internal notes, or page-load time are not SLA clocks.
+- Public customer activity may move work to the operator; public operator
+  activity may move it to the customer. Internal notes do not change the
+  public conversation owner. Complete work uses `none`.
+- Keep URL-backed queue scope shareable and refresh-safe. A retained or
+  placeholder result from a different request key remains visibly labeled and
+  read-only.
+- At the manifest PC viewport, the normal filter set and bounded actions use
+  one stable toolbar row when their labels and controls fit. Combining closely
+  related status and attention views into one selector is preferred to adding
+  another row or hiding frequent filters.
+- An empty queue is a bounded empty state, not a reason to preserve large
+  unused page geometry. Visual acceptance of populated states uses
+  deterministic fixtures or governed demo data and states exactly which one.
+
+The durable reasoning and delivery evidence for these rules are recorded in
+[Cloud Admin Support Request Queue Retrospective](cloud-admin-support-request-queue-retrospective-2026-08-01.md)
+and [ADR-038](decisions/038-server-owned-support-waiting-state-projection.md).
+
 ## 6. Dialogs And Configuration
 
 - Create and edit use a dialog or drawer while the list remains the primary
@@ -208,6 +341,11 @@ new route-local table shell.
   overlay.
 - The dialog must trap focus, close with `Escape` when safe, and return focus
   to the meaningful trigger.
+- A workbench uses one vertical scroll owner for one continuous task. When a
+  table, log, or preview pane owns scrolling, set the shared dialog to
+  `contentMode="contained"`; the overlay and dialog body stay non-scrolling.
+- Split panes may scroll independently only when they are sibling work regions
+  with distinct jobs. Never put either pane inside another vertical scroller.
 - Essential connection values use one dense configuration table during routine
   editing; only advanced runtime metadata starts collapsed.
 - Put the main work object, such as model visibility, in the default view.
@@ -239,9 +377,12 @@ new route-local table shell.
 
 Prefer these shared surfaces:
 
+- `BackofficePageHeader` for the one top-level page identity, action, and
+  compact summary surface;
 - `BackofficeLayer`, `BackofficeSummaryStrip`, and
   `BackofficeDiagnosticNotice`;
 - `AdminDataTableFrame`;
+- `AdminActionMenu` for collision-aware, keyboard-accessible low-frequency row actions;
 - `AdminConfigurationTable`;
 - `AdminWorkbenchDialog`;
 - `AdminCredentialField`;
@@ -254,6 +395,24 @@ Prefer these shared surfaces:
 Page files compose route data and behavior. They must not duplicate modal
 focus management, credential reveal behavior, table framing, status palette,
 shared geometry, or dashed empty-state framing.
+
+Every non-authentication Admin route uses `BackofficePageHeader` for its
+ready-state top-level page header. `BackofficeConfigurationHeader` remains the
+configuration-page compatibility alias and delegates to the same primitive.
+Keep the header order stable:
+eyebrow, one page title with an information hint, no more than one primary
+action plus bounded secondary action, then a compact factual summary. Use
+`BackofficeLayer` only for a section inside the page; it must not create a
+second page title. Loading and failure shells may use `BackofficePrimaryPanel`
+when they need to retain a bounded retry surface without fabricating summary
+facts.
+
+For customer and commercial detail surfaces, use a shared inspector drawer for
+long read-only records that must preserve the current page context. Use a shared
+workbench dialog for bounded comparison, selection, or mutation. Use a
+dedicated detail page when an object needs a durable URL and several independent
+tasks. Do not nest drawers, dialogs, or multiple disclosure levels as the
+routine path to evidence or action.
 
 Existing route-local dialogs are recorded as migration debt by the executable
 gate. New route-local dialogs are rejected; migrate one existing dialog at a
@@ -282,6 +441,93 @@ evidence for meaningful layout changes.
 
 ## 10. Required Gates
 
+### 10.1 Risk-tiered visual enforcement
+
+Admin visual evidence uses the risk tier declared by the changed seam:
+
+- `low`: copy, data labels, color, iconography, or route-local spacing with no
+  geometry, action-hierarchy, state, or interaction change; run the structural
+  check that owns the seam plus a focused target-route PC browser check;
+- `material`: route composition, table, form, responsive geometry, state,
+  action hierarchy, dialog, or inspector change; local PC browser evidence and
+  a structured visual receipt are mandatory;
+- `shared`: Admin shell, shared primitive, geometry token, or cross-route
+  interaction change; run the representative route matrix locally and gather
+  M4 browser evidence before acceptance.
+
+### 10.2 Preview-first and closeout gates
+
+Visual direction must be reviewable before unrelated integration work obscures
+the feedback loop. For an eligible `low` appearance-only change, use:
+
+```text
+focused source/static check
+  -> focused target-route PC browser check
+  -> visible preview
+```
+
+Do not wait for the complete Admin visual matrix, unrelated backend CI, merge,
+or M4 promotion before showing that preview. The preview proves only the
+rendered candidate. Required PR checks still decide merge eligibility, and M4
+promotion still decides accepted runtime state when acceptance is in scope.
+
+For `material` work, run the route-focused visual spec and write its receipt
+before preview. Run `check:admin-ui` before publish, and run the complete
+`check:admin-ui:visual` matrix once at closeout when the changed seam or PR
+policy requires it; do not repeat the matrix after every styling edit.
+
+For `shared` work, or any change involving behavior, state ownership, API/data
+contracts, credentials, destructive actions, dependencies, or runtime inputs,
+use the complete delivery chain in the frontend engineering standard.
+
+Reclassify upward immediately when a supposedly `low` change causes overflow,
+alters a control or state, touches a shared primitive/token, or produces an
+unexplained console or network failure. A user request for merged, M4 accepted,
+deployed, or production evidence also expands the requested outcome even when
+the visual diff itself remains small.
+
+The initial route pilots cover `/admin/ai-resources`, `/admin/service-settings`,
+and `/admin/troubleshooting`. The first cross-route workflow pilot covers the
+`/admin/support-requests` queue and `/admin/support-requests/[requestId]`
+detail as one operator closure. The manifest owns every pilot's page model,
+risk tier, working-surface selector, and required state matrix. Expand the
+pilot only through a bounded operator workflow with stable evidence and no
+excessive false positives.
+
+Every rule result is one of `pass`, `fail`, `review_required`,
+`not_applicable`, and `unmeasured`. Do not calculate a composite visual score.
+A deterministic failure blocks the gate. `review_required` preserves a human
+decision instead of inventing a machine judgment. No receipt means
+`unmeasured`; missing evidence must not be reported as a pass.
+
+The first rule set is:
+
+1. route and manifest page model agree;
+2. the PC evidence viewport is exactly `1440 x 1050`;
+3. the document has no unintended horizontal overflow;
+4. the main surface has exactly one page title;
+5. the primary working surface begins in the first PC viewport;
+6. each working region has no more than one primary action by default;
+7. status is expressed with text instead of color alone;
+8. frequent actions remain next to their object or in the same workbench;
+9. selected, keyboard-focus, and disabled states remain distinguishable;
+10. applicable dialogs contain focus, close safely with `Escape`, and restore
+    focus to their trigger;
+11. loading, feedback, failure, and retry preserve the operator's meaningful
+    context instead of resetting or displacing the working surface;
+12. the browser reports no unexplained console error or failed request.
+
+The receipt schema lives at `frontend/admin-visual-receipt.schema.json`. A
+receipt records route, model, exact source state, environment, viewport,
+tested states, all rule results, screenshots, interactions, browser errors,
+review items, and human acceptance. Local evidence, M4 candidate evidence,
+M4 accepted evidence, production, and human visual acceptance remain separate.
+
+Commit the schema, state matrix, tests, and accepted golden baselines. Keep
+ordinary successful screenshots, traces, videos, and repeated receipts in the
+ignored Playwright test-result directory. Commit a changed golden baseline
+only after the required human visual acceptance.
+
 Inner loop:
 
 ```bash
@@ -296,8 +542,9 @@ pnpm run check:admin-ui:visual
 
 The structural gate verifies the route manifest, shared tokens, required
 primitives, documentation/AI entry points, and the bounded legacy-dialog and
-credential allowlists. The visual gate verifies the accepted queue and
-configuration tables and edit workbenches at the fixed PC viewport.
+credential allowlists. The visual gate verifies the accepted queue, detail,
+configuration, diagnostic, and cross-route workflow pilots at the fixed PC
+viewport and writes structured receipts into Playwright test results.
 
 Also run type, lint, i18n, contract, M4, and repository gates required by the
 actual changed seam. A screenshot is supporting evidence, not proof of API,

@@ -6,11 +6,28 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
+from app.adapters.repositories.commercial_identity_repository import (
+    CommercialIdentityRepository,
+)
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
+)
+from app.adapters.repositories.commercial_subscription_repository import (
+    CommercialSubscriptionRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
     ACCOUNT_STATUS_SUSPENDED,
+    ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+    PRINCIPAL_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
     SITE_STATUS_PROVISIONING,
     SITE_STATUS_SUSPENDED,
@@ -24,6 +41,17 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
     CommercialValidationError,
+)
+from app.domain.commercial.identity import (
+    IDENTITY_TYPE_USER,
+    USER_ROLE_OWNER,
+    _new_principal_id,
+    _normalize_principal_email,
+    normalize_user_role,
+    resolve_principal_allowed_actions,
+)
+from app.domain.commercial.membership_policy import (
+    assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.service import (
@@ -39,31 +67,98 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         name: str,
+        primary_email: str = "",
         status: str = ACCOUNT_STATUS_ACTIVE,
         metadata_json: dict[str, object] | None = None,
         bind_default_free: bool = False,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
+        resolved_account_id = str(account_id or "").strip() or f"acct_{uuid4().hex}"
+        normalized_primary_email = (
+            _normalize_principal_email(primary_email) if str(primary_email or "").strip() else ""
+        )
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.upsert_account(
-                account_id=account_id,
+            account_site_repository = CommercialAccountSiteRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            access_repository = CommercialAccessRepository(session)
+            lifecycle_repository = CommercialSubscriptionLifecycleRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            account_site_repository.get_account_for_update(resolved_account_id)
+            identity = (
+                identity_repository.get_principal_identity_by_email(
+                    email=normalized_primary_email,
+                    for_update=True,
+                )
+                if normalized_primary_email
+                else None
+            )
+            if identity is not None and str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    f"principal '{identity.principal_id}' is not active",
+                )
+            principal_id = (
+                str(identity.principal_id)
+                if identity is not None
+                else (_new_principal_id() if normalized_primary_email else "")
+            )
+            if principal_id:
+                assert_single_account_membership_available(
+                    access_repository,
+                    principal_id=principal_id,
+                    account_id=resolved_account_id,
+                )
+            account = account_site_repository.upsert_account(
+                account_id=resolved_account_id,
                 name=name,
                 status=status,
                 metadata_json=metadata_json,
             )
+            membership = None
+            if normalized_primary_email:
+                if identity is None:
+                    identity = identity_repository.upsert_principal_identity(
+                        principal_id=principal_id,
+                        email=normalized_primary_email,
+                        status=PRINCIPAL_STATUS_ACTIVE,
+                        metadata_json={
+                            "source": "admin_customer_creation",
+                            "identity_type": IDENTITY_TYPE_USER,
+                        },
+                    )
+                membership = access_repository.upsert_account_user_membership(
+                    membership_id=f"aum_{uuid4().hex}",
+                    principal_id=str(identity.principal_id),
+                    account_id=str(account.account_id),
+                    role=normalize_user_role(USER_ROLE_OWNER),
+                    status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                    allowed_actions_json=resolve_principal_allowed_actions(),
+                    metadata_json={"source": "admin_customer_creation"},
+                )
             subscription_payload = None
             if bind_default_free:
                 subscription_payload = self._bind_default_free_subscription_for_account_in_session(
-                    repository=repository,
+                    repository=lifecycle_repository,
                     account_id=account.account_id,
                     audit_context=audit_context,
                 )
             payload = self._serialize_account(account)
+            if identity is not None and membership is not None:
+                payload["primary_identity"] = {
+                    "principal_id": str(identity.principal_id),
+                    "email": str(identity.email or ""),
+                    "status": str(identity.status or ""),
+                    "session_version": int(identity.session_version or 1),
+                }
+                payload["membership"] = {
+                    "membership_id": str(membership.membership_id),
+                    "role": str(membership.role or ""),
+                    "status": str(membership.status or ""),
+                }
             if subscription_payload is not None:
                 payload["current_subscription"] = subscription_payload["subscription"]
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="account.upsert",
                 outcome="succeeded",
@@ -91,8 +186,9 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             )
 
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            account = account_site_repository.get_account(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
@@ -117,7 +213,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 else "account.suspend"
             )
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind=event_kind,
                 outcome="succeeded",
@@ -144,9 +240,9 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         resolved_subscription_id = subscription_id or f"sub_{uuid4().hex}"
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            lifecycle_repository = CommercialSubscriptionLifecycleRepository(session)
             payload = self._upsert_account_subscription_in_session(
-                repository=repository,
+                repository=lifecycle_repository,
                 subscription_id=resolved_subscription_id,
                 account_id=account_id,
                 plan_id=plan_id,
@@ -168,8 +264,9 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            subscription = repository.get_latest_account_subscription(account_id)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            subscription = subscription_repository.get_latest_account_subscription(account_id)
             if subscription is None:
                 raise CommercialNotFoundError(
                     "service.subscription_not_found",
@@ -179,7 +276,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             subscription.suspended_at = now
             payload = cast(Any, self)._serialize_subscription(subscription)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="subscription.suspend",
                 outcome="succeeded",
@@ -202,8 +299,9 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            subscription = repository.get_latest_account_subscription(account_id)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            subscription = subscription_repository.get_latest_account_subscription(account_id)
             if subscription is None:
                 raise CommercialNotFoundError(
                     "service.subscription_not_found",
@@ -213,7 +311,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             subscription.canceled_at = now
             payload = cast(Any, self)._serialize_subscription(subscription)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="subscription.cancel",
                 outcome="succeeded",
@@ -231,7 +329,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _bind_default_free_subscription_for_account_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         audit_context: ServiceAuditContext | None,
     ) -> dict[str, object] | None:
@@ -281,7 +379,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _restore_default_free_subscription_for_account_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
         reason: str,
@@ -338,7 +436,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _reconcile_account_subscription_state_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
         audit_context: ServiceAuditContext | None = None,
@@ -445,7 +543,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _upsert_account_subscription_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription_id: str,
         account_id: str,
         plan_id: str,
@@ -529,7 +627,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _cancel_covered_subscriptions_for_replacement(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
         reason: str,
@@ -565,7 +663,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _assert_account_site_capacity(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         snapshot: object,
     ) -> None:

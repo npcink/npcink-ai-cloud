@@ -169,7 +169,7 @@ At minimum for a related change:
 
 ```bash
 uv run pytest tests/domain/test_site_compliance.py -q
-uv run pytest tests/api/test_service_routes.py -k site_compliance -q
+uv run pytest tests/api/test_service_settings_routes.py -k site_compliance -q
 uv run pytest tests/domain/test_subscription_commerce.py -q
 pnpm --dir frontend run type-check
 pnpm --dir frontend run lint

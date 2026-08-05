@@ -488,15 +488,15 @@ operator evidence store. It must be owner-only mode `0600`, use
 and bind the final commit, tree, outer bundle checksum, scan-index checksum,
 API scan-receipt checksum, allowlist checksum, exact three findings, zero
 unallowlisted blocking findings, fresh NVD/CISA check, operator, time, and
-2026-08-05 expiry. Record the acceptance file's SHA-256 separately.
+2026-08-11 expiry. Record the acceptance file's SHA-256 separately.
 
 The operator must manually compare those values with the bundle manifest,
 outer checksum, `release/image-scan/scan-index.json`,
 `release/image-scan/api.receipt.json`, and embedded allowlist. Absence,
 malformation, mismatch, expiry, changed threat intelligence, or changed scan
 evidence is a hard stop. GA is not authorized. The current PostgreSQL 18
-first-install deploy gate consumes the acceptance and its separate mode-`0600`
-SHA-256 file before upload or mutation; image-scan and the retired P1-E06
+production-host deployment gate consumes the acceptance and its separate
+mode-`0600` SHA-256 file before upload or mutation; image-scan and the retired P1-E06
 tooling do not consume it. A successful script exit supplements but never
 replaces the operator's manual evidence and threat-intelligence review.
 
@@ -505,7 +505,7 @@ binds an exact release artifact and operator risk decision; the later P1-E06
 receipt is machine-consumed proof that the database backup was copied to and
 verified on independent storage. Both gates were required for that historical
 cutover. Only the CVE acceptance pair is a current, temporary PostgreSQL 18
-first-install gate; the P1-E06 receipt is not.
+production-host deployment gate; the P1-E06 receipt is not.
 
 1. From the trusted operator workstation, stage the already-built exact bundle
    with `deploy/deploy-to-ssh-host.sh --stage-only`. Set the production host

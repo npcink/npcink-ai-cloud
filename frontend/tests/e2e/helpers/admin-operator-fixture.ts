@@ -49,7 +49,12 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
-export async function installAdminMocks(page: Page) {
+export async function installAdminMocks(
+  page: Page,
+  options: { auditEvents?: number; quotaNeedsAttention?: boolean } = {}
+) {
+  const auditEvents = options.auditEvents ?? 4;
+  const quotaNeedsAttention = options.quotaNeedsAttention ?? false;
   let primaryAccountSubscription = {
     subscription_id: 'sub_mvp',
     status: 'past_due',
@@ -285,11 +290,11 @@ export async function installAdminMocks(page: Page) {
       await fulfillJson(route, {
         generated_at: '2026-04-08T10:00:00Z',
         totals: {
-          events: 4,
-          succeeded: 3,
-          error: 1,
+          events: auditEvents,
+          succeeded: auditEvents > 0 ? 3 : 0,
+          error: auditEvents > 0 ? 1 : 0,
         },
-        groups: [
+        groups: auditEvents > 0 ? [
           {
             event_kind: searchParams.get('site_id') ? 'subscription.bind' : 'provider_connection.sync',
             outcome: 'succeeded',
@@ -303,6 +308,37 @@ export async function installAdminMocks(page: Page) {
             count: 1,
             first_seen_at: '2026-04-08T07:15:00Z',
             last_seen_at: '2026-04-08T07:15:00Z',
+          },
+        ] : [],
+      });
+      return;
+    }
+
+    if (pathname === '/api/admin/audit-events') {
+      await fulfillJson(route, {
+        total: 2,
+        items: [
+          {
+            event_id: 101,
+            event_kind: 'subscription.bind',
+            outcome: 'succeeded',
+            actor_kind: 'platform_admin',
+            actor_ref: 'operator',
+            method: 'POST',
+            path: '/internal/service/admin/subscriptions/sub_mvp/bind',
+            trace_id: 'trace-audit-101',
+            created_at: '2026-04-08T09:45:00Z',
+          },
+          {
+            event_id: 102,
+            event_kind: 'subscription.billing_snapshot.rebuild',
+            outcome: 'error',
+            actor_kind: 'system',
+            actor_ref: '',
+            method: 'POST',
+            path: '/internal/service/admin/subscriptions/sub_mvp/billing-snapshots/rebuild',
+            trace_id: 'trace-audit-102',
+            created_at: '2026-04-08T07:15:00Z',
           },
         ],
       });
@@ -833,7 +869,12 @@ export async function installAdminMocks(page: Page) {
           next_action: null,
         },
         subscription_grace: { subscription_status: 'past_due', active: true, grace_until_at: '2026-04-15T00:00:00Z' },
-        usage_totals: { runs: 21, tokens: 32000, cost: 18.42 },
+        usage_totals: {
+          runs: 21,
+          tokens: 32000,
+          cost_cny: 18.42,
+          cost_cny_snapshot_missing_count: 2,
+        },
         related_surfaces: {
           site_href: '/admin/sites/site_mvp',
           account_href: `/admin/accounts/${LONG_ACCOUNT_ID}`,
@@ -1187,6 +1228,20 @@ export async function installAdminMocks(page: Page) {
           metadata: primaryAccount?.metadata || {},
           created_at: primaryAccount?.created_at || '2026-02-01T00:00:00Z',
         },
+        primary_identity: {
+          principal_id: 'prn_mvp_owner',
+          email: 'admin@example.com',
+          status: 'active',
+          session_version: 1,
+          last_login_at: '2026-04-08T00:00:00Z',
+          created_at: '2026-02-01T00:00:00Z',
+          membership_id: 'aum_mvp_owner',
+          membership_role: 'owner',
+          membership_status: 'active',
+          qq_bound: false,
+          qq_binding_count: 0,
+        },
+        identity_relationship_state: 'healthy',
         memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' }],
         sites: [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }],
         subscriptions: [primaryAccountSubscription],
@@ -1224,6 +1279,57 @@ export async function installAdminMocks(page: Page) {
             { code: 'portal_admin', label: 'Portal user', ok: true, detail: '1 active or invited portal user(s).' },
           ],
         },
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`) {
+      await fulfillJson(route, {
+        status: 'ok',
+        generated_at: '2026-04-08T10:00:00Z',
+        ai_credits: {
+          key: 'ai_credits',
+          used: quotaNeedsAttention ? 1900 : 250,
+          limit: 2000,
+          remaining: quotaNeedsAttention ? 100 : 1750,
+          usage_ratio: quotaNeedsAttention ? 0.95 : 0.125,
+          unlimited: false,
+          status: quotaNeedsAttention ? 'near_limit' : 'ok',
+          unit: 'ai_credits',
+          estimated: false,
+          source: 'ledger',
+        },
+        ai_credit_ledger_summary: {
+          consumed_ai_credits: 250,
+          granted_ai_credits: 0,
+          net_used_ai_credits: 250,
+        },
+        resource_limits: [],
+        internal_limits: [],
+        breakdown: [],
+        totals: {},
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/credit-ledger`) {
+      await fulfillJson(route, {
+        account_id: LONG_ACCOUNT_ID,
+        generated_at: '2026-04-08T10:00:00Z',
+        rate_version: 'ai-credit-ledger-v1',
+        pagination: {
+          limit: 12,
+          offset: 0,
+          total: 0,
+          has_more: false,
+        },
+        summary: {
+          consumed_ai_credits: 250,
+          granted_ai_credits: 0,
+          net_used_ai_credits: 250,
+          entry_count: 0,
+        },
+        items: [],
       });
       return;
     }
@@ -1771,20 +1877,17 @@ export async function installAdminMocks(page: Page) {
       return;
     }
 
-    if (pathname === `/api/admin/plans/${LONG_PLAN_ID}/versions` && route.request().method() === 'POST') {
-      const payload = route.request().postDataJSON() as Record<string, unknown>;
+    if (pathname === `/api/admin/plans/${LONG_PLAN_ID}` && route.request().method() === 'PATCH') {
       await fulfillJson(route, {
-        plan_version: {
-          plan_version_id: String(payload.plan_version_id || LONG_PLAN_VERSION_ID),
-          version_label: String(payload.version_label || 'Pro v2'),
-          status: String(payload.status || 'published'),
-          currency: 'CNY',
-          created_at: '2026-04-08T00:00:00Z',
-        },
+        plan_version_id: LONG_PLAN_VERSION_ID,
+        version_label: 'Pro v2',
+        status: 'published',
+        currency: 'CNY',
+        created_at: '2026-04-08T00:00:00Z',
         receipt: {
           event_kind: 'plan_version.publish',
           scope_kind: 'plan_version',
-          scope_id: String(payload.plan_version_id || LONG_PLAN_VERSION_ID),
+          scope_id: LONG_PLAN_VERSION_ID,
           outcome: 'succeeded',
           effective_summary: 'Plan version is now published.',
         },

@@ -5,7 +5,6 @@ import {
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
   requestRisk,
-  sortSupportRequests,
   supportRequestsDisplayScope,
 } from '@/features/admin/support-requests/directory-model';
 import {
@@ -27,6 +26,8 @@ function supportRequest(
     description: 'Default description',
     status: 'open',
     priority: 'normal',
+    waiting_on: 'operator',
+    waiting_since: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     updated_at: '2026-07-29T08:00:00Z',
     ...overrides,
@@ -41,21 +42,25 @@ describe('Support request directory model', () => {
           q: '  customer@example.com  ',
           status: 'open',
           topic: 'billing',
+          attention: 'waiting_for_operator',
         },
+        'risk',
         20
       )
     );
 
     expect(Object.fromEntries(query)).toEqual({
       limit: '20',
+      sort: 'risk',
       offset: '20',
       status: 'open',
       topic: 'billing',
       q: 'customer@example.com',
+      attention: 'waiting_for_operator',
     });
   });
 
-  it('normalizes offset and current-page sort without inventing values', () => {
+  it('normalizes offset and server sort without inventing values', () => {
     expect(normalizeSupportRequestOffset('-1')).toBe(0);
     expect(normalizeSupportRequestOffset('12.5')).toBe(0);
     expect(normalizeSupportRequestOffset('40')).toBe(40);
@@ -63,26 +68,24 @@ describe('Support request directory model', () => {
     expect(normalizeSupportRequestSort('updated_at')).toBe('updated_at');
   });
 
-  it('keeps risk ordering bounded to the current page', () => {
+  it('classifies risk for the server-ordered queue presentation', () => {
     const critical = supportRequest({
       request_id: 'sr_critical',
       priority: 'critical',
     });
-    const inProgress = supportRequest({
-      request_id: 'sr_progress',
-      status: 'in_progress',
-    });
-    const resolved = supportRequest({
-      request_id: 'sr_resolved',
-      status: 'resolved',
-    });
 
     expect(requestRisk(critical)).toBe('critical');
-    expect(
-      sortSupportRequests([resolved, inProgress, critical], 'risk').map(
-        (item) => item.request_id
-      )
-    ).toEqual(['sr_critical', 'sr_progress', 'sr_resolved']);
+    expect(requestRisk(supportRequest({ status: 'in_progress' }))).toBe('warning');
+    expect(requestRisk(supportRequest({
+      status: 'in_progress',
+      waiting_on: 'customer',
+    }))).toBe('monitor');
+    expect(requestRisk(supportRequest({
+      status: 'resolved',
+      priority: 'urgent',
+      waiting_on: 'none',
+      waiting_since: undefined,
+    }))).toBe('stable');
   });
 
   it('marks placeholder and failed-filter fallbacks as read-only scopes', () => {

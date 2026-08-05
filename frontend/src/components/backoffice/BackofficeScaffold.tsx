@@ -62,6 +62,20 @@ type BackofficeSummaryStripProps = {
   density?: 'standard' | 'compact';
 };
 
+type BackofficePageHeaderProps = Pick<
+  BackofficeHeaderProps,
+  'eyebrow' | 'title' | 'description'
+> & {
+  summaryItems?: BackofficeMetricItem[];
+  primaryAction?: React.ReactNode;
+  secondaryAction?: React.ReactNode;
+  summaryAside?: React.ReactNode;
+};
+
+type BackofficeConfigurationHeaderProps = BackofficePageHeaderProps & {
+  summaryItems: BackofficeMetricItem[];
+};
+
 type BackofficeEmptyStateProps = {
   title: string;
   description: string;
@@ -215,6 +229,58 @@ export function BackofficePrimaryPanel({
       ) : null}
     </section>
   );
+}
+
+export function BackofficePageHeader({
+  eyebrow,
+  title,
+  description,
+  summaryItems = [],
+  primaryAction,
+  secondaryAction,
+  summaryAside,
+}: BackofficePageHeaderProps) {
+  const actions = primaryAction || secondaryAction ? (
+    <>
+      {secondaryAction}
+      {primaryAction}
+    </>
+  ) : undefined;
+
+  return (
+    <div data-ui="backoffice-page-header">
+      <BackofficePrimaryPanel
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        descriptionDisplay="hint"
+        actionPlacement="header"
+        contentClassName="px-4 py-3 md:px-4 md:py-3"
+        summaryClassName="px-4 py-2.5 md:px-4 md:py-2.5"
+        actions={actions}
+        summary={summaryItems.length || summaryAside ? (
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+            {summaryItems.length ? (
+              <BackofficeSummaryStrip
+                items={summaryItems}
+                density="compact"
+                className={summaryAside ? 'min-w-0 flex-1' : undefined}
+              />
+            ) : null}
+            {summaryAside ? (
+              <div className="text-xs leading-5 text-slate-500 dark:text-slate-400 xl:max-w-2xl xl:text-right">
+                {summaryAside}
+              </div>
+            ) : null}
+          </div>
+        ) : undefined}
+      />
+    </div>
+  );
+}
+
+export function BackofficeConfigurationHeader(props: BackofficeConfigurationHeaderProps) {
+  return <BackofficePageHeader {...props} />;
 }
 
 export function BackofficeLayer({

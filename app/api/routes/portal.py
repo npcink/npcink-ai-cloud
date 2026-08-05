@@ -78,6 +78,22 @@ from app.domain.usage.service import UsageService
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
 COOKIE_PORTAL_QQ_OAUTH_NONCE = "npcink_portal_qq_oauth_nonce"
 COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH = "/"
+PORTAL_LOGIN_CODE_RESEND_COOLDOWN_SECONDS = 60
+
+
+def _portal_login_code_rate_limit_response(
+    request: Request,
+    error: PortalBearerTokenError,
+) -> JSONResponse:
+    retry_after_seconds = max(1, int(error.retry_after_seconds or 1))
+    return portal_json_error(
+        request,
+        status_code=error.status_code,
+        error_code=error.error_code,
+        message=error.message,
+        data={"retry_after_seconds": retry_after_seconds},
+        headers={"Retry-After": str(retry_after_seconds)},
+    )
 
 
 class PortalSessionSitePayload(BaseModel):
@@ -419,11 +435,6 @@ def _portal_plan_comparison_tier_data(value: object) -> dict[str, object]:
         "label": str(tier.get("label") or ""),
         "plan_id": str(tier.get("plan_id") or ""),
         "plan_version_id": str(tier.get("plan_version_id") or ""),
-        "monthly_points": tier.get("monthly_points"),
-        "site_limit": tier.get("site_limit"),
-        "knowledge_article_limit": tier.get("knowledge_article_limit"),
-        "concurrency_limit": tier.get("concurrency_limit"),
-        "batch_item_limit": tier.get("batch_item_limit"),
         "comparison_rights": {
             key: _portal_plan_comparison_right_data(rights.get(key))
             for key in (
@@ -2305,12 +2316,7 @@ async def request_portal_login_code(
     try:
         enforce_portal_login_code_request_rate_limit(request, email=email)
     except PortalBearerTokenError as error:
-        return portal_json_error(
-            request,
-            status_code=error.status_code,
-            error_code=error.error_code,
-            message=error.message,
-        )
+        return _portal_login_code_rate_limit_response(request, error)
     services = get_cloud_services(request)
     ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
     email_sender = services.portal_email_sender or build_portal_email_sender(
@@ -2341,6 +2347,7 @@ async def request_portal_login_code(
                     "email": email.strip().lower(),
                     "delivery": "email",
                     "expires_in_seconds": ttl_seconds,
+                    "resend_cooldown_seconds": PORTAL_LOGIN_CODE_RESEND_COOLDOWN_SECONDS,
                     "code": "",
                 },
             )
@@ -2368,6 +2375,7 @@ async def request_portal_login_code(
             "email": str(issued.get("email") or ""),
             "delivery": ("development_code" if allow_development_code else "email"),
             "expires_in_seconds": ttl_seconds,
+            "resend_cooldown_seconds": PORTAL_LOGIN_CODE_RESEND_COOLDOWN_SECONDS,
             "code": (str(issued.get("code") or "") if allow_development_code else ""),
         },
     )
@@ -2651,12 +2659,7 @@ async def request_portal_registration_code(
     try:
         enforce_portal_login_code_request_rate_limit(request, email=email)
     except PortalBearerTokenError as error:
-        return portal_json_error(
-            request,
-            status_code=error.status_code,
-            error_code=error.error_code,
-            message=error.message,
-        )
+        return _portal_login_code_rate_limit_response(request, error)
     services = get_cloud_services(request)
     ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
     allow_development_code = _allow_development_login_code(request)
@@ -2703,6 +2706,7 @@ async def request_portal_registration_code(
             "email": str(issued.get("email") or ""),
             "delivery": ("development_code" if allow_development_code else "email"),
             "expires_in_seconds": ttl_seconds,
+            "resend_cooldown_seconds": PORTAL_LOGIN_CODE_RESEND_COOLDOWN_SECONDS,
             "code": (str(issued.get("code") or "") if allow_development_code else ""),
             "site": {
                 "site_id": str(issued.get("site_id") or ""),

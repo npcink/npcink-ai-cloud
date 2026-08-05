@@ -5,7 +5,10 @@ from typing import Any
 from uuid import uuid4
 
 from app.adapters.providers.base import ProviderAdapter, ProviderCatalogSnapshot
-from app.adapters.providers.registry import build_provider_adapters
+from app.adapters.providers.registry import (
+    EXECUTION_PROVIDER_SOURCE_ROLES,
+    build_provider_adapters,
+)
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
@@ -42,6 +45,13 @@ DEFAULT_RECOMMENDED_PROFILE_IDS = (
     GROK_IMAGINE_IMAGE_PROFILE_ID,
     "embed.default",
 )
+
+WP_AI_EXECUTION_CAPABILITY_BY_KIND = {
+    "text": "text_generation",
+    "vision": "vision",
+    "image_generation": "image_generation",
+    "audio_generation": "audio_generation",
+}
 
 ALLOWED_MODEL_COST_TIERS = {"budget", "balanced", "premium"}
 ALLOWED_MODEL_VISIBILITY = {"default", "advanced", "hidden"}
@@ -468,12 +478,32 @@ class CatalogService:
     ) -> None:
         repository.session.flush()
         instances = repository.list_instances_for_provider()
+        provider_capabilities: dict[str, set[str]] = {}
+        for connection in repository.list_enabled_provider_connections():
+            if str(connection.source_role or "").strip() not in EXECUTION_PROVIDER_SOURCE_ROLES:
+                continue
+            config = connection.config_json if isinstance(connection.config_json, dict) else {}
+            provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+            configured = bool(str(connection.secret_ciphertext or "").strip()) or bool(
+                config.get("secretless")
+            )
+            if not provider_id or not configured:
+                continue
+            capability_ids = config.get("capability_ids")
+            if not isinstance(capability_ids, list):
+                continue
+            provider_capabilities.setdefault(provider_id, set()).update(
+                str(capability_id or "").strip()
+                for capability_id in capability_ids
+                if str(capability_id or "").strip()
+            )
 
         def select_candidates(
             execution_kind: str,
             ordered_tiers: list[str],
             *,
             exact_model_id: str | None = None,
+            required_provider_capability: str | None = None,
         ) -> list[str]:
             scored: list[tuple[int, int, str]] = []
             instances_by_id = {instance.instance_id: instance for instance in instances}
@@ -481,6 +511,10 @@ class CatalogService:
             for instance in instances:
                 tags = set(instance.capability_tags)
                 if execution_kind not in tags:
+                    continue
+                if required_provider_capability and required_provider_capability not in (
+                    provider_capabilities.get(instance.provider_id) or set()
+                ):
                     continue
 
                 tier_rank = next(
@@ -555,6 +589,11 @@ class CatalogService:
                     }
                     else AUDIO_NARRATION_QUALITY_MODEL_ID
                     if profile_id == AUDIO_NARRATION_QUALITY_PROFILE_ID
+                    else None
+                ),
+                required_provider_capability=(
+                    WP_AI_EXECUTION_CAPABILITY_BY_KIND.get(execution_kind)
+                    if wp_ai_spec is not None and provider_capabilities
                     else None
                 ),
             )

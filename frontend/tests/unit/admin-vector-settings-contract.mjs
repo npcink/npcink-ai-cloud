@@ -82,7 +82,7 @@ assert.match(
 );
 assert.match(
   page,
-  /descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*\/admin\/vector-observability/,
+  /<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*\/admin\/vector-observability[\s\S]*summaryItems=\{\[/,
   'Vector settings must keep diagnostics and status in a compact runtime-style header'
 );
 assert.match(

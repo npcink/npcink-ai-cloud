@@ -5,6 +5,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import {
   BackofficeDiagnosticNotice,
   BackofficeMetricStrip,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
@@ -2079,7 +2080,7 @@ function AdminAiAdvisorContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={t('admin.ai_advisor.eyebrow', {}, 'Internal operations')}
         title={t('admin.ai_advisor.title', {}, 'Operations Advisor')}
         description={t(
@@ -2087,8 +2088,9 @@ function AdminAiAdvisorContent() {
           {},
           'Generate read-only diagnostic summaries from Cloud operational evidence and compare rule baseline output with AI output.'
         )}
-        aside={data ? <BackofficeStatusBadge label={data.comparison.aiUsed ? t('admin.ai_advisor.ai_used', {}, 'AI used') : t('admin.ai_advisor.rules_only', {}, 'Rules only')} status={data.comparison.aiUsed ? 'success' : 'inactive'} /> : undefined}
-      >
+        summaryAside={data ? <BackofficeStatusBadge label={data.comparison.aiUsed ? t('admin.ai_advisor.ai_used', {}, 'AI used') : t('admin.ai_advisor.rules_only', {}, 'Rules only')} status={data.comparison.aiUsed ? 'success' : 'inactive'} /> : undefined}
+      />
+      <BackofficeSectionPanel data-ui="ai-advisor-scope-workbench">
         <div className="flex flex-wrap items-center gap-3">
           {SCOPE_OPTIONS.map((option) => (
             <button
@@ -2193,7 +2195,7 @@ function AdminAiAdvisorContent() {
         {copyMessage ? (
           <p className="mt-3 text-xs font-semibold text-emerald-600 dark:text-emerald-300">{copyMessage}</p>
         ) : null}
-      </BackofficePrimaryPanel>
+      </BackofficeSectionPanel>
 
       {error ? (
         <BackofficeSectionPanel className="border border-amber-200 bg-amber-50/80 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/35 dark:text-amber-100">

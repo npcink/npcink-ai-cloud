@@ -4,7 +4,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
 from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session, require_database_connection
@@ -70,7 +72,7 @@ def run_once(
     since_at = now.astimezone(UTC) - timedelta(minutes=settings.latency_probe_worker_recent_minutes)
 
     with get_session(settings.database_url) as session:
-        sites = CommercialRepository(session).list_sites(
+        sites = CommercialAccountSiteRepository(session).list_sites(
             status=SITE_STATUS_ACTIVE,
             limit=settings.latency_probe_worker_site_limit,
         )

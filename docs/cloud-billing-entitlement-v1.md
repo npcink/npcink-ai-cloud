@@ -131,6 +131,12 @@ Field rules:
 - `analytics_retention.days` controls Cloud analytics/log summary visibility; it
   does not create indefinite retention.
 - `hosted_runtime_quota` controls Cloud runtime headroom only.
+  `max_active_runs` is enforced independently for the interactive `inline`
+  pool and the background pool (`step_offload` plus `whole_run_offload`). A
+  background run therefore cannot consume the interactive editor's only slot,
+  while requests within the same pool still share the configured limit. An
+  account-level Admin summary reports the combined use and combined capacity
+  across both pools and all active sites.
 - `pro_cloud_runtime` is a read-only detail surface for Toolbox Pro controls. It
   reports Nightly Site Inspection quota, usage, remaining count, batch item cap,
   result-retention guidance, and payload modes. It does not create a Cloud

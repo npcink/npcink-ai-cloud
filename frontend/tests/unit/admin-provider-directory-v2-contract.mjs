@@ -6,15 +6,20 @@ import { frontendRoot } from './_paths.mjs';
 const root = frontendRoot;
 const pageSource = readFileSync(resolve(root, 'src/app/admin/ai-resources/page.tsx'), 'utf8');
 const directorySource = readFileSync(resolve(root, 'src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
+const actionMenuSource = readFileSync(resolve(root, 'src/components/admin/AdminActionMenu.tsx'), 'utf8');
 const toolbarSource = readFileSync(resolve(root, 'src/components/admin/SupplierToolbar.tsx'), 'utf8');
 const adminLayoutSource = readFileSync(resolve(root, 'src/app/admin/layout.tsx'), 'utf8');
 const globalStyleSource = readFileSync(resolve(root, 'src/app/globals.css'), 'utf8');
 const dialogSource = readFileSync(resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const credentialSource = readFileSync(resolve(root, 'src/components/admin/AdminCredentialField.tsx'), 'utf8');
+const directoryQuerySource = readFileSync(
+  resolve(root, 'src/features/admin/ai-resources/directory.ts'),
+  'utf8'
+);
 
 assert.match(
   pageSource,
-  /data-ui="supplier-summary-strip"[\s\S]*BackofficeSummaryStrip[\s\S]*density="compact"/,
+  /<BackofficePageHeader[\s\S]*primaryAction=\{\([\s\S]*action_add_model_supplier[\s\S]*summaryItems=\{\[/,
   'Provider readiness must remain in the compact operational header'
 );
 
@@ -26,8 +31,32 @@ assert.match(
 
 assert.match(
   directorySource,
-  /data-connection-id=\{connection\.connection_id\}[\s\S]*data-selected=\{isSelected[\s\S]*action_configure[\s\S]*action_test[\s\S]*supplier-more-actions/,
+  /data-connection-id=\{connection\.connection_id\}[\s\S]*data-selected=\{isSelected[\s\S]*action_configure[\s\S]*action_test[\s\S]*SupplierMoreActions/,
   'Each provider row must keep URL-backed focus and put frequent actions before the overflow control'
+);
+
+assert.match(
+  directorySource,
+  /column_configuration_status[\s\S]*column_enabled_models[\s\S]*column_profiles[\s\S]*column_last_verification[\s\S]*data-ui="supplier-name"/,
+  'Supplier identity must be non-interactive and configuration, models, profiles, and verification must remain separate facts'
+);
+
+assert.match(
+  directorySource,
+  /action_delete_connection[\s\S]*<AdminActionMenu[\s\S]*dataUi="supplier-more-actions"/,
+  'Supplier overflow must use the shared collision-aware action menu and retain the bounded destructive action'
+);
+
+assert.match(
+  actionMenuSource,
+  /FloatingPortal[\s\S]*placement: 'bottom-end'[\s\S]*strategy: 'fixed'[\s\S]*flip\(\{ padding: 8 \}\)[\s\S]*shift\(\{ padding: 8 \}\)/,
+  'Admin action menus must portal outside table overflow and use collision-aware viewport placement'
+);
+
+assert.match(
+  actionMenuSource,
+  /useDismiss[\s\S]*useListNavigation[\s\S]*FloatingFocusManager[\s\S]*returnFocus/,
+  'Admin action menus must support dismissal, keyboard navigation, and trigger-focus restoration'
 );
 
 assert.doesNotMatch(
@@ -54,8 +83,14 @@ for (const key of ['q', 'status', 'focus']) {
 
 assert.match(
   pageSource,
-  /resourcesRequestActiveRef[\s\S]*resourcesRequestSequenceRef[\s\S]*resourcesLoadedRef[\s\S]*if \(resourcesRequestActiveRef\.current\) return/,
-  'Provider catalog reads must deduplicate development Strict Mode requests and reject stale replacement'
+  /useAiResourcesDirectory\(\)[\s\S]*directoryQuery\.isPending[\s\S]*directoryQuery\.refetch/,
+  'The route must delegate provider directory server state to its feature query'
+);
+
+assert.match(
+  directoryQuerySource,
+  /queryKey:\s*aiResourcesKeys\.directory\(\)[\s\S]*queryFn:\s*\(\{\s*signal\s*\}\)[\s\S]*fetchAiResourcesDirectory\(signal\)/,
+  'Provider directory reads must use one stable query identity and forward cancellation'
 );
 
 assert.match(
@@ -72,7 +107,7 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /openNewProviderConnection[\s\S]*action_add_model_supplier[\s\S]*actionPlacement="header"/,
+  /primaryAction=\{\([\s\S]*openNewProviderConnection[\s\S]*action_add_model_supplier/,
   'Adding a model supplier must remain the sole header primary action'
 );
 
@@ -102,6 +137,18 @@ assert.match(
 
 assert.match(
   pageSource,
+  /contentMode=\{providerWorkbenchSection === 'models' \? 'contained' : 'scroll'\}[\s\S]*model-visibility-directory" className="flex min-h-0 flex-1 flex-col[\s\S]*min-h-0 flex-1 overflow-auto overscroll-contain/,
+  'Model management must keep one bounded table scrollbar instead of nesting it inside a scrolling dialog body'
+);
+
+assert.match(
+  dialogSource,
+  /contentMode === 'contained' \? 'overflow-hidden' : 'overflow-y-auto'[\s\S]*contentMode === 'contained'[\s\S]*flex min-h-0 flex-1 flex-col overflow-hidden/,
+  'Contained workbenches must disable overlay and body scrolling so a declared child remains the sole vertical scroll owner'
+);
+
+assert.match(
+  pageSource,
   /AdminConfigurationTable[\s\S]*rowId="credential"[\s\S]*AdminCredentialField[\s\S]*credentialEditOpen/,
   'Editing an existing provider must use a dense configuration table and explicit credential replacement'
 );
@@ -120,14 +167,26 @@ assert.match(
 
 assert.match(
   pageSource,
-  /data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*field_feature_filter[\s\S]*field_show_deprecated_models[\s\S]*data-ui="model-sync-primary"/,
-  'Model search, filters, history visibility, and synchronization must stay in one stable toolbar'
+  /data-ui="model-metadata-gap-filter"[\s\S]*data-ui="model-sync-primary"[\s\S]*data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*filter_all_visibility[\s\S]*field_feature_filter[\s\S]*filter_all_features/,
+  'Model synchronization and missing-intelligence triage must use the summary while search and named frequent filters remain stable in the toolbar'
 );
 
 assert.match(
   pageSource,
-  /data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
-  'Reference source, manual additions, and bulk maintenance must use in-flow configuration rows'
+  /MODEL_VISIBILITY_PAGE_SIZE = 25[\s\S]*modelVisibilityPageRows[\s\S]*data-ui="model-visibility-pagination"[\s\S]*set_reference_page/,
+  'Large model directories must render one bounded page and keep pagination inside the model workbench'
+);
+
+assert.match(
+  directorySource,
+  /AdminEmptyState[\s\S]*hasActiveFilters[\s\S]*action_clear_filters/,
+  'A filtered-empty supplier queue must provide one direct reset action'
+);
+
+assert.match(
+  pageSource,
+  /<details data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="historical-model-visibility"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
+  'Reference source, historical visibility, manual additions, and bulk maintenance must use default-collapsed in-flow configuration rows'
 );
 
 assert.match(

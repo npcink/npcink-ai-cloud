@@ -302,7 +302,10 @@ adding a larger model, new vector service, or broader scan.
 
 ### Milestone C — Rebuildable Image Retrieval Projection
 
-Open this milestone only if Milestone B passes.
+Status on 2026-07-29: opened as a bounded implementation after the fixed-corpus
+evaluation reached Hit@10 1.00 and MRR 0.975 on 20 positive natural-language
+queries. Negative-query abstention and real operator adoption remain unproved,
+so this is not a general media-intelligence rollout.
 
 Required design work before editing:
 
@@ -328,8 +331,12 @@ Implementation order:
 5. WordPress removes stale, missing, private, or unauthorized results before
    display.
 
-No editor UI change is required until retrieval quality is proved on the fixed
-corpus.
+The first editor exposure remains manual and bounded: one shared “site media
+library” source in featured-image and paragraph-image recommendation surfaces,
+with explicit refresh and no automatic article-context search. WordPress
+revalidates every returned attachment before display. This does not authorize
+background scanning, automatic cleanup, provider-metadata redesign, or other
+attachment types.
 
 ### Milestone D — Editor Local-Library Recommendations
 

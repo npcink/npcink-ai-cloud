@@ -16,6 +16,9 @@ type TicketFixture = {
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   priority: string;
   admin_note: string;
+  waiting_on: 'operator' | 'customer' | 'none';
+  waiting_since?: string;
+  first_operator_response_at?: string;
   created_at: string;
   updated_at: string;
 };
@@ -33,6 +36,8 @@ function initialTickets(): TicketFixture[] {
       status: 'open',
       priority: 'normal',
       admin_note: '',
+      waiting_on: 'operator',
+      waiting_since: '2026-07-08T08:00:00Z',
       created_at: '2026-07-08T08:00:00Z',
       updated_at: '2026-07-08T08:00:00Z',
     },
@@ -47,6 +52,8 @@ function initialTickets(): TicketFixture[] {
       status: 'open',
       priority: 'normal',
       admin_note: '',
+      waiting_on: 'operator',
+      waiting_since: '2026-07-12T05:00:00Z',
       created_at: '2026-07-12T05:00:00Z',
       updated_at: '2026-07-12T05:00:00Z',
     },
@@ -61,6 +68,9 @@ function initialTickets(): TicketFixture[] {
       status: 'in_progress',
       priority: 'normal',
       admin_note: 'Checking the current billing snapshot.',
+      waiting_on: 'customer',
+      waiting_since: '2026-07-12T06:00:00Z',
+      first_operator_response_at: '2026-07-12T06:00:00Z',
       created_at: '2026-07-10T05:00:00Z',
       updated_at: '2026-07-12T06:00:00Z',
     },
@@ -75,6 +85,7 @@ function initialTickets(): TicketFixture[] {
       status: 'resolved',
       priority: 'normal',
       admin_note: 'Resolved after identity verification.',
+      waiting_on: 'none',
       created_at: '2026-07-09T05:00:00Z',
       updated_at: '2026-07-11T05:00:00Z',
     },
@@ -101,20 +112,49 @@ async function installSupportQueueMocks(page: Page) {
       return;
     }
     const status = url.searchParams.get('status') || '';
+    const attention = url.searchParams.get('attention') || '';
     const topic = url.searchParams.get('topic') || '';
-    const items = tickets.filter((ticket) => {
+    const filteredItems = tickets.filter((ticket) => {
       const searchable = [ticket.request_id, ticket.email, ticket.title, ticket.account_id, ticket.site_id].join(' ').toLowerCase();
-      return (!status || ticket.status === status) && (!topic || ticket.topic === topic) && (!query || searchable.includes(query));
+      const waitingForOperator = ticket.waiting_on === 'operator';
+      const overdue = waitingForOperator && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime();
+      return (!status || ticket.status === status)
+        && (!topic || ticket.topic === topic)
+        && (!attention || (attention === 'waiting_for_operator' ? waitingForOperator : overdue))
+        && (!query || searchable.includes(query));
     });
+    const sort = url.searchParams.get('sort') || 'risk';
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const riskRank = (ticket: TicketFixture) => {
+      const active = ticket.status === 'open' || ticket.status === 'in_progress';
+      const overdue = ticket.waiting_on === 'operator' && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime();
+      if (active && (['critical', 'urgent'].includes(ticket.priority) || overdue)) return 0;
+      if (active && (ticket.waiting_on === 'operator' || ticket.priority === 'high')) return 1;
+      if (active) return 2;
+      return 3;
+    };
+    const orderedItems = [...filteredItems].sort((left, right) => {
+      const updatedDifference = new Date(left.updated_at).getTime() - new Date(right.updated_at).getTime();
+      if (sort === 'updated_at') return -updatedDifference;
+      return riskRank(left) - riskRank(right) || updatedDifference;
+    });
+    const items = orderedItems.slice(offset, offset + 20);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
         items,
-        pagination: { total: items.length, limit: 20, offset: 0, has_more: false },
+        pagination: { total: filteredItems.length, limit: 20, offset, has_more: offset + items.length < filteredItems.length },
         summary: {
-          open: tickets.filter((ticket) => ticket.status === 'open').length,
-          in_progress: tickets.filter((ticket) => ticket.status === 'in_progress').length,
+          open: filteredItems.filter((ticket) => ticket.status === 'open').length,
+          in_progress: filteredItems.filter((ticket) => ticket.status === 'in_progress').length,
+          critical: filteredItems.filter((ticket) => riskRank(ticket) === 0).length,
+          warning: filteredItems.filter((ticket) => riskRank(ticket) === 1).length,
+          monitor: filteredItems.filter((ticket) => riskRank(ticket) === 2).length,
+          stable: filteredItems.filter((ticket) => riskRank(ticket) === 3).length,
+          waiting_for_operator: filteredItems.filter((ticket) => ticket.waiting_on === 'operator').length,
+          waiting_for_customer: filteredItems.filter((ticket) => ticket.waiting_on === 'customer').length,
+          overdue: filteredItems.filter((ticket) => ticket.waiting_on === 'operator' && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime()).length,
         },
       })),
     });
@@ -147,22 +187,45 @@ async function installSupportQueueMocks(page: Page) {
 }
 
 test('ticket queue persists filters and focus while retaining usable results on failure', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const mocks = await installSupportQueueMocks(page);
   await page.goto('/admin/support-requests');
 
   await expect(page.getByRole('heading', { name: /Customer ticket queue|客户工单队列/i })).toBeVisible();
-  await expect(page.locator('[data-ui="support-request-queue-item"]')).toHaveCount(4);
-  await expect(page.locator('table')).toHaveCount(0);
+  await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(4);
+  await expect(page.locator('[data-ui="support-request-table"] table')).toHaveCount(1);
+  await expect(page.locator('[data-ui="admin-context-drawer"]')).toHaveCount(0);
   expect(mocks.getRequestCount()).toBe(1);
 
-  const rows = page.locator('[data-ui="support-request-queue-item"]');
+  const toolbarControls = [
+    page.getByLabel(/Search tickets|搜索工单/i),
+    page.getByLabel(/Ticket view|工单视图/i),
+    page.getByLabel(/Ticket topic|工单类型/i),
+    page.getByLabel(/Sort|排序/i),
+    page.getByRole('button', { name: /^Apply$|^应用$/i }),
+    page.getByRole('button', { name: /^Clear filters$|^清除筛选$/i }),
+  ];
+  const toolbarCenters = await Promise.all(toolbarControls.map(async (control) => {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    return box!.y + box!.height / 2;
+  }));
+  expect(Math.max(...toolbarCenters) - Math.min(...toolbarCenters)).toBeLessThan(4);
+
+  const rows = page.locator('[data-ui="support-request-row"]');
   await expect(rows.nth(0)).toContainText('Payment confirmation is still missing');
   await expect(rows.nth(1)).toContainText('Site connection needs review');
   await expect(rows.nth(2)).toContainText('Usage total needs explanation');
-  await expect(page.locator('#support-request-inspector')).toContainText('Payment confirmation is still missing');
 
-  await page.getByRole('button', { name: /^Open$|^待处理$/i }).click();
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:waiting_for_operator');
+  await expect(page).toHaveURL(/attention=waiting_for_operator/);
+  await expect(rows).toHaveCount(2);
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:overdue');
+  await expect(page).toHaveURL(/attention=overdue/);
+  await expect(rows).toHaveCount(1);
+
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('status:open');
   await expect(page).toHaveURL(/status=open/);
   await expect(rows).toHaveCount(2);
 
@@ -175,9 +238,11 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await inspectButton.focus();
   await inspectButton.press('Enter');
   await expect(page).toHaveURL(/focus=sr_overdue_payment/);
+  await expect(page.locator('[data-ui="admin-context-drawer"]')).toContainText('Payment confirmation is still missing');
   await page.reload();
   await expect(page.getByLabel(/Search tickets|搜索工单/i)).toHaveValue('Payment');
-  await expect(page.locator('#support-request-inspector')).toContainText('Payment confirmation is still missing');
+  await expect(page.locator('[data-ui="admin-context-drawer"]')).toContainText('Payment confirmation is still missing');
+  await page.getByRole('button', { name: /Close ticket inspector|关闭工单检查器/i }).click();
 
   mocks.failRequestForQuery('Missing');
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Missing');
@@ -185,15 +250,16 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(page).toHaveURL(/q=Missing/);
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
   await expect(rows).toHaveCount(1);
-  await expect(page.locator('#support-request-inspector').getByRole('button', { name: /Update ticket|更新工单/i })).toBeDisabled();
-  await expect(page.locator('#support-request-inspector').getByRole('combobox', { name: /^Status$|^状态$/i })).toBeDisabled();
+  await page.getByRole('button', { name: /^Inspect$|^检查$/i }).click();
+  await expect(page.getByRole('button', { name: /Edit handling|编辑处理/i })).toBeDisabled();
+  await page.getByRole('button', { name: /Close ticket inspector|关闭工单检查器/i }).click();
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toHaveCount(0);
-  await expect(page.locator('#support-request-inspector').getByRole('button', { name: /Update ticket|更新工单/i })).toBeEnabled();
   await page.getByLabel(/Search tickets|搜索工单/i).fill('NeverMatches');
   await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
-  await expect(page.getByRole('heading', { name: /No tickets match these filters|没有符合当前筛选条件的工单/i })).toBeVisible();
-  await page.getByRole('button', { name: /Clear filters|清除筛选/i }).last().click();
+  const emptyState = page.locator('[data-ui="admin-empty-state"]');
+  await expect(emptyState).toContainText(/No tickets match these filters|没有符合当前筛选条件的工单/i);
+  await emptyState.getByRole('button', { name: /Clear filters|清除筛选/i }).click();
   await expect(rows).toHaveCount(4);
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -201,23 +267,33 @@ test('ticket queue persists filters and focus while retaining usable results on 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
 
-test('ticket inspector separates customer submission from bounded internal handling', async ({ page }) => {
+test('ticket drawer inspects context and shared dialog owns bounded internal handling', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installSupportQueueMocks(page);
   await page.goto('/admin/support-requests');
 
-  const inspector = page.locator('#support-request-inspector');
+  const paymentRow = page.locator('[data-ui="support-request-row"]').filter({ hasText: 'Payment confirmation is still missing' });
+  const paymentInspectButton = paymentRow.getByRole('button', { name: /^Inspect$|^检查$/i });
+  await paymentInspectButton.click();
+  const inspector = page.locator('[data-ui="admin-context-drawer"]');
   await expect(inspector.getByRole('heading', { name: /Customer submission|客户提交内容/i })).toBeVisible();
   await expect(inspector.getByRole('heading', { name: /Internal handling|内部处理/i })).toBeVisible();
-  await expect(page.locator('textarea')).toHaveCount(1);
+  await expect(page.locator('textarea')).toHaveCount(0);
+  await expect(inspector.getByRole('link', { name: /Open conversation|打开会话/i })).toHaveAttribute('href', /\/admin\/support-requests\/sr_overdue_payment\?return_to=/);
+  await expect(inspector.getByRole('link', { name: 'acct_beta' })).toHaveAttribute('href', '/admin/accounts/acct_beta');
+  await expect(inspector.getByRole('link', { name: 'site_beta' })).toHaveAttribute('href', '/admin/sites/site_beta');
 
-  const statusSelect = inspector.getByRole('combobox', { name: /^Status$|^状态$/i });
+  await inspector.getByRole('button', { name: /Edit handling|编辑处理/i }).click();
+  const editor = page.getByRole('dialog', { name: /Edit internal handling|编辑内部处理/i });
+  const statusSelect = editor.getByRole('combobox', { name: /Status for|的状态/i });
   await statusSelect.selectOption('in_progress');
-  await inspector.getByLabel(/Internal handling note|内部处理备注/i).fill('Provider confirmation is being reconciled.');
-  await inspector.getByRole('button', { name: /Update ticket|更新工单/i }).click();
+  await editor.getByLabel(/Internal note for|内部备注/i).fill('Provider confirmation is being reconciled.');
+  await editor.getByRole('button', { name: /^Save$|^保存$/i }).click();
 
   await expect(page.getByText(/Ticket updated|工单已更新/i).first()).toBeVisible();
-  await expect(statusSelect).toHaveValue('in_progress');
-  await expect(inspector.getByLabel(/Internal handling note|内部处理备注/i)).toHaveValue('Provider confirmation is being reconciled.');
-  await expect(inspector.getByRole('link', { name: /Open conversation|打开会话/i })).toHaveAttribute('href', '/admin/support-requests/sr_overdue_payment');
+  await expect(editor).toHaveCount(0);
+  await expect(inspector).toContainText(/In progress|处理中/i);
+  await expect(inspector).toContainText('Provider confirmation is being reconciled.');
+  await page.getByRole('button', { name: /Close ticket inspector|关闭工单检查器/i }).click();
+  await expect(paymentInspectButton).toBeFocused();
 });

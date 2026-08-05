@@ -43,6 +43,10 @@ ability registry.
   site knowledge.
 - Public `post` and `page` sources may be indexed by default. Public approved
   comments may be indexed only when Cloud explicitly enables comment indexing.
+- Public WordPress image attachments may be indexed only through the bounded
+  `media_items` projection described below. Cloud stores derived retrieval
+  text and an opaque local attachment identity; WordPress remains attachment,
+  permission, deletion, and final-use truth.
 - Cloud must not publish, update, delete, or otherwise mutate WordPress content.
 - Cloud must not return article bodies, article titles, SEO copy,
   `article_write_plan` candidates, full article drafts, ready-to-publish
@@ -51,6 +55,60 @@ ability registry.
   request headers, or full sensitive request payloads.
 - Long `site-knowledge-sync` runs use the existing runtime worker path and
   `run_records`; no second queue, scheduler, or workflow engine is introduced.
+
+## Rebuildable Image-Attachment Projection
+
+`site_knowledge_sync.v1` additively accepts a bounded `media_items` list. Each
+eligible row requires:
+
+- a positive local `attachment_id`;
+- an `image/*` MIME type and current local URL;
+- a local revision `media_fingerprint`;
+- bounded local metadata (`title`, `alt`, `caption`, `description`);
+- optional derived visual evidence (`visual_summary`, `alt_text_basis`,
+  `visible_text`, and `subject_tags`).
+
+Cloud deterministically joins those text fields into one retrieval document
+with `source_type=media`, `post_type=attachment`, and the original attachment
+ID as `source_id`. This is one rebuildable projection in the existing Site
+Knowledge vector subsystem, not a second media library or vector database.
+Raw image bytes are not persisted by this contract.
+
+`site_knowledge_search.v1` accepts the additive
+`intent=media_library_search`. Consumers must filter to
+`source_types=["media"]`, `post_types=["attachment"]`, and document
+granularity. A returned attachment ID is only a search candidate: the
+WordPress caller must re-read the attachment, verify that it still exists, is
+an image, and is authorized for the current operator before display or use.
+
+Visual recognition is optional enrichment. If it is unavailable, callers may
+index metadata-only text and must expose that degraded state rather than
+claiming visual evidence. Attachment deletion, identity/revision change, or
+consent withdrawal invalidates the projection and requires refresh or removal.
+
+The media projection separates two revisions:
+
+- `media_fingerprint` identifies the local image bytes/revision. A matching
+  fingerprint allows the caller to reuse the existing bounded visual evidence
+  instead of invoking a vision model again.
+- `content_hash` covers the media fingerprint plus the current retrieval text,
+  including WordPress metadata and visual evidence. A title, ALT, caption, or
+  description change therefore rebuilds embeddings without requiring another
+  visual-recognition call.
+
+A complete media-only refresh is incremental. Existing rows with the same
+`content_hash` remain in place and are reported as `unchanged_documents`;
+changed rows are replaced in the existing Site Knowledge vector subsystem.
+This optimization does not create another cache, queue, registry, or vector
+store.
+
+`site_knowledge_status.v1` additively accepts up to 20
+`media_attachment_ids`. Its `media_evidence_items` response returns existing
+projection evidence for those attachment IDs, including `media_fingerprint`,
+`content_hash`, bounded visual evidence, and `last_indexed_at`. The response is
+read-only and suggestion-only. Callers must require a matching current local
+fingerprint before reuse, and WordPress remains responsible for review and any
+final ALT write.
 
 ## Metering Boundary
 

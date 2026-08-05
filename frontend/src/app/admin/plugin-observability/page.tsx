@@ -7,11 +7,10 @@ import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
   BackofficeEmptyState,
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
@@ -707,7 +706,7 @@ function AdminPluginObservabilityContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.plugin_observability_title', {}, 'Plugin Observability')}
         description={t(
@@ -715,8 +714,15 @@ function AdminPluginObservabilityContent() {
           {},
           'Cross-site plugin event volume, error rates, latency, and recent errors for npcink-abilities-toolkit, npcink-governance-core, npcink-ai-client-adapter, and npcink-cloud-addon.'
         )}
-        aside={data ? <BackofficeStatusBadge status={effectiveHealthStatus} label={effectiveHealthLabel} /> : undefined}
-        actions={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+        secondaryAction={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+        summaryItems={data ? [
+          { label: t('admin.plugin_obs_events', {}, 'Events'), value: formatInteger(data.totals.eventsTotal) },
+          { label: t('admin.plugin_obs_success_rate', {}, 'Success rate'), value: formatSuccessRate(data.totals.successRate), toneClassName: successRateStatus(data.totals.successRate) === 'error' ? 'text-rose-600 dark:text-rose-400' : successRateStatus(data.totals.successRate) === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined },
+          { label: t('admin.plugin_obs_avg_latency', {}, 'Avg latency'), value: `${data.totals.avgLatencyMs}ms` },
+          { label: t('admin.plugin_obs_active_sites', {}, 'Active sites'), value: formatInteger(data.totals.activeSiteCount) },
+          { label: t('admin.plugin_obs_attention_open', {}, 'Open watch items'), value: formatInteger(data.attentionWorkflow.needsAttention), toneClassName: data.attentionWorkflow.needsAttention > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
+        ] : []}
+        summaryAside={data ? <BackofficeStatusBadge status={effectiveHealthStatus} label={effectiveHealthLabel} /> : undefined}
       />
 
       <BackofficeSectionPanel className="p-4 md:p-5">
@@ -753,14 +759,6 @@ function AdminPluginObservabilityContent() {
           </div>
         </div>
       </BackofficeSectionPanel>
-
-      {data ? <BackofficeSummaryStrip items={[
-        { label: t('admin.plugin_obs_events', {}, 'Events'), value: formatInteger(data.totals.eventsTotal) },
-        { label: t('admin.plugin_obs_success_rate', {}, 'Success rate'), value: formatSuccessRate(data.totals.successRate), toneClassName: successRateStatus(data.totals.successRate) === 'error' ? 'text-rose-600 dark:text-rose-400' : successRateStatus(data.totals.successRate) === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined },
-        { label: t('admin.plugin_obs_avg_latency', {}, 'Avg latency'), value: `${data.totals.avgLatencyMs}ms` },
-        { label: t('admin.plugin_obs_active_sites', {}, 'Active sites'), value: formatInteger(data.totals.activeSiteCount) },
-        { label: t('admin.plugin_obs_attention_open', {}, 'Open watch items'), value: formatInteger(data.attentionWorkflow.needsAttention), toneClassName: data.attentionWorkflow.needsAttention > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
-      ]} /> : null}
 
       {error ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"><div className="font-semibold">{error}</div>{data ? <div className="mt-1 text-xs">{t('admin.plugin_obs_stale_notice', {}, 'The last successfully loaded plugin snapshot remains visible.')}</div> : null}</div> : null}
 

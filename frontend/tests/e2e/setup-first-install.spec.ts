@@ -10,6 +10,11 @@ function envelope(data: unknown) {
   };
 }
 
+test.skip(
+  process.env.NPCINK_CLOUD_SETUP_STATE_OVERRIDE !== 'pending',
+  'first-install flow requires the dedicated pending-installation Playwright lane',
+);
+
 test('first install keeps secrets in memory and reveals the admin key once', async ({ page }) => {
   const adminKey = 'nca_admin_setup_e2e_only';
   const setupCode = 'nca_setup_setup_e2e_only';
@@ -77,7 +82,10 @@ test('first install keeps secrets in memory and reveals the admin key once', asy
   expect((await blockedAdminApi.json()).error_code).toBe('setup.installation_required');
   const frontendHealth = await page.request.get('/api/health');
   expect(frontendHealth.status()).toBe(200);
-  expect((await frontendHealth.json()).status).toBe('healthy');
+  expect(await frontendHealth.json()).toMatchObject({
+    status: 'healthy',
+    scope: 'frontend_container',
+  });
   const frontendHealthHead = await page.request.head('/api/health');
   expect(frontendHealthHead.status()).toBe(200);
   const frontendHealthPost = await page.request.post('/api/health');

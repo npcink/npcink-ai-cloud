@@ -43,7 +43,7 @@ export function usePortalCommercialCatalog({
       setIsLoading(false);
       setError(null);
       setErrorCode('');
-      return;
+      return false;
     }
     const requestVersion = ++requestVersionRef.current;
     setIsLoading(true);
@@ -54,20 +54,19 @@ export function usePortalCommercialCatalog({
       if (
         requestVersion !== requestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
-      ) return;
+      ) return false;
       setEntitlements(bundle.entitlements);
       setCreditPacks(bundle.creditPacks);
       setPlanOffers(bundle.planOffers || null);
+      return true;
     } catch (loadError) {
       if (
         requestVersion !== requestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
-      ) return;
+      ) return false;
       setError(formatPortalErrorMessage(loadError, t, t('error.failed_load', {}, 'Failed to load.')));
       setErrorCode(loadError instanceof ApiError ? loadError.errorCode : '');
-      setEntitlements(null);
-      setCreditPacks(null);
-      setPlanOffers(null);
+      return false;
     } finally {
       if (
         requestVersion === requestVersionRef.current

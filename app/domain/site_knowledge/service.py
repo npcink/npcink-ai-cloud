@@ -52,6 +52,10 @@ from app.domain.site_knowledge.maintenance import (
     record_maintenance_batch,
     validate_maintenance_batch,
 )
+from app.domain.site_knowledge.media_search_quality import (
+    collapse_media_search_duplicates,
+    rank_media_search_results,
+)
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.rerankers import (
     SiteKnowledgeReranker,
@@ -163,7 +167,16 @@ class SiteKnowledgeService:
         documents = documents if isinstance(documents, list) else []
         comments = input_payload.get("comments")
         comments = comments if isinstance(comments, list) else []
-        total_documents = len(documents) + len(comments)
+        media_items = input_payload.get("media_items")
+        media_items = media_items if isinstance(media_items, list) else []
+        incremental_media_refresh = _is_complete_media_refresh(
+            sync_mode=sync_mode,
+            post_ids=post_ids,
+            documents=documents,
+            comments=comments,
+            media_items=media_items,
+        )
+        total_documents = len(documents) + len(comments) + len(media_items)
 
         deleted_entries = 0
         self._emit_sync_progress(
@@ -238,7 +251,7 @@ class SiteKnowledgeService:
                 if post_ids
                 else self.repository.delete_site_index(site_id)
             )
-        elif sync_mode == "refresh" and post_ids:
+        elif sync_mode == "refresh" and post_ids and not incremental_media_refresh:
             self._emit_sync_progress(
                 status="running",
                 stage="cleaning",
@@ -257,6 +270,7 @@ class SiteKnowledgeService:
         truncated_documents = 0
         skipped_documents = 0
         skipped_due_to_quota = 0
+        unchanged_documents = 0
         processed_documents = 0
         site_document_count = self.repository.count_documents(site_id)
         site_chunk_count = self.repository.count_chunks(site_id)
@@ -264,7 +278,7 @@ class SiteKnowledgeService:
         remaining_run_chunks = int(self.settings.site_knowledge_max_sync_chunks_per_run)
         quota_limited = False
 
-        for raw_document in [*documents, *comments]:
+        for raw_document in [*documents, *comments, *media_items]:
             document = raw_document if isinstance(raw_document, dict) else {}
             self._emit_sync_progress(
                 status="running",
@@ -281,11 +295,12 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
-            normalized = (
-                _normalize_public_comment(document)
-                if _looks_like_comment_document(document)
-                else _normalize_public_document(document)
-            )
+            if _looks_like_media_document(document):
+                normalized = _normalize_public_media(document)
+            elif _looks_like_comment_document(document):
+                normalized = _normalize_public_comment(document)
+            else:
+                normalized = _normalize_public_document(document)
             if normalized is None:
                 failed_documents += 1
                 processed_documents += 1
@@ -309,6 +324,21 @@ class SiteKnowledgeService:
                 source_type=source_type,
                 source_id=source_id,
             )
+            if (
+                incremental_media_refresh
+                and source_type == "media"
+                and existing_document
+                and self.repository.document_content_hash(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                == str(normalized["content_hash"])
+            ):
+                accepted_documents += 1
+                unchanged_documents += 1
+                processed_documents += 1
+                continue
             if remaining_run_documents <= 0:
                 skipped_documents += 1
                 skipped_due_to_quota += 1
@@ -349,6 +379,14 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
+            if incremental_media_refresh and source_type == "media" and existing_document:
+                if self.vector_backend is not None:
+                    self.vector_backend.delete_source_index(site_id, source_type, source_id)
+                deleted_entries += self.repository.delete_source_index(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
             if allowed_chunks < MAX_CHUNKS_PER_DOCUMENT and _chunks_include_limit_truncation(
                 chunks
             ):
@@ -430,6 +468,10 @@ class SiteKnowledgeService:
                     "taxonomies": normalized.get("taxonomies")
                     if isinstance(normalized.get("taxonomies"), dict)
                     else {"category": [], "post_tag": []},
+                    "media_fingerprint": str(normalized.get("media_fingerprint") or "")[:128],
+                    "visual_evidence": normalized.get("visual_evidence")
+                    if isinstance(normalized.get("visual_evidence"), dict)
+                    else {},
                 },
                 chunks=chunks,
             )
@@ -474,6 +516,7 @@ class SiteKnowledgeService:
             failed_documents=failed_documents,
             skipped_documents=skipped_documents,
             skipped_due_to_quota=skipped_due_to_quota,
+            unchanged_documents=unchanged_documents,
             deleted_entries=deleted_entries,
             percent=100,
         )
@@ -526,6 +569,7 @@ class SiteKnowledgeService:
             truncated_documents=truncated_documents,
             skipped_documents=skipped_documents,
             skipped_due_to_quota=skipped_due_to_quota,
+            unchanged_documents=unchanged_documents,
             deleted_entries=deleted_entries,
             progress=progress,
             quota=self._quota_snapshot(
@@ -538,6 +582,7 @@ class SiteKnowledgeService:
 
     def status(self, *, site_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
         include_coverage = bool(input_payload.get("include_coverage"))
+        media_attachment_ids = _coerce_post_ids(input_payload.get("media_attachment_ids"))[:20]
         indexed_posts = self.repository.count_documents(site_id)
         indexed_chunks = self.repository.count_chunks(site_id)
         last_sync_at = self.repository.last_sync_at(site_id)
@@ -592,6 +637,13 @@ class SiteKnowledgeService:
             "coverage": coverage,
             "progress": progress,
             "maintenance": maintenance,
+            "media_evidence_items": [
+                _serialize_media_evidence_document(document)
+                for document in self.repository.media_evidence_documents(
+                    site_id=site_id,
+                    attachment_ids=media_attachment_ids,
+                )
+            ],
             "active_run": _serialize_active_run(active_run) if active_run is not None else {},
             "ownership": _site_knowledge_ownership_contract(),
             "truth_boundaries": _site_knowledge_truth_boundaries(),
@@ -637,12 +689,19 @@ class SiteKnowledgeService:
             source_types = [source_type for source_type in source_types if source_type != "comment"]
         current_post_id = _coerce_int(input_payload.get("current_post_id"), default=0)
 
-        indexed_embedding_models = self.repository.list_embedding_models(site_id)
+        indexed_embedding_models = self.repository.list_embedding_models(
+            site_id,
+            source_types=source_types,
+        )
         retrieval_readiness = _embedding_space_readiness(
             indexed_embedding_models=indexed_embedding_models,
             query_embedding_model=self.embedding_space_id,
+            requires_semantic_embedding=intent == "media_library_search",
         )
-        if retrieval_readiness["status"] == "embedding_space_mismatch":
+        if retrieval_readiness["status"] in {
+            "embedding_space_mismatch",
+            "semantic_embedding_required",
+        }:
             workflow_support = _workflow_support_for_intent(intent)
             evidence_gate = _evidence_gate([], evidence_policy)
             return {
@@ -660,7 +719,7 @@ class SiteKnowledgeService:
                 "evidence_gate": evidence_gate,
                 "rerank": {
                     "status": "skipped",
-                    "reason": "embedding_space_mismatch",
+                    "reason": retrieval_readiness["status"],
                     "candidate_count": 0,
                 },
                 "retrieval_readiness": retrieval_readiness,
@@ -674,6 +733,12 @@ class SiteKnowledgeService:
                     "candidate_count": 0,
                     "returned_count": 0,
                     "duplicate_chunks_collapsed": 0,
+                    "duplicate_media_collapsed": 0,
+                    "ranking_strategy": (
+                        "semantic_plus_bounded_lexical"
+                        if intent == "media_library_search"
+                        else "semantic"
+                    ),
                 },
                 "results": [],
                 "write_posture": "suggestion_only",
@@ -699,6 +764,7 @@ class SiteKnowledgeService:
         )
         if results is not None:
             results, rerank, result_grouping = self._prepare_search_results(
+                intent=intent,
                 query=query,
                 results=results,
                 evidence_policy=evidence_policy,
@@ -740,7 +806,11 @@ class SiteKnowledgeService:
         ):
             embedding = chunk.embedding_json if isinstance(chunk.embedding_json, list) else []
             score = cosine_similarity(query_embedding, [float(value) for value in embedding])
-            lexical_bonus = _lexical_bonus(query, chunk.chunk_text, chunk.title)
+            lexical_bonus = (
+                0.0
+                if intent == "media_library_search"
+                else _lexical_bonus(query, chunk.chunk_text, chunk.title)
+            )
             scored.append((min(1.0, score + lexical_bonus), chunk))
 
         scored.sort(key=lambda item: (-item[0], item[1].post_id, item[1].chunk_index))
@@ -761,6 +831,7 @@ class SiteKnowledgeService:
             for score, chunk in scored
         ]
         results, rerank, result_grouping = self._prepare_search_results(
+            intent=intent,
             query=query,
             results=results,
             evidence_policy=evidence_policy,
@@ -958,6 +1029,7 @@ class SiteKnowledgeService:
     def _prepare_search_results(
         self,
         *,
+        intent: str,
         query: str,
         results: list[dict[str, object]],
         evidence_policy: dict[str, object],
@@ -966,11 +1038,16 @@ class SiteKnowledgeService:
     ) -> tuple[list[dict[str, object]], dict[str, object], dict[str, object]]:
         filtered = _apply_evidence_policy(results, evidence_policy)
         ranked = _rank_search_results_for_query(query, filtered)
+        if intent == "media_library_search":
+            ranked = rank_media_search_results(query, ranked)
         reranked, rerank = self._maybe_rerank_results(query=query, results=ranked)
         candidate_count = len(reranked)
         collapsed_count = 0
+        duplicate_media_count = 0
         if result_granularity == "document":
             reranked, collapsed_count = _collapse_search_results_by_document(reranked)
+        if intent == "media_library_search":
+            reranked, duplicate_media_count = collapse_media_search_duplicates(reranked)
         returned = reranked[:max_results]
         return returned, rerank, {
             "strategy": (
@@ -981,6 +1058,12 @@ class SiteKnowledgeService:
             "candidate_count": candidate_count,
             "returned_count": len(returned),
             "duplicate_chunks_collapsed": collapsed_count,
+            "duplicate_media_collapsed": duplicate_media_count,
+            "ranking_strategy": (
+                "semantic_plus_bounded_lexical"
+                if intent == "media_library_search"
+                else "semantic"
+            ),
         }
 
     def _maybe_rerank_results(
@@ -1038,6 +1121,7 @@ class SiteKnowledgeService:
         failed_documents: int = 0,
         skipped_documents: int = 0,
         skipped_due_to_quota: int = 0,
+        unchanged_documents: int = 0,
         deleted_entries: int = 0,
         percent: int | None = None,
     ) -> dict[str, Any]:
@@ -1061,6 +1145,7 @@ class SiteKnowledgeService:
             "failed_documents": max(0, int(failed_documents)),
             "skipped_documents": max(0, int(skipped_documents)),
             "skipped_due_to_quota": max(0, int(skipped_due_to_quota)),
+            "unchanged_documents": max(0, int(unchanged_documents)),
             "deleted_entries": max(0, int(deleted_entries)),
             "percent": resolved_percent,
             "updated_at": _serialize_datetime(datetime.now(UTC)),
@@ -1201,6 +1286,7 @@ class SiteKnowledgeService:
         truncated_documents: int = 0,
         skipped_documents: int = 0,
         skipped_due_to_quota: int = 0,
+        unchanged_documents: int = 0,
         progress: dict[str, Any] | None = None,
         quota: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -1219,6 +1305,7 @@ class SiteKnowledgeService:
                 "truncated_documents": truncated_documents,
                 "skipped_documents": skipped_documents,
                 "skipped_due_to_quota": skipped_due_to_quota,
+                "unchanged_documents": unchanged_documents,
                 "deleted_entries": deleted_entries,
             },
             "quota": quota if isinstance(quota, dict) else {},
@@ -1237,6 +1324,7 @@ class SiteKnowledgeService:
                 failed_documents=failed_documents,
                 skipped_documents=skipped_documents,
                 skipped_due_to_quota=skipped_due_to_quota,
+                unchanged_documents=unchanged_documents,
                 deleted_entries=deleted_entries,
                 percent=100 if status == "completed" else None,
             ),
@@ -1330,6 +1418,200 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
         "taxonomies": taxonomies,
         "content_hash": content_hash[:128],
     }
+
+
+def _normalize_public_media(document: dict[str, Any]) -> dict[str, object] | None:
+    attachment_id = _coerce_int(
+        document.get("attachment_id") or document.get("post_id"),
+        default=0,
+    )
+    mime_type = str(document.get("mime_type") or "").strip().lower()
+    if attachment_id <= 0 or not mime_type.startswith("image/"):
+        return None
+
+    title = _normalize_site_knowledge_text(document.get("title"), max_chars=500)
+    url = str(document.get("url") or "").strip()
+    alt = _normalize_site_knowledge_text(document.get("alt"), max_chars=1000)
+    caption = _normalize_site_knowledge_text(document.get("caption"), max_chars=2000)
+    description = _normalize_site_knowledge_text(
+        document.get("description"),
+        max_chars=4000,
+        remove_markup_noise=True,
+    )
+    visual_summary = _normalize_site_knowledge_text(
+        document.get("visual_summary"),
+        max_chars=2000,
+        remove_markup_noise=True,
+    )
+    alt_text_basis = _normalize_site_knowledge_text(
+        document.get("alt_text_basis"),
+        max_chars=1500,
+        remove_markup_noise=True,
+    )
+    visible_text_items = _filter_media_text_list(
+        document.get("visible_text"),
+        max_items=20,
+        max_chars=200,
+    )
+    subject_tag_items = _filter_media_text_list(
+        document.get("subject_tags"),
+        max_items=30,
+        max_chars=100,
+    )
+    visible_text = " ".join(visible_text_items)
+    subject_tags = " ".join(subject_tag_items)
+    content_excerpt = " ".join(
+        part
+        for part in (
+            title,
+            alt,
+            caption,
+            description,
+            visual_summary,
+            alt_text_basis,
+            visible_text,
+            subject_tags,
+        )
+        if part
+    )[:MAX_DOCUMENT_CONTENT_CHARS]
+    if not url or not content_excerpt:
+        return None
+
+    media_fingerprint = str(
+        document.get("media_fingerprint") or document.get("content_hash") or ""
+    ).strip()
+    if not media_fingerprint:
+        media_fingerprint = hashlib.sha256(
+            f"{attachment_id}|{url}|{mime_type}|{content_excerpt}".encode()
+        ).hexdigest()
+    media_fingerprint = media_fingerprint[:128]
+    content_hash = hashlib.sha256(f"{media_fingerprint}|{content_excerpt}".encode()).hexdigest()
+    visual_evidence = _normalize_media_visual_evidence(
+        document,
+        visual_summary=visual_summary,
+        alt_text_basis=alt_text_basis,
+        visible_text=visible_text_items,
+        subject_tags=subject_tag_items,
+    )
+
+    return {
+        "post_id": attachment_id,
+        "source_type": "media",
+        "source_id": attachment_id,
+        "parent_post_id": attachment_id,
+        "post_type": "attachment",
+        "post_status": "publish",
+        "title": title or f"Media attachment {attachment_id}",
+        "url": url[:2000],
+        "modified_gmt": str(document.get("modified_gmt") or "").strip()[:64],
+        "excerpt": visual_summary or alt or caption,
+        "content_excerpt": content_excerpt,
+        "source_content_chars": len(content_excerpt),
+        "indexed_content_chars": len(content_excerpt),
+        "content_truncated": False,
+        "taxonomies": {"category": [], "post_tag": []},
+        "content_hash": content_hash,
+        "media_fingerprint": media_fingerprint,
+        "visual_evidence": visual_evidence,
+    }
+
+
+def _normalize_media_visual_evidence(
+    document: dict[str, Any],
+    *,
+    visual_summary: str,
+    alt_text_basis: str,
+    visible_text: list[str],
+    subject_tags: list[str],
+) -> dict[str, object]:
+    has_visual_evidence = bool(visual_summary or alt_text_basis or visible_text or subject_tags)
+    confidence = max(0.0, min(1.0, _coerce_float(document.get("confidence"), default=0.0)))
+    return {
+        "status": "ready" if has_visual_evidence else "metadata_only",
+        "contract_version": (
+            str(document.get("vision_contract_version") or "image_context_evidence.v1")[:128]
+            if has_visual_evidence
+            else ""
+        ),
+        "source": (
+            str(document.get("vision_source") or "cloud_vision_model")[:64]
+            if has_visual_evidence
+            else ""
+        ),
+        "model_id": (
+            str(document.get("vision_model_id") or document.get("model_id") or "")[:191]
+            if has_visual_evidence
+            else ""
+        ),
+        "run_id": (str(document.get("vision_run_id") or "")[:191] if has_visual_evidence else ""),
+        "visual_summary": visual_summary,
+        "alt_text_basis": alt_text_basis,
+        "visible_text": visible_text,
+        "subject_tags": subject_tags,
+        "confidence": confidence,
+        "uncertainty_flags": _filter_media_text_list(
+            document.get("uncertainty_flags"),
+            max_items=20,
+            max_chars=100,
+        ),
+        "requires_human_visual_check": has_visual_evidence,
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+
+
+def _serialize_media_evidence_document(document: Any) -> dict[str, object]:
+    metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
+    visual_evidence = (
+        metadata.get("visual_evidence") if isinstance(metadata.get("visual_evidence"), dict) else {}
+    )
+    return {
+        "attachment_id": int(document.source_id),
+        "media_fingerprint": str(metadata.get("media_fingerprint") or "")[:128],
+        "content_hash": str(document.content_hash or "")[:128],
+        "visual_evidence": visual_evidence,
+        "last_indexed_at": _serialize_datetime(document.last_indexed_at),
+    }
+
+
+def _is_complete_media_refresh(
+    *,
+    sync_mode: str,
+    post_ids: list[int],
+    documents: list[Any],
+    comments: list[Any],
+    media_items: list[Any],
+) -> bool:
+    if sync_mode != "refresh" or documents or comments or not media_items:
+        return False
+    attachment_ids = {
+        _coerce_int(item.get("attachment_id"), default=0)
+        for item in media_items
+        if isinstance(item, dict)
+    }
+    attachment_ids.discard(0)
+    return bool(attachment_ids) and attachment_ids == set(post_ids)
+
+
+def _filter_media_text_list(value: Any, *, max_items: int, max_chars: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    seen: set[str] = set()
+    for raw_item in value:
+        item = _normalize_site_knowledge_text(
+            raw_item,
+            max_chars=max_chars,
+            remove_markup_noise=True,
+        )
+        key = item.casefold()
+        if not item or key in seen:
+            continue
+        items.append(item)
+        seen.add(key)
+        if len(items) >= max_items:
+            break
+    return items
 
 
 def _normalize_public_taxonomies(value: Any) -> dict[str, list[str]]:
@@ -1427,6 +1709,14 @@ def _remove_markup_noise(text: str) -> str:
 
 def _looks_like_comment_document(document: dict[str, Any]) -> bool:
     return "comment_id" in document or "comment_status" in document
+
+
+def _looks_like_media_document(document: dict[str, Any]) -> bool:
+    return (
+        "attachment_id" in document
+        or str(document.get("source_type") or "").strip().lower() == "media"
+        or str(document.get("post_type") or "").strip().lower() == "attachment"
+    )
 
 
 def _coerce_post_ids(value: Any) -> list[int]:
@@ -1585,11 +1875,19 @@ def _embedding_space_readiness(
     *,
     indexed_embedding_models: list[str],
     query_embedding_model: str,
+    requires_semantic_embedding: bool = False,
 ) -> dict[str, object]:
     indexed_models = sorted(
         {str(model).strip() for model in indexed_embedding_models if str(model).strip()}
     )
     query_model = str(query_embedding_model or "").strip()
+    if requires_semantic_embedding and query_model.startswith("deterministic:"):
+        return {
+            "status": "semantic_embedding_required",
+            "query_embedding_model": query_model,
+            "indexed_embedding_models": indexed_models,
+            "action": "configure_semantic_embedding_and_rebuild_index",
+        }
     if any(model != query_model for model in indexed_models):
         return {
             "status": "embedding_space_mismatch",
@@ -1763,6 +2061,8 @@ def _reason_for_intent(intent: str) -> str:
         )
     if intent == "image_context":
         return "The indexed passage can inform image context or media planning."
+    if intent == "media_library_search":
+        return "The indexed visual evidence matches the requested media-library scene."
     return "Topic and intent are closely related."
 
 
@@ -1776,6 +2076,7 @@ def _suggested_use_for_intent(intent: str) -> str:
         "content_gap_analysis": "gap_evidence",
         "duplicate_check": "duplicate_or_conflict_candidate",
         "writing_support_plan": "writing_support_evidence",
+        "media_library_search": "media_library_candidate",
     }.get(intent, "reference_snippet")
 
 

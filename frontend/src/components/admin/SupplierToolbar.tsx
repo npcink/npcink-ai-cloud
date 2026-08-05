@@ -1,4 +1,4 @@
-import type { ConnectionStatusFilter } from '@/components/admin/SupplierConnectionTables';
+import type { ConnectionStatusFilter } from '@/features/admin/ai-resources/types';
 
 type SupplierToolbarProps = {
   connectionSearch: string;
@@ -40,6 +40,7 @@ export function SupplierToolbar({
           >
             <option value="all">{translate('filter_all_statuses', 'All statuses')}</option>
             <option value="ready">{translate('filter_ready', 'Ready')}</option>
+            <option value="attention">{translate('filter_attention', 'Needs attention')}</option>
             <option value="missing_secret">{translate('filter_missing_secret', 'Missing secret')}</option>
             <option value="disabled">{translate('filter_disabled', 'Disabled')}</option>
           </select>

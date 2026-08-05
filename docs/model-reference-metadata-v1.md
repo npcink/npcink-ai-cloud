@@ -103,7 +103,7 @@ This price unit is explicit display metadata only.
 Use focused checks:
 
 ```bash
-.venv/bin/python -m pytest tests/api/test_service_routes.py::test_admin_model_references_syncs_models_dev_payload_as_reference_only
+.venv/bin/python -m pytest tests/api/test_service_provider_routes.py::test_admin_model_references_syncs_models_dev_payload_as_reference_only
 node frontend/tests/unit/admin-ai-resources-contract.mjs
 pnpm run frontend:type-check
 ```

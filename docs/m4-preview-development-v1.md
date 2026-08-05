@@ -129,6 +129,33 @@ relay, acquire the remote deployment lock, or change containers. Use
 `pnpm run m4:preview:tunnel` command remains available when an explicitly
 configured SSH target is required.
 
+Before starting SSH, the command fails when the requested local port already
+has a listener, so an old healthy tunnel cannot be mistaken for the new
+process. Select a different `--local-port` instead of reusing that listener.
+The command reports `tunnel_ready=true` only after the local listener can
+successfully read `/health/live`; selecting an SSH route or starting an SSH
+process is not readiness. The default wait is 120 seconds and can be bounded
+with `NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS`. A timeout fails closed,
+stops the child SSH process, and never emits the ready marker.
+
+For an offsite browser lane, add the optional read-only transport preflight:
+
+```bash
+pnpm run m4:preview:auto -- --browser-preflight
+```
+
+It reads the final Tailscale ping route and a bounded 256 KiB byte range from a
+local Next.js static asset. It does not run Playwright, change M4, select
+replacement evidence, or print raw Tailscale output. A peer-relay path, an
+incomplete sample, or throughput below 64 KiB/s emits
+`browser_transport=degraded` and `browser_evidence=not_counted`. This is a
+transport classification, not a product failure. Use the same revision with
+local production Playwright, or collect manual evidence through an
+existing-authenticated Cloudflare browser. Record which lane supplied the
+evidence; do not silently treat either as an automatic substitute. A
+`browser_transport=ready` result only says the transport is usable enough to
+attempt real browser assertions.
+
 The implementation reasoning, rejected alternatives, timeout correction,
 measured LAN/Tailscale evidence, and troubleshooting lessons are recorded in
 [the 2026-07-25 single-operator preview retrospective](m4-personal-preview-auto-route-retrospective-2026-07-25.md).
@@ -280,6 +307,9 @@ Run commands from the local repository worktree:
 # Open the single-operator preview; office LAN first, Tailscale fallback
 pnpm run m4:preview:auto
 
+# Offsite read-only transport classification before browser assertions
+pnpm run m4:preview:auto -- --browser-preflight
+
 # First deployment or dependency/Dockerfile/lock-file change
 pnpm run m4:preview:deploy
 
@@ -403,6 +433,52 @@ volume labels, removes only
 `npcink-ai-cloud-m4-dev_cloud-frontend-node-modules-dev`, and lets Docker copy
 the new image dependencies into that disposable volume. PostgreSQL, Redis,
 artifacts, and unrelated M4 volumes are never part of this refresh.
+
+Before a deploy that may refresh this shared dependency volume, the script
+first lists matching volume names and compares the returned name exactly. A
+failed Docker query is not treated as an absent volume. If the exact volume is
+present, its Compose project and volume-key labels must verify before live
+source synchronization or image build. The script then resolves the current
+Compose frontend container and enumerates every container that consumes the
+volume. The absence of a current frontend is allowed for recovery; one current
+frontend must match the exact consumer container ID and expected Compose
+labels; an ambiguous duplicate primary or any other consumer fails closed.
+Before that first consumer check, a refresh also acquires the repository's
+operation lock for each managed frontend slot. If a slot update or release is
+already in flight, deploy refuses before live source synchronization. The
+primary deploy holds all three slot locks through the post-build consumer
+re-check, frontend stop/removal, label proof, and dependency-volume removal;
+its existing primary operation lock prevents a slot from entering after those
+slot locks are released. These coordination locks never release a lease or
+remove a slot container.
+This includes a stale label-matching container and a frontend-only preview
+slot. Refusal happens before the candidate is synchronized into the live
+source mirror, before image build, and before frontend stop/removal, volume
+removal, or migration. The diagnostic records the consumer's Compose
+project/service and, for a managed slot, its owner/slot/lease/backend-lease
+state. Inspect it with
+`m4:frontend:status`; after coordinating with the recorded owner, use only the
+repository-controlled `m4:frontend:release` command. Active, expired, and
+drifted slot leases are never released or deleted automatically. The later
+consumer re-check closes the image-build claim window; exact Compose
+volume-label verification still runs before the primary stop and again before
+volume removal. Before the first live source change, the script validates
+Compose from the fully extracted incoming tree and runs `nginx -t` against the
+incoming M4 proxy configuration in a disposable, network-disabled Nginx
+container. A validation failure leaves the live source mirror and the running
+services unchanged. The live rsync uses delayed updates and delayed deletion.
+The single-file Nginx bind-mount source is excluded from rsync, copied to a
+same-directory incoming file, checksum-verified, and committed with an atomic
+rename only after rsync succeeds. When that file changed, deploy recreates the
+proxy only after the candidate preflight and atomic commit. Thus Nginx can see
+the previous complete file or the next complete file, never an rsync partial.
+
+After the first guard passes, the script marks the stack touched immediately
+before that atomic live-source commit. A later build or runtime failure still
+deliberately stops the application services rather than leaving committed
+candidate source running under accepted-state evidence. Transfer, extraction,
+Compose, or Nginx-candidate validation failures happen earlier and retain the
+previous running services.
 
 The overlay explicitly marks the frontend as development and uses the
 repository's development-only completed-installation override. This keeps the
@@ -566,8 +642,19 @@ This development-only command creates or updates the secretless `ollama-m4`
 provider at `http://host.docker.internal:11434/v1`, allows
 `qwen3.5:9b`, sets provider-default `reasoning_effort=none`, refreshes its
 catalog, and points the three WordPress text profiles at the resulting 9B
-instance. The setting is explicit per provider connection; it does not change
-production providers or the generic WordPress operation contract.
+instance. It also creates the development-only, secretless
+`ollama_m4_embedding` connection for `qwen3-embedding:0.6b` with 1024
+dimensions and the existing PostgreSQL JSON development vector backend. The
+embedding connection is accepted only in development or test environments.
+The setting is explicit per provider connection; it does not change production
+providers or the generic WordPress operation contract.
+
+Development and production embedding spaces are deliberately separate.
+Switching to the production SiliconFlow `BAAI/bge-m3` profile requires a full
+Site Knowledge index rebuild even though both profiles use 1024 dimensions.
+Media-library semantic search fails closed while only the deterministic
+placeholder embedding is active; it must not return random nearest-neighbor
+candidates.
 
 Ollama's OpenAI-compatible endpoint maps `reasoning_effort=none` to disabled
 thinking. This is required for `qwen3.5:9b` in the preview because an unbounded

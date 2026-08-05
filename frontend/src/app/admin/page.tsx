@@ -14,6 +14,7 @@ import {
   BackofficeMetricStrip,
   BackofficeDiagnosticNotice,
   BackofficeLayer,
+  BackofficePageHeader,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
   BackofficeStackCard,
@@ -572,7 +573,6 @@ function AdminOverviewContent() {
       ? t('admin.home_primary_action_coverage', {}, 'Review service status')
       : t('admin.home_primary_action_accounts', {}, 'Review customers');
   const supportLookupAccountHref = buildAdminLookupHref('/admin/accounts', supportQuery);
-  const supportLookupPortalUserHref = buildAdminLookupHref('/admin/portal-users', supportQuery);
   const quickLinks = [
     {
       href: '/admin/support-requests',
@@ -686,44 +686,28 @@ function AdminOverviewContent() {
   ];
   return (
     <AdminWorkspacePage>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.home_title', {}, 'Platform state comes first')}
         description={platformConclusion}
-        className="rounded-[1.2rem] shadow-none"
-        contentClassName="px-5 py-5 md:px-6 md:py-5"
-        actions={(
+        primaryAction={(
           <Link href={primaryActionHref} className="btn btn-primary">
             {primaryActionLabel}
           </Link>
         )}
-        aside={(
-          <div className="w-full xl:w-[44rem]">
-            <BackofficeMetricStrip
-              items={primaryMetrics.map((item) => ({ ...item, detail: undefined, size: 'compact' }))}
-              columnsClassName="md:grid-cols-2 xl:grid-cols-4"
-            />
-          </div>
+        summaryItems={primaryMetrics.map((item) => ({ ...item, detail: undefined }))}
+        summaryAside={(
+          <span className={cn('inline-flex rounded-full border px-2.5 py-1 font-semibold', readinessClasses)}>
+            {readinessLabel} · {overview.operationalReadiness.generatedAt
+              ? formatDate(overview.operationalReadiness.generatedAt)
+              : overview.generatedAt
+                ? formatDate(overview.generatedAt)
+                : t('common.unknown')}
+          </span>
         )}
-      >
+      />
+      <BackofficeSectionPanel className="space-y-3" data-ui="admin-overview-attention">
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em]',
-                readinessClasses
-              )}
-            >
-              {readinessLabel}
-            </span>
-            <span className="text-sm text-slate-500 dark:text-slate-400">
-              {overview.operationalReadiness.generatedAt
-                ? formatDate(overview.operationalReadiness.generatedAt)
-                : overview.generatedAt
-                  ? formatDate(overview.generatedAt)
-                  : t('common.unknown')}
-            </span>
-          </div>
           {attentionNotes.length > 0 ? (
             attentionNotes.map((item) => (
               <BackofficeStackCard key={`${item.scope}-${item.title}`}>
@@ -749,7 +733,7 @@ function AdminOverviewContent() {
             </BackofficeStackCard>
           )}
         </div>
-      </BackofficePrimaryPanel>
+      </BackofficeSectionPanel>
 
       <BackofficeSectionPanel className="space-y-4" data-ui="admin-overview-destinations">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -829,9 +813,6 @@ function AdminOverviewContent() {
                   <div className="flex shrink-0 gap-2">
                     <Link href={supportLookupAccountHref} className="btn btn-primary btn-sm whitespace-nowrap">
                       {t('admin.home_support_lookup_accounts', {}, 'Find customer')}
-                    </Link>
-                    <Link href={supportLookupPortalUserHref} className="btn btn-secondary btn-sm whitespace-nowrap">
-                      {t('admin.home_support_lookup_portal_users', {}, 'Find user')}
                     </Link>
                   </div>
                 </form>

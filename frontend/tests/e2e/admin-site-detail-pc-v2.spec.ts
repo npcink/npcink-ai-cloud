@@ -11,8 +11,10 @@ test('site detail keeps the PC first screen focused on one conclusion and one ne
   await expect(page.getByRole('heading', { name: /Commercial coverage needs follow-up|商业覆盖需要跟进/i })).toHaveCount(1);
   await expect(page.getByRole('link', { name: /Open coverage|打开覆盖/i })).toBeVisible();
   await expect(page.locator('a[href^="/api/admin/audit-events"]')).toBeHidden();
-  // The one remaining unscoped subscriptions link is the persistent sidebar destination.
-  await expect(page.locator('a[href="/admin/subscriptions"]')).toHaveCount(1);
+  // The persistent desktop sidebar keeps one unscoped subscriptions destination.
+  await expect(
+    page.locator('[data-ui="admin-primary-nav"] a[href="/admin/subscriptions"]')
+  ).toHaveCount(1);
 
   await expect(page.getByText(/Queued or backlogged runs are accumulating\.|当前存在排队或积压运行/i)).toBeVisible();
   await expect(page.getByText(/Open the current customer subscription when commercial coverage is the blocker\./i)).toHaveCount(0);
@@ -47,4 +49,19 @@ test('site detail failure preserves the PC shell and bounded retry', async ({ pa
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/sites\/site_mvp$/);
+});
+
+test('direct and tampered Site detail return contexts fail closed to Accounts', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.goto('/admin/sites/site_mvp');
+  await expect(page.getByRole('link', { name: /^Back$|^返回$/i }).first()).toHaveAttribute(
+    'href',
+    '/admin/accounts'
+  );
+
+  await page.goto('/admin/sites/site_mvp?return_to=https%3A%2F%2Fevil.example');
+  await expect(page.getByRole('link', { name: /^Back$|^返回$/i }).first()).toHaveAttribute(
+    'href',
+    '/admin/accounts'
+  );
 });

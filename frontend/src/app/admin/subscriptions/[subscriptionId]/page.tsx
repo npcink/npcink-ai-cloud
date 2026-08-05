@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -12,13 +12,12 @@ import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { normalizeStatusToken, translateStatusLabel } from '@/lib/status-display';
 import {
-  BackofficeMetricStrip,
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
-  BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
 import { type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminLatestOperationButton } from '@/components/admin/AdminLatestOperationDialog';
@@ -28,6 +27,10 @@ import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifi
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
 import { formatAdminCurrency } from '@/lib/currency';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  normalizeAdminReturnTo,
+} from '@/lib/admin-return-context';
 import { formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
 type SubscriptionDetailPayload = {
@@ -96,7 +99,8 @@ type SubscriptionDetailPayload = {
   usage_totals?: {
     runs?: number;
     tokens?: number;
-    cost?: number;
+    cost_cny?: number;
+    cost_cny_snapshot_missing_count?: number;
   };
   related_surfaces?: {
     site_href?: string;
@@ -131,9 +135,17 @@ const subscriptionDetailClient = createApiClient({ idempotencyPrefix: 'admin_sub
 
 function SubscriptionDetailContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
   const { subscriptionId } = params as { subscriptionId: string };
+  const returnTo = normalizeAdminReturnTo(
+    searchParams.get('return_to'),
+    {
+      allowedPathnames: [ADMIN_QUEUE_PATHNAMES.subscriptions],
+      fallback: ADMIN_QUEUE_PATHNAMES.subscriptions,
+    }
+  );
   const [detail, setDetail] = useState<SubscriptionDetailPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +214,11 @@ function SubscriptionDetailContent() {
       runsLimit: Number(budget.runs?.limit ?? 0),
       tokensCurrent: Number(budget.tokens?.current_total ?? usage.tokens ?? 0),
       tokensLimit: Number(budget.tokens?.limit ?? 0),
-      costCurrent: Number(budget.cost?.current_total ?? usage.cost ?? 0),
+      costCurrent: Number(budget.cost?.current_total ?? usage.cost_cny ?? 0),
+      costSnapshotMissingCount: Math.max(
+        0,
+        Number(usage.cost_cny_snapshot_missing_count ?? 0)
+      ),
       costLimit: Number(budget.cost?.limit ?? 0),
       baseRunsLimit: Number(budgetHeadroom.base_budget?.runs ?? 0),
       baseTokensLimit: Number(budgetHeadroom.base_budget?.tokens ?? 0),
@@ -361,54 +377,42 @@ function SubscriptionDetailContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
-        eyebrow={t('admin.nav_coverage', {}, 'Service status')}
+      <BackofficePageHeader
+        eyebrow={t('admin.nav_subscriptions', {}, 'Subscription operations')}
         title={t(
           'admin.subscription_detail.title',
           { subscription: packageLabel },
-          `Service status detail: ${packageLabel}`
+          `Subscription detail: ${packageLabel}`
         )}
         description={t(
           'admin.subscription_detail.primary_desc',
           {},
-          'Start with the current conclusion, then handle the customer, package, usage, or billing-statistics follow-up shown below.'
+          'Review the current conclusion, subscription facts, usage, and related evidence.'
         )}
-        summary={(
-          <BackofficeMetricStrip
-            columnsClassName="md:grid-cols-4"
-            items={[
-              {
-                label: t('admin.subscription_detail.service_state_metric', {}, 'Service state'),
-                value: statusValue,
-                detail: t('admin.subscription_detail.status_metric', {}, 'Current operator-visible service coverage state.'),
-              },
-              {
-                label: t('admin.current_package', {}, 'Current package'),
-                value: packageLabel,
-                detail: statusValue,
-              },
-              {
-                label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'),
-                value: billingSnapshotStatusLabel,
-                detail: localizedBillingSnapshotSummary || t('admin.subscription_detail.snapshot_freshness_desc', {}, 'This period billing statistics.'),
-              },
-              {
-                label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'),
-                value: formatInteger(normalized.relatedSites.length),
-                detail: t('admin.subscription_detail.related_sites_metric_detail', {}, 'Related evidence only.'),
-              },
-            ]}
-          />
+        secondaryAction={(
+          <Link href={returnTo} className="btn btn-secondary">
+            {t('admin.back_to_subscriptions', {}, 'Back to subscription operations')}
+          </Link>
         )}
-      >
-        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.subscription_detail.current_follow_up', {}, 'Current follow-up')}
+        summaryItems={[
+          { label: t('common.status', {}, 'Status'), value: <BackofficeStatusBadge status={normalized.status} label={statusValue} /> },
+          { label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'), value: <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} /> },
+          { label: t('common.account', {}, 'Customer'), value: normalized.accountName || t('admin.subscription_detail.current_customer_label', {}, 'Current customer') },
+          { label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'), value: formatInteger(normalized.relatedSites.length) },
+        ]}
+      />
+
+      <BackofficeSectionPanel>
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(32rem,1.2fr)]">
+          <div className="flex min-w-0 flex-col justify-between gap-4">
+            <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              {t('admin.subscription_detail.current_follow_up', {}, 'Current conclusion')}
             </p>
-            <h3 className="mt-3 text-lg font-semibold text-gray-950 dark:text-white">{conclusionTitle}</h3>
-            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{conclusionDescription}</p>
-            <div className="mt-4 flex flex-wrap gap-3">
+            <h2 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">{conclusionTitle}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{conclusionDescription}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
               {hasSnapshotFollowUp && normalized.billingSnapshotNextAction.action ? (
                 <button
                   type="button"
@@ -422,19 +426,14 @@ function SubscriptionDetailContent() {
                       t('admin.subscription_detail.snapshot_refresh_action', {}, 'Refresh this period billing statistics')}
                 </button>
               ) : accountCoverageHref ? (
-                <Link href={accountCoverageHref} className="btn btn-primary">
-                  {needsCustomerCoverage
-                    ? t('admin.subscription_detail.open_customer_coverage_action', {}, 'Open customer coverage')
-                    : t('admin.subscription_detail.open_customer_action', {}, 'Open customer')}
-                </Link>
-              ) : normalized.relatedSites[0]?.siteId ? (
-                <Link href={`/admin/sites/${normalized.relatedSites[0].siteId}`} className="btn btn-primary">
-                  {t('admin.site_detail.open_site_action', {}, 'Open site')}
-                </Link>
+                needsCustomerCoverage ? (
+                  <Link href={accountCoverageHref} className="btn btn-primary">
+                    {t('admin.subscription_detail.open_customer_coverage_action', {}, 'Open customer coverage')}
+                  </Link>
+                ) : null
               ) : null}
-            </div>
             {snapshotRefreshError ? (
-              <BackofficeDiagnosticNotice message={snapshotRefreshError} className="mt-4" />
+              <BackofficeDiagnosticNotice message={snapshotRefreshError} />
             ) : null}
             <AdminLatestOperationButton
               receipt={lastReceipt}
@@ -444,138 +443,76 @@ function SubscriptionDetailContent() {
               title={t('admin.latest_operation', {}, 'Latest operation')}
               triggerLabel={t('admin.latest_operation', {}, 'Latest operation')}
             />
-          </BackofficeStackCard>
-
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.subscription_detail.follow_up_focus', {}, 'Follow-up focus')}
-            </p>
-            <div className="mt-4 divide-y divide-slate-200 dark:divide-slate-800">
-              {[
-                {
-                  label: t('admin.subscription_detail.service_state_metric', {}, 'Service state'),
-                  value: statusValue,
-                  detail: normalized.graceActive
-                    ? t('admin.subscription_detail.grace_active', {}, 'Grace active')
-                    : t('admin.subscription_detail.grace_inactive', {}, 'No active grace window'),
-                  tone: needsCustomerCoverage ? 'text-red-600 dark:text-red-400' : '',
-                },
-                {
-                  label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'),
-                  value: billingSnapshotStatusLabel,
-                  detail: localizedBillingSnapshotSummary || t('admin.subscription_detail.snapshot_freshness_desc', {}, 'This period billing statistics.'),
-                  tone: hasSnapshotFollowUp ? 'text-amber-600 dark:text-amber-300' : '',
-                },
-                {
-                  label: t('admin.subscription_detail.budget_pressure_label', {}, 'Budget pressure'),
-                  value: normalized.hasBudgetPressure
-                    ? t('common.attention', {}, 'Attention')
-                    : t('common.ok', {}, 'OK'),
-                  detail: t('admin.subscription_detail.budget_pressure_desc', {}, 'Current-period request, token, and cost limits.'),
-                  tone: normalized.hasBudgetPressure ? 'text-red-600 dark:text-red-400' : '',
-                },
-              ].map((item) => (
-                <div key={item.label} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{item.label}</p>
-                    <p className={`mt-1 text-sm font-semibold text-gray-950 dark:text-white ${item.tone}`}>{item.value}</p>
-                  </div>
-                  <p className="max-w-sm text-right text-sm text-gray-600 dark:text-gray-400">{item.detail}</p>
-                </div>
-              ))}
             </div>
-          </BackofficeStackCard>
-        </div>
-
-        <details className="border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          <summary className="cursor-pointer font-medium">
-            {t('portal.support_information', {}, 'Support information')}
-          </summary>
-          <div className="mt-2 space-y-1">
-            <BackofficeIdentifier value={normalized.subscriptionId} full />
-            {normalized.planVersionId ? <BackofficeIdentifier value={normalized.planVersionId} full /> : null}
           </div>
-        </details>
-      </BackofficePrimaryPanel>
-
-      <BackofficeDisclosure
-        summary={t('admin.subscription_detail.advanced_operational_evidence', {}, 'Advanced subscription evidence')}
-        contentClassName="space-y-6"
-      >
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(24rem,0.85fr)]">
-        <BackofficeSectionPanel className="space-y-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.subscription_detail.commercial_status_eyebrow', {}, 'Commercial status')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('admin.subscription_detail.commercial_status_title', {}, 'Package, usage, and service coverage')}
+          <div data-ui="subscription-summary-card" className="rounded-xl bg-slate-50/80 px-4 py-3 dark:bg-slate-900/45" aria-labelledby="subscription-facts-heading">
+            <h2 id="subscription-facts-heading" className="text-sm font-semibold text-slate-950 dark:text-white">
+              {t('admin.subscription_detail.basic_information', {}, 'Subscription facts')}
             </h2>
+            <dl className="mt-2 grid gap-x-6 sm:grid-cols-2">
+              <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
+                <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('common.account', {}, 'Customer')}</dt>
+                <dd className="mt-1 text-sm font-medium text-slate-950 dark:text-white">
+                  {normalized.accountName || t('admin.subscription_detail.current_customer_label', {}, 'Current customer')}
+                  {normalized.accountId ? (
+                    <Link href={`/admin/accounts/${normalized.accountId}`} className="ml-2 text-blue-600 hover:underline dark:text-blue-300">
+                      {t('admin.subscription_detail.open_customer_action', {}, 'Open customer')}
+                    </Link>
+                  ) : null}
+                </dd>
+              </div>
+              <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
+                <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.current_package', {}, 'Current package')}</dt>
+                <dd className="mt-1 text-sm font-medium text-slate-950 dark:text-white">{packageLabel}</dd>
+              </div>
+              <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
+                <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.billing_period', {}, 'Billing period')}</dt>
+                <dd className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                  {normalized.currentPeriodStart ? formatDate(normalized.currentPeriodStart) : t('common.not_available', {}, 'N/A')}
+                  {' – '}
+                  {normalized.currentPeriodEnd ? formatDate(normalized.currentPeriodEnd) : t('common.not_available', {}, 'N/A')}
+                </dd>
+              </div>
+              <div className="border-b border-slate-200/70 py-2 dark:border-slate-800">
+                <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.grace_policy', {}, 'Grace policy')}</dt>
+                <dd className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                  {t('admin.subscription_detail.grace_days', { days: String(normalized.graceDays) }, `${normalized.graceDays} day grace policy`)}
+                  {normalized.graceUntilAt ? ` · ${t('admin.subscription_detail.grace_until', { date: formatDate(normalized.graceUntilAt) }, `Grace until ${formatDate(normalized.graceUntilAt)}`)}` : null}
+                </dd>
+              </div>
+              <div className="py-2">
+                <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics')}</dt>
+                <dd className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                  <span className="font-medium text-slate-950 dark:text-white">{billingSnapshotStatusLabel}</span>
+                  <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                    {t(
+                      'admin.subscription_detail.snapshot_freshness_counts',
+                      {
+                        fresh: String(normalized.billingSnapshotFreshCount),
+                        stale: String(normalized.billingSnapshotStaleCount),
+                        missing: String(normalized.billingSnapshotMissingCount),
+                      },
+                      `Current ${normalized.billingSnapshotFreshCount} · Refresh ${normalized.billingSnapshotStaleCount} · Missing ${normalized.billingSnapshotMissingCount}`
+                    )}
+                  </span>
+                </dd>
+              </div>
+              <div className="py-2">
+                <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites')}</dt>
+                <dd className="mt-1 text-sm font-medium tabular-nums text-slate-950 dark:text-white">{formatInteger(normalized.relatedSites.length)}</dd>
+              </div>
+            </dl>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <BackofficeStackCard>
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('common.account', {}, 'Customer')}</p>
-              <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-                {normalized.accountName || t('admin.subscription_detail.current_customer_label', {}, 'Current customer')}
-              </p>
-              {normalized.accountId ? (
-                <Link href={`/admin/accounts/${normalized.accountId}`} className="mt-3 inline-flex text-sm font-medium text-blue-600 hover:underline dark:text-blue-300">
-                  {t('admin.subscription_detail.open_customer_action', {}, 'Open customer')}
-                </Link>
-              ) : null}
-              {normalized.accountId ? (
-                <details className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                  <summary className="cursor-pointer font-medium">
-                    {t('portal.support_information', {}, 'Support information')}
-                  </summary>
-                  <div className="mt-2">
-                    <BackofficeIdentifier value={normalized.accountId} full />
-                  </div>
-                </details>
-              ) : null}
-            </BackofficeStackCard>
-            <BackofficeStackCard>
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.current_package', {}, 'Current package')}</p>
-              <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-                {packageLabel}
-              </p>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{statusValue}</p>
-              <details className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                <summary className="cursor-pointer font-medium">
-                  {t('portal.support_information', {}, 'Support information')}
-                </summary>
-                <div className="mt-2 space-y-1">
-                  {normalized.planId ? <BackofficeIdentifier value={normalized.planId} full /> : null}
-                  {normalized.planVersionId ? <BackofficeIdentifier value={normalized.planVersionId} full /> : null}
-                </div>
-              </details>
-            </BackofficeStackCard>
-            <BackofficeStackCard>
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.billing_period', {}, 'Billing period')}</p>
-              <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                {normalized.currentPeriodStart ? formatDate(normalized.currentPeriodStart) : t('common.not_available', {}, 'N/A')}
-                {' - '}
-                {normalized.currentPeriodEnd ? formatDate(normalized.currentPeriodEnd) : t('common.not_available', {}, 'N/A')}
-              </p>
-            </BackofficeStackCard>
-            <BackofficeStackCard>
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('admin.subscription_detail.grace_policy', {}, 'Grace policy')}</p>
-              <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                {t('admin.subscription_detail.grace_days', { days: String(normalized.graceDays) }, `${normalized.graceDays} day grace policy`)}
-              </p>
-              {normalized.graceUntilAt ? (
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  {t('admin.subscription_detail.grace_until', { date: formatDate(normalized.graceUntilAt) }, `Grace until ${formatDate(normalized.graceUntilAt)}`)}
-                </p>
-              ) : null}
-            </BackofficeStackCard>
-          </div>
-          <BackofficeStackCard>
+        </section>
+      </BackofficeSectionPanel>
+
+      <div data-ui="subscription-operational-grid" className="grid items-stretch gap-6 xl:grid-cols-2 2xl:grid-cols-[minmax(36rem,1.45fr)_minmax(18rem,0.8fr)_minmax(18rem,0.8fr)]">
+      <BackofficeSectionPanel className="h-full space-y-4 xl:col-span-2 2xl:col-span-1">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
                   {t('admin.subscription_detail.usage_title', {}, 'Budget and usage')}
-                </p>
+                </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   {t('admin.subscription_detail.usage_boundary', {}, 'Base budget plus current-period top-up becomes the effective budget.')}
                 </p>
@@ -616,82 +553,31 @@ function SubscriptionDetailContent() {
                     <td className="py-2 font-medium tabular-nums">{formatAdminCurrency(normalized.baseCostLimit)}</td>
                     <td className="py-2 font-medium tabular-nums">{formatAdminCurrency(normalized.topupCostDelta)}</td>
                     <td className="py-2 font-semibold tabular-nums text-slate-950 dark:text-white">{formatAdminCurrency(normalized.effectiveCostLimit)}</td>
-                    <td className="py-2 font-medium tabular-nums">{formatAdminCurrency(normalized.costCurrent)}</td>
+                    <td
+                      className="py-2 font-medium tabular-nums"
+                      data-ui="cost-snapshot-completeness"
+                    >
+                      <span>
+                        {normalized.costSnapshotMissingCount > 0 ? '≥ ' : ''}
+                        {formatAdminCurrency(normalized.costCurrent)}
+                      </span>
+                      {normalized.costSnapshotMissingCount > 0 ? (
+                        <span className="mt-1 block max-w-xs text-xs font-normal leading-5 text-amber-700 dark:text-amber-300">
+                          {t(
+                            'admin.subscription_detail.cost_snapshot_incomplete',
+                            { count: formatInteger(normalized.costSnapshotMissingCount) },
+                            `Known CNY minimum · missing call-time snapshots: ${formatInteger(normalized.costSnapshotMissingCount)}`
+                          )}
+                        </span>
+                      ) : null}
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </AdminHorizontalScroll>
-          </BackofficeStackCard>
-        </BackofficeSectionPanel>
+      </BackofficeSectionPanel>
 
-        <div className="space-y-6">
-          <BackofficeSectionPanel className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.subscription_detail.follow_up_eyebrow', {}, 'Follow-up')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                {t('admin.subscription_detail.follow_up_title', {}, 'What needs operator action')}
-              </h2>
-            </div>
-            <BackofficeStackCard className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                    {t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics')}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {t(
-                      'admin.subscription_detail.snapshot_freshness_counts',
-                      {
-                        fresh: String(normalized.billingSnapshotFreshCount),
-                        stale: String(normalized.billingSnapshotStaleCount),
-                        missing: String(normalized.billingSnapshotMissingCount),
-                      },
-                      `Current ${normalized.billingSnapshotFreshCount} · Refresh ${normalized.billingSnapshotStaleCount} · Missing ${normalized.billingSnapshotMissingCount}`
-                    )}
-                  </p>
-                </div>
-                <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} />
-              </div>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {localizedBillingSnapshotSummary ||
-                  t(
-                    'admin.subscription_detail.snapshot_freshness_desc',
-                    {},
-                    'Billing statistics stay tied to the current service period.'
-                  )}
-              </p>
-              {normalized.billingSnapshotNextAction.action ? (
-                <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
-                  {localizedSnapshotActionDetail ||
-                    t('admin.subscription_detail.snapshot_refresh_detail', {}, 'Refresh this period billing statistics for every covered site before treating the service state as reconciled.')}
-                </p>
-              ) : null}
-            </BackofficeStackCard>
-            <BackofficeStackCard>
-              <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                {t('admin.subscription_detail.route_hint', {}, 'Boundary')}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t(
-                  'admin.subscription_detail.route_hint_desc',
-                  {},
-                  'This page explains service coverage and billing evidence. It does not become customer access authority, site access authority, or a runtime control surface.'
-                )}
-              </p>
-              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                {lifecyclePosture ? <p>{lifecyclePosture}</p> : null}
-                {snapshotReconciliation ? <p>{snapshotReconciliation}</p> : null}
-                {nextOperatorFollowUp ? <p>{nextOperatorFollowUp}</p> : null}
-              </div>
-            </BackofficeStackCard>
-          </BackofficeSectionPanel>
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.8fr)]">
-        <BackofficeSectionPanel className="space-y-4">
+        <BackofficeSectionPanel className="h-full space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -700,44 +586,40 @@ function SubscriptionDetailContent() {
               <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
                 {t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites')}
               </h2>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                {t(
-                  'admin.subscription_detail.related_sites_scope_desc',
-                  {},
-                  'Sites remain related operating surfaces. They are not the commercial authority for this service coverage record.'
-                )}
-              </p>
             </div>
             <BackofficeStatusBadge status="inactive" label={relatedSiteCountLabel} />
           </div>
           {normalized.relatedSites.length > 0 ? (
-            <div className="divide-y divide-slate-200/80 overflow-hidden rounded-2xl border border-slate-200/80 dark:divide-slate-800 dark:border-slate-800">
-              {normalized.relatedSites.map((site) => (
-                <div key={site.siteId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                  <div>
-                    <p className="font-medium text-slate-950 dark:text-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <tr>
+                  <th className="py-2 font-semibold">{t('common.site', {}, 'Site')}</th>
+                  <th className="py-2 font-semibold">{t('common.status', {}, 'Status')}</th>
+                  <th className="py-2 text-right font-semibold">{t('common.actions', {}, 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800">
+                {normalized.relatedSites.map((site) => (
+                  <tr key={site.siteId}>
+                    <td className="py-3 font-medium text-slate-950 dark:text-white">
                       {site.siteName || t('admin.site_detail.current_site_label', {}, 'Current site')}
-                    </p>
-                    <Link href={`/admin/sites/${site.siteId}`} className="mt-1 inline-flex text-sm font-medium text-blue-600 hover:underline dark:text-blue-300">
-                      {t('admin.site_detail.open_site_action', {}, 'Open site')}
-                    </Link>
-                    <details className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      <summary className="cursor-pointer font-medium">
-                        {t('portal.support_information', {}, 'Support information')}
-                      </summary>
-                      <div className="mt-2">
-                        <BackofficeIdentifier value={site.siteId} full />
-                      </div>
-                    </details>
-                  </div>
-                  <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
-                </div>
-              ))}
-            </div>
+                    </td>
+                    <td className="py-3">
+                      <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
+                    </td>
+                    <td className="py-3 text-right">
+                      <Link href={`/admin/sites/${site.siteId}`} className="font-medium text-blue-600 hover:underline dark:text-blue-300">
+                        {t('admin.site_detail.open_site_action', {}, 'Open site')}
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
-            <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
+            <p className="py-4 text-sm text-slate-600 dark:text-slate-300">
               {t('admin.subscription_detail.no_covered_sites', {}, 'No covered sites are attached to this subscription.')}
-            </BackofficeStackCard>
+            </p>
           )}
         </BackofficeSectionPanel>
         <AdminAuditSummaryPanel
@@ -745,8 +627,50 @@ function SubscriptionDetailContent() {
           siteId={normalized.relatedSites[0]?.siteId || ''}
           accountId={normalized.accountId}
           trailHref={detail?.related_surfaces?.audit_href}
+          display="table"
+          className="h-full"
         />
       </div>
+
+      <BackofficeDisclosure
+        summary={t('admin.subscription_detail.advanced_operational_evidence', {}, 'Support and advanced evidence')}
+        contentClassName="space-y-4"
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section>
+            <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
+              {t('admin.subscription_detail.route_hint', {}, 'Boundary')}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              {t(
+                'admin.subscription_detail.route_hint_desc',
+                {},
+                'This page explains service coverage and billing evidence. It does not become customer access authority, site access authority, or a runtime control surface.'
+              )}
+            </p>
+            <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+              {lifecyclePosture ? <p>{lifecyclePosture}</p> : null}
+              {snapshotReconciliation ? <p>{snapshotReconciliation}</p> : null}
+              {nextOperatorFollowUp ? <p>{nextOperatorFollowUp}</p> : null}
+              {localizedBillingSnapshotSummary ? <p>{localizedBillingSnapshotSummary}</p> : null}
+              {localizedSnapshotActionDetail ? <p>{localizedSnapshotActionDetail}</p> : null}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
+              {t('portal.support_information', {}, 'Support information')}
+            </h2>
+            <div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400">
+              <BackofficeIdentifier value={normalized.subscriptionId} full />
+              {normalized.accountId ? <BackofficeIdentifier value={normalized.accountId} full /> : null}
+              {normalized.planId ? <BackofficeIdentifier value={normalized.planId} full /> : null}
+              {normalized.planVersionId ? <BackofficeIdentifier value={normalized.planVersionId} full /> : null}
+              {normalized.relatedSites.map((site) => (
+                <BackofficeIdentifier key={site.siteId} value={site.siteId} full />
+              ))}
+            </div>
+          </section>
+        </div>
       </BackofficeDisclosure>
     </BackofficePageStack>
   );

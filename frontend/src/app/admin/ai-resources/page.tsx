@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
@@ -22,44 +22,53 @@ import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionD
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
   ModelSupplierTable,
-  type ConnectionStatusFilter,
-  type ProviderConnectionTestResult,
-  type SupplierConnection as Connection,
 } from '@/components/admin/SupplierConnectionTables';
 import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
-import { createApiClient } from '@/lib/api-client';
+import {
+  aiResourcesClient,
+  useAiResourcesDirectory,
+} from '@/features/admin/ai-resources/directory';
+import {
+  buildProviderConnectionForm,
+  EMPTY_PROVIDER_CONNECTION_FORM,
+  INITIAL_PROVIDER_WORKBENCH_STATE,
+  providerWorkbenchReducer,
+  type ModelReferenceFeatureFilter,
+  type ModelReferenceVisibilityFilter,
+  type ProviderCatalogPreview,
+  type ProviderCatalogPreviewModel,
+  type ProviderConnectionForm,
+} from '@/features/admin/ai-resources/provider-workbench-state';
+import {
+  PROVIDER_PRESETS,
+  canChooseReferenceProvider,
+  connectionExternalLinkItems,
+  defaultReferenceProviderId,
+  externalUrlValue,
+  inferProviderPreset,
+  inferReferenceProviderFromModelIds,
+  providerPresetById,
+  providerExternalLinkItems,
+  providerReferenceLinksForConnection,
+  providerReferenceLinksForForm,
+  referenceProviderForConnection,
+  referenceProviderLabel,
+  type ProviderExternalLinkItem,
+} from '@/features/admin/ai-resources/provider-presets';
+import type {
+  ConnectionStatusFilter,
+  ProviderConnectionTestResult,
+  SupplierConnection as Connection,
+} from '@/features/admin/ai-resources/types';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
 
-const aiResourcesClient = createApiClient({ idempotencyPrefix: 'ai_resources' });
-
 type SupplierCategory = 'ai' | 'capability';
-
-type ProviderCatalogPreview = {
-  provider_id: string;
-  display_name: string;
-  adapter_type: string;
-  model_count: number;
-  model_ids: string[];
-  models?: ProviderCatalogPreviewModel[];
-  truncated: boolean;
-};
-
-type ProviderCatalogPreviewModel = {
-  model_id: string;
-  family: string;
-  feature: string;
-  status: string;
-  is_deprecated: boolean;
-  runtime_supported: boolean;
-  verified: boolean;
-  capability_tags: string[];
-};
 
 type ModelReferenceEntry = {
   source_id: string;
@@ -108,9 +117,6 @@ type ModelReferenceSourceSummary = {
   last_error_message: string;
 };
 
-type ModelReferenceFeatureFilter = 'all' | 'text' | 'image' | 'audio' | 'video' | 'embedding';
-type ModelReferenceVisibilityFilter = 'all' | 'enabled' | 'disabled';
-
 function modelReferenceSourceNeedsSync(source: ModelReferenceSourceSummary | null, total: number): boolean {
   if (total > 0) return false;
   if (!source) return true;
@@ -131,347 +137,11 @@ type ModelVisibilityRow = {
   catalog?: ProviderCatalogPreviewModel;
 };
 
-type AiResources = {
-  connections: Connection[];
-};
+const MODEL_VISIBILITY_PAGE_SIZE = 25;
 
 type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
   receipt?: AdminMutationReceiptPayload | null;
 };
-
-type ProviderConnectionForm = {
-  providerPreset: string;
-  connectionId: string;
-  providerId: string;
-  displayName: string;
-  kind: string;
-  baseUrl: string;
-  sourceRole: string;
-  capabilityIds: string;
-  runtimeProfileIds: string;
-  modelIds: string;
-  imageResponseFormat: string;
-  imageOutputHosts: string;
-  credential: string;
-  enabled: boolean;
-};
-
-const EMPTY_PROVIDER_CONNECTION_FORM: ProviderConnectionForm = {
-  providerPreset: 'openai_compatible',
-  connectionId: '',
-  providerId: 'openai',
-  displayName: 'OpenAI Compatible',
-  kind: 'openai_compatible',
-  baseUrl: 'https://api.openai.com/v1',
-  sourceRole: 'execution_source',
-  capabilityIds: 'text_generation, image_generation',
-  runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
-  modelIds: '',
-  imageResponseFormat: '',
-  imageOutputHosts: '',
-  credential: '',
-  enabled: true,
-};
-
-type ProviderPreset = {
-  id: string;
-  label: string;
-  providerId: string;
-  kind: string;
-  displayName: string;
-  baseUrl: string;
-  websiteUrl?: string;
-  statusUrl?: string;
-  docsUrl?: string;
-  capabilityIds: string;
-  runtimeProfileIds: string;
-  modelIds: string;
-};
-
-type ProviderExternalLinkItem = {
-  key: 'website' | 'status' | 'docs';
-  labelKey: string;
-  fallback: string;
-  href: string;
-};
-
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    id: 'openai_compatible',
-    label: 'OpenAI Compatible',
-    providerId: 'openai',
-    kind: 'openai_compatible',
-    displayName: 'OpenAI Compatible',
-    baseUrl: 'https://api.openai.com/v1',
-    websiteUrl: 'https://openai.com/',
-    statusUrl: 'https://status.openai.com/',
-    docsUrl: 'https://developers.openai.com/api/docs',
-    capabilityIds: 'text_generation, image_generation',
-    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
-    modelIds: '',
-  },
-  {
-    id: 'newapi',
-    label: 'New API / One API',
-    providerId: 'newapi',
-    kind: 'openai_compatible',
-    displayName: 'New API channel',
-    baseUrl: 'https://api.example.com/v1',
-    websiteUrl: 'https://www.newapi.ai/en',
-    docsUrl: 'https://www.newapi.ai/en/docs',
-    capabilityIds: 'text_generation, image_generation',
-    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
-    modelIds: '',
-  },
-  {
-    id: 'deepseek',
-    label: 'DeepSeek',
-    providerId: 'deepseek',
-    kind: 'openai_compatible',
-    displayName: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    websiteUrl: 'https://www.deepseek.com/',
-    statusUrl: 'https://status.deepseek.com/',
-    docsUrl: 'https://api-docs.deepseek.com/',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'deepseek-v4-flash, deepseek-v4-pro',
-  },
-  {
-    id: 'kimi',
-    label: 'Kimi',
-    providerId: 'kimi',
-    kind: 'openai_compatible',
-    displayName: 'Kimi',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    websiteUrl: 'https://www.kimi.com/',
-    docsUrl: 'https://platform.kimi.com/docs/api/overview',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'kimi-k2.6',
-  },
-  {
-    id: 'doubao',
-    label: 'Doubao / Volcengine Ark',
-    providerId: 'doubao',
-    kind: 'openai_compatible',
-    displayName: 'Doubao / Volcengine Ark',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    websiteUrl: 'https://www.volcengine.com/product/ark',
-    docsUrl: 'https://docs.volcengine.com/docs/82379/1795150',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'doubao-seed-2-0-lite-260215',
-  },
-  {
-    id: 'xiaomi_mimo',
-    label: 'Xiaomi MiMo',
-    providerId: 'xiaomi_mimo',
-    kind: 'openai_compatible',
-    displayName: 'Xiaomi MiMo',
-    baseUrl: 'https://api.xiaomimimo.com/v1',
-    websiteUrl: 'https://mimo.mi.com/',
-    docsUrl: 'https://mimo.mi.com/docs/quick-start/first-api-call',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'mimo-v2.5-pro',
-  },
-  {
-    id: 'longcat',
-    label: 'LongCat / Meituan',
-    providerId: 'longcat',
-    kind: 'openai_compatible',
-    displayName: 'LongCat / Meituan',
-    baseUrl: 'https://api.longcat.chat/openai/v1',
-    websiteUrl: 'https://longcat.chat/',
-    docsUrl: 'https://longcat.chat/platform/docs/APIDocs.html',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'LongCat-2.0',
-  },
-  {
-    id: 'qwen',
-    label: 'Qwen / Alibaba Cloud Model Studio',
-    providerId: 'qwen',
-    kind: 'openai_compatible',
-    displayName: 'Qwen / Alibaba Cloud Model Studio',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    websiteUrl: 'https://www.aliyun.com/product/bailian',
-    docsUrl: 'https://help.aliyun.com/zh/model-studio/base-url',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'qwen3.6-plus',
-  },
-  {
-    id: 'hunyuan',
-    label: 'Hunyuan / Tencent TokenHub',
-    providerId: 'hunyuan',
-    kind: 'openai_compatible',
-    displayName: 'Hunyuan / Tencent TokenHub',
-    baseUrl: 'https://tokenhub.tencentmaas.com/v1',
-    websiteUrl: 'https://cloud.tencent.com/product/hunyuan',
-    docsUrl: 'https://cloud.tencent.com/document/product/1729/131925',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'hy3-preview',
-  },
-  {
-    id: 'zhipu_glm',
-    label: 'Zhipu GLM',
-    providerId: 'zhipu_glm',
-    kind: 'openai_compatible',
-    displayName: 'Zhipu GLM',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    websiteUrl: 'https://www.bigmodel.cn/',
-    docsUrl: 'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'glm-5.1',
-  },
-  {
-    id: 'anthropic',
-    label: 'Anthropic',
-    providerId: 'anthropic',
-    kind: 'anthropic',
-    displayName: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    websiteUrl: 'https://www.anthropic.com/',
-    statusUrl: 'https://status.claude.com/',
-    docsUrl: 'https://platform.claude.com/docs',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'claude-3-5-sonnet-latest',
-  },
-  {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    providerId: 'openrouter',
-    kind: 'openrouter',
-    displayName: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    websiteUrl: 'https://openrouter.ai/',
-    statusUrl: 'https://status.openrouter.ai/',
-    docsUrl: 'https://openrouter.ai/docs',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: '',
-  },
-  {
-    id: 'siliconflow',
-    label: 'SiliconFlow',
-    providerId: 'siliconflow',
-    kind: 'siliconflow',
-    displayName: 'SiliconFlow',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    websiteUrl: 'https://www.siliconflow.com/',
-    docsUrl: 'https://docs.siliconflow.com/en/userguide/introduction',
-    capabilityIds: 'text_generation, embedding',
-    runtimeProfileIds: 'text.ai, embed.default',
-    modelIds: '',
-  },
-  {
-    id: 'minimax',
-    label: 'MiniMax',
-    providerId: 'minimax',
-    kind: 'minimax',
-    displayName: 'MiniMax',
-    baseUrl: '',
-    websiteUrl: 'https://www.minimax.io/',
-    statusUrl: 'https://status.minimax.io/',
-    docsUrl: 'https://platform.minimax.io/docs',
-    capabilityIds: 'text_generation, image_generation, audio_generation, video_generation',
-    runtimeProfileIds: '',
-    modelIds: '',
-  },
-  {
-    id: 'custom',
-    label: 'Custom',
-    providerId: 'custom',
-    kind: 'openai_compatible',
-    displayName: 'Custom provider',
-    baseUrl: '',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: '',
-  },
-];
-
-function externalUrlValue(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : '';
-  } catch {
-    return '';
-  }
-}
-
-function providerExternalLinkItems(values: {
-  websiteUrl?: unknown;
-  statusUrl?: unknown;
-  docsUrl?: unknown;
-}): ProviderExternalLinkItem[] {
-  return [
-    {
-      key: 'website' as const,
-      labelKey: 'provider_link_website',
-      fallback: 'Website',
-      href: externalUrlValue(values.websiteUrl),
-    },
-    {
-      key: 'status' as const,
-      labelKey: 'provider_link_status',
-      fallback: 'Status',
-      href: externalUrlValue(values.statusUrl),
-    },
-    {
-      key: 'docs' as const,
-      labelKey: 'provider_link_docs',
-      fallback: 'Docs',
-      href: externalUrlValue(values.docsUrl),
-    },
-  ].filter((item) => item.href);
-}
-
-function providerReferenceLinksForForm(form: ProviderConnectionForm): {
-  websiteUrl?: unknown;
-  statusUrl?: unknown;
-  docsUrl?: unknown;
-} {
-  const preset = providerPresetById(form.providerPreset);
-  return preset.id === 'custom' ? {} : preset;
-}
-
-function providerReferenceLinksForConnection(connection: Connection): {
-  websiteUrl?: unknown;
-  statusUrl?: unknown;
-  docsUrl?: unknown;
-} {
-  const preset = providerPresetById(inferProviderPreset(connection));
-  if (preset.id === 'custom') return {};
-  if (
-    preset.id === 'openai_compatible' &&
-    connection.provider_id.toLowerCase() !== 'openai' &&
-    !isExactOpenAIBaseUrl(connection.base_url)
-  ) {
-    return {};
-  }
-  return preset;
-}
-
-function isExactOpenAIBaseUrl(baseUrl: string): boolean {
-  try {
-    return new URL(baseUrl).hostname.toLowerCase() === 'api.openai.com';
-  } catch {
-    return false;
-  }
-}
-
-function connectionExternalLinkItems(connection: Connection): ProviderExternalLinkItem[] {
-  return providerExternalLinkItems(providerReferenceLinksForConnection(connection));
-}
 
 function supplierCategory(connection: Connection): SupplierCategory {
   if (
@@ -527,50 +197,6 @@ function slugifyProviderValue(value: string): string {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return slug || 'provider';
-}
-
-function providerPresetById(presetId: string): ProviderPreset {
-  return PROVIDER_PRESETS.find((preset) => preset.id === presetId) || PROVIDER_PRESETS[0];
-}
-
-function providerHostname(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).hostname.toLowerCase().replace(/\.$/, '');
-  } catch {
-    return '';
-  }
-}
-
-function matchesProviderHostname(hostname: string, allowedDomains: string[]): boolean {
-  return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
-}
-
-function inferProviderPreset(connection: Connection): string {
-  const kind = connection.kind.toLowerCase();
-  const providerId = connection.provider_id.toLowerCase();
-  const hostname = providerHostname(connection.base_url);
-  if (providerId.includes('newapi')) return 'newapi';
-  if (providerId.includes('deepseek') || matchesProviderHostname(hostname, ['deepseek.com'])) return 'deepseek';
-  if (providerId.includes('kimi') || providerId.includes('moonshot') || matchesProviderHostname(hostname, ['moonshot.cn'])) return 'kimi';
-  if (providerId.includes('doubao') || providerId.includes('volcengine') || matchesProviderHostname(hostname, ['volces.com'])) return 'doubao';
-  if (providerId.includes('xiaomi_mimo') || providerId === 'mimo' || matchesProviderHostname(hostname, ['xiaomimimo.com'])) return 'xiaomi_mimo';
-  if (providerId.includes('longcat') || providerId.includes('meituan') || matchesProviderHostname(hostname, ['longcat.chat'])) return 'longcat';
-  if (providerId.includes('qwen') || providerId.includes('dashscope') || matchesProviderHostname(hostname, ['dashscope.aliyuncs.com', 'maas.aliyuncs.com'])) return 'qwen';
-  if (providerId.includes('hunyuan') || providerId.includes('tencent') || matchesProviderHostname(hostname, ['tencentmaas.com', 'hunyuan.cloud.tencent.com'])) return 'hunyuan';
-  if (providerId.includes('zhipu') || providerId.includes('glm') || matchesProviderHostname(hostname, ['bigmodel.cn'])) return 'zhipu_glm';
-  if (kind === 'anthropic') return 'anthropic';
-  if (kind === 'openrouter') return 'openrouter';
-  if (kind === 'siliconflow') return 'siliconflow';
-  if (kind === 'minimax' || kind === 'audio_provider' || kind === 'minimax_audio') return 'minimax';
-  if (kind === 'openai_compatible') return 'openai_compatible';
-  return 'custom';
-}
-
-function normalizeAiResources(raw: any): AiResources {
-  const value = raw && typeof raw === 'object' ? raw : {};
-  return {
-    connections: Array.isArray(value.connections) ? value.connections : [],
-  };
 }
 
 function providerConnectionTestResultFromError(error: unknown): ProviderConnectionTestResponse | undefined {
@@ -651,48 +277,6 @@ function modelReferenceSearchText(row: ModelVisibilityRow): string {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-function defaultReferenceProviderId(providerId: string, presetId: string): string {
-  const normalizedProviderId = providerId.trim().toLowerCase();
-  if (normalizedProviderId && normalizedProviderId !== 'custom') return normalizedProviderId;
-  const presetProviderId = providerPresetById(presetId).providerId.trim().toLowerCase();
-  return presetProviderId === 'custom' ? 'openai' : presetProviderId;
-}
-
-function canChooseReferenceProvider(presetId: string): boolean {
-  return ['openai_compatible', 'newapi', 'openrouter', 'custom'].includes(presetId);
-}
-
-function referenceProviderLabel(providerId: string): string {
-  const normalizedProviderId = providerId.trim().toLowerCase();
-  const preset = PROVIDER_PRESETS.find((item) => item.providerId === normalizedProviderId);
-  return preset?.label || normalizedProviderId || 'OpenAI';
-}
-
-function modelProviderPrefix(modelId: string): string {
-  const normalizedModelId = modelId.trim().toLowerCase();
-  const slashIndex = normalizedModelId.indexOf('/');
-  if (slashIndex <= 0) return '';
-  return normalizedModelId.slice(0, slashIndex);
-}
-
-function inferReferenceProviderFromModelIds(modelIds: string[], fallbackProviderId: string): string {
-  const normalizedFallback = fallbackProviderId.trim().toLowerCase();
-  const prefixes = uniqueList(modelIds.map(modelProviderPrefix).filter(Boolean));
-  if (prefixes.length === 1) {
-    return prefixes[0];
-  }
-  return normalizedFallback || 'openai';
-}
-
-function referenceProviderForConnection(connection: Connection): string {
-  const presetId = inferProviderPreset(connection);
-  const fallbackProviderId = defaultReferenceProviderId(connection.provider_id, presetId);
-  if (!canChooseReferenceProvider(presetId)) {
-    return fallbackProviderId;
-  }
-  return inferReferenceProviderFromModelIds(connection.model_ids || [], fallbackProviderId);
-}
-
 function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureFilter {
   const normalized = feature.trim().toLowerCase();
   if (normalized.includes('image')) return 'image';
@@ -701,6 +285,17 @@ function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureF
   if (normalized.includes('embedding') || normalized.includes('vector')) return 'embedding';
   if (normalized.includes('text')) return 'text';
   return 'all';
+}
+
+function catalogDisplayFeature(modelId: string, catalogFeature: string): string {
+  const normalized = modelId.trim().toLowerCase();
+  if (/(^|[\/_-])(cosyvoice|sensevoice|funasr|whisper|tts|speech|audio)([\/_:.-]|$)/.test(normalized)) {
+    return 'audio';
+  }
+  if (/(^|[\/_-])(video|wan2\.[0-9]|sora)([\/_:.-]|$)/.test(normalized)) {
+    return 'video';
+  }
+  return catalogFeature;
 }
 
 function normalizeModelLookupValue(value: string): string {
@@ -747,12 +342,10 @@ function selectedModelIdFor(
 function hasModelMetadataFor(
   modelId: string,
   providerId: string,
-  references: ModelReferenceEntry[],
-  catalogModels: ProviderCatalogPreviewModel[]
+  references: ModelReferenceEntry[]
 ): boolean {
   const keys = modelLookupKeySet(modelId, providerId);
-  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)))
-    || catalogModels.some((model) => modelLookupKeys(model.model_id, providerId).some((key) => keys.has(key)));
+  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)));
 }
 
 function normalizeProviderCatalogPreview(value: any): ProviderCatalogPreview | null {
@@ -825,16 +418,23 @@ function AiResourcesContent() {
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.ai_resources.${key}`, params, fallback),
     [t]
   );
-  const [data, setData] = useState<AiResources | null>(null);
+  const directoryQuery = useAiResourcesDirectory();
+  const data = directoryQuery.data || null;
+  const loading = directoryQuery.isPending;
+  const refetchResources = directoryQuery.refetch;
+  const directoryError = directoryQuery.error
+    ? resolveUiErrorMessage(
+      directoryQuery.error,
+      aiText('error_load', 'Failed to load provider management.')
+    )
+    : '';
   const [connectionStatusFilter, setConnectionStatusFilter] = useState<ConnectionStatusFilter>('all');
   const [connectionSearch, setConnectionSearch] = useState('');
-  const [loading, setLoading] = useState(true);
   const [savingConnection, setSavingConnection] = useState(false);
   const [testingConnectionId, setTestingConnectionId] = useState('');
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState(false);
-  const [providerCatalogPreview, setProviderCatalogPreview] = useState<ProviderCatalogPreview | null>(null);
   const [loadingModelReferences, setLoadingModelReferences] = useState(false);
   const [syncingModelReferences, setSyncingModelReferences] = useState(false);
   const [autoSyncingModelReferences, setAutoSyncingModelReferences] = useState(false);
@@ -843,28 +443,34 @@ function AiResourcesContent() {
   const [modelReferenceTotal, setModelReferenceTotal] = useState(0);
   const [modelReferenceSources, setModelReferenceSources] = useState<ModelReferenceSourceSummary[]>([]);
   const [loadedModelReferenceProviderId, setLoadedModelReferenceProviderId] = useState('');
-  const [modelReferenceProviderId, setModelReferenceProviderId] = useState('openai');
-  const [modelReferenceSearch, setModelReferenceSearch] = useState('');
-  const [modelReferenceFeatureFilter, setModelReferenceFeatureFilter] = useState<ModelReferenceFeatureFilter>('all');
-  const [modelReferenceVisibilityFilter, setModelReferenceVisibilityFilter] = useState<ModelReferenceVisibilityFilter>('all');
-  const [modelReferenceShowDeprecated, setModelReferenceShowDeprecated] = useState(false);
-  const [confirmingClearModels, setConfirmingClearModels] = useState(false);
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
-  const [providerFormOpen, setProviderFormOpen] = useState(false);
-  const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
-  const [credentialEditOpen, setCredentialEditOpen] = useState(true);
-  const [providerConnectionForm, setProviderConnectionForm] = useState<ProviderConnectionForm>(
-    EMPTY_PROVIDER_CONNECTION_FORM
+  const [providerWorkbench, dispatchProviderWorkbench] = useReducer(
+    providerWorkbenchReducer,
+    INITIAL_PROVIDER_WORKBENCH_STATE
   );
-  const [customModelInput, setCustomModelInput] = useState('');
+  const {
+    providerFormOpen,
+    providerFormMode,
+    credentialEditOpen,
+    providerConnectionForm,
+    providerCatalogPreview,
+    modelReferenceProviderId,
+    modelReferenceSearch,
+    modelReferenceFeatureFilter,
+    modelReferenceVisibilityFilter,
+    modelReferenceIntelligenceFilter,
+    modelReferenceShowDeprecated,
+    modelReferencePage,
+    confirmingClearModels,
+    confirmingModelBatch,
+    customModelInput,
+  } = providerWorkbench;
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
+  const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models'>('connection');
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
-  const resourcesRequestActiveRef = useRef(false);
-  const resourcesRequestSequenceRef = useRef(0);
-  const resourcesLoadedRef = useRef(false);
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -885,33 +491,25 @@ function AiResourcesContent() {
     updateWorkspaceParams({ status: value === 'all' ? null : value, focus: null });
   }, [updateWorkspaceParams]);
 
+  const handleClearConnectionFilters = useCallback(() => {
+    setConnectionSearch('');
+    setConnectionStatusFilter('all');
+    updateWorkspaceParams({ q: null, status: null, focus: null });
+  }, [updateWorkspaceParams]);
+
   const handleSelectConnection = useCallback((connectionId: string) => {
     updateWorkspaceParams({ focus: connectionId });
   }, [updateWorkspaceParams]);
-  const loadResources = useCallback(async (options: { showLoading?: boolean } = {}) => {
-    if (resourcesRequestActiveRef.current) return;
-    resourcesRequestActiveRef.current = true;
-    const sequence = ++resourcesRequestSequenceRef.current;
-    if (options.showLoading !== false && !resourcesLoadedRef.current) {
-      setLoading(true);
-    }
+  const loadResources = useCallback(async () => {
     setError('');
-    try {
-      const response = await aiResourcesClient.request<AiResources>('/api/admin/ai-resources');
-      if (sequence !== resourcesRequestSequenceRef.current) return;
-      const normalized = normalizeAiResources(response.data);
-      setData(normalized);
-      resourcesLoadedRef.current = true;
-    } catch (loadError) {
-      if (sequence !== resourcesRequestSequenceRef.current) return;
-      setError(resolveUiErrorMessage(loadError, aiText('error_load', 'Failed to load provider management.')));
-    } finally {
-      if (sequence === resourcesRequestSequenceRef.current) {
-        resourcesRequestActiveRef.current = false;
-        setLoading(false);
-      }
+    const result = await refetchResources();
+    if (result.error) {
+      setError(resolveUiErrorMessage(
+        result.error,
+        aiText('error_load', 'Failed to load provider management.')
+      ));
     }
-  }, [aiText]);
+  }, [aiText, refetchResources]);
 
   const loadModelReferences = useCallback(async (providerId: string) => {
     const normalizedProviderId = providerId.trim().toLowerCase();
@@ -951,17 +549,13 @@ function AiResourcesContent() {
   }, [aiText]);
 
   useEffect(() => {
-    void loadResources();
-  }, [loadResources]);
-
-  useEffect(() => {
     if (!providerFormOpen) return;
     void loadModelReferences(modelReferenceProviderId);
   }, [loadModelReferences, modelReferenceProviderId, providerFormOpen]);
 
   useEffect(() => {
     const requestedStatus = searchParams.get('status');
-    if (requestedStatus === 'ready' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
+    if (requestedStatus === 'ready' || requestedStatus === 'attention' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
       setConnectionStatusFilter(requestedStatus);
     } else {
       setConnectionStatusFilter('all');
@@ -1049,11 +643,9 @@ function AiResourcesContent() {
           })
         );
       }
-      await loadResources({ showLoading: false });
+      await loadResources();
       if (!testFailed) {
-        setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
-        setProviderFormMode('create');
-        setProviderFormOpen(false);
+        dispatchProviderWorkbench({ type: 'reset_after_save' });
         setMessage('');
         toast.success(successMessage, t('common.success'));
       }
@@ -1081,12 +673,10 @@ function AiResourcesContent() {
       setMessage('');
       toast.success(successMessage, t('common.success'));
       if (providerConnectionForm.connectionId === connection.connection_id) {
-        setProviderFormOpen(false);
-        setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
-        setProviderFormMode('create');
+        dispatchProviderWorkbench({ type: 'reset_after_save' });
       }
       setConfirmingDeleteConnectionId('');
-      await loadResources({ showLoading: false });
+      await loadResources();
     } catch (deleteError) {
       const deleteMessage = resolveUiErrorMessage(deleteError, aiText('error_delete_connection', 'Failed to delete provider connection.'));
       setError(deleteMessage);
@@ -1111,7 +701,9 @@ function AiResourcesContent() {
       });
       await loadModelReferences(normalizedProviderId);
       if (options.announce) {
-        setMessage(aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.'));
+        const successMessage = aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.');
+        setMessage('');
+        toast.success(successMessage, t('common.success'));
       }
     } finally {
       setSyncingModelReferences(false);
@@ -1153,7 +745,7 @@ function AiResourcesContent() {
       return;
     }
     setFetchingProviderCatalog(true);
-    setProviderCatalogPreview(null);
+    dispatchProviderWorkbench({ type: 'set_catalog_preview', preview: null });
     setError('');
     setMessage('');
     try {
@@ -1182,7 +774,7 @@ function AiResourcesContent() {
         },
       });
       const preview = response.data;
-      setProviderCatalogPreview(preview);
+      dispatchProviderWorkbench({ type: 'set_catalog_preview', preview });
       const verifiedModelIds = (preview.models || [])
         .filter((model) => !model.is_deprecated && (model.verified || model.runtime_supported))
         .map((model) => model.model_id);
@@ -1194,7 +786,10 @@ function AiResourcesContent() {
         defaultReferenceProviderId(normalizedProviderId, providerConnectionForm.providerPreset)
       );
       if (referenceProviderId !== modelReferenceProviderId) {
-        setModelReferenceProviderId(referenceProviderId);
+        dispatchProviderWorkbench({
+          type: 'set_reference_provider',
+          providerId: referenceProviderId,
+        });
       }
       let referenceSyncFailed = '';
       try {
@@ -1207,7 +802,7 @@ function AiResourcesContent() {
         setModelReferenceAutoSyncError(referenceSyncFailed);
         await loadModelReferences(referenceProviderId);
       }
-      setMessage(aiText(
+      const catalogMessage = aiText(
         referenceSyncFailed ? 'message_catalog_fetched_reference_failed' : 'message_catalog_and_references_synced',
         referenceSyncFailed
           ? 'Fetched {{count}} upstream models. Reference intelligence refresh failed; saved models and runtime calls are not affected.'
@@ -1215,7 +810,13 @@ function AiResourcesContent() {
         {
           count: String(preview.model_count || preview.model_ids?.length || 0),
         }
-      ));
+      );
+      setMessage('');
+      if (referenceSyncFailed) {
+        toast.error(catalogMessage, t('common.error'));
+      } else {
+        toast.success(catalogMessage, t('common.success'));
+      }
     } catch (catalogError) {
       setError(resolveUiErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.')));
     } finally {
@@ -1232,7 +833,10 @@ function AiResourcesContent() {
         modelReferenceProviderId
       );
       if (effectiveReferenceProviderId !== modelReferenceProviderId) {
-        setModelReferenceProviderId(effectiveReferenceProviderId);
+        dispatchProviderWorkbench({
+          type: 'set_reference_provider',
+          providerId: effectiveReferenceProviderId,
+        });
       }
       await syncModelReferencesForProvider(effectiveReferenceProviderId, {
         announce: true,
@@ -1243,7 +847,9 @@ function AiResourcesContent() {
         modelReferenceProviderId
       );
       await loadModelReferences(effectiveReferenceProviderId);
-      setError(resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.')));
+      const syncMessage = resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.'));
+      setModelReferenceAutoSyncError(syncMessage);
+      toast.error(syncMessage, t('common.error'));
     }
   }
 
@@ -1299,7 +905,7 @@ function AiResourcesContent() {
         toast.success(successMessage, t('common.success'));
       }
       if (reload) {
-        await loadResources({ showLoading: false });
+        await loadResources();
       }
       return result;
     } catch (testError) {
@@ -1327,84 +933,62 @@ function AiResourcesContent() {
 
   function openNewProviderConnection() {
     setConfirmingDeleteConnectionId('');
-    setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
-    setProviderFormMode('create');
-    setCredentialEditOpen(true);
-    setProviderFormOpen(true);
-    setProviderCatalogPreview(null);
-    setModelReferenceProviderId(defaultReferenceProviderId(EMPTY_PROVIDER_CONNECTION_FORM.providerId, EMPTY_PROVIDER_CONNECTION_FORM.providerPreset));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setConfirmingClearModels(false);
-    setCustomModelInput('');
+    setProviderWorkbenchSection('connection');
+    dispatchProviderWorkbench({
+      type: 'open_create',
+      referenceProviderId: defaultReferenceProviderId(
+        EMPTY_PROVIDER_CONNECTION_FORM.providerId,
+        EMPTY_PROVIDER_CONNECTION_FORM.providerPreset
+      ),
+    });
     setError('');
     setMessage('');
   }
 
   function editProviderConnection(connection: Connection) {
     setConfirmingDeleteConnectionId('');
+    setProviderWorkbenchSection('connection');
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
     setMessage('');
     setError('');
-    setProviderCatalogPreview(storedCatalogPreview);
-    setModelReferenceProviderId(referenceProviderForConnection(connection));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setConfirmingClearModels(false);
-    setCustomModelInput('');
-    setProviderFormMode('edit');
-    setCredentialEditOpen(false);
-    setProviderConnectionForm({
-      providerPreset,
-      connectionId: connection.connection_id,
-      providerId: connection.provider_id,
-      displayName: connection.display_name,
-      kind: connection.kind,
-      baseUrl: connection.base_url || '',
-      sourceRole: 'execution_source',
-      capabilityIds: connection.capability_ids.join(', '),
-      runtimeProfileIds: connection.runtime_profile_ids.join(', '),
-      modelIds: (connection.model_ids || []).join(', '),
-      imageResponseFormat: String(connection.config?.image_response_format || ''),
-      imageOutputHosts: Array.isArray(connection.config?.image_output_hosts)
-        ? connection.config.image_output_hosts.map(String).join(', ')
-        : '',
-      credential: '',
-      enabled: connection.enabled,
+    dispatchProviderWorkbench({
+      type: 'open_edit',
+      form: buildProviderConnectionForm(connection, providerPreset),
+      catalogPreview: storedCatalogPreview,
+      referenceProviderId: referenceProviderForConnection(connection),
     });
-    setProviderFormOpen(true);
   }
 
   function closeProviderForm() {
-    setProviderFormOpen(false);
-    setCredentialEditOpen(true);
-    setConfirmingClearModels(false);
+    dispatchProviderWorkbench({ type: 'close' });
+    setProviderWorkbenchSection('connection');
     setMessage('');
     setError('');
   }
 
   function updateProviderConnectionForm(patch: Partial<ProviderConnectionForm>) {
-    setProviderConnectionForm((current) => ({ ...current, ...patch }));
-    if (patch.providerId !== undefined) {
-      setModelReferenceProviderId(defaultReferenceProviderId(patch.providerId, providerConnectionForm.providerPreset));
-    }
-    if (patch.kind || patch.baseUrl || patch.credential || patch.providerId) {
-      setProviderCatalogPreview(null);
-    }
+    dispatchProviderWorkbench({
+      type: 'patch_form',
+      patch,
+      referenceProviderId: patch.providerId !== undefined
+        ? defaultReferenceProviderId(patch.providerId, providerConnectionForm.providerPreset)
+        : undefined,
+      invalidateCatalog: Boolean(
+        patch.kind || patch.baseUrl || patch.credential || patch.providerId
+      ),
+    });
   }
 
   function setProviderModelIds(modelIds: string[]) {
-    setConfirmingClearModels(false);
     const inferredReferenceProviderId = inferReferenceProviderFromModelIds(modelIds, modelReferenceProviderId);
-    if (modelIds.length && inferredReferenceProviderId !== modelReferenceProviderId) {
-      setModelReferenceProviderId(inferredReferenceProviderId);
-    }
-    updateProviderConnectionForm({ modelIds: joinList(modelIds) });
+    dispatchProviderWorkbench({
+      type: 'set_model_ids',
+      modelIds: joinList(modelIds),
+      referenceProviderId: modelIds.length && inferredReferenceProviderId !== modelReferenceProviderId
+        ? inferredReferenceProviderId
+        : undefined,
+    });
   }
 
   function addProviderModelIds(modelIds: string[]) {
@@ -1419,22 +1003,19 @@ function AiResourcesContent() {
     const modelIds = splitList(customModelInput);
     if (!modelIds.length) return;
     addProviderModelIds(modelIds);
-    setCustomModelInput('');
+    dispatchProviderWorkbench({ type: 'set_custom_model_input', value: '' });
   }
 
   function applyProviderPreset(presetId: string) {
     const preset = providerPresetById(presetId);
-    setProviderCatalogPreview(null);
-    setModelReferenceProviderId(defaultReferenceProviderId(preset.providerId, preset.id));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setCustomModelInput('');
-    setProviderConnectionForm((current) => {
-      const displayName = current.displayName && current.providerPreset === presetId ? current.displayName : preset.displayName;
-      return {
-        ...current,
+    const displayName =
+      providerConnectionForm.displayName && providerConnectionForm.providerPreset === presetId
+        ? providerConnectionForm.displayName
+        : preset.displayName;
+    dispatchProviderWorkbench({
+      type: 'apply_preset',
+      form: {
+        ...providerConnectionForm,
         providerPreset: preset.id,
         providerId: preset.providerId,
         displayName,
@@ -1443,8 +1024,11 @@ function AiResourcesContent() {
         capabilityIds: preset.capabilityIds,
         runtimeProfileIds: preset.runtimeProfileIds,
         modelIds: preset.modelIds,
-        connectionId: current.connectionId || slugifyProviderValue(displayName || preset.providerId),
-      };
+        connectionId:
+          providerConnectionForm.connectionId ||
+          slugifyProviderValue(displayName || preset.providerId),
+      },
+      referenceProviderId: defaultReferenceProviderId(preset.providerId, preset.id),
     });
   }
 
@@ -1537,7 +1121,8 @@ function AiResourcesContent() {
     return (data?.connections || []).filter((connection) => {
       const matchesFilter =
         connectionStatusFilter === 'all'
-        || (connectionStatusFilter === 'ready' && connection.status === 'ready')
+        || (connectionStatusFilter === 'ready' && connection.status === 'ready' && !connection.attention_required)
+        || (connectionStatusFilter === 'attention' && (connection.attention_required ?? connection.status !== 'ready'))
         || (connectionStatusFilter === 'missing_secret' && (connection.status === 'missing_secret' || !connection.configured))
         || (connectionStatusFilter === 'disabled' && (!connection.enabled || connection.status === 'disabled'));
       if (!matchesFilter) return false;
@@ -1569,7 +1154,7 @@ function AiResourcesContent() {
       return aiText('model_feature_text_generation', 'Text generation');
     }
     if (normalized === 'audio_generation' || normalized === 'audio_generations' || normalized === 'audio') {
-      return aiText('model_feature_audio_generation', 'Audio generation');
+      return aiText('model_feature_audio_generation', 'Audio');
     }
     if (normalized === 'video_generation' || normalized === 'video_generations' || normalized === 'video') {
       return aiText('model_feature_video_generation', 'Video generation');
@@ -1633,12 +1218,10 @@ function AiResourcesContent() {
     () => selectedProviderModelIds.filter((modelId) => !hasModelMetadataFor(
       modelId,
       modelReferenceProviderId,
-      modelReferences,
-      providerCatalogPreview?.models || []
+      modelReferences
     )).length,
-    [modelReferenceProviderId, modelReferences, providerCatalogPreview, selectedProviderModelIds]
+    [modelReferenceProviderId, modelReferences, selectedProviderModelIds]
   );
-
   const modelsDevReferenceSource = useMemo(
     () => modelReferenceSources.find((source) => source.source_id === 'models.dev') || null,
     [modelReferenceSources]
@@ -1673,11 +1256,11 @@ function AiResourcesContent() {
     if (loadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
-    if (modelReferenceTotal > 0) {
-      return aiText('model_reference_compact_synced', 'reference synced');
-    }
     if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
       return aiText('model_reference_compact_failed', 'reference sync failed');
+    }
+    if (modelsDevReferenceSource?.last_synced_at || modelReferenceTotal > 0) {
+      return aiText('model_reference_compact_synced', 'reference synced');
     }
     return aiText('model_reference_compact_not_synced', 'reference not synced');
   }, [
@@ -1728,7 +1311,7 @@ function AiResourcesContent() {
       rows.set(rowModelId, {
         modelId: rowModelId,
         family: existing?.family || model.family,
-        feature: existing?.feature || model.feature,
+        feature: existing?.feature || catalogDisplayFeature(model.model_id, model.feature),
         sourceLabel: existing?.sourceLabel || aiText('model_source_upstream', 'Upstream catalog'),
         sourceKind: existing?.sourceKind || 'catalog',
         selected: Boolean(selectedModelId),
@@ -1760,6 +1343,7 @@ function AiResourcesContent() {
         if (!modelReferenceShowDeprecated && row.deprecated && !row.selected) return false;
         if (modelReferenceVisibilityFilter === 'enabled' && !row.selected) return false;
         if (modelReferenceVisibilityFilter === 'disabled' && row.selected) return false;
+        if (modelReferenceIntelligenceFilter === 'missing' && row.reference) return false;
         if (modelReferenceFeatureFilter !== 'all' && normalizeModelReferenceFeature(row.feature) !== modelReferenceFeatureFilter) {
           return false;
         }
@@ -1776,6 +1360,7 @@ function AiResourcesContent() {
   }, [
     aiText,
     modelReferenceFeatureFilter,
+    modelReferenceIntelligenceFilter,
     modelReferenceSearch,
     modelReferenceShowDeprecated,
     modelReferenceVisibilityFilter,
@@ -1792,6 +1377,41 @@ function AiResourcesContent() {
     modelVisibilityRows.length,
     selectedProviderModelIds.length
   );
+  const modelVisibilityPageCount = Math.max(
+    1,
+    Math.ceil(modelVisibilityRows.length / MODEL_VISIBILITY_PAGE_SIZE)
+  );
+  const visibleModelReferencePage = Math.min(
+    modelReferencePage,
+    modelVisibilityPageCount
+  );
+  const modelVisibilityPageRows = modelVisibilityRows.slice(
+    (visibleModelReferencePage - 1) * MODEL_VISIBILITY_PAGE_SIZE,
+    visibleModelReferencePage * MODEL_VISIBILITY_PAGE_SIZE
+  );
+  const filteredEnableModelIds = modelVisibilityRows
+    .filter((row) => !row.selected && !row.deprecated)
+    .map((row) => row.modelId);
+  const filteredDisableModelIds = modelVisibilityRows
+    .filter((row) => row.selected)
+    .map((row) => row.modelId);
+  const confirmingBatchModelIds = confirmingModelBatch === 'enable'
+    ? filteredEnableModelIds
+    : filteredDisableModelIds;
+  const confirmingBatchResultCount = confirmingModelBatch === 'enable'
+    ? uniqueList([...selectedProviderModelIds, ...confirmingBatchModelIds]).length
+    : selectedProviderModelIds.filter((modelId) => !new Set(confirmingBatchModelIds).has(modelId)).length;
+
+  function applyFilteredModelBatch(): void {
+    if (confirmingModelBatch === 'enable') {
+      setProviderModelIds([...selectedProviderModelIds, ...filteredEnableModelIds]);
+      return;
+    }
+    if (confirmingModelBatch === 'disable') {
+      const disabledIds = new Set(filteredDisableModelIds);
+      setProviderModelIds(selectedProviderModelIds.filter((modelId) => !disabledIds.has(modelId)));
+    }
+  }
   if (loading) {
     return <AdminRouteSkeleton />;
   }
@@ -1805,7 +1425,7 @@ function AiResourcesContent() {
           description={aiText('unavailable_desc', 'Cloud runtime provider resources are unavailable.')}
         >
           <BackofficeDiagnosticNotice
-            message={error || aiText('unavailable_message', 'Provider management is unavailable.')}
+            message={error || directoryError || aiText('unavailable_message', 'Provider management is unavailable.')}
             retryLabel={t('common.retry')}
             onRetry={() => void loadResources()}
           />
@@ -1815,13 +1435,16 @@ function AiResourcesContent() {
   }
 
   const readyModelSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai' && connection.status === 'ready'
+    (connection) => supplierCategory(connection) === 'ai'
+      && connection.status === 'ready'
+      && !connection.attention_required
   ).length;
   const modelSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai'
   ).length;
   const attentionSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai' && connection.status !== 'ready'
+    (connection) => supplierCategory(connection) === 'ai'
+      && (connection.attention_required ?? connection.status !== 'ready')
   ).length;
   const latestModelSupplierTestAt = data.connections
     .filter(
@@ -1836,56 +1459,44 @@ function AiResourcesContent() {
     )[0]?.last_tested_at;
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={aiText('eyebrow', 'Runtime plane')}
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
-        descriptionDisplay="hint"
-        aside={(
+        secondaryAction={(
           <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
             {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
           </Link>
         )}
-        actions={(
+        primaryAction={(
           <button type="button" className="btn btn-primary justify-center" onClick={openNewProviderConnection}>
             {aiText('action_add_model_supplier', 'Add model supplier')}
           </button>
         )}
-        actionPlacement="header"
-        contentClassName="px-4 py-4 md:px-5 md:py-4"
-        summaryClassName="px-4 py-2.5 md:px-5 md:py-2.5"
-        summary={(
-          <div
-            data-ui="supplier-summary-strip"
-            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+        summaryItems={[
+          {
+            label: aiText('overview_model_suppliers', 'Model suppliers'),
+            value: `${readyModelSupplierCount}/${modelSupplierCount}`,
+          },
+          {
+            label: aiText('overview_attention_suppliers', 'Needs attention'),
+            value: attentionSupplierCount,
+            toneClassName: attentionSupplierCount > 0
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-emerald-600 dark:text-emerald-400',
+          },
+          {
+            label: aiText('last_test', 'Last test'),
+            value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
+          },
+        ]}
+        summaryAside={(
+          <Link
+            href="/admin/troubleshooting"
+            className="shrink-0 font-semibold text-slate-600 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
           >
-            <BackofficeSummaryStrip
-              density="compact"
-              items={[
-                {
-                  label: aiText('overview_model_suppliers', 'Model suppliers'),
-                  value: `${readyModelSupplierCount}/${modelSupplierCount}`,
-                },
-                {
-                  label: aiText('overview_attention_suppliers', 'Needs attention'),
-                  value: attentionSupplierCount,
-                  toneClassName: attentionSupplierCount > 0
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-emerald-600 dark:text-emerald-400',
-                },
-                {
-                  label: aiText('last_test', 'Last test'),
-                  value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
-                },
-              ]}
-            />
-            <Link
-              href="/admin/troubleshooting"
-              className="shrink-0 text-xs font-semibold text-slate-600 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
-            >
-              {aiText('action_view_diagnostics', 'View diagnostics')} →
-            </Link>
-          </div>
+            {aiText('action_view_diagnostics', 'View diagnostics')} →
+          </Link>
         )}
       />
 
@@ -1901,9 +1512,47 @@ function AiResourcesContent() {
           saveLabel={aiText('action_save_and_test_connection', 'Save and test')}
           savingLabel={aiText('saving', 'Saving...')}
           footerNotice={aiText('save_test_notice', 'Saving will immediately run a masked provider test. Secrets are never returned to the browser.')}
+          density="compact"
+          contentMode={providerWorkbenchSection === 'models' ? 'contained' : 'scroll'}
           onClose={closeProviderForm}
           onSubmit={() => void saveProviderConnection()}
         >
+                <div
+                  role="tablist"
+                  aria-label={aiText('provider_workbench_sections', 'Provider workspace sections')}
+                  className="flex items-center gap-1 border-b border-slate-200 pb-2 dark:border-slate-800"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={providerWorkbenchSection === 'connection'}
+                    className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      providerWorkbenchSection === 'connection'
+                        ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+                        : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                    }`}
+                    onClick={() => setProviderWorkbenchSection('connection')}
+                  >
+                    {aiText('workbench_connection_tab', 'Connection settings')}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={providerWorkbenchSection === 'models'}
+                    className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      providerWorkbenchSection === 'models'
+                        ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+                        : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                    }`}
+                    onClick={() => setProviderWorkbenchSection('models')}
+                  >
+                    {aiText('workbench_models_tab', 'Model management')}
+                    <span className="ml-1.5 rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {selectedProviderModelIds.length}
+                    </span>
+                  </button>
+                </div>
+                {providerWorkbenchSection === 'connection' ? (
                 <AdminConfigurationTable
                   ariaLabel={aiText('provider_configuration_table_label', '{{name}} configuration', { name: providerDialogName })}
                   itemHeading={aiText('configuration_item_heading', 'Setting')}
@@ -1913,7 +1562,11 @@ function AiResourcesContent() {
                   <AdminConfigurationRow
                     rowId="provider-type"
                     label={aiText('field_provider_type', 'Provider type')}
-                    value={(
+                    value={providerFormMode === 'edit' ? (
+                      <span className="font-medium text-slate-900 dark:text-white">
+                        {providerPresetById(providerConnectionForm.providerPreset)?.label || providerKindLabel(providerConnectionForm.kind)}
+                      </span>
+                    ) : (
                       <select
                         className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                         value={providerConnectionForm.providerPreset}
@@ -1927,7 +1580,9 @@ function AiResourcesContent() {
                         ))}
                       </select>
                     )}
-                    detail={providerKindLabel(providerConnectionForm.kind)}
+                    detail={providerFormMode === 'edit'
+                      ? aiText('provider_type_locked_hint', 'Provider type is fixed after creation')
+                      : providerKindLabel(providerConnectionForm.kind)}
                   />
                   <AdminConfigurationRow
                     rowId="display-name"
@@ -1964,11 +1619,13 @@ function AiResourcesContent() {
                         cancelReplacementLabel={aiText('action_cancel_credential_replacement', 'Cancel replacement')}
                         keepCurrentPlaceholder={aiText('placeholder_keep_current_credential', 'Leave blank to keep current')}
                         onChange={(credential) => updateProviderConnectionForm({ credential })}
-                        onReveal={() => setCredentialEditOpen(true)}
-                        onCancelReplacement={() => {
-                          setCredentialEditOpen(false);
-                          updateProviderConnectionForm({ credential: '' });
-                        }}
+                        onReveal={() => dispatchProviderWorkbench({
+                          type: 'set_credential_edit_open',
+                          open: true,
+                        })}
+                        onCancelReplacement={() => dispatchProviderWorkbench({
+                          type: 'cancel_credential_edit',
+                        })}
                         density="compact"
                         hideLabel
                       />
@@ -2015,6 +1672,22 @@ function AiResourcesContent() {
                       </label>
                     )}
                   />
+                  <AdminConfigurationRow
+                    rowId="model-management-entry"
+                    label={aiText('model_visibility_title', 'Model visibility')}
+                    value={aiText('model_catalog_enabled_count_short', '{{count}} models', {
+                      count: String(selectedProviderModelIds.length),
+                    })}
+                    detail={(
+                      <button
+                        type="button"
+                        className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                        onClick={() => setProviderWorkbenchSection('models')}
+                      >
+                        {aiText('action_manage_models', 'Manage models')}
+                      </button>
+                    )}
+                  />
                   {providerUsesImageGeneration ? (
                     <>
                       <AdminConfigurationRow
@@ -2045,129 +1718,162 @@ function AiResourcesContent() {
                           </span>
                         )}
                       />
-                      <AdminConfigurationRow
-                        rowId="image-output-hosts"
-                        label={aiText('field_image_output_hosts', 'Image download hosts')}
-                        value={(
-                          <input
-                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            value={providerConnectionForm.imageOutputHosts}
-                            onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
-                            placeholder="images.provider.example, assets.provider.example"
-                            aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
-                            required={providerConnectionForm.imageResponseFormat === 'url'}
-                          />
-                        )}
-                        detail={aiText(
-                          'image_delivery_security_note_compact',
-                          'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
-                        )}
-                      />
+                      {providerConnectionForm.imageResponseFormat === 'url' ? (
+                        <AdminConfigurationRow
+                          rowId="image-output-hosts"
+                          label={aiText('field_image_output_hosts', 'Image download hosts')}
+                          value={(
+                            <input
+                              className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              value={providerConnectionForm.imageOutputHosts}
+                              onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
+                              placeholder="images.provider.example, assets.provider.example"
+                              aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
+                              required
+                            />
+                          )}
+                          detail={aiText(
+                            'image_delivery_security_note_compact',
+                            'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
+                          )}
+                        />
+                      ) : null}
                     </>
                   ) : null}
                 </AdminConfigurationTable>
+                ) : null}
 
-                <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-                  <div className="grid gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
-                      <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                        {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                        <span data-ui="model-visibility-status">
-                          {aiText(
-                            'model_visibility_operating_summary',
-                            'Enabled {{enabled}} / available {{available}} · upstream {{upstream}} · intelligence {{intelligence}} · {{provider}} · {{status}}',
-                            {
-                              enabled: String(selectedProviderModelIds.length),
-                              available: String(availableModelCount),
-                              upstream: providerCatalogPreview ? String(providerCatalogPreview.model_count) : '—',
-                              intelligence: String(modelReferenceTotal),
-                              provider: referenceProviderLabel(modelReferenceProviderId),
-                              status: modelReferenceCompactStatusText,
-                            }
-                          )}
-                        </span>
-                        {modelReferenceHasSyncError ? (
-                          <button
-                            type="button"
-                            data-ui="model-reference-retry"
-                            className="font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
-                            disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
-                            onClick={() => void syncModelReferences()}
-                          >
-                            {syncingModelReferences || autoSyncingModelReferences
-                              ? aiText('action_syncing_model_references', 'Syncing...')
-                              : aiText('action_sync_model_references', 'Retry intelligence only')}
-                          </button>
-                        ) : null}
-                      </div>
-                      {selectedModelMetadataGapCount ? (
-                        <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                          {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
-                            count: String(selectedModelMetadataGapCount),
-                          })}
+                {providerWorkbenchSection === 'models' ? (
+                <section className="flex min-h-0 flex-1 flex-col">
+                  <div className="flex min-h-0 flex-1 flex-col gap-3">
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
+                        <p className="sr-only">
+                          {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
                         </p>
-                      ) : null}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                          <span>{aiText('model_visibility_enabled_available', 'Enabled {{enabled}} / available {{available}}', {
+                            enabled: String(selectedProviderModelIds.length),
+                            available: String(availableModelCount),
+                          })}</span>
+                          {selectedModelMetadataGapCount ? (
+                            <button
+                              type="button"
+                              data-ui="model-metadata-gap-filter"
+                              aria-pressed={modelReferenceIntelligenceFilter === 'missing'}
+                              className={`rounded-full px-2 py-1 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                                modelReferenceIntelligenceFilter === 'missing'
+                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                                  : 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/60'
+                              }`}
+                              onClick={() => dispatchProviderWorkbench({
+                                type: 'set_reference_intelligence_filter',
+                                filter: modelReferenceIntelligenceFilter === 'missing' ? 'all' : 'missing',
+                              })}
+                            >
+                              {modelReferenceIntelligenceFilter === 'missing'
+                                ? aiText('action_show_all_models', 'Show all models')
+                                : aiText('model_metadata_gap_action', '{{count}} need intelligence →', {
+                                  count: String(selectedModelMetadataGapCount),
+                                })}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+                        <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                          <div data-ui="model-visibility-status">
+                            {aiText('model_reference_last_synced', 'Last synced {{time}}', {
+                              time: modelsDevReferenceSource?.last_synced_at
+                                ? formatDate(modelsDevReferenceSource.last_synced_at)
+                                : aiText('status_not_synced', 'Not synced'),
+                            })}
+                          </div>
+                          {loadingModelReferences || autoSyncingModelReferences || modelReferenceHasSyncError ? (
+                            <div className={`mt-0.5 ${modelReferenceHasSyncError ? 'text-amber-700 dark:text-amber-300' : ''}`}>
+                              {modelReferenceCompactStatusText}
+                            </div>
+                          ) : null}
+                          {modelReferenceHasSyncError ? (
+                            <button
+                              type="button"
+                              data-ui="model-reference-retry"
+                              className="mt-0.5 font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
+                              disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
+                              onClick={() => void syncModelReferences()}
+                            >
+                              {syncingModelReferences || autoSyncingModelReferences
+                                ? aiText('action_syncing_model_references', 'Syncing...')
+                                : aiText('action_sync_model_references', 'Retry intelligence only')}
+                            </button>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          data-ui="model-sync-primary"
+                          className="btn btn-secondary h-10 shrink-0 px-3"
+                          disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
+                          onClick={() => void fetchProviderCatalogPreview()}
+                        >
+                          {fetchingProviderCatalog || syncingModelReferences
+                            ? aiText('action_fetching_upstream_models', 'Syncing...')
+                            : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
+                        </button>
+                      </div>
                     </div>
 
                     <div data-ui="model-visibility-toolbar" className="flex flex-wrap items-center gap-2">
-                      <label className="min-w-[16rem] flex-1">
+                      <label className="w-full sm:w-[22rem] lg:w-[24rem]">
                         <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
                         <input
                           className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           value={modelReferenceSearch}
-                          onChange={(event) => setModelReferenceSearch(event.target.value)}
+                          onChange={(event) => dispatchProviderWorkbench({
+                            type: 'set_reference_search',
+                            search: event.target.value,
+                          })}
                           placeholder={aiText('placeholder_search_models', 'model, family, provider')}
                         />
                       </label>
                       <select
                         className="h-10 min-w-28 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                         value={modelReferenceVisibilityFilter}
-                        onChange={(event) => setModelReferenceVisibilityFilter(event.target.value as ModelReferenceVisibilityFilter)}
+                        onChange={(event) => dispatchProviderWorkbench({
+                          type: 'set_reference_visibility_filter',
+                          filter: event.target.value as ModelReferenceVisibilityFilter,
+                        })}
                         aria-label={aiText('field_visibility_filter', 'Visibility')}
                       >
-                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="all">{aiText('filter_all_visibility', 'All visibility')}</option>
                         <option value="enabled">{aiText('filter_enabled_models', 'Enabled')}</option>
                         <option value="disabled">{aiText('filter_disabled_models', 'Disabled')}</option>
                       </select>
                       <select
                         className="h-10 min-w-32 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                         value={modelReferenceFeatureFilter}
-                        onChange={(event) => setModelReferenceFeatureFilter(event.target.value as ModelReferenceFeatureFilter)}
+                        onChange={(event) => dispatchProviderWorkbench({
+                          type: 'set_reference_feature_filter',
+                          filter: event.target.value as ModelReferenceFeatureFilter,
+                        })}
                         aria-label={aiText('field_feature_filter', 'Feature')}
                       >
-                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="all">{aiText('filter_all_features', 'All capabilities')}</option>
                         <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
                         <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
-                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
+                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio')}</option>
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
-                      <label className="inline-flex h-10 shrink-0 items-center gap-2 px-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={modelReferenceShowDeprecated}
-                          onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
-                        />
-                        {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
-                      </label>
-                      <button
-                        type="button"
-                        data-ui="model-sync-primary"
-                        className="btn btn-secondary h-10 shrink-0 px-3"
-                        disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
-                        onClick={() => void fetchProviderCatalogPreview()}
-                      >
-                        {fetchingProviderCatalog || syncingModelReferences
-                          ? aiText('action_fetching_upstream_models', 'Syncing...')
-                          : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
-                      </button>
                     </div>
 
-                    <div data-ui="model-maintenance-table">
-                      <AdminConfigurationTable
+                    <details data-ui="model-maintenance-table" className="border-t border-slate-200 pt-2 dark:border-slate-800">
+                      <summary className="cursor-pointer py-1 text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
+                        {aiText('model_maintenance_disclosure', 'Manual and batch operations')}
+                      </summary>
+                      <div className="mt-2">
+                        <AdminConfigurationTable
                         ariaLabel={aiText('model_maintenance_table_label', 'Model maintenance')}
                         itemHeading={aiText('configuration_item_heading', 'Setting')}
                         valueHeading={aiText('configuration_value_heading', 'Current setting')}
@@ -2181,7 +1887,10 @@ function AiResourcesContent() {
                               <select
                                 className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                                 value={modelReferenceProviderId}
-                                onChange={(event) => setModelReferenceProviderId(event.target.value)}
+                                onChange={(event) => dispatchProviderWorkbench({
+                                  type: 'set_reference_provider',
+                                  providerId: event.target.value,
+                                })}
                                 aria-label={aiText('field_reference_provider', 'Reference source')}
                               >
                                 {modelReferenceProviderOptions.map((providerId) => (
@@ -2195,6 +1904,26 @@ function AiResourcesContent() {
                           />
                         ) : null}
                         <AdminConfigurationRow
+                          rowId="historical-model-visibility"
+                          label={aiText('historical_models_label', 'Historical models')}
+                          value={modelReferenceShowDeprecated
+                            ? aiText('status_included', 'Included')
+                            : aiText('status_hidden', 'Hidden')}
+                          detail={(
+                            <label className="inline-flex min-h-8 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={modelReferenceShowDeprecated}
+                                onChange={(event) => dispatchProviderWorkbench({
+                                  type: 'set_show_deprecated',
+                                  show: event.target.checked,
+                                })}
+                              />
+                              {aiText('field_show_deprecated_models_compact', 'Include historical/deprecated')}
+                            </label>
+                          )}
+                        />
+                        <AdminConfigurationRow
                           rowId="manual-model-add"
                           label={aiText('manual_model_add_title', 'Add model ID manually')}
                           value={(
@@ -2202,7 +1931,10 @@ function AiResourcesContent() {
                               <input
                                 className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                                 value={customModelInput}
-                                onChange={(event) => setCustomModelInput(event.target.value)}
+                                onChange={(event) => dispatchProviderWorkbench({
+                                  type: 'set_custom_model_input',
+                                  value: event.target.value,
+                                })}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter') {
                                     event.preventDefault();
@@ -2223,6 +1955,68 @@ function AiResourcesContent() {
                             </div>
                           )}
                           detail={aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
+                        />
+                        <AdminConfigurationRow
+                          rowId="filtered-model-batch"
+                          label={aiText('filtered_models_batch_label', 'Filtered results')}
+                          value={aiText('filtered_models_batch_count', '{{count}} matching models', {
+                            count: String(modelVisibilityRows.length),
+                          })}
+                          detail={confirmingModelBatch ? (
+                            <span className="grid gap-2">
+                              <span className="text-amber-700 dark:text-amber-300">
+                                {aiText(
+                                  'filtered_models_batch_confirmation',
+                                  '{{action}} {{count}} matching models? The enabled total will become {{result}}. Changes remain a draft until you save.',
+                                  {
+                                    action: confirmingModelBatch === 'enable'
+                                      ? aiText('action_enable', 'Enable')
+                                      : aiText('action_disable', 'Disable'),
+                                    count: String(confirmingBatchModelIds.length),
+                                    result: String(confirmingBatchResultCount),
+                                  }
+                                )}
+                              </span>
+                              <span className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  data-ui="model-filtered-batch-confirm"
+                                  className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                                  onClick={applyFilteredModelBatch}
+                                >
+                                  {aiText('action_confirm_apply', 'Confirm apply')}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
+                                  onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: '' })}
+                                >
+                                  {aiText('action_cancel', 'Cancel')}
+                                </button>
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                data-ui="model-filtered-enable-request"
+                                className="font-semibold text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300"
+                                disabled={!filteredEnableModelIds.length || savingConnection}
+                                onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'enable' })}
+                              >
+                                {aiText('action_enable_filtered_models', 'Enable matching')}
+                              </button>
+                              <button
+                                type="button"
+                                data-ui="model-filtered-disable-request"
+                                className="font-semibold text-slate-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300"
+                                disabled={!filteredDisableModelIds.length || savingConnection}
+                                onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'disable' })}
+                              >
+                                {aiText('action_disable_filtered_models', 'Disable matching')}
+                              </button>
+                            </span>
+                          )}
                         />
                         <AdminConfigurationRow
                           rowId="enabled-model-bulk-maintenance"
@@ -2249,7 +2043,10 @@ function AiResourcesContent() {
                                 <button
                                   type="button"
                                   className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
-                                  onClick={() => setConfirmingClearModels(false)}
+                                  onClick={() => dispatchProviderWorkbench({
+                                    type: 'set_confirming_clear_models',
+                                    confirming: false,
+                                  })}
                                 >
                                   {aiText('action_cancel', 'Cancel')}
                                 </button>
@@ -2261,14 +2058,18 @@ function AiResourcesContent() {
                               data-ui="model-clear-all-request"
                               className="font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
                               disabled={!selectedProviderModelIds.length || savingConnection}
-                              onClick={() => setConfirmingClearModels(true)}
+                              onClick={() => dispatchProviderWorkbench({
+                                type: 'set_confirming_clear_models',
+                                confirming: true,
+                              })}
                             >
                               {aiText('action_clear_all_models', 'Clear all')}
                             </button>
                           )}
                         />
-                      </AdminConfigurationTable>
-                    </div>
+                        </AdminConfigurationTable>
+                      </div>
+                    </details>
 
                     {loadingModelReferences ? (
                         <div
@@ -2278,31 +2079,47 @@ function AiResourcesContent() {
                           {aiText('loading_model_references', 'Loading model reference data...')}
                         </div>
                       ) : modelVisibilityRows.length ? (
-                        <div className="relative max-h-[28rem] overflow-auto border-t border-slate-200 dark:border-slate-800">
-                          <table className="w-full min-w-[50rem] text-left text-xs">
+                        <div data-ui="model-visibility-directory" className="flex min-h-0 flex-1 flex-col border-t border-slate-200 dark:border-slate-800">
+                          <div data-ui="model-visibility-scroll" className="relative min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
+                            <table className="w-full min-w-[44rem] table-fixed text-left text-xs">
+                            <colgroup>
+                              <col className="w-[12%]" />
+                              <col className="w-[38%]" />
+                              <col className="w-[22%]" />
+                              <col className="w-[28%]" />
+                            </colgroup>
                             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_rgba(30,41,59,0.9)]">
                               <tr>
                                 <th className="px-3 py-2 font-semibold">{aiText('column_model_visibility', 'Visibility')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_model', 'Model')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_feature', 'Feature')}</th>
-                                <th className="px-3 py-2 font-semibold">{aiText('column_context_output', 'Context / output')}</th>
-                                <th className="px-3 py-2 font-semibold">
-                                  <span>{aiText('column_reference_price', 'Reference price')}</span>
-                                  <span className="mt-0.5 block text-[11px] font-normal text-slate-400 dark:text-slate-500">
-                                    {aiText('price_unit_per_1m', 'per 1M tokens')}
-                                  </span>
-                                </th>
+                                <th className="px-3 py-2 font-semibold">{aiText('column_model_intelligence', 'Intelligence')}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {modelVisibilityRows.map((row) => {
+                              {modelVisibilityPageRows.map((row) => {
                                 const tags = row.reference ? modelReferenceCapabilityTags(row.reference) : [];
                                 const tagLabels = tags.map(modelReferenceCapabilityLabel);
                                 const visibleTagLabels = tagLabels.slice(0, 3);
                                 const canRemoveManualModel = row.sourceKind === 'manual' && row.selected;
                                 const deprecatedEnableBlocked = row.deprecated && !row.selected;
+                                const referenceContext = row.reference
+                                  ? formatReferenceContext(row.reference, aiText('model_reference_missing_context', 'No context data'))
+                                  : '';
+                                const referencePrice = row.reference
+                                  ? formatReferencePrice(
+                                    row.reference,
+                                    aiText('price_cache_label', 'Cache'),
+                                    aiText('model_reference_missing_price', 'No reference price')
+                                  )
+                                  : '';
+                                const referenceHasContext = Boolean(
+                                  row.reference
+                                  && (typeof row.reference.context_window === 'number' || typeof row.reference.output_limit === 'number')
+                                );
+                                const referenceHasPriceValue = Boolean(row.reference && hasReferencePrice(row.reference));
                                 return (
-                                  <tr key={row.modelId}>
+                                  <tr key={row.modelId} className="group">
                                     <td className="px-3 py-2">
                                       <div className="flex flex-col gap-1">
                                         <button
@@ -2347,7 +2164,7 @@ function AiResourcesContent() {
                                       <div className="text-slate-500 dark:text-slate-400">
                                         {row.family}
                                         {row.sourceKind === 'manual' ? ` · ${row.sourceLabel}` : ''}
-                                        {row.verified ? ` · ${aiText('catalog_model_status_verified', 'Verified')}` : ''}
+                                        {row.verified ? ` · ${aiText('catalog_model_status_upstream_available', 'Upstream available')}` : ''}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
                                       {row.deprecated && row.selected ? (
@@ -2358,15 +2175,18 @@ function AiResourcesContent() {
                                       {canRemoveManualModel ? (
                                         <button
                                           type="button"
-                                          className="mt-1 text-xs font-semibold text-slate-500 underline-offset-2 transition hover:text-rose-700 hover:underline dark:text-slate-400 dark:hover:text-rose-300"
+                                          className="mt-1 text-xs font-semibold text-slate-500 opacity-0 underline-offset-2 transition hover:text-rose-700 hover:underline focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 dark:text-slate-400 dark:hover:text-rose-300"
+                                          aria-label={aiText('action_remove_model_named', 'Remove {{name}}', { name: row.modelId })}
                                           onClick={() => removeProviderModelId(row.modelId)}
                                         >
-                                          {aiText('action_remove_manual_model', 'Remove manual model')}
+                                          {aiText('action_remove_manual_model_short', 'Remove')}
                                         </button>
                                       ) : null}
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                                      {modelFeatureLabel(row.feature)}
+                                      {row.feature ? modelFeatureLabel(row.feature) : (
+                                        <span className="text-slate-400" title={aiText('model_feature_unknown', 'Unknown')}>—</span>
+                                      )}
                                       {tagLabels.length ? (
                                         <div
                                           className="mt-1 max-w-[16rem] truncate text-slate-500 dark:text-slate-400"
@@ -2377,28 +2197,88 @@ function AiResourcesContent() {
                                         </div>
                                       ) : null}
                                     </td>
-                                    <td
-                                      className="px-3 py-2 text-slate-600 dark:text-slate-300"
-                                      title={row.reference ? formatReferenceContextTitle(row.reference) : undefined}
-                                    >
-                                      {row.reference
-                                        ? formatReferenceContext(row.reference, aiText('model_reference_missing_context', 'No reference data'))
-                                        : aiText('model_reference_missing_context', 'No reference data')}
-                                    </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                                      {row.reference
-                                        ? formatReferencePrice(
-                                          row.reference,
-                                          aiText('price_cache_label', 'Cache'),
-                                          aiText('model_reference_missing_price', 'No reference price')
-                                        )
-                                        : aiText('model_reference_missing_price', 'No reference price')}
+                                      {row.reference ? (
+                                        <details data-ui="model-reference-details">
+                                          <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
+                                            {referenceHasContext
+                                              ? referenceContext
+                                              : aiText('model_reference_recorded', 'Reference available')}
+                                            <span className="ml-1.5 font-normal text-slate-400 dark:text-slate-500">
+                                              · {referenceHasPriceValue
+                                                ? aiText('model_reference_price_available', 'priced')
+                                                : aiText('model_reference_price_missing_compact', 'no price')}
+                                            </span>
+                                          </summary>
+                                          <div className="mt-2 grid gap-1 border-l border-slate-200 pl-3 text-[11px] leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                            <div>
+                                              <span className="font-semibold">{aiText('column_context_output', 'Context / output')}：</span>
+                                              <span title={row.reference ? formatReferenceContextTitle(row.reference) : undefined}>{referenceContext}</span>
+                                            </div>
+                                            <div>
+                                              <span className="font-semibold">{aiText('column_reference_price', 'Reference price')}：</span>
+                                              <span>{referencePrice}</span>
+                                            </div>
+                                          </div>
+                                        </details>
+                                      ) : (
+                                        <span className="font-medium text-amber-700 dark:text-amber-300">
+                                          {aiText('model_reference_needs_intelligence', 'Needs intelligence')}
+                                        </span>
+                                      )}
                                     </td>
                                   </tr>
                                 );
                               })}
                             </tbody>
-                          </table>
+                            </table>
+                          </div>
+                          <div
+                            data-ui="model-visibility-pagination"
+                            className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
+                          >
+                            <span>
+                              {aiText(
+                                'model_visibility_page_summary',
+                                'Showing {{shown}} of {{total}} matching models · {{enabled}} enabled',
+                                {
+                                  shown: String(modelVisibilityPageRows.length),
+                                  total: String(modelVisibilityRows.length),
+                                  enabled: String(selectedProviderModelIds.length),
+                                }
+                              )}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-secondary h-8 px-3"
+                                disabled={visibleModelReferencePage <= 1}
+                                onClick={() => dispatchProviderWorkbench({
+                                  type: 'set_reference_page',
+                                  page: visibleModelReferencePage - 1,
+                                })}
+                              >
+                                {aiText('action_previous_page', 'Previous')}
+                              </button>
+                              <span className="min-w-16 text-center font-medium text-slate-700 dark:text-slate-200">
+                                {aiText('pagination_page', '{{current}} / {{total}}', {
+                                  current: String(visibleModelReferencePage),
+                                  total: String(modelVisibilityPageCount),
+                                })}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-secondary h-8 px-3"
+                                disabled={visibleModelReferencePage >= modelVisibilityPageCount}
+                                onClick={() => dispatchProviderWorkbench({
+                                  type: 'set_reference_page',
+                                  page: visibleModelReferencePage + 1,
+                                })}
+                              >
+                                {aiText('action_next_page', 'Next')}
+                              </button>
+                            </span>
+                          </div>
                         </div>
                       ) : (
                         <AdminEmptyState>
@@ -2407,8 +2287,9 @@ function AiResourcesContent() {
                     )}
                   </div>
                 </section>
+                ) : null}
 
-                {providerUsesCustomRuntimeFields ? (
+                {providerWorkbenchSection === 'connection' && providerUsesCustomRuntimeFields ? (
                   <details className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
                     <summary className="cursor-pointer text-sm font-semibold text-slate-900 dark:text-white">
                       {aiText('advanced_settings_title', 'Advanced runtime settings')}
@@ -2507,6 +2388,8 @@ function AiResourcesContent() {
           )}
           selectedConnectionId={selectedConnectionId}
           onSelectConnection={handleSelectConnection}
+          hasActiveFilters={Boolean(connectionSearch.trim() || connectionStatusFilter !== 'all')}
+          onClearFilters={handleClearConnectionFilters}
           testResults={connectionTestResults}
           testingConnectionId={testingConnectionId}
           deletingConnectionId={deletingConnectionId}

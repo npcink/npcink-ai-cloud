@@ -85,6 +85,14 @@ export interface PortalLoginCodeRequest {
   locale?: 'en' | 'zh-CN';
 }
 
+export interface PortalVerificationCodeResponse {
+  email: string;
+  delivery: 'email' | 'development_code';
+  expires_in_seconds: number;
+  resend_cooldown_seconds: number;
+  code: string;
+}
+
 export interface PortalLoginCodeVerifyRequest {
   email: string;
   code: string;
@@ -117,6 +125,15 @@ export interface PortalEmailChangeResult extends PortalSession {
 export interface PortalRegistrationCodeRequest {
   email: string;
   locale?: 'en' | 'zh-CN';
+}
+
+export interface PortalRegistrationCodeResponse extends PortalVerificationCodeResponse {
+  site?: {
+    site_id: string;
+    site_name: string;
+    site_url: string;
+    platform_kind: 'wordpress';
+  };
 }
 
 export interface PortalRegistrationVerifyRequest {
@@ -1197,12 +1214,7 @@ export interface PortalPlanComparisonTier {
   label: string;
   plan_id: string;
   plan_version_id: string;
-  monthly_points: number | null;
-  site_limit: number | null;
-  knowledge_article_limit: number | null;
-  concurrency_limit: number | null;
-  batch_item_limit: number | null;
-  comparison_rights?: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>;
+  comparison_rights: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>;
   amount?: number | null;
   currency: 'CNY';
   billing_cycle?: 'monthly' | null;
@@ -1689,12 +1701,9 @@ export class PortalClient {
    * 请求邮箱验证码
    * POST /portal/v1/auth/code/request
    */
-  async requestLoginCode(payload: PortalLoginCodeRequest): Promise<PortalEnvelope<{
-    email: string;
-    delivery: 'email';
-    expires_in_seconds: number;
-    code: string;
-  }>> {
+  async requestLoginCode(
+    payload: PortalLoginCodeRequest
+  ): Promise<PortalEnvelope<PortalVerificationCodeResponse>> {
     return this.request('POST', '/auth/code/request', payload);
   }
 
@@ -1718,18 +1727,9 @@ export class PortalClient {
    * 请求注册验证码
    * POST /portal/v1/register/code/request
    */
-  async requestRegistrationCode(payload: PortalRegistrationCodeRequest): Promise<PortalEnvelope<{
-    email: string;
-    delivery: 'email' | 'development_code';
-    expires_in_seconds: number;
-    code: string;
-    site?: {
-      site_id: string;
-      site_name: string;
-      site_url: string;
-      platform_kind: 'wordpress';
-    };
-  }>> {
+  async requestRegistrationCode(
+    payload: PortalRegistrationCodeRequest
+  ): Promise<PortalEnvelope<PortalRegistrationCodeResponse>> {
     return this.request('POST', '/register/code/request', payload);
   }
 

@@ -21,12 +21,16 @@ async function installPlanDirectoryHarness(page: Page) {
   return { getRequestCount: () => requestCount, failNextRequest: () => { failNext = true; } };
 }
 
-test('package directory keeps filters and modal focus while retaining the catalog on refresh failure', async ({ page }) => {
+test('package directory keeps modal focus while retaining the catalog on refresh failure', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const harness = await installPlanDirectoryHarness(page);
   await page.goto('/admin/plans');
 
   await expect(page.getByRole('heading', { name: /Standard package catalog|标准套餐目录/i })).toBeVisible();
+  const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
+  await expect(primaryNav.locator('a[href="/admin/plans"]')).toHaveAttribute('aria-current', 'page');
+  await expect(primaryNav.locator('a[href="/admin/credit-packs"]')).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: /Open AI credit packs|打开AI 积分包/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="plan-catalog-table"] table')).toBeVisible();
   await expect(page.locator('[data-ui="plan-catalog-table"] thead')).toContainText(/Package AI credits|套餐 AI 积分/i);
   await expect(page.locator('[data-ui="plan-catalog-item"]')).toHaveCount(4);
@@ -34,40 +38,33 @@ test('package directory keeps filters and modal focus while retaining the catalo
   expect(harness.getRequestCount()).toBe(1);
 
   const rows = page.locator('[data-ui="plan-catalog-item"]');
-  await expect(rows.nth(0)).toContainText('Plus');
-  await expect(rows.nth(1)).toContainText('Agency');
-  await expect(rows.nth(2)).toContainText('Free');
-  await expect(rows.nth(2).getByText(/package has a published version|套餐已有发布版本/i)).toHaveCount(0);
-  await expect(rows.nth(2).getByText(/3 core limits|3 项核心限制/i)).toHaveCount(0);
+  await expect(rows.nth(0)).toContainText('Free');
+  await expect(rows.nth(1)).toContainText('Plus');
+  await expect(rows.nth(2)).toContainText('Pro');
+  await expect(rows.nth(3)).toContainText('Agency');
+  await expect(rows.nth(0).getByText(/package has a published version|套餐已有发布版本/i)).toHaveCount(0);
+  await expect(rows.nth(0).getByText(/3 core limits|3 项核心限制/i)).toHaveCount(0);
   await expect(page.locator('[data-ui="admin-workbench-dialog"]')).toHaveCount(0);
-
-  await page.getByRole('button', { name: /^Ready$|^已就绪$/i }).click();
-  await expect(page).toHaveURL(/state=ready/);
-  await expect(rows).toHaveCount(2);
-
-  await page.getByLabel(/Search packages|搜索套餐/i).fill('Free');
-  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
-  await expect(page).toHaveURL(/q=Free/);
-  await expect(rows).toHaveCount(1);
 
   const manage = page.getByRole('button', { name: /^Manage Free$|^管理 Free$/i });
   await manage.focus();
   await manage.press('Enter');
   await expect(page).toHaveURL(/focus=free/);
   await page.reload();
-  await expect(page.getByLabel(/Search packages|搜索套餐/i)).toHaveValue('Free');
+  await page.waitForLoadState('networkidle');
   const workbench = page.locator('[data-ui="admin-workbench-dialog"]');
   await expect(workbench).toContainText('Free');
   await expect(workbench.getByRole('tab', { name: /^Package parameters$|^套餐参数$/i })).toHaveAttribute('aria-selected', 'true');
   await expect(workbench.locator('input[type="number"]')).toHaveCount(8);
   await expect(workbench.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
   await workbench.locator('[data-ui="admin-workbench-close"]').click();
+  await expect(page).toHaveURL(/\/admin\/plans$/);
   await expect(page.locator('[data-ui="admin-workbench-dialog"]')).toHaveCount(0);
 
   harness.failNextRequest();
   await page.getByRole('button', { name: /Refresh catalog|刷新目录/i }).click();
   await expect(page.getByText(/last successfully loaded catalog|最近一次成功加载的套餐目录/i)).toBeVisible();
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(4);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);
@@ -95,8 +92,7 @@ test('package management combines readable limits, descriptions, and editing whi
   await expect(inspector.getByText(/Knowledge articles|知识库文章上限/i).first()).toBeVisible();
   await expect(inspector.getByText(/Customer-facing 30-day price|用户端展示并用于新支付宝订单/i)).toBeVisible();
   await expect(inspector.getByText(/Internal provider-cost monitoring threshold|Provider 成本监控阈值/i)).toBeVisible();
-  await expect(inspector.getByRole('button', { name: /Save package changes|保存套餐修改/i })).toBeVisible();
-  await expect(inspector.getByRole('link', { name: /Open subscriptions|打开订阅/i })).toHaveAttribute('href', '/admin/subscriptions?plan_id=free');
+  await expect(inspector.getByRole('button', { name: /^Save$|^保存$/i })).toBeVisible();
   await inspector.locator('[data-ui="admin-workbench-close"]').click();
 
   await page.getByText(/Package initialization|套餐初始化/i).click();

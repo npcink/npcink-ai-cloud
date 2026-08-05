@@ -9,7 +9,14 @@ const vectorSettingsSource = read('src/app/admin/vector-settings/page.tsx');
 const layoutSource = read('src/app/admin/layout.tsx');
 const toolbarSource = read('src/components/admin/SupplierToolbar.tsx');
 const tablesSource = read('src/components/admin/SupplierConnectionTables.tsx');
+const actionMenuSource = read('src/components/admin/AdminActionMenu.tsx');
 const tableFrameSource = read('src/components/admin/AdminDataTableFrame.tsx');
+const providerWorkbenchStateSource = read(
+  'src/features/admin/ai-resources/provider-workbench-state.ts'
+);
+const providerPresetsSource = read(
+  'src/features/admin/ai-resources/provider-presets.ts'
+);
 const i18nSource = read('src/lib/i18n.ts');
 const aiResourcesTranslationSource = i18nSource
   .split('\n')
@@ -34,8 +41,7 @@ assert.match(i18nSource, /'admin\.nav_ai_resources': '模型供应商'/);
 assert.match(i18nSource, /'admin\.nav_external_services': '搜索与图片'/);
 assert.match(i18nSource, /'admin\.ai_resources\.title': '模型供应商'/);
 
-assert.match(pageSource, /<BackofficePrimaryPanel[\s\S]*actionPlacement="header"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-5 md:py-2\.5"/);
-assert.match(pageSource, /<BackofficeSummaryStrip[\s\S]*density="compact"/);
+assert.match(pageSource, /<BackofficePageHeader[\s\S]*primaryAction=\{\([\s\S]*summaryItems=\{\[/);
 assert.match(pageSource, /openNewProviderConnection[\s\S]*action_add_model_supplier/);
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*toolbar=\{\([\s\S]*<SupplierToolbar/);
 assert.doesNotMatch(pageSource, /<SupplierSummaryCards/);
@@ -57,8 +63,9 @@ assert.doesNotMatch(pageSource, /isCapabilityProviderForm|capabilityAddDialogOpe
 assert.doesNotMatch(pageSource, /action_add_capability_supplier|capability_channel_form|capability_diagnostics/);
 assert.doesNotMatch(pageSource, /runtime-telemetry|RuntimeTelemetrySummary|provider_model_health|capability_matrix/);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
-assert.match(pageSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
-assert.match(pageSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
+assert.match(pageSource, /buildProviderConnectionForm\(connection, providerPreset\)/);
+assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
+assert.match(providerWorkbenchStateSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
 assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);
 assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
 assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);
@@ -67,8 +74,27 @@ assert.match(pageSource, /Connection testing does not prove image delivery/);
 assert.match(pageSource, /URL mode accepts exact hosts only; no scheme, path, port, or wildcard/);
 assert.match(pageSource, /data-ui="model-visibility-toolbar"/);
 assert.match(pageSource, /data-ui="model-maintenance-table"/);
+assert.match(pageSource, /providerWorkbenchSection === 'connection'/);
+assert.match(pageSource, /role="tab"[\s\S]*workbench_connection_tab/);
+assert.match(pageSource, /role="tab"[\s\S]*workbench_models_tab/);
+assert.match(pageSource, /providerFormMode === 'edit'[\s\S]*provider_type_locked_hint/);
+assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url'[\s\S]*rowId="image-output-hosts"/);
+assert.doesNotMatch(pageSource, /modelMoreFiltersOpen|action_more_filters/);
+assert.match(pageSource, /field_visibility_filter[\s\S]*filter_all_visibility/);
+assert.match(pageSource, /field_feature_filter[\s\S]*filter_all_features/);
+assert.match(pageSource, /data-ui="model-metadata-gap-filter"[\s\S]*set_reference_intelligence_filter/);
+assert.match(pageSource, /<details data-ui="model-maintenance-table"/);
+assert.match(pageSource, /data-ui="model-maintenance-table"[\s\S]*rowId="historical-model-visibility"[\s\S]*field_show_deprecated_models_compact/);
 assert.match(pageSource, /data-ui="model-clear-all-request"/);
 assert.match(pageSource, /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/);
+assert.match(pageSource, /data-ui="model-filtered-enable-request"/);
+assert.match(pageSource, /data-ui="model-filtered-disable-request"/);
+assert.match(pageSource, /filtered_models_batch_confirmation[\s\S]*data-ui="model-filtered-batch-confirm"/);
+assert.match(pageSource, /model_reference_compact_synced/);
+assert.match(pageSource, /column_model_intelligence[\s\S]*data-ui="model-reference-details"/);
+assert.match(pageSource, /catalog_model_status_upstream_available/);
+assert.match(providerPresetsSource, /id: 'ollama'[\s\S]*https:\/\/docs\.ollama\.com\/api\/openai-compatibility/);
+assert.match(providerPresetsSource, /connection\.metadata\?\.website_url/);
 assert.doesNotMatch(pageSource, /model_visibility_more_operations[\s\S]*sm:absolute sm:right-0 sm:z-30/);
 assert.match(i18nSource, /'admin\.ai_resources\.field_image_output_hosts': '精确图片下载域名'/);
 assert.match(i18nSource, /文本或模型目录连接测试通过，不代表生成图片一定可以交付/);
@@ -81,6 +107,11 @@ assert.doesNotMatch(toolbarSource, /SupplierTypeFilter|supplierTypeFilter|action
 assert.match(tablesSource, /export function ModelSupplierTable/);
 assert.match(tablesSource, /headerActions=\{toolbar\}/);
 assert.match(tablesSource, /className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"/);
+assert.match(tablesSource, /connection\.verification_status === 'passed'/);
+assert.match(tablesSource, /connection\.attention_reasons/);
+assert.match(tablesSource, /action_delete_connection[\s\S]*<AdminActionMenu/);
+assert.match(actionMenuSource, /item\.tone === 'danger'[\s\S]*role="menuitem"/);
+assert.doesNotMatch(tablesSource, /TABLE_DELETE_BUTTON_CLASS/);
 assert.doesNotMatch(tablesSource, /CapabilitySupplierTable|capability-supplier-directory|CapabilityProviderCategory/);
 assert.match(tableFrameSource, /headerActions\?: ReactNode/);
 
@@ -122,7 +153,7 @@ assert.match(externalServicesSource, /data-external-service-id=\{option\.id\}/);
 assert.match(externalServicesSource, /AdminDataTableFrame[\s\S]*dataUi="external-service-directory"/);
 assert.match(
   externalServicesSource,
-  /descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*density="compact"/,
+  /<BackofficePageHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
   'External services must keep diagnostics and status in a compact operational header'
 );
 assert.match(externalServicesSource, /AdminWorkbenchDialog[\s\S]*width="compact"/);

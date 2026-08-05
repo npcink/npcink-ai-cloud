@@ -260,7 +260,7 @@ Likely focused tests:
 
 - `tests/domain/test_runtime_abuse_guard.py`;
 - `tests/domain/test_runtime_queue.py::test_runtime_backlog_diagnostics_group_by_scope_and_classify_bottlenecks`;
-- the runtime diagnostics cases in `tests/api/test_service_routes.py`.
+- the runtime diagnostics cases in `tests/api/test_service_observability_routes.py`.
 
 After that pilot is merged and accepted, reassess the next responsibility
 using fresh coverage and change history. Do not automatically continue into

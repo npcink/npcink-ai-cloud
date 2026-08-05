@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_decision_repository import (
+    CommercialDecisionRepository,
+)
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.models import (
@@ -113,7 +118,7 @@ class CommercialServiceAuditMixin:
     def _record_service_audit_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialServiceAuditRepository,
         audit_context: ServiceAuditContext | None,
         event_kind: str,
         outcome: str,
@@ -153,7 +158,7 @@ class CommercialServiceAuditMixin:
     def _record_commercial_decision_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialDecisionRepository,
         account_id: str | None,
         site_id: str | None,
         subscription_id: str | None,
@@ -262,7 +267,7 @@ class CommercialServiceAuditMixin:
     def _build_budget_policy_state(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialDecisionRepository,
         subscription: AccountSubscription | None,
         policy: dict[str, object],
         budgets: dict[str, object],
@@ -414,7 +419,7 @@ class CommercialServiceAuditMixin:
         payload_json: object | None = None,
     ) -> dict[str, object] | None:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialServiceAuditRepository(session)
             event = self._record_service_audit_in_session(
                 repository=repository,
                 audit_context=audit_context,
@@ -449,7 +454,7 @@ class CommercialServiceAuditMixin:
         if resolved_since is None and window_minutes is not None:
             resolved_since = self.now_factory() - timedelta(minutes=window_minutes)
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialServiceAuditRepository(session)
             items = repository.summarize_service_audit_events(
                 site_id=site_id,
                 site_ids=site_ids,
@@ -482,7 +487,7 @@ class CommercialServiceAuditMixin:
         limit: int = 50,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialDecisionRepository(session)
             events = repository.list_commercial_decision_events(
                 site_id=site_id,
                 subscription_id=subscription_id,
@@ -518,7 +523,7 @@ class CommercialServiceAuditMixin:
         if resolved_since is None and window_minutes is not None:
             resolved_since = self.now_factory() - timedelta(minutes=window_minutes)
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialDecisionRepository(session)
             groups = repository.summarize_commercial_decision_events(
                 site_id=site_id,
                 subscription_id=subscription_id,
@@ -554,7 +559,7 @@ class CommercialServiceAuditMixin:
         limit: int = 50,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialServiceAuditRepository(session)
             events = repository.list_service_audit_events(
                 site_id=site_id,
                 site_ids=site_ids,

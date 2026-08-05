@@ -1,81 +1,15 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getApiBaseUrl } from '@/lib/env';
-import {
-  isInstallationState,
-  parseSetupStateEnvelope,
-  type InstallationState,
-} from '@/lib/setup';
+import { readInstallationState } from '@/lib/installation-state';
 
 const ADMIN_SESSION_COOKIE = 'npcink_admin_session_token';
 const PORTAL_SESSION_COOKIE = 'npcink_portal_session_token';
-const SETUP_STATE_TIMEOUT_MS = 5000;
-
-type InstallationGateResult =
-  | { ok: true; installationState: InstallationState }
-  | { ok: false };
-
 const SETUP_API_RULES = new Set([
   'GET /api/setup/state',
   'POST /api/setup/session',
   'POST /api/setup/database/test',
   'POST /api/setup/install',
 ]);
-
-// Completion is irreversible by contract. Cache only that terminal state so
-// steady-state frontend requests do not add a setup-state network round trip.
-let completedInstallationObserved = false;
-
-function resolveDevelopmentInstallationStateOverride(): InstallationState | null {
-  const runtimeEnvironment = String(process.env.NEXT_PUBLIC_ENV || '').trim().toLowerCase();
-  if (runtimeEnvironment !== 'development' && runtimeEnvironment !== 'test') {
-    return null;
-  }
-  const value = String(process.env.NPCINK_CLOUD_SETUP_STATE_OVERRIDE || '').trim();
-  return isInstallationState(value) ? value : null;
-}
-
-async function readInstallationState(): Promise<InstallationGateResult> {
-  if (completedInstallationObserved) {
-    return { ok: true, installationState: 'complete' };
-  }
-  const override = resolveDevelopmentInstallationStateOverride();
-  if (override) {
-    completedInstallationObserved = override === 'complete';
-    return { ok: true, installationState: override };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SETUP_STATE_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${getApiBaseUrl().replace(/\/$/, '')}/setup/v1/state`, {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      return completedInstallationObserved
-        ? { ok: true, installationState: 'complete' }
-        : { ok: false };
-    }
-    const state = parseSetupStateEnvelope(await response.json());
-    if (state?.installation_state === 'complete') {
-      completedInstallationObserved = true;
-    }
-    if (completedInstallationObserved) {
-      return { ok: true, installationState: 'complete' };
-    }
-    return state
-      ? { ok: true, installationState: state.installation_state }
-      : { ok: false };
-  } catch {
-    return completedInstallationObserved
-      ? { ok: true, installationState: 'complete' }
-      : { ok: false };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 function buildSetupGateJsonResponse(
   status: number,

@@ -14,6 +14,7 @@ This document is the engineering companion to:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md);
+- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin UI Development Retrospective](cloud-admin-ui-development-retrospective-2026-07-27.md);
 - [Development Validation Operating Model v1](development-validation-operating-model-v1.md).
 
@@ -28,16 +29,22 @@ The completed sequence and final work review are recorded in
 Current implementation evidence:
 
 - Stage 1 added the existing Vitest suite to frontend CI.
-- Stage 2 remediated `/admin/portal-users` as the first Query-first queue.
-- The Portal users directory repository owns filtered counts, stable
-  principal pagination, and current-page candidate selection; the domain
-  hydrates related details only for that page.
-- The measured acceptance record is
+- Stage 2 historically remediated `/admin/portal-users` as the first
+  Query-first queue. PR #425 later removed that product route when Customers
+  became the single validation-stage customer directory. The pilot remains
+  engineering-method evidence; it is not an active route baseline and does
+  not authorize restoring Portal users.
+- The historical measured acceptance record is
   [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md).
 - `/admin/support-requests` is the bounded second Query-first queue. It reuses
   the existing provider and adapter, keeps its accepted operator layout, and
   makes retained or placeholder result scopes read-only. Its measured record
   is [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md).
+- PRs #436, #438, #439, and #450 then evolved that same queue without replacing
+  its Query ownership: full-width comparison with on-demand inspection,
+  one-row PC filters, queue-to-detail operator closure, and a server-owned
+  waiting-state projection. The consolidated record is
+  [Cloud Admin Support Request Queue Retrospective](cloud-admin-support-request-queue-retrospective-2026-08-01.md).
 - A headless table library and React Hook Form remain unadopted. They require
   their own burden-removal evidence; the Query pilot does not pre-approve them.
 - Stage 3 tested React Hook Form plus the Zod resolver on the bounded account
@@ -184,6 +191,19 @@ Hard rules:
    conclusions require explicit evidence completeness. Partial evidence may
    remain visible, but it must not silently authorize a complete-scope
    conclusion or mutation.
+9. A browser must not derive a durable queue clock from `created_at` or
+   `updated_at` when public domain activity owns the transition. Persist or
+   project the canonical event time on the service and expose it read-only.
+10. Workflow status, attention view, waiting object, and risk rank are distinct
+    state dimensions. Give each one an explicit owner and test their combined
+    behavior before adding UI labels.
+11. Internal notes, notification delivery, and public conversation activity
+    must not accidentally share one update timestamp as their only semantic
+    source. Test the mutation that changes the waiting owner and the mutation
+    that deliberately does not.
+12. When a new projection is backfilled, migration fixtures must include every
+    historical event family that can own the result, including messages and
+    attachments, plus internal events that must be ignored.
 
 ## 5. Page And Feature Structure
 
@@ -210,21 +230,23 @@ A route file should not newly accumulate:
 Use feature modules for a remediated surface. Example:
 
 ```text
-frontend/src/features/admin/portal-users/
+frontend/src/features/admin/support-requests/
   api.ts
   schemas.ts
   queries.ts
-  portal-user-directory-model.ts
-  use-portal-user-filters.ts
-  PortalUsersDirectory.tsx
-  PortalUserInspector.tsx
-  PortalUserEditForm.tsx
+  support-request-directory-model.ts
+  use-support-request-filters.ts
+  SupportRequestsDirectory.tsx
+  SupportRequestInspector.tsx
+  SupportRequestEditForm.tsx
 ```
 
 The existing shared primitives stay in `frontend/src/components/admin`,
 `frontend/src/components/backoffice`, and `frontend/src/components/ui`.
 Feature modules must not fork those primitives to obtain slightly different
-spacing or color.
+spacing or color. The Tailwind content scan must include `frontend/src/features`
+so moving a surface into a feature module cannot silently remove its responsive
+or interaction-state utilities from the production CSS bundle.
 
 File length is a review signal, not a hard gate. A large translation map,
 schema, fixture, or declarative column definition is different from a large
@@ -362,7 +384,7 @@ paths. Do not delete tests or lower behavioral evidence to improve a number.
 
 ### Stage 2: one queue pilot
 
-The accepted first candidate is `/admin/portal-users`.
+The historical first candidate was `/admin/portal-users`.
 
 1. Introduce the query capability for that feature.
 2. Introduce the headless table capability only if it deletes real route-local
@@ -374,6 +396,10 @@ The accepted first candidate is `/admin/portal-users`.
    module.
 5. Preserve behavior and appearance; this is an engineering pilot, not a
    redesign.
+
+This pilot remains evidence for bounded Query adoption. The route itself was
+later retired by the single-account, single-identity product contraction and
+must not be restored from this section.
 
 Do not begin with `/admin/accounts/[accountId]`,
 `/admin/ai-resources`, `/admin/ai-advisor`, or
@@ -476,8 +502,21 @@ Reject prompts or plans that begin with:
 
 ## 11. Verification And Delivery
 
-Use the narrowest useful source gates during the edit loop. Before publishing a
-material Admin source change, the minimum expected chain is:
+Use the narrowest useful source gates during the edit loop. Separate the first
+human-visible preview from engineering closeout:
+
+| Visual risk | Before visible preview | Before publish or closeout |
+| --- | --- | --- |
+| `low` appearance-only | exact source/static check plus focused target-route PC browser check | required PR checks; no M4 unless the requested outcome includes runtime acceptance |
+| `material` route layout | focused route visual spec and structured receipt | `check:admin-ui`; complete visual matrix once when required by the changed seam or PR policy |
+| `shared` or behavioral | representative local matrix and focused behavior evidence | full chain below, including M4 candidate and accepted promotion when in scope |
+
+Do not make unrelated backend CI, the complete Admin visual matrix, merge, or
+M4 promotion prerequisites for showing an eligible appearance-only preview.
+The preview is deliberately a candidate, not a merge or acceptance claim.
+
+Before publishing a shared, behavioral, or otherwise integration-sensitive
+Admin source change, the minimum expected chain is:
 
 ```text
 focused Vitest
@@ -495,6 +534,10 @@ focused Vitest
 CI, a screenshot, `200`, M4 candidate reachability, merge, M4 acceptance,
 production deployment, and human acceptance remain separate evidence states.
 
+The eligibility, upward-reclassification triggers, and 15-minute visible-
+preview objective for appearance-only work are normative in
+[Development Validation Operating Model v1](development-validation-operating-model-v1.md#appearance-only-preview-first-lane).
+
 Documentation-only changes require link validation, `git diff --check`,
 release-policy validation, and the docs-only gate. They do not require M4.
 
@@ -507,9 +550,9 @@ A new implementation session should:
    route manifest, and the development-validation model;
 3. revalidate the evidence instead of trusting the 2026-07-29 snapshot;
 4. treat Stages 1 and 2 as accepted baselines, not work to repeat;
-5. treat Portal users repository pagination as the accepted backend baseline
-   and revalidate its response contract rather than restoring full-directory
-   hydration;
+5. treat `/admin/accounts` as the only validation-stage customer directory,
+   follow the customer operations workspace standard, and do not restore the
+   retired Portal-users product route from historical Query-pilot evidence;
 6. preserve Support requests as the bounded second Query-first queue and use
    its measured reuse evidence before considering another queue;
 7. treat the account-create form as the Stage 3 baseline: retain its
