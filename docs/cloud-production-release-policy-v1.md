@@ -95,6 +95,18 @@ soon as the three allowlist entries are removed. Pushes still never deploy.
 Ordinary deployments continue to require the manually dispatched GitHub
 workflow and Environment approval.
 
+For the already-finalized installation, one narrower internal-validation
+exception may be used through 2026-08-11 only while the operator confirms that
+there are no external users. It replaces only the bundle-external acceptance
+file and checksum with `--no-user-internal-validation` plus the exact protected
+operator approval environment value. The gate still requires the exact three
+Python 3.14.6 findings, a fresh passed Linux/AMD64 scan, zero unallowlisted
+blocking findings, and an embedded source revision/tree matching the clean
+checked-out `production` source. It hard-fails when combined with the external
+acceptance path, after expiry, for GA or external-user use, or when any evidence
+drifts. It does not authorize broader rollout or bypass any other deploy,
+migration, health, rollback, or smoke gate.
+
 Recommended repository gate:
 
 ```bash

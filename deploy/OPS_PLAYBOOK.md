@@ -507,6 +507,29 @@ verified on independent storage. Both gates were required for that historical
 cutover. Only the CVE acceptance pair is a current, temporary PostgreSQL 18
 production-host deployment gate; the P1-E06 receipt is not.
 
+For the finalized installation only, the no-external-user internal-validation
+exception may replace that file pair through 2026-08-11. Export the exact
+approval sentence required by `deploy/deploy-to-ssh-host.sh` and pass
+`--no-user-internal-validation`. This is fail-closed for external users, GA,
+expiry, any CVE set other than the fixed three, stale or failed Linux/AMD64
+scan evidence, extra blocking findings, or source revision/tree drift. It does
+not skip bundle verification, deployment preflight, migration, health, smoke,
+or rollback controls.
+
+```bash
+export NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL='Approved for no-external-user internal production validation; CISA SSVC exploitation remains none; GA is not authorized.'
+bash deploy/deploy-to-ssh-host.sh \
+  --no-user-internal-validation \
+  --ssh-host "${SSH_HOST}" \
+  --ssh-user "${SSH_USER}" \
+  --identity-file "${SSH_IDENTITY_FILE}" \
+  --host-python /usr/bin/python3.11 \
+  --remote-dir /opt/npcink-ai-cloud
+```
+
+Do not persist this mode in `.env.deploy`; unset the approval variable after
+the bounded deployment attempt.
+
 1. From the trusted operator workstation, stage the already-built exact bundle
    with `deploy/deploy-to-ssh-host.sh --stage-only`. Set the production host
    release-tool interpreter explicitly. Stage-only accepts only its mode,

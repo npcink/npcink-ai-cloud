@@ -256,6 +256,59 @@ def test_first_install_cve_gate_accepts_only_exact_fresh_operator_receipt(
     )
 
 
+def test_first_install_cve_gate_accepts_bounded_no_user_internal_validation(
+    tmp_path: Path,
+) -> None:
+    module = _load_module(
+        ROOT / "scripts" / "check-first-install-cve-gate.py",
+        "first_install_cve_gate_no_user",
+    )
+    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(tmp_path, module)
+
+    module.assert_no_user_internal_validation_allowed(
+        bundle=bundle,
+        expected_source_revision="a" * 40,
+        expected_source_tree="b" * 40,
+        operator_approval=module.NO_USER_INTERNAL_VALIDATION_APPROVAL,
+        now=now,
+    )
+
+
+def test_first_install_cve_gate_no_user_mode_fails_closed(
+    tmp_path: Path,
+) -> None:
+    module = _load_module(
+        ROOT / "scripts" / "check-first-install-cve-gate.py",
+        "first_install_cve_gate_no_user_fail_closed",
+    )
+    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(tmp_path, module)
+
+    with pytest.raises(ValueError, match="exact operator approval"):
+        module.assert_no_user_internal_validation_allowed(
+            bundle=bundle,
+            expected_source_revision="a" * 40,
+            expected_source_tree="b" * 40,
+            operator_approval="",
+            now=now,
+        )
+    with pytest.raises(ValueError, match="exact checked-out source"):
+        module.assert_no_user_internal_validation_allowed(
+            bundle=bundle,
+            expected_source_revision="c" * 40,
+            expected_source_tree="b" * 40,
+            operator_approval=module.NO_USER_INTERNAL_VALIDATION_APPROVAL,
+            now=now,
+        )
+    with pytest.raises(ValueError, match="has expired"):
+        module.assert_no_user_internal_validation_allowed(
+            bundle=bundle,
+            expected_source_revision="a" * 40,
+            expected_source_tree="b" * 40,
+            operator_approval=module.NO_USER_INTERNAL_VALIDATION_APPROVAL,
+            now=datetime(2026, 8, 12, tzinfo=UTC),
+        )
+
+
 def test_first_install_cve_gate_rejects_rebound_or_unprotected_operator_receipt(
     tmp_path: Path,
 ) -> None:
@@ -511,6 +564,11 @@ def test_first_install_cve_probe_is_protected_and_precedes_host_mutation() -> No
     assert "path_metadata_after = path.lstat()" in source
     assert "--controlled-cve-risk-acceptance" in source
     assert "--controlled-cve-risk-acceptance-checksum" in source
+    assert "--no-user-internal-validation" in source
+    assert "requires a clean production checkout" in source
+    assert "requires HEAD to equal origin/production" in source
+    assert '--expected-source-revision "${EXPECTED_SOURCE_REVISION}"' in source
+    assert '--expected-source-tree "${EXPECTED_SOURCE_TREE}"' in source
     assert "FIRST_INSTALL_CVE_GATE_ARGS" in source
     assert "missing|pending|complete)" in source
     assert "Production host mutation is forbidden" in source
