@@ -20,6 +20,7 @@
     "check:python-cve-upstream": "python3 scripts/check-python-cve-upstream.py",
     "provider:call-ledger": "python3 scripts/provider_call_ledger.py",
     "production:wordpress-roundtrip:readiness": "bash deploy/wordpress-roundtrip-readiness-to-ssh-host.sh",
+    "production:internal-validation:active-soak": "python3 scripts/production_internal_validation_active_soak.py",
     "production:wordpress-roundtrip:cleanup": "bash deploy/wordpress-roundtrip-cleanup-to-ssh-host.sh",
     "check:release-policy": "bash scripts/check-release-policy.sh",
     "test:pr-body-contract": "python3 scripts/test-pr-body-contract.py",

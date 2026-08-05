@@ -112,6 +112,52 @@ ledger value differs. The receipt deliberately sets
 `claims.finalize_authorized=false`: mechanical readiness never grants
 first-install finalization.
 
+### Internal no-user active-soak mode
+
+The ordinary 24–72 hour observation remains required when external users,
+public trial traffic, or natural workload exists. When the operator explicitly
+declares that there are no external users and no natural traffic, one bounded
+30–60 minute active soak may satisfy only the first-install internal-validation
+observation item. This replaces empty elapsed time with event-driven evidence;
+it does not weaken the later real-user gate.
+
+Run the default 30-minute, 60-second-interval soak from the trusted operator
+workstation:
+
+```bash
+pnpm run production:internal-validation:active-soak -- \
+  --ssh-host <host> \
+  --ssh-user <user> \
+  --identity-file <path> \
+  --site-id <site_id> \
+  --account-id <account_id> \
+  --expected-source-revision <40-hex> \
+  --expected-migration <revision> \
+  --expected-used <used> \
+  --expected-remaining <remaining> \
+  --expected-limit <limit> \
+  --expected-ledger <count> \
+  --expected-runs <count> \
+  --expected-provider-calls <count> \
+  --approval 'Approved for internal no-user active soak by operator.'
+```
+
+The command repeatedly invokes the existing read-only readiness inspection. It
+fails when release, migration, lifecycle, container identity/start time,
+restart count, image identity, site/account, entitlement, quota, ledger, run,
+or Provider-call totals change. Every sample also reuses the governed internal
+operational-readiness helper to check the required worker heartbeats, worker
+container stability, and `/health/operational-ready`. It makes no Provider request and does not
+contact WordPress. The receipt records non-health `502` evidence as `not
+measured` unless a separate governed log query supplies it; absence of that
+measurement must not be presented as a zero count.
+
+This substitution does not waive the real WordPress round trip, backup/restore,
+rollback, controlled CVE gate, operator review, or separate finalize approval.
+It proves no real-user acceptance, natural reuse, quality demand, or commercial
+viability. If any external user or natural traffic is introduced, discard this
+substitution and use the ordinary 24–72 hour observation window.
+
 ## 5. WordPress-side zero-write baseline
 
 Use the real WordPress UI for the operator action. CLI evidence must avoid
@@ -236,7 +282,8 @@ totals and optional run/artifact IDs.
 
 First-install finalization remains a separate operator decision. Before asking
 for it, also confirm the release policy, backup/restore evidence, rollback map,
-required observation window, controlled CVE gate, and all acceptance items in
+the applicable passive-window or internal active-soak observation evidence,
+controlled CVE gate, and all acceptance items in
 [Cloud First Install with Alibaba RDS PostgreSQL 18](cloud-first-install-rds-pg18-runbook.md).
 Do not finalize from this runbook automatically.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -7,11 +8,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 READINESS = ROOT / "scripts/production_wordpress_roundtrip_readiness.py"
+ACTIVE_SOAK = ROOT / "scripts/production_internal_validation_active_soak.py"
 CLEANUP = ROOT / "scripts/production_wordpress_roundtrip_cleanup.py"
 READINESS_WRAPPER = ROOT / "deploy/wordpress-roundtrip-readiness-to-ssh-host.sh"
 CLEANUP_WRAPPER = ROOT / "deploy/wordpress-roundtrip-cleanup-to-ssh-host.sh"
 RUNBOOK = ROOT / "docs/production-wordpress-roundtrip-validation-runbook-v1.md"
 EVIDENCE = ROOT / "docs/production-wordpress-image-roundtrip-evidence-2026-08-05.md"
+ACTIVE_SOAK_EVIDENCE = (
+    ROOT / "docs/production-internal-validation-active-soak-evidence-2026-08-05.md"
+)
+CVE_WORKSHEET = (
+    ROOT / "docs/python-3-14-6-controlled-validation-operator-worksheet-2026-08-05.md"
+)
 PACKAGE = ROOT / "package.json"
 INVENTORY = ROOT / "config/engineering-command-inventory-v1.json"
 
@@ -22,6 +30,9 @@ def test_roundtrip_tools_have_separate_read_and_mutation_commands() -> None:
     assert scripts["production:wordpress-roundtrip:readiness"] == (
         "bash deploy/wordpress-roundtrip-readiness-to-ssh-host.sh"
     )
+    assert scripts["production:internal-validation:active-soak"] == (
+        "python3 scripts/production_internal_validation_active_soak.py"
+    )
     assert scripts["production:wordpress-roundtrip:cleanup"] == (
         "bash deploy/wordpress-roundtrip-cleanup-to-ssh-host.sh"
     )
@@ -30,6 +41,7 @@ def test_roundtrip_tools_have_separate_read_and_mutation_commands() -> None:
     assert '"profile": "remote_read"' in inventory
     assert '"profile": "production_state"' in inventory
     assert '"production:wordpress-roundtrip:readiness"' in inventory
+    assert '"production:internal-validation:active-soak"' in inventory
     assert '"production:wordpress-roundtrip:cleanup"' in inventory
 
 
@@ -60,6 +72,47 @@ def test_readiness_payload_is_read_only_and_denies_acceptance_claims() -> None:
     assert "actual_image_id == expected_image_id" in source
     assert "StrictHostKeyChecking=yes" in READINESS_WRAPPER.read_text(encoding="utf-8")
     assert "python3.11" in READINESS_WRAPPER.read_text(encoding="utf-8")
+    assert 'containers[service]["container_id"] = container_id' in source
+    assert "NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL=1" in source
+    assert "internal operational readiness did not pass" in source
+
+
+def test_active_soak_freezes_zero_call_and_finalization_boundaries() -> None:
+    source = ACTIVE_SOAK.read_text(encoding="utf-8")
+    for marker in (
+        'CONTRACT_VERSION = "npcink.production_internal_validation_active_soak.v1"',
+        'APPROVAL = "Approved for internal no-user active soak by operator."',
+        '"provider_called": False if outcome == "pass" else None',
+        '"wordpress_written": False if outcome == "pass" else None',
+        '"finalize_authorized": False',
+        '"real_user_acceptance": False',
+        '"commercial_viability": False',
+        '"non_health_502_count": "not measured"',
+        "duration minutes must be between 30 and 60",
+    ):
+        assert marker in source
+
+    spec = importlib.util.spec_from_file_location("production_active_soak", ACTIVE_SOAK)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    baseline = {
+        "source_revision": "a" * 40,
+        "migration_revisions": ["0076"],
+        "identity": {"site_id": "site_test"},
+        "entitlement": {"limit": 300.0},
+        "totals": {"provider_calls": 12},
+        "lifecycle": {"current_release": "release-a"},
+        "containers": {"api": {"container_id": "abc"}},
+        "service_images": {"api": {"matches": True}},
+        "operational_ready": {"ok": True, "worker_cutoff": "2026-08-05T00:00:00Z"},
+    }
+    assert module._compare_fingerprints(baseline, baseline.copy(), 1) == []
+    changed = dict(baseline)
+    changed["totals"] = {"provider_calls": 13}
+    assert module._compare_fingerprints(baseline, changed, 1) == [
+        "sample 1: totals changed during active soak"
+    ]
 
 
 def test_cleanup_requires_exact_identity_approval_and_preserves_audit() -> None:
@@ -92,8 +145,13 @@ def test_cleanup_requires_exact_identity_approval_and_preserves_audit() -> None:
 
 
 def test_roundtrip_tool_help_and_shell_syntax() -> None:
-    for script in (READINESS, CLEANUP):
+    for script in (READINESS, ACTIVE_SOAK, CLEANUP):
         subprocess.run([sys.executable, str(script), "--help"], check=True, capture_output=True)
+    subprocess.run(
+        [sys.executable, str(ACTIVE_SOAK), "--", "--help"],
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["bash", "-n", str(READINESS_WRAPPER), str(CLEANUP_WRAPPER)],
         check=True,
@@ -126,3 +184,24 @@ def test_runbook_freezes_efficiency_and_truth_boundaries() -> None:
         "does not prove real-user acceptance",
     ):
         assert marker in evidence
+
+    active_soak_evidence = ACTIVE_SOAK_EVIDENCE.read_text(encoding="utf-8")
+    for marker in (
+        "elapsed_seconds=1802.805",
+        "sample_count=30",
+        "Provider calls: `0` / `0`",
+        "tool-initiated WordPress writes: `0`",
+        "Non-health `502` count was not measured",
+        "First-install finalization is still not ready",
+    ):
+        assert marker in active_soak_evidence
+
+    worksheet = CVE_WORKSHEET.read_text(encoding="utf-8")
+    for marker in (
+        "unsigned worksheet; not a controlled-risk acceptance receipt",
+        "4a45f6d2f9d16b42b1b608ee638c12baa321b6af4091a49b609ff537202ea8e0",
+        "f01827758d912798ac5073db65ce40212fd21337a419b184d1e5a2eb3026dd53",
+        "If the exact original bundle is unavailable, stop",
+        "still does not authorize first-install finalization",
+    ):
+        assert marker in worksheet
