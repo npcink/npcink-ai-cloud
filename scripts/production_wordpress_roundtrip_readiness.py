@@ -31,6 +31,15 @@ REQUIRED_SERVICES = (
     "proxy",
     "redis",
 )
+SERVICE_IMAGE_ROLES = {
+    "api": "api",
+    "worker": "worker",
+    "callback-worker": "callback_worker",
+    "ops-worker": "ops_worker",
+    "frontend": "frontend",
+    "proxy": "external_nginx",
+    "redis": "external_redis",
+}
 
 
 class ReadinessError(RuntimeError):
@@ -117,6 +126,13 @@ def _container_state(container_id: str) -> dict[str, Any]:
     }
 
 
+def _container_image_id(container_id: str) -> str:
+    image_id = _run(["docker", "inspect", container_id, "--format", "{{.Image}}"])
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+        raise ReadinessError("container image identity is missing or invalid")
+    return image_id
+
+
 def _frontend_revision(container_id: str) -> str:
     raw = _run(
         [
@@ -133,6 +149,49 @@ def _frontend_revision(container_id: str) -> str:
     if len(matches) != 1 or not REVISION_RE.fullmatch(matches[0]):
         raise ReadinessError("frontend source revision is missing or invalid")
     return matches[0]
+
+
+def _release_image_evidence(
+    release: Path,
+    target_images_path: Path,
+    container_ids: dict[str, str],
+) -> dict[str, Any]:
+    manifest = _read_json(release / "release-bundle-manifest.json")
+    target_images = _read_json(target_images_path)
+    source = manifest.get("source") or {}
+    bundle = target_images.get("bundle") or {}
+    roles = target_images.get("roles") or {}
+    source_revision = str(source.get("revision") or "")
+    if not REVISION_RE.fullmatch(source_revision):
+        raise ReadinessError("release manifest source revision is missing or invalid")
+    if bundle.get("source_revision") != source_revision:
+        raise ReadinessError("target image map source revision does not match the release")
+    if bundle.get("release_name") != release.name or bundle.get("release_path") != str(release):
+        raise ReadinessError("target image map release binding does not match current")
+    if not isinstance(roles, dict):
+        raise ReadinessError("target image role map is invalid")
+
+    service_images: dict[str, dict[str, Any]] = {}
+    for service, role in SERVICE_IMAGE_ROLES.items():
+        role_record = roles.get(role)
+        expected_image_id = (
+            str(role_record.get("target_daemon_image_id") or "")
+            if isinstance(role_record, dict)
+            else ""
+        )
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", expected_image_id):
+            raise ReadinessError(f"target image identity is missing for {service}")
+        actual_image_id = _container_image_id(container_ids[service])
+        service_images[service] = {
+            "role": role,
+            "matches": actual_image_id == expected_image_id,
+            "expected_image_id": expected_image_id,
+            "actual_image_id": actual_image_id,
+        }
+    return {
+        "source_revision": source_revision,
+        "service_images": service_images,
+    }
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -449,7 +508,9 @@ def main(argv: list[str] | None = None) -> int:
             container_ids[service] = container_id
             containers[service] = _container_state(container_id)
 
-        source_revision = _frontend_revision(container_ids["frontend"])
+        release_images = _release_image_evidence(release, target_images, container_ids)
+        source_revision = release_images["source_revision"]
+        frontend_revision = _frontend_revision(container_ids["frontend"])
         cloud = _cloud_evidence(
             container_ids["api"],
             site_id=site_id,
@@ -464,6 +525,17 @@ def main(argv: list[str] | None = None) -> int:
             blockers.append("deployment lock is present")
         if any(not item["running"] or item["restarting"] for item in containers.values()):
             blockers.append("one or more required containers are unstable")
+        if any(
+            item["health"] not in {"healthy", "not_configured"}
+            for item in containers.values()
+        ):
+            blockers.append("one or more required containers are not healthy")
+        if frontend_revision != source_revision:
+            blockers.append("frontend revision does not match the current release revision")
+        if any(
+            not item["matches"] for item in release_images["service_images"].values()
+        ):
+            blockers.append("one or more required containers do not match current release images")
         if not public_health.get("ok"):
             blockers.append("public live health did not return HTTP 200")
         if len(cloud.get("migration_revisions") or []) != 1:
@@ -561,6 +633,7 @@ def main(argv: list[str] | None = None) -> int:
             "rollback_map_exists": rollback_map_exists,
             "rollback_images_count": rollback_line_count,
             "target_image_evidence_present": target_images.is_file(),
+            "release_image_evidence": release_images,
             "observation_hours": round(observation_hours, 2),
             "minimum_observation_hours": args.minimum_observation_hours,
         }

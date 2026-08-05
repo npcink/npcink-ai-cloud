@@ -53,6 +53,11 @@ def test_readiness_payload_is_read_only_and_denies_acceptance_claims() -> None:
     assert "minimum-observation-hours" in source
     assert "rollback_image_map" in source
     assert "previous_release" in source
+    assert 'item["health"] not in {"healthy", "not_configured"}' in source
+    assert "frontend_revision != source_revision" in source
+    assert "SERVICE_IMAGE_ROLES" in source
+    assert 'bundle.get("source_revision") != source_revision' in source
+    assert "actual_image_id == expected_image_id" in source
     assert "StrictHostKeyChecking=yes" in READINESS_WRAPPER.read_text(encoding="utf-8")
     assert "python3.11" in READINESS_WRAPPER.read_text(encoding="utf-8")
 
