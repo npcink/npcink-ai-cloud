@@ -870,6 +870,123 @@ PY
 	export NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH="${nginx_config_path}"
 }
 
+npcink_ai_cloud_discover_existing_runtime_network_contract() {
+	local compose_project_name="$1"
+	local release_tool_python="${2:-$(npcink_ai_cloud_release_tool_python)}"
+	local network_ids=""
+	local network_count=0
+	local network_id=""
+	local driver=""
+	local internal=""
+	local ipam_count=""
+	local subnet=""
+	local gateway=""
+	local endpoints=""
+	local container_id=""
+	local endpoint_cidr=""
+	local endpoint_ip=""
+	local endpoint_project=""
+	local endpoint_service=""
+	local proxy_ips=""
+
+	if [[ ! "${compose_project_name}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+		echo "[fail] Runtime Compose project name is invalid." >&2
+		return 1
+	fi
+	npcink_ai_cloud_require_release_tool_python "${release_tool_python}" || return 1
+	network_ids="$(docker network ls --quiet \
+		--filter "label=com.docker.compose.project=${compose_project_name}" \
+		--filter "label=com.docker.compose.network=default")" || return 1
+	network_count="$(printf '%s\n' "${network_ids}" | awk 'NF {n += 1} END {print n + 0}')"
+	if [ "${network_count}" -ne 1 ]; then
+		echo "[fail] Existing managed Compose default network is not unique." >&2
+		return 1
+	fi
+	network_id="$(printf '%s\n' "${network_ids}" | awk 'NF {print; exit}')"
+	[[ "${network_id}" =~ ^[0-9a-f]{12,64}$ ]] || {
+		echo "[fail] Existing managed Compose default network ID is invalid." >&2
+		return 1
+	}
+	driver="$(docker network inspect --format '{{.Driver}}' "${network_id}")" || return 1
+	internal="$(docker network inspect --format '{{.Internal}}' "${network_id}")" || return 1
+	ipam_count="$(docker network inspect --format '{{len .IPAM.Config}}' "${network_id}")" || return 1
+	if [ "${driver}" != "bridge" ] || [ "${internal}" != "false" ] || [ "${ipam_count}" != "1" ]; then
+		echo "[fail] Existing managed Compose default network must be one non-internal bridge IPv4 network." >&2
+		return 1
+	fi
+	subnet="$(docker network inspect \
+		--format '{{(index .IPAM.Config 0).Subnet}}' "${network_id}")" || return 1
+	gateway="$(docker network inspect \
+		--format '{{(index .IPAM.Config 0).Gateway}}' "${network_id}")" || return 1
+	endpoints="$(docker network inspect \
+		--format '{{range $id, $container := .Containers}}{{$id}}|{{$container.IPv4Address}}{{println}}{{end}}' \
+		"${network_id}")" || return 1
+	while IFS='|' read -r container_id endpoint_cidr; do
+		[ -n "${container_id}" ] || continue
+		[[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] || {
+			echo "[fail] Existing managed network contains an invalid endpoint ID." >&2
+			return 1
+		}
+		endpoint_project="$(docker inspect \
+			--format '{{index .Config.Labels "com.docker.compose.project"}}' \
+			"${container_id}")" || return 1
+		endpoint_service="$(docker inspect \
+			--format '{{index .Config.Labels "com.docker.compose.service"}}' \
+			"${container_id}")" || return 1
+		if [ "${endpoint_project}" != "${compose_project_name}" ] || [ -z "${endpoint_service}" ]; then
+			echo "[fail] Existing managed Compose network contains a foreign or unlabelled endpoint." >&2
+			return 1
+		fi
+		endpoint_ip="${endpoint_cidr%%/*}"
+		if [ "${endpoint_service}" = "proxy" ]; then
+			proxy_ips+="${endpoint_ip},"
+		fi
+	done <<<"${endpoints}"
+
+	"${release_tool_python}" - "${subnet}" "${gateway}" "${proxy_ips}" <<'PY'
+from __future__ import annotations
+
+import ipaddress
+import sys
+
+subnet_text, gateway_text, proxy_text = sys.argv[1:]
+try:
+    network = ipaddress.ip_network(subnet_text, strict=True)
+    gateway = ipaddress.ip_address(gateway_text)
+    proxy_values = [
+        ipaddress.ip_address(value)
+        for value in proxy_text.rstrip(",").split(",")
+        if value
+    ]
+except ValueError as exc:
+    raise SystemExit(
+        f"[fail] Existing managed Compose network IPv4 contract is invalid: {exc}"
+    ) from exc
+
+if network.version != 4 or gateway.version != 4:
+    raise SystemExit("[fail] Existing managed Compose runtime requires an IPv4 network.")
+if gateway not in network or gateway in {network.network_address, network.broadcast_address}:
+    raise SystemExit(
+        "[fail] Existing managed Compose network gateway is outside its usable subnet."
+    )
+if len(proxy_values) != 1:
+    raise SystemExit(
+        "[fail] Existing managed Compose network must have exactly one proxy endpoint address."
+    )
+proxy = proxy_values[0]
+if (
+    proxy.version != 4
+    or proxy not in network
+    or proxy in {network.network_address, network.broadcast_address, gateway}
+):
+    raise SystemExit(
+        "[fail] Existing managed Compose proxy endpoint is outside its usable IPv4 subnet."
+    )
+
+print(f"{network.with_prefixlen}\t{gateway}\t{proxy}")
+PY
+}
+
 npcink_ai_cloud_compose() {
 	local root_dir="$1"
 	shift

@@ -1616,6 +1616,176 @@ PY
 		"${NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH}" "${digests}"
 )
 
+bootstrap_previous_runtime_network_contract_for_pending_repair() {
+	local state_dir=""
+	local state_file=""
+	local nginx_file=""
+	local discovered=""
+	local subnet=""
+	local gateway=""
+	local proxy_ipv4=""
+	local line=""
+	local parameterized=0
+
+	[ "${FIRST_INSTALL_REPAIR}" = "1" ] || return 0
+	[ -n "${PREVIOUS_RELEASE_DIR}" ] || return 0
+	[ -f "${PREVIOUS_COMPOSE_FILE}" ] && [ ! -L "${PREVIOUS_COMPOSE_FILE}" ] && \
+		[ -O "${PREVIOUS_COMPOSE_FILE}" ] || {
+		echo "[fail] Pending first-install repair previous runtime Compose must be an owner-controlled regular file." >&2
+		return 1
+	}
+	while IFS= read -r line || [ -n "${line}" ]; do
+		case "${line}" in
+			*'NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET'*|\
+			*'NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY'*|\
+			*'NPCINK_CLOUD_RUNTIME_PROXY_IPV4'*|\
+			*'NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH'*)
+				parameterized=1
+				break
+				;;
+		esac
+	done <"${PREVIOUS_COMPOSE_FILE}"
+	[ "${parameterized}" -eq 1 ] || return 0
+	state_dir="$(npcink_ai_cloud_release_state_dir "${PREVIOUS_RELEASE_DIR}")" || return 1
+	state_file="${state_dir}/runtime-network.env"
+	nginx_file="${state_dir}/nginx.runtime.conf"
+	if [ -e "${state_file}" ] || [ -L "${state_file}" ]; then
+		return 0
+	fi
+	if [ ! -d "${state_dir}" ] || [ -L "${state_dir}" ] || \
+		[ "$(stat -c '%u' "${state_dir}" 2>/dev/null || true)" != "0" ] || \
+		[ "$(stat -c '%a' "${state_dir}" 2>/dev/null || true)" != "700" ]; then
+		echo "[fail] Pending first-install repair runtime network bootstrap requires the existing root-owned mode-0700 release state directory." >&2
+		return 1
+	fi
+	discovered="$(npcink_ai_cloud_discover_existing_runtime_network_contract \
+		"${PREVIOUS_COMPOSE_PROJECT_NAME}" "${RELEASE_TOOL_PYTHON}")" || return 1
+	IFS=$'\t' read -r subnet gateway proxy_ipv4 <<<"${discovered}"
+	if [ -z "${subnet}" ] || [ -z "${gateway}" ] || [ -z "${proxy_ipv4}" ]; then
+		echo "[fail] Pending first-install repair could not parse the existing runtime network contract." >&2
+		return 1
+	fi
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${PREVIOUS_RELEASE_DIR}" "${PREVIOUS_COMPOSE_FILE}" "${state_dir}" \
+		"${PREVIOUS_COMPOSE_PROJECT_NAME}" "${subnet}" "${gateway}" "${proxy_ipv4}" <<'PY'
+from __future__ import annotations
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"[fail] {message}")
+
+
+def read_owned_regular(path: Path, expected_mode: int | None = None) -> str:
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as exc:
+        fail(f"Pending repair protected file could not be opened: {path}: {exc}")
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid():
+            fail(f"Pending repair protected file is not owner-controlled: {path}")
+        if expected_mode is not None and stat.S_IMODE(metadata.st_mode) != expected_mode:
+            fail(f"Pending repair protected file has an unsafe mode: {path}")
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+    try:
+        return b"".join(chunks).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"Pending repair protected file is not UTF-8: {path}: {exc}")
+
+
+root = Path(sys.argv[1])
+compose = Path(sys.argv[2])
+state_dir = Path(sys.argv[3])
+project, subnet, gateway, proxy = sys.argv[4:]
+state_file = state_dir / "runtime-network.env"
+nginx_source = root / "deploy" / "nginx.prod.conf"
+nginx_target = state_dir / "nginx.runtime.conf"
+
+if root != Path(os.path.abspath(root)) or compose != root / "docker-compose.runtime.yml":
+    fail("Pending repair bootstrap requires the canonical previous runtime Compose file.")
+compose_text = read_owned_regular(compose)
+runtime_markers = {
+    "${NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET:-172.28.0.0/24}": 1,
+    "${NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY:-172.28.0.1}": 1,
+    "${NPCINK_CLOUD_RUNTIME_PROXY_IPV4:-172.28.0.10}": 2,
+    "${NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH:-./deploy/nginx.prod.conf}": 1,
+}
+if any(compose_text.count(marker) != count for marker, count in runtime_markers.items()):
+    fail("Pending repair runtime Compose interpolation structure is incomplete or ambiguous.")
+
+source_text = read_owned_regular(nginx_source)
+default_trust = "    set_real_ip_from 172.28.0.1;"
+if source_text.count(default_trust) != 1:
+    fail("Pending repair bundled NGINX gateway trust anchor is not unique.")
+rendered = source_text.replace(default_trust, f"    set_real_ip_from {gateway};", 1)
+
+if nginx_target.exists() or nginx_target.is_symlink():
+    if nginx_target.is_symlink() or read_owned_regular(nginx_target, 0o600) != rendered:
+        fail("Pending repair existing runtime NGINX state is unsafe or inconsistent.")
+else:
+    temporary = state_dir / f".nginx.runtime.conf.pending-repair.{os.getpid()}"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(rendered)
+            stream.flush()
+            os.fsync(stream.fileno())
+        descriptor = -1
+        os.replace(temporary, nginx_target)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+state_text = (
+    f"NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT={project}\n"
+    f"NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET={subnet}\n"
+    f"NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY={gateway}\n"
+    f"NPCINK_CLOUD_RUNTIME_PROXY_IPV4={proxy}\n"
+)
+temporary = state_dir / f".runtime-network.env.pending-repair.{os.getpid()}"
+descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+try:
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(state_text)
+        stream.flush()
+        os.fsync(stream.fileno())
+    descriptor = -1
+    if state_file.exists() or state_file.is_symlink():
+        fail("Pending repair runtime network state appeared concurrently.")
+    os.replace(temporary, state_file)
+finally:
+    if descriptor >= 0:
+        os.close(descriptor)
+    try:
+        temporary.unlink()
+    except FileNotFoundError:
+        pass
+
+directory_fd = os.open(state_dir, os.O_RDONLY)
+try:
+    os.fsync(directory_fd)
+finally:
+    os.close(directory_fd)
+PY
+	echo "[ok] Pending first-install repair reconstructed the previous runtime network contract from the unique live Compose network."
+}
+
 freeze_previous_runtime_network_contract() {
 	local kind=""
 	local nginx_config_path=""
@@ -2489,6 +2659,7 @@ export NPCINK_CLOUD_COMPOSE_FILE="${NEW_COMPOSE_FILE}"
 if [ -n "${PREVIOUS_RELEASE_DIR}" ]; then
 	PREVIOUS_COMPOSE_FILE="${PREVIOUS_RELEASE_DIR}/${NEW_COMPOSE_RELATIVE}"
 fi
+bootstrap_previous_runtime_network_contract_for_pending_repair
 freeze_previous_runtime_network_contract
 assert_previous_writer_project_alignment
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
