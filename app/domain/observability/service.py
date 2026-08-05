@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings
 from app.core.db import get_session
-from app.core.models import HealthSnapshot
+from app.core.models import CatalogInstance, HealthSnapshot
 from app.core.services import ReadyReport
 from app.domain.runtime.service import RuntimeService
 from app.workers.heartbeat import build_worker_heartbeat_summary, expected_worker_ids
@@ -101,8 +101,15 @@ class ObservabilityService:
             if isinstance(item, dict)
         }
         providers = self._dict_value(summary.get("providers"))
-        provider_status_counts = self._dict_value(providers.get("status_counts"))
-        provider_instances_total = self._int_value(providers.get("instances_total"))
+        provider_operational_scope = self._dict_value(providers.get("operational_scope"))
+        if not provider_operational_scope:
+            provider_operational_scope = providers
+        provider_status_counts = self._dict_value(
+            provider_operational_scope.get("status_counts")
+        )
+        provider_instances_total = self._int_value(
+            provider_operational_scope.get("instances_total")
+        )
         degraded_instances = self._int_value(provider_status_counts.get("degraded"))
         unhealthy_instances = self._int_value(provider_status_counts.get("unhealthy"))
         unknown_instances = self._int_value(provider_status_counts.get("unknown"))
@@ -124,7 +131,9 @@ class ObservabilityService:
         }
         checks = {
             "dependencies.ready": ready_report.ok,
-            "providers.fresh": str(providers.get("freshness") or "") == "fresh",
+            "providers.fresh": (
+                str(provider_operational_scope.get("freshness") or "") == "fresh"
+            ),
             "providers.operational": providers_operational,
             **worker_checks,
             **cadence_checks,
@@ -134,7 +143,8 @@ class ObservabilityService:
             if ready_report.ok
             else "database or redis dependency checks failed",
             "providers.fresh": (
-                f"provider health freshness={str(providers.get('freshness') or 'missing')}"
+                "provider health freshness="
+                f"{str(provider_operational_scope.get('freshness') or 'missing')}"
             ),
             "providers.operational": (
                 f"provider instances={provider_instances_total}; "
@@ -167,6 +177,7 @@ class ObservabilityService:
         with get_session(self.settings.database_url) as session:
             repository = StatsRepository(session)
             instances = repository.list_instances()
+            routing_bindings = repository.list_routing_bindings()
             health_snapshots = repository.list_latest_health_snapshots(
                 [str(instance.instance_id) for instance in instances]
             )
@@ -180,6 +191,46 @@ class ObservabilityService:
             if current is None or snapshot.measured_at > current.measured_at:
                 latest_by_instance[snapshot_instance_id] = snapshot
 
+        summary = self._summarize_provider_health(
+            instances=instances,
+            expected_instance_ids=[str(instance.instance_id) for instance in instances],
+            latest_by_instance=latest_by_instance,
+            current_time=current_time,
+        )
+        routed_instance_ids: list[str] = []
+        seen_instance_ids: set[str] = set()
+        for binding in routing_bindings:
+            candidate_instance_ids = binding.candidate_instance_ids
+            if not isinstance(candidate_instance_ids, list):
+                continue
+            for candidate_instance_id in candidate_instance_ids:
+                instance_id = str(candidate_instance_id or "").strip()
+                if not instance_id or instance_id in seen_instance_ids:
+                    continue
+                seen_instance_ids.add(instance_id)
+                routed_instance_ids.append(instance_id)
+        instances_by_id = {str(instance.instance_id): instance for instance in instances}
+        routed_instances = [
+            instances_by_id[instance_id]
+            for instance_id in routed_instance_ids
+            if instance_id in instances_by_id
+        ]
+        summary["operational_scope"] = self._summarize_provider_health(
+            instances=routed_instances,
+            expected_instance_ids=routed_instance_ids,
+            latest_by_instance=latest_by_instance,
+            current_time=current_time,
+        )
+        return summary
+
+    def _summarize_provider_health(
+        self,
+        *,
+        instances: list[CatalogInstance],
+        expected_instance_ids: list[str],
+        latest_by_instance: dict[str, HealthSnapshot],
+        current_time: datetime,
+    ) -> dict[str, object]:
         status_counts = {
             "healthy": 0,
             "degraded": 0,
@@ -202,6 +253,8 @@ class ObservabilityService:
                 last_measured_at is None or measured_at > last_measured_at
             ):
                 last_measured_at = measured_at
+
+        unresolved_instance_count = max(0, len(expected_instance_ids) - len(instances))
 
         last_measured_at = self._normalize_datetime(last_measured_at)
         age_seconds = (
@@ -229,6 +282,9 @@ class ObservabilityService:
             "age_seconds": age_seconds,
             "providers_total": len({instance.provider_id for instance in instances}),
             "instances_total": len(instances),
+            "configured_instance_ids_total": len(expected_instance_ids),
+            "resolved_instances_total": len(instances),
+            "unresolved_instance_ids_total": unresolved_instance_count,
             "status_counts": status_counts,
             "degraded_provider_ids": sorted(degraded_provider_ids),
         }
