@@ -260,13 +260,15 @@ plus its fail-closed bootstrap correction in
   rollback, and operator recovery
 
 - [ ] the exact release canonical allowlist either no longer contains the three
-  governed Python `3.14.6` entries, or the temporary bundle-external
-  `npcink.controlled_production_cve_risk_acceptance.v1` receipt and its separate
-  SHA-256 file are operator-owned mode `0600`, fresh, unexpired, and bind the
-  exact Linux/AMD64 source, bundle, allowlist, passed scan, API receipt, and
-  exact finding set; in either case the fresh exact-image scan is green
+  governed Python `3.14.6` entries, the temporary bundle-external
+  `npcink.controlled_production_cve_risk_acceptance.v1` receipt pair is valid,
+  or the finalized-installation no-external-user internal-validation mode is
+  explicitly approved before 2026-08-11; every path still binds the clean
+  production source to a fresh passed Linux/AMD64 scan with zero unallowlisted
+  blocking findings
 - [ ] while any governed entry remains, the machine-executable production-host
-  deployment gate consumes and validates both external evidence files before
+  deployment gate consumes and validates either both external evidence files
+  or the exact no-user internal-validation approval before
   remote mkdir,
   upload, deployment lock, image, container, or database mutation; absence,
   partial matches, changed threat intelligence, changed scan evidence, unsafe
