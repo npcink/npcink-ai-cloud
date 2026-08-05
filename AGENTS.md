@@ -48,6 +48,13 @@ prompt/router/preset local truth, or WordPress write owner.
   module, intended change, explicit non-goals, public contracts touched,
   expected files, files or areas that must not change, required gates,
   cross-repo matrix requirement, and rollback plan.
+- Treat elapsed time, paid Provider calls, full-gate executions, image builds,
+  and shared-runtime operations as bounded task resources. Declare the relevant
+  budget before using them, reuse valid evidence for the same revision, and do
+  not repeat a broad gate unless the rerun answers a distinct risk question.
+  After two consecutive failures with the same external-transfer signature,
+  stop automatic retries, preserve the evidence, and either use a documented
+  recovery lane or report the blocker to the operator.
 - When sessions run in parallel, follow the Three Uniques in
   `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
   conflict domain, one human-authored PR in the protected merge lane, and one
@@ -124,6 +131,12 @@ with the narrowest test, lint, type, or contract gate that covers the changed
 seam. Use `check:fast` when risk or integration closeout requires the combined
 contract/domain suite, and do not duplicate the same full gate for one revision
 without a distinct reason.
+
+When a broad command proves an earlier sub-gate and later fails on an unrelated
+assertion, preserve the successful sub-gate evidence but do not call the whole
+command green. Diagnose and rerun only the failed seam when the governing tool
+supports it; do not rebuild, rescan, consume Provider budget, or expand product
+scope merely to replay already-proved work.
 
 Additional gates by scope:
 
