@@ -101,6 +101,39 @@ Recommended repository gate:
 pnpm run check:release-policy
 ```
 
+### Bounded release verification
+
+Production safety and operator time are both release constraints. A release
+session must bind every reusable result to the exact revision, source tree,
+bundle digest, platform, scan identity, and target state. Evidence that still
+matches those values should be reused; the same exact bundle must not be rebuilt
+or rescanned only because an unrelated later assertion failed.
+
+Release verification follows these rules:
+
+- declare the maximum production mutations, migration attempts, Provider calls,
+  and full bundle/scan executions before starting the controlled validation;
+- after the initial attempt, allow at most one automatic retry for the same
+  external download or registry failure; two consecutive failures with the
+  same signature require an approved cache/resume recovery, a materially
+  different plan, or a blocker report before any third attempt;
+- when a combined command fails after bundle verification, scan, replay, or
+  health has already passed, retain those exact sub-receipts but keep the
+  combined command failed until its remaining required seam is verified;
+- do not fix unrelated Portal, Admin, reporting, or product behavior merely to
+  make a bounded production repair proceed;
+- release smoke contracts must use versioned, server-rendered,
+  language-independent markers for non-visual product contracts. Localized
+  copy is not a production activation contract and must not gate a release
+  unless that exact copy is the explicitly reviewed release requirement;
+- a revision, tree, bundle, platform, scan database, production baseline, or
+  risk-question change invalidates only the evidence that depends on the
+  changed value. It is not authority to replay every other gate.
+
+This rule does not permit a failed required gate to be relabeled as passed. It
+keeps successful evidence attributable, limits retries to an actual recovery
+plan, and prevents broad validation from expanding a narrow production repair.
+
 ## Current PostgreSQL 18 Release Contract
 
 The current production database contract is a fresh external Alibaba Cloud RDS

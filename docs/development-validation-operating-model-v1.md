@@ -201,6 +201,44 @@ These observations are not guarantees. They show why focused feedback should
 remain the inner loop and the full suite should remain a closeout or high-risk
 gate.
 
+### Time and paid operations are validation resources
+
+Validation strength is not measured by how many commands ran. Elapsed time,
+paid Provider calls, image builds, vulnerability-database downloads, full CI or
+M4 suites, production mutations, and shared-runtime operations are finite task
+resources. Before using a material one, declare the relevant budget and the
+question that the operation must answer.
+
+Use these rules:
+
+1. Reuse valid evidence that is bound to the same source revision, tree,
+   artifact digest, environment, and risk question. Do not rebuild or rescan an
+   unchanged exact bundle merely to reproduce an already-recorded result.
+2. A broad gate is justified only when its combined result is the required
+   authority. During diagnosis, run the smallest failed seam instead of
+   restarting all earlier successful work.
+3. If a broad command proves an earlier stage and later fails, record the
+   earlier evidence separately but do not report the whole command as passed.
+   Diagnose the later failure and keep unrelated product work out of the change
+   envelope.
+4. After the initial attempt, allow at most one automatic retry for the same
+   external-transfer failure. Two consecutive failures with the same signature
+   end blind retries: preserve logs and partial progress, then use a documented
+   resumable/cache recovery lane or stop and ask the operator. A third attempt
+   requires a materially different recovery plan or explicit operator choice.
+5. Set explicit limits for paid or stateful operations, including Provider
+   calls, production deploys, migration attempts, and WordPress writes. Do not
+   manufacture calls or mutations to complete a sample count.
+6. Report the material causes of wall-clock delay, including operator wait,
+   external download time, rebuild time, full-suite time, and avoidable reruns.
+   Time cost is part of the closeout evidence, not an invisible implementation
+   detail.
+
+Stable assertions also reduce wasted reruns. Release and integration smoke must
+prefer versioned, machine-readable, language-independent markers over localized
+copy, layout text, or other presentation details unless the presentation itself
+is the declared consumer contract.
+
 ## 8. CI Feedback Is a Governed Closed Loop
 
 The pytest scheduling loop is:
