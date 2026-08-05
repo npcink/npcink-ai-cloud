@@ -511,8 +511,11 @@ For the finalized installation only, the no-external-user internal-validation
 exception may replace that file pair through 2026-08-11. Export the exact
 approval sentence required by `deploy/deploy-to-ssh-host.sh` and pass
 `--no-user-internal-validation`. This is fail-closed for external users, GA,
-expiry, any CVE set other than the fixed three, stale or failed Linux/AMD64
-scan evidence, extra blocking findings, or source revision/tree drift. It does
+expiry, any CVE set other than the governed three Python findings plus frontend
+Node `CVE-2026-58043`, stale or failed Linux/AMD64 scan evidence, extra blocking
+findings, or source revision/tree drift. The Node exception applies only while
+the frontend remains `node frontend/server.js` without `--permission` or
+`NODE_OPTIONS`; stop if that reachability changes. It does
 not skip bundle verification, deployment preflight, migration, health, smoke,
 or rollback controls.
 
