@@ -72,6 +72,10 @@ class StatsRepository:
     def get_routing_binding(self, profile_id: str) -> RoutingBinding | None:
         return self.session.get(RoutingBinding, profile_id)
 
+    def list_routing_bindings(self) -> list[RoutingBinding]:
+        statement = select(RoutingBinding).order_by(RoutingBinding.profile_id.asc())
+        return list(self.session.scalars(statement))
+
     def list_site_ids(self) -> list[str]:
         statement = select(Site.site_id).order_by(Site.site_id.asc())
         return [site_id for site_id in self.session.scalars(statement)]
