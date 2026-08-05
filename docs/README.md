@@ -127,6 +127,12 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
 - [Issue #406 Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
   — dated evidence; canary/browser completion is not production validation
+- [Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md)
+  — one-operator, one-budget production evidence, exact quota/ledger assertions,
+  WordPress-write boundaries, and fixture cleanup
+- [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
+  — dated one-operator SiliconFlow lifecycle evidence, cleanup receipt,
+  alt-text diagnosis, timing lesson, and remaining first-install blockers
 - [Frontend Public/Portal Release Checklist](frontend-public-portal-release-checklist-v1.md)
 - [P5 Local Backup/Restore Drill](p5-b5-local-backup-restore-drill-v1.md)
 - [Runtime Stability and Performance Evidence Plan](runtime-stability-performance-evidence-v1.md)

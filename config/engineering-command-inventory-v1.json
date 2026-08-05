@@ -168,6 +168,36 @@
     },
     {
       "package": "root",
+      "profile": "remote_read",
+      "owner_doc": "docs/production-wordpress-roundtrip-validation-runbook-v1.md",
+      "used_by": ["runbook", "manual", "contract"],
+      "status": "active",
+      "evidence": [
+        "docs/production-wordpress-roundtrip-validation-runbook-v1.md",
+        "deploy/wordpress-roundtrip-readiness-to-ssh-host.sh",
+        "scripts/production_wordpress_roundtrip_readiness.py"
+      ],
+      "commands": {
+        "production:wordpress-roundtrip:readiness": "Collect read-only production lifecycle, identity, entitlement, quota, ledger, run, and artifact evidence."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "production_state",
+      "owner_doc": "docs/production-wordpress-roundtrip-validation-runbook-v1.md",
+      "used_by": ["runbook", "manual", "contract"],
+      "status": "active",
+      "evidence": [
+        "docs/production-wordpress-roundtrip-validation-runbook-v1.md",
+        "deploy/wordpress-roundtrip-cleanup-to-ssh-host.sh",
+        "scripts/production_wordpress_roundtrip_cleanup.py"
+      ],
+      "commands": {
+        "production:wordpress-roundtrip:cleanup": "Purge one exact ACKed WordPress round-trip fixture while preserving Cloud audit truth."
+      }
+    },
+    {
+      "package": "root",
       "profile": "ci_read",
       "owner_doc": "docs/pr-and-dependency-update-policy.md",
       "used_by": ["ci", "runbook", "contract", "automation"],

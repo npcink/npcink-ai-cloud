@@ -149,6 +149,9 @@ Before accepting the validation environment:
   `verify-full` with the submitted CA;
 - complete WordPress text and image round trips from
   `https://magick-ai.local/` without Cloud writing CMS content directly;
+- follow the bounded evidence, Provider-budget, zero-write, and exact-cleanup
+  procedure in the
+  [Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md);
 - observe the host and RDS for 24 to 72 hours;
 - run one RDS backup restore drill to a separate validation target;
 - keep the old PostgreSQL 16 volume offline for seven days, then delete it only
