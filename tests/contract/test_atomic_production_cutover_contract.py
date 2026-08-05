@@ -412,7 +412,7 @@ elif [ "${1:-}" = "compose" ] && [[ " $* " = *" config --format json "* ]]; then
 JSON
 elif [ "${1:-}" = "compose" ] && [[ " $* " = *" ps -q "* ]]; then
     service_name="${*: -1}"
-    if [ "${MISSING_PREVIOUS_SERVICE:-}" != "${service_name}" ] && \
+    if [[ ",${MISSING_PREVIOUS_SERVICES:-}," != *",${service_name},"* ]] && \
         { [ ! -f "${CUTOVER_FAILURE_TRIGGERED}" ] || \
           [ -f "${RECOVERY_RUNNING_STATE}/${service_name}" ]; }; then
         printf 'previous-%s\n' "${service_name}"
@@ -566,6 +566,7 @@ def _run_remote_cutover(
     skip_frontend_image: bool = False,
     actual_container_project_name: str = "npcink-ai-cloud",
     missing_previous_service: str = "",
+    preexisting_failure_outcome: str = "",
     absent_rollback_reference: bool = False,
     fail_rollback_remove: bool = False,
     fail_incoming_cleanup: bool = False,
@@ -744,6 +745,16 @@ def _run_remote_cutover(
         current_target.mkdir()
     if current_kind != "absent":
         (remote_dir / "current").symlink_to(current_target)
+    if preexisting_failure_outcome:
+        failure_marker = remote_dir / ".cutover-failed"
+        failure_marker.write_text(
+            "phase=verify-worker-operational-readiness\n"
+            f"outcome={preexisting_failure_outcome}\n"
+            f"failed_release={remote_dir / 'release-failed'}\n"
+            f"previous_release={previous}\n",
+            encoding="utf-8",
+        )
+        failure_marker.chmod(0o600)
     if preexisting_one_off_lock:
         one_off_lock = remote_dir / ".release-state" / ".release-one-off.lock"
         one_off_lock.mkdir(parents=True, mode=0o700)
@@ -850,7 +861,7 @@ def _run_remote_cutover(
             "RECOVERY_WRONG_IMAGE_SERVICE": recovery_wrong_image_service,
             "RECOVERY_RUNNING_STATE": str(recovery_running_state),
             "ACTUAL_CONTAINER_PROJECT_NAME": actual_container_project_name,
-            "MISSING_PREVIOUS_SERVICE": missing_previous_service,
+            "MISSING_PREVIOUS_SERVICES": missing_previous_service,
             "ABSENT_ROLLBACK_REFERENCE": "1" if absent_rollback_reference else "0",
             "FAIL_ROLLBACK_REMOVE": "1" if fail_rollback_remove else "0",
             "FAIL_INCOMING_CLEANUP": "1" if fail_incoming_cleanup else "0",
@@ -891,7 +902,7 @@ def _run_remote_cutover(
         "DATABASE_REVISION": database_revision,
         "FAIL_OLD_COMPOSE_UP": "1" if fail_old_compose_up else "0",
         "FAIL_ROLLBACK_REMOVE": "1" if fail_rollback_remove else "0",
-        "MISSING_PREVIOUS_SERVICE": missing_previous_service,
+        "MISSING_PREVIOUS_SERVICES": missing_previous_service,
         "MULTIPLE_PREVIOUS_CONTAINERS": ("1" if multiple_previous_containers else "0"),
         "RECOVERY_WRONG_IMAGE_SERVICE": recovery_wrong_image_service,
         "RECOVERY_RUNNING_STATE": str(recovery_running_state),
@@ -1525,6 +1536,39 @@ def test_backend_only_cutover_requires_a_running_frontend_to_preserve(
         assert "requires an existing managed release" in completed.stderr
     else:
         assert "found 0" in completed.stderr
+
+
+def test_migration_started_fail_closed_state_allows_matched_redeploy(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        missing_previous_service="api,worker,callback-worker,ops-worker",
+        preexisting_failure_outcome="fail_closed_after_migration_started",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    assert "failure evidence matches the stopped previous writers" in completed.stdout
+    assert (remote_dir / "current").resolve() == remote_dir / "release-next"
+    assert not (remote_dir / ".cutover-failed").exists()
+    assert "migrate:0" in log_path.read_text(encoding="utf-8")
+
+
+def test_stopped_previous_writers_require_exact_migration_started_marker(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        missing_previous_service="api,worker,callback-worker,ops-worker",
+        preexisting_failure_outcome="fail_closed_without_safe_rollback",
+    )
+
+    assert completed.returncode != 0
+    assert "found 0" in completed.stderr
+    assert (remote_dir / ".cutover-failed").exists()
+    assert "load:prepare-only" not in (
+        log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    )
 
 
 def test_pre_migration_failure_restores_previous_release(tmp_path: Path) -> None:

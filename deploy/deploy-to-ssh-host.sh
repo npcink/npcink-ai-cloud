@@ -1996,6 +1996,78 @@ previous_release_is_restartable() {
 	return 0
 }
 
+has_fail_closed_after_migration_marker() {
+	[ -n "${PREVIOUS_RELEASE_DIR}" ] || return 1
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${FAILURE_MARKER}" "${PREVIOUS_RELEASE_DIR}" "${REMOTE_DIR_CANONICAL}" <<'PY'
+from __future__ import annotations
+
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+marker_raw, previous_raw, managed_root_raw = sys.argv[1:]
+marker = Path(marker_raw)
+previous = Path(previous_raw)
+managed_root = Path(managed_root_raw)
+expected_keys = {"phase", "outcome", "failed_release", "previous_release"}
+
+try:
+    metadata = marker.lstat()
+except FileNotFoundError:
+    raise SystemExit(1)
+if (
+    marker.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or (metadata.st_uid, metadata.st_gid) != (0, 0)
+    or metadata.st_size > 4096
+):
+    raise SystemExit(1)
+
+descriptor = os.open(
+    marker,
+    os.O_RDONLY
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0),
+)
+try:
+    raw = os.read(descriptor, 4097)
+finally:
+    os.close(descriptor)
+if len(raw) > 4096:
+    raise SystemExit(1)
+try:
+    lines = raw.decode("utf-8").splitlines()
+except UnicodeDecodeError:
+    raise SystemExit(1)
+
+values: dict[str, str] = {}
+for line in lines:
+    key, separator, value = line.partition("=")
+    if separator != "=" or key not in expected_keys or key in values or not value:
+        raise SystemExit(1)
+    values[key] = value
+if set(values) != expected_keys:
+    raise SystemExit(1)
+if values["outcome"] != "fail_closed_after_migration_started":
+    raise SystemExit(1)
+if Path(values["previous_release"]) != previous:
+    raise SystemExit(1)
+failed_release = Path(values["failed_release"])
+if (
+    failed_release.parent != managed_root
+    or re.fullmatch(r"release-[A-Za-z0-9._-]+", failed_release.name) is None
+):
+    raise SystemExit(1)
+if not values["phase"].strip():
+    raise SystemExit(1)
+PY
+}
+
 assert_previous_writer_project_alignment() {
 	local service_name=""
 	local required_services=("${PREVIOUS_WRITER_SERVICES[@]}")
@@ -2004,6 +2076,8 @@ assert_previous_writer_project_alignment() {
 	local container_id=""
 	local observed_project=""
 	local running=""
+	local fail_closed_recovery=0
+	local stopped_services=0
 
 	if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
 		if [ "${SKIP_FRONTEND_IMAGE}" = "1" ]; then
@@ -2015,12 +2089,19 @@ assert_previous_writer_project_alignment() {
 	if [ "${SKIP_FRONTEND_IMAGE}" = "1" ]; then
 		required_services+=(frontend)
 	fi
+	if has_fail_closed_after_migration_marker; then
+		fail_closed_recovery=1
+	fi
 	for service_name in "${required_services[@]}"; do
 		if ! container_ids="$(compose_previous_release ps -q "${service_name}")"; then
 			echo "[fail] Could not inspect the previous ${service_name} container before cutover." >&2
 			return 1
 		fi
 		container_count="$(printf '%s\n' "${container_ids}" | awk 'NF { count += 1 } END { print count + 0 }')"
+		if [ "${container_count}" -eq 0 ] && [ "${fail_closed_recovery}" = "1" ]; then
+			stopped_services=$((stopped_services + 1))
+			continue
+		fi
 		if [ "${container_count}" -ne 1 ]; then
 			echo "[fail] Previous release must have exactly one running ${service_name} container under Compose project ${PREVIOUS_COMPOSE_PROJECT_NAME}; found ${container_count}." >&2
 			return 1
@@ -2039,6 +2120,14 @@ assert_previous_writer_project_alignment() {
 			return 1
 		fi
 	done
+	if [ "${fail_closed_recovery}" = "1" ]; then
+		if [ "${stopped_services}" -ne "${#required_services[@]}" ]; then
+			echo "[fail] Migration-started recovery requires every previous write-capable service to remain stopped." >&2
+			return 1
+		fi
+		echo "[ok] Durable migration-started failure evidence matches the stopped previous writers."
+		return 0
+	fi
 	echo "[ok] Previous write-capable containers belong to the expected Compose project."
 }
 
