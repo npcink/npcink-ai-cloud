@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -530,6 +529,7 @@ def test_image_source_fast_first_parallel_returns_after_first_success(
         },
     )
     slow_started = threading.Event()
+    slow_finished = threading.Event()
     release_slow = threading.Event()
 
     def slow_unsplash_search(
@@ -542,6 +542,7 @@ def test_image_source_fast_first_parallel_returns_after_first_success(
     ) -> ImageSourceExecutionResult:
         slow_started.set()
         release_slow.wait(5)
+        slow_finished.set()
         return image_source_service._build_result(
             provider_id="unsplash",
             auto_strategy="fast_first",
@@ -586,19 +587,17 @@ def test_image_source_fast_first_parallel_returns_after_first_success(
     monkeypatch.setattr(UnsplashImageSourceProvider, "search", slow_unsplash_search)
     monkeypatch.setattr(PixabayImageSourceProvider, "search", fast_pixabay_search)
 
-    started = time.monotonic()
     try:
         response = _execute(
             client,
             _payload({"provider": "auto", "per_page": 9}),
             idempotency_key="image-source-fast-first-parallel",
         )
+        assert not slow_finished.is_set(), "fast-first waited for the slow provider"
     finally:
         release_slow.set()
-    elapsed = time.monotonic() - started
 
     assert response.status_code == 200, response.text
-    assert elapsed < 1.0
     result = response.json()["data"]["result"]
     assert result["provider_mode"] == "parallel"
     assert result["auto_strategy"] == "fast_first"

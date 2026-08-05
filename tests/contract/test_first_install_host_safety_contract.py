@@ -96,6 +96,8 @@ def _write_private_json(path: Path, payload: dict[str, object]) -> bytes:
 def _controlled_acceptance_fixture(
     tmp_path: Path,
     module: ModuleType,
+    *,
+    include_no_user_node_exception: bool = False,
 ) -> tuple[Path, Path, Path, datetime]:
     generated_at = "2026-07-22T10:00:00Z"
     now = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
@@ -111,6 +113,15 @@ def _controlled_acceptance_fixture(
             for finding in module.EXPECTED_FINDINGS
         ],
     }
+    if include_no_user_node_exception:
+        allowlist["entries"].append(
+            {
+                "image": "frontend",
+                "vulnerability_id": "CVE-2026-58043",
+                "package": "node",
+                "package_version": "22.23.1",
+            }
+        )
     allowlist_raw = (json.dumps(allowlist, sort_keys=True, separators=(",", ":")) + "\n").encode()
     allowlist_sha256 = hashlib.sha256(allowlist_raw).hexdigest()
     api_receipt = {
@@ -263,7 +274,11 @@ def test_first_install_cve_gate_accepts_bounded_no_user_internal_validation(
         ROOT / "scripts" / "check-first-install-cve-gate.py",
         "first_install_cve_gate_no_user",
     )
-    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(tmp_path, module)
+    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(
+        tmp_path,
+        module,
+        include_no_user_node_exception=True,
+    )
 
     module.assert_no_user_internal_validation_allowed(
         bundle=bundle,
@@ -281,7 +296,11 @@ def test_first_install_cve_gate_no_user_mode_fails_closed(
         ROOT / "scripts" / "check-first-install-cve-gate.py",
         "first_install_cve_gate_no_user_fail_closed",
     )
-    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(tmp_path, module)
+    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(
+        tmp_path,
+        module,
+        include_no_user_node_exception=True,
+    )
 
     with pytest.raises(ValueError, match="exact operator approval"):
         module.assert_no_user_internal_validation_allowed(
@@ -306,6 +325,25 @@ def test_first_install_cve_gate_no_user_mode_fails_closed(
             expected_source_tree="b" * 40,
             operator_approval=module.NO_USER_INTERNAL_VALIDATION_APPROVAL,
             now=datetime(2026, 8, 12, tzinfo=UTC),
+        )
+
+
+def test_first_install_cve_gate_no_user_mode_requires_node_permission_exception(
+    tmp_path: Path,
+) -> None:
+    module = _load_module(
+        ROOT / "scripts" / "check-first-install-cve-gate.py",
+        "first_install_cve_gate_no_user_node_exception",
+    )
+    bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(tmp_path, module)
+
+    with pytest.raises(ValueError, match="exact four governed CVE exceptions"):
+        module.assert_no_user_internal_validation_allowed(
+            bundle=bundle,
+            expected_source_revision="a" * 40,
+            expected_source_tree="b" * 40,
+            operator_approval=module.NO_USER_INTERNAL_VALIDATION_APPROVAL,
+            now=now,
         )
 
 
