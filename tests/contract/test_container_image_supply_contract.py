@@ -1017,14 +1017,15 @@ def test_release_index_rejects_mixed_grype_database_identities(tmp_path: Path) -
 def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
 
-    assert "production image scanner requires Docker server API 1.49 or newer" in source
+    assert "configure_docker_platform_archive_support" in source
+    assert "USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=0" in source
+    assert "Docker server API ${server_api} uses the single-platform archive fallback" in source
+    assert "requires docker image inspect --platform support with Docker server API" in source
+    assert "requires docker image save --platform support with Docker server API" in source
     assert (
-        'image_id="$(docker image inspect --platform "${RELEASE_PLATFORM}" \\\n'
-        '\t\t"${reference}" --format \'{{.Id}}\')"'
+        'image_id="$(docker_image_inspect "${reference}" --format \'{{.Id}}\')"'
     ) in source
-    assert (
-        'docker image inspect --platform "${RELEASE_PLATFORM}" "${reference}" >"${inspect_path}"'
-    ) in source
+    assert 'docker_image_inspect "${reference}" >"${inspect_path}"' in source
     assert '"docker-archive:/input/${key}.image.tar"' in source
     assert "docker image save" in source
     assert '"syft-json=/output/${key}.syft.json"' in source
@@ -1039,10 +1040,11 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert 'docker pull --platform "${RELEASE_PLATFORM}"' in source
     assert '--expected-platform "${RELEASE_PLATFORM}"' in source
     assert 'docker image tag "${reference}" "${archive_reference}"' in source
-    assert (
-        'docker image save --platform "${RELEASE_PLATFORM}" \\\n'
-        '\t\t--output "${archive_path}" "${archive_reference}"'
-    ) in source
+    assert 'docker_image_save --output "${archive_path}" "${archive_reference}"' in source
+    assert 'docker image inspect --platform "${RELEASE_PLATFORM}" "$@"' in source
+    assert 'docker image save --platform "${RELEASE_PLATFORM}" "$@"' in source
+    assert 'docker image inspect "$@"' in source
+    assert 'docker image save "$@"' in source
     assert "npcink-ai-cloud-scan-${CUSTOM_KEYS[${custom_index}]}" in source
     assert "APPLICATIONS_ONLY=0" in source
     assert 'if image["kind"] == "compose_external"' in source
@@ -1056,11 +1058,14 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
 def test_formal_bundle_inspects_the_requested_platform_in_multi_platform_stores() -> None:
     source = (ROOT / "deploy" / "bundle-images.sh").read_text()
 
-    assert "formal bundle builder requires Docker server API 1.49 or newer" in source
+    assert "configure_docker_platform_archive_support" in source
+    assert "USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=0" in source
+    assert "Docker server API ${server_api} uses the single-platform archive fallback" in source
+    assert "requires docker image inspect --platform support with Docker server API" in source
+    assert "requires docker image save --platform support with Docker server API" in source
+    assert 'docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" "$@"' in source
+    assert 'docker image inspect "$@"' in source
+    assert 'docker_image_inspect --format \'{{.Id}}\' "$1"' in source
     assert (
-        'docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" --format \'{{.Id}}\' "$1"'
-    ) in source
-    assert (
-        'docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" \\\n'
-        "\t\t--format '{{.Os}}/{{.Architecture}}' \"$1\""
+        'docker_image_inspect --format \'{{.Os}}/{{.Architecture}}\' "$1"'
     ) in source
