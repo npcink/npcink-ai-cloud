@@ -176,6 +176,11 @@ def test_runbook_freezes_efficiency_and_truth_boundaries() -> None:
         "Known pre-import alt-text mismatch",
         "check-first-install-cve-gate.py",
         "Time cost is a first-class constraint",
+        "preempt **every** `/v1/runtime/execute` request",
+        "blocked_non_target",
+        "failed gate; do not silently redefine an autosave as zero writes",
+        "native autosave without a separate WordPress-owned change envelope",
+        "deterministic Local transport failure",
     ):
         assert marker in text
 
