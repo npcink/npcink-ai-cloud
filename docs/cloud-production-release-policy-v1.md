@@ -235,6 +235,25 @@ unavailable for this exception. Repair rollback is a separate matched recovery:
 restore the recorded RDS backup, the previous release/configuration, and the
 repair rollback images while public/write services remain stopped.
 
+A separate, narrower lifecycle repair exists only for a finalized installation
+whose active parameterized runtime release predates its protected
+`runtime-network.env` and `nginx.runtime.conf` state. Ordinary deployment never
+reconstructs this state. The operator must explicitly enable
+`--finalized-runtime-network-repair` and provide the exact protected approval
+sentence `Approved for finalized runtime-network repair by operator.`. The
+remote gate requires `installation_state=complete`, a valid permanent
+installation-complete sentinel, no pending first-install marker, an active
+direct managed release, and a root-owned mode-0600 `.cutover-failed` record
+whose `phase=initialize`, `outcome=validation_failed_before_mutation`, and
+`previous_release` exactly match that active release. Only then may deployment
+derive the subnet, gateway, and proxy address from one unique live Compose
+network and atomically publish the missing mode-0600 state files in the
+existing root-owned mode-0700 release-state directory. Existing inconsistent
+state, missing or ambiguous live network evidence, or mismatched failure
+evidence fails closed before image, container, migration, or WordPress
+mutation. This exception repairs release lifecycle evidence only; it does not
+authorize Admin, provider, database, product, or infrastructure expansion.
+
 After installation, the ordinary deployment order is:
 
 ```text
