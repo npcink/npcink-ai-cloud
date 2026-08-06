@@ -58,6 +58,17 @@ push deploys automatically. The only temporary exception is the exact
 bundle-bound trusted-workstation path for the current empty-host PostgreSQL 18
 first install described below; it is not reusable after finalization.
 
+If a finalized active release is missing its protected runtime-network state,
+the same manual workflow exposes a default-off
+`finalized_runtime_network_repair` input. Enabling it also requires the exact
+sentence `Approved for finalized runtime-network repair by operator.`. This is
+not a general recovery switch: the remote deploy accepts it only for valid
+permanent installation acceptance plus retained initialize-phase
+`validation_failed_before_mutation` evidence matching the current managed
+release. It reconstructs only `runtime-network.env` and
+`nginx.runtime.conf` from one unique live Compose network before the ordinary
+deployment continues. Any ambiguity fails before image or container mutation.
+
 `Deploy Production` and `Production Maintenance` share the
 `production-host-mutation` concurrency group. A mutating `safe-prune` also
 requires the exact phrase `Prune production images and old releases.` and

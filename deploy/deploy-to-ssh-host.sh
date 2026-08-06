@@ -45,6 +45,8 @@ WITH_OPERATIONAL_READY="${NPCINK_CLOUD_WITH_OPERATIONAL_READY:-0}"
 SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 FIRST_INSTALL_PENDING_REPAIR="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR:-0}"
 FIRST_INSTALL_PENDING_REPAIR_APPROVAL="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR_APPROVAL:-}"
+FINALIZED_RUNTIME_NETWORK_REPAIR="${NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR:-0}"
+FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL="${NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL:-}"
 STAGE_ONLY_DISALLOWED_CLI=()
 
 while [ "$#" -gt 0 ]; do
@@ -218,6 +220,11 @@ while [ "$#" -gt 0 ]; do
 			FIRST_INSTALL_PENDING_REPAIR=1
 			shift
 			;;
+		--finalized-runtime-network-repair)
+			STAGE_ONLY_DISALLOWED_CLI+=("$1")
+			FINALIZED_RUNTIME_NETWORK_REPAIR=1
+			shift
+			;;
 		*)
 			echo "[fail] Unknown argument: $1" >&2
 			exit 1
@@ -294,6 +301,22 @@ if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
 	fi
 elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
 	echo "[fail] Pending first-install repair approval is invalid without --first-install-pending-repair." >&2
+	exit 1
+fi
+
+FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL_TEXT="Approved for finalized runtime-network repair by operator."
+if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "1" ]; then
+	if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL}" != "${FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL_TEXT}" ]; then
+		echo "[fail] Finalized runtime-network repair requires the exact operator approval sentence." >&2
+		exit 1
+	fi
+elif [ -n "${FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL}" ]; then
+	echo "[fail] Finalized runtime-network repair approval is invalid without --finalized-runtime-network-repair." >&2
+	exit 1
+fi
+
+if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ] && [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "1" ]; then
+	echo "[fail] Pending first-install repair and finalized runtime-network repair are mutually exclusive." >&2
 	exit 1
 fi
 
@@ -694,6 +717,8 @@ if [ "${STAGE_ONLY}" != "1" ]; then
 	NPCINK_INPUT_WITH_OPERATIONAL_READY="${WITH_OPERATIONAL_READY}" \
 	NPCINK_INPUT_FIRST_INSTALL_PENDING_REPAIR="${FIRST_INSTALL_PENDING_REPAIR}" \
 	NPCINK_INPUT_FIRST_INSTALL_PENDING_REPAIR_APPROVAL="${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" \
+	NPCINK_INPUT_FINALIZED_RUNTIME_NETWORK_REPAIR="${FINALIZED_RUNTIME_NETWORK_REPAIR}" \
+	NPCINK_INPUT_FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL="${FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL}" \
 		"${LOCAL_RELEASE_TOOL_PYTHON}" - "${LOCAL_DEPLOY_INPUT_PATH}" <<'PY'
 from __future__ import annotations
 
@@ -817,6 +842,8 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		WITH_OPERATIONAL_READY=0
 		FIRST_INSTALL_PENDING_REPAIR=0
 		FIRST_INSTALL_PENDING_REPAIR_APPROVAL=""
+		FINALIZED_RUNTIME_NETWORK_REPAIR=0
+		FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL=""
 		STAGE_ONLY=1
 		;;
 	deploy)
@@ -873,6 +900,8 @@ mapping = {
     "WITH_OPERATIONAL_READY": "WITH_OPERATIONAL_READY",
     "FIRST_INSTALL_PENDING_REPAIR": "FIRST_INSTALL_PENDING_REPAIR",
     "FIRST_INSTALL_PENDING_REPAIR_APPROVAL": "FIRST_INSTALL_PENDING_REPAIR_APPROVAL",
+    "FINALIZED_RUNTIME_NETWORK_REPAIR": "FINALIZED_RUNTIME_NETWORK_REPAIR",
+    "FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL": "FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL",
 }
 if not isinstance(payload, dict) or set(payload) != set(mapping):
     raise SystemExit("[fail] Protected deployment input schema mismatch.")
@@ -900,6 +929,23 @@ PY
 			fi
 		elif [ -n "${FIRST_INSTALL_PENDING_REPAIR_APPROVAL}" ]; then
 			echo "[fail] Protected pending first-install repair approval is unexpected." >&2
+			exit 1
+		fi
+		if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" != "0" ] && [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" != "1" ]; then
+			echo "[fail] Protected finalized runtime-network repair flag must be 0 or 1." >&2
+			exit 1
+		fi
+		if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "1" ]; then
+			if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL}" != "Approved for finalized runtime-network repair by operator." ]; then
+				echo "[fail] Protected finalized runtime-network repair approval is invalid." >&2
+				exit 1
+			fi
+		elif [ -n "${FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL}" ]; then
+			echo "[fail] Protected finalized runtime-network repair approval is unexpected." >&2
+			exit 1
+		fi
+		if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ] && [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "1" ]; then
+			echo "[fail] Protected repair modes are mutually exclusive." >&2
 			exit 1
 		fi
 		if ! rm -f -- "${REMOTE_DEPLOY_INPUT_PATH}" || \
@@ -958,6 +1004,7 @@ INSTALLATION_COMPLETE_MARKER="${REMOTE_DIR}/.installation-complete"
 INSTALLATION_STATE=""
 FIRST_INSTALL_PENDING=0
 FIRST_INSTALL_REPAIR=0
+FINALIZED_RUNTIME_NETWORK_REPAIR_ACTIVE=0
 FIRST_INSTALL_PENDING_MARKER_SNAPSHOT=""
 FIRST_INSTALL_PENDING_MARKER_REWRITTEN=0
 FRESH_PG18_INSTALL=0
@@ -1646,7 +1693,91 @@ PY
 		"${NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH}" "${digests}"
 )
 
-bootstrap_previous_runtime_network_contract_for_pending_repair() {
+assert_finalized_runtime_network_repair_gate() {
+	[ "${FINALIZED_RUNTIME_NETWORK_REPAIR_ACTIVE}" = "1" ] || return 0
+	"${RELEASE_TOOL_PYTHON}" \
+		"${RELEASE_DIR}/deploy/validate-installation-complete.py" \
+		--managed-root "${REMOTE_DIR}" \
+		--sentinel "${INSTALLATION_COMPLETE_MARKER}" \
+		--state "${CONFIG_DIR_HOST}/install-state.json" \
+		--runtime "${CONFIG_DIR_HOST}/runtime-config.json" >/dev/null || {
+		echo "[fail] Finalized runtime-network repair requires valid permanent installation acceptance." >&2
+		return 1
+	}
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${FAILURE_MARKER}" "${PREVIOUS_RELEASE_DIR}" "${REMOTE_DIR_CANONICAL}" <<'PY'
+from __future__ import annotations
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+marker, current, managed_root = map(Path, sys.argv[1:])
+try:
+    metadata = marker.lstat()
+except FileNotFoundError as exc:
+    raise SystemExit(
+        "[fail] Finalized runtime-network repair requires retained pre-mutation failure evidence."
+    ) from exc
+if (
+    marker.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or (metadata.st_uid, metadata.st_gid) != (0, 0)
+    or metadata.st_size > 4096
+):
+    raise SystemExit("[fail] Finalized runtime-network repair failure evidence is unsafe.")
+descriptor = os.open(
+    marker,
+    os.O_RDONLY
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0),
+)
+try:
+    raw = os.read(descriptor, 4097)
+finally:
+    os.close(descriptor)
+if len(raw) > 4096:
+    raise SystemExit("[fail] Finalized runtime-network repair failure evidence is oversized.")
+try:
+    lines = raw.decode("utf-8").splitlines()
+except UnicodeDecodeError as exc:
+    raise SystemExit(
+        "[fail] Finalized runtime-network repair failure evidence is not UTF-8."
+    ) from exc
+payload: dict[str, str] = {}
+for line in lines:
+    key, separator, value = line.partition("=")
+    if not separator or key in payload:
+        raise SystemExit("[fail] Finalized runtime-network repair failure evidence is malformed.")
+    payload[key] = value
+if set(payload) != {"phase", "outcome", "failed_release", "previous_release"}:
+    raise SystemExit("[fail] Finalized runtime-network repair failure evidence schema is invalid.")
+if payload["phase"] != "initialize" or payload["outcome"] != "validation_failed_before_mutation":
+    raise SystemExit(
+        "[fail] Finalized runtime-network repair requires an initialize-phase pre-mutation failure."
+    )
+if Path(payload["previous_release"]) != current:
+    raise SystemExit(
+        "[fail] Finalized runtime-network repair failure evidence does not match current."
+    )
+failed = Path(payload["failed_release"])
+if (
+    not failed.is_absolute()
+    or failed.parent != managed_root
+    or not failed.name.startswith("release-")
+    or failed == current
+):
+    raise SystemExit(
+        "[fail] Finalized runtime-network repair failed-release evidence is outside the managed release set."
+    )
+PY
+	echo "[ok] Explicit finalized runtime-network repair approval and pre-mutation evidence accepted for the active release."
+}
+
+bootstrap_previous_runtime_network_contract_for_repair() {
 	local state_dir=""
 	local state_file=""
 	local nginx_file=""
@@ -1656,12 +1787,17 @@ bootstrap_previous_runtime_network_contract_for_pending_repair() {
 	local proxy_ipv4=""
 	local line=""
 	local parameterized=0
+	local repair_label="Pending first-install repair"
 
-	[ "${FIRST_INSTALL_REPAIR}" = "1" ] || return 0
+	if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR_ACTIVE}" = "1" ]; then
+		repair_label="Finalized runtime-network repair"
+	elif [ "${FIRST_INSTALL_REPAIR}" != "1" ]; then
+		return 0
+	fi
 	[ -n "${PREVIOUS_RELEASE_DIR}" ] || return 0
 	[ -f "${PREVIOUS_COMPOSE_FILE}" ] && [ ! -L "${PREVIOUS_COMPOSE_FILE}" ] && \
 		[ -O "${PREVIOUS_COMPOSE_FILE}" ] || {
-		echo "[fail] Pending first-install repair previous runtime Compose must be an owner-controlled regular file." >&2
+		echo "[fail] ${repair_label} previous runtime Compose must be an owner-controlled regular file." >&2
 		return 1
 	}
 	while IFS= read -r line || [ -n "${line}" ]; do
@@ -1685,14 +1821,14 @@ bootstrap_previous_runtime_network_contract_for_pending_repair() {
 	if [ ! -d "${state_dir}" ] || [ -L "${state_dir}" ] || \
 		[ "$(stat -c '%u' "${state_dir}" 2>/dev/null || true)" != "0" ] || \
 		[ "$(stat -c '%a' "${state_dir}" 2>/dev/null || true)" != "700" ]; then
-		echo "[fail] Pending first-install repair runtime network bootstrap requires the existing root-owned mode-0700 release state directory." >&2
+		echo "[fail] ${repair_label} runtime network bootstrap requires the existing root-owned mode-0700 release state directory." >&2
 		return 1
 	fi
 	discovered="$(npcink_ai_cloud_discover_existing_runtime_network_contract \
 		"${PREVIOUS_COMPOSE_PROJECT_NAME}" "${RELEASE_TOOL_PYTHON}")" || return 1
 	IFS=$'\t' read -r subnet gateway proxy_ipv4 <<<"${discovered}"
 	if [ -z "${subnet}" ] || [ -z "${gateway}" ] || [ -z "${proxy_ipv4}" ]; then
-		echo "[fail] Pending first-install repair could not parse the existing runtime network contract." >&2
+		echo "[fail] ${repair_label} could not parse the existing runtime network contract." >&2
 		return 1
 	fi
 	"${RELEASE_TOOL_PYTHON}" - \
@@ -1813,7 +1949,7 @@ try:
 finally:
     os.close(directory_fd)
 PY
-	echo "[ok] Pending first-install repair reconstructed the previous runtime network contract from the unique live Compose network."
+	echo "[ok] ${repair_label} reconstructed the previous runtime network contract from the unique live Compose network."
 }
 
 freeze_previous_runtime_network_contract() {
@@ -2583,6 +2719,26 @@ elif [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ]; then
 	exit 1
 fi
 
+if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "1" ]; then
+	if [ "${FIRST_INSTALL_PENDING_MARKER_PRESENT}" = "1" ]; then
+		echo "[fail] Finalized runtime-network repair is forbidden while first-install acceptance is pending." >&2
+		exit 1
+	fi
+	if [ "${INSTALLATION_STATE}" != "complete" ]; then
+		echo "[fail] Finalized runtime-network repair requires installation_state=complete." >&2
+		exit 1
+	fi
+	if [ ! -e "${INSTALLATION_COMPLETE_MARKER}" ] && [ ! -L "${INSTALLATION_COMPLETE_MARKER}" ]; then
+		echo "[fail] Finalized runtime-network repair requires permanent installation acceptance." >&2
+		exit 1
+	fi
+	if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
+		echo "[fail] Finalized runtime-network repair requires an active managed release." >&2
+		exit 1
+	fi
+	FINALIZED_RUNTIME_NETWORK_REPAIR_ACTIVE=1
+fi
+
 if [ -n "${PREVIOUS_RELEASE_DIR}" ]; then
 	PREVIOUS_ENV_FILE="$(NPCINK_CLOUD_ENV_FILE= npcink_ai_cloud_resolve_env_file "${PREVIOUS_RELEASE_DIR}")"
 	if [ -z "${PREVIOUS_ENV_FILE}" ] || [ ! -f "${PREVIOUS_ENV_FILE}" ]; then
@@ -2778,7 +2934,8 @@ export NPCINK_CLOUD_COMPOSE_FILE="${NEW_COMPOSE_FILE}"
 if [ -n "${PREVIOUS_RELEASE_DIR}" ]; then
 	PREVIOUS_COMPOSE_FILE="${PREVIOUS_RELEASE_DIR}/${NEW_COMPOSE_RELATIVE}"
 fi
-bootstrap_previous_runtime_network_contract_for_pending_repair
+assert_finalized_runtime_network_repair_gate
+bootstrap_previous_runtime_network_contract_for_repair
 freeze_previous_runtime_network_contract
 assert_previous_writer_project_alignment
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then

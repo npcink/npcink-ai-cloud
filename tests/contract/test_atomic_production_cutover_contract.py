@@ -584,6 +584,10 @@ def _run_remote_cutover(
     drift_previous_runtime_network_after_failure: bool = False,
     pending_first_install: bool = False,
     pending_repair: bool = False,
+    finalized_runtime_network_repair: bool = False,
+    finalized_runtime_network_repair_approval: str | None = None,
+    preexisting_failure_phase: str = "initialize",
+    preexisting_failure_previous: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -748,10 +752,10 @@ def _run_remote_cutover(
     if preexisting_failure_outcome:
         failure_marker = remote_dir / ".cutover-failed"
         failure_marker.write_text(
-            "phase=verify-worker-operational-readiness\n"
+            f"phase={preexisting_failure_phase}\n"
             f"outcome={preexisting_failure_outcome}\n"
             f"failed_release={remote_dir / 'release-failed'}\n"
-            f"previous_release={previous}\n",
+            f"previous_release={preexisting_failure_previous or previous}\n",
             encoding="utf-8",
         )
         failure_marker.chmod(0o600)
@@ -830,6 +834,18 @@ def _run_remote_cutover(
                         "Approved for first-install pending repair by operator."
                         if pending_repair
                         else ""
+                    ),
+                    "FINALIZED_RUNTIME_NETWORK_REPAIR": (
+                        "1" if finalized_runtime_network_repair else "0"
+                    ),
+                    "FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL": (
+                        finalized_runtime_network_repair_approval
+                        if finalized_runtime_network_repair_approval is not None
+                        else (
+                            "Approved for finalized runtime-network repair by operator."
+                            if finalized_runtime_network_repair
+                            else ""
+                        )
                     ),
                 },
                 sort_keys=True,
@@ -1697,6 +1713,150 @@ def test_ordinary_deploy_does_not_bootstrap_missing_previous_runtime_network_sta
     log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
     assert "docker:network ls" not in log
     assert "load:prepare-only" not in log
+
+
+def test_finalized_repair_bootstraps_missing_runtime_network_state_from_live_network(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        finalized_runtime_network_repair=True,
+        preexisting_failure_outcome="validation_failed_before_mutation",
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    state_dir = remote_dir / ".release-state" / "release-previous"
+    assert (state_dir / "runtime-network.env").read_text(encoding="utf-8") == (
+        "NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT=npcink-ai-cloud\n"
+        "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET=172.28.0.0/24\n"
+        "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY=172.28.0.1\n"
+        "NPCINK_CLOUD_RUNTIME_PROXY_IPV4=172.28.0.10\n"
+    )
+    assert (state_dir / "runtime-network.env").stat().st_mode & 0o777 == 0o600
+    assert (state_dir / "nginx.runtime.conf").stat().st_mode & 0o777 == 0o600
+    assert "set_real_ip_from 172.28.0.1;" in (
+        state_dir / "nginx.runtime.conf"
+    ).read_text(encoding="utf-8")
+    assert "pre-mutation evidence accepted" in completed.stdout
+    assert "reconstructed the previous runtime network contract" in completed.stdout
+    log = log_path.read_text(encoding="utf-8")
+    assert "docker:network ls --quiet" in log
+    assert "load:prepare-only" in log
+
+
+def test_finalized_repair_rejects_invalid_protected_approval_before_mutation(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        finalized_runtime_network_repair=True,
+        finalized_runtime_network_repair_approval="wrong approval",
+        preexisting_failure_outcome="validation_failed_before_mutation",
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+    )
+
+    assert completed.returncode != 0
+    assert "finalized runtime-network repair approval is invalid" in completed.stderr
+    assert not (
+        remote_dir / ".release-state" / "release-previous" / "runtime-network.env"
+    ).exists()
+    assert not log_path.exists()
+
+
+def test_finalized_repair_requires_retained_pre_mutation_failure_evidence(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        finalized_runtime_network_repair=True,
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+    )
+
+    assert completed.returncode != 0
+    assert "requires retained pre-mutation failure evidence" in completed.stderr
+    assert not (
+        remote_dir / ".release-state" / "release-previous" / "runtime-network.env"
+    ).exists()
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "load:prepare-only" not in log
+
+
+@pytest.mark.parametrize(
+    ("failure_phase", "failure_outcome", "previous_override", "expected_error"),
+    [
+        (
+            "verify-worker-operational-readiness",
+            "validation_failed_before_mutation",
+            None,
+            "initialize-phase pre-mutation failure",
+        ),
+        (
+            "initialize",
+            "previous_release_restored",
+            None,
+            "initialize-phase pre-mutation failure",
+        ),
+        (
+            "initialize",
+            "validation_failed_before_mutation",
+            "/opt/unrelated-release",
+            "does not match current",
+        ),
+    ],
+)
+def test_finalized_repair_rejects_unmatched_failure_evidence_before_mutation(
+    tmp_path: Path,
+    failure_phase: str,
+    failure_outcome: str,
+    previous_override: str | None,
+    expected_error: str,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        finalized_runtime_network_repair=True,
+        preexisting_failure_phase=failure_phase,
+        preexisting_failure_outcome=failure_outcome,
+        preexisting_failure_previous=previous_override,
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+    )
+
+    assert completed.returncode != 0
+    assert expected_error in completed.stderr
+    assert not (
+        remote_dir / ".release-state" / "release-previous" / "runtime-network.env"
+    ).exists()
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "load:prepare-only" not in log
+    assert "docker:stop" not in log
+
+
+def test_finalized_repair_fails_closed_on_ambiguous_live_network(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        finalized_runtime_network_repair=True,
+        preexisting_failure_outcome="validation_failed_before_mutation",
+        previous_runtime_network_contract=True,
+        runtime_network_state_variant="missing-file",
+        runtime_network_live_variant="multiple",
+    )
+
+    assert completed.returncode != 0
+    assert "default network is not unique" in completed.stderr
+    assert not (
+        remote_dir / ".release-state" / "release-previous" / "runtime-network.env"
+    ).exists()
+    marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
+    assert "outcome=validation_failed_before_mutation" in marker
+    log = log_path.read_text(encoding="utf-8")
+    assert "load:prepare-only" not in log
+    assert "docker:stop" not in log
 
 
 @pytest.mark.parametrize(
