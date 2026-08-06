@@ -914,12 +914,37 @@ def test_equivalence_inspects_the_selected_platform(
         lock=str(LOCK_PATH),
         output=str(output),
         expected_platform="linux/amd64",
+        docker_platform_inspect="platform",
     )
 
     assert supply.verify_equivalence(args) == 0
     assert commands
     assert all(command[3:5] == ["--platform", "linux/amd64"] for command in commands)
     assert json.loads(output.read_text())["status"] == "passed"
+
+
+def test_equivalence_uses_plain_inspect_for_classic_docker_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supply = _supply_module()
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=f"{SHA256}\n", stderr="")
+
+    monkeypatch.setattr(supply.subprocess, "run", fake_run)
+    args = Namespace(
+        lock=str(LOCK_PATH),
+        output=str(tmp_path / "equivalence.json"),
+        expected_platform="linux/amd64",
+        docker_platform_inspect="classic",
+    )
+
+    assert supply.verify_equivalence(args) == 0
+    assert commands
+    assert all(command[0:3] == ["docker", "image", "inspect"] for command in commands)
+    assert all("--platform" not in command for command in commands)
 
 
 def test_release_scan_index_requires_complete_deploy_set_and_real_id_equivalence(
@@ -1039,12 +1064,14 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert "DOCKER_HOST is forbidden" in source
     assert 'docker pull --platform "${RELEASE_PLATFORM}"' in source
     assert '--expected-platform "${RELEASE_PLATFORM}"' in source
+    assert '--docker-platform-inspect "${DOCKER_PLATFORM_INSPECT_MODE}"' in source
     assert 'docker image tag "${reference}" "${archive_reference}"' in source
     assert 'docker_image_save --output "${archive_path}" "${archive_reference}"' in source
     assert 'docker image inspect --platform "${RELEASE_PLATFORM}" "$@"' in source
     assert 'docker image save --platform "${RELEASE_PLATFORM}" "$@"' in source
     assert 'docker image inspect "$@"' in source
     assert 'docker image save "$@"' in source
+    assert source.count('--user "$(id -u):$(id -g)"') >= 2
     assert "npcink-ai-cloud-scan-${CUSTOM_KEYS[${custom_index}]}" in source
     assert "APPLICATIONS_ONLY=0" in source
     assert 'if image["kind"] == "compose_external"' in source
