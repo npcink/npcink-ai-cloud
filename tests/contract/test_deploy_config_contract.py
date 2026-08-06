@@ -2291,9 +2291,15 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "actions: read" in deploy_workflow
     external_images_default = 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
     production_package_extras = 'NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"'
+    no_user_approval_secret = (
+        "NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL: "
+        "${{ secrets.NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL }}"
+    )
     assert external_images_default not in ci_workflow
     assert external_images_default in deploy_workflow
     assert production_package_extras in deploy_workflow
+    assert no_user_approval_secret in deploy_workflow
+    assert "--no-user-internal-validation" in deploy_workflow
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in ci_workflow
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in deploy_workflow
     assert "deploy_required:" in ci_workflow

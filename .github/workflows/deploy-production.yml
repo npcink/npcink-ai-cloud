@@ -99,6 +99,7 @@ jobs:
           NPCINK_CLOUD_REMOTE_COMPOSE_FILE: docker-compose.runtime.yml
           NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
           NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
+          NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL: ${{ secrets.NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL }}
           NPCINK_CLOUD_REFRESH_PROVIDERS: "1"
           NPCINK_CLOUD_WITH_OPERATIONAL_READY: "1"
         run: |
@@ -112,6 +113,7 @@ jobs:
           }
           trap cleanup_deploy_output EXIT
           bash deploy/deploy-to-ssh-host.sh \
+            --no-user-internal-validation \
             --skip-seed \
             --skip-smoke \
             --refresh-providers \
