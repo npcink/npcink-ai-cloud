@@ -1184,17 +1184,12 @@ def verify_equivalence(args: argparse.Namespace) -> int:
             ("image_id", reference),
             ("representative_image_id", representative_reference),
         ):
+            inspect_command = ["docker", "image", "inspect"]
+            if args.docker_platform_inspect == "platform":
+                inspect_command.extend(["--platform", args.expected_platform])
+            inspect_command.extend([image_reference, "--format", "{{.Id}}"])
             result = subprocess.run(
-                [
-                    "docker",
-                    "image",
-                    "inspect",
-                    "--platform",
-                    args.expected_platform,
-                    image_reference,
-                    "--format",
-                    "{{.Id}}",
-                ],
+                inspect_command,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -1794,6 +1789,9 @@ def parse_args() -> argparse.Namespace:
     equivalence.add_argument("--output", required=True)
     equivalence.add_argument(
         "--expected-platform", choices=("linux/amd64", "linux/arm64"), required=True
+    )
+    equivalence.add_argument(
+        "--docker-platform-inspect", choices=("classic", "platform"), required=True
     )
     return parser.parse_args()
 

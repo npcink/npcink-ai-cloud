@@ -106,6 +106,7 @@ esac
 docker info >/dev/null 2>&1 || fail "local Docker daemon is unavailable"
 
 USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=0
+DOCKER_PLATFORM_INSPECT_MODE=classic
 configure_docker_platform_archive_support() {
 	local inspect_help save_help server_api api_major api_minor
 	inspect_help="$(docker image inspect --help 2>&1)" \
@@ -130,6 +131,7 @@ configure_docker_platform_archive_support() {
 			*) fail "production image scanner requires docker image save --platform support with Docker server API ${server_api}" ;;
 		esac
 		USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=1
+		DOCKER_PLATFORM_INSPECT_MODE=platform
 		return
 	fi
 	echo "[info] Docker server API ${server_api} uses the single-platform archive fallback"
@@ -282,6 +284,7 @@ trap 'rm -rf "${GRYPE_CACHE}"' EXIT
 
 echo "[scan] refreshing the pinned Grype database once for this scan set"
 docker run --rm \
+	--user "$(id -u):$(id -g)" \
 	-e GRYPE_DB_AUTO_UPDATE=true \
 	-e GRYPE_DB_VALIDATE_BY_HASH_ON_START=true \
 	-e GRYPE_CHECK_FOR_APP_UPDATE=false \
@@ -296,6 +299,7 @@ if [ "${RELEASE_SCOPE}" = "1" ]; then
 	python3 "${ROOT_DIR}/scripts/production-image-supply.py" equivalence \
 		--lock "${LOCK_FILE}" \
 		--expected-platform "${RELEASE_PLATFORM}" \
+		--docker-platform-inspect "${DOCKER_PLATFORM_INSPECT_MODE}" \
 		--output "${EQUIVALENCE_PATH}" || fail "application worker image IDs are not equivalent"
 	EQUIVALENCE_ARGS=(--equivalence-json "${EQUIVALENCE_PATH}")
 fi
@@ -353,6 +357,7 @@ for index in "${!TARGET_KEYS[@]}"; do
 
 	report_tmp="${report_path}.tmp"
 	if ! docker run --rm \
+		--user "$(id -u):$(id -g)" \
 		-e GRYPE_DB_AUTO_UPDATE=false \
 		-e GRYPE_DB_VALIDATE_BY_HASH_ON_START=true \
 		-e GRYPE_CHECK_FOR_APP_UPDATE=false \
