@@ -84,20 +84,22 @@ def _add_tar_bytes(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
 
 
 def _write_image_archive(
-    path: Path, *, archive_reference: str, repo_tags: list[str] | None = None
+    path: Path,
+    *,
+    archive_reference: str,
+    repo_tags: list[str] | None = None,
+    layer_sources: object | None = None,
 ) -> None:
     config_name = f"blobs/sha256/{SHA256.split(':', 1)[1]}"
     layer_name = "blobs/sha256/" + "e" * 64
-    manifest = json.dumps(
-        [
-            {
-                "Config": config_name,
-                "RepoTags": repo_tags if repo_tags is not None else [archive_reference],
-                "Layers": [layer_name],
-            }
-        ],
-        separators=(",", ":"),
-    ).encode()
+    manifest_entry: dict[str, object] = {
+        "Config": config_name,
+        "RepoTags": repo_tags if repo_tags is not None else [archive_reference],
+        "Layers": [layer_name],
+    }
+    if layer_sources is not None:
+        manifest_entry["LayerSources"] = layer_sources
+    manifest = json.dumps([manifest_entry], separators=(",", ":")).encode()
     with tarfile.open(path, mode="w") as archive:
         _add_tar_bytes(archive, "manifest.json", manifest)
         _add_tar_bytes(archive, config_name, CONFIG_BYTES)
@@ -730,6 +732,45 @@ def test_evaluator_rejects_extra_docker_archive_repo_tag(tmp_path: Path) -> None
         supply.evaluate_scan(args)
 
 
+def test_normalize_archive_removes_classic_store_layer_sources(tmp_path: Path) -> None:
+    supply = _supply_module()
+    archive_path = tmp_path / "api.image.tar"
+    archive_reference = "npcink-ai-cloud-api:prod"
+    _write_image_archive(
+        archive_path,
+        archive_reference=archive_reference,
+        layer_sources={
+            "sha256:" + "e" * 64: {
+                "mediaType": "application/vnd.docker.image.rootfs.diff.tar"
+            }
+        },
+    )
+
+    args = Namespace(archive=str(archive_path), archive_reference=archive_reference)
+    assert supply.normalize_archive(args) == 0
+    with tarfile.open(archive_path, mode="r:") as archive:
+        manifest = json.loads(archive.extractfile("manifest.json").read())
+    assert set(manifest[0]) == {"Config", "RepoTags", "Layers"}
+    assert supply._docker_archive_subject(
+        archive_path, archive_reference=archive_reference
+    )["config_image_id"] == SHA256
+
+
+def test_normalize_archive_rejects_invalid_layer_sources(tmp_path: Path) -> None:
+    supply = _supply_module()
+    archive_path = tmp_path / "api.image.tar"
+    archive_reference = "npcink-ai-cloud-api:prod"
+    _write_image_archive(
+        archive_path,
+        archive_reference=archive_reference,
+        layer_sources=["unexpected"],
+    )
+
+    args = Namespace(archive=str(archive_path), archive_reference=archive_reference)
+    with pytest.raises(supply.SupplyError, match="LayerSources"):
+        supply.normalize_archive(args)
+
+
 def test_receipt_separates_portable_config_id_from_multiarch_daemon_id(tmp_path: Path) -> None:
     supply = _supply_module()
     empty = {"schema_version": "npcink.production-image-cve-allowlist.v1", "entries": []}
@@ -1075,6 +1116,7 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert 'GRYPE_TMP="${GRYPE_CACHE}/tmp"' in source
     assert 'mkdir -p "${GRYPE_TMP}"' in source
     assert source.count('-e TMPDIR=/.cache/grype/tmp') >= 2
+    assert 'production-image-supply.py" normalize-archive' in source
     assert "npcink-ai-cloud-scan-${CUSTOM_KEYS[${custom_index}]}" in source
     assert "APPLICATIONS_ONLY=0" in source
     assert 'if image["kind"] == "compose_external"' in source

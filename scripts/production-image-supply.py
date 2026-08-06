@@ -6,12 +6,16 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import copy
 import hashlib
+import io
 import json
+import os
 import re
 import subprocess
 import sys
 import tarfile
+import tempfile
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -222,6 +226,86 @@ def _docker_archive_subject(path: Path, *, archive_reference: str) -> dict[str, 
         "platform": f"{os_name}/{architecture}",
         "repo_tags": sorted(repo_tags),
     }
+
+
+def normalize_archive(args: argparse.Namespace) -> int:
+    archive_path = Path(args.archive).resolve()
+    archive_reference = _required_text(args.archive_reference, "archive_reference")
+    temporary_path: Path | None = None
+    try:
+        with tarfile.open(archive_path, mode="r:") as source:
+            manifest_member = source.getmember("manifest.json")
+            if not manifest_member.isfile():
+                raise SupplyError("Docker archive manifest.json must be a regular file")
+            manifest_stream = source.extractfile(manifest_member)
+            if manifest_stream is None:
+                raise SupplyError("Docker archive manifest.json cannot be read")
+            manifest = json.loads(manifest_stream.read())
+            if not isinstance(manifest, list) or len(manifest) != 1:
+                raise SupplyError("Docker archive manifest must contain exactly one image")
+            entry = manifest[0]
+            required_keys = {"Config", "RepoTags", "Layers"}
+            allowed_keys = {
+                frozenset(required_keys),
+                frozenset(required_keys | {"LayerSources"}),
+            }
+            if not isinstance(entry, dict) or frozenset(entry) not in allowed_keys:
+                raise SupplyError("Docker archive manifest entry has unknown or missing fields")
+            if "LayerSources" not in entry:
+                subject = _docker_archive_subject(
+                    archive_path, archive_reference=archive_reference
+                )
+                print(json.dumps(subject, indent=2, sort_keys=True))
+                return 0
+            if not isinstance(entry["LayerSources"], dict):
+                raise SupplyError("Docker archive LayerSources must be an object")
+
+            normalized_entry = dict(entry)
+            normalized_entry.pop("LayerSources")
+            normalized_manifest = (
+                json.dumps([normalized_entry], separators=(",", ":")) + "\n"
+            ).encode()
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{archive_path.name}.", suffix=".tmp", dir=archive_path.parent
+            )
+            os.close(descriptor)
+            temporary_path = Path(temporary_name)
+            with tarfile.open(
+                temporary_path, mode="w", format=tarfile.PAX_FORMAT
+            ) as target:
+                for member in source.getmembers():
+                    target_member = copy.copy(member)
+                    if member.name == "manifest.json":
+                        target_member.size = len(normalized_manifest)
+                        target.addfile(target_member, io.BytesIO(normalized_manifest))
+                        continue
+                    if member.isfile():
+                        member_stream = source.extractfile(member)
+                        if member_stream is None:
+                            raise SupplyError(
+                                f"Docker archive member {member.name!r} cannot be read"
+                            )
+                        with member_stream:
+                            target.addfile(target_member, member_stream)
+                    else:
+                        target.addfile(target_member)
+        if temporary_path is not None:
+            os.chmod(temporary_path, 0o600)
+            os.replace(temporary_path, archive_path)
+            temporary_path = None
+    except SupplyError:
+        raise
+    except (KeyError, OSError, tarfile.TarError, json.JSONDecodeError) as error:
+        raise SupplyError(
+            f"cannot normalize Docker image archive {archive_path}: {error}"
+        ) from error
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+    subject = _docker_archive_subject(archive_path, archive_reference=archive_reference)
+    print(json.dumps(subject, indent=2, sort_keys=True))
+    return 0
 
 
 def _base64_payload(value: object, field: str) -> bytes:
@@ -1793,6 +1877,9 @@ def parse_args() -> argparse.Namespace:
     equivalence.add_argument(
         "--docker-platform-inspect", choices=("classic", "platform"), required=True
     )
+    normalize = subparsers.add_parser("normalize-archive")
+    normalize.add_argument("--archive", required=True)
+    normalize.add_argument("--archive-reference", required=True)
     return parser.parse_args()
 
 
@@ -1809,6 +1896,8 @@ def main() -> int:
             return write_index(args)
         if args.command == "equivalence":
             return verify_equivalence(args)
+        if args.command == "normalize-archive":
+            return normalize_archive(args)
         raise SupplyError(f"unsupported command {args.command!r}")
     except SupplyError as error:
         print(f"[fail] {error}", file=sys.stderr)
