@@ -501,6 +501,13 @@ def test_empty_text_output_judgement_is_task_bounded() -> None:
         },
     )
     assert not runtime.is_empty_text_output(
+        input_payload=title_input,
+        provider_output={
+            "output_text": "小团队如何验证人工智能写作能力",
+            "usage": {"completion_tokens_details": {"reasoning_tokens": 128}},
+        },
+    )
+    assert not runtime.is_empty_text_output(
         input_payload={"metadata": {"task": "comment_moderation"}},
         provider_output={},
     )
