@@ -280,11 +280,15 @@ umask 077
 
 GRYPE_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/npcink-grype-cache.XXXXXX")"
 chmod 0700 "${GRYPE_CACHE}"
+GRYPE_TMP="${GRYPE_CACHE}/tmp"
+mkdir -p "${GRYPE_TMP}"
+chmod 0700 "${GRYPE_TMP}"
 trap 'rm -rf "${GRYPE_CACHE}"' EXIT
 
 echo "[scan] refreshing the pinned Grype database once for this scan set"
 docker run --rm \
 	--user "$(id -u):$(id -g)" \
+	-e TMPDIR=/.cache/grype/tmp \
 	-e GRYPE_DB_AUTO_UPDATE=true \
 	-e GRYPE_DB_VALIDATE_BY_HASH_ON_START=true \
 	-e GRYPE_CHECK_FOR_APP_UPDATE=false \
@@ -358,6 +362,7 @@ for index in "${!TARGET_KEYS[@]}"; do
 	report_tmp="${report_path}.tmp"
 	if ! docker run --rm \
 		--user "$(id -u):$(id -g)" \
+		-e TMPDIR=/.cache/grype/tmp \
 		-e GRYPE_DB_AUTO_UPDATE=false \
 		-e GRYPE_DB_VALIDATE_BY_HASH_ON_START=true \
 		-e GRYPE_CHECK_FOR_APP_UPDATE=false \
