@@ -183,6 +183,44 @@ attribute it to the Provider call.
 No post, revision, attachment, metadata, or publication write may occur while
 the suggestion or image is only being generated and reviewed.
 
+### Local failure/recovery isolation gate
+
+Use a deterministic Local-only transport fixture for the recovery lane. Arm it
+before opening the editor and record its expiry, unique token, target post, and
+zeroed attempt counters. The fixture must be mode `0600`, require a `.local`
+site plus `local` or `development` environment, and expire automatically.
+
+While armed, the fixture must preempt **every** `/v1/runtime/execute` request:
+
+- the exact target task/token may return the declared controlled failure and
+  then one deterministic success;
+- a missing or expired armed state must block execution instead of falling
+  through to Cloud;
+- every non-target runtime request must fail closed and increment a bounded
+  local `blocked_non_target` counter;
+- no request may reach the configured production endpoint merely because its
+  payload did not match the target fixture.
+
+Record production `used`, `remaining`, `limit`, ledger, run, and Provider-call
+totals immediately before the editor opens, after the controlled failure, and
+after recovery. Every value must remain identical. A local request log may
+record the failed and successful fixture attempts, but it must identify the
+deterministic connector result and must not be presented as Cloud or Provider
+evidence.
+
+WordPress autosave is a separate write owner. After Insert/Accept marks the
+editor dirty, a normal autosave can create an autosave revision before the
+operator clicks Save. If the declared acceptance contract requires literally
+zero database writes before explicit Save, crossing the autosave window is a
+failed gate; do not silently redefine an autosave as zero writes. Report
+autosave revisions separately from canonical revisions and do not suppress
+native autosave without a separate WordPress-owned change envelope and recovery
+risk review.
+
+Cleanup removes only the exact test post and its revisions, the exact option,
+the marked MU fixture, and the test browser session. Confirm their absence and
+re-check unchanged production totals before closing the lane.
+
 ## 6. Execute one real operator journey
 
 Use one high-frequency task first. Text title, summary, or rewrite may be used
@@ -225,6 +263,11 @@ when it appears. Do not manufacture a paid failure. Prove whether recovery
 created another Provider call, ledger entry, run, or WordPress write. A
 non-blocking optional-stage failure is recorded separately and is not an excuse
 for unrelated refactoring.
+
+A deterministic Local transport failure is the preferred zero-cost recovery
+proof when no natural failure exists. It is valid only when the isolation gate
+above proves that all runtime execution was preempted and production totals did
+not move.
 
 ## 8. Exact Cloud artifact cleanup
 

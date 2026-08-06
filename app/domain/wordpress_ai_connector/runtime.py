@@ -599,8 +599,13 @@ class WordPressOperationRuntime:
             completion_details.get("reasoning_tokens"),
             default=0,
         )
-        visible_word_count = len(re.findall(r"\S+", output_text))
-        return reasoning_tokens > 0 and visible_word_count <= 3
+        visible_unit_count = len(
+            re.findall(
+                r"[A-Za-z0-9]+|[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]",
+                output_text,
+            )
+        )
+        return reasoning_tokens > 0 and visible_unit_count <= 3
 
     def apply_managed_policy(
         self,
