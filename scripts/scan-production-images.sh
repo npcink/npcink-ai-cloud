@@ -105,20 +105,13 @@ esac
 [ -S "${DOCKER_SOCKET_PATH}" ] || fail "local Docker Unix socket is unavailable"
 docker info >/dev/null 2>&1 || fail "local Docker daemon is unavailable"
 
-require_docker_platform_archive_support() {
+USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=0
+configure_docker_platform_archive_support() {
 	local inspect_help save_help server_api api_major api_minor
 	inspect_help="$(docker image inspect --help 2>&1)" \
 		|| fail "cannot inspect Docker image-inspect capabilities"
 	save_help="$(docker image save --help 2>&1)" \
 		|| fail "cannot inspect Docker image-save capabilities"
-	case "${inspect_help}" in
-		*--platform*) ;;
-		*) fail "production image scanner requires docker image inspect --platform support" ;;
-	esac
-	case "${save_help}" in
-		*--platform*) ;;
-		*) fail "production image scanner requires docker image save --platform support" ;;
-	esac
 	server_api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" \
 		|| fail "cannot resolve Docker server API version"
 	if [[ ! "${server_api}" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
@@ -126,12 +119,23 @@ require_docker_platform_archive_support() {
 	fi
 	api_major="${BASH_REMATCH[1]}"
 	api_minor="${BASH_REMATCH[2]}"
-	if ((api_major < 1 || (api_major == 1 && api_minor < 49))); then
-		fail "production image scanner requires Docker server API 1.49 or newer; got ${server_api}"
+	((api_major >= 1)) || fail "unsupported Docker server API version: ${server_api}"
+	if ((api_major > 1 || (api_major == 1 && api_minor >= 49))); then
+		case "${inspect_help}" in
+			*--platform*) ;;
+			*) fail "production image scanner requires docker image inspect --platform support with Docker server API ${server_api}" ;;
+		esac
+		case "${save_help}" in
+			*--platform*) ;;
+			*) fail "production image scanner requires docker image save --platform support with Docker server API ${server_api}" ;;
+		esac
+		USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=1
+		return
 	fi
+	echo "[info] Docker server API ${server_api} uses the single-platform archive fallback"
 }
 
-require_docker_platform_archive_support
+configure_docker_platform_archive_support
 
 if [ -z "${RELEASE_PLATFORM}" ]; then
 	RELEASE_PLATFORM="$(docker info --format '{{.OSType}}/{{.Architecture}}')"
@@ -144,6 +148,22 @@ if [ -z "${RELEASE_PLATFORM}" ]; then
 		*) fail "unsupported local Docker platform: ${RELEASE_PLATFORM}" ;;
 	esac
 fi
+
+docker_image_inspect() {
+	if [ "${USE_DOCKER_PLATFORM_ARCHIVE_FLAGS}" = "1" ]; then
+		docker image inspect --platform "${RELEASE_PLATFORM}" "$@"
+	else
+		docker image inspect "$@"
+	fi
+}
+
+docker_image_save() {
+	if [ "${USE_DOCKER_PLATFORM_ARCHIVE_FLAGS}" = "1" ]; then
+		docker image save --platform "${RELEASE_PLATFORM}" "$@"
+	else
+		docker image save "$@"
+	fi
+}
 
 python3 "${ROOT_DIR}/scripts/production-image-supply.py" verify --lock "${LOCK_FILE}" >/dev/null
 
@@ -288,15 +308,14 @@ for index in "${!TARGET_KEYS[@]}"; do
 	if [ "${pull}" = "1" ]; then
 		docker pull --platform "${RELEASE_PLATFORM}" "${reference}" >/dev/null
 	fi
-	if ! image_id="$(docker image inspect --platform "${RELEASE_PLATFORM}" \
-		"${reference}" --format '{{.Id}}')"; then
+	if ! image_id="$(docker_image_inspect "${reference}" --format '{{.Id}}')"; then
 		fail "image is not available locally: ${reference}"
 	fi
 	case "${image_id}" in
 		sha256:????????????????????????????????????????????????????????????????) ;;
 		*) fail "Docker returned a non-sha256 image ID for ${reference}: ${image_id}" ;;
 	esac
-	actual_platform="$(docker image inspect --platform "${RELEASE_PLATFORM}" \
+	actual_platform="$(docker_image_inspect \
 		"${reference}" --format '{{.Os}}/{{.Architecture}}')"
 	case "${actual_platform}" in
 		linux/aarch64) actual_platform="linux/arm64" ;;
@@ -309,17 +328,16 @@ for index in "${!TARGET_KEYS[@]}"; do
 	sbom_path="${OUTPUT_DIR}/${key}.sbom.cdx.json"
 	report_path="${OUTPUT_DIR}/${key}.grype.json"
 	receipt_path="${OUTPUT_DIR}/${key}.receipt.json"
-	docker image inspect --platform "${RELEASE_PLATFORM}" "${reference}" >"${inspect_path}"
+	docker_image_inspect "${reference}" >"${inspect_path}"
 	if [ "${archive_reference}" != "${reference}" ]; then
 		docker image tag "${reference}" "${archive_reference}"
 	fi
-	archive_image_id="$(docker image inspect --platform "${RELEASE_PLATFORM}" \
+	archive_image_id="$(docker_image_inspect \
 		"${archive_reference}" --format '{{.Id}}')"
 	[ "${archive_image_id}" = "${image_id}" ] \
 		|| fail "archive reference does not resolve to the scanned daemon image for ${key}"
 	archive_path="${OUTPUT_DIR}/${key}.image.tar"
-	docker image save --platform "${RELEASE_PLATFORM}" \
-		--output "${archive_path}" "${archive_reference}"
+	docker_image_save --output "${archive_path}" "${archive_reference}"
 	chmod 0600 "${archive_path}"
 
 	docker run --rm \
