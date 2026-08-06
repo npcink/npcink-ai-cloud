@@ -30,10 +30,10 @@ from __future__ import annotations
 import json
 
 from app.adapters.providers.registry import resolve_live_provider_adapters
-from app.core.config import Settings
+from app.core.config import get_settings
 from app.domain.catalog.service import CatalogService
 
-settings = Settings()
+settings = get_settings()
 providers = resolve_live_provider_adapters(settings, include_enabled_connections=True)
 service = CatalogService(settings.database_url, providers=providers, settings=settings)
 
