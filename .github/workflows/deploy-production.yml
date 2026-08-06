@@ -7,6 +7,15 @@ on:
         description: "Type: Approved for production validation by operator."
         required: true
         type: string
+      finalized_runtime_network_repair:
+        description: "Repair missing finalized active-release runtime-network state before ordinary deployment"
+        required: true
+        default: false
+        type: boolean
+      finalized_runtime_network_repair_confirmation:
+        description: "When repair is enabled, type: Approved for finalized runtime-network repair by operator."
+        required: false
+        type: string
 
 concurrency:
   group: production-host-mutation
@@ -25,9 +34,16 @@ jobs:
       - name: Validate operator confirmation
         env:
           OPERATOR_CONFIRMATION: ${{ inputs.confirmation }}
+          FINALIZED_RUNTIME_NETWORK_REPAIR: ${{ inputs.finalized_runtime_network_repair }}
+          FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
           test "${OPERATOR_CONFIRMATION}" = "Approved for production validation by operator."
+          if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "true" ]; then
+            test "${FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION}" = "Approved for finalized runtime-network repair by operator."
+          else
+            test -z "${FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION}"
+          fi
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -102,8 +118,13 @@ jobs:
           NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL: ${{ secrets.NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL }}
           NPCINK_CLOUD_REFRESH_PROVIDERS: "1"
           NPCINK_CLOUD_WITH_OPERATIONAL_READY: "1"
+          NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
+          repair_args=()
+          if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
+            repair_args+=(--finalized-runtime-network-repair)
+          fi
           deploy_output_file="$(mktemp)"
           cleanup_deploy_output() {
             exit_status="$?"
@@ -118,6 +139,7 @@ jobs:
             --skip-smoke \
             --refresh-providers \
             --with-operational-ready \
+            "${repair_args[@]}" \
             --remote-compose-file docker-compose.runtime.yml | tee "${deploy_output_file}"
           installation_state_count="$(
             awk '/^installation_state=(pending|complete)$/ { count += 1 } END { print count + 0 }' \
