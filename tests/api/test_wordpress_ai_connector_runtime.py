@@ -315,6 +315,8 @@ class WordPressAIConnectorTextProvider:
             )
         elif task == "title_generation" and "title schema mismatch" in source_text:
             output_text = '{"headline":"This must not pass the title Ability schema"}'
+        elif task == "title_generation" and "cjk reasoning title" in source_text:
+            output_text = "小团队如何验证人工智能写作能力"
         if task == "content_classification":
             output_text = (
                 '{"suggestions":[{"term":"经验教程","confidence":0.8,"is_new":false}]}'
@@ -475,9 +477,13 @@ class WordPressAIConnectorTextProvider:
                 "model_id": request.model_id,
                 "usage": {
                     "completion_tokens_details": {
-                        "reasoning_tokens": 42
-                        if task == "title_generation" and "title fragment" in source_text
-                        else 0
+                        "reasoning_tokens": (
+                            128
+                            if task == "title_generation" and "cjk reasoning title" in source_text
+                            else 42
+                            if task == "title_generation" and "title fragment" in source_text
+                            else 0
+                        )
                     }
                 },
             },
@@ -910,6 +916,29 @@ def test_wordpress_ai_connector_title_generation_rejects_a_parseable_wrong_schem
     assert response.json()["status"] == "error"
     assert response.json()["error_code"] == "provider.output_quality_rejected"
     assert len(provider.requests) == 2
+
+
+def test_wordpress_ai_connector_title_generation_accepts_cjk_with_reasoning_usage(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "request": {
+                "source_text": "<content>cjk reasoning title production regression</content>",
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-title-cjk-reasoning")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["result"]["output"]["output_text"] == (
+        "小团队如何验证人工智能写作能力"
+    )
+    assert len(provider.requests) == 1
 
 
 @pytest.mark.parametrize(
