@@ -262,6 +262,21 @@ if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?", host):
 print(host)
 PY
 )"
+READINESS_FORWARD_PROTO="$("${RELEASE_TOOL_PYTHON}" - "${BASE_URL}" <<'PY'
+from __future__ import annotations
+
+import os
+import sys
+from urllib.parse import urlsplit
+
+base_url = sys.argv[1]
+public_base_url = os.getenv("NPCINK_CLOUD_BASE_URL", "").strip() or base_url
+scheme = urlsplit(public_base_url).scheme.lower()
+if scheme not in {"http", "https"}:
+    raise SystemExit("[fail] Operational readiness forwarded proto is invalid.")
+print(scheme)
+PY
+)"
 umask 077
 REQUEST_DIR="$(mktemp -d)"
 REQUEST_HEADERS="${REQUEST_DIR}/headers"
@@ -282,11 +297,12 @@ cleanup_request_dir() {
 }
 trap cleanup_request_dir EXIT
 chmod 0700 "${REQUEST_DIR}"
-printf '%s\n%s\n' \
+printf '%s\n%s\n%s\n' \
 	"Host: ${READINESS_HOST}" \
+	"X-Forwarded-Proto: ${READINESS_FORWARD_PROTO}" \
 	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}" >"${REQUEST_HEADERS}"
 chmod 0600 "${REQUEST_HEADERS}"
-unset INTERNAL_AUTH_TOKEN READINESS_HOST
+unset INTERNAL_AUTH_TOKEN READINESS_HOST READINESS_FORWARD_PROTO
 curl -fsS \
 	--header "@${REQUEST_HEADERS}" \
 	"${BASE_URL%/}/health/operational-ready" >/dev/null
