@@ -1196,6 +1196,7 @@ raise SystemExit(64)
     operational_environment.update(
         {
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "operational-token-sentinel",
+            "NPCINK_CLOUD_BASE_URL": "https://cloud.npc.ink",
             "NPCINK_CLOUD_DOMAIN_NAME": "cloud.npc.ink",
             "NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST": "wrong.example",
             "CURL_REQUEST_HEADER_CAPTURE": str(operational_header_capture),
@@ -1216,9 +1217,13 @@ raise SystemExit(64)
         check=False,
     )
     assert operational.returncode == 0, f"{operational.stdout}\n{operational.stderr}"
-    assert operational_header_capture.read_text(encoding="utf-8").splitlines()[0] == (
-        "Host: cloud.npc.ink"
-    )
+    operational_headers = operational_header_capture.read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert operational_headers[:2] == [
+        "Host: cloud.npc.ink",
+        "X-Forwarded-Proto: https",
+    ]
 
     portal_environment = base_environment.copy()
     portal_environment.update(
