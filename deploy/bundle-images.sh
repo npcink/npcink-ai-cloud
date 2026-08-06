@@ -60,20 +60,13 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 command -v tar >/dev/null 2>&1 || fail "tar is required"
 docker buildx version >/dev/null 2>&1 || fail "docker buildx is required"
 
-require_docker_platform_archive_support() {
+USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=0
+configure_docker_platform_archive_support() {
 	local inspect_help save_help server_api api_major api_minor
 	inspect_help="$(docker image inspect --help 2>&1)" \
 		|| fail "cannot inspect Docker image-inspect capabilities"
 	save_help="$(docker image save --help 2>&1)" \
 		|| fail "cannot inspect Docker image-save capabilities"
-	case "${inspect_help}" in
-		*--platform*) ;;
-		*) fail "formal bundle builder requires docker image inspect --platform support" ;;
-	esac
-	case "${save_help}" in
-		*--platform*) ;;
-		*) fail "formal bundle builder requires docker image save --platform support" ;;
-	esac
 	server_api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" \
 		|| fail "cannot resolve Docker server API version"
 	if [[ ! "${server_api}" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
@@ -81,12 +74,23 @@ require_docker_platform_archive_support() {
 	fi
 	api_major="${BASH_REMATCH[1]}"
 	api_minor="${BASH_REMATCH[2]}"
-	if ((api_major < 1 || (api_major == 1 && api_minor < 49))); then
-		fail "formal bundle builder requires Docker server API 1.49 or newer; got ${server_api}"
+	((api_major >= 1)) || fail "unsupported Docker server API version: ${server_api}"
+	if ((api_major > 1 || (api_major == 1 && api_minor >= 49))); then
+		case "${inspect_help}" in
+			*--platform*) ;;
+			*) fail "formal bundle builder requires docker image inspect --platform support with Docker server API ${server_api}" ;;
+		esac
+		case "${save_help}" in
+			*--platform*) ;;
+			*) fail "formal bundle builder requires docker image save --platform support with Docker server API ${server_api}" ;;
+		esac
+		USE_DOCKER_PLATFORM_ARCHIVE_FLAGS=1
+		return
 	fi
+	echo "[info] Docker server API ${server_api} uses the single-platform archive fallback"
 }
 
-require_docker_platform_archive_support
+configure_docker_platform_archive_support
 
 if [ -n "${IMAGE_PLATFORM}" ]; then
 	case "${IMAGE_PLATFORM}" in
@@ -178,13 +182,26 @@ set_build_cache_args() {
 	fi
 }
 
+docker_image_inspect() {
+	if [ "${USE_DOCKER_PLATFORM_ARCHIVE_FLAGS}" = "1" ]; then
+		docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" "$@"
+	else
+		docker image inspect "$@"
+	fi
+}
+
 image_id() {
-	docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" --format '{{.Id}}' "$1"
+	docker_image_inspect --format '{{.Id}}' "$1"
 }
 
 image_platform() {
-	docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" \
-		--format '{{.Os}}/{{.Architecture}}' "$1"
+	local actual_platform
+	actual_platform="$(docker_image_inspect --format '{{.Os}}/{{.Architecture}}' "$1")" || return
+	case "${actual_platform}" in
+		linux/aarch64) printf '%s\n' "linux/arm64" ;;
+		linux/x86_64) printf '%s\n' "linux/amd64" ;;
+		*) printf '%s\n' "${actual_platform}" ;;
+	esac
 }
 
 require_image_platform() {
