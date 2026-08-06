@@ -1072,6 +1072,9 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert 'docker image inspect "$@"' in source
     assert 'docker image save "$@"' in source
     assert source.count('--user "$(id -u):$(id -g)"') >= 2
+    assert 'GRYPE_TMP="${GRYPE_CACHE}/tmp"' in source
+    assert 'mkdir -p "${GRYPE_TMP}"' in source
+    assert source.count('-e TMPDIR=/.cache/grype/tmp') >= 2
     assert "npcink-ai-cloud-scan-${CUSTOM_KEYS[${custom_index}]}" in source
     assert "APPLICATIONS_ONLY=0" in source
     assert 'if image["kind"] == "compose_external"' in source
