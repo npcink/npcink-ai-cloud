@@ -686,6 +686,9 @@ def test_runtime_compose_never_pulls_and_v227_run_commands_have_no_pull_flag() -
     assert "npcink_ai_cloud_compose_run_with_image_proof" in refresh
     assert "loaded-role-daemon-id" in migrate
     assert "loaded-role-daemon-id" in refresh
+    assert "from app.core.config import get_settings" in refresh
+    assert "settings = get_settings()" in refresh
+    assert "settings = Settings()" not in refresh
     assert "exec -T api" not in refresh
     assert "NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF" not in refresh
     assert "up -d --pull never --no-build" not in migrate
