@@ -346,6 +346,9 @@ for index in "${!TARGET_KEYS[@]}"; do
 		|| fail "archive reference does not resolve to the scanned daemon image for ${key}"
 	archive_path="${OUTPUT_DIR}/${key}.image.tar"
 	docker_image_save --output "${archive_path}" "${archive_reference}"
+	python3 "${ROOT_DIR}/scripts/production-image-supply.py" normalize-archive \
+		--archive "${archive_path}" \
+		--archive-reference "${archive_reference}" >/dev/null
 	chmod 0600 "${archive_path}"
 
 	docker run --rm \
