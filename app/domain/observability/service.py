@@ -115,7 +115,6 @@ class ObservabilityService:
         unknown_instances = self._int_value(provider_status_counts.get("unknown"))
         providers_operational = (
             provider_instances_total > 0
-            and degraded_instances == 0
             and unhealthy_instances == 0
             and unknown_instances == 0
         )
