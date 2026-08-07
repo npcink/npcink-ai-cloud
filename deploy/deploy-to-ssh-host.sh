@@ -3107,10 +3107,12 @@ fi
 if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${WITH_OPERATIONAL_READY}" = "1" ]; then
 	echo "[info] Running remote operational readiness gate"
 	OPERATIONAL_READY_TOKEN="$(npcink_ai_cloud_read_internal_token_projection "${RELEASE_DIR}")"
+	OPERATIONAL_READY_LOOPBACK_URL="http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}"
 	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN="${OPERATIONAL_READY_TOKEN}" \
 		remote_run_timed "remote operational readiness" \
-		bash deploy/remote-operational-ready.sh --base-url "${BASE_URL}" </dev/null
-	unset OPERATIONAL_READY_TOKEN
+		bash deploy/remote-operational-ready.sh \
+			--base-url "${OPERATIONAL_READY_LOOPBACK_URL}" </dev/null
+	unset OPERATIONAL_READY_TOKEN OPERATIONAL_READY_LOOPBACK_URL
 	echo "[ok] Remote operational readiness gate passed"
 fi
 
