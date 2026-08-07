@@ -42,6 +42,11 @@ assert.match(
   /data-ui="editor-assist-quality-candidate-table"[\s\S]*<thead[\s\S]*admin\.editor_quality\.column_evidence[\s\S]*admin\.editor_quality\.column_next_action/,
   'problem candidates must render as a semantic comparison table'
 );
+assert.match(
+  panelSource,
+  /data-ui="editor-assist-quality-export"[\s\S]*downloadJson\(exportData, exportFilename\)/,
+  'the quality section must export the current loaded read-only response'
+);
 assert.doesNotMatch(
   panelSource,
   /method:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/,
@@ -57,6 +62,7 @@ for (const key of [
   'admin.editor_quality.title',
   'admin.editor_quality.description',
   'admin.editor_quality.sample_validation',
+  'admin.editor_quality.export_json',
   'admin.editor_quality.persistence_sustained',
   'admin.editor_quality.action_validate_instrumentation',
   'admin.editor_quality.boundary',
