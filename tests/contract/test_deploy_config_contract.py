@@ -2051,10 +2051,6 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "bash deploy/remote-migrate.sh </dev/null" in deploy_to_ssh_script
     assert "bash deploy/remote-refresh-providers.sh </dev/null" in deploy_to_ssh_script
     assert 'bash deploy/remote-smoke.sh "${SMOKE_ARGS[@]}" </dev/null' in deploy_to_ssh_script
-    assert (
-        'bash deploy/remote-operational-ready.sh --base-url "${BASE_URL}" </dev/null'
-        in deploy_to_ssh_script
-    )
     assert "NPCINK_CLOUD_HEALTH_HOST_HEADER" in common_script
     assert "NPCINK_CLOUD_HEALTH_FORWARDED_PROTO" in common_script
     assert "npcink_ai_cloud_run_timed" in common_script
@@ -2068,6 +2064,23 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "db_managed_provider_connections" in provider_matrix_smoke
     assert '"direct_wordpress_write": False' in provider_matrix_smoke
     assert '"secret_exposure": "none"' in provider_matrix_smoke
+
+
+def test_production_operational_readiness_uses_private_loopback() -> None:
+    cloud_root = _cloud_root()
+    deploy_script = (cloud_root / "deploy" / "deploy-to-ssh-host.sh").read_text()
+    nginx_prod = (cloud_root / "deploy" / "nginx.prod.conf").read_text()
+
+    readiness_block = nginx_prod.split(
+        "location = /health/operational-ready {", 1
+    )[1].split("\n    }", 1)[0]
+    assert "deny all;" in readiness_block
+    assert (
+        'OPERATIONAL_READY_LOOPBACK_URL="http://127.0.0.1:'
+        '${NPCINK_CLOUD_PORT:-8010}"' in deploy_script
+    )
+    assert '--base-url "${OPERATIONAL_READY_LOOPBACK_URL}"' in deploy_script
+    assert 'remote-operational-ready.sh --base-url "${BASE_URL}"' not in deploy_script
 
 
 def test_remote_deploy_keeps_env_file_private_end_to_end() -> None:
