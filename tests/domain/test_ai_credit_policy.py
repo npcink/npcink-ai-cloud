@@ -130,6 +130,31 @@ def test_ai_credit_estimates_match_declared_provider_components() -> None:
         execution_kind="site_knowledge",
         payload_json={"billing_mode": "meter_only"},
     ) == 1.0
+    assert estimate_runtime_request_ai_credits(
+        ability_name="npcink-cloud/site-knowledge-status",
+        ability_family="knowledge",
+        execution_kind="knowledge",
+    ) == 0.0
+
+
+def test_site_knowledge_status_usage_is_evidence_only() -> None:
+    status_event = SimpleNamespace(
+        meter_key="runs",
+        quantity=1,
+        payload_json={"ability_name": "npcink-cloud/site-knowledge-status"},
+    )
+    search_event = SimpleNamespace(
+        meter_key="runs",
+        quantity=1,
+        payload_json={"ability_name": "npcink-cloud/site-knowledge-search"},
+    )
+
+    assert usage_meter_credit_component(status_event) is None
+    assert usage_meter_credit_component(search_event) == {
+        **AI_CREDIT_COMPONENT_POLICY_REGISTRY["runs"],
+        "quantity": 1.0,
+        "ai_credits": 1.0,
+    }
 
 
 def test_cache_usage_meters_do_not_discount_token_credit_component() -> None:

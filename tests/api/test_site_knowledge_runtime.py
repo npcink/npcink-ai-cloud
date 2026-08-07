@@ -269,6 +269,25 @@ def _search_payload(
     }
 
 
+def _status_payload() -> dict[str, object]:
+    return {
+        "ability_name": "npcink-cloud/site-knowledge-status",
+        "contract_version": "site_knowledge_status.v1",
+        "execution_pattern": "inline",
+        "data_classification": "public_site_content",
+        "storage_mode": "result_only",
+        "retention_ttl": 86400,
+        "timeout_seconds": 20,
+        "retry_max": 0,
+        "policy": {"allow_fallback": True},
+        "input": {
+            "contract_version": "site_knowledge_status.v1",
+            "include_coverage": True,
+            "write_posture": "suggestion_only",
+        },
+    }
+
+
 def test_site_knowledge_search_input_helpers_bound_user_controlled_lists() -> None:
     assert (
         _normalize_search_query("  AI   摘要  " + ("x" * 900))
@@ -407,6 +426,55 @@ def test_sync_remains_available_after_ordinary_ai_credits_are_exhausted(
             )
         )
     assert sync_credit_entries == []
+
+
+def test_status_remains_evidence_only_after_ai_credits_are_exhausted(
+    tmp_path: Path,
+) -> None:
+    database_url, _, _, client = _build_client(tmp_path)
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read"],
+        budgets={"max_ai_credits_per_period": 1},
+    )
+    search_result = _execute(
+        client,
+        _search_payload("consume the only ordinary credit"),
+        idempotency_key="exhaust-credit-before-status",
+    )
+
+    status_result = _execute(
+        client,
+        _status_payload(),
+        idempotency_key="status-after-credit-exhaustion",
+    )
+    assert search_result["status_code"] == 200
+    assert status_result["status_code"] == 200
+    status_run_id = status_result["json"]["data"]["run_id"]
+    with get_session(database_url) as session:
+        status_meter_events = list(
+            session.scalars(
+                select(UsageMeterEvent).where(UsageMeterEvent.run_id == status_run_id)
+            )
+        )
+        status_credit_entries = list(
+            session.scalars(
+                select(CreditLedgerEntry).where(CreditLedgerEntry.run_id == status_run_id)
+            )
+        )
+        status_provider_calls = list(
+            session.scalars(
+                select(ProviderCallRecord).where(ProviderCallRecord.run_id == status_run_id)
+            )
+        )
+
+    assert [event.meter_key for event in status_meter_events] == ["runs"]
+    assert status_meter_events[0].payload_json["ability_name"] == (
+        "npcink-cloud/site-knowledge-status"
+    )
+    assert status_credit_entries == []
+    assert status_provider_calls == []
 
 
 def test_media_projection_sync_and_natural_language_search(tmp_path: Path) -> None:
