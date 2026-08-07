@@ -73,6 +73,12 @@ AI-credit consume entries. Cloud derives this class from the ability name; a
 caller-provided payload cannot request it. Site Knowledge search and downstream
 writing or generation remain ordinary AI-credit consumers.
 
+The canonical `npcink-cloud/site-knowledge-status` ability is read-only runtime
+detail. Its run remains in usage and audit evidence, but its preflight estimate
+is zero and its usage-meter events do not write AI-credit consume entries. This
+exception does not apply to Site Knowledge search, downstream generation, or
+unrelated provider-backed calls. The status contract itself remains provider-free.
+
 ## Feature Rule Fields
 
 Feature charge rules use `AI_CREDIT_FEATURE_CHARGE_RULES_VERSION=ai-credit-feature-charge-rules-v1`.

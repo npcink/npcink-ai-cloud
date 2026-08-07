@@ -77,6 +77,35 @@ def test_readiness_payload_is_read_only_and_denies_acceptance_claims() -> None:
     assert "internal operational readiness did not pass" in source
 
 
+def test_readiness_requires_temporary_rollback_images_until_finalize() -> None:
+    spec = importlib.util.spec_from_file_location("production_roundtrip_readiness", READINESS)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    requires = module._requires_current_release_rollback_images
+    assert requires(
+        installation_state="pending",
+        pending_marker_present=True,
+        completion_sentinel_present=False,
+    )
+    assert requires(
+        installation_state="complete",
+        pending_marker_present=True,
+        completion_sentinel_present=False,
+    )
+    assert requires(
+        installation_state="complete",
+        pending_marker_present=False,
+        completion_sentinel_present=False,
+    )
+    assert not requires(
+        installation_state="complete",
+        pending_marker_present=False,
+        completion_sentinel_present=True,
+    )
+
+
 def test_active_soak_freezes_zero_call_and_finalization_boundaries() -> None:
     source = ACTIVE_SOAK.read_text(encoding="utf-8")
     for marker in (
