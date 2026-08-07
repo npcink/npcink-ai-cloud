@@ -135,6 +135,9 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
   — dated one-operator SiliconFlow lifecycle evidence, cleanup receipt,
   alt-text diagnosis, timing lesson, and remaining first-install blockers
+- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
+  — dated deployment/recovery retrospective plus one-operator text adoption,
+  autosave recovery, quota/ledger, and cleanup evidence
 - [Frontend Public/Portal Release Checklist](frontend-public-portal-release-checklist-v1.md)
 - [P5 Local Backup/Restore Drill](p5-b5-local-backup-restore-drill-v1.md)
 - [Runtime Stability and Performance Evidence Plan](runtime-stability-performance-evidence-v1.md)

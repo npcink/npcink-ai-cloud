@@ -108,6 +108,19 @@ function formatRate(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function downloadJson(payload: unknown, filename: string): void {
+  const url = URL.createObjectURL(new Blob([
+    `${JSON.stringify(payload, null, 2)}\n`,
+  ], { type: 'application/json;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function EditorAssistQualityPanel({
   windowHours,
   refreshSignal,
@@ -116,6 +129,7 @@ export function EditorAssistQualityPanel({
   const { t } = useLocale();
   const [taskKey, setTaskKey] = useState('');
   const [data, setData] = useState<EditorQualitySummary | null>(null);
+  const [exportData, setExportData] = useState<unknown>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const requestSequenceRef = useRef(0);
@@ -132,6 +146,7 @@ export function EditorAssistQualityPanel({
       );
       if (sequence !== requestSequenceRef.current) return;
       setData(normalizeEditorQuality(response.data));
+      setExportData(response.data);
     } catch (loadError) {
       if (sequence !== requestSequenceRef.current) return;
       setError(resolveUiErrorMessage(
@@ -181,6 +196,12 @@ export function EditorAssistQualityPanel({
     secondaryValue: Math.round(item.repeatRate * 100),
   }));
   const hasTrendEvidence = (data?.trend || []).some((item) => item.sessionTotal > 0);
+  const exportFilename = [
+    'npcink-editor-assist-quality',
+    taskKey || 'all',
+    `${windowHours}h`,
+    (data?.generatedAt || new Date().toISOString()).slice(0, 10),
+  ].join('-') + '.json';
 
   return (
     <details
@@ -242,20 +263,31 @@ export function EditorAssistQualityPanel({
               {t('admin.editor_quality.sample_stage', { stage: sampleLabel }, 'Sample stage: {{stage}}')}
             </p>
           </div>
-          <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-            <span>{t('admin.editor_quality.task_filter', {}, 'Task')}</span>
-            <select
-              className="min-w-32 cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-              value={taskKey}
-              onChange={(event) => setTaskKey(event.target.value)}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+              <span>{t('admin.editor_quality.task_filter', {}, 'Task')}</span>
+              <select
+                className="min-w-32 cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                value={taskKey}
+                onChange={(event) => setTaskKey(event.target.value)}
+              >
+                {TASK_OPTIONS.map((option) => (
+                  <option key={option.value || 'all'} value={option.value}>
+                    {t(option.labelKey, {}, option.fallback)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              data-ui="editor-assist-quality-export"
+              type="button"
+              className="btn btn-secondary btn-sm whitespace-nowrap"
+              disabled={loading || Boolean(error) || exportData === null}
+              onClick={() => downloadJson(exportData, exportFilename)}
             >
-              {TASK_OPTIONS.map((option) => (
-                <option key={option.value || 'all'} value={option.value}>
-                  {t(option.labelKey, {}, option.fallback)}
-                </option>
-              ))}
-            </select>
-          </label>
+              {t('admin.editor_quality.export_json', {}, 'Export JSON')}
+            </button>
+          </div>
         </div>
 
         {error ? (
