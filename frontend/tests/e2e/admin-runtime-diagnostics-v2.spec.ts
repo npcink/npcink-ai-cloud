@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -113,6 +114,22 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(page.getByRole('button', { name: /Refreshing|刷新中/i })).toBeDisabled();
   await expect.poll(() => qualityRequests.some((url) => url.includes('task_key=content_summary'))).toBe(true);
   await expect(page.getByRole('button', { name: /^Refresh$|^刷新$/i })).toBeEnabled();
+
+  const downloadPromise = page.waitForEvent('download');
+  await qualityPanel.getByRole('button', { name: /Export JSON|导出 JSON/i }).click();
+  const qualityDownload = await downloadPromise;
+  expect(qualityDownload.suggestedFilename()).toBe(
+    'npcink-editor-assist-quality-content_summary-24h-2026-04-08.json'
+  );
+  const qualityDownloadPath = await qualityDownload.path();
+  expect(qualityDownloadPath).toBeTruthy();
+  const exportedQuality = JSON.parse(readFileSync(qualityDownloadPath!, 'utf8'));
+  expect(exportedQuality.contract_version).toBe('editor_assist_quality.v1');
+  expect(exportedQuality.filters).toEqual({
+    task_key: 'content_summary',
+    window_hours: 24,
+  });
+  expect(exportedQuality.read_only).toBe(true);
 
   await page.getByRole('button', { name: '72h' }).click();
   await expect(page).toHaveURL(/window=72/);
