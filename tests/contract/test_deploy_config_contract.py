@@ -24,6 +24,22 @@ def _cloud_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def test_small_customer_preflight_accepts_application_or_edge_fail_closed_ready_status() -> None:
+    preflight = (
+        _cloud_root() / "deploy" / "small-customer-trial-preflight.sh"
+    ).read_text()
+
+    assert (
+        'assert_status_in "401,403" '
+        '"health/ready should fail closed without internal token"'
+    ) in preflight
+    assert 'if [ "${HTTP_STATUS}" = "401" ]; then' in preflight
+    assert (
+        'assert_body_contains "auth.internal_token_required" '
+        '"health/ready should require internal token"'
+    ) in preflight
+
+
 def test_first_install_preparation_refuses_unmanaged_source_tree_before_mutation(
     tmp_path: Path,
 ) -> None:

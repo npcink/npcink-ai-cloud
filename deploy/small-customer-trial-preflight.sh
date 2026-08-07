@@ -163,8 +163,10 @@ assert_body_contains '"status":"ok"' "health/live should return ok envelope"
 ok "health/live is healthy"
 
 http_request "GET" "${BASE_URL%/}/health/ready"
-assert_status "401" "health/ready should fail closed without internal token"
-assert_body_contains "auth.internal_token_required" "health/ready should require internal token"
+assert_status_in "401,403" "health/ready should fail closed without internal token"
+if [ "${HTTP_STATUS}" = "401" ]; then
+	assert_body_contains "auth.internal_token_required" "health/ready should require internal token"
+fi
 ok "health/ready fails closed without internal token"
 
 http_request "GET" "${BASE_URL%/}/"
