@@ -469,6 +469,20 @@ def _assert_expected(actual: Any, expected: Any, label: str, blockers: list[str]
         blockers.append(f"{label}: expected {expected!r}, observed {actual!r}")
 
 
+def _requires_current_release_rollback_images(
+    *,
+    installation_state: Any,
+    pending_marker_present: bool,
+    completion_sentinel_present: bool,
+) -> bool:
+    """Require temporary rollback images until first-install finalization is complete."""
+    return not (
+        installation_state == "complete"
+        and not pending_marker_present
+        and completion_sentinel_present
+    )
+
+
 def _parse_utc(value: str, label: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
@@ -533,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         release_state = managed_root / ".release-state" / release_name
         rollback_images = release_state / "rollback-images.tsv"
         target_images = release_state / "target-daemon-images.json"
+        completion_sentinel_present = (managed_root / ".installation-complete").exists()
 
         containers: dict[str, dict[str, Any]] = {}
         container_ids: dict[str, str] = {}
@@ -627,7 +642,14 @@ def main(argv: list[str] | None = None) -> int:
             blockers.append("pending first-install previous release is unavailable")
         if pending_marker is not None and not rollback_map_exists:
             blockers.append("pending first-install rollback image map is unavailable")
-        if not rollback_images.is_file() or rollback_line_count < 1:
+        rollback_image_evidence_required = _requires_current_release_rollback_images(
+            installation_state=install_state.get("installation_state"),
+            pending_marker_present=pending_marker is not None,
+            completion_sentinel_present=completion_sentinel_present,
+        )
+        if rollback_image_evidence_required and (
+            not rollback_images.is_file() or rollback_line_count < 1
+        ):
             blockers.append("current release rollback image evidence is unavailable")
         if not target_images.is_file():
             blockers.append("current release target image evidence is unavailable")
@@ -661,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
             "database_contract": install_state.get("database_contract"),
             "pending_marker_present": pending_marker is not None,
             "pending_marker_contract": (pending_marker or {}).get("contract"),
-            "completion_sentinel_present": (managed_root / ".installation-complete").exists(),
+            "completion_sentinel_present": completion_sentinel_present,
             "current_release": release_name,
             "current_release_path_matches": release == (managed_root / "current").resolve(),
             "previous_release": previous_release_name,
@@ -669,6 +691,7 @@ def main(argv: list[str] | None = None) -> int:
             "rollback_map": rollback_map_name,
             "rollback_map_exists": rollback_map_exists,
             "rollback_images_count": rollback_line_count,
+            "rollback_image_evidence_required": rollback_image_evidence_required,
             "target_image_evidence_present": target_images.is_file(),
             "release_image_evidence": release_images,
             "observation_hours": round(observation_hours, 2),
