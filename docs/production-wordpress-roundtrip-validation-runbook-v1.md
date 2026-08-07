@@ -1,6 +1,7 @@
 # Production WordPress Round-Trip Validation Runbook v1
 
 Status: active controlled-validation runbook.
+Updated: 2026-08-07.
 
 Purpose: prove one real operator journey through WordPress, the Cloud Addon,
 Npcink AI Cloud, and one hosted provider call without manufacturing users,
@@ -217,6 +218,28 @@ autosave revisions separately from canonical revisions and do not suppress
 native autosave without a separate WordPress-owned change envelope and recovery
 risk review.
 
+For a text task, refresh the editor from the server immediately before the
+adoption step. A tab that stayed open during deployment, CI, or evidence review
+may already have an expired autosave timer and can write as soon as Insert marks
+the post dirty. If WordPress reports that the browser backup differs from the
+server, do not restore it automatically: first determine whether it contains
+the test suggestion and whether restoring it would reintroduce a failed dirty
+state.
+
+When an autosave occurs after a paid suggestion returned:
+
+1. stop without Save, Retry, Regenerate, or another Provider call;
+2. verify the exact autosave ID, parent post, and `*-autosave-v1` name;
+3. delete only that test autosave and prove the parent post is still unchanged;
+4. reload the server version and decline the stale browser backup;
+5. reuse the already returned, already reviewed suggestion;
+6. adopt it and immediately perform one explicit Save;
+7. verify the canonical revision and unchanged Provider/credit totals.
+
+This recovery may satisfy the required failure/recovery scenario, but the
+original pre-save autosave remains a recorded failed attempt. Do not rewrite the
+history as if it never occurred.
+
 Cleanup removes only the exact test post and its revisions, the exact option,
 the marked MU fixture, and the test browser session. Confirm their absence and
 re-check unchanged production totals before closing the lane.
@@ -257,6 +280,14 @@ Compare before and after evidence from database-backed Cloud truth:
 - grants and adjustments are reported separately and do not erase historical
   used evidence;
 - a UI summary alone is never sufficient.
+
+Split run-count changes into billed execution and evidence-only side effects.
+An editor reload, Addon initialization, cleanup hook, or Site Knowledge status
+projection may create a Cloud run with no Provider call and no credit ledger
+entry. Record each such run by ability and identity. It does not change the
+Provider-call or credit delta, but it must not be hidden merely because it was
+free. The paid-call contract is proved by the matching Provider record and
+credit components, not by assuming every run has the same price.
 
 Cover one naturally occurring failure, retry, busy, or optional-stage error
 when it appears. Do not manufacture a paid failure. Prove whether recovery
@@ -381,3 +412,9 @@ pre-import alt-text for an attachment-only connector.
 9. A mechanical readiness pass is not lifecycle finalization authority.
 10. Time cost is a first-class constraint: stop investigation once the
     declared evidence question is answered.
+11. Refresh the WordPress editor immediately before adoption; a long-open tab
+    can cross the native autosave window before the operator acts.
+12. A paid result can be reused after an editor-only recovery. Do not spend a
+    second Provider call to repair local dirty state.
+13. Run totals, Provider-call totals, and credit-ledger totals are separate
+    truths; explain evidence-only runs instead of forcing them to match.
