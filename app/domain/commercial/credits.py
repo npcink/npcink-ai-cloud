@@ -5,7 +5,10 @@ from datetime import datetime
 from math import ceil
 from typing import Any, cast
 
-from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_SYNC_ABILITY
+from app.domain.site_knowledge.contracts import (
+    SITE_KNOWLEDGE_STATUS_ABILITY,
+    SITE_KNOWLEDGE_SYNC_ABILITY,
+)
 
 AI_CREDIT_RATE_VERSION = "ai-credit-ledger-v2"
 AI_CREDIT_CHARGE_CONTRACT_VERSION = "ai-credit-charge-contract-v1"
@@ -437,8 +440,14 @@ def is_site_knowledge_index_meter_event(event: object) -> bool:
     return _event_payload(event).get("metering_class") == SITE_KNOWLEDGE_INDEX_METERING_CLASS
 
 
+def is_site_knowledge_status_meter_event(event: object) -> bool:
+    return _event_payload(event).get("ability_name") == SITE_KNOWLEDGE_STATUS_ABILITY
+
+
 def usage_meter_credit_component(event: object) -> dict[str, object] | None:
-    if is_site_knowledge_index_meter_event(event):
+    if is_site_knowledge_index_meter_event(event) or is_site_knowledge_status_meter_event(
+        event
+    ):
         return None
     meter_key = str(getattr(event, "meter_key", "") or "").strip()
     quantity = _coerce_float(getattr(event, "quantity", 0.0))
@@ -502,7 +511,10 @@ def estimate_runtime_request_ai_credits(
     ability_name: str | None = None,
     payload_json: dict[str, object] | None = None,
 ) -> float:
-    if str(ability_name or "").strip() == SITE_KNOWLEDGE_SYNC_ABILITY:
+    if str(ability_name or "").strip() in {
+        SITE_KNOWLEDGE_STATUS_ABILITY,
+        SITE_KNOWLEDGE_SYNC_ABILITY,
+    }:
         return 0.0
     capability = resolve_ai_credit_capability_policy(
         ability_family=ability_family,
