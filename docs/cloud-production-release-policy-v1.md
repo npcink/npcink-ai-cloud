@@ -155,6 +155,39 @@ This rule does not permit a failed required gate to be relabeled as passed. It
 keeps successful evidence attributable, limits retries to an actual recovery
 plan, and prevents broad validation from expanding a narrow production repair.
 
+### Recovery deployment decision envelope
+
+A production recovery deployment is not a generic rerun button. Before each
+authorized recovery deployment, classify the exact failed phase:
+
+1. source or production-promotion identity;
+2. bundle build, dependency fetch, SBOM, or vulnerability scan;
+3. archive transfer, image load, or image-equivalence verification;
+4. migration or protected database preflight;
+5. service activation, provider refresh, or operational readiness;
+6. terminalization, pointer publication, cleanup, or unlock.
+
+The recovery envelope must name the exact production revision, the prior
+failure signature, the smallest changed seam, the evidence that remains valid,
+the maximum new deployment attempts, and the stop condition. A retry is valid
+only when the failure was transient or the owning seam changed materially. A
+new commit requires a new production promotion; it must not be smuggled into a
+same-revision retry through a server edit or mutable image tag.
+
+Do not rebuild, rescan, retransmit, or reload an unchanged exact artifact when
+the failed phase begins later and the earlier receipt remains identity-bound.
+Syft and Grype are build/evidence tools, not production application services.
+Run them on the governed build workstation, M4, or CI lane as required; the
+production host validates the resulting locked evidence and loads the exact
+images. Installing scanners as long-lived production services is not a recovery
+strategy.
+
+If the same phase fails twice with the same signature, stop blind recovery
+deployments. Choose a materially different cache, resumable-transfer, local
+artifact preparation, or source-fix plan, or report the blocker. Time spent on
+external downloads, scans, rebuilds, transfers, and repeated health waits must
+be included in the closeout receipt.
+
 ## Optional Production-host Localhost Candidate Canary
 
 An explicitly authorized production-host localhost canary may rehearse an exact
