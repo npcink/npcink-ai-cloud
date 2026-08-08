@@ -130,6 +130,24 @@ while IFS= read -r path; do
 		tests/api/test_*.py|tests/domain/test_*.py|tests/core/test_*.py|tests/dev/test_*.py)
 			printf '%s\n' "${path}"
 			;;
+		app/domain/commercial/mixins/*.py)
+			# Production logic without its own test change must still run the
+			# focused suites that exercise the mixins (activation/binding
+			# capacity, quota, portal addon connections).
+			printf '%s\n' \
+				tests/domain/test_commercial_runtime_defaults.py \
+				tests/api/test_portal_routes.py \
+				tests/api/test_service_routes.py
+			;;
+		app/domain/commercial/*.py)
+			printf '%s\n' tests/domain/test_commercial_*.py
+			;;
+		app/domain/runtime/*.py)
+			printf '%s\n' tests/domain/test_runtime_*.py
+			;;
+		app/domain/*.py)
+			printf '%s\n' tests/domain/test_*.py
+			;;
 	esac
 done < "${TMP_CHANGED}" | sort -u > "${TMP_TESTS}"
 
