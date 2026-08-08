@@ -71,6 +71,7 @@ deleting the old decision history.
 - [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
+- [AI Development Changed-Code Coverage Closeout and Retrospective](ai-development-changed-code-coverage-retrospective-2026-08-08.md) — dated implementation, CI cost-correction, and observation-cycle evidence; the active policy remains in CI Pytest Sharding
 - [Python Type Checking Standard](python-type-checking-standard.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
 - [Production-host Localhost Candidate Canary Standard](production-host-localhost-candidate-canary-standard-v1.md)
