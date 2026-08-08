@@ -130,6 +130,28 @@ while IFS= read -r path; do
 		tests/api/test_*.py|tests/domain/test_*.py|tests/core/test_*.py|tests/dev/test_*.py)
 			printf '%s\n' "${path}"
 			;;
+		app/domain/commercial/mixins/*.py)
+			# Mixins have dedicated suites (payment, subscription, billing,
+			# credit, runtime defaults) plus the core portal/service route
+			# files; run the whole commercial domain set so logic-only
+			# changes cannot slip past their focused tests.
+			printf '%s\n' \
+				tests/domain/test_commercial_*.py \
+				tests/api/test_portal_routes.py \
+				tests/api/test_service_routes.py
+			;;
+		app/domain/commercial/*.py)
+			printf '%s\n' tests/domain/test_commercial_*.py
+			;;
+		app/domain/runtime/*.py)
+			printf '%s\n' tests/domain/test_runtime_*.py
+			;;
+		app/domain/*.py)
+			printf '%s\n' tests/domain/test_*.py
+			;;
+		app/api/*.py|app/api/*/*.py|app/api/*/*/*.py)
+			printf '%s\n' tests/api/
+			;;
 	esac
 done < "${TMP_CHANGED}" | sort -u > "${TMP_TESTS}"
 
