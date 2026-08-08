@@ -35,18 +35,20 @@ def _init_repo(tmp_path: Path) -> tuple[Path, str]:
 def _run_report(
     repo: Path,
     base: str,
-    coverage_payload: dict[str, object],
+    coverage_payload: dict[str, object] | None,
 ) -> subprocess.CompletedProcess[str]:
-    coverage_json = repo / "coverage.json"
     markdown = repo / "changed-coverage.md"
     report_json = repo / "changed-coverage.json"
-    coverage_json.write_text(json.dumps(coverage_payload), encoding="utf-8")
-    return subprocess.run(
+    command = [
+        sys.executable,
+        str(REPORT),
+    ]
+    if coverage_payload is not None:
+        coverage_json = repo / "coverage.json"
+        coverage_json.write_text(json.dumps(coverage_payload), encoding="utf-8")
+        command.extend(["--coverage-json", str(coverage_json)])
+    command.extend(
         [
-            sys.executable,
-            str(REPORT),
-            "--coverage-json",
-            str(coverage_json),
             "--base",
             base,
             "--head",
@@ -57,7 +59,10 @@ def _run_report(
             str(markdown),
             "--json-output",
             str(report_json),
-        ],
+        ]
+    )
+    return subprocess.run(
+        command,
         cwd=repo,
         text=True,
         capture_output=True,
@@ -129,7 +134,7 @@ def test_report_ignores_changes_outside_app_python(tmp_path: Path) -> None:
     _git(repo, "add", "docs/note.md")
     _git(repo, "commit", "-m", "add docs")
 
-    completed = _run_report(repo, base, {"files": {}})
+    completed = _run_report(repo, base, None)
 
     assert completed.returncode == 0, completed.stderr
     report = json.loads((repo / "changed-coverage.json").read_text(encoding="utf-8"))
@@ -175,7 +180,7 @@ def test_report_counts_only_modified_lines_in_existing_python_file(tmp_path: Pat
     assert report["files"][0]["missing_lines"] == [2]
 
 
-def test_report_fails_closed_when_changed_python_file_has_no_coverage_record(
+def test_report_requires_coverage_evidence_when_app_python_changed(
     tmp_path: Path,
 ) -> None:
     repo, base = _init_repo(tmp_path)
@@ -185,7 +190,10 @@ def test_report_fails_closed_when_changed_python_file_has_no_coverage_record(
     _git(repo, "add", "app/missing.py")
     _git(repo, "commit", "-m", "add missing module")
 
-    completed = _run_report(repo, base, {"files": {}})
+    completed = _run_report(repo, base, None)
 
     assert completed.returncode == 2
-    assert "has no record for changed Python file app/missing.py" in completed.stderr
+    assert (
+        "--coverage-json or --coverage-data is required when app Python lines changed"
+        in completed.stderr
+    )

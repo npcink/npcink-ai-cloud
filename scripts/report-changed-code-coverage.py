@@ -205,6 +205,36 @@ def build_report(
     }
 
 
+def coverage_payload_from_data(data_path: Path, changed: dict[str, set[int]]) -> dict[str, Any]:
+    try:
+        from coverage import Coverage
+    except ImportError as error:
+        raise CoverageReportError("coverage.py is required to read coverage data") from error
+
+    coverage = Coverage(data_file=str(data_path), branch=True)
+    coverage.load()
+    files: dict[str, dict[str, Any]] = {}
+    for path in changed:
+        analysis = coverage._analyze(path)
+        executed_branches = [
+            [source, destination]
+            for source, destinations in analysis.executed_branch_arcs().items()
+            for destination in destinations
+        ]
+        missing_branches = [
+            [source, destination]
+            for source, destinations in analysis.missing_branch_arcs().items()
+            for destination in destinations
+        ]
+        files[path] = {
+            "executed_lines": sorted(analysis.statements - analysis.missing),
+            "missing_lines": sorted(analysis.missing),
+            "executed_branches": executed_branches,
+            "missing_branches": missing_branches,
+        }
+    return {"files": files}
+
+
 def _rate(covered: int, total: int) -> float | None:
     if total == 0:
         return None
@@ -278,7 +308,8 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--coverage-json", required=True, type=Path)
+    parser.add_argument("--coverage-json", type=Path)
+    parser.add_argument("--coverage-data", type=Path)
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
@@ -290,10 +321,20 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     try:
-        payload = json.loads(args.coverage_json.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise CoverageReportError("coverage JSON root must be an object")
         changed = parse_changed_python_lines(_git_diff(args.repo, args.base, args.head))
+        if changed:
+            if args.coverage_data is not None:
+                payload = coverage_payload_from_data(args.coverage_data, changed)
+            elif args.coverage_json is not None:
+                payload = json.loads(args.coverage_json.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise CoverageReportError("coverage JSON root must be an object")
+            else:
+                raise CoverageReportError(
+                    "--coverage-json or --coverage-data is required when app Python lines changed"
+                )
+        else:
+            payload = {"files": {}}
         report = build_report(payload, changed, base=args.base, head=args.head)
         markdown = render_markdown(report)
     except (CoverageReportError, OSError, json.JSONDecodeError) as error:
