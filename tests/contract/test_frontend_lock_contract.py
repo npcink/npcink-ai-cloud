@@ -78,8 +78,10 @@ def test_watch_doctor_and_ci_consume_only_the_root_lock() -> None:
     assert "/app/node_modules/.pnpm" in doctor
 
     assert "frontend/pnpm-lock.yaml" not in workflows
-    assert workflows.count("cache-dependency-path: pnpm-lock.yaml") == 5
-    assert workflows.count('node-version: "22"') == 5
+    setup_node_count = workflows.count("uses: actions/setup-node@v6")
+    assert setup_node_count > 0
+    assert workflows.count("cache-dependency-path: pnpm-lock.yaml") == setup_node_count
+    assert workflows.count('node-version: "22"') == setup_node_count
     assert 'node-version: "20"' not in workflows
     assert "pnpm install --frozen-lockfile --filter frontend..." in workflows
     assert "working-directory: frontend" not in workflows

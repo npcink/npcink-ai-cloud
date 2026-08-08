@@ -36,6 +36,7 @@ jobs:
       docs_only: ${{ steps.changed.outputs.docs_only }}
       frontend_only: ${{ steps.changed.outputs.frontend_only }}
       frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}
+      specialized_quality_required: ${{ steps.changed.outputs.specialized_quality_required }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,6 +68,53 @@ jobs:
 
           bash scripts/classify-ci-changes.sh "${changed_files[@]}" \
             | tee -a "${GITHUB_OUTPUT}"
+
+          specialized_quality_required="$(
+            python3 scripts/check_changed.py --plan --format json "${changed_files[@]}" \
+              | python3 -c 'import json,sys; print("true" if json.load(sys.stdin)["specialized_commands"] else "false")'
+          )"
+          echo "specialized_quality_required=${specialized_quality_required}" \
+            | tee -a "${GITHUB_OUTPUT}"
+
+  specialized-quality:
+    name: Specialized changed-domain quality gates
+    needs: [classify]
+    if: github.event_name == 'pull_request' && needs.classify.outputs.specialized_quality_required == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+
+      - name: Bootstrap Cloud Dev Environment
+        run: make bootstrap-dev
+
+      - name: Run specialized changed-domain gates
+        env:
+          NPCINK_CLOUD_PR_BASE_REF: origin/${{ github.base_ref }}
+        run: >-
+          python3 scripts/check_changed.py
+          --specialized-only
+          --base "${NPCINK_CLOUD_PR_BASE_REF}"
 
   backend-scope:
     needs: [classify]
@@ -354,7 +402,7 @@ jobs:
 
   backend:
     name: backend
-    needs: [classify, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-static, backend-pytest, backend-postgres-cutover]
+    needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-static, backend-pytest, backend-postgres-cutover]
     if: always() && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -371,6 +419,8 @@ jobs:
           REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
           DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
           FRONTEND_ONLY: ${{ needs.classify.outputs.frontend_only }}
+          SPECIALIZED_QUALITY_REQUIRED: ${{ needs.classify.outputs.specialized_quality_required }}
+          SPECIALIZED_QUALITY_RESULT: ${{ needs['specialized-quality'].result }}
         run: |
           set -euo pipefail
           echo "scope=${BACKEND_SCOPE_RESULT}"
@@ -380,10 +430,26 @@ jobs:
           echo "static=${BACKEND_STATIC_RESULT}"
           echo "pytest=${BACKEND_PYTEST_RESULT}"
           echo "postgres_cutover=${BACKEND_POSTGRES_CUTOVER_RESULT}"
+          echo "specialized_quality=${SPECIALIZED_QUALITY_RESULT}"
           echo "requires_full_backend=${REQUIRES_FULL_BACKEND}"
 
           if [ "${BACKEND_SCOPE_RESULT}" != "success" ]; then
             echo "backend scope classification did not pass" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            if [ "${SPECIALIZED_QUALITY_REQUIRED}" = "true" ]; then
+              if [ "${SPECIALIZED_QUALITY_RESULT}" != "success" ]; then
+                echo "specialized changed-domain quality gates did not pass" >&2
+                exit 1
+              fi
+            elif [ "${SPECIALIZED_QUALITY_RESULT}" != "skipped" ]; then
+              echo "specialized changed-domain quality gates should be skipped" >&2
+              exit 1
+            fi
+          elif [ "${SPECIALIZED_QUALITY_RESULT}" != "skipped" ]; then
+            echo "specialized changed-domain quality gates must stay PR-only" >&2
             exit 1
           fi
 

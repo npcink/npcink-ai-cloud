@@ -150,9 +150,18 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "frontend_e2e_required: "
         "${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
     )
+    assert (
+        "specialized_quality_required: "
+        "${{ steps.changed.outputs.specialized_quality_required }}" in workflow
+    )
     assert workflow.count("--diff-filter=ACMRD") == 3
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
+    assert "specialized-quality:" in workflow
+    assert "python3 scripts/check_changed.py" in workflow
+    assert "--specialized-only" in workflow
+    assert "specialized changed-domain quality gates did not pass" in workflow
+    assert "specialized changed-domain quality gates must stay PR-only" in workflow
     assert "Docs-only frontend acknowledgement" in workflow
     assert (
         "python dependency audit should be skipped for docs-only or frontend-only changes"
