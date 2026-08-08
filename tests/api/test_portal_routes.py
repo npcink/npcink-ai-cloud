@@ -1440,7 +1440,10 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert decoded_key["key_id"] == exchange_data["key_id"]
     assert decoded_key["secret"].startswith("sk_")
     assert oauth_state_lock_flags == [True]
-    assert locked_account_ids == [account_id]
+    # Both the bind-capacity check and the activation-capacity check lock the
+    # account row within the same exchange transaction; re-entrant row locks
+    # are harmless, so assert the set of locked accounts, not the count.
+    assert sorted(set(locked_account_ids)) == [account_id]
 
     replay_response = client.post(
         "/portal/v1/addon-connections/exchange",
@@ -1448,7 +1451,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     )
     assert replay_response.status_code != 200
     assert oauth_state_lock_flags == [True, True]
-    assert locked_account_ids == [account_id]
+    assert sorted(set(locked_account_ids)) == [account_id]
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
@@ -1914,6 +1917,81 @@ def test_portal_addon_connection_allows_new_site_after_inactive_site_releases_ca
         assert secondary_site is not None
         assert primary_site.status == "inactive"
         assert secondary_site.status == "active"
+
+    dispose_engine(database_url)
+
+
+def test_portal_addon_connection_rejects_activation_at_active_site_limit(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    registration_request = _request_portal_registration_code(
+        client,
+        email="addon-activation-limit@example.com",
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    registration = _verify_portal_registration_code(
+        client,
+        email="addon-activation-limit@example.com",
+        code=str(registration_request["code"]),
+    )
+    _assert_strict_portal_session(registration)
+    account_id = str(_ACCESS_BY_EMAIL["addon-activation-limit@example.com"]["account_id"])
+
+    _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://primary.example.com",
+        site_name="Primary Site",
+        state="addon-state-activation-limit-primary",
+        idempotency_key="portal-addon-activation-limit-primary",
+    )
+
+    # Binding the second site is allowed (soft bind limit), but activating it
+    # must be rejected while the Free active site limit (1) is already used.
+    return_url = (
+        "https://secondary.example.com/wp-admin/admin-post.php"
+        "?action=npcink_cloud_addon_complete_auth"
+        "&state=addon-state-activation-limit-secondary"
+    )
+    issue_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": account_id,
+            "site_url": "https://secondary.example.com",
+            "site_name": "Secondary Site",
+            "return_url": return_url,
+            "state": "addon-state-activation-limit-secondary",
+        },
+        headers={"Idempotency-Key": "portal-addon-activation-limit-secondary"},
+    )
+    assert issue_response.status_code == 200, issue_response.text
+    issue_data = issue_response.json()["data"]
+    redirect_query = parse_qs(urlsplit(str(issue_data["redirect_url"])).query)
+    code = redirect_query["code"][0]
+
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={
+            "code": code,
+            "state": "addon-state-activation-limit-secondary",
+        },
+    )
+    assert exchange_response.status_code == 403, exchange_response.text
+    assert (
+        exchange_response.json()["error_code"] == "service.site_limit_exceeded"
+    )
+
+    with get_session(database_url) as session:
+        primary_site = session.get(Site, "site_primary-example-com")
+        secondary_site = session.get(Site, "site_secondary-example-com")
+        assert primary_site is not None
+        assert primary_site.status == "active"
+        assert secondary_site is None
 
     dispose_engine(database_url)
 
@@ -6680,6 +6758,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert "internal_limits" not in quota_summary
     assert {item["key"] for item in quota_summary["resource_limits"]} == {
         "bound_sites",
+        "active_sites",
         "vector_documents",
     }
     bound_sites = next(

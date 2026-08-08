@@ -410,48 +410,85 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             account_ids=[account_id],
             statuses=[
                 SITE_STATUS_ACTIVE,
-                SITE_STATUS_PROVISIONING,
-                SITE_STATUS_SUSPENDED,
             ],
         )
         current_count = self._coerce_int(site_counts.get(account_id, 0))
         if site_limit > 0 and current_count >= site_limit:
             raise CommercialPermissionError(
                 "service.site_limit_exceeded",
-                f"account '{account_id}' has reached its site limit for the pending Free activation",
+                f"account '{account_id}' has reached its active site limit for the pending Free activation",
             )
 
-    def _deactivate_account_active_sibling_sites(
+    def _assert_account_site_bind_capacity(
         self,
         *,
         repository: CommercialRepository,
         account_id: str,
-        activated_site_id: str,
-        audit_context: ServiceAuditContext | None,
-    ) -> list[dict[str, object]]:
-        deactivated_sites: list[dict[str, object]] = []
-        for sibling in repository.list_sites(account_id=account_id):
-            if sibling.site_id == activated_site_id or sibling.status != SITE_STATUS_ACTIVE:
-                continue
-            sibling.status = SITE_STATUS_INACTIVE
-            payload = self._serialize_site(sibling)
-            deactivated_sites.append(payload)
-            self._record_service_audit_in_session(
-                repository=repository,
-                audit_context=audit_context,
-                event_kind="site.deactivate",
-                outcome="succeeded",
-                account_id=sibling.account_id,
-                site_id=sibling.site_id,
-                scope_kind="site",
-                scope_id=sibling.site_id,
-                payload_json={
-                    **payload,
-                    "reason": "portal_single_active_site_switch",
-                    "activated_site_id": activated_site_id,
-                },
+        site_limit: int,
+    ) -> None:
+        # Serialize bind-capacity checks per account so concurrent
+        # provisioning/reconnect requests cannot both observe the same count
+        # and overshoot the bound-site ceiling after commit.
+        if repository.get_account_for_update(account_id) is None:
+            raise CommercialNotFoundError(
+                "service.account_not_found",
+                f"account '{account_id}' was not found",
             )
-        return deactivated_sites
+        # Binding is not capped by the activation site_limit: accounts may bind
+        # multiple sites, while only site_limit of them may be active at once.
+        # A soft bind ceiling (max 3, or 3x the activation limit) prevents
+        # unbounded accumulation of bound-but-inactive sites.
+        bind_limit = max(3, self._coerce_int(site_limit) * 3)
+        site_counts = repository.count_sites_by_account(
+            account_ids=[account_id],
+            statuses=[
+                SITE_STATUS_ACTIVE,
+                SITE_STATUS_PROVISIONING,
+                SITE_STATUS_SUSPENDED,
+                SITE_STATUS_INACTIVE,
+            ],
+        )
+        current_count = self._coerce_int(site_counts.get(account_id, 0))
+        if current_count >= bind_limit:
+            raise CommercialPermissionError(
+                "service.site_bind_limit_exceeded",
+                f"account '{account_id}' has reached its bound-site soft limit of {bind_limit}",
+            )
+
+    def _assert_site_activation_capacity_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        account_id: str,
+    ) -> None:
+        # Serialize activation capacity checks per account so concurrent
+        # activation requests cannot both count the same active-site set and
+        # exceed site_limit after commit.
+        if repository.get_account_for_update(account_id) is None:
+            raise CommercialNotFoundError(
+                "service.account_not_found",
+                f"account '{account_id}' was not found",
+            )
+        subscription = repository.get_runtime_subscription(account_id)
+        snapshot = (
+            repository.get_active_entitlement_snapshot(
+                account_id,
+                subscription_id=subscription.subscription_id,
+            )
+            if subscription is not None
+            else None
+        )
+        if snapshot is not None:
+            cast(Any, self)._assert_account_site_capacity(
+                repository=repository,
+                account_id=account_id,
+                snapshot=snapshot,
+            )
+        else:
+            self._assert_default_free_site_capacity(
+                repository=repository,
+                account_id=account_id,
+            )
 
     def _revoke_active_site_keys_in_session(
         self,
@@ -568,23 +605,48 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 if subscription is not None
                 else None
             )
+            # Lock the account before reading the existing site so concurrent
+            # duplicate provisioning of the same site serializes: the second
+            # caller sees the created site and treats it as an idempotent
+            # update instead of failing the bind-capacity check at the ceiling.
+            if repository.get_account_for_update(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found",
+                    f"account '{account_id}' was not found",
+                )
             existing_site = repository.get_site(site_id)
             if existing_site is not None and str(existing_site.account_id or "") != account_id:
                 raise CommercialConflictError(
                     "service.site_account_binding_conflict",
                     f"site '{site_id}' is already bound to another account",
                 )
-            if existing_site is None and snapshot is not None:
-                cast(Any, self)._assert_account_site_capacity(
+            if (
+                existing_site is None
+                or repository.get_current_site_account_binding(
+                    existing_site.site_id,
+                    for_update=False,
+                )
+                is None
+            ):
+                cast(Any, self)._assert_account_site_bind_capacity(
                     repository=repository,
                     account_id=account_id,
-                    snapshot=snapshot,
+                    site_limit=cast(Any, self)._resolve_site_limit(snapshot=snapshot),
+                )
+            requested_status = str(status or "").strip() or SITE_STATUS_PROVISIONING
+            if requested_status == SITE_STATUS_ACTIVE and (
+                existing_site is None
+                or str(existing_site.status or "") != SITE_STATUS_ACTIVE
+            ):
+                self._assert_site_activation_capacity_in_session(
+                    repository=repository,
+                    account_id=account_id,
                 )
             site = repository.upsert_site(
                 site_id=site_id,
                 account_id=account_id,
                 name=name or site_id,
-                status=status,
+                status=requested_status,
                 site_url=site_url,
                 platform_kind=PLATFORM_KIND_WORDPRESS,
                 metadata_json=metadata_json,
@@ -626,6 +688,15 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 raise CommercialNotFoundError(
                     "service.site_not_found",
                     f"site '{site_id}' was not found",
+                )
+            site_account_id = str(site.account_id or "")
+            if (
+                str(site.status or "") != SITE_STATUS_ACTIVE
+                and site_account_id
+            ):
+                self._assert_site_activation_capacity_in_session(
+                    repository=repository,
+                    account_id=site_account_id,
                 )
             site.status = SITE_STATUS_ACTIVE
             if site.provisioned_at is None:
@@ -1037,15 +1108,31 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 payload_json=payload,
             )
             if activate_site_on_issue and site.status == SITE_STATUS_PROVISIONING:
-                deactivated_site_ids = [
-                    str(item.get("site_id") or "")
-                    for item in self._deactivate_account_active_sibling_sites(
-                        repository=repository,
-                        account_id=site.account_id or "",
-                        activated_site_id=site.site_id,
-                        audit_context=audit_context,
+                site_account_id = str(site.account_id or "")
+                subscription = (
+                    repository.get_runtime_subscription(site_account_id)
+                    if site_account_id
+                    else None
+                )
+                snapshot = (
+                    repository.get_active_entitlement_snapshot(
+                        site_account_id,
+                        subscription_id=subscription.subscription_id,
                     )
-                ]
+                    if subscription is not None
+                    else None
+                )
+                if snapshot is not None:
+                    cast(Any, self)._assert_account_site_capacity(
+                        repository=repository,
+                        account_id=site_account_id,
+                        snapshot=snapshot,
+                    )
+                else:
+                    self._assert_default_free_site_capacity(
+                        repository=repository,
+                        account_id=site_account_id,
+                    )
                 site.status = SITE_STATUS_ACTIVE
                 if site.provisioned_at is None:
                     site.provisioned_at = now
@@ -1054,7 +1141,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 site.suspension_reason = None
                 payload["site_status"] = site.status
                 payload["site_activated"] = True
-                payload["deactivated_site_ids"] = deactivated_site_ids
                 self._record_service_audit_in_session(
                     repository=repository,
                     audit_context=audit_context,
@@ -1065,10 +1151,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     key_id=api_key.key_id,
                     scope_kind="site",
                     scope_id=site.site_id,
-                    payload_json={
-                        **self._serialize_site(site),
-                        "deactivated_site_ids": deactivated_site_ids,
-                    },
+                    payload_json=self._serialize_site(site),
                 )
             else:
                 payload["site_status"] = str(site.status or "")
@@ -1162,17 +1245,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             existing_site = repository.get_site(normalized_site_id)
             site_created = existing_site is None
             if existing_site is None:
-                if snapshot is not None:
-                    service._assert_account_site_capacity(
-                        repository=repository,
-                        account_id=normalized_account_id,
-                        snapshot=snapshot,
-                    )
-                else:
-                    self._assert_default_free_site_capacity(
-                        repository=repository,
-                        account_id=normalized_account_id,
-                    )
+                service._assert_account_site_bind_capacity(
+                    repository=repository,
+                    account_id=normalized_account_id,
+                    site_limit=service._resolve_site_limit(snapshot=snapshot),
+                )
             else:
                 cross_account_relink = self._assert_cross_account_relink_available(
                     site=existing_site,
@@ -1185,18 +1262,16 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "service.portal_site_not_connectable",
                         f"site '{normalized_site_id}' is not available for addon connection",
                     )
-                if cross_account_relink:
-                    if snapshot is not None:
-                        service._assert_account_site_capacity(
-                            repository=repository,
-                            account_id=normalized_account_id,
-                            snapshot=snapshot,
-                        )
-                    else:
-                        self._assert_default_free_site_capacity(
-                            repository=repository,
-                            account_id=normalized_account_id,
-                        )
+                current_binding = repository.get_current_site_account_binding(
+                    existing_site.site_id,
+                    for_update=False,
+                )
+                if cross_account_relink or current_binding is None:
+                    service._assert_account_site_bind_capacity(
+                        repository=repository,
+                        account_id=normalized_account_id,
+                        site_limit=service._resolve_site_limit(snapshot=snapshot),
+                    )
             repository.create_portal_oauth_state(
                 state_id=f"wacs_{uuid4().hex}",
                 provider=WORDPRESS_ADDON_CONNECTION_PROVIDER,
@@ -1392,10 +1467,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             site_transferred = False
             previous_account_id = ""
             if site is None:
-                service._assert_account_site_capacity(
+                service._assert_account_site_bind_capacity(
                     repository=repository,
                     account_id=account_id,
-                    snapshot=snapshot,
+                    site_limit=service._resolve_site_limit(snapshot=snapshot),
                 )
                 site = repository.upsert_site(
                     site_id=site_id,
@@ -1443,11 +1518,15 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "service.portal_site_not_connectable",
                         f"site '{site_id}' is not available for addon connection",
                     )
-                if site_transferred:
-                    service._assert_account_site_capacity(
+                current_site_account_binding = repository.get_current_site_account_binding(
+                    site.site_id,
+                    for_update=False,
+                )
+                if site_transferred or current_site_account_binding is None:
+                    service._assert_account_site_bind_capacity(
                         repository=repository,
                         account_id=account_id,
-                        snapshot=snapshot,
+                        site_limit=service._resolve_site_limit(snapshot=snapshot),
                     )
                 self._bind_site_to_account_in_session(
                     repository=repository,
@@ -1528,21 +1607,16 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 audit_context=audit_context,
                 replaced_key_ids=revoked_key_ids,
             )
-            deactivated_site_ids: list[str] = []
             if site.status in {
                 SITE_STATUS_PROVISIONING,
                 SITE_STATUS_INACTIVE,
                 SITE_STATUS_ARCHIVED,
             }:
-                deactivated_site_ids = [
-                    str(item.get("site_id") or "")
-                    for item in self._deactivate_account_active_sibling_sites(
-                        repository=repository,
-                        account_id=account_id,
-                        activated_site_id=site.site_id,
-                        audit_context=audit_context,
-                    )
-                ]
+                service._assert_account_site_capacity(
+                    repository=repository,
+                    account_id=account_id,
+                    snapshot=snapshot,
+                )
                 site.status = SITE_STATUS_ACTIVE
                 if site.provisioned_at is None:
                     site.provisioned_at = now
@@ -1559,10 +1633,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     key_id=api_key.key_id,
                     scope_kind="site",
                     scope_id=site.site_id,
-                    payload_json={
-                        **self._serialize_site(site),
-                        "deactivated_site_ids": deactivated_site_ids,
-                    },
+                    payload_json=self._serialize_site(site),
                 )
 
             cloud_api_key = build_customer_api_key(

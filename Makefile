@@ -41,6 +41,9 @@ lint:
 	docker compose -f docker-compose.dev.yml run --rm api python -m ruff check . && \
 	docker compose -f docker-compose.dev.yml run --rm api python -m mypy app
 
+publish-pr:
+	bash scripts/publish-pr.sh $(PR_ARGS)
+
 lint-changed:
 	NPCINK_CLOUD_CHANGED_BASE_REF="$(CHANGED_BASE_REF)" bash scripts/check-changed-python-quality.sh
 
