@@ -11,6 +11,7 @@ from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     SITE_STATUS_ACTIVE,
+    SITE_STATUS_ARCHIVED,
     SITE_STATUS_PROVISIONING,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -877,6 +878,55 @@ def test_provision_active_site_upsert_preserved_at_active_site_limit(
             status="active",
         )
     assert exc_info.value.error_code == "service.site_limit_exceeded"
+
+    dispose_engine(database_url)
+
+
+def test_reconnect_rejected_when_bind_ceiling_reached(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    service = CommercialService(database_url)
+    service.upsert_account(
+        account_id="acct_reconnect_limit",
+        name="Reconnect Limit Account",
+        bind_default_free=True,
+    )
+    for index in range(3):
+        service.provision_site(
+            site_id=f"site_re_{index}",
+            account_id="acct_reconnect_limit",
+            name=f"Reconnect Site {index}",
+        )
+
+    # Release site_re_0's binding and archive it, as remove_portal_site does,
+    # then fill the freed slot with a new site.
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        binding = repository.get_current_site_account_binding("site_re_0")
+        assert binding is not None
+        binding.released_at = datetime.now(UTC)
+        site = session.get(Site, "site_re_0")
+        assert site is not None
+        site.status = SITE_STATUS_ARCHIVED
+        session.commit()
+    service.provision_site(
+        site_id="site_re_3",
+        account_id="acct_reconnect_limit",
+        name="Reconnect Site 3",
+    )
+
+    # Reconnecting the released same-account site would create a new binding
+    # and exceed the bound-site ceiling; it must be rejected.
+    with pytest.raises(CommercialPermissionError) as exc_info:
+        service.provision_site(
+            site_id="site_re_0",
+            account_id="acct_reconnect_limit",
+            name="Reconnect Site 0 Again",
+        )
+    assert exc_info.value.error_code == "service.site_bind_limit_exceeded"
 
     dispose_engine(database_url)
 

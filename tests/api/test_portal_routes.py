@@ -1440,7 +1440,10 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert decoded_key["key_id"] == exchange_data["key_id"]
     assert decoded_key["secret"].startswith("sk_")
     assert oauth_state_lock_flags == [True]
-    assert locked_account_ids == [account_id]
+    # Both the bind-capacity check and the activation-capacity check lock the
+    # account row within the same exchange transaction; re-entrant row locks
+    # are harmless, so assert the set of locked accounts, not the count.
+    assert sorted(set(locked_account_ids)) == [account_id]
 
     replay_response = client.post(
         "/portal/v1/addon-connections/exchange",
@@ -1448,7 +1451,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     )
     assert replay_response.status_code != 200
     assert oauth_state_lock_flags == [True, True]
-    assert locked_account_ids == [account_id]
+    assert sorted(set(locked_account_ids)) == [account_id]
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
