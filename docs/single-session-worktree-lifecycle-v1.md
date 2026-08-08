@@ -74,6 +74,19 @@ complete, remove only the exact stale lock, re-run the read-only audit, and
 then make a separate non-force removal decision. If ownership or deliverable
 evidence is unavailable, leave the worktree protected.
 
+## Repository Phase Transitions
+
+Routine task closeout handles one worktree. A deliberate development-stage
+transition that consolidates many historical worktrees, branches, archives, or
+generated-state directories must follow the
+[Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md).
+
+That process inventories worktrees before branches, preserves dirty and
+detached state before registration changes, keeps Git cleanup separate from
+runtime-data cleanup, and targets the default topology defined above. It does
+not relax the current-worktree, exact-path, non-force, lock, ownership, or
+protected-role rules in this standard.
+
 ## Read-Only Audit
 
 Use:
