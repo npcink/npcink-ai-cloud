@@ -426,6 +426,14 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         account_id: str,
         site_limit: int,
     ) -> None:
+        # Serialize bind-capacity checks per account so concurrent
+        # provisioning/reconnect requests cannot both observe the same count
+        # and overshoot the bound-site ceiling after commit.
+        if repository.get_account_for_update(account_id) is None:
+            raise CommercialNotFoundError(
+                "service.account_not_found",
+                f"account '{account_id}' was not found",
+            )
         # Binding is not capped by the activation site_limit: accounts may bind
         # multiple sites, while only site_limit of them may be active at once.
         # A soft bind ceiling (max 3, or 3x the activation limit) prevents
@@ -603,7 +611,14 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.site_account_binding_conflict",
                     f"site '{site_id}' is already bound to another account",
                 )
-            if existing_site is None:
+            if (
+                existing_site is None
+                or repository.get_current_site_account_binding(
+                    existing_site.site_id,
+                    for_update=False,
+                )
+                is None
+            ):
                 cast(Any, self)._assert_account_site_bind_capacity(
                     repository=repository,
                     account_id=account_id,
@@ -1238,7 +1253,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "service.portal_site_not_connectable",
                         f"site '{normalized_site_id}' is not available for addon connection",
                     )
-                if cross_account_relink:
+                current_binding = repository.get_current_site_account_binding(
+                    existing_site.site_id,
+                    for_update=False,
+                )
+                if cross_account_relink or current_binding is None:
                     service._assert_account_site_bind_capacity(
                         repository=repository,
                         account_id=normalized_account_id,
@@ -1490,7 +1509,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "service.portal_site_not_connectable",
                         f"site '{site_id}' is not available for addon connection",
                     )
-                if site_transferred:
+                current_site_account_binding = repository.get_current_site_account_binding(
+                    site.site_id,
+                    for_update=False,
+                )
+                if site_transferred or current_site_account_binding is None:
                     service._assert_account_site_bind_capacity(
                         repository=repository,
                         account_id=account_id,
