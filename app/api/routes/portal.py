@@ -34,6 +34,7 @@ from app.api.portal_session import (
     project_portal_subscription,
     resolve_portal_login_session_ttl_seconds,
     resolve_portal_request_context,
+    resolve_portal_session_rotation_expiry,
     serialize_portal_session,
     set_portal_session_cookies,
 )
@@ -2569,12 +2570,22 @@ async def verify_portal_email_change_code(
             message="portal email change code and new email are required",
         )
     services = get_cloud_services(request)
+    try:
+        current_session_expires_at = resolve_portal_session_rotation_expiry(
+            request,
+            principal_id=auth.principal_id,
+            minimum_remaining_seconds=60,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     renewed_session_metadata = build_new_portal_session_metadata(
         request,
-        ttl_seconds=resolve_portal_login_session_ttl_seconds(
-            request,
-            remember_me=False,
-        ),
+        expires_at=current_session_expires_at,
     )
     try:
         changed = _get_commercial_service(request).verify_portal_email_change_code(
@@ -2635,6 +2646,7 @@ async def verify_portal_email_change_code(
         response,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
+        expires_at=current_session_expires_at,
     )
     return response
 
@@ -2829,6 +2841,19 @@ async def select_portal_session_site(
     if isinstance(auth, JSONResponse):
         return auth
     try:
+        current_session_expires_at = resolve_portal_session_rotation_expiry(
+            request,
+            principal_id=auth.principal_id,
+            minimum_remaining_seconds=5,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
+    try:
         data = serialize_portal_session(
             request,
             principal_id=auth.principal_id,
@@ -2849,6 +2874,7 @@ async def select_portal_session_site(
         response,
         principal_id=auth.principal_id,
         site_id=site_id,
+        expires_at=current_session_expires_at,
     )
     return response
 

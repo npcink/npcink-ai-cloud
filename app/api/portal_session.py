@@ -157,6 +157,51 @@ def current_portal_browser_session(
     )
 
 
+def resolve_portal_session_rotation_expiry(
+    request: Request,
+    *,
+    principal_id: str,
+    minimum_remaining_seconds: int = 1,
+) -> datetime:
+    session = _resolve_portal_session_metadata(
+        request,
+        principal_id=principal_id,
+    )
+    session_principal_id = str(session.get("principal_id") or "").strip()
+    if session_principal_id != principal_id:
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "portal session principal does not match the authenticated principal",
+        )
+    expires_at_value = str(session.get("expires_at") or "").strip()
+    try:
+        expires_at = datetime.fromisoformat(expires_at_value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "portal session expiry is invalid",
+        ) from error
+    if expires_at.tzinfo is None:
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "portal session expiry is invalid",
+        )
+    resolved_expires_at = expires_at.astimezone(UTC)
+    minimum_expiry = datetime.now(UTC) + timedelta(
+        seconds=max(1, int(minimum_remaining_seconds or 0))
+    )
+    if resolved_expires_at <= minimum_expiry:
+        raise PortalBearerTokenError(
+            401,
+            "auth.portal_session_expired",
+            "portal session has expired",
+        )
+    return resolved_expires_at
+
+
 def current_portal_site_session(
     request: Request,
     *,
@@ -302,20 +347,35 @@ def build_new_portal_session_metadata(
     request: Request,
     *,
     ttl_seconds: int | None = None,
+    expires_at: datetime | None = None,
 ) -> dict[str, object]:
     settings = get_cloud_services(request).settings
     now = datetime.now(UTC)
-    resolved_ttl_seconds = (
-        max(60, int(ttl_seconds or 0))
-        if ttl_seconds is not None
-        else resolve_portal_session_ttl_seconds(settings)
+    if ttl_seconds is not None and expires_at is not None:
+        raise ValueError("ttl_seconds and expires_at are mutually exclusive")
+    resolved_expires_at = expires_at or (
+        now
+        + timedelta(
+            seconds=(
+                max(60, int(ttl_seconds or 0))
+                if ttl_seconds is not None
+                else resolve_portal_session_ttl_seconds(settings)
+            )
+        )
     )
+    if resolved_expires_at.tzinfo is None:
+        raise ValueError("expires_at must be timezone-aware")
+    resolved_expires_at = resolved_expires_at.astimezone(UTC)
+    if resolved_expires_at <= now:
+        raise PortalBearerTokenError(
+            401,
+            "auth.portal_session_expired",
+            "portal session has expired",
+        )
     return {
         "principal_id": "",
         "issued_at": now.isoformat().replace("+00:00", "Z"),
-        "expires_at": (now + timedelta(seconds=resolved_ttl_seconds))
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "expires_at": resolved_expires_at.isoformat().replace("+00:00", "Z"),
         "transport": "cookie",
         "revocable": True,
     }
@@ -329,14 +389,34 @@ def set_portal_session_cookies(
     site_id: str = "",
     session_version: int | None = None,
     ttl_seconds: int | None = None,
+    expires_at: datetime | None = None,
 ) -> None:
     settings = get_cloud_services(request).settings
     now = datetime.now(UTC)
-    resolved_ttl_seconds = (
-        max(60, int(ttl_seconds or 0))
-        if ttl_seconds is not None
-        else resolve_portal_session_ttl_seconds(settings)
+    if ttl_seconds is not None and expires_at is not None:
+        raise ValueError("ttl_seconds and expires_at are mutually exclusive")
+    resolved_expires_at = expires_at or (
+        now
+        + timedelta(
+            seconds=(
+                max(60, int(ttl_seconds or 0))
+                if ttl_seconds is not None
+                else resolve_portal_session_ttl_seconds(settings)
+            )
+        )
     )
+    if resolved_expires_at.tzinfo is None:
+        raise ValueError("expires_at must be timezone-aware")
+    resolved_expires_at = resolved_expires_at.astimezone(UTC)
+    resolved_ttl_seconds = int(
+        resolved_expires_at.timestamp() - now.timestamp()
+    )
+    if resolved_ttl_seconds < 1:
+        raise PortalBearerTokenError(
+            401,
+            "auth.portal_session_expired",
+            "portal session has expired",
+        )
     secure = portal_cookie_secure(request)
     if (
         not isinstance(principal_id, str)
@@ -383,7 +463,7 @@ def set_portal_session_cookies(
             principal_id=principal_id,
             site_id=site_id,
             session_version=current_session_version,
-            expires_at=now + timedelta(seconds=resolved_ttl_seconds),
+            expires_at=resolved_expires_at,
         ),
         httponly=True,
         secure=secure,
@@ -456,6 +536,13 @@ def _resolve_portal_session_metadata(request: Request, *, principal_id: str) -> 
                 get_cloud_services(request).settings,
                 auth_header[7:].strip(),
             )
+            token_principal_id = str(claims.get("sub") or "").strip()
+            if token_principal_id != principal_id:
+                raise PortalBearerTokenError(
+                    403,
+                    "auth.portal_session_invalid",
+                    "portal session principal does not match the authenticated principal",
+                )
             expires_at = (
                 datetime.fromtimestamp(claims["exp"], tz=UTC).isoformat().replace("+00:00", "Z")
             )
@@ -478,8 +565,14 @@ def _resolve_portal_session_metadata(request: Request, *, principal_id: str) -> 
         }
 
     session = current_portal_browser_session(request)
+    if session["principal_id"] != principal_id:
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "portal session principal does not match the authenticated principal",
+        )
     return {
-        "principal_id": principal_id,
+        "principal_id": session["principal_id"],
         "issued_at": session.get("issued_at", ""),
         "expires_at": session.get("expires_at", ""),
         "transport": "cookie",
