@@ -57,8 +57,16 @@ def test_bootstrap_portal_site_binds_principal_to_existing_site_without_demo_usa
     assert result["portal"]["account_membership"]["membership_status"] == "active"
     assert result["site_summary"]["site"]["site_id"] == "site_realish"
     assert result["usage_summary"]["windows"]["today"]["runs_total"] == 0
-    assert result["usage_meter"]["totals"] == {}
-    assert result["billing_snapshot"]["totals"] == {}
+    assert result["usage_meter"]["totals"] == {
+        "cost_cny": 0.0,
+        "cost_cny_snapshot_missing_count": 0.0,
+        "cost_usd": 0.0,
+    }
+    assert result["billing_snapshot"]["totals"] == {
+        "cost_cny": 0.0,
+        "cost_cny_snapshot_missing_count": 0.0,
+        "cost_usd": 0.0,
+    }
     assert len(result["billing_snapshots"]["items"]) == 1
     assert len(result["site_keys"]["items"]) == 1
     assert result["issued_key"] is None
