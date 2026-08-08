@@ -10,6 +10,8 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
+    SITE_STATUS_ACTIVE,
+    SITE_STATUS_PROVISIONING,
     AccountEntitlementSnapshot,
     AccountSubscription,
     CreditLedgerEntry,
@@ -767,6 +769,114 @@ def test_site_bind_soft_limit_blocks_extra_provisioning(
     with get_session(database_url) as session:
         site = session.get(Site, "site_bind_3")
         assert site is None
+
+    dispose_engine(database_url)
+
+
+def test_activate_site_rejects_at_active_site_limit(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    service = CommercialService(database_url)
+    service.upsert_account(
+        account_id="acct_activate_limit",
+        name="Activate Limit Account",
+        bind_default_free=True,
+    )
+    service.provision_site(
+        site_id="site_act_a",
+        account_id="acct_activate_limit",
+        name="Active A",
+    )
+    service.activate_site("site_act_a")
+
+    service.provision_site(
+        site_id="site_act_b",
+        account_id="acct_activate_limit",
+        name="Provisioned B",
+    )
+    with pytest.raises(CommercialPermissionError) as exc_info:
+        service.activate_site("site_act_b")
+    assert exc_info.value.error_code == "service.site_limit_exceeded"
+
+    with get_session(database_url) as session:
+        site = session.get(Site, "site_act_b")
+        assert site is not None
+        assert site.status == SITE_STATUS_PROVISIONING
+
+    dispose_engine(database_url)
+
+
+def test_provision_active_site_rejects_at_active_site_limit(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    service = CommercialService(database_url)
+    service.upsert_account(
+        account_id="acct_provision_active_limit",
+        name="Provision Active Limit Account",
+        bind_default_free=True,
+    )
+    service.provision_site(
+        site_id="site_prov_active_a",
+        account_id="acct_provision_active_limit",
+        name="Active A",
+        status="active",
+    )
+    with pytest.raises(CommercialPermissionError) as exc_info:
+        service.provision_site(
+            site_id="site_prov_active_b",
+            account_id="acct_provision_active_limit",
+            name="Active B",
+            status="active",
+        )
+    assert exc_info.value.error_code == "service.site_limit_exceeded"
+
+    dispose_engine(database_url)
+
+
+def test_provision_active_site_upsert_preserved_at_active_site_limit(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    service = CommercialService(database_url)
+    service.upsert_account(
+        account_id="acct_provision_active_upsert",
+        name="Provision Active Upsert Account",
+        bind_default_free=True,
+    )
+    service.provision_site(
+        site_id="site_prov_active_upsert",
+        account_id="acct_provision_active_upsert",
+        name="Active A",
+        status="active",
+    )
+    # Re-upserting the already-active site at the Free activation cap must
+    # update the site, not reject it for exceeding the activation limit.
+    result = service.provision_site(
+        site_id="site_prov_active_upsert",
+        account_id="acct_provision_active_upsert",
+        name="Active A Renamed",
+        status="active",
+    )
+    assert result["status"] == SITE_STATUS_ACTIVE
+    assert result["name"] == "Active A Renamed"
+
+    # A brand-new active site is still rejected at the cap.
+    with pytest.raises(CommercialPermissionError) as exc_info:
+        service.provision_site(
+            site_id="site_prov_active_new",
+            account_id="acct_provision_active_upsert",
+            name="Active New",
+            status="active",
+        )
+    assert exc_info.value.error_code == "service.site_limit_exceeded"
 
     dispose_engine(database_url)
 

@@ -6755,6 +6755,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert "internal_limits" not in quota_summary
     assert {item["key"] for item in quota_summary["resource_limits"]} == {
         "bound_sites",
+        "active_sites",
         "vector_documents",
     }
     bound_sites = next(

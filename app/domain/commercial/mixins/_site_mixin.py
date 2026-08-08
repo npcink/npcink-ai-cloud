@@ -447,6 +447,41 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 f"account '{account_id}' has reached its bound-site soft limit of {bind_limit}",
             )
 
+    def _assert_site_activation_capacity_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        account_id: str,
+    ) -> None:
+        # Serialize activation capacity checks per account so concurrent
+        # activation requests cannot both count the same active-site set and
+        # exceed site_limit after commit.
+        if repository.get_account_for_update(account_id) is None:
+            raise CommercialNotFoundError(
+                "service.account_not_found",
+                f"account '{account_id}' was not found",
+            )
+        subscription = repository.get_runtime_subscription(account_id)
+        snapshot = (
+            repository.get_active_entitlement_snapshot(
+                account_id,
+                subscription_id=subscription.subscription_id,
+            )
+            if subscription is not None
+            else None
+        )
+        if snapshot is not None:
+            cast(Any, self)._assert_account_site_capacity(
+                repository=repository,
+                account_id=account_id,
+                snapshot=snapshot,
+            )
+        else:
+            self._assert_default_free_site_capacity(
+                repository=repository,
+                account_id=account_id,
+            )
+
     def _revoke_active_site_keys_in_session(
         self,
         *,
@@ -574,11 +609,20 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     account_id=account_id,
                     site_limit=cast(Any, self)._resolve_site_limit(snapshot=snapshot),
                 )
+            requested_status = str(status or "").strip() or SITE_STATUS_PROVISIONING
+            if requested_status == SITE_STATUS_ACTIVE and (
+                existing_site is None
+                or str(existing_site.status or "") != SITE_STATUS_ACTIVE
+            ):
+                self._assert_site_activation_capacity_in_session(
+                    repository=repository,
+                    account_id=account_id,
+                )
             site = repository.upsert_site(
                 site_id=site_id,
                 account_id=account_id,
                 name=name or site_id,
-                status=status,
+                status=requested_status,
                 site_url=site_url,
                 platform_kind=PLATFORM_KIND_WORDPRESS,
                 metadata_json=metadata_json,
@@ -620,6 +664,15 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 raise CommercialNotFoundError(
                     "service.site_not_found",
                     f"site '{site_id}' was not found",
+                )
+            site_account_id = str(site.account_id or "")
+            if (
+                str(site.status or "") != SITE_STATUS_ACTIVE
+                and site_account_id
+            ):
+                self._assert_site_activation_capacity_in_session(
+                    repository=repository,
+                    account_id=site_account_id,
                 )
             site.status = SITE_STATUS_ACTIVE
             if site.provisioned_at is None:

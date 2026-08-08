@@ -2228,6 +2228,13 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 key="bound_sites",
                 label="Bound sites",
                 used=site_count,
+                limit=max(3, service._coerce_int(site_limit) * 3),
+                unit="site",
+            ),
+            self._quota_metric(
+                key="active_sites",
+                label="Active sites",
+                used=active_site_count,
                 limit=site_limit,
                 unit="site",
             ),
@@ -2654,7 +2661,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         }
         resource_limits = [
             resource_by_key[key]
-            for key in ("bound_sites", "vector_documents")
+            for key in ("bound_sites", "active_sites", "vector_documents")
             if key in resource_by_key
         ]
         visible_statuses = [
