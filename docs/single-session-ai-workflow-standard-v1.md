@@ -65,8 +65,15 @@ Dry-run first:
 bash scripts/publish-pr.sh --title "<title>" --body-file /path/to/body.md --dry-run
 ```
 
-The branch may be re-published after force pushes; the script targets the
-current `HEAD` SHA, so batch local changes into one rebase before pushing.
+The publisher refuses to re-publish a branch that already has an open PR
+(its idempotency guard, `scripts/publish-pr.sh` lines 117-124). After a
+force-push, re-request auto-merge for the new head manually:
+
+```bash
+gh pr merge <pr-url> --auto --squash --match-head-commit <new-head-sha>
+```
+
+Prefer batching local changes into one rebase before the first push.
 
 ## 3. Change-Scoped Testing
 
@@ -74,7 +81,7 @@ current `HEAD` SHA, so batch local changes into one rebase before pushing.
 
 | Changed path | Local verification |
 | --- | --- |
-| `app/domain/commercial/mixins/*.py` | `ruff` + `mypy` + `pytest tests/domain/test_commercial_runtime_defaults.py tests/api/test_portal_routes.py tests/api/test_service_routes.py` |
+| `app/domain/commercial/mixins/*.py` | `ruff` + `mypy` + `pytest tests/domain/test_commercial_*.py tests/api/test_portal_routes.py tests/api/test_service_routes.py` |
 | other `app/domain/commercial/*.py` | `ruff` + `mypy` + `pytest tests/domain/test_commercial_*.py` |
 | other `app/domain/**` | `ruff` + `mypy` + `pytest tests/domain/ tests/api/` |
 | `app/api/**` | `ruff` + `mypy` + `pytest tests/api/` |

@@ -131,11 +131,12 @@ while IFS= read -r path; do
 			printf '%s\n' "${path}"
 			;;
 		app/domain/commercial/mixins/*.py)
-			# Production logic without its own test change must still run the
-			# focused suites that exercise the mixins (activation/binding
-			# capacity, quota, portal addon connections).
+			# Mixins have dedicated suites (payment, subscription, billing,
+			# credit, runtime defaults) plus the core portal/service route
+			# files; run the whole commercial domain set so logic-only
+			# changes cannot slip past their focused tests.
 			printf '%s\n' \
-				tests/domain/test_commercial_runtime_defaults.py \
+				tests/domain/test_commercial_*.py \
 				tests/api/test_portal_routes.py \
 				tests/api/test_service_routes.py
 			;;
@@ -147,6 +148,9 @@ while IFS= read -r path; do
 			;;
 		app/domain/*.py)
 			printf '%s\n' tests/domain/test_*.py
+			;;
+		app/api/*.py|app/api/*/*.py|app/api/*/*/*.py)
+			printf '%s\n' tests/api/
 			;;
 	esac
 done < "${TMP_CHANGED}" | sort -u > "${TMP_TESTS}"
