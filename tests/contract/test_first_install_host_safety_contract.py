@@ -114,14 +114,15 @@ def _controlled_acceptance_fixture(
         ],
     }
     if include_no_user_node_exception:
-        allowlist["entries"].append(
-            {
-                "image": "frontend",
-                "vulnerability_id": "CVE-2026-58043",
-                "package": "node",
-                "package_version": "22.23.1",
-            }
-        )
+        for cve in ("CVE-2026-58043", "CVE-2026-56846", "CVE-2026-56848"):
+            allowlist["entries"].append(
+                {
+                    "image": "frontend",
+                    "vulnerability_id": cve,
+                    "package": "node",
+                    "package_version": "22.23.1",
+                }
+            )
     allowlist_raw = (json.dumps(allowlist, sort_keys=True, separators=(",", ":")) + "\n").encode()
     allowlist_sha256 = hashlib.sha256(allowlist_raw).hexdigest()
     api_receipt = {
@@ -337,7 +338,7 @@ def test_first_install_cve_gate_no_user_mode_requires_node_permission_exception(
     )
     bundle, _acceptance, _checksum, now = _controlled_acceptance_fixture(tmp_path, module)
 
-    with pytest.raises(ValueError, match="exact four governed CVE exceptions"):
+    with pytest.raises(ValueError, match="exact governed CVE exceptions"):
         module.assert_no_user_internal_validation_allowed(
             bundle=bundle,
             expected_source_revision="a" * 40,
