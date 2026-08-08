@@ -304,9 +304,12 @@ def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
     report = CHANGED_COVERAGE_REPORT.read_text(encoding="utf-8")
 
     assert workflow.count("pytest-backend-coverage-shard-${{ matrix.shard }}") == 1
-    assert "coverage run --branch --source=app" in workflow
+    assert 'git diff --name-only --diff-filter=ACMR "${BASE_SHA}...${HEAD_SHA}"' in workflow
+    assert '--include="${coverage_include_arg}"' in workflow
+    assert 'coverage_include_paths=("app/__init__.py" "${changed_app_files[@]}")' in workflow
+    assert 'if [ "${#changed_app_files[@]}" -gt 0 ]' in workflow
     assert "coverage combine" in workflow
-    assert "coverage json" in workflow
+    assert '--coverage-data "${combine_dir}/.coverage"' in workflow
     assert "report-changed-code-coverage.py" in workflow
     assert "changed-code-coverage.json" in workflow
     assert "changed-code-coverage.md" in workflow

@@ -62,14 +62,20 @@ one runner can be temporarily slow.
 
 ## Changed-code coverage observation
 
-Pull requests that enter the complete backend pytest lane also collect branch
-coverage while the existing three shards run. No fourth pytest execution is
-added. Each shard uploads one coverage.py data file; `CI observability` combines
-the three files and compares the result with the pull request diff.
+Pull requests that enter the complete backend pytest lane and change Python
+under `app/**` also collect branch coverage while the existing three shards
+run. No fourth pytest execution is added. Each shard uploads one coverage.py
+data file; `CI observability` combines the three files and compares the result
+with the pull request diff. Pull requests without changed `app/**` Python keep
+the original pytest command and publish a no-app-changes observation without
+installing or running coverage.py.
 
 The report is intentionally bounded:
 
 - source scope is Python under `app/**` only;
+- coverage.py traces only the changed Python files plus the lightweight
+  `app/__init__.py` combine sentinel, not every `app/**` module executed by the
+  test suite;
 - the diff uses the checked-out PR merge candidate so changed line numbers
   match the source revision exercised by pytest;
 - line coverage counts changed executable lines, excluding comments, blank
