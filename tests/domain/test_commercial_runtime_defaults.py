@@ -15,8 +15,10 @@ from app.core.models import (
     CreditLedgerEntry,
     PaidCreditGrant,
     ServiceSetting,
+    Site,
     UsageMeterEvent,
 )
+from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.errors import RuntimeQuotaExceededError
 from tests.conftest import seed_site_auth
@@ -730,6 +732,41 @@ def test_site_capacity_uses_current_plan_version_site_limit(
     )
 
     assert second_site["site_id"] == "site_second"
+
+    dispose_engine(database_url)
+
+
+def test_site_bind_soft_limit_blocks_extra_provisioning(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    service = CommercialService(database_url)
+    service.upsert_account(
+        account_id="acct_bind_limit",
+        name="Bind Limit Account",
+        bind_default_free=True,
+    )
+    # Free activation site_limit is 1, so the bind soft limit is max(3, 1*3) = 3.
+    for index in range(3):
+        service.provision_site(
+            site_id=f"site_bind_{index}",
+            account_id="acct_bind_limit",
+            name=f"Bound Site {index}",
+        )
+
+    with pytest.raises(CommercialPermissionError) as exc_info:
+        service.provision_site(
+            site_id="site_bind_3",
+            account_id="acct_bind_limit",
+            name="Bound Site 3",
+        )
+    assert exc_info.value.error_code == "service.site_bind_limit_exceeded"
+
+    with get_session(database_url) as session:
+        site = session.get(Site, "site_bind_3")
+        assert site is None
 
     dispose_engine(database_url)
 
