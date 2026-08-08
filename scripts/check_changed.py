@@ -241,10 +241,16 @@ def classify_tier(
         tier = "L1"
         reasons.append("Frontend composition work is at least L1.")
     else:
-        reasons.append("Shared engineering, backend, test, configuration, or runtime-sensitive work is L2.")
+        reasons.append(
+            "Shared engineering, backend, test, configuration, or runtime-sensitive "
+            "work is L2."
+        )
 
     if kinds["build_runtime"]:
-        reasons.append("A dependency, image, Compose, proxy, or deployment fingerprint input requires L2.")
+        reasons.append(
+            "A dependency, image, Compose, proxy, or deployment fingerprint input "
+            "requires L2."
+        )
     if kinds["migration"]:
         reasons.append("Migration and persistence behavior requires L2.")
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
@@ -11,7 +12,6 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,14 +19,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import check_changed
+import check_changed  # noqa: E402 - sibling CLI module after scripts path setup
 
 ROOT = Path(__file__).resolve().parents[1]
 TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017 - system Python may be 3.9
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return dt.datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def git_text(*args: str, check: bool = True) -> str:
@@ -66,7 +67,8 @@ def source_fingerprint(paths: list[str]) -> str:
 def validate_task_id(task_id: str) -> str:
     if not TASK_ID_PATTERN.fullmatch(task_id):
         raise SystemExit(
-            "[fail] task id must be 1-80 characters using letters, digits, dot, underscore, or hyphen"
+            "[fail] task id must be 1-80 characters using letters, digits, "
+            "dot, underscore, or hyphen"
         )
     return task_id
 
@@ -300,7 +302,9 @@ def receipt_markdown(receipt: dict[str, Any]) -> str:
             f"- task: {receipt['task_id']}",
             f"- module: {receipt['focused_module']}",
             f"- tier: {receipt['tier']}",
-            f"- source: {receipt['current_source_state']['head']} ({receipt['current_source_state']['branch']})",
+            "- source: "
+            f"{receipt['current_source_state']['head']} "
+            f"({receipt['current_source_state']['branch']})",
             f"- clean: {str(receipt['current_source_state']['clean']).lower()}",
             f"- highest evidence state: {receipt['highest_evidence_state']}",
             f"- plan current: {str(receipt['plan_current']).lower()}",
