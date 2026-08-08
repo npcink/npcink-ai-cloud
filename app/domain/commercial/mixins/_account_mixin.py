@@ -29,8 +29,6 @@ from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
     PRINCIPAL_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
-    SITE_STATUS_PROVISIONING,
-    SITE_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_SUSPENDED,
@@ -683,13 +681,15 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             account_ids=[account_id],
             statuses=[
                 SITE_STATUS_ACTIVE,
-                SITE_STATUS_PROVISIONING,
-                SITE_STATUS_SUSPENDED,
             ],
         )
         current_count = self._coerce_int(site_counts.get(account_id, 0))
         if site_limit > 0 and current_count >= site_limit:
             raise CommercialPermissionError(
                 "service.site_limit_exceeded",
-                f"account '{account_id}' has reached its site limit for the current subscription",
+                (
+                    f"account '{account_id}' has reached its active site limit "
+                    "for the current subscription; release another active site "
+                    "before activating a new one"
+                ),
             )
