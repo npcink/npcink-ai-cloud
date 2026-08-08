@@ -52,17 +52,17 @@ echo "[editor-assist-quality] Running bounded Admin UI contract"
 )
 
 echo "[editor-assist-quality] Checking the no-auto-mutation boundary"
-rg -q '"automatic_prompt_mutation": False' \
+grep -Fq '"automatic_prompt_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"automatic_model_mutation": False' \
+grep -Fq '"automatic_model_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"automatic_router_mutation": False' \
+grep -Fq '"automatic_router_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"raw_content_retention": False' \
+grep -Fq '"raw_content_retention": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"automatic_evaluation_trigger": False' \
+grep -Fq '"automatic_evaluation_trigger": False' \
 	app/workers/ops_cadence.py
-rg -q 'interval_seconds=lambda _settings: 24 \* 60 \* 60' \
+grep -Fq 'interval_seconds=lambda _settings: 24 * 60 * 60' \
 	app/workers/ops_cadence.py
 
 echo "[editor-assist-quality] Gate passed"
