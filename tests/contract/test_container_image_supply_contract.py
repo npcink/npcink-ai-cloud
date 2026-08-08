@@ -483,6 +483,8 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
         ("api", "CVE-2026-11972", "python", "3.14.6"),
         ("api", "CVE-2026-15308", "python", "3.14.6"),
         ("frontend", "CVE-2026-58043", "node", "22.23.1"),
+        ("frontend", "CVE-2026-56846", "node", "22.23.1"),
+        ("frontend", "CVE-2026-56848", "node", "22.23.1"),
     ]
     assert {entry["owner"] for entry in entries} == {"Muze"}
     assert {entry["expires_on"] for entry in entries} == {"2026-08-11"}
@@ -516,6 +518,35 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
         "rebuild and rescan, then remove this entry; stop the rehearsal and controlled "
         "production validation if reachability changes."
     )
+    frontend_http2_reachability = {
+        "CVE-2026-56846": (
+            "CVE-2026-56846 is a Node.js HTTP/2 retained-header "
+            "resource-exhaustion issue (CWE-400, CVSS 7.5 AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H); "
+            "the production frontend starts as `node frontend/server.js` (Next.js standalone, "
+            "output: standalone) behind nginx TLS termination and serves HTTP/1.1 only, with no "
+            "http2.createServer and no ALPN h2 negotiation, so the attack surface is unreachable; "
+            "CISA SSVC exploitation=none."
+        ),
+        "CVE-2026-56848": (
+            "CVE-2026-56848 is a Node.js HTTP/2 reentrant-send "
+            "use-after-free issue (CWE-416, CVSS 7.5 AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H); "
+            "the production frontend starts as `node frontend/server.js` (Next.js standalone, "
+            "output: standalone) behind nginx TLS termination and serves HTTP/1.1 only, with no "
+            "http2.createServer and no ALPN h2 negotiation, so the attack surface is unreachable; "
+            "CISA SSVC exploitation=none."
+        ),
+    }
+    frontend_http2_prefix = (
+        "Temporary exception only for operator-authorized no-external-user "
+        "internal production validation; no GA, customer rollout, or general "
+        "production authorization. "
+    )
+    frontend_http2_upgrade = (
+        " Upgrade to the first supported Node 22 Alpine image that removes this finding "
+        "(v22.23.2), repin its exact digest, rebuild and rescan, then remove this entry; "
+        "stop internal validation immediately if the frontend serves HTTP/2 (ALPN h2), "
+        "external users appear, exploitation changes, or this exception expires."
+    )
     for entry in entries:
         if entry["vulnerability_id"] in reachability_by_cve:
             assert entry["reason"] == (
@@ -523,6 +554,12 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
                 + reachability_by_cve[entry["vulnerability_id"]]
                 + " "
                 + upgrade_and_stop
+            )
+        elif entry["vulnerability_id"] in frontend_http2_reachability:
+            assert entry["reason"] == (
+                frontend_http2_prefix
+                + frontend_http2_reachability[entry["vulnerability_id"]]
+                + frontend_http2_upgrade
             )
         else:
             assert entry["reason"] == (
