@@ -28,13 +28,13 @@ from app.api.portal_locale import resolve_portal_email_locale
 from app.api.portal_session import (
     build_new_portal_session_metadata,
     clear_portal_session_cookies,
-    current_portal_browser_session,
     portal_cookie_secure,
     portal_idempotency_replay_response,
     portal_json_error,
     project_portal_subscription,
     resolve_portal_login_session_ttl_seconds,
     resolve_portal_request_context,
+    resolve_portal_session_rotation_expiry,
     serialize_portal_session,
     set_portal_session_cookies,
 )
@@ -2570,9 +2570,19 @@ async def verify_portal_email_change_code(
             message="portal email change code and new email are required",
         )
     services = get_cloud_services(request)
-    current_session_expires_at = datetime.fromisoformat(
-        current_portal_browser_session(request)["expires_at"].replace("Z", "+00:00")
-    )
+    try:
+        current_session_expires_at = resolve_portal_session_rotation_expiry(
+            request,
+            principal_id=auth.principal_id,
+            minimum_remaining_seconds=60,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     renewed_session_metadata = build_new_portal_session_metadata(
         request,
         expires_at=current_session_expires_at,
@@ -2830,9 +2840,19 @@ async def select_portal_session_site(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    current_session_expires_at = datetime.fromisoformat(
-        current_portal_browser_session(request)["expires_at"].replace("Z", "+00:00")
-    )
+    try:
+        current_session_expires_at = resolve_portal_session_rotation_expiry(
+            request,
+            principal_id=auth.principal_id,
+            minimum_remaining_seconds=5,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     try:
         data = serialize_portal_session(
             request,

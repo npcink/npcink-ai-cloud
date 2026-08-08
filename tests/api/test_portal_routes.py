@@ -3858,6 +3858,149 @@ def test_portal_remember_me_expiry_survives_site_selection(tmp_path: Path) -> No
     assert after_claims["exp"] - after_claims["iat"] > 6 * 24 * 60 * 60
 
 
+def test_portal_bearer_expiry_drives_site_selection_cookie_rotation(tmp_path: Path) -> None:
+    _database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_jwt_issuer": "npcink-cloud-portal",
+            "portal_jwt_audience": "npcink-cloud-customers",
+        },
+    )
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_bearer_site", "name": "Bearer Site"},
+        headers=build_internal_headers(idempotency_key="portal-bearer-site-account-001"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_bearer_site",
+            "account_id": "acct_portal_bearer_site",
+            "name": "Bearer Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="portal-bearer-site-create-001"),
+    )
+    grant = _grant_account_member_access(
+        client,
+        site_id="site_portal_bearer_site",
+        email="portal-bearer-site@example.com",
+        idempotency_key="portal-bearer-site-member-001",
+    )
+    settings = client.app.state.services.settings
+    client.cookies.set(
+        COOKIE_PORTAL_SESSION_TOKEN,
+        build_portal_session_token(
+            settings,
+            principal_id="principal:unrelated@example.com",
+            session_version=1,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+        domain="testserver.local",
+    )
+    bearer_expires_at = datetime.now(UTC) + timedelta(days=2)
+
+    select_response = client.post(
+        "/portal/v1/session/site",
+        json={"site_id": "site_portal_bearer_site"},
+        headers=_portal_bearer_headers_for_grant(
+            grant,
+            expires_at=bearer_expires_at,
+            issuer="npcink-cloud-portal",
+            audience="npcink-cloud-customers",
+        ),
+    )
+
+    assert select_response.status_code == 200, select_response.text
+    rotated_claims = decode_portal_session_cookie_claims(
+        settings,
+        str(client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or ""),
+    )
+    assert rotated_claims["sub"] == grant["principal_id"]
+    assert rotated_claims["site_id"] == "site_portal_bearer_site"
+    assert rotated_claims["exp"] == int(bearer_expires_at.timestamp())
+
+
+def test_portal_email_change_rejects_near_expiry_before_mutation(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_login_code_ttl_seconds": 300,
+        },
+        portal_email_sender=FakePortalEmailSender(),
+    )
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_email_expiry", "name": "Email Expiry Account"},
+        headers=build_internal_headers(idempotency_key="email-expiry-account"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_email_expiry",
+            "account_id": "acct_email_expiry",
+            "name": "Email Expiry Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="email-expiry-site"),
+    )
+    _grant_account_member_access(
+        client,
+        site_id="site_email_expiry",
+        email="old-expiry@example.com",
+        idempotency_key="email-expiry-grant",
+    )
+    login_code = _request_portal_login_code(
+        client,
+        email="old-expiry@example.com",
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    verified_login = _verify_portal_login_code(
+        client,
+        email="old-expiry@example.com",
+        code=str(login_code["code"]),
+    )
+    request_response = client.post(
+        "/portal/v1/account/email-change/request",
+        json={"new_email": "new-expiry@example.com", "locale": "zh-CN"},
+        headers={
+            "Idempotency-Key": "email-expiry-request",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    assert request_response.status_code == 200, request_response.text
+    request_data = request_response.json()["data"]
+    client.cookies.set(
+        COOKIE_PORTAL_SESSION_TOKEN,
+        build_portal_session_token(
+            client.app.state.services.settings,
+            principal_id=str(verified_login["principal_id"]),
+            session_version=int(verified_login["session_version"]),
+            expires_at=datetime.now(UTC) + timedelta(seconds=30),
+        ),
+    )
+
+    verify_response = client.post(
+        "/portal/v1/account/email-change/verify",
+        json={"new_email": "new-expiry@example.com", "code": request_data["code"]},
+        headers={"Idempotency-Key": "email-expiry-verify"},
+    )
+
+    assert verify_response.status_code == 401, verify_response.text
+    assert verify_response.json()["error_code"] == "auth.portal_session_expired"
+    with get_session(database_url) as session:
+        assert (
+            session.scalar(select(Principal).where(Principal.email == "old-expiry@example.com"))
+            is not None
+        )
+        assert (
+            session.scalar(select(Principal).where(Principal.email == "new-expiry@example.com"))
+            is None
+        )
+
+
 def test_portal_qq_bind_and_callback_login_reuse_user_session(
     tmp_path: Path,
     monkeypatch: Any,
