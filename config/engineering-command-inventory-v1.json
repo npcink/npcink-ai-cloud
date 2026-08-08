@@ -217,9 +217,18 @@
       "owner_doc": "docs/development-validation-operating-model-v1.md",
       "used_by": ["runbook", "contract", "automation"],
       "status": "active",
-      "evidence": ["README.md", "scripts/check_changed.py", "tests/contract/test_check_changed_contract.py"],
+      "evidence": [
+        "README.md",
+        "scripts/check_changed.py",
+        "scripts/ai_task.py",
+        "tests/contract/test_check_changed_contract.py",
+        "tests/contract/test_ai_task_contract.py"
+      ],
       "commands": {
-        "check:changed": "Plan and run the narrowest safe local gates for the current diff."
+        "check:changed": "Plan and run the narrowest safe local gates for the current diff.",
+        "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
+        "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
+        "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."
       }
     },
     {

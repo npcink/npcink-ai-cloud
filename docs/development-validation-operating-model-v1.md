@@ -294,6 +294,30 @@ pnpm run check:changed -- --plan
 pnpm run check:changed
 ```
 
+For a task that needs a durable local plan and closeout receipt, create an
+ignored structured envelope instead of leaving a temporary root task contract:
+
+```bash
+pnpm run ai:task:plan -- \
+  --task-id <task-id> \
+  --module "<focused module>" \
+  --outcome "<intended outcome>" \
+  --non-goal "<explicit non-goal>" \
+  --public-contract "<contract touched>" \
+  --rollback "<rollback>"
+pnpm run ai:task:verify -- .runtime/ai-tasks/<task-id>.json
+pnpm run ai:task:receipt -- .runtime/ai-tasks/<task-id>.json
+```
+
+The envelope records the changed-file plan, validation tier, matched domains,
+required context, resource budgets, exact gate results, source state, and
+rollback. Verification rebuilds the plan from the current trusted rules and
+fails closed when the base revision, changed-file set, or selected command
+definition differs from the saved envelope. Content fingerprints preserve valid
+evidence across a commit that does not change the verified files. The receipt
+may report `local verified`; it does not
+promote local evidence into PR, merged, M4, production, or human acceptance.
+
 The plan is read-only. Execution runs only local focused gates; it reports M4
 sync/deploy and browser work as explicit follow-ups and never mutates M4,
 production, Cloudflare, Provider budgets, or external systems automatically.
