@@ -309,6 +309,10 @@ jobs:
       - name: Bootstrap Cloud Dev Environment
         run: make bootstrap-dev
 
+      - name: Install changed-code coverage collector
+        if: github.event_name == 'pull_request'
+        run: uv pip install --python .venv/bin/python 'coverage==7.15.2'
+
       - name: Select pytest shard
         run: |
           set -euo pipefail
@@ -333,9 +337,19 @@ jobs:
             echo "No pytest files selected for shard ${{ matrix.shard }}." >&2
             exit 1
           fi
-          .venv/bin/python -m pytest "${pytest_files[@]}" -q \
-            --junitxml="artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" \
+          pytest_args=(
+            "${pytest_files[@]}"
+            -q
+            "--junitxml=artifacts/pytest-backend-shard-${{ matrix.shard }}.xml"
             --durations=25
+          )
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            COVERAGE_FILE="artifacts/coverage-backend-shard-${{ matrix.shard }}.data" \
+              .venv/bin/python -m coverage run --branch --source=app \
+              -m pytest "${pytest_args[@]}"
+          else
+            .venv/bin/python -m pytest "${pytest_args[@]}"
+          fi
 
       - name: Summarize pytest timing
         if: always()
@@ -357,6 +371,14 @@ jobs:
           path: |
             artifacts/pytest-backend-shard-${{ matrix.shard }}.xml
             artifacts/pytest-files-shard-${{ matrix.shard }}.txt
+          if-no-files-found: ignore
+
+      - name: Upload pytest coverage artifact
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-backend-coverage-shard-${{ matrix.shard }}
+          path: artifacts/coverage-backend-shard-${{ matrix.shard }}.data
           if-no-files-found: ignore
 
   backend-postgres-cutover:
@@ -591,6 +613,7 @@ jobs:
     needs:
       - secret-scan
       - classify
+      - backend-scope
       - backend
       - frontend
       - static-terms
@@ -602,6 +625,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python for changed-code coverage
+        if: github.event_name == 'pull_request' && needs.backend.result == 'success' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install changed-code coverage reporter
+        if: github.event_name == 'pull_request' && needs.backend.result == 'success' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        run: python -m pip install 'coverage==7.15.2'
 
       - name: Summarize CI timing
         env:
@@ -636,3 +671,57 @@ jobs:
             echo "Pytest shard balance summary was unavailable because the full lane did not execute." \
               >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+      - name: Summarize changed-code coverage
+        if: github.event_name == 'pull_request' && needs.backend.result == 'success' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          coverage_root="$(mktemp -d "${RUNNER_TEMP}/changed-code-coverage.XXXXXX")"
+          combine_dir="${coverage_root}/combine"
+          report_dir="artifacts/changed-code-coverage"
+          trap 'rm -rf "${coverage_root}"' EXIT
+          mkdir -p "${combine_dir}" "${report_dir}"
+
+          if gh run download "${GITHUB_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${coverage_root}/download" \
+            --pattern 'pytest-backend-coverage-shard-*' >/dev/null 2>&1; then
+            mapfile -t coverage_files < <(
+              find "${coverage_root}/download" -type f \
+                -name 'coverage-backend-shard-*.data' -print | sort
+            )
+            if [ "${#coverage_files[@]}" -ne 3 ]; then
+              echo "expected 3 backend coverage shard files, found ${#coverage_files[@]}" >&2
+              exit 1
+            fi
+            for index in "${!coverage_files[@]}"; do
+              cp "${coverage_files[$index]}" "${combine_dir}/.coverage.shard-$((index + 1))"
+            done
+
+            COVERAGE_FILE="${combine_dir}/.coverage" \
+              python -m coverage combine "${combine_dir}"
+            COVERAGE_FILE="${combine_dir}/.coverage" \
+              python -m coverage json -o "${combine_dir}/coverage.json"
+            python3 scripts/report-changed-code-coverage.py \
+              --coverage-json "${combine_dir}/coverage.json" \
+              --base "${BASE_SHA}" \
+              --head "${HEAD_SHA}" \
+              --markdown-output "${report_dir}/changed-code-coverage.md" \
+              --json-output "${report_dir}/changed-code-coverage.json"
+            cat "${report_dir}/changed-code-coverage.md" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "backend pytest succeeded but changed-code coverage artifacts were unavailable" >&2
+            exit 1
+          fi
+
+      - name: Upload changed-code coverage report
+        if: always() && github.event_name == 'pull_request' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: changed-code-coverage
+          path: artifacts/changed-code-coverage
+          if-no-files-found: ignore

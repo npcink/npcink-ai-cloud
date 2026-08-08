@@ -60,6 +60,31 @@ An actual shard ratio above `1.30`, or any material file drift, creates an
 advisory Actions warning. This warning does not fail the required gate because
 one runner can be temporarily slow.
 
+## Changed-code coverage observation
+
+Pull requests that enter the complete backend pytest lane also collect branch
+coverage while the existing three shards run. No fourth pytest execution is
+added. Each shard uploads one coverage.py data file; `CI observability` combines
+the three files and compares the result with the pull request diff.
+
+The report is intentionally bounded:
+
+- source scope is Python under `app/**` only;
+- the diff uses the checked-out PR merge candidate so changed line numbers
+  match the source revision exercised by pytest;
+- line coverage counts changed executable lines, excluding comments, blank
+  lines, and other non-executable lines;
+- branch coverage counts coverage.py branch arcs whose source line changed;
+- the Markdown summary and JSON artifact are trend evidence only;
+- no percentage threshold is configured and low coverage does not fail CI;
+- missing, malformed, or incomplete coverage artifacts fail the reporting seam
+  rather than publishing a misleading percentage.
+
+Coverage collection runs only for pull requests. Natural `master` pushes keep
+the existing timing and weight-refresh loop without paying the coverage
+instrumentation cost. The stable required check remains `backend`; this pilot
+does not change test selection, assertions, or release authority.
+
 ## Refresh and escalation rules
 
 1. Refresh weights through a focused PR; never push generated weights directly
@@ -86,6 +111,7 @@ For changes to this mechanism, run:
 ```bash
 .venv/bin/python -m pytest -q \
   tests/dev/test_select_pytest_shard.py \
+  tests/dev/test_report_changed_code_coverage.py \
   tests/contract/test_ci_efficiency_contract.py
 bash -n scripts/refresh-pytest-duration-weights.sh
 pnpm run check:fast

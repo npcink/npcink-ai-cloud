@@ -13,6 +13,7 @@ DOCS_GATE = ROOT / "scripts" / "check-docs-only.sh"
 BACKEND_GATE = ROOT / "scripts" / "check-pr-backend-gate.sh"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
+CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
@@ -296,3 +297,24 @@ def test_pytest_balance_observability_is_advisory_and_uses_complete_artifacts() 
     assert "::warning title=Pytest shard balance drift::" in report
     assert "actual_max_min_ratio" in report
     assert "file_drift_seconds" in report
+
+
+def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    report = CHANGED_COVERAGE_REPORT.read_text(encoding="utf-8")
+
+    assert workflow.count("pytest-backend-coverage-shard-${{ matrix.shard }}") == 1
+    assert "coverage run --branch --source=app" in workflow
+    assert "coverage combine" in workflow
+    assert "coverage json" in workflow
+    assert "report-changed-code-coverage.py" in workflow
+    assert "changed-code-coverage.json" in workflow
+    assert "changed-code-coverage.md" in workflow
+    assert "expected 3 backend coverage shard files" in workflow
+    assert "github.event_name == 'pull_request'" in workflow
+    assert "HEAD_SHA: ${{ github.sha }}" in workflow
+    assert "--fail-under" not in workflow
+    assert '"advisory": True' in report
+    assert '"threshold": None' in report
+    assert '"scope": "app/**/*.py"' in report
+    assert "does not block merging" in report
