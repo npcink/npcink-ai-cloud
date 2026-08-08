@@ -1703,6 +1703,9 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
     }
     resource_limits = {item["key"]: item for item in data["resource_limits"]}
     assert resource_limits["bound_sites"]["used"] == 1.0
+    assert resource_limits["bound_sites"]["limit"] == 3.0
+    assert resource_limits["active_sites"]["used"] == 1.0
+    assert resource_limits["active_sites"]["limit"] == 1.0
     assert resource_limits["active_api_key_sites"]["used"] == 1.0
     assert resource_limits["concurrent_runs"]["used"] == 2.0
     assert resource_limits["concurrent_runs"]["limit"] == 2.0
