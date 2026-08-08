@@ -49,12 +49,15 @@ the job summary.
 Ordinary production deployment has one trigger: manually dispatch
 `Deploy Production` from the exact `production` revision after `Cloud CI` is
 green. The operator must enter
-`Approved for production validation by operator.` exactly, and the GitHub
-Environment named `production` must receive its human approval. The workflow
-then deploys and runs the small-customer preflight plus optional formal release
-smoke. Missing optional smoke secrets produce an explicit skip, never a
-secret-bearing log. Neither a normal `production` push nor a static-terms-only
-push deploys automatically. The only temporary exception is the exact
+`Approved for production validation by operator.` exactly. In the current
+single-operator AI-development model, that manual dispatch is the one human
+production authorization. The GitHub Environment named `production` retains
+protected secrets and production-branch policy without adding a second hidden
+reviewer wait. The workflow then deploys and runs the small-customer preflight
+plus optional formal release smoke. Missing optional smoke secrets produce an
+explicit skip, never a secret-bearing log. Neither a normal `production` push
+nor a static-terms-only push deploys automatically. The only temporary
+exception is the exact
 bundle-bound trusted-workstation path for the current empty-host PostgreSQL 18
 first install described below; it is not reusable after finalization.
 
@@ -77,7 +80,10 @@ never prune images or releases while another host mutation holds that lock.
 
 The manually approved production deploy job:
 
-1. Builds the production Docker image bundle.
+1. Resolves the successful `Cloud CI` run for the exact production SHA,
+   downloads its short-lived `production-deploy-bundle-<sha>` artifact, and
+   re-verifies the bundle checksum and manifest. The CI run, not the authorized
+   deploy job, owns the one build-and-scan operation.
 2. Uploads the exact bundle and, when supplied, the env file as separate
    protected incoming objects. The release payload never contains `.env.deploy`.
 3. Installs the selected env source at
@@ -229,6 +235,9 @@ fingerprint through an independent trusted channel before storing it. The
 workflow never uses runtime `ssh-keyscan` as a trust root, and all SSH/SCP
 connections require `StrictHostKeyChecking=yes`. A legitimate host-key change
 must be investigated and the pinned secret deliberately rotated before deploy.
+The Environment admits only the production branch. In the current
+single-operator model it has no required reviewer rule; the exact manual
+workflow confirmation is the visible production authorization.
 
 Host release tools use
 `NPCINK_CLOUD_RELEASE_TOOL_PYTHON=/usr/bin/python3.11` and require Python

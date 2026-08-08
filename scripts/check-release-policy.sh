@@ -388,7 +388,10 @@ require_marker ".github/workflows/ci.yml" "PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT"
 require_marker ".github/workflows/ci.yml" "Python 3.14 Alpine production image smoke did not pass"
 require_marker ".github/workflows/ci.yml" "bash scripts/classify-ci-changes.sh"
 require_marker "scripts/classify-ci-changes.sh" "Dockerfile*|*/Dockerfile*"
-require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
+require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
+require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"'
+reject_marker ".github/workflows/deploy-production.yml" "NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES"
+reject_marker ".github/workflows/deploy-production.yml" "NPCINK_CLOUD_PACKAGE_EXTRAS"
 reject_marker ".github/workflows/ci.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
 reject_marker ".github/workflows/deploy-production.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
 require_marker "scripts/production-python-extras-smoke.sh" 'PYTHON_VERSION="3.14"'
@@ -398,6 +401,9 @@ require_marker "scripts/check-pr-backend-gate.sh" "Dockerfile*|*/Dockerfile*"
 
 require_marker ".github/pull_request_template.md" "Focused module:"
 require_marker ".github/pull_request_template.md" "Cloud boundary impact:"
+require_marker ".github/pull_request_template.md" 'Requires an explicit `Deploy Production` dispatch'
+require_marker "docs/cloud-production-release-policy-v1.md" "single-operator model"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "no required reviewer rule"
 require_marker ".github/pull_request_template.md" "Approved for production validation by operator."
 require_marker ".github/pull_request_template.md" "does not commit production secrets"
 require_marker "package.json" '"pr:publish": "bash scripts/publish-pr.sh"'
@@ -975,6 +981,9 @@ require_marker "deploy/nginx.prod.conf" "location /terms/"
 require_marker "deploy/nginx.prod.conf" "location = /terms {"
 require_marker "deploy/nginx.prod.conf" "location = /privacy {"
 require_marker ".github/workflows/ci.yml" "branches: [master, main, production]"
+require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
+require_marker ".github/workflows/ci.yml" 'production-deploy-bundle-${{ github.sha }}'
+require_marker ".github/workflows/ci.yml" "bash deploy/bundle-images.sh"
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker ".github/workflows/ci.yml" "frontend_only"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"
@@ -991,6 +1000,11 @@ require_marker ".github/workflows/deploy-production.yml" "group: production-host
 require_marker ".github/workflows/deploy-production.yml" "actions: read"
 require_marker ".github/workflows/deploy-production.yml" 'select(.head_sha == $sha)'
 require_marker ".github/workflows/deploy-production.yml" 'test "${conclusion}" = "success"'
+require_marker ".github/workflows/deploy-production.yml" 'gh run download "${PRODUCTION_CI_RUN_ID}"'
+require_marker ".github/workflows/deploy-production.yml" 'production-deploy-bundle-${GITHUB_SHA}'
+require_marker ".github/workflows/deploy-production.yml" "--skip-bundle-build"
+reject_marker ".github/workflows/deploy-production.yml" "pnpm/action-setup"
+reject_marker ".github/workflows/deploy-production.yml" "docker/setup-buildx-action"
 require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}'
 require_marker ".github/workflows/deploy-production.yml" 'test "${PROD_SSH_USER}" = "root"'
 require_marker ".github/workflows/deploy-production.yml" 'PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}'
@@ -1000,6 +1014,12 @@ require_marker "deploy/deploy-to-ssh-host.sh" 'the remote deployment account mus
 require_marker "deploy/deploy-to-ssh-host.sh" 'STAGE_ONLY_DISALLOWED_CLI'
 require_marker "deploy/deploy-to-ssh-host.sh" '--stage-only accepts only bundle/platform'
 require_marker "deploy/deploy-to-ssh-host.sh" 'StrictHostKeyChecking=yes'
+require_marker "deploy/deploy-to-ssh-host.sh" 'ControlMaster=auto'
+require_marker "deploy/deploy-to-ssh-host.sh" 'ControlPersist=60'
+require_marker "deploy/deploy-to-ssh-host.sh" 'npcink-cloud-ssh.XXXXXX'
+require_marker "deploy/deploy-to-ssh-host.sh" 'cleanup_ssh_control'
+require_marker "deploy/deploy-to-ssh-host.sh" 'stop_pids+=("$!")'
+require_marker "deploy/deploy-to-ssh-host.sh" 'wait "${stop_pids[$index]}"'
 reject_marker "deploy/deploy-to-ssh-host.sh" 'StrictHostKeyChecking=accept-new'
 reject_marker ".github/workflows/production-maintenance.yml" "ssh-keyscan"
 require_marker ".github/workflows/production-maintenance.yml" 'PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}'
