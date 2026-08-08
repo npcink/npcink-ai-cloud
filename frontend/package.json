@@ -62,7 +62,7 @@
     "@types/react": "^19.2.14",
     "@playwright/test": "^1.59.1",
     "@vitest/coverage-v8": "4.1.9",
-    "autoprefixer": "10.4.20",
+    "autoprefixer": "10.5.4",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.9",
     "postcss": "^8.5.18",
