@@ -605,6 +605,15 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 if subscription is not None
                 else None
             )
+            # Lock the account before reading the existing site so concurrent
+            # duplicate provisioning of the same site serializes: the second
+            # caller sees the created site and treats it as an idempotent
+            # update instead of failing the bind-capacity check at the ceiling.
+            if repository.get_account_for_update(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found",
+                    f"account '{account_id}' was not found",
+                )
             existing_site = repository.get_site(site_id)
             if existing_site is not None and str(existing_site.account_id or "") != account_id:
                 raise CommercialConflictError(
