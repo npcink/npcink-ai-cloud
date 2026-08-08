@@ -32,6 +32,26 @@ jobs:
       actions: read
       contents: read
     steps:
+      - name: Record authorization latency
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          created_at="$(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              --jq '.created_at'
+          )"
+          created_epoch="$(date -u -d "${created_at}" +%s)"
+          started_epoch="$(date -u +%s)"
+          authorization_latency_seconds="$((started_epoch - created_epoch))"
+          {
+            echo "## Production Authorization Timing"
+            echo ""
+            echo "- dispatch_to_job_seconds=${authorization_latency_seconds}"
+            echo "- authorization=workflow_dispatch exact confirmation"
+            echo "- environment=secrets and production branch policy"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Validate operator confirmation
         env:
           OPERATOR_CONFIRMATION: ${{ inputs.confirmation }}
@@ -88,26 +108,6 @@ jobs:
           test -f dist/deploy-bundle.tgz.sha256
           bash deploy/verify-release-bundle.sh --archive \
             dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
-
-      - name: Record authorization latency
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          created_at="$(
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-              --jq '.created_at'
-          )"
-          created_epoch="$(date -u -d "${created_at}" +%s)"
-          started_epoch="$(date -u +%s)"
-          authorization_latency_seconds="$((started_epoch - created_epoch))"
-          {
-            echo "## Production Authorization Timing"
-            echo ""
-            echo "- dispatch_to_job_seconds=${authorization_latency_seconds}"
-            echo "- authorization=workflow_dispatch exact confirmation"
-            echo "- environment=secrets and production branch policy"
-          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Install SSH key
         env:
