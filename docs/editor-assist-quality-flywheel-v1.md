@@ -156,3 +156,20 @@ pnpm run check:editor-assist-quality
 
 This validates the regression fixture, focused API/domain behavior, targeted
 lint, and the explicit no-auto-mutation boundary.
+
+The fixture also declares five human-readable cases beside the existing event
+stream: exact publish adoption, edited adoption with and without repeat
+pressure, and two expired-without-save signals needed to exercise the bounded
+diagnostic threshold. Those cases do not reinterpret an unmatched or expired
+session as rejection.
+
+Combined with the five Content Support Agent Feedback samples, inspect the
+bounded ten-case report with:
+
+```bash
+pnpm run report:ai-quality-regression
+```
+
+This command is deterministic and metadata-only. It produces evidence for
+review but does not call a Provider, retain raw content, block on subjective
+editorial quality, or trigger Eval or production mutation.

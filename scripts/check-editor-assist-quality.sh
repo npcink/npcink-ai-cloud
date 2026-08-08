@@ -24,6 +24,9 @@ echo "[editor-assist-quality] Validating metadata-only regression fixture"
 	tests/fixtures/editor_assist_quality/quality_events.json \
 	>/tmp/npcink-editor-assist-quality-events.json
 
+echo "[editor-assist-quality] Reporting the bounded ten-case quality sample set"
+"${PYTHON_BIN}" scripts/report_ai_quality_regression_samples.py
+
 echo "[editor-assist-quality] Running focused API and aggregation tests"
 "${PYTHON_BIN}" -m pytest \
 	tests/api/test_editor_assist_quality_routes.py \
@@ -38,7 +41,8 @@ echo "[editor-assist-quality] Running targeted Python lint"
 	app/api/routes/service.py \
 	app/workers/ops_cadence.py \
 	tests/api/test_editor_assist_quality_routes.py \
-	tests/workers/test_ops_cadence_worker.py
+	tests/workers/test_ops_cadence_worker.py \
+	scripts/report_ai_quality_regression_samples.py
 
 echo "[editor-assist-quality] Running bounded Admin UI contract"
 (
@@ -48,17 +52,17 @@ echo "[editor-assist-quality] Running bounded Admin UI contract"
 )
 
 echo "[editor-assist-quality] Checking the no-auto-mutation boundary"
-rg -q '"automatic_prompt_mutation": False' \
+grep -Fq '"automatic_prompt_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"automatic_model_mutation": False' \
+grep -Fq '"automatic_model_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"automatic_router_mutation": False' \
+grep -Fq '"automatic_router_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"raw_content_retention": False' \
+grep -Fq '"raw_content_retention": False' \
 	app/domain/observability/editor_assist_quality.py
-rg -q '"automatic_evaluation_trigger": False' \
+grep -Fq '"automatic_evaluation_trigger": False' \
 	app/workers/ops_cadence.py
-rg -q 'interval_seconds=lambda _settings: 24 \* 60 \* 60' \
+grep -Fq 'interval_seconds=lambda _settings: 24 * 60 * 60' \
 	app/workers/ops_cadence.py
 
 echo "[editor-assist-quality] Gate passed"
