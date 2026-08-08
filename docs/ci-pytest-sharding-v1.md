@@ -91,6 +91,41 @@ the existing timing and weight-refresh loop without paying the coverage
 instrumentation cost. The stable required check remains `backend`; this pilot
 does not change test selection, assertions, or release authority.
 
+### Changed-code coverage observation cycle
+
+Treat changed-code coverage as a bounded pilot until several naturally
+occurring pull requests change Python under `app/**`. Do not manufacture pull
+requests or full CI runs to complete the sample.
+
+For each useful natural sample, retain enough evidence to distinguish test
+cost from hosted-runner variation:
+
+- changed Python file count, changed executable lines, and changed branch arcs;
+- whether the report identified a real missing test or changed a review
+  decision;
+- each shard's wall time and JUnit recorded test time;
+- `CI observability` time and any artifact, combine, rename, or diff-mapping
+  anomaly.
+
+Do not infer coverage overhead from one run. Compare multiple natural samples
+and separate runner setup or scheduling variance from recorded pytest time and
+coverage instrumentation. The initial implementation and cost correction are
+recorded in the
+[2026-08-08 changed-code coverage retrospective](ai-development-changed-code-coverage-retrospective-2026-08-08.md).
+
+Keep `threshold=null` during this observation cycle. A low percentage remains
+advisory; incomplete or invalid evidence remains fail closed. Introducing a
+merge threshold requires a separate reviewed change with stable natural
+samples, critical-module justification, false-positive analysis, and an
+explicit rollback.
+
+Keep the pilot while its reports are accurate, its incremental cost remains
+small, and it sometimes changes testing or review decisions. First narrow or
+repair it, then remove it if natural samples show persistent material PR
+latency, repeated artifact or line-mapping errors, or maintenance cost greater
+than review value. Those conditions do not by themselves justify a dashboard,
+database, external coverage service, or another test execution.
+
 ## Refresh and escalation rules
 
 1. Refresh weights through a focused PR; never push generated weights directly
@@ -126,3 +161,8 @@ pnpm run check:fast
 Before committing generated weights, inspect `source_run_ids`, verify that each
 run is a successful `master` push with three timing artifacts, and replay the
 new assignment against a held-out run when diagnosing a regression.
+
+For changed-code coverage policy or reporting changes, also verify the empty
+target path, fully unexecuted changed-module fallback, malformed/incomplete
+artifact failure, and Markdown/JSON agreement. GitHub Actions remains the
+runtime evidence for CI orchestration; M4 is not part of this mechanism.
