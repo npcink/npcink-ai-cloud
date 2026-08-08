@@ -118,6 +118,9 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Image Source AI Generation Handoff](image-source-ai-generation-handoff-v1.md)
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
+- [Editor Assist Quality JSON Export Production Closeout — 2026-08-07](editor-assist-quality-json-export-production-closeout-2026-08-07.md)
+  — dated evidence for the restrained metadata-only export, focused validation,
+  production release, time costs, and explicit non-commercial conclusions
 - [Feedback Data Operations](feedback-data-operations-v1.md)
 - [Hosted WordPress Text Generation Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
 

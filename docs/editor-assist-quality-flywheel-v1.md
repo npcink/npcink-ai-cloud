@@ -119,6 +119,31 @@ This is an operator diagnostic surface, not a second product dashboard. It has
 no feedback form, mutation control, notification action, or WordPress write
 path.
 
+### Read-only JSON export
+
+The expanded Editor-assist quality detail may export the currently loaded raw
+read-model response as a JSON file for bounded offline analysis. The export is
+a secondary operator action and is unavailable while the read is loading,
+failed, or empty.
+
+The export:
+
+- reuses the existing `GET /internal/service/admin/editor-assist-quality`
+  response and creates no second API, database projection, report system, or
+  scheduled job;
+- performs no Provider call, Eval run, Cloud mutation, or WordPress write;
+- retains the metadata-only contract: no prompt, article text, generated text,
+  credential, WordPress post ID, or WordPress user ID may be introduced merely
+  for export;
+- is evidence for external analysis, not automatic proof of rejection,
+  acceptance, willingness to pay, retention, or commercial viability;
+- must not be joined to Provider cost or customer billing data without a
+  separately reviewed product and data-boundary change.
+
+An operator may inspect the exported file with a spreadsheet, notebook, or
+third-party analysis tool. Cloud remains the read-only evidence owner, while
+WordPress remains the adoption and final-write owner.
+
 ## Daily Read-only Detection
 
 The existing `ops-worker` cadence evaluates the seven-day summary once every
