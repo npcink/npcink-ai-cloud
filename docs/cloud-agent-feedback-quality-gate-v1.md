@@ -62,6 +62,21 @@ Current expected summary:
 These samples are metadata-only. They must not include prompt text, post
 content, provider responses, secrets, confirmation tokens, or write authority.
 
+Together with the five Editor Assist sessions in
+`tests/fixtures/editor_assist_quality/quality_events.json`, the repository has
+one bounded ten-case deterministic sample set. Generate its human-readable
+report with:
+
+```bash
+pnpm run report:ai-quality-regression
+```
+
+The report validates five cases per capability, global case-ID uniqueness,
+metadata-only fields, Editor Assist case-to-event consistency, and the local
+WordPress approval/preflight/final-write boundary. Its quality interpretation
+is report-only: it performs no Provider call and does not authorize prompt,
+model, router, approval, or production mutation.
+
 ## Nightly Inspection Feedback
 
 Real-site Morning Brief feedback should reuse the same feedback event contract.

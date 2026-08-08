@@ -9,9 +9,11 @@
         "app/domain/agent_feedback/**",
         "tests/api/test_agent_feedback_routes.py",
         "tests/fixtures/agent_feedback/**",
+        "tests/contract/test_ai_quality_regression_samples.py",
         "frontend/src/app/admin/agent-feedback/**",
         "frontend/tests/unit/admin-agent-feedback-*.mjs",
         "scripts/check-agent-feedback-quality.sh",
+        "scripts/report_ai_quality_regression_samples.py",
         "docs/cloud-agent-feedback-quality-gate-v1.md"
       ],
       "documents": [
@@ -33,9 +35,11 @@
         "app/domain/observability/editor_assist_quality.py",
         "tests/api/test_editor_assist_quality_routes.py",
         "tests/fixtures/editor_assist_quality/**",
+        "tests/contract/test_ai_quality_regression_samples.py",
         "frontend/src/app/admin/editor-assist-quality/**",
         "frontend/tests/unit/admin-editor-assist-quality-contract.mjs",
         "scripts/check-editor-assist-quality.sh",
+        "scripts/report_ai_quality_regression_samples.py",
         "docs/editor-assist-quality-flywheel-v1.md"
       ],
       "documents": [

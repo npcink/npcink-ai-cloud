@@ -336,6 +336,22 @@
     {
       "package": "root",
       "profile": "local_read",
+      "owner_doc": "docs/cloud-agent-feedback-quality-gate-v1.md",
+      "used_by": ["ci", "runbook", "contract"],
+      "status": "active",
+      "evidence": [
+        "docs/cloud-agent-feedback-quality-gate-v1.md",
+        "docs/editor-assist-quality-flywheel-v1.md",
+        "scripts/report_ai_quality_regression_samples.py",
+        "tests/contract/test_ai_quality_regression_samples.py"
+      ],
+      "commands": {
+        "report:ai-quality-regression": "Report the bounded metadata-only Agent Feedback and Editor Assist regression samples."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
       "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
       "used_by": ["runbook", "automation"],
       "status": "active",

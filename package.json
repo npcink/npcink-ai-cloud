@@ -98,6 +98,7 @@
     "check:frontend-scope": "node scripts/check-cloud-frontend-scope.js",
     "check:agent-feedback-quality": "bash scripts/check-agent-feedback-quality.sh",
     "check:editor-assist-quality": "bash scripts/check-editor-assist-quality.sh",
+    "report:ai-quality-regression": "python3 scripts/report_ai_quality_regression_samples.py",
     "check:runtime-stability-plan": "node scripts/check-runtime-stability-evidence-plan.js",
     "check:visual:frontend": "pnpm --dir frontend run test:visual",
     "check:admin-ui:visual-governance": "node frontend/tests/unit/admin-visual-governance-contract.mjs && pnpm --dir frontend exec eslint tests/e2e/helpers/admin-visual-receipt.ts tests/e2e/admin-provider-directory-v2.spec.ts tests/e2e/admin-service-settings-v2.spec.ts tests/e2e/admin-runtime-diagnostics-v2.spec.ts tests/e2e/admin-support-request-operator-closure.spec.ts tests/unit/admin-visual-governance-contract.mjs --max-warnings=0",

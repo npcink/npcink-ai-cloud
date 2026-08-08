@@ -1,5 +1,53 @@
 {
   "contract_version": "editor_assist_quality.v1",
+  "description": "Five metadata-only Editor Assist sessions used to verify adoption, edit pressure, no-save signals, and read-only issue-candidate thresholds.",
+  "cases": [
+    {
+      "case_id": "editor_summary_exact_publish",
+      "quality_session_id": "quality_s1",
+      "task_key": "content_summary",
+      "expected_bucket": "exact_publish_adoption",
+      "expected_outcome": "saved_exact_output",
+      "repeated": true,
+      "description": "A repeated summary generation is later published with an exact output fingerprint."
+    },
+    {
+      "case_id": "editor_summary_edited_after_repeat",
+      "quality_session_id": "quality_s2",
+      "task_key": "content_summary",
+      "expected_bucket": "edited_after_repeat",
+      "expected_outcome": "saved_after_generation_unmatched",
+      "repeated": true,
+      "description": "A repeated summary generation is saved after local editing rather than treated as exact adoption."
+    },
+    {
+      "case_id": "editor_summary_expired_without_save",
+      "quality_session_id": "quality_s3",
+      "task_key": "content_summary",
+      "expected_bucket": "expired_without_save",
+      "expected_outcome": "expired_without_save",
+      "repeated": false,
+      "description": "A single generated summary expires without a matching local save and remains a diagnostic signal only."
+    },
+    {
+      "case_id": "editor_summary_edited_without_repeat",
+      "quality_session_id": "quality_s4",
+      "task_key": "content_summary",
+      "expected_bucket": "edited_without_repeat",
+      "expected_outcome": "saved_after_generation_unmatched",
+      "repeated": false,
+      "description": "A first-pass summary is saved after local editing without regeneration pressure."
+    },
+    {
+      "case_id": "editor_summary_no_save_threshold_companion",
+      "quality_session_id": "quality_s5",
+      "task_key": "content_summary",
+      "expected_bucket": "expired_threshold_companion",
+      "expected_outcome": "expired_without_save",
+      "repeated": false,
+      "description": "A second no-save session proves the bounded fixture crosses the diagnostic threshold without claiming rejection."
+    }
+  ],
   "events": [
     {
       "plugin_slug": "npcink-cloud-addon",
