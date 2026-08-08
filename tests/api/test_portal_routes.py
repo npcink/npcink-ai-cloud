@@ -23,6 +23,7 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.auth import (
     PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL,
     build_portal_session_token,
+    decode_portal_session_cookie_claims,
 )
 from app.api.main import create_app
 from app.api.portal_session import COOKIE_PORTAL_SESSION_TOKEN
@@ -3790,6 +3791,71 @@ def test_portal_auth_login_code_remember_me_extends_cookie_session(tmp_path: Pat
             minutes=1,
         )
     )
+
+
+def test_portal_remember_me_expiry_survives_site_selection(tmp_path: Path) -> None:
+    _database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_jwt_issuer": "npcink-cloud-portal",
+            "portal_jwt_audience": "npcink-cloud-customers",
+            "portal_session_ttl_seconds": 4 * 60 * 60,
+            "portal_remember_me_session_ttl_seconds": 7 * 24 * 60 * 60,
+            "portal_login_code_ttl_seconds": 300,
+        },
+    )
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_remember_site", "name": "Remember Site"},
+        headers=build_internal_headers(idempotency_key="portal-remember-site-account-001"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_remember_site",
+            "account_id": "acct_portal_remember_site",
+            "name": "Remember Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="portal-remember-site-create-001"),
+    )
+    _grant_account_member_access(
+        client,
+        site_id="site_portal_remember_site",
+        email="portal-remember-site@example.com",
+        idempotency_key="portal-remember-site-member-001",
+    )
+    request_data = _request_portal_login_code(
+        client,
+        email="portal-remember-site@example.com",
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    _verify_portal_login_code(
+        client,
+        email="portal-remember-site@example.com",
+        code=str(request_data["code"]),
+        remember_me=True,
+    )
+    settings = client.app.state.services.settings
+    before_claims = decode_portal_session_cookie_claims(
+        settings,
+        str(client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or ""),
+    )
+
+    select_response = client.post(
+        "/portal/v1/session/site",
+        json={"site_id": "site_portal_remember_site"},
+    )
+
+    assert select_response.status_code == 200, select_response.text
+    after_claims = decode_portal_session_cookie_claims(
+        settings,
+        str(client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN) or ""),
+    )
+    assert after_claims["site_id"] == "site_portal_remember_site"
+    assert after_claims["exp"] == before_claims["exp"]
+    assert after_claims["exp"] - after_claims["iat"] > 6 * 24 * 60 * 60
 
 
 def test_portal_qq_bind_and_callback_login_reuse_user_session(

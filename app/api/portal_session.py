@@ -302,20 +302,35 @@ def build_new_portal_session_metadata(
     request: Request,
     *,
     ttl_seconds: int | None = None,
+    expires_at: datetime | None = None,
 ) -> dict[str, object]:
     settings = get_cloud_services(request).settings
     now = datetime.now(UTC)
-    resolved_ttl_seconds = (
-        max(60, int(ttl_seconds or 0))
-        if ttl_seconds is not None
-        else resolve_portal_session_ttl_seconds(settings)
+    if ttl_seconds is not None and expires_at is not None:
+        raise ValueError("ttl_seconds and expires_at are mutually exclusive")
+    resolved_expires_at = expires_at or (
+        now
+        + timedelta(
+            seconds=(
+                max(60, int(ttl_seconds or 0))
+                if ttl_seconds is not None
+                else resolve_portal_session_ttl_seconds(settings)
+            )
+        )
     )
+    if resolved_expires_at.tzinfo is None:
+        raise ValueError("expires_at must be timezone-aware")
+    resolved_expires_at = resolved_expires_at.astimezone(UTC)
+    if resolved_expires_at <= now:
+        raise PortalBearerTokenError(
+            401,
+            "auth.portal_session_expired",
+            "portal session has expired",
+        )
     return {
         "principal_id": "",
         "issued_at": now.isoformat().replace("+00:00", "Z"),
-        "expires_at": (now + timedelta(seconds=resolved_ttl_seconds))
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "expires_at": resolved_expires_at.isoformat().replace("+00:00", "Z"),
         "transport": "cookie",
         "revocable": True,
     }
@@ -329,14 +344,34 @@ def set_portal_session_cookies(
     site_id: str = "",
     session_version: int | None = None,
     ttl_seconds: int | None = None,
+    expires_at: datetime | None = None,
 ) -> None:
     settings = get_cloud_services(request).settings
     now = datetime.now(UTC)
-    resolved_ttl_seconds = (
-        max(60, int(ttl_seconds or 0))
-        if ttl_seconds is not None
-        else resolve_portal_session_ttl_seconds(settings)
+    if ttl_seconds is not None and expires_at is not None:
+        raise ValueError("ttl_seconds and expires_at are mutually exclusive")
+    resolved_expires_at = expires_at or (
+        now
+        + timedelta(
+            seconds=(
+                max(60, int(ttl_seconds or 0))
+                if ttl_seconds is not None
+                else resolve_portal_session_ttl_seconds(settings)
+            )
+        )
     )
+    if resolved_expires_at.tzinfo is None:
+        raise ValueError("expires_at must be timezone-aware")
+    resolved_expires_at = resolved_expires_at.astimezone(UTC)
+    resolved_ttl_seconds = int(
+        resolved_expires_at.timestamp() - now.timestamp()
+    )
+    if resolved_ttl_seconds < 1:
+        raise PortalBearerTokenError(
+            401,
+            "auth.portal_session_expired",
+            "portal session has expired",
+        )
     secure = portal_cookie_secure(request)
     if (
         not isinstance(principal_id, str)
@@ -383,7 +418,7 @@ def set_portal_session_cookies(
             principal_id=principal_id,
             site_id=site_id,
             session_version=current_session_version,
-            expires_at=now + timedelta(seconds=resolved_ttl_seconds),
+            expires_at=resolved_expires_at,
         ),
         httponly=True,
         secure=secure,
