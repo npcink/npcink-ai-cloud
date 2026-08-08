@@ -294,6 +294,12 @@ plus its fail-closed bootstrap correction in
 - [ ] the production Environment has a pinned `PROD_SSH_KNOWN_HOSTS` entry
   verified through an independent channel; runtime `ssh-keyscan` is not used,
   and SSH/SCP enforce `StrictHostKeyChecking=yes`
+- [ ] the production Environment retains its production-branch policy and
+  protected secrets but has no hidden required-reviewer wait; the exact manual
+  `Deploy Production` confirmation is the single-operator authorization
+- [ ] the successful production `Cloud CI` run contains the exact
+  `production-deploy-bundle-<sha>` artifact, and the deploy workflow downloads,
+  verifies, and uses it with `--skip-bundle-build`
 - [x] `NPCINK_CLOUD_ALLOW_DEV_ADMIN_INTERNAL_TOKEN_FALLBACK=false`
 - [x] no development-code seam is relied on for release verification
 - [x] no stub-only login path is used during production smoke
@@ -536,7 +542,7 @@ This section is `Required` for first release or runtime/auth changes.
 Post-release timing evidence:
 
 - [x] GitHub Actions release timing was captured with `pnpm run release:timing -- 29084936244`
-- [x] backend, frontend, deploy, overall release, and smoke durations were recorded; the production environment approval was confirmed
+- [x] backend, frontend, deploy, overall release, and smoke durations were recorded; the explicit production dispatch authorization was confirmed
 - [x] no unexpected release-time regression was observed
 
 All items in this section are `Required`.

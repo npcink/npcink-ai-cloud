@@ -72,7 +72,8 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 ## Deployment Impact
 
 - [ ] No production deployment impact.
-- [ ] Requires production environment approval after CI passes on the protected production branch.
+- [ ] Requires an explicit `Deploy Production` dispatch with the exact operator
+  confirmation after CI passes on the protected production branch.
 
 ## Production Promotion
 

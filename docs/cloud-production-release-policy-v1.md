@@ -3,8 +3,9 @@
 Status: active lightweight gate.
 
 Purpose: define the low-cost production release rules for the current early
-validation phase. This policy is a human/process gate until GitHub branch
-protection and environment approval are worth paying for.
+validation phase. In the current single-operator model, the exact manual
+workflow confirmation is the visible human gate; a second Environment reviewer
+is deferred until another independent reviewer would provide real protection.
 
 ## Scope
 
@@ -64,8 +65,11 @@ Git, and run the narrowest relevant local gates plus CI. Before promoting
   archive, GitHub logs, process arguments, and `.env.deploy`;
 - the production-promotion PR sentence
   `Approved for production validation by operator.`;
-- manual production workflow dispatch and Environment approval after the exact
-  `production` revision passes CI.
+- manual production workflow dispatch with the exact operator confirmation
+  after the exact `production` revision passes CI. In the current
+  single-operator AI-development model, this dispatch confirmation is the one
+  human production authorization; the Environment retains secrets and branch
+  policy but does not add a second hidden reviewer wait.
 
 One temporary exception applies only to the current empty-host PostgreSQL 18
 first installation while the exact three governed Python 3.14.6 findings
@@ -93,7 +97,7 @@ This is not a second ordinary deployment route. It expires no later than
 2026-08-11, cannot be used after installation finalization, and disappears as
 soon as the three allowlist entries are removed. Pushes still never deploy.
 Ordinary deployments continue to require the manually dispatched GitHub
-workflow and Environment approval.
+workflow and its exact operator confirmation.
 
 For the already-finalized installation, one narrower internal-validation
 exception may be used through 2026-08-11 only while the operator confirms that
@@ -457,16 +461,22 @@ For the current early validation phase, the manual sign-off is:
 Approved for production validation by operator.
 ```
 
-Put that sentence in the production promotion PR body until paid branch
-protection/environment approval is enabled.
+Put that sentence in the production promotion PR body and enter it again in the
+manual `Deploy Production` dispatch.
 
 ### Historical Deployment Rule
 
 Merging or pushing to `production` runs validation only; it must never mutate
-the host. After the exact `production` revision passes `Cloud CI`, an operator
-manually dispatches `Deploy Production`, enters the exact approval sentence,
-passes the GitHub `production` Environment approval, and lets the workflow
-confirm a completed successful `Cloud CI` run for that exact production commit.
+the host. The production CI run builds, scans, and retains one exact SHA-bound
+deploy bundle as a short-lived artifact. After that exact `production`
+revision passes `Cloud CI`, the operator manually dispatches
+`Deploy Production` and enters the exact approval sentence. That explicit
+dispatch is the single human production authorization for the current
+single-operator model. The GitHub `production` Environment remains the owner
+of protected secrets and the production branch policy, but must not add an
+unannounced required-reviewer wait. The workflow confirms the successful CI
+run, downloads its exact artifact, re-verifies the bundle and checksum, and
+deploys with `--skip-bundle-build`.
 The workflow is `workflow_dispatch` only; there is no push or `workflow_run`
 deployment path.
 
@@ -712,8 +722,8 @@ If production is broken and SSH hotfixing is unavoidable:
 
 ## Upgrade Trigger
 
-Move from this lightweight policy to enforced GitHub branch protection and
-environment approval when any of these become true:
+Add enforced GitHub branch protection and an independent Environment reviewer
+when any of these become true:
 
 - production has meaningful external users;
 - more than one person can merge or deploy;

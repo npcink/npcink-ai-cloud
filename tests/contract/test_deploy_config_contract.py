@@ -2324,9 +2324,10 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
         "NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL: "
         "${{ secrets.NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL }}"
     )
-    assert external_images_default not in ci_workflow
-    assert external_images_default in deploy_workflow
-    assert production_package_extras in deploy_workflow
+    assert external_images_default in ci_workflow
+    assert external_images_default not in deploy_workflow
+    assert production_package_extras in ci_workflow
+    assert production_package_extras not in deploy_workflow
     assert no_user_approval_secret in deploy_workflow
     assert "--no-user-internal-validation" in deploy_workflow
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in ci_workflow
@@ -2350,6 +2351,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "load-plan" in remote_load_script
     assert "verify loaded image IDs" in remote_load_script
     assert "static_terms_only" in ci_workflow
+    assert "production-deploy-bundle:" in ci_workflow
+    assert "production-deploy-bundle-${{ github.sha }}" in ci_workflow
+    assert "bash deploy/bundle-images.sh" in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
@@ -2371,6 +2375,11 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "Approved for production validation by operator." in deploy_workflow
     assert "select(.head_sha == $sha)" in deploy_workflow
     assert 'test "${conclusion}" = "success"' in deploy_workflow
+    assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
+    assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
+    assert "--skip-bundle-build" in deploy_workflow
+    assert "pnpm/action-setup" not in deploy_workflow
+    assert "docker/setup-buildx-action" not in deploy_workflow
     assert "bash deploy/small-customer-trial-preflight.sh" in deploy_workflow
     assert "--require-alipay-enabled" in deploy_workflow
     assert "bash deploy/release-smoke.sh --base-url" in deploy_workflow

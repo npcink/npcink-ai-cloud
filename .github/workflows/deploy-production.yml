@@ -1,4 +1,5 @@
 name: Deploy Production
+run-name: Deploy production ${{ github.sha }}
 
 on:
   workflow_dispatch:
@@ -49,34 +50,64 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Require successful CI for this production commit
+        id: production_ci
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          conclusion="$(
+          ci_run="$(
             gh api --method GET \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
               -f branch=production \
               -f event=push \
               -f status=completed \
               -f per_page=20 |
-              jq -r --arg sha "${GITHUB_SHA}" \
-                '[.workflow_runs[] | select(.head_sha == $sha)][0].conclusion // ""'
+              jq -c --arg sha "${GITHUB_SHA}" \
+                '[.workflow_runs[] | select(.head_sha == $sha)][0] // {}'
           )"
+          conclusion="$(jq -r '.conclusion // ""' <<<"${ci_run}")"
+          ci_run_id="$(jq -r '.id // ""' <<<"${ci_run}")"
           test "${conclusion}" = "success"
+          [[ "${ci_run_id}" =~ ^[0-9]+$ ]]
+          printf 'run_id=%s\n' "${ci_run_id}" >> "${GITHUB_OUTPUT}"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Download exact production deploy bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          artifact_name="production-deploy-bundle-${GITHUB_SHA}"
+          rm -rf dist
+          mkdir -p dist
+          gh run download "${PRODUCTION_CI_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact_name}" \
+            --dir dist
+          test -f dist/deploy-bundle.tgz
+          test -f dist/deploy-bundle.tgz.sha256
+          bash deploy/verify-release-bundle.sh --archive \
+            dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Record authorization latency
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          created_at="$(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              --jq '.created_at'
+          )"
+          created_epoch="$(date -u -d "${created_at}" +%s)"
+          started_epoch="$(date -u +%s)"
+          authorization_latency_seconds="$((started_epoch - created_epoch))"
+          {
+            echo "## Production Authorization Timing"
+            echo ""
+            echo "- dispatch_to_job_seconds=${authorization_latency_seconds}"
+            echo "- authorization=workflow_dispatch exact confirmation"
+            echo "- environment=secrets and production branch policy"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Install SSH key
         env:
@@ -113,8 +144,6 @@ jobs:
           NPCINK_CLOUD_DEPLOY_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_REMOTE_COMPOSE_FILE: docker-compose.runtime.yml
-          NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
-          NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
           NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL: ${{ secrets.NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL }}
           NPCINK_CLOUD_REFRESH_PROVIDERS: "1"
           NPCINK_CLOUD_WITH_OPERATIONAL_READY: "1"
@@ -135,6 +164,7 @@ jobs:
           trap cleanup_deploy_output EXIT
           bash deploy/deploy-to-ssh-host.sh \
             --no-user-internal-validation \
+            --skip-bundle-build \
             --skip-seed \
             --skip-smoke \
             --refresh-providers \

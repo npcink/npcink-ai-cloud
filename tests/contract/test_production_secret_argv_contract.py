@@ -275,6 +275,11 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert "group: production-host-mutation" in deploy
     assert "group: production-host-mutation" in maintenance
     assert "group: production-deploy" not in deploy
+    deploy_script = (ROOT / "deploy/deploy-to-ssh-host.sh").read_text(encoding="utf-8")
+    assert "ControlMaster=auto" in deploy_script
+    assert "ControlPersist=60" in deploy_script
+    assert "npcink-cloud-ssh.XXXXXX" in deploy_script
+    assert "cleanup_ssh_control" in deploy_script
     assert "group: production-maintenance" not in maintenance
     assert "permissions: {}" in maintenance
     assert "safe_prune_confirmation:" in maintenance
