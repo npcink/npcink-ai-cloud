@@ -453,6 +453,14 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         repository: CommercialRepository,
         account_id: str,
     ) -> None:
+        # Serialize activation capacity checks per account so concurrent
+        # activation requests cannot both count the same active-site set and
+        # exceed site_limit after commit.
+        if repository.get_account_for_update(account_id) is None:
+            raise CommercialNotFoundError(
+                "service.account_not_found",
+                f"account '{account_id}' was not found",
+            )
         subscription = repository.get_runtime_subscription(account_id)
         snapshot = (
             repository.get_active_entitlement_snapshot(
@@ -602,7 +610,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     site_limit=cast(Any, self)._resolve_site_limit(snapshot=snapshot),
                 )
             requested_status = str(status or "").strip() or SITE_STATUS_PROVISIONING
-            if requested_status == SITE_STATUS_ACTIVE:
+            if requested_status == SITE_STATUS_ACTIVE and (
+                existing_site is None
+                or str(existing_site.status or "") != SITE_STATUS_ACTIVE
+            ):
                 self._assert_site_activation_capacity_in_session(
                     repository=repository,
                     account_id=account_id,
