@@ -17,6 +17,7 @@ WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
 CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
 PRODUCTION_CI_EVIDENCE = ROOT / "scripts" / "production-ci-evidence.py"
+PRODUCTION_RELEASE_PLAN = ROOT / "scripts" / "production-release-plan.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
@@ -136,6 +137,24 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert '--full-backend "${full_backend}"' in workflow
 
 
+def test_production_push_creates_exact_release_plan_evidence() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    release_plan = PRODUCTION_RELEASE_PLAN.read_text(encoding="utf-8")
+
+    assert "production-release-plan:" in workflow
+    assert "Create exact production release plan" in workflow
+    assert "git diff --name-only --diff-filter=ACMRD" in workflow
+    assert '"${base_sha}" "${GITHUB_SHA}"' in workflow
+    assert '"${base_sha}...${GITHUB_SHA}"' not in workflow
+    assert "production-release-plan-${{ github.sha }}" in workflow
+    assert "python3 scripts/production-release-plan.py" in workflow
+    assert "PRODUCTION_RELEASE_PLAN_RESULT" in workflow
+    assert "npcink.production_release_plan.v1" in release_plan
+    assert '"head_tree"' in release_plan
+    assert '"backend_image_required"' in release_plan
+    assert '"migration_required"' in release_plan
+
+
 def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None:
     for path in (
         "frontend/src/app/portal/page.tsx",
@@ -181,7 +200,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "specialized_quality_required: "
         "${{ steps.changed.outputs.specialized_quality_required }}" in workflow
     )
-    assert workflow.count("--diff-filter=ACMRD") == 3
+    assert workflow.count("--diff-filter=ACMRD") == 5
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
     assert "specialized-quality:" in workflow

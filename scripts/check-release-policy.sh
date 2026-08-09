@@ -981,6 +981,9 @@ require_marker "deploy/nginx.prod.conf" "location /terms/"
 require_marker "deploy/nginx.prod.conf" "location = /terms {"
 require_marker "deploy/nginx.prod.conf" "location = /privacy {"
 require_marker ".github/workflows/ci.yml" "branches: [master, main, production]"
+require_marker ".github/workflows/ci.yml" "production-release-plan:"
+require_marker ".github/workflows/ci.yml" 'production-release-plan-${{ github.sha }}'
+require_marker ".github/workflows/ci.yml" "python3 scripts/production-release-plan.py"
 require_marker ".github/workflows/ci.yml" "production-promotion-evidence:"
 require_marker ".github/workflows/ci.yml" "Production PR CI evidence"
 require_marker ".github/workflows/ci.yml" 'commits/${GITHUB_SHA}/pulls'
@@ -1002,7 +1005,16 @@ reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "PROD_SSH_KEY"
 require_file "scripts/production-ci-evidence.py"
+require_file "scripts/production-release-plan.py"
 require_file "scripts/production-release-preflight.py"
+require_marker "scripts/production-release-plan.py" \
+	"npcink.production_release_plan.v1"
+require_marker "scripts/production-release-plan.py" \
+	'"deployment_required"'
+require_marker "scripts/production-release-plan.py" \
+	'"migration_required"'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	"npcink.production_release_plan.v1"
 require_marker "package.json" '"production:release:preflight":'
 require_marker "scripts/production-release-preflight.py" \
 	"npcink.production_release_preflight.v1"
