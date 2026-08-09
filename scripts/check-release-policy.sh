@@ -1002,6 +1002,14 @@ reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "PROD_SSH_KEY"
 require_file "scripts/production-ci-evidence.py"
+require_file "scripts/production-release-preflight.py"
+require_marker "package.json" '"production:release:preflight":'
+require_marker "scripts/production-release-preflight.py" \
+	"npcink.production_release_preflight.v1"
+require_marker "scripts/production-release-preflight.py" \
+	"production-deploy-bundle-{sha}"
+require_marker "scripts/production-release-preflight.py" \
+	"FORMAL_SMOKE_REQUIRED_SECRETS"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
 require_marker "scripts/production-ci-evidence.py" \
 	"production commit tree does not match the tree tested by the production PR"
@@ -1012,6 +1020,13 @@ require_marker "scripts/production-ci-evidence.py" \
 require_marker "scripts/check-pr-backend-gate.sh" \
 	"Production-promotion PR; full backend gate required."
 require_marker ".github/workflows/deploy-production.yml" "workflow_dispatch:"
+require_marker ".github/workflows/deploy-production.yml" "expected_sha:"
+require_marker ".github/workflows/deploy-production.yml" \
+	'EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}'
+require_marker ".github/workflows/deploy-production.yml" \
+	'[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]'
+require_marker ".github/workflows/deploy-production.yml" \
+	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
 require_marker ".github/workflows/deploy-production.yml" "Approved for production validation by operator."
 require_marker ".github/workflows/deploy-production.yml" "environment: production"
 require_marker ".github/workflows/deploy-production.yml" "group: production-host-mutation"

@@ -48,8 +48,17 @@ the job summary.
 
 Ordinary production deployment has one trigger: manually dispatch
 `Deploy Production` from the exact `production` revision after `Cloud CI` is
-green. The operator must enter
-`Approved for production validation by operator.` exactly. In the current
+green. Before dispatch, run
+`pnpm run production:release:preflight -- --sha <production-sha>` and require
+`release_preflight=ready`; add `--require-formal-smoke` when authenticated
+formal smoke is part of the release gate. This read-only command waits for the
+exact Cloud CI and CodeQL runs, verifies the SHA-bound bundle artifact and
+secret-name readiness, and rejects an already active deploy without reading
+secret values or mutating production. The operator must paste the reported
+`dispatch_expected_sha` into the required `expected_sha` workflow input, then
+enter `Approved for production validation by operator.` exactly. The workflow
+fails before checkout or host mutation if the full lowercase SHA does not equal
+the exact `production` revision selected for the run. In the current
 single-operator AI-development model, that manual dispatch is the one human
 production authorization. The GitHub Environment named `production` retains
 protected secrets and production-branch policy without adding a second hidden

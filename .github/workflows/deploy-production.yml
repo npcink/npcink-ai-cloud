@@ -4,6 +4,10 @@ run-name: Deploy production ${{ github.sha }}
 on:
   workflow_dispatch:
     inputs:
+      expected_sha:
+        description: "Paste dispatch_expected_sha from production:release:preflight"
+        required: true
+        type: string
       confirmation:
         description: "Type: Approved for production validation by operator."
         required: true
@@ -54,11 +58,14 @@ jobs:
 
       - name: Validate operator confirmation
         env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}
           OPERATOR_CONFIRMATION: ${{ inputs.confirmation }}
           FINALIZED_RUNTIME_NETWORK_REPAIR: ${{ inputs.finalized_runtime_network_repair }}
           FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
+          [[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"
           test "${OPERATOR_CONFIRMATION}" = "Approved for production validation by operator."
           if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "true" ]; then
             test "${FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION}" = "Approved for finalized runtime-network repair by operator."
