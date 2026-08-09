@@ -304,7 +304,7 @@ def main() -> int:
             )
             if args.output:
                 _write_json(args.output, payload)
-        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        print(f"[ok] production CI evidence {args.command} completed")
         return 0
     except EvidenceError as exc:
         print(f"[fail] {exc}", file=sys.stderr)

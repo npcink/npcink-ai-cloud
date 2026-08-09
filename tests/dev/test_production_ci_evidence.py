@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -174,3 +175,45 @@ def test_verify_fails_closed_on_identity_or_tree_drift(
             ci_run=ci_run,
             receipt=receipt,
         )
+
+
+def test_cli_does_not_log_receipt_fields(tmp_path: Path) -> None:
+    output = tmp_path / "receipt.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "create",
+            "--repository",
+            "npcink/npcink-ai-cloud",
+            "--pr-number",
+            "600",
+            "--head-sha",
+            HEAD_SHA,
+            "--run-id",
+            "12345",
+            "--tested-sha",
+            TESTED_SHA,
+            "--tested-tree",
+            TREE_SHA,
+            "--static-terms-only",
+            "false",
+            "--secret-scan",
+            "success",
+            "--backend",
+            "success",
+            "--frontend",
+            "success",
+            "--static-terms",
+            "skipped",
+            "--output",
+            str(output),
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert completed.stdout == "[ok] production CI evidence create completed\n"
+    assert "secret_scan" not in completed.stdout
+    assert HEAD_SHA not in completed.stdout
