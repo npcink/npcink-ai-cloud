@@ -143,7 +143,7 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
 
     assert "production-release-plan:" in workflow
     assert "Create exact production release plan" in workflow
-    assert "git diff --name-only --diff-filter=ACMRD" in workflow
+    assert "git diff --no-renames --name-only --diff-filter=ACMRD" in workflow
     assert '"${base_sha}" "${GITHUB_SHA}"' in workflow
     assert '"${base_sha}...${GITHUB_SHA}"' not in workflow
     assert "production-release-plan-${{ github.sha }}" in workflow

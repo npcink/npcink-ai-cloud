@@ -38,7 +38,8 @@ jobs:
             )
           else
             mapfile -t changed_files < <(
-              git diff --name-only --diff-filter=ACMRD "${base_sha}" "${GITHUB_SHA}"
+              git diff --no-renames --name-only --diff-filter=ACMRD \
+                "${base_sha}" "${GITHUB_SHA}"
             )
           fi
 
