@@ -16,6 +16,7 @@ PR_WAITER = ROOT / "scripts" / "wait-pr-readiness.py"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
 CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
+PRODUCTION_CI_EVIDENCE = ROOT / "scripts" / "production-ci-evidence.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
@@ -110,6 +111,27 @@ def test_codeql_runs_for_master_and_production_pull_requests() -> None:
 
     assert "push:\n    branches: [master, production]" in workflow
     assert "pull_request:\n    branches: [master, production]" in workflow
+
+
+def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    evidence_script = PRODUCTION_CI_EVIDENCE.read_text(encoding="utf-8")
+    production_push_guard = (
+        "github.event_name != 'push' || github.ref != 'refs/heads/production'"
+    )
+
+    assert "production-promotion-evidence:" in workflow
+    assert "Production PR CI evidence" in workflow
+    assert "commits/${GITHUB_SHA}/pulls" in workflow
+    assert "production-pr-ci-evidence-${pr_number}-${pr_head_sha}" in workflow
+    assert "python3 scripts/production-ci-evidence.py verify" in workflow
+    assert "production commit tree does not match the tree tested" in evidence_script
+    assert "exactly one merged same-repository production PR" in evidence_script
+    assert workflow.count(production_push_guard) >= 8
+    assert "needs: [production-promotion-evidence]" in workflow
+    assert "Create production PR CI evidence receipt" in workflow
+    assert "Upload production PR CI evidence receipt" in workflow
+    assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
 
 
 def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None:

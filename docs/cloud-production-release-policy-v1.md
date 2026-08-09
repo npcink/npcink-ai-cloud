@@ -155,6 +155,34 @@ Release verification follows these rules:
   risk-question change invalidates only the evidence that depends on the
   changed value. It is not authority to replay every other gate.
 
+### Production PR CI evidence reuse
+
+The exact `production` push Cloud CI may reuse the complete backend, frontend,
+and static-terms result from the merged production-promotion PR instead of
+running the same complete suites again. This is evidence reuse, not a reduced
+production gate, and is valid only when all of the following fail-closed checks
+pass:
+
+- the exact production commit is associated with exactly one merged
+  same-repository PR whose base is `production`;
+- the production PR's successful `Cloud CI` run emitted the versioned
+  `npcink.production_pr_ci_evidence.v1` receipt after its applicable secret,
+  backend/frontend, or static-terms gates passed;
+- the receipt PR number, head SHA, workflow run ID, repository, workflow path,
+  and gate results match the GitHub API evidence;
+- the Git tree tested by the production PR is byte-identical to the exact
+  merged production commit tree;
+- the exact production push still runs its own secret scan, CodeQL workflow,
+  production bundle build/scan, and CI evidence verification before manual
+  deployment can consume the SHA-bound bundle.
+
+A missing artifact, expired artifact, forked PR, ambiguous associated PR,
+failed or mismatched workflow run, changed tree, or malformed receipt fails the
+production push. It must not fall back to trusting a branch name, commit
+message, prior `master` run, or an unbound green status. Recovery is a new
+reviewed production-promotion PR or restoration of the required exact evidence,
+not a manual bypass.
+
 This rule does not permit a failed required gate to be relabeled as passed. It
 keeps successful evidence attributable, limits retries to an actual recovery
 plan, and prevents broad validation from expanding a narrow production repair.

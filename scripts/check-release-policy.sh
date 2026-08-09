@@ -981,6 +981,12 @@ require_marker "deploy/nginx.prod.conf" "location /terms/"
 require_marker "deploy/nginx.prod.conf" "location = /terms {"
 require_marker "deploy/nginx.prod.conf" "location = /privacy {"
 require_marker ".github/workflows/ci.yml" "branches: [master, main, production]"
+require_marker ".github/workflows/ci.yml" "production-promotion-evidence:"
+require_marker ".github/workflows/ci.yml" "Production PR CI evidence"
+require_marker ".github/workflows/ci.yml" 'commits/${GITHUB_SHA}/pulls'
+require_marker ".github/workflows/ci.yml" "python3 scripts/production-ci-evidence.py verify"
+require_marker ".github/workflows/ci.yml" "Create production PR CI evidence receipt"
+require_marker ".github/workflows/ci.yml" 'needs: [production-promotion-evidence]'
 require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
 require_marker ".github/workflows/ci.yml" 'production-deploy-bundle-${{ github.sha }}'
 require_marker ".github/workflows/ci.yml" "bash deploy/bundle-images.sh"
@@ -993,6 +999,12 @@ reject_marker ".github/workflows/ci.yml" "environment: production"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "PROD_SSH_KEY"
+require_file "scripts/production-ci-evidence.py"
+require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
+require_marker "scripts/production-ci-evidence.py" \
+	"production commit tree does not match the tree tested by the production PR"
+require_marker "scripts/production-ci-evidence.py" \
+	"exactly one merged same-repository production PR"
 require_marker ".github/workflows/deploy-production.yml" "workflow_dispatch:"
 require_marker ".github/workflows/deploy-production.yml" "Approved for production validation by operator."
 require_marker ".github/workflows/deploy-production.yml" "environment: production"

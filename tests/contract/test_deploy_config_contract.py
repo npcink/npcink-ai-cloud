@@ -208,6 +208,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "dev-frontend-recover.sh",
         "local-alpha-smoke.sh",
         "production-image-supply.py",
+        "production-ci-evidence.py",
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
         "pg18-semantic-proof.py",
@@ -2354,6 +2355,10 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-deploy-bundle:" in ci_workflow
     assert "production-deploy-bundle-${{ github.sha }}" in ci_workflow
     assert "bash deploy/bundle-images.sh" in ci_workflow
+    assert "production-promotion-evidence:" in ci_workflow
+    assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
+    assert "Create production PR CI evidence receipt" in ci_workflow
+    assert "needs: [production-promotion-evidence]" in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
