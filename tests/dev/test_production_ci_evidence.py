@@ -37,6 +37,7 @@ def _ordinary_receipt() -> dict[str, object]:
         tested_sha=TESTED_SHA,
         tested_tree=TREE_SHA,
         static_terms_only=False,
+        full_backend=True,
         secret_scan="success",
         backend="success",
         frontend="success",
@@ -75,6 +76,7 @@ def test_ordinary_production_receipt_requires_all_reusable_gates() -> None:
 
     assert receipt["gates"] == {
         "static_terms_only": False,
+        "full_backend": True,
         "secret_scan": "success",
         "backend": "success",
         "frontend": "success",
@@ -83,7 +85,7 @@ def test_ordinary_production_receipt_requires_all_reusable_gates() -> None:
 
     with pytest.raises(
         production_ci_evidence.EvidenceError,
-        match="ordinary production PRs require backend/frontend success",
+        match="ordinary production PRs require full backend and frontend success",
     ):
         production_ci_evidence.create_receipt(
             repository="npcink/npcink-ai-cloud",
@@ -93,6 +95,7 @@ def test_ordinary_production_receipt_requires_all_reusable_gates() -> None:
             tested_sha=TESTED_SHA,
             tested_tree=TREE_SHA,
             static_terms_only=False,
+            full_backend=False,
             secret_scan="success",
             backend="skipped",
             frontend="success",
@@ -109,6 +112,7 @@ def test_static_terms_receipt_requires_the_static_gate_only() -> None:
         tested_sha=TESTED_SHA,
         tested_tree=TREE_SHA,
         static_terms_only=True,
+        full_backend=False,
         secret_scan="success",
         backend="skipped",
         frontend="skipped",
@@ -198,6 +202,8 @@ def test_cli_does_not_log_receipt_fields(tmp_path: Path) -> None:
             TREE_SHA,
             "--static-terms-only",
             "false",
+            "--full-backend",
+            "true",
             "--secret-scan",
             "success",
             "--backend",

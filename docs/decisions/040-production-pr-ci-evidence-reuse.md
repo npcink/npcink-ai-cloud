@@ -35,7 +35,7 @@ receipt after the applicable gates pass. The receipt binds:
 - repository, production PR number, base ref, and head SHA;
 - Cloud CI run ID and workflow path;
 - the actual checked-out merge-candidate commit and Git tree;
-- secret-scan plus ordinary backend/frontend or static-terms gate results.
+- secret-scan plus complete backend/frontend or static-terms gate results.
 
 On the exact production push, Cloud CI:
 
@@ -49,9 +49,12 @@ On the exact production push, Cloud CI:
    check succeeds.
 
 The production push retains its own secret scan and separate CodeQL workflow.
-Manual deploy authorization and exact SHA-bound bundle verification remain
-unchanged. Complete pytest/frontend execution remains required on the
-production PR; it is skipped only on the byte-identical post-merge push.
+The manual deploy workflow requires both exact-production-SHA Cloud CI and
+CodeQL success before it downloads the bundle. Manual authorization and exact
+SHA-bound bundle verification remain unchanged. Every non-static production PR
+is forced into the complete backend lane regardless of ordinary diff targeting;
+complete pytest/frontend execution is skipped only on the byte-identical
+post-merge push.
 
 ## Alternatives Considered
 

@@ -862,9 +862,14 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           STATIC_TERMS_RESULT: ${{ needs.static-terms.result }}
           STATIC_TERMS_ONLY: ${{ needs.classify.outputs.static_terms_only }}
+          REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/production-pr-ci-evidence
+          full_backend=false
+          if [ "${REQUIRES_FULL_BACKEND}" = "1" ]; then
+            full_backend=true
+          fi
           python3 scripts/production-ci-evidence.py create \
             --repository "${GITHUB_REPOSITORY}" \
             --pr-number "${{ github.event.pull_request.number }}" \
@@ -873,6 +878,7 @@ jobs:
             --tested-sha "$(git rev-parse HEAD)" \
             --tested-tree "$(git rev-parse HEAD^{tree})" \
             --static-terms-only "${STATIC_TERMS_ONLY}" \
+            --full-backend "${full_backend}" \
             --secret-scan "${SECRET_SCAN_RESULT}" \
             --backend "${BACKEND_RESULT}" \
             --frontend "${FRONTEND_RESULT}" \

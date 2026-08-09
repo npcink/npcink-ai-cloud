@@ -2380,6 +2380,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "Approved for production validation by operator." in deploy_workflow
     assert "select(.head_sha == $sha)" in deploy_workflow
     assert 'test "${conclusion}" = "success"' in deploy_workflow
+    assert "actions/workflows/codeql.yml/runs" in deploy_workflow
+    assert 'test "${codeql_conclusion}" = "success"' in deploy_workflow
+    assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow

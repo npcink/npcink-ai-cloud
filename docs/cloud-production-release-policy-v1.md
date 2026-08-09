@@ -167,14 +167,17 @@ pass:
   same-repository PR whose base is `production`;
 - the production PR's successful `Cloud CI` run emitted the versioned
   `npcink.production_pr_ci_evidence.v1` receipt after its applicable secret,
-  backend/frontend, or static-terms gates passed;
+  complete backend/frontend, or static-terms gates passed; every non-static
+  production-promotion PR is forced into the complete backend lane regardless
+  of ordinary changed-file targeting;
 - the receipt PR number, head SHA, workflow run ID, repository, workflow path,
   and gate results match the GitHub API evidence;
 - the Git tree tested by the production PR is byte-identical to the exact
   merged production commit tree;
 - the exact production push still runs its own secret scan, CodeQL workflow,
   production bundle build/scan, and CI evidence verification before manual
-  deployment can consume the SHA-bound bundle.
+  deployment can consume the SHA-bound bundle; the deploy workflow separately
+  requires successful exact-SHA Cloud CI and CodeQL workflow runs.
 
 A missing artifact, expired artifact, forked PR, ambiguous associated PR,
 failed or mismatched workflow run, changed tree, or malformed receipt fails the

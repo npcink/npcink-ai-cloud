@@ -77,8 +77,11 @@ def validate_receipt(receipt: object) -> dict[str, Any]:
     _require_sha(workflow.get("tested_tree"), "workflow.tested_tree")
 
     static_terms_only = gates.get("static_terms_only")
+    full_backend = gates.get("full_backend")
     if not isinstance(static_terms_only, bool):
         raise EvidenceError("gates.static_terms_only must be boolean")
+    if not isinstance(full_backend, bool):
+        raise EvidenceError("gates.full_backend must be boolean")
     secret_scan = _require_result(gates.get("secret_scan"), "gates.secret_scan")
     backend = _require_result(gates.get("backend"), "gates.backend")
     frontend = _require_result(gates.get("frontend"), "gates.frontend")
@@ -86,15 +89,23 @@ def validate_receipt(receipt: object) -> dict[str, Any]:
     if secret_scan != "success":
         raise EvidenceError("production PR secret scan must pass")
     if static_terms_only:
-        if (backend, frontend, static_terms) != ("skipped", "skipped", "success"):
+        if full_backend or (backend, frontend, static_terms) != (
+            "skipped",
+            "skipped",
+            "success",
+        ):
             raise EvidenceError(
                 "static-terms production PRs require static terms success and skipped "
-                "backend/frontend gates"
+                "backend/frontend gates without full backend execution"
             )
-    elif (backend, frontend, static_terms) != ("success", "success", "skipped"):
+    elif not full_backend or (backend, frontend, static_terms) != (
+        "success",
+        "success",
+        "skipped",
+    ):
         raise EvidenceError(
-            "ordinary production PRs require backend/frontend success and a skipped "
-            "static terms gate"
+            "ordinary production PRs require full backend and frontend success with "
+            "a skipped static terms gate"
         )
     return receipt
 
@@ -108,6 +119,7 @@ def create_receipt(
     tested_sha: str,
     tested_tree: str,
     static_terms_only: bool,
+    full_backend: bool,
     secret_scan: str,
     backend: str,
     frontend: str,
@@ -130,6 +142,7 @@ def create_receipt(
             },
             "gates": {
                 "static_terms_only": static_terms_only,
+                "full_backend": full_backend,
                 "secret_scan": secret_scan,
                 "backend": backend,
                 "frontend": frontend,
@@ -258,6 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--tested-sha", required=True)
     create.add_argument("--tested-tree", required=True)
     create.add_argument("--static-terms-only", required=True, type=_parse_bool)
+    create.add_argument("--full-backend", required=True, type=_parse_bool)
     create.add_argument("--secret-scan", required=True)
     create.add_argument("--backend", required=True)
     create.add_argument("--frontend", required=True)
@@ -287,6 +301,7 @@ def main() -> int:
                 tested_sha=args.tested_sha,
                 tested_tree=args.tested_tree,
                 static_terms_only=args.static_terms_only,
+                full_backend=args.full_backend,
                 secret_scan=args.secret_scan,
                 backend=args.backend,
                 frontend=args.frontend,
