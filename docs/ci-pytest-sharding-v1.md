@@ -12,6 +12,24 @@ This mechanism is CI scheduling evidence only. It must not change test
 assertions, skip coverage, weaken release gates, or introduce a second runtime
 control plane. The stable required check remains `backend`.
 
+Targeted pull requests use a separate four-lane fast gate:
+
+1. changed-source static and anti-drift checks;
+2. deterministic contract shard 1;
+3. deterministic contract shard 2;
+4. impacted API/domain tests selected from changed paths.
+
+The lanes run in parallel and still aggregate into the stable required
+`backend` check. `scripts/select-pr-backend-tests.py` owns the impacted-test
+mapping. Central API/bootstrap files intentionally select all `tests/api`;
+unknown future `app/api/**` files also fall back to all API tests with a
+warning. A missing mapping therefore costs time but cannot silently reduce
+coverage.
+
+The complete backend lane remains three shards and is still selected for CI
+configuration, dependencies, migrations, core models, and other high-risk
+surfaces. Targeted-lane optimization must not change that authority.
+
 ## Weight source
 
 `ci/pytest-backend-durations.json` is generated from complete
@@ -152,11 +170,16 @@ For changes to this mechanism, run:
 ```bash
 .venv/bin/python -m pytest -q \
   tests/dev/test_select_pytest_shard.py \
+  tests/dev/test_select_pr_backend_tests.py \
+  tests/dev/test_wait_pr_readiness.py \
   tests/dev/test_report_changed_code_coverage.py \
   tests/contract/test_ci_efficiency_contract.py
-bash -n scripts/refresh-pytest-duration-weights.sh
-pnpm run check:fast
+bash -n scripts/check-pr-backend-gate.sh scripts/refresh-pytest-duration-weights.sh
 ```
+
+When `.github/workflows/ci.yml` changes, the pull request intentionally enters
+the complete backend lane. That exact GitHub Actions run is the orchestration
+and integration authority; do not duplicate it with local Docker or M4.
 
 Before committing generated weights, inspect `source_run_ids`, verify that each
 run is a successful `master` push with three timing artifacts, and replay the

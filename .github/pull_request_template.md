@@ -40,6 +40,9 @@
 
 - Residual risk:
 - Rollback plan:
+- [ ] For auth/quota/multi-tenant changes: current configuration versus stored
+      snapshots, principal-scoped error projections, and stale `409` client
+      recovery were reviewed or marked not applicable.
 
 ## Admin UI
 

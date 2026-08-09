@@ -31,6 +31,7 @@
     "ai:task:receipt": "python3 scripts/ai_task.py receipt",
     "worktree:audit": "python3 scripts/audit_worktrees.py",
     "pr:publish": "bash scripts/publish-pr.sh",
+    "pr:wait": "python3 scripts/wait-pr-readiness.py",
     "check:seam": "pnpm run test:api && pnpm run check:perimeter",
     "check:perimeter": "make perimeter",
     "check:anti-drift": "node scripts/check-cloud-anti-drift.js && node scripts/check-provider-env-retirement.js",
