@@ -255,6 +255,21 @@
     },
     {
       "package": "root",
+      "profile": "ci_read",
+      "owner_doc": "docs/single-session-ai-workflow-standard-v1.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": [
+        "package.json",
+        "scripts/wait-pr-readiness.py",
+        "docs/single-session-ai-workflow-standard-v1.md"
+      ],
+      "commands": {
+        "pr:wait": "Monitor pull-request checks and unresolved review threads until the final head is ready."
+      }
+    },
+    {
+      "package": "root",
       "profile": "local_read",
       "owner_doc": "docs/cloud-agent-workflow-metadata-projection-v1.md",
       "used_by": ["ci", "runbook", "automation", "contract"],
