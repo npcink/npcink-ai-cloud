@@ -36,6 +36,7 @@ from app.domain.portal_idempotency import (
 )
 
 COOKIE_PORTAL_SESSION_TOKEN = "npcink_portal_session_token"
+PORTAL_REMEMBER_ME_MIN_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 def _dict_value(value: object) -> dict[str, object]:
@@ -508,7 +509,10 @@ def set_portal_session_cookies(
 def resolve_portal_login_session_ttl_seconds(request: Request, *, remember_me: bool) -> int:
     settings = get_cloud_services(request).settings
     if remember_me:
-        return resolve_portal_remember_me_session_ttl_seconds(settings)
+        return max(
+            PORTAL_REMEMBER_ME_MIN_TTL_SECONDS,
+            resolve_portal_remember_me_session_ttl_seconds(settings),
+        )
     return resolve_portal_session_ttl_seconds(settings)
 
 

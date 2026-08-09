@@ -3793,7 +3793,9 @@ def test_portal_auth_login_code_remember_me_extends_cookie_session(tmp_path: Pat
             "portal_jwt_issuer": "npcink-cloud-portal",
             "portal_jwt_audience": "npcink-cloud-customers",
             "portal_session_ttl_seconds": 900,
-            "portal_remember_me_session_ttl_seconds": 7 * 24 * 60 * 60,
+            # A stale deployment override must not shorten the user-facing
+            # "keep me signed in for 7 days" contract.
+            "portal_remember_me_session_ttl_seconds": 4 * 60 * 60,
             "portal_login_code_ttl_seconds": 300,
         },
     )
