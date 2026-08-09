@@ -183,9 +183,10 @@ For changes to this mechanism, run:
 bash -n scripts/check-pr-backend-gate.sh scripts/refresh-pytest-duration-weights.sh
 ```
 
-When `.github/workflows/ci.yml` changes, the pull request intentionally enters
-the complete backend lane. That exact GitHub Actions run is the orchestration
-and integration authority; do not duplicate it with local Docker or M4.
+When `.github/workflows/ci.yml` or `ci/pytest-backend-durations.json` changes,
+the pull request intentionally enters the complete backend lane. That exact
+GitHub Actions run is the orchestration and integration authority; do not
+duplicate it with local Docker or M4.
 
 Before committing generated weights, inspect `source_run_ids`, verify that each
 run is a successful `master` push with three timing artifacts, and replay the
