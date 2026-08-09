@@ -1828,13 +1828,21 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     assert workflow.index('test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"') < workflow.index(
         "uses: actions/checkout@v6"
     )
+    assert "run_formal_release_smoke:" in workflow
+    assert "default: false" in workflow
+    assert "installation_state == 'complete' && inputs.run_formal_release_smoke" in workflow
+    assert "Failed closed because the selected formal release smoke" in workflow
+    assert "exit 1" in workflow
+    assert "Record deferred formal release smoke" in workflow
+    assert "This is not passing formal-smoke evidence." in workflow
+    assert "Skipped because one or more formal release smoke secrets" not in workflow
     assert "printf 'installation_state=pending\\n'" in deploy
     assert "printf 'installation_state=complete\\n'" in deploy
     assert "id: deploy" in workflow
     assert "^installation_state=(pending|complete)$" in workflow
     assert "exactly one explicit installation_state=pending|complete" in workflow
     assert "steps.deploy.outputs.installation_state == 'pending'" in workflow
-    assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 2
+    assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 3
     assert "Post-install preflight and release smoke were intentionally skipped." in workflow
     assert (
         "While the lifecycle remains pending, run the complete-only Release Smoke workflow"
@@ -2537,8 +2545,18 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
         assert removed_marker not in release_smoke_env_example
 
     assert "workflow_dispatch:" in release_smoke_workflow
+    assert "expected_deployed_sha:" in release_smoke_workflow
     assert "github.ref == 'refs/heads/production'" in release_smoke_workflow
     assert "environment: production" in release_smoke_workflow
+    assert "actions: read" in release_smoke_workflow
+    assert 'EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}' in release_smoke_workflow
+    assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
+    assert 'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"' in release_smoke_workflow
+    assert "actions/workflows/deploy-production.yml/runs" in release_smoke_workflow
+    assert '.head_sha == $sha and .conclusion == "success"' in release_smoke_workflow
+    assert release_smoke_workflow.index(
+        'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+    ) < release_smoke_workflow.index("uses: actions/checkout@v6")
     assert "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN" in release_smoke_workflow
     assert "NPCINK_CLOUD_ADMIN_KEY" in release_smoke_workflow
     assert "NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN" not in release_smoke_workflow

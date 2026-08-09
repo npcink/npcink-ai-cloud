@@ -12,6 +12,11 @@ on:
         description: "Type: Approved for production validation by operator."
         required: true
         type: string
+      run_formal_release_smoke:
+        description: "Run fail-closed authenticated smoke after a completed ordinary deploy"
+        required: true
+        default: false
+        type: boolean
       finalized_runtime_network_repair:
         description: "Repair missing finalized active-release runtime-network state before ordinary deployment"
         required: true
@@ -249,8 +254,8 @@ jobs:
             --base-url "${NPCINK_CLOUD_BASE_URL}" \
             --require-alipay-enabled
 
-      - name: Optional formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete'
+      - name: Formal release smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
@@ -280,8 +285,8 @@ jobs:
           if [ "${missing}" = "1" ]; then
             echo "## Formal Release Smoke" >> "${GITHUB_STEP_SUMMARY}"
             echo "" >> "${GITHUB_STEP_SUMMARY}"
-            echo "Skipped because one or more formal release smoke secrets are not configured." >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
+            echo "Failed closed because the selected formal release smoke is missing one or more protected secrets." >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
           fi
           credential_dir="$(mktemp -d)"
           credential_file="${credential_dir}/release-smoke-credentials.json"
@@ -342,3 +347,13 @@ jobs:
             NPCINK_CLOUD_RELEASE_KEY_SECRET
           bash deploy/release-smoke.sh --base-url "${NPCINK_CLOUD_BASE_URL}" \
             --credentials-file "${credential_file}"
+
+      - name: Record deferred formal release smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke == false
+        run: |
+          {
+            echo "## Formal Release Smoke"
+            echo ""
+            echo "Not selected for this deploy. This is not passing formal-smoke evidence."
+            echo "For real SMTP, refresh the one-time Portal login code only after deployment, then immediately dispatch the fail-closed Release Smoke workflow from production."
+          } >> "${GITHUB_STEP_SUMMARY}"
