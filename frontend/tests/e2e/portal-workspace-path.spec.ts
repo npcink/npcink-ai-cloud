@@ -40,6 +40,16 @@ function buildPortalSession(selectedSiteId: string) {
       site_url: '',
       platform_kind: 'wordpress',
       status: 'active',
+      capacity_scope: 'scope_1',
+      capacity: {
+        active_count: 2,
+        active_limit: 5,
+        active_remaining: 3,
+        bound_count: 2,
+        bound_limit: 15,
+        bound_remaining: 13,
+      },
+      allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
     },
     {
       site_id: 'site_clear',
@@ -47,6 +57,16 @@ function buildPortalSession(selectedSiteId: string) {
       site_url: 'https://clear.example.test',
       platform_kind: 'wordpress',
       status: 'active',
+      capacity_scope: 'scope_1',
+      capacity: {
+        active_count: 2,
+        active_limit: 5,
+        active_remaining: 3,
+        bound_count: 2,
+        bound_limit: 15,
+        bound_remaining: 13,
+      },
+      allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
     },
   ];
 
@@ -1573,8 +1593,9 @@ test('portal workspace interaction path: account overview to site detail and ser
   ).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
-  await expect(sitesWorkspace.getByText(/^1 (?:Needs attention|需要关注)$/i)).toBeVisible();
-  await expect(sitesWorkspace.getByText(/^Needs attention$|^需要关注$/i)).toHaveCount(1);
+  await expect(sitesWorkspace.getByText(/^Active 2\/5$|^活动站点 2\/5$/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/^Bound 2\/15$|^已绑定 2\/15$/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/^Active$|^已激活$/i)).toHaveCount(2);
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',

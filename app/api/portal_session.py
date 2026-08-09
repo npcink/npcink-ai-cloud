@@ -23,7 +23,7 @@ from app.api.auth import (
 )
 from app.api.envelope import build_envelope
 from app.core.db import get_session
-from app.core.models import PRINCIPAL_STATUS_ACTIVE, SITE_STATUS_ACTIVE, SITE_STATUS_ARCHIVED
+from app.core.models import PRINCIPAL_STATUS_ACTIVE, SITE_STATUS_ARCHIVED
 from app.core.security import extract_trace_id
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
@@ -239,10 +239,37 @@ def serialize_portal_session(
     service = get_commercial_service(request)
     sites = service.list_portal_sites(principal_id=principal_id)
     principal_profile = service.get_portal_principal_profile(principal_id=principal_id)
-    site_items = [
-        _portal_site_projection(_dict_value(item.get("site")))
-        for item in _dict_list(sites.get("items"))
-    ]
+    capacity_by_account = _dict_value(sites.get("capacities"))
+    account_scope = {
+        account_id: f"scope_{index}"
+        for index, account_id in enumerate(sorted(capacity_by_account), start=1)
+    }
+    site_items = []
+    for item in _dict_list(sites.get("items")):
+        site = _dict_value(item.get("site"))
+        account_id = str(site.get("account_id") or "")
+        capacity = _dict_value(capacity_by_account.get(account_id))
+        site_items.append(
+            {
+                **_portal_site_projection(site),
+                "capacity_scope": account_scope.get(account_id, ""),
+                "capacity": {
+                    "active_count": int(capacity.get("active_count") or 0),
+                    "active_limit": int(capacity.get("active_limit") or 0),
+                    "active_remaining": int(capacity.get("active_remaining") or 0),
+                    "bound_count": int(capacity.get("bound_count") or 0),
+                    "bound_limit": int(capacity.get("bound_limit") or 0),
+                    "bound_remaining": int(capacity.get("bound_remaining") or 0),
+                },
+                "allowed_actions": sorted(
+                    {
+                        str(action).strip()
+                        for action in _object_list(item.get("allowed_actions"))
+                        if str(action).strip()
+                    }
+                ),
+            }
+        )
     selected_context: dict[str, object] | None = None
     session = session_metadata or _resolve_portal_session_metadata(
         request,
@@ -267,13 +294,6 @@ def serialize_portal_session(
                         "service.portal_site_removed",
                         "removed portal sites cannot be selected as the current site",
                     )
-            elif selected_status != SITE_STATUS_ACTIVE:
-                if strict_site:
-                    raise CommercialServiceError(
-                        403,
-                        "service.portal_site_inactive",
-                        "inactive portal sites cannot be selected as the current site",
-                    )
             else:
                 account_id = str(access.get("account_id") or "").strip()
                 current_subscription = (
@@ -282,7 +302,16 @@ def serialize_portal_session(
                     else None
                 )
                 selected_context = {
-                    "site": _portal_site_projection(selected_site),
+                    "site": {
+                        **_portal_site_projection(selected_site),
+                        "allowed_actions": sorted(
+                            {
+                                str(action).strip()
+                                for action in _object_list(access.get("allowed_actions"))
+                                if str(action).strip()
+                            }
+                        ),
+                    },
                     "allowed_actions": sorted(
                         {
                             str(action).strip()

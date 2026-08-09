@@ -1922,7 +1922,7 @@ def test_portal_addon_connection_allows_new_site_after_inactive_site_releases_ca
     dispose_engine(database_url)
 
 
-def test_portal_addon_connection_rejects_activation_at_active_site_limit(
+def test_portal_addon_connection_binds_inactive_at_limit_and_supports_explicit_swap(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
@@ -1952,8 +1952,9 @@ def test_portal_addon_connection_rejects_activation_at_active_site_limit(
         idempotency_key="portal-addon-activation-limit-primary",
     )
 
-    # Binding the second site is allowed (soft bind limit), but activating it
-    # must be rejected while the Free active site limit (1) is already used.
+    # Binding the second site is allowed even while the Free active site limit
+    # is already used. The exchange still returns a valid credential, but the
+    # newly bound site remains inactive until the user explicitly swaps it in.
     return_url = (
         "https://secondary.example.com/wp-admin/admin-post.php"
         "?action=npcink_cloud_addon_complete_auth"
@@ -1982,22 +1983,80 @@ def test_portal_addon_connection_rejects_activation_at_active_site_limit(
             "state": "addon-state-activation-limit-secondary",
         },
     )
-    assert exchange_response.status_code == 403, exchange_response.text
-    assert (
-        exchange_response.json()["error_code"] == "service.site_limit_exceeded"
-    )
+    assert exchange_response.status_code == 200, exchange_response.text
+    exchange_data = exchange_response.json()["data"]
+    assert exchange_data["cloud_api_key"].startswith("mak1_")
+    assert exchange_data["activation_state"] == "inactive"
+    assert exchange_data["activation_required"] is True
+    assert exchange_data["activation_reason"] == "active_site_limit_reached"
+    assert exchange_data["capacity"] == {
+        "active_count": 1,
+        "active_limit": 1,
+        "active_remaining": 0,
+        "bound_count": 2,
+        "bound_limit": 3,
+        "bound_remaining": 1,
+    }
 
     with get_session(database_url) as session:
         primary_site = session.get(Site, "site_primary-example-com")
         secondary_site = session.get(Site, "site_secondary-example-com")
         assert primary_site is not None
         assert primary_site.status == "active"
-        assert secondary_site is None
+        assert secondary_site is not None
+        assert secondary_site.status == "inactive"
+
+    quota_response = client.patch(
+        "/portal/v1/sites/site_secondary-example-com/lifecycle",
+        json={"status": "active", "replace_site_ids": []},
+        headers={"Idempotency-Key": "portal-site-activate-without-swap"},
+    )
+    assert quota_response.status_code == 409, quota_response.text
+    quota_data = quota_response.json()
+    assert quota_data["error_code"] == "service.site_limit_exceeded"
+    assert quota_data["data"]["required_release_count"] == 1
+    assert [
+        item["site_id"] for item in quota_data["data"]["active_sites"]
+    ] == ["site_primary-example-com"]
+    assert set(quota_data["data"]["active_sites"][0]) == {
+        "site_id",
+        "name",
+        "site_url",
+        "platform_kind",
+        "status",
+    }
+
+    swap_response = client.patch(
+        "/portal/v1/sites/site_secondary-example-com/lifecycle",
+        json={
+            "status": "active",
+            "replace_site_ids": ["site_primary-example-com"],
+        },
+        headers={"Idempotency-Key": "portal-site-activate-with-swap"},
+    )
+    assert swap_response.status_code == 200, swap_response.text
+    swap_data = swap_response.json()["data"]
+    assert swap_data["site"]["status"] == "active"
+    assert swap_data["transition"] == {
+        "previous_status": "inactive",
+        "deactivated_site_ids": ["site_primary-example-com"],
+    }
+    assert swap_data["capacity"]["active_count"] == 1
+    assert swap_data["capacity"]["bound_count"] == 2
+
+    deactivate_response = client.patch(
+        "/portal/v1/sites/site_secondary-example-com/lifecycle",
+        json={"status": "inactive", "replace_site_ids": []},
+        headers={"Idempotency-Key": "portal-site-deactivate"},
+    )
+    assert deactivate_response.status_code == 200, deactivate_response.text
+    assert deactivate_response.json()["data"]["site"]["status"] == "inactive"
+    assert deactivate_response.json()["data"]["capacity"]["active_count"] == 0
 
     dispose_engine(database_url)
 
 
-def test_portal_addon_connection_reactivates_existing_inactive_site(
+def test_portal_addon_connection_preserves_existing_inactive_site(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
@@ -2063,13 +2122,15 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
     )
     assert exchange_response.status_code == 200, exchange_response.text
     exchange_data = exchange_response.json()["data"]
-    assert exchange_data["activation_state"] == "active"
+    assert exchange_data["activation_state"] == "inactive"
+    assert exchange_data["activation_required"] is True
+    assert exchange_data["activation_reason"] == "manual_activation_required"
     assert exchange_data["revoked_key_ids"] == [old_key_id]
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
-        assert site.status == "active"
+        assert site.status == "inactive"
         assert site.site_url == "https://primary.example.com"
         assert site.platform_kind == "wordpress"
         old_key = session.get(SiteApiKey, old_key_id)
@@ -6122,10 +6183,28 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
             "site_id": "site_portal_session",
             "name": "Portal Session Site",
             "site_url": "",
-            "platform_kind": "wordpress",
-            "status": "active",
-        }
-    ]
+                "platform_kind": "wordpress",
+                "status": "active",
+                "capacity_scope": "scope_1",
+                "capacity": {
+                    "active_count": 1,
+                    "active_limit": 5,
+                    "active_remaining": 4,
+                    "bound_count": 1,
+                    "bound_limit": 15,
+                    "bound_remaining": 14,
+                },
+                "allowed_actions": [
+                    "manage_billing",
+                    "provision_sites",
+                    "remove_sites",
+                    "view_audit",
+                    "view_billing",
+                    "view_sites",
+                    "view_usage",
+                ],
+            }
+        ]
 
     sites_response = client.get("/portal/v1/sites")
     assert sites_response.status_code == 404

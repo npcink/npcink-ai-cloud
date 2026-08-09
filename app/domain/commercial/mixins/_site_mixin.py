@@ -211,6 +211,73 @@ def _get_active_addon_subscription(
 
 
 class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
+    def _site_capacity_projection_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        account_id: str,
+        snapshot: object | None = None,
+    ) -> dict[str, object]:
+        resolved_snapshot = snapshot
+        if resolved_snapshot is None:
+            subscription = repository.get_runtime_subscription(account_id)
+            if subscription is not None:
+                resolved_snapshot = repository.get_active_entitlement_snapshot(
+                    account_id,
+                    subscription_id=subscription.subscription_id,
+                )
+        active_limit = (
+            cast(Any, self)._resolve_site_limit(snapshot=resolved_snapshot)
+            if resolved_snapshot is not None
+            else max(
+                0,
+                self._coerce_int(
+                    PLAN_TIER_REGISTRY[DEFAULT_PLAN_TIER_ID].get("site_limit")
+                ),
+            )
+        )
+        bound_limit = max(3, active_limit * 3)
+        active_count = self._coerce_int(
+            repository.count_sites_by_account(
+                account_ids=[account_id],
+                statuses=[SITE_STATUS_ACTIVE],
+            ).get(account_id, 0)
+        )
+        bound_count = self._coerce_int(
+            repository.count_sites_by_account(
+                account_ids=[account_id],
+                statuses=[
+                    SITE_STATUS_ACTIVE,
+                    SITE_STATUS_PROVISIONING,
+                    SITE_STATUS_SUSPENDED,
+                    SITE_STATUS_INACTIVE,
+                ],
+            ).get(account_id, 0)
+        )
+        active_sites = [
+            {
+                "site_id": str(site.site_id or ""),
+                "name": str(site.name or ""),
+                "site_url": str(site.site_url or ""),
+                "platform_kind": str(site.platform_kind or ""),
+                "status": str(site.status or ""),
+            }
+            for site in repository.list_sites(
+                account_id=account_id,
+                status=SITE_STATUS_ACTIVE,
+                limit=None,
+            )
+        ]
+        return {
+            "active_count": active_count,
+            "active_limit": active_limit,
+            "active_remaining": max(0, active_limit - active_count),
+            "bound_count": bound_count,
+            "bound_limit": bound_limit,
+            "bound_remaining": max(0, bound_limit - bound_count),
+            "active_sites": active_sites,
+        }
+
     def _assert_cross_account_relink_available(
         self,
         *,
@@ -718,6 +785,197 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             )
             session.commit()
             return payload
+
+    def update_portal_site_lifecycle(
+        self,
+        site_id: str,
+        *,
+        principal_id: str,
+        status: str,
+        replace_site_ids: list[str] | None = None,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        desired_status = str(status or "").strip()
+        if desired_status not in {SITE_STATUS_ACTIVE, SITE_STATUS_INACTIVE}:
+            raise CommercialValidationError(
+                "service.portal_site_lifecycle_status_invalid",
+                "portal site lifecycle status must be active or inactive",
+            )
+        normalized_replacements = list(
+            dict.fromkeys(
+                str(item or "").strip()
+                for item in (replace_site_ids or [])
+                if str(item or "").strip() and str(item or "").strip() != site_id
+            )
+        )
+        now = self.now_factory()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            access_row = repository.get_portal_site_access(
+                principal_id=principal_id,
+                site_id=site_id,
+            )
+            if access_row is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            access_site, account, identity, membership, site_binding = access_row
+            if (
+                account is None
+                or str(account.status or "") != ACCOUNT_STATUS_ACTIVE
+                or identity is None
+                or str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE
+                or membership is None
+                or str(membership.status or "")
+                != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or USER_ALLOWED_ACTION_PROVISION_SITES
+                not in {
+                    str(action).strip()
+                    for action in (membership.allowed_actions_json or [])
+                    if str(action).strip()
+                }
+                or site_binding is None
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_site_access_required",
+                    "portal site access is required",
+                )
+            account_id = str(access_site.account_id or "")
+            if repository.get_account_for_update(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found",
+                    f"account '{account_id}' was not found",
+                )
+            site = repository.get_site_for_update(site_id)
+            if site is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            previous_status = str(site.status or "")
+            if previous_status == SITE_STATUS_SUSPENDED:
+                raise CommercialPermissionError(
+                    "service.portal_site_lifecycle_operator_owned",
+                    "suspended sites can only be changed by a Cloud operator",
+                )
+            if previous_status == SITE_STATUS_ARCHIVED:
+                raise CommercialPermissionError(
+                    "service.portal_site_removed",
+                    "removed sites must reconnect before activation",
+                )
+
+            deactivated_site_ids: list[str] = []
+            if desired_status == SITE_STATUS_ACTIVE and previous_status == SITE_STATUS_ACTIVE and normalized_replacements:
+                raise CommercialValidationError(
+                    "service.portal_site_replacement_not_allowed",
+                    "replace_site_ids is only valid when activating an inactive site at capacity",
+                )
+            if desired_status == SITE_STATUS_ACTIVE and previous_status != SITE_STATUS_ACTIVE:
+                capacity = self._site_capacity_projection_in_session(
+                    repository=repository,
+                    account_id=account_id,
+                )
+                active_limit = self._coerce_int(capacity.get("active_limit"))
+                active_count = self._coerce_int(capacity.get("active_count"))
+                required_release_count = (
+                    max(0, active_count + 1 - active_limit) if active_limit > 0 else 0
+                )
+                replacement_sites: list[Site] = []
+                for replacement_site_id in normalized_replacements:
+                    replacement = repository.get_site_for_update(replacement_site_id)
+                    replacement_binding = repository.get_current_principal_site_binding(
+                        replacement_site_id,
+                        for_update=False,
+                    )
+                    if (
+                        replacement is None
+                        or str(replacement.account_id or "") != account_id
+                        or str(replacement.status or "") != SITE_STATUS_ACTIVE
+                        or replacement_binding is None
+                        or str(replacement_binding.principal_id or "") != principal_id
+                    ):
+                        raise CommercialValidationError(
+                            "service.portal_site_replacement_invalid",
+                            f"replacement site '{replacement_site_id}' is not an active bound site in this account",
+                        )
+                    replacement_sites.append(replacement)
+                if len(replacement_sites) < required_release_count:
+                    raise CommercialConflictError(
+                        "service.site_limit_exceeded",
+                        "the active site limit is full; explicitly select an active site to replace",
+                        data={
+                            **capacity,
+                            "required_release_count": required_release_count,
+                        },
+                    )
+                if len(replacement_sites) != required_release_count:
+                    raise CommercialValidationError(
+                        "service.portal_site_replacement_count_invalid",
+                        "replace_site_ids must contain exactly the number of active sites required to release capacity",
+                        data={"required_release_count": required_release_count},
+                    )
+                for replacement in replacement_sites:
+                    replacement.status = SITE_STATUS_INACTIVE
+                    deactivated_site_ids.append(replacement.site_id)
+                    self._record_service_audit_in_session(
+                        repository=repository,
+                        audit_context=audit_context,
+                        event_kind="site.deactivate",
+                        outcome="succeeded",
+                        account_id=account_id,
+                        site_id=replacement.site_id,
+                        scope_kind="site",
+                        scope_id=replacement.site_id,
+                        payload_json=self._serialize_site(replacement),
+                    )
+                site.status = SITE_STATUS_ACTIVE
+                site.activated_at = now
+                site.suspended_at = None
+                site.suspension_reason = None
+            elif desired_status == SITE_STATUS_INACTIVE and normalized_replacements:
+                raise CommercialValidationError(
+                    "service.portal_site_replacement_not_allowed",
+                    "replace_site_ids is only valid when activating a site at capacity",
+                )
+            elif desired_status == SITE_STATUS_INACTIVE and previous_status != SITE_STATUS_INACTIVE:
+                site.status = SITE_STATUS_INACTIVE
+
+            if previous_status != str(site.status or ""):
+                self._record_service_audit_in_session(
+                    repository=repository,
+                    audit_context=audit_context,
+                    event_kind=(
+                        "site.activate"
+                        if str(site.status or "") == SITE_STATUS_ACTIVE
+                        else "site.deactivate"
+                    ),
+                    outcome="succeeded",
+                    account_id=account_id,
+                    site_id=site.site_id,
+                    scope_kind="site",
+                    scope_id=site.site_id,
+                    payload_json=self._serialize_site(site),
+                )
+            session.flush()
+            capacity = self._site_capacity_projection_in_session(
+                repository=repository,
+                account_id=account_id,
+            )
+            result = {
+                "site": self._serialize_site(site),
+                "capacity": {
+                    key: value
+                    for key, value in capacity.items()
+                    if key != "active_sites"
+                },
+                "transition": {
+                    "previous_status": previous_status,
+                    "deactivated_site_ids": deactivated_site_ids,
+                },
+            }
+            session.commit()
+            return result
 
     def suspend_site(
         self,
@@ -1607,16 +1865,21 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 audit_context=audit_context,
                 replaced_key_ids=revoked_key_ids,
             )
-            if site.status in {
+            should_auto_activate = site.status in {
                 SITE_STATUS_PROVISIONING,
-                SITE_STATUS_INACTIVE,
                 SITE_STATUS_ARCHIVED,
-            }:
-                service._assert_account_site_capacity(
-                    repository=repository,
-                    account_id=account_id,
-                    snapshot=snapshot,
-                )
+            }
+            capacity_before_activation = service._site_capacity_projection_in_session(
+                repository=repository,
+                account_id=account_id,
+                snapshot=snapshot,
+            )
+            has_active_capacity = (
+                self._coerce_int(capacity_before_activation.get("active_limit")) <= 0
+                or self._coerce_int(capacity_before_activation.get("active_count"))
+                < self._coerce_int(capacity_before_activation.get("active_limit"))
+            )
+            if should_auto_activate and has_active_capacity:
                 site.status = SITE_STATUS_ACTIVE
                 if site.provisioned_at is None:
                     site.provisioned_at = now
@@ -1635,6 +1898,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     scope_id=site.site_id,
                     payload_json=self._serialize_site(site),
                 )
+            elif should_auto_activate:
+                site.status = SITE_STATUS_INACTIVE
 
             cloud_api_key = build_customer_api_key(
                 site_id=site.site_id,
@@ -1645,7 +1910,27 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "site_id": site.site_id,
                 "key_id": api_key.key_id,
                 "cloud_api_key": cloud_api_key,
-                "activation_state": "active",
+                "activation_state": str(site.status or SITE_STATUS_INACTIVE),
+                "activation_required": str(site.status or "") != SITE_STATUS_ACTIVE,
+                "activation_reason": (
+                    "active_site_limit_reached"
+                    if str(site.status or "") != SITE_STATUS_ACTIVE
+                    and not has_active_capacity
+                    else (
+                        "manual_activation_required"
+                        if str(site.status or "") == SITE_STATUS_INACTIVE
+                        else ""
+                    )
+                ),
+                "capacity": {
+                    key: value
+                    for key, value in service._site_capacity_projection_in_session(
+                        repository=repository,
+                        account_id=account_id,
+                        snapshot=snapshot,
+                    ).items()
+                    if key != "active_sites"
+                },
                 "site_created": site_created,
                 "site_transferred": site_transferred,
                 "revoked_key_ids": revoked_key_ids,
@@ -1921,10 +2206,13 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             items = []
+            account_ids: set[str] = set()
             for site, _identity, membership in repository.list_sites_for_principal(
                 principal_id=principal_id,
                 membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
             ):
+                if str(site.account_id or "").strip():
+                    account_ids.add(str(site.account_id or ""))
                 items.append(
                     {
                         "principal_id": principal_id,
@@ -1939,9 +2227,21 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "site": self._serialize_site(site),
                     }
                 )
+            capacities = {}
+            for account_id in sorted(account_ids):
+                capacity = self._site_capacity_projection_in_session(
+                    repository=repository,
+                    account_id=account_id,
+                )
+                capacities[account_id] = {
+                    key: value
+                    for key, value in capacity.items()
+                    if key != "active_sites"
+                }
             return {
                 "principal_id": principal_id,
                 "items": items,
+                "capacities": capacities,
             }
 
     def list_admin_sites(

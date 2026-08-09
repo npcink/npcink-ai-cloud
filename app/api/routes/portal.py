@@ -116,6 +116,13 @@ class PortalAddonConnectionExchangePayload(BaseModel):
     state: str = ""
 
 
+class PortalSiteLifecyclePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["active", "inactive"]
+    replace_site_ids: list[str] = Field(default_factory=list, max_length=25)
+
+
 class PortalLoginCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1031,6 +1038,30 @@ def _portal_remove_site_data(value: object) -> dict[str, object]:
             "relink_available_at": str(
                 relink_policy.get("relink_available_at") or ""
             ),
+        },
+    }
+
+
+def _portal_site_lifecycle_data(value: object) -> dict[str, object]:
+    result = _dict_value(value)
+    capacity = _dict_value(result.get("capacity"))
+    transition = _dict_value(result.get("transition"))
+    return {
+        "site": _portal_public_site_data(result.get("site")),
+        "capacity": {
+            "active_count": int(capacity.get("active_count") or 0),
+            "active_limit": int(capacity.get("active_limit") or 0),
+            "active_remaining": int(capacity.get("active_remaining") or 0),
+            "bound_count": int(capacity.get("bound_count") or 0),
+            "bound_limit": int(capacity.get("bound_limit") or 0),
+            "bound_remaining": int(capacity.get("bound_remaining") or 0),
+        },
+        "transition": {
+            "previous_status": str(transition.get("previous_status") or ""),
+            "deactivated_site_ids": [
+                str(item)
+                for item in _object_list(transition.get("deactivated_site_ids"))
+            ],
         },
     }
 
@@ -2038,13 +2069,6 @@ def _resolve_selected_portal_account_access(
             status_code=403,
             error_code="service.portal_site_removed",
             message="removed portal sites cannot establish account context",
-        )
-    if site_status != "active":
-        return portal_json_error(
-            request,
-            status_code=403,
-            error_code="service.portal_site_inactive",
-            message="inactive portal sites cannot establish account context",
         )
     if not str(access.get("account_id") or "").strip():
         return portal_json_error(
@@ -4186,6 +4210,52 @@ async def remove_portal_site(request: Request, site_id: str) -> Any:
     return _portal_route_envelope(
         message="portal site removed",
         data=_portal_remove_site_data(result),
+    )
+
+
+@router.patch("/sites/{site_id}/lifecycle")
+async def update_portal_site_lifecycle(
+    request: Request,
+    site_id: str,
+    payload: PortalSiteLifecyclePayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    access = _authorize_portal_site_access(
+        request,
+        site_id=site_id,
+        principal_id=auth.principal_id,
+        required_action=USER_ALLOWED_ACTION_PROVISION_SITES,
+    )
+    if isinstance(access, JSONResponse):
+        return access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    try:
+        result = _get_commercial_service(request).update_portal_site_lifecycle(
+            site_id,
+            principal_id=auth.principal_id,
+            status=payload.status,
+            replace_site_ids=payload.replace_site_ids,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal site lifecycle updated",
+        data=_portal_site_lifecycle_data(result),
     )
 
 

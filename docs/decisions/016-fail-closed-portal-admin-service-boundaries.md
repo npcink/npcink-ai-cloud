@@ -4,7 +4,8 @@
 
 Accepted. Its account-wide site-authorization scope is superseded by ADR-031;
 account membership remains necessary but is no longer sufficient for Portal
-site access.
+site access. Its removal of customer lifecycle actions is superseded by
+ADR-039's bounded activation management contract.
 
 ## Date
 
