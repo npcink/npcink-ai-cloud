@@ -1002,6 +1002,14 @@ reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "PROD_SSH_KEY"
 require_file "scripts/production-ci-evidence.py"
+require_file "scripts/production-release-preflight.py"
+require_marker "package.json" '"production:release:preflight":'
+require_marker "scripts/production-release-preflight.py" \
+	"npcink.production_release_preflight.v1"
+require_marker "scripts/production-release-preflight.py" \
+	"production-deploy-bundle-{sha}"
+require_marker "scripts/production-release-preflight.py" \
+	"FORMAL_SMOKE_REQUIRED_SECRETS"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
 require_marker "scripts/production-ci-evidence.py" \
 	"production commit tree does not match the tree tested by the production PR"

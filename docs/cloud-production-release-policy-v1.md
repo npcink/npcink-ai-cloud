@@ -126,6 +126,21 @@ Recommended repository gate:
 pnpm run check:release-policy
 ```
 
+Before manually dispatching `Deploy Production`, run the read-only exact-SHA
+release preflight:
+
+```bash
+pnpm run production:release:preflight -- --sha <production-sha>
+```
+
+The command waits up to 15 minutes for the exact production push Cloud CI and
+CodeQL runs, requires the unexpired SHA-bound deploy bundle, rejects another
+active deploy for the same revision, and checks only the names of repository
+and protected `production` Environment secrets. It never reads or prints secret
+values and never dispatches or mutates production. Formal authenticated smoke
+secret readiness is always reported and can be made fail-closed with
+`--require-formal-smoke`.
+
 ### Bounded release verification
 
 Production safety and operator time are both release constraints. A release
