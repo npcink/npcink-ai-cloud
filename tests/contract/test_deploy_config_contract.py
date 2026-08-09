@@ -1821,6 +1821,13 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     deploy = (cloud_root / "deploy" / "deploy-to-ssh-host.sh").read_text()
     workflow = (cloud_root / ".github" / "workflows" / "deploy-production.yml").read_text()
 
+    assert "expected_sha:" in workflow
+    assert 'EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}' in workflow
+    assert '[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]' in workflow
+    assert 'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"' in workflow
+    assert workflow.index('test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"') < workflow.index(
+        "uses: actions/checkout@v6"
+    )
     assert "printf 'installation_state=pending\\n'" in deploy
     assert "printf 'installation_state=complete\\n'" in deploy
     assert "id: deploy" in workflow

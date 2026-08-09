@@ -139,7 +139,10 @@ active deploy for the same revision, and checks only the names of repository
 and protected `production` Environment secrets. It never reads or prints secret
 values and never dispatches or mutates production. Formal authenticated smoke
 secret readiness is always reported and can be made fail-closed with
-`--require-formal-smoke`.
+`--require-formal-smoke`. Copy the reported `dispatch_expected_sha` into the
+required `expected_sha` workflow input. The workflow rejects the dispatch
+before checkout or host mutation unless that full lowercase SHA still equals
+the exact `production` revision selected by GitHub for the run.
 
 ### Bounded release verification
 

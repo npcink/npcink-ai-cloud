@@ -29,7 +29,10 @@ Immediately before the manual deploy dispatch, run
 `pnpm run production:release:preflight -- --sha <production-sha>`. Do not
 dispatch until it reports `release_preflight=ready`; use
 `--require-formal-smoke` whenever the formal authenticated smoke is required
-for the release.
+for the release. Paste its `dispatch_expected_sha` value into the required
+`expected_sha` input when dispatching `Deploy Production`; the workflow must
+reject any value that is not a full lowercase SHA or no longer equals the
+revision selected for that run.
 
 Current deployment authority is the fresh PostgreSQL 18 contract:
 

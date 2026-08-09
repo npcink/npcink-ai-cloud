@@ -100,7 +100,9 @@ def test_ready_snapshot_binds_exact_checks_bundle_and_secret_names() -> None:
         "active_deploy_run_ids": [],
         "release_preflight": "ready",
     }
-    assert "release_preflight=ready" in module.render_text(result)
+    rendered = module.render_text(result)
+    assert f"dispatch_expected_sha={SHA}" in rendered
+    assert "release_preflight=ready" in rendered
 
 
 def test_formal_smoke_gap_is_visible_and_optionally_fail_closed() -> None:

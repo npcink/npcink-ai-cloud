@@ -1020,6 +1020,13 @@ require_marker "scripts/production-ci-evidence.py" \
 require_marker "scripts/check-pr-backend-gate.sh" \
 	"Production-promotion PR; full backend gate required."
 require_marker ".github/workflows/deploy-production.yml" "workflow_dispatch:"
+require_marker ".github/workflows/deploy-production.yml" "expected_sha:"
+require_marker ".github/workflows/deploy-production.yml" \
+	'EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}'
+require_marker ".github/workflows/deploy-production.yml" \
+	'[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]'
+require_marker ".github/workflows/deploy-production.yml" \
+	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
 require_marker ".github/workflows/deploy-production.yml" "Approved for production validation by operator."
 require_marker ".github/workflows/deploy-production.yml" "environment: production"
 require_marker ".github/workflows/deploy-production.yml" "group: production-host-mutation"

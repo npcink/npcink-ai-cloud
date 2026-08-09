@@ -297,6 +297,7 @@ def render_text(result: dict[str, Any]) -> str:
     return "\n".join(
         (
             f"production_sha={result['production_sha']}",
+            f"dispatch_expected_sha={result['production_sha']}",
             f"cloud_ci_run_id={result['cloud_ci_run_id']}",
             f"codeql_run_id={result['codeql_run_id']}",
             f"bundle_artifact_id={result['bundle_artifact_id']}",
