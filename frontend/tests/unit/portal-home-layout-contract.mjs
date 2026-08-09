@@ -81,8 +81,13 @@ assert.doesNotMatch(
 );
 assert.match(
   sitesWorkspaceSource,
-  /portalSiteNeedsAttention\(site\)/,
-  'Portal site list must derive scan status from the session site status and URL'
+  /portalSiteNeedsAttention\(right\)[\s\S]*portalSiteNeedsAttention\(left\)/,
+  'Portal site list must continue to prioritize sites that need attention'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /portal\.sites\.active_capacity[\s\S]*portal\.sites\.bound_capacity[\s\S]*site\.status === 'active'/,
+  'Portal site list must show separate account capacity and each site lifecycle status'
 );
 
 const siteRegisterIndex = sitesWorkspaceSource.indexOf('portal.site_register');
