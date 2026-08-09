@@ -222,6 +222,29 @@ This rule does not permit a failed required gate to be relabeled as passed. It
 keeps successful evidence attributable, limits retries to an actual recovery
 plan, and prevents broad validation from expanding a narrow production repair.
 
+### Exact production release plan
+
+Every exact `production` push emits a short-lived
+`production-release-plan-<sha>` artifact containing the versioned
+`npcink.production_release_plan.v1` receipt. The receipt binds the repository,
+event-before SHA, production SHA, production tree, sorted changed paths, and
+the selected `no_deploy`, `static`, `frontend`, `backend`, `config`,
+`migration`, or `full` lane. It separately records whether deployment, backend
+or frontend images, migration, runtime configuration, or static payload work
+is required so later release stages do not infer scope from the lane name.
+
+The plan compares the exact event-before and production revisions. Empty or
+unknown path sets, Dockerfiles, dependency locks, image locks, and mixed
+backend/frontend impact fail closed to `full`. Documentation, tests, and CI
+workflow-only changes may select `no_deploy`; pure `site/terms/**` changes may
+select `static`. A missing, malformed, or SHA/tree-mismatched receipt is not
+deployment authority.
+
+Introducing the receipt does not by itself skip the existing full deploy
+bundle. Build, scan, transfer, image-load, migration, and selective cutover
+optimizations may consume it only after their own exact-digest and runtime
+contracts are implemented and reviewed.
+
 ### Recovery deployment decision envelope
 
 A production recovery deployment is not a generic rerun button. Before each

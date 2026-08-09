@@ -15,6 +15,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  production-release-plan:
+    name: Production release plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create exact production release plan
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base_sha="${BEFORE_SHA}"
+          if [ -z "${base_sha}" ] || [[ "${base_sha}" =~ ^0+$ ]]; then
+            base_sha="0000000000000000000000000000000000000000"
+            mapfile -t changed_files < <(
+              git diff-tree --root --no-commit-id --name-only -r --diff-filter=ACMRD "${GITHUB_SHA}"
+            )
+          else
+            mapfile -t changed_files < <(
+              git diff --no-renames --name-only --diff-filter=ACMRD \
+                "${base_sha}" "${GITHUB_SHA}"
+            )
+          fi
+
+          mkdir -p artifacts/production-release-plan
+          python3 scripts/production-release-plan.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --base-sha "${base_sha}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse "${GITHUB_SHA}^{tree}")" \
+            --output artifacts/production-release-plan/production-release-plan.json \
+            -- \
+            "${changed_files[@]}"
+          cat artifacts/production-release-plan/production-release-plan.json \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload exact production release plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-release-plan-${{ github.sha }}
+          path: artifacts/production-release-plan/production-release-plan.json
+          if-no-files-found: error
+          retention-days: 14
+
   production-promotion-evidence:
     name: Production PR CI evidence
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
@@ -809,6 +857,7 @@ jobs:
   ci-observability:
     name: CI observability
     needs:
+      - production-release-plan
       - production-promotion-evidence
       - production-deploy-bundle
       - secret-scan
@@ -848,9 +897,11 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/production'
         env:
           PRODUCTION_PR_EVIDENCE_RESULT: ${{ needs.production-promotion-evidence.result }}
+          PRODUCTION_RELEASE_PLAN_RESULT: ${{ needs.production-release-plan.result }}
           PRODUCTION_DEPLOY_BUNDLE_RESULT: ${{ needs.production-deploy-bundle.result }}
         run: |
           set -euo pipefail
+          test "${PRODUCTION_RELEASE_PLAN_RESULT}" = "success"
           test "${PRODUCTION_PR_EVIDENCE_RESULT}" = "success"
           test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
 

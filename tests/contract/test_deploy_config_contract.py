@@ -209,6 +209,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "local-alpha-smoke.sh",
         "production-image-supply.py",
         "production-ci-evidence.py",
+        "production-release-plan.py",
         "production-release-preflight.py",
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
