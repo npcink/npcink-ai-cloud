@@ -50,6 +50,10 @@ def _object_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
 
 
+def _int_value(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def get_commercial_service(request: Request) -> CommercialService:
     services = get_cloud_services(request)
     return CommercialService(services.settings.database_url, settings=services.settings)
@@ -254,12 +258,12 @@ def serialize_portal_session(
                 **_portal_site_projection(site),
                 "capacity_scope": account_scope.get(account_id, ""),
                 "capacity": {
-                    "active_count": int(capacity.get("active_count") or 0),
-                    "active_limit": int(capacity.get("active_limit") or 0),
-                    "active_remaining": int(capacity.get("active_remaining") or 0),
-                    "bound_count": int(capacity.get("bound_count") or 0),
-                    "bound_limit": int(capacity.get("bound_limit") or 0),
-                    "bound_remaining": int(capacity.get("bound_remaining") or 0),
+                    "active_count": _int_value(capacity.get("active_count")),
+                    "active_limit": _int_value(capacity.get("active_limit")),
+                    "active_remaining": _int_value(capacity.get("active_remaining")),
+                    "bound_count": _int_value(capacity.get("bound_count")),
+                    "bound_limit": _int_value(capacity.get("bound_limit")),
+                    "bound_remaining": _int_value(capacity.get("bound_remaining")),
                 },
                 "allowed_actions": sorted(
                     {
