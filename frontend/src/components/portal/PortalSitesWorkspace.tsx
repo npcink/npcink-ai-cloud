@@ -23,6 +23,7 @@ import {
   type PortalSiteRelinkPolicy,
   type Site,
 } from '@/lib/portal-client';
+import { ApiError } from '@/lib/errors';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
@@ -31,6 +32,8 @@ type PortalTranslator = (
   params?: Record<string, string>,
   fallback?: string
 ) => string;
+
+const EMPTY_SITES: Site[] = [];
 
 function siteRemovalNotice(t: PortalTranslator, relinkAvailableAt: string): string {
   const formattedDate = formatDate(relinkAvailableAt);
@@ -74,7 +77,7 @@ function PortalSitesWorkspaceContent() {
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
-  const sites = session?.sites || [];
+  const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
   const canRemoveSites = Boolean(
@@ -140,6 +143,13 @@ function PortalSitesWorkspaceContent() {
   useEffect(() => {
     setSearchQuery(searchParams.get('q') || '');
   }, [searchParams]);
+
+  useEffect(() => {
+    setPendingLifecycleSite((pendingSite) => {
+      if (!pendingSite) return null;
+      return sites.find((site) => site.site_id === pendingSite.site_id) || pendingSite;
+    });
+  }, [sites]);
 
   useEffect(() => {
     if (addonConnectMode && isAuthenticated) {
@@ -337,6 +347,10 @@ function PortalSitesWorkspaceContent() {
       setPendingLifecycleSite(null);
       setReplacementSiteIds([]);
     } catch (error) {
+      if (error instanceof ApiError && error.statusCode === 409) {
+        await refresh().catch(() => undefined);
+        setReplacementSiteIds([]);
+      }
       setLifecycleError(
         formatPortalErrorMessage(
           error,

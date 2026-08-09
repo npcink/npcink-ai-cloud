@@ -728,6 +728,14 @@ def test_site_capacity_uses_current_plan_version_site_limit(
         },
     )
 
+    with get_session(database_url) as session:
+        capacity = service._site_capacity_projection_in_session(
+            repository=CommercialRepository(session),
+            account_id="acct_capacity",
+        )
+        assert capacity["active_limit"] == 3
+        assert capacity["bound_limit"] == 9
+
     second_site = service.provision_site(
         site_id="site_second",
         account_id="acct_capacity",

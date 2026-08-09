@@ -226,16 +226,36 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     account_id,
                     subscription_id=subscription.subscription_id,
                 )
-        active_limit = (
-            cast(Any, self)._resolve_site_limit(snapshot=resolved_snapshot)
-            if resolved_snapshot is not None
-            else max(
+        resolved_plan_version = None
+        if resolved_snapshot is not None:
+            plan_version_id = str(
+                getattr(resolved_snapshot, "plan_version_id", "") or ""
+            ).strip()
+            if plan_version_id:
+                resolved_plan_version = repository.get_plan_version(plan_version_id)
+        plan_version_metadata = (
+            getattr(resolved_plan_version, "metadata_json", None) or {}
+            if resolved_plan_version is not None
+            else {}
+        )
+        if (
+            resolved_plan_version is not None
+            and plan_version_metadata.get("site_limit") is not None
+        ):
+            active_limit = cast(Any, self)._resolve_site_limit(
+                plan_version=resolved_plan_version
+            )
+        elif resolved_snapshot is not None:
+            active_limit = cast(Any, self)._resolve_site_limit(
+                snapshot=resolved_snapshot
+            )
+        else:
+            active_limit = max(
                 0,
                 self._coerce_int(
                     PLAN_TIER_REGISTRY[DEFAULT_PLAN_TIER_ID].get("site_limit")
                 ),
             )
-        )
         bound_limit = max(3, active_limit * 3)
         active_count = self._coerce_int(
             repository.count_sites_by_account(
@@ -905,7 +925,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "service.site_limit_exceeded",
                         "the active site limit is full; explicitly select an active site to replace",
                         data={
-                            **capacity,
+                            **{
+                                key: value
+                                for key, value in capacity.items()
+                                if key != "active_sites"
+                            },
                             "required_release_count": required_release_count,
                         },
                     )

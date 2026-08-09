@@ -2015,16 +2015,7 @@ def test_portal_addon_connection_binds_inactive_at_limit_and_supports_explicit_s
     quota_data = quota_response.json()
     assert quota_data["error_code"] == "service.site_limit_exceeded"
     assert quota_data["data"]["required_release_count"] == 1
-    assert [
-        item["site_id"] for item in quota_data["data"]["active_sites"]
-    ] == ["site_primary-example-com"]
-    assert set(quota_data["data"]["active_sites"][0]) == {
-        "site_id",
-        "name",
-        "site_url",
-        "platform_kind",
-        "status",
-    }
+    assert "active_sites" not in quota_data["data"]
 
     swap_response = client.patch(
         "/portal/v1/sites/site_secondary-example-com/lifecycle",
