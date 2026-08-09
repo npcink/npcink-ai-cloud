@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -123,3 +124,23 @@ def test_waiter_accepts_already_merged_pull_request() -> None:
     result = waiter.evaluate_readiness(_pr(state="MERGED"), [])
 
     assert result.state == "ready"
+
+
+def test_cli_accepts_the_pnpm_argument_separator() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--",
+            "--pr",
+            "1",
+            "--interval",
+            "0",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 2
+    assert "interval, timeout, and settle-polls must be positive" in completed.stderr

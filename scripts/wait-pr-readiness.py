@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -125,7 +126,10 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=7200.0)
     parser.add_argument("--settle-polls", type=int, default=2)
     parser.add_argument("--once", action="store_true")
-    args = parser.parse_args()
+    argv = sys.argv[1:]
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    args = parser.parse_args(argv)
 
     if args.interval <= 0 or args.timeout <= 0 or args.settle_polls <= 0:
         parser.error("interval, timeout, and settle-polls must be positive")
