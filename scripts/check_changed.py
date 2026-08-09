@@ -247,11 +247,13 @@ def classify_tier(
         )
 
     if kinds["build_runtime"]:
+        tier = "L2"
         reasons.append(
             "A dependency, image, Compose, proxy, or deployment fingerprint input "
             "requires L2."
         )
     if kinds["migration"]:
+        tier = "L2"
         reasons.append("Migration and persistence behavior requires L2.")
 
     for rule in rules:

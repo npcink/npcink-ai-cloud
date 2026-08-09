@@ -113,9 +113,18 @@ def test_all_specialized_pnpm_commands_exist() -> None:
 def test_build_runtime_plan_never_mutates_m4_automatically() -> None:
     plan = _plan("Dockerfile", "app/main.py")
 
+    assert plan["tier"] == "L2"
     assert plan["classification"]["build_runtime"] is True
     assert any("runtime fingerprint" in item for item in plan["followups"])
     assert not any("m4:preview" in " ".join(command) for command in plan["commands"])
+
+
+def test_frontend_build_runtime_input_promotes_plan_to_l2() -> None:
+    plan = _plan("frontend/package.json")
+
+    assert plan["classification"]["frontend"] is True
+    assert plan["classification"]["build_runtime"] is True
+    assert plan["tier"] == "L2"
 
 
 def test_m4_fingerprint_inputs_request_deploy_followup() -> None:
