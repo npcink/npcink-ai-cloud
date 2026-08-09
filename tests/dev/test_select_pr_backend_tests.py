@@ -49,6 +49,17 @@ def test_service_route_changes_select_the_bounded_service_family() -> None:
     assert "tests/api/test_runtime_execute.py" not in selected_paths
 
 
+def test_auth_route_changes_include_admin_login_and_session_coverage() -> None:
+    selected, fallback = selector.select_impacted_tests(["app/api/routes/auth.py"])
+
+    assert fallback == []
+    assert _relative(selected) == [
+        "tests/api/test_auth.py",
+        "tests/api/test_internal_auth_replay.py",
+        "tests/api/test_web_routes.py",
+    ]
+
+
 def test_unknown_api_changes_fail_closed_to_all_api_tests() -> None:
     selected, fallback = selector.select_impacted_tests(["app/api/future_route.py"])
 

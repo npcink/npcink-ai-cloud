@@ -37,6 +37,7 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
     "app/api/routes/auth.py": (
         "tests/api/test_auth.py",
         "tests/api/test_internal_auth_replay.py",
+        "tests/api/test_web_routes.py",
     ),
     "app/api/routes/catalog.py": ("tests/api/test_catalog_routes.py",),
     "app/api/routes/entitlements.py": ("tests/api/test_entitlement_routes.py",),
