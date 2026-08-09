@@ -144,6 +144,16 @@ required `expected_sha` workflow input. The workflow rejects the dispatch
 before checkout or host mutation unless that full lowercase SHA still equals
 the exact `production` revision selected by GitHub for the run.
 
+`run_formal_release_smoke` is default-off because a Portal login code is
+single-use and expires after the configured short TTL (10 minutes by default),
+while deployment may take longer. Selecting it makes the post-deploy formal
+smoke fail closed when any protected credential is absent or stale; it never
+silently converts missing credentials into green evidence. For a deployment
+that may exceed the code TTL, leave it off, complete the deploy, issue and store
+a fresh code through the protected operator path, and immediately dispatch the
+separate fail-closed `Release Smoke` workflow from the exact `production`
+revision. A deferred smoke is explicitly recorded as not-passed evidence.
+
 ### Bounded release verification
 
 Production safety and operator time are both release constraints. A release

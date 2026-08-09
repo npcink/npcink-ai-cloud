@@ -1828,13 +1828,21 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     assert workflow.index('test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"') < workflow.index(
         "uses: actions/checkout@v6"
     )
+    assert "run_formal_release_smoke:" in workflow
+    assert "default: false" in workflow
+    assert "installation_state == 'complete' && inputs.run_formal_release_smoke" in workflow
+    assert "Failed closed because the selected formal release smoke" in workflow
+    assert "exit 1" in workflow
+    assert "Record deferred formal release smoke" in workflow
+    assert "This is not passing formal-smoke evidence." in workflow
+    assert "Skipped because one or more formal release smoke secrets" not in workflow
     assert "printf 'installation_state=pending\\n'" in deploy
     assert "printf 'installation_state=complete\\n'" in deploy
     assert "id: deploy" in workflow
     assert "^installation_state=(pending|complete)$" in workflow
     assert "exactly one explicit installation_state=pending|complete" in workflow
     assert "steps.deploy.outputs.installation_state == 'pending'" in workflow
-    assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 2
+    assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 3
     assert "Post-install preflight and release smoke were intentionally skipped." in workflow
     assert (
         "While the lifecycle remains pending, run the complete-only Release Smoke workflow"

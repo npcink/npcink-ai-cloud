@@ -1027,6 +1027,15 @@ require_marker ".github/workflows/deploy-production.yml" \
 	'[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]'
 require_marker ".github/workflows/deploy-production.yml" \
 	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
+require_marker ".github/workflows/deploy-production.yml" "run_formal_release_smoke:"
+require_marker ".github/workflows/deploy-production.yml" \
+	"installation_state == 'complete' && inputs.run_formal_release_smoke"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Failed closed because the selected formal release smoke"
+require_marker ".github/workflows/deploy-production.yml" \
+	"This is not passing formal-smoke evidence."
+reject_marker ".github/workflows/deploy-production.yml" \
+	"Skipped because one or more formal release smoke secrets"
 require_marker ".github/workflows/deploy-production.yml" "Approved for production validation by operator."
 require_marker ".github/workflows/deploy-production.yml" "environment: production"
 require_marker ".github/workflows/deploy-production.yml" "group: production-host-mutation"
