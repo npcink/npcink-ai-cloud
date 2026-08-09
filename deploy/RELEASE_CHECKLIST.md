@@ -490,7 +490,9 @@ Preferred GitHub Actions path:
   default, request it only immediately before the smoke that will consume it.
   After a long deploy, update the protected secret;
 - manually run the `Release Smoke` workflow from the `production` branch at
-  the exact deployed revision;
+  the exact deployed revision. Paste the successful deploy's full SHA into
+  `expected_deployed_sha`; require the workflow's exact-SHA deploy-run binding
+  step to pass before accepting smoke evidence;
 - keep `require_alipay_enabled=true` for a paid trial release;
 - treat a green `Release Smoke` run as the formal smoke evidence for the items
   below, but not as a replacement for the real WordPress plugin runtime flow in

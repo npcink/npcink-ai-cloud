@@ -152,7 +152,11 @@ silently converts missing credentials into green evidence. For a deployment
 that may exceed the code TTL, leave it off, complete the deploy, issue and store
 a fresh code through the protected operator path, and immediately dispatch the
 separate fail-closed `Release Smoke` workflow from the exact `production`
-revision. A deferred smoke is explicitly recorded as not-passed evidence.
+revision. Paste that successfully deployed full SHA into its required
+`expected_deployed_sha` input. The smoke workflow rejects a different selected
+revision and requires a successful `Deploy Production` run for the exact SHA
+before checkout. A deferred smoke is explicitly recorded as not-passed
+evidence.
 
 ### Bounded release verification
 

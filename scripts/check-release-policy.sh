@@ -1049,6 +1049,17 @@ require_marker ".github/workflows/deploy-production.yml" \
 require_marker ".github/workflows/deploy-production.yml" 'gh run download "${PRODUCTION_CI_RUN_ID}"'
 require_marker ".github/workflows/deploy-production.yml" 'production-deploy-bundle-${GITHUB_SHA}'
 require_marker ".github/workflows/deploy-production.yml" "--skip-bundle-build"
+require_marker ".github/workflows/release-smoke.yml" "expected_deployed_sha:"
+require_marker ".github/workflows/release-smoke.yml" \
+	'EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'
+require_marker ".github/workflows/release-smoke.yml" \
+	'[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]'
+require_marker ".github/workflows/release-smoke.yml" \
+	'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+require_marker ".github/workflows/release-smoke.yml" \
+	"actions/workflows/deploy-production.yml/runs"
+require_marker ".github/workflows/release-smoke.yml" \
+	'.head_sha == $sha and .conclusion == "success"'
 reject_marker ".github/workflows/deploy-production.yml" "pnpm/action-setup"
 reject_marker ".github/workflows/deploy-production.yml" "docker/setup-buildx-action"
 require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}'

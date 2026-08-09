@@ -3,6 +3,10 @@ name: Release Smoke
 on:
   workflow_dispatch:
     inputs:
+      expected_deployed_sha:
+        description: "Full production SHA from the successful Deploy Production run"
+        required: true
+        type: string
       base_url:
         description: "Production base URL to smoke."
         required: false
@@ -27,8 +31,39 @@ jobs:
     if: github.ref == 'refs/heads/production'
     environment: production
     permissions:
+      actions: read
       contents: read
     steps:
+      - name: Bind smoke to successful deployed revision
+        env:
+          EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for command_name in gh jq; do
+            command -v "${command_name}" >/dev/null
+          done
+          [[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"
+          deploy_run="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs" \
+              -f branch=production \
+              -f event=workflow_dispatch \
+              -f status=completed \
+              -f per_page=30 |
+              jq -c --arg sha "${EXPECTED_DEPLOYED_SHA}" \
+                '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")][0] // {}'
+          )"
+          deploy_run_id="$(jq -r '.id // ""' <<<"${deploy_run}")"
+          [[ "${deploy_run_id}" =~ ^[0-9]+$ ]]
+          {
+            echo "## Exact Deployed Revision"
+            echo ""
+            echo "- production_sha=${EXPECTED_DEPLOYED_SHA}"
+            echo "- deploy_production_run=${deploy_run_id}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Checkout
         uses: actions/checkout@v6
 
