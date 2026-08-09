@@ -208,6 +208,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "dev-frontend-recover.sh",
         "local-alpha-smoke.sh",
         "production-image-supply.py",
+        "production-ci-evidence.py",
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
         "pg18-semantic-proof.py",
@@ -2354,6 +2355,10 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-deploy-bundle:" in ci_workflow
     assert "production-deploy-bundle-${{ github.sha }}" in ci_workflow
     assert "bash deploy/bundle-images.sh" in ci_workflow
+    assert "production-promotion-evidence:" in ci_workflow
+    assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
+    assert "Create production PR CI evidence receipt" in ci_workflow
+    assert "needs: [production-promotion-evidence]" in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
@@ -2375,6 +2380,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "Approved for production validation by operator." in deploy_workflow
     assert "select(.head_sha == $sha)" in deploy_workflow
     assert 'test "${conclusion}" = "success"' in deploy_workflow
+    assert "actions/workflows/codeql.yml/runs" in deploy_workflow
+    assert 'test "${codeql_conclusion}" = "success"' in deploy_workflow
+    assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow

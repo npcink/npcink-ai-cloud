@@ -69,7 +69,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Require successful CI for this production commit
+      - name: Require successful CI and CodeQL for this production commit
         id: production_ci
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,7 +89,29 @@ jobs:
           ci_run_id="$(jq -r '.id // ""' <<<"${ci_run}")"
           test "${conclusion}" = "success"
           [[ "${ci_run_id}" =~ ^[0-9]+$ ]]
+          codeql_run="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/codeql.yml/runs" \
+              -f branch=production \
+              -f event=push \
+              -f status=completed \
+              -f per_page=20 |
+              jq -c --arg sha "${GITHUB_SHA}" \
+                '[.workflow_runs[] | select(.head_sha == $sha)][0] // {}'
+          )"
+          codeql_conclusion="$(jq -r '.conclusion // ""' <<<"${codeql_run}")"
+          codeql_run_id="$(jq -r '.id // ""' <<<"${codeql_run}")"
+          test "${codeql_conclusion}" = "success"
+          [[ "${codeql_run_id}" =~ ^[0-9]+$ ]]
           printf 'run_id=%s\n' "${ci_run_id}" >> "${GITHUB_OUTPUT}"
+          printf 'codeql_run_id=%s\n' "${codeql_run_id}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "## Exact Production Checks"
+            echo ""
+            echo "- cloud_ci_run=${ci_run_id}"
+            echo "- codeql_run=${codeql_run_id}"
+            echo "- production_sha=${GITHUB_SHA}"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Download exact production deploy bundle
         env:
