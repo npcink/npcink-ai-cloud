@@ -14,6 +14,9 @@ runbook that owns a command's behavior.
 
 - `package.json` and `frontend/package.json` remain executable command truth.
 - `config/engineering-command-inventory-v1.json` is the governance inventory.
+- `config/ai-development-validation-rules-v1.json` maps changed domains to the
+  minimum validation tier, required context, specialized local gate, and
+  non-mutating follow-up evidence used by `check:changed` and CI.
 - `scripts/check_engineering_command_inventory.py` verifies that both sources
   cover exactly the same command names and that every inventory entry has
   complete risk and lifecycle metadata.
@@ -121,13 +124,16 @@ python3 scripts/check_engineering_command_inventory.py
 After the reviewed legacy Mini Preview removal on 2026-08-03, the inventory
 contains:
 
-- root package: 109 commands;
+- root package: 110 commands;
 - frontend package: 31 commands;
-- total: 140 commands.
+- total: 141 commands.
 
 `check:changed` is the single-session local gate router. It classifies the
-current diff, runs only focused local checks, and reports browser or M4 work as
-follow-up evidence rather than mutating shared or external systems.
+current diff, reports its tier and matched domain contracts, runs only focused
+local checks, and reports browser or M4 work as follow-up evidence rather than
+mutating shared or external systems. Domain rules remain declarative and
+fail closed when their schema or command shape is invalid. PR CI reuses the
+same selected specialized commands instead of maintaining a second path map.
 `worktree:audit` inventories registered worktrees without unlocking, pruning,
 removing, or changing them.
 

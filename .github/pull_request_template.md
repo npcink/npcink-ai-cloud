@@ -40,6 +40,9 @@
 
 - Residual risk:
 - Rollback plan:
+- [ ] For auth/quota/multi-tenant changes: current configuration versus stored
+      snapshots, principal-scoped error projections, and stale `409` client
+      recovery were reviewed or marked not applicable.
 
 ## Admin UI
 
@@ -72,7 +75,8 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 ## Deployment Impact
 
 - [ ] No production deployment impact.
-- [ ] Requires production environment approval after CI passes on the protected production branch.
+- [ ] Requires an explicit `Deploy Production` dispatch with the exact operator
+  confirmation after CI passes on the protected production branch.
 
 ## Production Promotion
 

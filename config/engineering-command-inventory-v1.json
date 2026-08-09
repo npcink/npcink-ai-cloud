@@ -217,9 +217,18 @@
       "owner_doc": "docs/development-validation-operating-model-v1.md",
       "used_by": ["runbook", "contract", "automation"],
       "status": "active",
-      "evidence": ["README.md", "scripts/check_changed.py", "tests/contract/test_check_changed_contract.py"],
+      "evidence": [
+        "README.md",
+        "scripts/check_changed.py",
+        "scripts/ai_task.py",
+        "tests/contract/test_check_changed_contract.py",
+        "tests/contract/test_ai_task_contract.py"
+      ],
       "commands": {
-        "check:changed": "Plan and run the narrowest safe local gates for the current diff."
+        "check:changed": "Plan and run the narrowest safe local gates for the current diff.",
+        "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
+        "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
+        "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."
       }
     },
     {
@@ -242,6 +251,21 @@
       "evidence": ["AGENTS.md", "README.md", "docs/parallel-ai-collaboration-standard-v1.md"],
       "commands": {
         "pr:publish": "Publish a template-complete PR and request protected auto-merge."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "ci_read",
+      "owner_doc": "docs/single-session-ai-workflow-standard-v1.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": [
+        "package.json",
+        "scripts/wait-pr-readiness.py",
+        "docs/single-session-ai-workflow-standard-v1.md"
+      ],
+      "commands": {
+        "pr:wait": "Monitor pull-request checks and unresolved review threads until the final head is ready."
       }
     },
     {
@@ -322,6 +346,22 @@
         "frontend:watch": "Run the local frontend auto-sync watch loop.",
         "frontend:doctor": "Diagnose local frontend dependency and lock consistency.",
         "frontend:recover": "Repair the local frontend dependency installation."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-agent-feedback-quality-gate-v1.md",
+      "used_by": ["ci", "runbook", "contract"],
+      "status": "active",
+      "evidence": [
+        "docs/cloud-agent-feedback-quality-gate-v1.md",
+        "docs/editor-assist-quality-flywheel-v1.md",
+        "scripts/report_ai_quality_regression_samples.py",
+        "tests/contract/test_ai_quality_regression_samples.py"
+      ],
+      "commands": {
+        "report:ai-quality-regression": "Report the bounded metadata-only Agent Feedback and Editor Assist regression samples."
       }
     },
     {

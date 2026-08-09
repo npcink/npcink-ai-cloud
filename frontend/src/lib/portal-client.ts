@@ -58,8 +58,29 @@ export interface Site {
   site_url: string;
   platform_kind: string;
   status: string;
+  allowed_actions?: string[];
+  capacity_scope?: string;
+  capacity?: PortalSiteCapacity;
   ownership_released_at?: string;
   relink_cooldown_until?: string;
+}
+
+export interface PortalSiteCapacity {
+  active_count: number;
+  active_limit: number;
+  active_remaining: number;
+  bound_count: number;
+  bound_limit: number;
+  bound_remaining: number;
+}
+
+export interface PortalSiteLifecycleResult {
+  site: Site;
+  capacity: PortalSiteCapacity;
+  transition: {
+    previous_status: string;
+    deactivated_site_ids: string[];
+  };
 }
 
 export interface PortalSiteDetail extends Site {
@@ -1829,6 +1850,17 @@ export class PortalClient {
 
   async removeSite(siteId: string): Promise<PortalEnvelope<PortalSiteRemovalResult>> {
     return this.request('POST', `/sites/${siteId}/remove`, {});
+  }
+
+  async updateSiteLifecycle(
+    siteId: string,
+    status: 'active' | 'inactive',
+    replaceSiteIds: string[] = []
+  ): Promise<PortalEnvelope<PortalSiteLifecycleResult>> {
+    return this.request('PATCH', `/sites/${siteId}/lifecycle`, {
+      status,
+      replace_site_ids: replaceSiteIds,
+    });
   }
 
   /**

@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "rules": [
+    {
+      "id": "agent_feedback_quality",
+      "tier": "L2",
+      "reason": "Agent feedback changes affect the shared quality evidence contract and local-control-plane boundary.",
+      "match_any": [
+        "app/domain/agent_feedback/**",
+        "tests/api/test_agent_feedback_routes.py",
+        "tests/fixtures/agent_feedback/**",
+        "tests/contract/test_ai_quality_regression_samples.py",
+        "frontend/src/app/admin/agent-feedback/**",
+        "frontend/tests/unit/admin-agent-feedback-*.mjs",
+        "scripts/check-agent-feedback-quality.sh",
+        "scripts/report_ai_quality_regression_samples.py",
+        "docs/cloud-agent-feedback-quality-gate-v1.md"
+      ],
+      "documents": [
+        "docs/cloud-agent-feedback-quality-gate-v1.md",
+        "docs/cloud-content-generation-boundary-v1.md"
+      ],
+      "commands": [
+        ["pnpm", "run", "check:agent-feedback-quality"]
+      ],
+      "followups": [
+        "Confirm the quality surface remains metadata-only and read-only; WordPress approval, preflight, and final writes stay local."
+      ]
+    },
+    {
+      "id": "editor_assist_quality",
+      "tier": "L2",
+      "reason": "Editor-assist quality changes affect regression evidence, automatic detection, and no-auto-mutation guarantees.",
+      "match_any": [
+        "app/domain/observability/editor_assist_quality.py",
+        "tests/api/test_editor_assist_quality_routes.py",
+        "tests/fixtures/editor_assist_quality/**",
+        "tests/contract/test_ai_quality_regression_samples.py",
+        "frontend/src/app/admin/editor-assist-quality/**",
+        "frontend/tests/unit/admin-editor-assist-quality-contract.mjs",
+        "scripts/check-editor-assist-quality.sh",
+        "scripts/report_ai_quality_regression_samples.py",
+        "docs/editor-assist-quality-flywheel-v1.md"
+      ],
+      "documents": [
+        "docs/editor-assist-quality-flywheel-v1.md",
+        "docs/cloud-agent-feedback-quality-gate-v1.md"
+      ],
+      "commands": [
+        ["pnpm", "run", "check:editor-assist-quality"]
+      ],
+      "followups": [
+        "Treat AI-generated issue candidates as read-only evidence; do not authorize automatic prompt, model, router, approval, or WordPress mutations."
+      ]
+    },
+    {
+      "id": "agent_workflow_metadata",
+      "tier": "L2",
+      "reason": "Agent/workflow metadata is a shared read-only projection contract and must not become execution or approval truth.",
+      "match_any": [
+        "app/domain/agent_workflow_metadata.py",
+        "frontend/tests/e2e/agent-workflow-metadata-smoke.spec.ts",
+        "frontend/tests/unit/*agent-workflow*.mjs",
+        "docs/cloud-agent-workflow-metadata-projection-v1.md"
+      ],
+      "documents": [
+        "docs/cloud-agent-workflow-metadata-projection-v1.md"
+      ],
+      "commands": [
+        ["pnpm", "run", "check:agent-workflow-metadata"]
+      ],
+      "followups": [
+        "Verify the projection remains display/detail truth only, with no workflow execution, approval, prompt, preset, MCP, OpenClaw, or WordPress-write ownership."
+      ]
+    },
+    {
+      "id": "runtime_stability_policy",
+      "tier": "L2",
+      "reason": "Runtime stability policy governs shared architecture and infrastructure expansion boundaries.",
+      "match_any": [
+        "docs/runtime-stability-performance-evidence-v1.md",
+        "scripts/check-runtime-stability-evidence-plan.js"
+      ],
+      "documents": [
+        "docs/runtime-stability-performance-evidence-v1.md"
+      ],
+      "commands": [
+        ["pnpm", "run", "check:runtime-stability-plan"]
+      ],
+      "followups": [
+        "Keep FastAPI, PostgreSQL, Redis, worker, and Docker Compose as the default stack unless measured evidence satisfies the documented sidecar gate."
+      ]
+    },
+    {
+      "id": "cloud_boundary",
+      "tier": "L2",
+      "reason": "Cloud boundary changes can move control-plane or truth ownership and require anti-drift evidence.",
+      "match_any": [
+        "docs/cloud-content-generation-boundary-v1.md",
+        "docs/cloud-task-pack-boundary-v1.md",
+        "docs/cloud-agent-workflow-metadata-projection-v1.md",
+        "docs/cloud-agent-feedback-quality-gate-v1.md",
+        "config/cloud-anti-drift-default-contract-v1.json",
+        "scripts/check-cloud-anti-drift.js",
+        "scripts/test-cloud-anti-drift.js"
+      ],
+      "documents": [
+        "docs/cloud-content-generation-boundary-v1.md",
+        "docs/cloud-task-pack-boundary-v1.md",
+        "docs/cloud-agent-workflow-metadata-projection-v1.md",
+        "docs/cloud-agent-feedback-quality-gate-v1.md"
+      ],
+      "commands": [
+        ["pnpm", "run", "check:anti-drift"]
+      ],
+      "followups": [
+        "Confirm local ability, workflow, approval, prompt/router/preset, audit, and final-write truth remain outside Cloud."
+      ]
+    },
+    {
+      "id": "admin_ui",
+      "tier": "L1",
+      "reason": "Admin route work changes operator composition or interaction and requires the governed Admin gate.",
+      "match_any": [
+        "frontend/src/app/admin/**",
+        "frontend/src/components/admin/**",
+        "frontend/src/features/admin/**",
+        "frontend/admin-ui-manifest.json"
+      ],
+      "documents": [
+        "docs/cloud-admin-ui-standard-v1.md",
+        "docs/cloud-admin-frontend-engineering-standard-v1.md",
+        "frontend/admin-ui-manifest.json"
+      ],
+      "commands": [
+        ["pnpm", "run", "check:admin-ui"]
+      ],
+      "followups": [
+        "Run the focused target-route PC browser gate; add pnpm run check:admin-ui:visual once at closeout for material layout, table, dialog, or shared-primitive changes."
+      ]
+    },
+    {
+      "id": "admin_shared_primitive",
+      "tier": "L2",
+      "reason": "Shared Admin primitives and the Admin manifest have multi-route blast radius.",
+      "match_any": [
+        "frontend/src/components/admin/**",
+        "frontend/admin-ui-manifest.json"
+      ],
+      "documents": [
+        "docs/cloud-admin-ui-standard-v1.md",
+        "docs/cloud-admin-frontend-engineering-standard-v1.md",
+        "frontend/admin-ui-manifest.json"
+      ],
+      "commands": [],
+      "followups": [
+        "Treat shared primitive changes as L2 and run pnpm run check:admin-ui:visual once at closeout after the focused PC browser check."
+      ]
+    },
+    {
+      "id": "engineering_validation_tooling",
+      "tier": "L2",
+      "reason": "The changed-file router, validation rules, and CI selection are shared engineering policy interfaces.",
+      "match_any": [
+        "scripts/check_changed.py",
+        "scripts/ai_task.py",
+        "config/ai-development-validation-rules-v1.json",
+        "tests/contract/test_check_changed_contract.py",
+        "tests/contract/test_ai_task_contract.py",
+        ".github/workflows/ci.yml"
+      ],
+      "documents": [
+        "docs/development-validation-operating-model-v1.md",
+        "docs/ai-development-validation-tiers-v1.md",
+        "docs/engineering-command-inventory-standard-v1.md"
+      ],
+      "commands": [],
+      "followups": [
+        "GitHub Actions is the runtime for this CI/tooling change; do not dispatch M4 unless Cloud runtime inputs also changed."
+      ]
+    }
+  ]
+}

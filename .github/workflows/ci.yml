@@ -14,6 +14,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  production-deploy-bundle:
+    name: Production deploy bundle
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and scan exact production deploy bundle
+        env:
+          NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
+          NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
+        run: bash deploy/bundle-images.sh
+
+      - name: Upload exact production deploy bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-deploy-bundle-${{ github.sha }}
+          path: |
+            dist/deploy-bundle.tgz
+            dist/deploy-bundle.tgz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
@@ -36,6 +64,7 @@ jobs:
       docs_only: ${{ steps.changed.outputs.docs_only }}
       frontend_only: ${{ steps.changed.outputs.frontend_only }}
       frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}
+      specialized_quality_required: ${{ steps.changed.outputs.specialized_quality_required }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,6 +96,53 @@ jobs:
 
           bash scripts/classify-ci-changes.sh "${changed_files[@]}" \
             | tee -a "${GITHUB_OUTPUT}"
+
+          specialized_quality_required="$(
+            python3 scripts/check_changed.py --plan --format json "${changed_files[@]}" \
+              | python3 -c 'import json,sys; print("true" if json.load(sys.stdin)["specialized_commands"] else "false")'
+          )"
+          echo "specialized_quality_required=${specialized_quality_required}" \
+            | tee -a "${GITHUB_OUTPUT}"
+
+  specialized-quality:
+    name: Specialized changed-domain quality gates
+    needs: [classify]
+    if: github.event_name == 'pull_request' && needs.classify.outputs.specialized_quality_required == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+
+      - name: Bootstrap Cloud Dev Environment
+        run: make bootstrap-dev
+
+      - name: Run specialized changed-domain gates
+        env:
+          NPCINK_CLOUD_PR_BASE_REF: origin/${{ github.base_ref }}
+        run: >-
+          python3 scripts/check_changed.py
+          --specialized-only
+          --base "${NPCINK_CLOUD_PR_BASE_REF}"
 
   backend-scope:
     needs: [classify]
@@ -141,8 +217,24 @@ jobs:
 
   backend-targeted:
     needs: [classify, backend-scope]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.frontend_only != 'true' && needs['backend-scope'].outputs.requires_full_backend != '1' && (github.event_name == 'pull_request' || needs.classify.outputs.docs_only == 'true')
+    if: github.event_name == 'pull_request' && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true' && needs['backend-scope'].outputs.requires_full_backend != '1'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: static
+            command: --targeted-static
+            needs_node: true
+          - lane: contract-1
+            command: --targeted-contract-shard 1
+            needs_node: false
+          - lane: contract-2
+            command: --targeted-contract-shard 2
+            needs_node: false
+          - lane: impacted
+            command: --targeted-impacted
+            needs_node: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -150,17 +242,16 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        if: needs.classify.outputs.docs_only != 'true'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup pnpm
-        if: needs.classify.outputs.docs_only != 'true'
+        if: matrix.needs_node
         uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        if: needs.classify.outputs.docs_only != 'true'
+        if: matrix.needs_node
         uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -168,19 +259,27 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install uv
-        if: needs.classify.outputs.docs_only != 'true'
         run: python -m pip install --upgrade uv
 
-      - name: Bootstrap Cloud Dev Environment
-        if: needs.classify.outputs.docs_only != 'true'
-        run: make bootstrap-dev
+      - name: Bootstrap backend test environment
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -e '.[dev]'
 
-      - name: PR backend fast gate
-        if: needs.classify.outputs.docs_only != 'true'
-        run: bash scripts/check-pr-backend-gate.sh --targeted-only
+      - name: Targeted backend ${{ matrix.lane }} lane
+        run: bash scripts/check-pr-backend-gate.sh ${{ matrix.command }}
 
-      - name: Docs-only gate
-        if: needs.classify.outputs.docs_only == 'true'
+  backend-docs:
+    needs: [classify, backend-scope]
+    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Docs-only backend gate
         env:
           NPCINK_CLOUD_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           NPCINK_CLOUD_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -277,6 +376,9 @@ jobs:
             | sed 's/$/`/' >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Pytest
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -285,9 +387,32 @@ jobs:
             echo "No pytest files selected for shard ${{ matrix.shard }}." >&2
             exit 1
           fi
-          .venv/bin/python -m pytest "${pytest_files[@]}" -q \
-            --junitxml="artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" \
+          pytest_args=(
+            "${pytest_files[@]}"
+            -q
+            "--junitxml=artifacts/pytest-backend-shard-${{ matrix.shard }}.xml"
             --durations=25
+          )
+          changed_app_files=()
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            while IFS= read -r changed_path; do
+              changed_app_files+=("${changed_path}")
+            done < <(
+              git diff --name-only --diff-filter=ACMR "${BASE_SHA}...${HEAD_SHA}" \
+                -- 'app/*.py' 'app/**/*.py'
+            )
+          fi
+          if [ "${#changed_app_files[@]}" -gt 0 ]; then
+            uv pip install --python .venv/bin/python 'coverage==7.15.2'
+            coverage_include_paths=("app/__init__.py" "${changed_app_files[@]}")
+            coverage_include_arg="$(IFS=,; echo "${coverage_include_paths[*]}")"
+            COVERAGE_FILE="artifacts/coverage-backend-shard-${{ matrix.shard }}.data" \
+              .venv/bin/python -m coverage run --branch \
+              --include="${coverage_include_arg}" \
+              -m pytest "${pytest_args[@]}"
+          else
+            .venv/bin/python -m pytest "${pytest_args[@]}"
+          fi
 
       - name: Summarize pytest timing
         if: always()
@@ -309,6 +434,14 @@ jobs:
           path: |
             artifacts/pytest-backend-shard-${{ matrix.shard }}.xml
             artifacts/pytest-files-shard-${{ matrix.shard }}.txt
+          if-no-files-found: ignore
+
+      - name: Upload pytest coverage artifact
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-backend-coverage-shard-${{ matrix.shard }}
+          path: artifacts/coverage-backend-shard-${{ matrix.shard }}.data
           if-no-files-found: ignore
 
   backend-postgres-cutover:
@@ -354,7 +487,7 @@ jobs:
 
   backend:
     name: backend
-    needs: [classify, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-static, backend-pytest, backend-postgres-cutover]
+    needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, backend-static, backend-pytest, backend-postgres-cutover]
     if: always() && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -365,25 +498,45 @@ jobs:
           PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT: ${{ needs['production-python-image-smoke'].result }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
+          BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
           BACKEND_STATIC_RESULT: ${{ needs['backend-static'].result }}
           BACKEND_PYTEST_RESULT: ${{ needs['backend-pytest'].result }}
           BACKEND_POSTGRES_CUTOVER_RESULT: ${{ needs['backend-postgres-cutover'].result }}
           REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
           DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
           FRONTEND_ONLY: ${{ needs.classify.outputs.frontend_only }}
+          SPECIALIZED_QUALITY_REQUIRED: ${{ needs.classify.outputs.specialized_quality_required }}
+          SPECIALIZED_QUALITY_RESULT: ${{ needs['specialized-quality'].result }}
         run: |
           set -euo pipefail
           echo "scope=${BACKEND_SCOPE_RESULT}"
           echo "python_dependency_audit=${PYTHON_DEPENDENCY_AUDIT_RESULT}"
           echo "production_python_image_smoke=${PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT}"
           echo "targeted=${BACKEND_TARGETED_RESULT}"
+          echo "docs=${BACKEND_DOCS_RESULT}"
           echo "static=${BACKEND_STATIC_RESULT}"
           echo "pytest=${BACKEND_PYTEST_RESULT}"
           echo "postgres_cutover=${BACKEND_POSTGRES_CUTOVER_RESULT}"
+          echo "specialized_quality=${SPECIALIZED_QUALITY_RESULT}"
           echo "requires_full_backend=${REQUIRES_FULL_BACKEND}"
 
           if [ "${BACKEND_SCOPE_RESULT}" != "success" ]; then
             echo "backend scope classification did not pass" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            if [ "${SPECIALIZED_QUALITY_REQUIRED}" = "true" ]; then
+              if [ "${SPECIALIZED_QUALITY_RESULT}" != "success" ]; then
+                echo "specialized changed-domain quality gates did not pass" >&2
+                exit 1
+              fi
+            elif [ "${SPECIALIZED_QUALITY_RESULT}" != "skipped" ]; then
+              echo "specialized changed-domain quality gates should be skipped" >&2
+              exit 1
+            fi
+          elif [ "${SPECIALIZED_QUALITY_RESULT}" != "skipped" ]; then
+            echo "specialized changed-domain quality gates must stay PR-only" >&2
             exit 1
           fi
 
@@ -413,6 +566,14 @@ jobs:
           fi
 
           if [ "${REQUIRES_FULL_BACKEND}" = "1" ]; then
+            if [ "${BACKEND_TARGETED_RESULT}" != "skipped" ]; then
+              echo "targeted backend lanes should be skipped for a full backend gate" >&2
+              exit 1
+            fi
+            if [ "${BACKEND_DOCS_RESULT}" != "skipped" ]; then
+              echo "docs-only backend gate should be skipped for a full backend gate" >&2
+              exit 1
+            fi
             if [ "${BACKEND_STATIC_RESULT}" != "success" ]; then
               echo "backend static gate did not pass" >&2
               exit 1
@@ -430,10 +591,23 @@ jobs:
               echo "PostgreSQL 16 encryption cutover regression should be skipped for a targeted gate" >&2
               exit 1
             fi
+            if [ "${DOCS_ONLY}" = "true" ]; then
+              if [ "${BACKEND_DOCS_RESULT}" != "success" ]; then
+                echo "docs-only backend gate did not pass" >&2
+                exit 1
+              fi
+              if [ "${BACKEND_TARGETED_RESULT}" != "skipped" ]; then
+                echo "targeted backend lanes should be skipped for docs-only changes" >&2
+                exit 1
+              fi
+            elif [ "${BACKEND_DOCS_RESULT}" != "skipped" ]; then
+              echo "docs-only backend gate should be skipped for non-doc changes" >&2
+              exit 1
+            fi
             if [ "${FRONTEND_ONLY}" = "true" ] && [ "${BACKEND_TARGETED_RESULT}" != "skipped" ]; then
               echo "targeted backend gate should be skipped for frontend-only changes" >&2
               exit 1
-            elif [ "${FRONTEND_ONLY}" != "true" ] && [ "${BACKEND_TARGETED_RESULT}" != "success" ]; then
+            elif [ "${FRONTEND_ONLY}" != "true" ] && [ "${DOCS_ONLY}" != "true" ] && [ "${BACKEND_TARGETED_RESULT}" != "success" ]; then
               echo "targeted backend gate did not pass" >&2
               exit 1
             fi
@@ -523,8 +697,10 @@ jobs:
   ci-observability:
     name: CI observability
     needs:
+      - production-deploy-bundle
       - secret-scan
       - classify
+      - backend-scope
       - backend
       - frontend
       - static-terms
@@ -536,6 +712,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python for changed-code coverage
+        if: github.event_name == 'pull_request' && needs.backend.result == 'success' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Summarize CI timing
         env:
@@ -546,6 +730,14 @@ jobs:
             echo "" >> "${GITHUB_STEP_SUMMARY}"
             echo "Timing summary was unavailable for this run." >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+      - name: Verify production deploy bundle result
+        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+        env:
+          PRODUCTION_DEPLOY_BUNDLE_RESULT: ${{ needs.production-deploy-bundle.result }}
+        run: |
+          set -euo pipefail
+          test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
 
       - name: Summarize pytest shard balance
         env:
@@ -570,3 +762,70 @@ jobs:
             echo "Pytest shard balance summary was unavailable because the full lane did not execute." \
               >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+      - name: Summarize changed-code coverage
+        if: github.event_name == 'pull_request' && needs.backend.result == 'success' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          coverage_root="$(mktemp -d "${RUNNER_TEMP}/changed-code-coverage.XXXXXX")"
+          combine_dir="${coverage_root}/combine"
+          report_dir="artifacts/changed-code-coverage"
+          trap 'rm -rf "${coverage_root}"' EXIT
+          mkdir -p "${combine_dir}" "${report_dir}"
+
+          mapfile -t changed_app_files < <(
+            git diff --name-only --diff-filter=ACMR "${BASE_SHA}...${HEAD_SHA}" \
+              -- 'app/*.py' 'app/**/*.py'
+          )
+          if [ "${#changed_app_files[@]}" -eq 0 ]; then
+            python3 scripts/report-changed-code-coverage.py \
+              --base "${BASE_SHA}" \
+              --head "${HEAD_SHA}" \
+              --markdown-output "${report_dir}/changed-code-coverage.md" \
+              --json-output "${report_dir}/changed-code-coverage.json"
+            cat "${report_dir}/changed-code-coverage.md" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          if gh run download "${GITHUB_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${coverage_root}/download" \
+            --pattern 'pytest-backend-coverage-shard-*' >/dev/null 2>&1; then
+            mapfile -t coverage_files < <(
+              find "${coverage_root}/download" -type f \
+                -name 'coverage-backend-shard-*.data' -print | sort
+            )
+            if [ "${#coverage_files[@]}" -ne 3 ]; then
+              echo "expected 3 backend coverage shard files, found ${#coverage_files[@]}" >&2
+              exit 1
+            fi
+            for index in "${!coverage_files[@]}"; do
+              cp "${coverage_files[$index]}" "${combine_dir}/.coverage.shard-$((index + 1))"
+            done
+
+            python -m pip install 'coverage==7.15.2'
+            COVERAGE_FILE="${combine_dir}/.coverage" \
+              python -m coverage combine "${combine_dir}"
+            python3 scripts/report-changed-code-coverage.py \
+              --coverage-data "${combine_dir}/.coverage" \
+              --base "${BASE_SHA}" \
+              --head "${HEAD_SHA}" \
+              --markdown-output "${report_dir}/changed-code-coverage.md" \
+              --json-output "${report_dir}/changed-code-coverage.json"
+            cat "${report_dir}/changed-code-coverage.md" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "backend pytest succeeded but changed-code coverage artifacts were unavailable" >&2
+            exit 1
+          fi
+
+      - name: Upload changed-code coverage report
+        if: always() && github.event_name == 'pull_request' && needs['backend-scope'].outputs.requires_full_backend == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: changed-code-coverage
+          path: artifacts/changed-code-coverage
+          if-no-files-found: ignore

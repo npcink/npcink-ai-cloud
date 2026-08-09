@@ -11,8 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CLASSIFIER = ROOT / "scripts" / "classify-ci-changes.sh"
 DOCS_GATE = ROOT / "scripts" / "check-docs-only.sh"
 BACKEND_GATE = ROOT / "scripts" / "check-pr-backend-gate.sh"
+BACKEND_SELECTOR = ROOT / "scripts" / "select-pr-backend-tests.py"
+PR_WAITER = ROOT / "scripts" / "wait-pr-readiness.py"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
+CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
@@ -150,9 +153,18 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "frontend_e2e_required: "
         "${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
     )
+    assert (
+        "specialized_quality_required: "
+        "${{ steps.changed.outputs.specialized_quality_required }}" in workflow
+    )
     assert workflow.count("--diff-filter=ACMRD") == 3
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
+    assert "specialized-quality:" in workflow
+    assert "python3 scripts/check_changed.py" in workflow
+    assert "--specialized-only" in workflow
+    assert "specialized changed-domain quality gates did not pass" in workflow
+    assert "specialized changed-domain quality gates must stay PR-only" in workflow
     assert "Docs-only frontend acknowledgement" in workflow
     assert (
         "python dependency audit should be skipped for docs-only or frontend-only changes"
@@ -203,19 +215,39 @@ def test_docs_only_gate_runs_fail_closed_with_system_bash() -> None:
     assert "command not found" not in completed.stderr
 
 
-def test_targeted_backend_gate_times_contracts_without_rerunning_changed_contracts() -> None:
+def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests() -> None:
     source = BACKEND_GATE.read_text(encoding="utf-8")
-    changed_test_selection = source.split(
-        "while IFS= read -r path; do",
-        1,
-    )[1].split(
-        'done < "${TMP_CHANGED}"',
-        1,
-    )[0]
+    selector = BACKEND_SELECTOR.read_text(encoding="utf-8")
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
     assert "pytest tests/contract -q --durations=25" in source
-    assert "tests/contract/test_*.py" not in changed_test_selection
-    assert "contract files are already covered" in source
+    assert "--targeted-contract-shard" in source
+    assert "--shards 2" in source
+    assert "mapfile" not in source
+    assert "select-pr-backend-tests.py" in source
+    assert "contract shards are already covered" in source
+    assert '"app/api/routes/portal.py"' in selector
+    assert '"tests/api/test_portal_routes.py"' in selector
+    assert "selecting all tests/api" in selector
+    for lane in ("static", "contract-1", "contract-2", "impacted"):
+        assert f"lane: {lane}" in workflow
+    assert "matrix.needs_node" in workflow
+    assert "backend-docs:" in workflow
+    assert "docs-only backend gate did not pass" in workflow
+
+
+def test_pr_wait_command_monitors_checks_and_review_threads_together() -> None:
+    waiter = PR_WAITER.read_text(encoding="utf-8")
+    package = (ROOT / "package.json").read_text(encoding="utf-8")
+    workflow_standard = (
+        ROOT / "docs" / "single-session-ai-workflow-standard-v1.md"
+    ).read_text(encoding="utf-8")
+
+    assert "reviewThreads(first:100)" in waiter
+    assert 'readiness.state == "review_required"' in waiter
+    assert "settle-polls" in waiter
+    assert '"pr:wait": "python3 scripts/wait-pr-readiness.py"' in package
+    assert "pnpm run pr:wait -- --pr <number>" in workflow_standard
 
 
 def test_pytest_weight_refresh_is_reproducible_and_fail_closed(
@@ -287,3 +319,27 @@ def test_pytest_balance_observability_is_advisory_and_uses_complete_artifacts() 
     assert "::warning title=Pytest shard balance drift::" in report
     assert "actual_max_min_ratio" in report
     assert "file_drift_seconds" in report
+
+
+def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    report = CHANGED_COVERAGE_REPORT.read_text(encoding="utf-8")
+
+    assert workflow.count("pytest-backend-coverage-shard-${{ matrix.shard }}") == 1
+    assert 'git diff --name-only --diff-filter=ACMR "${BASE_SHA}...${HEAD_SHA}"' in workflow
+    assert '--include="${coverage_include_arg}"' in workflow
+    assert 'coverage_include_paths=("app/__init__.py" "${changed_app_files[@]}")' in workflow
+    assert 'if [ "${#changed_app_files[@]}" -gt 0 ]' in workflow
+    assert "coverage combine" in workflow
+    assert '--coverage-data "${combine_dir}/.coverage"' in workflow
+    assert "report-changed-code-coverage.py" in workflow
+    assert "changed-code-coverage.json" in workflow
+    assert "changed-code-coverage.md" in workflow
+    assert "expected 3 backend coverage shard files" in workflow
+    assert "github.event_name == 'pull_request'" in workflow
+    assert "HEAD_SHA: ${{ github.sha }}" in workflow
+    assert "--fail-under" not in workflow
+    assert '"advisory": True' in report
+    assert '"threshold": None' in report
+    assert '"scope": "app/**/*.py"' in report
+    assert "does not block merging" in report

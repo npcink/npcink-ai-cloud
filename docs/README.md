@@ -71,6 +71,7 @@ deleting the old decision history.
 - [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
+- [AI Development Changed-Code Coverage Closeout and Retrospective](ai-development-changed-code-coverage-retrospective-2026-08-08.md) — dated implementation, CI cost-correction, and observation-cycle evidence; the active policy remains in CI Pytest Sharding
 - [Python Type Checking Standard](python-type-checking-standard.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
 - [Production-host Localhost Candidate Canary Standard](production-host-localhost-candidate-canary-standard-v1.md)
@@ -117,6 +118,9 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Image Source AI Generation Handoff](image-source-ai-generation-handoff-v1.md)
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
+- [Editor Assist Quality JSON Export Production Closeout — 2026-08-07](editor-assist-quality-json-export-production-closeout-2026-08-07.md)
+  — dated evidence for the restrained metadata-only export, focused validation,
+  production release, time costs, and explicit non-commercial conclusions
 - [Feedback Data Operations](feedback-data-operations-v1.md)
 - [Hosted WordPress Text Generation Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
 

@@ -42,15 +42,89 @@ def test_admin_plan_selects_static_gates_and_reports_browser_followup() -> None:
     assert plan["classification"]["admin"] is True
     assert ["pnpm", "--dir", "frontend", "run", "type-check"] in plan["commands"]
     assert ["node", "frontend/tests/unit/admin-account-detail-v2-contract.mjs"] in plan["commands"]
+    assert plan["tier"] == "L1"
+    assert "admin_ui" in plan["domains"]
+    assert ["pnpm", "run", "check:admin-ui"] in plan["specialized_commands"]
+    assert "docs/cloud-admin-ui-standard-v1.md" in plan["documents"]
     assert any("PC browser" in item for item in plan["followups"])
+
+
+def test_shared_admin_primitive_reclassifies_to_l2() -> None:
+    plan = _plan("frontend/src/components/admin/AdminWorkbenchDialog.tsx")
+
+    assert plan["tier"] == "L2"
+    assert "admin_shared_primitive" in plan["domains"]
+    assert any("check:admin-ui:visual" in item for item in plan["followups"])
+
+
+def test_non_admin_frontend_route_defaults_to_l1() -> None:
+    plan = _plan("frontend/src/app/portal/page.tsx")
+
+    assert plan["classification"]["frontend"] is True
+    assert plan["tier"] == "L1"
+
+
+def test_agent_feedback_plan_selects_boundary_context_and_quality_gate() -> None:
+    plan = _plan("app/domain/agent_feedback/service.py")
+
+    assert plan["tier"] == "L2"
+    assert plan["domains"] == ["agent_feedback_quality"]
+    assert "docs/cloud-agent-feedback-quality-gate-v1.md" in plan["documents"]
+    assert ["pnpm", "run", "check:agent-feedback-quality"] in plan["specialized_commands"]
+    assert plan["commands"].count(
+        ["pnpm", "run", "check:agent-feedback-quality"]
+    ) == 1
+
+
+def test_editor_assist_plan_selects_no_auto_mutation_gate() -> None:
+    plan = _plan("app/domain/observability/editor_assist_quality.py")
+
+    assert "editor_assist_quality" in plan["domains"]
+    assert ["pnpm", "run", "check:editor-assist-quality"] in plan["specialized_commands"]
+    assert any("automatic prompt" in item for item in plan["followups"])
+
+
+def test_boundary_document_is_not_misclassified_as_low_risk_docs_only() -> None:
+    plan = _plan("docs/cloud-content-generation-boundary-v1.md")
+
+    assert plan["classification"]["documentation_only"] is True
+    assert plan["tier"] == "L2"
+    assert "cloud_boundary" in plan["domains"]
+    assert ["pnpm", "run", "check:anti-drift"] in plan["specialized_commands"]
+
+
+def test_all_specialized_pnpm_commands_exist() -> None:
+    package_scripts = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["scripts"]
+    plans = [
+        _plan("app/domain/agent_feedback/service.py"),
+        _plan("app/domain/observability/editor_assist_quality.py"),
+        _plan("app/domain/agent_workflow_metadata.py"),
+        _plan("docs/runtime-stability-performance-evidence-v1.md"),
+        _plan("docs/cloud-content-generation-boundary-v1.md"),
+        _plan("frontend/src/app/admin/accounts/page.tsx"),
+    ]
+
+    for plan in plans:
+        for command in plan["specialized_commands"]:
+            assert command[:2] == ["pnpm", "run"]
+            assert command[2] in package_scripts
 
 
 def test_build_runtime_plan_never_mutates_m4_automatically() -> None:
     plan = _plan("Dockerfile", "app/main.py")
 
+    assert plan["tier"] == "L2"
     assert plan["classification"]["build_runtime"] is True
     assert any("runtime fingerprint" in item for item in plan["followups"])
     assert not any("m4:preview" in " ".join(command) for command in plan["commands"])
+
+
+def test_frontend_build_runtime_input_promotes_plan_to_l2() -> None:
+    plan = _plan("frontend/package.json")
+
+    assert plan["classification"]["frontend"] is True
+    assert plan["classification"]["build_runtime"] is True
+    assert plan["tier"] == "L2"
 
 
 def test_m4_fingerprint_inputs_request_deploy_followup() -> None:

@@ -12,6 +12,24 @@ This mechanism is CI scheduling evidence only. It must not change test
 assertions, skip coverage, weaken release gates, or introduce a second runtime
 control plane. The stable required check remains `backend`.
 
+Targeted pull requests use a separate four-lane fast gate:
+
+1. changed-source static and anti-drift checks;
+2. deterministic contract shard 1;
+3. deterministic contract shard 2;
+4. impacted API/domain tests selected from changed paths.
+
+The lanes run in parallel and still aggregate into the stable required
+`backend` check. `scripts/select-pr-backend-tests.py` owns the impacted-test
+mapping. Central API/bootstrap files intentionally select all `tests/api`;
+unknown future `app/api/**` files also fall back to all API tests with a
+warning. A missing mapping therefore costs time but cannot silently reduce
+coverage.
+
+The complete backend lane remains three shards and is still selected for CI
+configuration, dependencies, migrations, core models, and other high-risk
+surfaces. Targeted-lane optimization must not change that authority.
+
 ## Weight source
 
 `ci/pytest-backend-durations.json` is generated from complete
@@ -60,6 +78,72 @@ An actual shard ratio above `1.30`, or any material file drift, creates an
 advisory Actions warning. This warning does not fail the required gate because
 one runner can be temporarily slow.
 
+## Changed-code coverage observation
+
+Pull requests that enter the complete backend pytest lane and change Python
+under `app/**` also collect branch coverage while the existing three shards
+run. No fourth pytest execution is added. Each shard uploads one coverage.py
+data file; `CI observability` combines the three files and compares the result
+with the pull request diff. Pull requests without changed `app/**` Python keep
+the original pytest command and publish a no-app-changes observation without
+installing or running coverage.py.
+
+The report is intentionally bounded:
+
+- source scope is Python under `app/**` only;
+- coverage.py traces only the changed Python files plus the lightweight
+  `app/__init__.py` combine sentinel, not every `app/**` module executed by the
+  test suite;
+- the diff uses the checked-out PR merge candidate so changed line numbers
+  match the source revision exercised by pytest;
+- line coverage counts changed executable lines, excluding comments, blank
+  lines, and other non-executable lines;
+- branch coverage counts coverage.py branch arcs whose source line changed;
+- the Markdown summary and JSON artifact are trend evidence only;
+- no percentage threshold is configured and low coverage does not fail CI;
+- missing, malformed, or incomplete coverage artifacts fail the reporting seam
+  rather than publishing a misleading percentage.
+
+Coverage collection runs only for pull requests. Natural `master` pushes keep
+the existing timing and weight-refresh loop without paying the coverage
+instrumentation cost. The stable required check remains `backend`; this pilot
+does not change test selection, assertions, or release authority.
+
+### Changed-code coverage observation cycle
+
+Treat changed-code coverage as a bounded pilot until several naturally
+occurring pull requests change Python under `app/**`. Do not manufacture pull
+requests or full CI runs to complete the sample.
+
+For each useful natural sample, retain enough evidence to distinguish test
+cost from hosted-runner variation:
+
+- changed Python file count, changed executable lines, and changed branch arcs;
+- whether the report identified a real missing test or changed a review
+  decision;
+- each shard's wall time and JUnit recorded test time;
+- `CI observability` time and any artifact, combine, rename, or diff-mapping
+  anomaly.
+
+Do not infer coverage overhead from one run. Compare multiple natural samples
+and separate runner setup or scheduling variance from recorded pytest time and
+coverage instrumentation. The initial implementation and cost correction are
+recorded in the
+[2026-08-08 changed-code coverage retrospective](ai-development-changed-code-coverage-retrospective-2026-08-08.md).
+
+Keep `threshold=null` during this observation cycle. A low percentage remains
+advisory; incomplete or invalid evidence remains fail closed. Introducing a
+merge threshold requires a separate reviewed change with stable natural
+samples, critical-module justification, false-positive analysis, and an
+explicit rollback.
+
+Keep the pilot while its reports are accurate, its incremental cost remains
+small, and it sometimes changes testing or review decisions. First narrow or
+repair it, then remove it if natural samples show persistent material PR
+latency, repeated artifact or line-mapping errors, or maintenance cost greater
+than review value. Those conditions do not by themselves justify a dashboard,
+database, external coverage service, or another test execution.
+
 ## Refresh and escalation rules
 
 1. Refresh weights through a focused PR; never push generated weights directly
@@ -86,11 +170,22 @@ For changes to this mechanism, run:
 ```bash
 .venv/bin/python -m pytest -q \
   tests/dev/test_select_pytest_shard.py \
+  tests/dev/test_select_pr_backend_tests.py \
+  tests/dev/test_wait_pr_readiness.py \
+  tests/dev/test_report_changed_code_coverage.py \
   tests/contract/test_ci_efficiency_contract.py
-bash -n scripts/refresh-pytest-duration-weights.sh
-pnpm run check:fast
+bash -n scripts/check-pr-backend-gate.sh scripts/refresh-pytest-duration-weights.sh
 ```
+
+When `.github/workflows/ci.yml` changes, the pull request intentionally enters
+the complete backend lane. That exact GitHub Actions run is the orchestration
+and integration authority; do not duplicate it with local Docker or M4.
 
 Before committing generated weights, inspect `source_run_ids`, verify that each
 run is a successful `master` push with three timing artifacts, and replay the
 new assignment against a held-out run when diagnosing a regression.
+
+For changed-code coverage policy or reporting changes, also verify the empty
+target path, fully unexecuted changed-module fallback, malformed/incomplete
+artifact failure, and Markdown/JSON agreement. GitHub Actions remains the
+runtime evidence for CI orchestration; M4 is not part of this mechanism.

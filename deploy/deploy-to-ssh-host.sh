@@ -361,18 +361,40 @@ if [ -n "${SSH_USER}" ]; then
 	SSH_TARGET="${SSH_USER}@${SSH_HOST}"
 fi
 
+SSH_CONTROL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/npcink-cloud-ssh.XXXXXX")"
+chmod 0700 "${SSH_CONTROL_DIR}"
+SSH_CONTROL_PATH="${SSH_CONTROL_DIR}/control-%C"
+
+cleanup_ssh_control() {
+	local cleanup_failed=0
+	set +e
+	ssh "${SSH_ARGS[@]}" -O exit "${SSH_TARGET}" >/dev/null 2>&1 || true
+	if ! rm -rf -- "${SSH_CONTROL_DIR}" || [ -e "${SSH_CONTROL_DIR}" ] || [ -L "${SSH_CONTROL_DIR}" ]; then
+		cleanup_failed=1
+	fi
+	return "${cleanup_failed}"
+}
+
 SSH_ARGS=(
 	-p "${SSH_PORT}"
 	-o StrictHostKeyChecking=yes
 	-o BatchMode=yes
 	-o ConnectTimeout="${SSH_CONNECT_TIMEOUT_SECONDS}"
+	-o ControlMaster=auto
+	-o ControlPersist=60
+	-o "ControlPath=${SSH_CONTROL_PATH}"
 )
 SCP_ARGS=(
 	-P "${SSH_PORT}"
 	-o StrictHostKeyChecking=yes
 	-o BatchMode=yes
 	-o ConnectTimeout="${SSH_CONNECT_TIMEOUT_SECONDS}"
+	-o ControlMaster=auto
+	-o ControlPersist=60
+	-o "ControlPath=${SSH_CONTROL_PATH}"
 )
+
+trap cleanup_ssh_control EXIT
 
 if [ -n "${SSH_IDENTITY_FILE}" ]; then
 	SSH_ARGS+=(-i "${SSH_IDENTITY_FILE}")
@@ -642,6 +664,10 @@ cleanup_remote_incoming_on_exit() {
 			echo "[fail] Could not prove remote incoming upload cleanup: ${REMOTE_INCOMING_DIR}" >&2
 			cleanup_failed=1
 		fi
+	fi
+	if ! cleanup_ssh_control; then
+		echo "[fail] Could not clean the private SSH control directory." >&2
+		cleanup_failed=1
 	fi
 	if [ "${cleanup_failed}" -ne 0 ]; then
 		echo "[fail] Deployment credential/upload cleanup did not complete." >&2
@@ -1590,15 +1616,49 @@ application_container_ids() {
 stop_application_services() {
 	local service_name=""
 	local container_id=""
+	local started_at=0
+	local duration_seconds=0
+	local stop_failed=0
+	local index=0
+	local -a stop_pids=()
+	local -a stop_services=()
+	local -a stop_containers=()
 	# Mark the deployment as stopped before touching the first container. A
 	# partial stop must take the same recovery path as a complete stop.
 	APPLICATIONS_STOPPED=1
 	for service_name in "${APPLICATION_SERVICES[@]}"; do
 		while IFS= read -r container_id; do
 			[ -n "${container_id}" ] || continue
-			docker stop --time 30 "${container_id}"
-			docker rm -f "${container_id}"
+			stop_services+=("${service_name}")
+			stop_containers+=("${container_id}")
+			(
+				started_at="$(date +%s)"
+				echo "[timing] stop application service ${service_name} (${container_id}): start"
+				if ! docker stop --time 30 "${container_id}" >/dev/null; then
+					echo "[fail] Application service did not stop cleanly: ${service_name} (${container_id})" >&2
+					exit 1
+				fi
+				duration_seconds=$(($(date +%s) - started_at))
+				echo "[timing] stop application service ${service_name} (${container_id}): ${duration_seconds}s"
+			) &
+			stop_pids+=("$!")
 		done < <(application_container_ids "${service_name}")
+	done
+	for index in "${!stop_pids[@]}"; do
+		if ! wait "${stop_pids[$index]}"; then
+			stop_failed=1
+		fi
+	done
+	if [ "${stop_failed}" -ne 0 ]; then
+		return 1
+	fi
+	for index in "${!stop_containers[@]}"; do
+		container_id="${stop_containers[$index]}"
+		service_name="${stop_services[$index]}"
+		if ! docker rm -f "${container_id}" >/dev/null; then
+			echo "[fail] Stopped application service could not be removed: ${service_name} (${container_id})" >&2
+			return 1
+		fi
 	done
 }
 
@@ -3177,6 +3237,10 @@ CUTOVER_PHASE="finalize-current-release"
 EOF
 
 REMOTE_INCOMING_NEEDS_CLEANUP=0
+if ! cleanup_ssh_control; then
+	echo "[fail] Could not clean the private SSH control directory." >&2
+	exit 1
+fi
 trap - EXIT
 if [ "${STAGE_ONLY}" = "1" ]; then
 	echo "[ok] Remote release staged on ${SSH_TARGET}"

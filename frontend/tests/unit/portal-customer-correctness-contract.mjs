@@ -24,6 +24,16 @@ assert.equal(existsSync(monitoringPath), false);
 assert.match(homeSource, /<PortalSitesWorkspace \/>/);
 assert.doesNotMatch(homeSource, /getSiteSummary|getSiteDiagnostics|siteSummaryCache/);
 assert.doesNotMatch(sitesSource, /siteSummaries|PortalSiteSummaryRecord/);
+assert.match(
+  sitesSource,
+  /error instanceof ApiError && error\.statusCode === 409[\s\S]*await refresh\(\)[\s\S]*setReplacementSiteIds\(\[\]\)/,
+  'site lifecycle quota conflicts must refresh capacity before another swap attempt'
+);
+assert.match(
+  sitesSource,
+  /setPendingLifecycleSite\(\(pendingSite\)[\s\S]*sites\.find\(\(site\) => site\.site_id === pendingSite\.site_id\)/,
+  'an open lifecycle dialog must reconcile its site against refreshed session capacity'
+);
 assert.match(portalClientSource, /customer_status:[\s\S]*nestedCustomerStatus\.needs_attention/);
 assert.doesNotMatch(
   accountSource,

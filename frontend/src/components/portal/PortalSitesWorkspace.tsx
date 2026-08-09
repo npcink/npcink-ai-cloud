@@ -23,6 +23,7 @@ import {
   type PortalSiteRelinkPolicy,
   type Site,
 } from '@/lib/portal-client';
+import { ApiError } from '@/lib/errors';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
@@ -31,6 +32,8 @@ type PortalTranslator = (
   params?: Record<string, string>,
   fallback?: string
 ) => string;
+
+const EMPTY_SITES: Site[] = [];
 
 function siteRemovalNotice(t: PortalTranslator, relinkAvailableAt: string): string {
   const formattedDate = formatDate(relinkAvailableAt);
@@ -66,9 +69,15 @@ function PortalSitesWorkspaceContent() {
   const [removeError, setRemoveError] = useState('');
   const [removeNotice, setRemoveNotice] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
+  const [pendingLifecycleSite, setPendingLifecycleSite] = useState<Site | null>(null);
+  const [pendingLifecycleStatus, setPendingLifecycleStatus] = useState<'active' | 'inactive'>('active');
+  const [replacementSiteIds, setReplacementSiteIds] = useState<string[]>([]);
+  const [lifecycleError, setLifecycleError] = useState('');
+  const [lifecycleNotice, setLifecycleNotice] = useState('');
+  const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
-  const sites = session?.sites || [];
+  const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
   const canRemoveSites = Boolean(
@@ -97,12 +106,50 @@ function PortalSitesWorkspaceContent() {
       return getPortalSiteDisplayName(left).localeCompare(getPortalSiteDisplayName(right));
     });
   }, [filteredSites]);
-  const restrictedCount = visibleSites.filter((site) => portalSiteNeedsAttention(site)).length;
-  const clearCount = visibleSites.length - restrictedCount;
+  const capacities = Array.from(
+    new Map(
+      sites
+        .flatMap((site) => (
+          site.capacity_scope && site.capacity
+            ? [[site.capacity_scope, site.capacity] as const]
+            : []
+        ))
+    ).values()
+  );
+  const totalCapacity = capacities.reduce(
+    (total, capacity) => ({
+      active_count: total.active_count + capacity.active_count,
+      active_limit: total.active_limit + capacity.active_limit,
+      bound_count: total.bound_count + capacity.bound_count,
+      bound_limit: total.bound_limit + capacity.bound_limit,
+    }),
+    { active_count: 0, active_limit: 0, bound_count: 0, bound_limit: 0 }
+  );
+  const pendingCapacity = pendingLifecycleSite?.capacity;
+  const requiredReleaseCount = pendingLifecycleStatus === 'active'
+    && pendingCapacity
+    && pendingCapacity.active_limit > 0
+    ? Math.max(0, pendingCapacity.active_count + 1 - pendingCapacity.active_limit)
+    : 0;
+  const activationNeedsSwap = requiredReleaseCount > 0;
+  const replacementCandidates = pendingLifecycleSite
+    ? sites.filter((site) => (
+        site.capacity_scope === pendingLifecycleSite.capacity_scope
+        && site.site_id !== pendingLifecycleSite.site_id
+        && site.status === 'active'
+      ))
+    : [];
 
   useEffect(() => {
     setSearchQuery(searchParams.get('q') || '');
   }, [searchParams]);
+
+  useEffect(() => {
+    setPendingLifecycleSite((pendingSite) => {
+      if (!pendingSite) return null;
+      return sites.find((site) => site.site_id === pendingSite.site_id) || pendingSite;
+    });
+  }, [sites]);
 
   useEffect(() => {
     if (addonConnectMode && isAuthenticated) {
@@ -256,6 +303,66 @@ function PortalSitesWorkspaceContent() {
     }
   };
 
+  const openLifecycleModal = (site: Site, status: 'active' | 'inactive') => {
+    setPendingLifecycleSite(site);
+    setPendingLifecycleStatus(status);
+    setReplacementSiteIds([]);
+    setLifecycleError('');
+  };
+
+  const closeLifecycleModal = () => {
+    if (isUpdatingLifecycle) return;
+    setPendingLifecycleSite(null);
+    setReplacementSiteIds([]);
+    setLifecycleError('');
+  };
+
+  const handleLifecycleUpdate = async () => {
+    if (!pendingLifecycleSite) return;
+    if (activationNeedsSwap && replacementSiteIds.length !== requiredReleaseCount) {
+      setLifecycleError(
+        t(
+          'portal.site_swap_required',
+          {},
+          'Choose an active site to deactivate before activating this site.'
+        )
+      );
+      return;
+    }
+    setIsUpdatingLifecycle(true);
+    setLifecycleError('');
+    setLifecycleNotice('');
+    try {
+      const response = await portalClient.updateSiteLifecycle(
+        pendingLifecycleSite.site_id,
+        pendingLifecycleStatus,
+        activationNeedsSwap ? replacementSiteIds : []
+      );
+      await refresh();
+      setLifecycleNotice(
+        response.data.site.status === 'active'
+          ? t('portal.site_activate_success', {}, 'Site activated.')
+          : t('portal.site_deactivate_success', {}, 'Site deactivated. Its binding and credential remain available.')
+      );
+      setPendingLifecycleSite(null);
+      setReplacementSiteIds([]);
+    } catch (error) {
+      if (error instanceof ApiError && error.statusCode === 409) {
+        await refresh().catch(() => undefined);
+        setReplacementSiteIds([]);
+      }
+      setLifecycleError(
+        formatPortalErrorMessage(
+          error,
+          t,
+          t('portal.site_lifecycle_failed', {}, 'Failed to update this site.')
+        )
+      );
+    } finally {
+      setIsUpdatingLifecycle(false);
+    }
+  };
+
   const removeSiteConfirmation = expectedRelinkAvailableAt
     ? siteRelinkPolicy?.enabled
       ? t(
@@ -287,11 +394,19 @@ function PortalSitesWorkspaceContent() {
             </h2>
             <div className="mt-3 flex flex-wrap gap-2">
               <PortalTag>{visibleSites.length} {t('common.site')}</PortalTag>
-              <PortalTag tone="warning">
-                {restrictedCount} {t('portal.home.filter_attention_only', {}, 'Needs attention')}
-              </PortalTag>
               <PortalTag tone="success">
-                {clearCount} {t('portal.home.filter_clear', {}, 'Clear')}
+                {t(
+                  'portal.sites.active_capacity',
+                  { used: String(totalCapacity.active_count), limit: String(totalCapacity.active_limit) },
+                  `Active ${totalCapacity.active_count}/${totalCapacity.active_limit}`
+                )}
+              </PortalTag>
+              <PortalTag tone="info">
+                {t(
+                  'portal.sites.bound_capacity',
+                  { used: String(totalCapacity.bound_count), limit: String(totalCapacity.bound_limit) },
+                  `Bound ${totalCapacity.bound_count}/${totalCapacity.bound_limit}`
+                )}
               </PortalTag>
             </div>
           </div>
@@ -331,6 +446,12 @@ function PortalSitesWorkspaceContent() {
           </div>
         ) : null}
 
+        {lifecycleNotice ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+            {lifecycleNotice}
+          </div>
+        ) : null}
+
         {siteSelectionError ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
             {siteSelectionError}
@@ -356,10 +477,14 @@ function PortalSitesWorkspaceContent() {
                       {getPortalSiteDisplayName(site)}
                     </p>
                     <PortalStatusBadge
-                      status={portalSiteNeedsAttention(site) ? 'warning' : 'active'}
-                      label={portalSiteNeedsAttention(site)
-                        ? t('portal.home.filter_attention_only', {}, 'Needs attention')
-                        : t('portal.home.risk_level_normal', {}, 'Normal')}
+                      status={site.status === 'active' ? 'active' : 'warning'}
+                      label={site.status === 'active'
+                        ? t('portal.site_status_active', {}, 'Active')
+                        : site.status === 'inactive'
+                          ? t('portal.site_status_inactive', {}, 'Inactive')
+                          : site.status === 'provisioning'
+                            ? t('portal.site_status_provisioning', {}, 'Provisioning')
+                            : t('portal.site_status_suspended', {}, 'Suspended')}
                       className="normal-case tracking-normal"
                     />
                     {site.site_id === selectedSiteId ? (
@@ -374,6 +499,19 @@ function PortalSitesWorkspaceContent() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  {site.allowed_actions?.includes('provision_sites')
+                    && site.status !== 'suspended'
+                    && site.status !== 'archived' ? (
+                    <button
+                      type="button"
+                      onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      {site.status === 'active'
+                        ? t('portal.deactivate_site_action', {}, 'Deactivate')
+                        : t('portal.activate_site_action', {}, 'Activate')}
+                    </button>
+                  ) : null}
                   {site.site_id !== selectedSiteId ? (
                     <button
                       type="button"
@@ -430,6 +568,90 @@ function PortalSitesWorkspaceContent() {
           addonReturnUrl={addonReturnUrl}
           addonState={addonState}
         />
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(pendingLifecycleSite)}
+        onClose={closeLifecycleModal}
+        closeLabel={t('common.close', {}, 'Close')}
+        closeOnOverlay={!isUpdatingLifecycle}
+        title={pendingLifecycleStatus === 'active'
+          ? t('portal.activate_site_action', {}, 'Activate site')
+          : t('portal.deactivate_site_action', {}, 'Deactivate site')}
+        description={pendingLifecycleStatus === 'active'
+          ? activationNeedsSwap
+            ? t(
+              'portal.activate_site_swap_desc',
+                { count: String(requiredReleaseCount) },
+                `Your active-site quota is full. Choose exactly ${requiredReleaseCount} active site(s) to deactivate; no site is replaced automatically.`
+              )
+            : t('portal.activate_site_confirm', {}, 'Activate this site for Cloud runtime service?')
+          : t(
+              'portal.deactivate_site_confirm',
+              {},
+              'Deactivate this site? Its binding, credential, usage, and audit history will be preserved.'
+            )}
+        className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={closeLifecycleModal} disabled={isUpdatingLifecycle}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => void handleLifecycleUpdate()} disabled={isUpdatingLifecycle}>
+              {isUpdatingLifecycle
+                ? t('common.saving')
+                : pendingLifecycleStatus === 'active'
+                  ? t('portal.activate_site_action', {}, 'Activate')
+                  : t('portal.deactivate_site_action', {}, 'Deactivate')}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+          <p className="font-semibold text-slate-950 dark:text-white">
+            {getPortalSiteDisplayName(pendingLifecycleSite)}
+          </p>
+          {activationNeedsSwap ? (
+            <fieldset className="space-y-2">
+              <legend className="font-medium text-slate-950 dark:text-white">
+                {t(
+                  'portal.site_swap_select_label',
+                  { count: String(requiredReleaseCount) },
+                  `Choose ${requiredReleaseCount} active site(s) to deactivate`
+                )}
+              </legend>
+              {replacementCandidates.map((site) => (
+                <label key={site.site_id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                  <input
+                    type="checkbox"
+                    name="replacement-site"
+                    value={site.site_id}
+                    checked={replacementSiteIds.includes(site.site_id)}
+                    onChange={(event) => {
+                      setReplacementSiteIds((current) => event.target.checked
+                        ? [...current, site.site_id]
+                        : current.filter((siteId) => siteId !== site.site_id));
+                    }}
+                    disabled={
+                      !replacementSiteIds.includes(site.site_id)
+                      && replacementSiteIds.length >= requiredReleaseCount
+                    }
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block font-medium text-slate-950 dark:text-white">{getPortalSiteDisplayName(site)}</span>
+                    <span className="block break-all text-xs">{getPortalSiteUrl(site)}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
+          {lifecycleError ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+              {lifecycleError}
+            </p>
+          ) : null}
+        </div>
       </Modal>
 
       <Modal

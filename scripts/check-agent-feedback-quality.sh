@@ -28,14 +28,19 @@ ok "Validating Content Support regression fixture"
 	tests/fixtures/agent_feedback/content_support_regression_samples.json \
 	>/tmp/magick-ai-content-support-regression-samples.json
 
+ok "Reporting the bounded ten-case quality sample set"
+"${PYTHON_BIN}" scripts/report_ai_quality_regression_samples.py
+
 ok "Running agent feedback API and regression tests"
-"${PYTHON_BIN}" -m pytest tests/api/test_agent_feedback_routes.py -q
+"${PYTHON_BIN}" -m pytest \
+	tests/api/test_agent_feedback_routes.py -q
 
 ok "Running targeted Python lint"
 "${RUFF_CMD[@]}" check \
 	app/domain/agent_feedback/service.py \
 	app/api/routes/service.py \
-	tests/api/test_agent_feedback_routes.py
+	tests/api/test_agent_feedback_routes.py \
+	scripts/report_ai_quality_regression_samples.py
 
 ok "Running Cloud admin type check"
 pnpm --dir frontend run type-check

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import subprocess
@@ -12,6 +13,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+VALIDATION_RULES_PATH = ROOT / "config" / "ai-development-validation-rules-v1.json"
+TIER_RANK = {"documentation-only": 0, "L0": 1, "L1": 2, "L2": 3}
 M4_DEPLOY_INPUTS = {
     ".dockerignore",
     "Dockerfile",
@@ -71,6 +74,80 @@ def normalize_paths(paths: list[str]) -> list[str]:
             raise SystemExit(f"[fail] path is outside the repository: {value}") from exc
         normalized.add(path.as_posix().removeprefix("./"))
     return sorted(path for path in normalized if path)
+
+
+def load_validation_rules() -> list[dict[str, object]]:
+    try:
+        payload = json.loads(VALIDATION_RULES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            f"[fail] unable to load validation rules: {VALIDATION_RULES_PATH}: {exc}"
+        ) from exc
+    if payload.get("schema_version") != 1 or not isinstance(payload.get("rules"), list):
+        raise SystemExit("[fail] validation rules must use schema_version=1 and a rules list")
+    rules = payload["rules"]
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            raise SystemExit(f"[fail] validation rule {index} must be an object")
+        required = {"id", "tier", "reason", "match_any", "documents", "commands", "followups"}
+        missing = sorted(required - set(rule))
+        if missing:
+            raise SystemExit(
+                f"[fail] validation rule {index} is missing: {', '.join(missing)}"
+            )
+        if rule["tier"] not in TIER_RANK:
+            raise SystemExit(f"[fail] validation rule {rule['id']} has an invalid tier")
+        for key in ("match_any", "documents", "commands", "followups"):
+            if not isinstance(rule[key], list):
+                raise SystemExit(
+                    f"[fail] validation rule {rule['id']} field {key} must be a list"
+                )
+        if not all(isinstance(value, str) and value for value in rule["match_any"]):
+            raise SystemExit(
+                f"[fail] validation rule {rule['id']} match_any values must be non-empty strings"
+            )
+        if not all(isinstance(value, str) and value for value in rule["documents"]):
+            raise SystemExit(
+                f"[fail] validation rule {rule['id']} documents must be non-empty strings"
+            )
+        if not all(isinstance(value, str) and value for value in rule["followups"]):
+            raise SystemExit(
+                f"[fail] validation rule {rule['id']} followups must be non-empty strings"
+            )
+        if not all(
+            isinstance(command, list)
+            and command
+            and all(isinstance(part, str) and part for part in command)
+            for command in rule["commands"]
+        ):
+            raise SystemExit(
+                f"[fail] validation rule {rule['id']} commands must be non-empty string arrays"
+            )
+    return rules
+
+
+def _matches_rule(path: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+
+
+def select_validation_rules(paths: list[str]) -> list[dict[str, object]]:
+    selected: list[dict[str, object]] = []
+    for rule in load_validation_rules():
+        patterns = [str(value) for value in rule["match_any"]]  # type: ignore[index]
+        if any(_matches_rule(path, patterns) for path in paths):
+            selected.append(rule)
+    return selected
+
+
+def _deduplicate_commands(commands: list[list[str]]) -> list[list[str]]:
+    seen: set[tuple[str, ...]] = set()
+    result: list[list[str]] = []
+    for command in commands:
+        key = tuple(command)
+        if key not in seen:
+            seen.add(key)
+            result.append(command)
+    return result
 
 
 def classify(paths: list[str]) -> dict[str, bool]:
@@ -150,14 +227,63 @@ def classify(paths: list[str]) -> dict[str, bool]:
     }
 
 
+def classify_tier(
+    paths: list[str], kinds: dict[str, bool], rules: list[dict[str, object]]
+) -> tuple[str, list[str]]:
+    tier = "documentation-only" if kinds["documentation_only"] else "L2"
+    reasons: list[str] = []
+    if kinds["documentation_only"]:
+        reasons.append("All changed paths are documentation or repository-policy Markdown.")
+    elif kinds["admin"]:
+        tier = "L1"
+        reasons.append("Admin route or route-local interaction work is at least L1.")
+    elif kinds["frontend"]:
+        tier = "L1"
+        reasons.append("Frontend composition work is at least L1.")
+    else:
+        reasons.append(
+            "Shared engineering, backend, test, configuration, or runtime-sensitive "
+            "work is L2."
+        )
+
+    if kinds["build_runtime"]:
+        tier = "L2"
+        reasons.append(
+            "A dependency, image, Compose, proxy, or deployment fingerprint input "
+            "requires L2."
+        )
+    if kinds["migration"]:
+        tier = "L2"
+        reasons.append("Migration and persistence behavior requires L2.")
+
+    for rule in rules:
+        rule_tier = str(rule["tier"])
+        reasons.append(str(rule["reason"]))
+        if TIER_RANK[rule_tier] > TIER_RANK[tier]:
+            tier = rule_tier
+    return tier, list(dict.fromkeys(reasons))
+
+
 def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, object]:
     kinds = classify(paths)
+    rules = select_validation_rules(paths)
+    tier, tier_reasons = classify_tier(paths, kinds, rules)
     commands: list[list[str]] = [
         ["git", "diff", "--check", f"{base_ref}...HEAD"],
         ["git", "diff", "--cached", "--check"],
         ["git", "diff", "--check"],
     ]
     followups: list[str] = []
+    specialized_commands: list[list[str]] = []
+    documents: list[str] = []
+
+    for rule in rules:
+        documents.extend(str(value) for value in rule["documents"])  # type: ignore[index]
+        specialized_commands.extend(
+            [str(part) for part in command]
+            for command in rule["commands"]  # type: ignore[index]
+        )
+        followups.extend(str(value) for value in rule["followups"])  # type: ignore[index]
 
     if kinds["policy"]:
         commands.append(["bash", "scripts/check-release-policy.sh"])
@@ -238,9 +364,12 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
             )
 
     if kinds["admin"]:
-        followups.append(
-            "Run the focused target-route PC browser gate; run pnpm run check:admin-ui "
-            "at closeout when the manifest or shared seam requires it."
+        documents.extend(
+            [
+                "docs/cloud-admin-ui-standard-v1.md",
+                "docs/cloud-admin-frontend-engineering-standard-v1.md",
+                "frontend/admin-ui-manifest.json",
+            ]
         )
     if kinds["build_runtime"]:
         followups.append(
@@ -263,13 +392,30 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
             "closeout."
         )
 
-    return {"paths": paths, "classification": kinds, "commands": commands, "followups": followups}
+    specialized_commands = _deduplicate_commands(specialized_commands)
+    commands = _deduplicate_commands([*commands, *specialized_commands])
+    return {
+        "paths": paths,
+        "classification": kinds,
+        "tier": tier,
+        "tier_reasons": tier_reasons,
+        "domains": [str(rule["id"]) for rule in rules],
+        "documents": sorted(set(documents)),
+        "commands": commands,
+        "specialized_commands": specialized_commands,
+        "followups": list(dict.fromkeys(followups)),
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--plan", action="store_true", help="print the plan without running gates"
+    )
+    parser.add_argument(
+        "--specialized-only",
+        action="store_true",
+        help="run only specialized domain gates selected by the current diff",
     )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--base", default="origin/master")
@@ -294,8 +440,22 @@ def main() -> int:
         print("[plan] changed files:")
         for path in paths:
             print(f" - {path}")
+        print(f"[plan] tier: {plan['tier']}")
+        for reason in plan["tier_reasons"]:  # type: ignore[index]
+            print(f" - {reason}")
+        if plan["domains"]:  # type: ignore[index]
+            print("[plan] matched domains:")
+            for domain in plan["domains"]:  # type: ignore[index]
+                print(f" - {domain}")
+        if plan["documents"]:  # type: ignore[index]
+            print("[plan] required context:")
+            for document in plan["documents"]:  # type: ignore[index]
+                print(f" - {document}")
+        selected_commands = (
+            plan["specialized_commands"] if args.specialized_only else plan["commands"]
+        )
         print("[plan] local gates:")
-        for command in plan["commands"]:  # type: ignore[index]
+        for command in selected_commands:  # type: ignore[assignment]
             print(" - " + " ".join(command))
         for followup in plan["followups"]:  # type: ignore[index]
             print(f"[next] {followup}")
@@ -305,7 +465,13 @@ def main() -> int:
 
     environment = os.environ.copy()
     environment["NPCINK_CLOUD_PYTHON_BIN"] = python_bin
-    for command in plan["commands"]:  # type: ignore[index]
+    selected_commands = (
+        plan["specialized_commands"] if args.specialized_only else plan["commands"]
+    )
+    if args.specialized_only and not selected_commands:
+        print("[ok] No specialized domain gates selected.")
+        return 0
+    for command in selected_commands:  # type: ignore[assignment]
         print("[run] " + " ".join(command), flush=True)
         subprocess.run(command, cwd=ROOT, env=environment, check=True)
     return 0
