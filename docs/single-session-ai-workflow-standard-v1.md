@@ -75,6 +75,19 @@ gh pr merge <pr-url> --auto --squash --match-head-commit <new-head-sha>
 
 Prefer batching local changes into one rebase before the first push.
 
+After publication, monitor checks and review threads together instead of
+watching only one Actions run:
+
+```bash
+pnpm run pr:wait -- --pr <number>
+```
+
+The command keeps pending checks visible, fails immediately when an unresolved
+review thread appears (including an outdated thread), and requires two
+consecutive ready observations before returning success. Fix and push review
+findings while the existing CI run is still useful instead of discovering them
+only after all checks finish.
+
 ## 3. Change-Scoped Testing
 
 "Change what you touch; full-suite only at the release gate."
@@ -84,15 +97,30 @@ Prefer batching local changes into one rebase before the first push.
 | `app/domain/commercial/mixins/*.py` | `ruff` + `mypy` + `pytest tests/domain/test_commercial_*.py tests/api/test_portal_routes.py tests/api/test_service_routes.py` |
 | other `app/domain/commercial/*.py` | `ruff` + `mypy` + `pytest tests/domain/test_commercial_*.py` |
 | other `app/domain/**` | `ruff` + `mypy` + `pytest tests/domain/ tests/api/` |
-| `app/api/**` | `ruff` + `mypy` + `pytest tests/api/` |
-| tests only | `pytest` on the changed test files |
-| frontend / docs / scripts | static checks only |
+| mapped `app/api/**` | `ruff` + `mypy` + mapped API tests from `scripts/select-pr-backend-tests.py` |
+| central or unmapped `app/api/**` | `ruff` + `mypy` + `pytest tests/api/` fail-closed fallback |
+| tests only | `pytest` on the changed test files; targeted PR CI also retains both contract shards |
+| frontend only | frontend gates; backend targeted lanes are skipped |
+| docs only | fail-closed docs gate |
+| scripts | script-specific/static checks plus targeted contract shards, unless classified full-backend |
 
-CI (`scripts/check-pr-backend-gate.sh`) applies the same mapping in its
-`backend-targeted` gate, so production code changes without an accompanying
-test file still run the focused suites. The full `backend-pytest` gate runs
+CI (`scripts/check-pr-backend-gate.sh`) applies the same mapping in four
+parallel targeted lanes: static checks, two deterministic contract shards,
+and impacted tests. Production code changes without an accompanying test file
+therefore still run their owning tests. The full `backend-pytest` gate runs
 only for high-risk surfaces (`pyproject.toml`, migrations, core models,
 Dockerfile, CI config) and on the `production` branch.
+
+Before the first push of an auth, quota, entitlement, or multi-tenant change,
+review three failure classes explicitly:
+
+- current mutable plan/config truth versus stored snapshot truth;
+- account-wide internal data accidentally returned through a principal-scoped
+  error or projection;
+- stale client state after a `409` or another concurrency conflict.
+
+These are review questions, not new product ownership. Add focused regression
+tests when the changed seam can exhibit them.
 
 Run the full local suite only immediately before a release promotion:
 
@@ -109,8 +137,8 @@ Run the full local suite only immediately before a release promotion:
 - [ ] Change-scoped pytest passes (Section 3 mapping).
 - [ ] Body file contains `Scope`, `Boundary`, `Verification`, `Risk`.
 - [ ] Published via `scripts/publish-pr.sh`; squash auto-merge requested.
-- [ ] Cloud CI green on the final head; any review comment threads resolved
-      (branch protection requires conversation resolution).
+- [ ] `pnpm run pr:wait -- --pr <number>` confirms Cloud CI is green on the
+      final head and every review comment thread is resolved.
 - [ ] PR is MERGED (auto-merge completes once required checks pass).
 
 ## 5. Known Traps
@@ -121,8 +149,8 @@ Run the full local suite only immediately before a release promotion:
 - **Untracked files block publishing**: `git status --porcelain` must be
   empty; move agent/observation artifacts out of the tree first.
 - **Review threads unresolved**: auto-merge stays BLOCKED even when all
-  checks are green; resolve threads via the GitHub UI or GraphQL
-  `resolveReviewThread`.
+  checks are green; use `pnpm run pr:wait -- --pr <number>` during the CI wait,
+  then resolve threads via the GitHub UI or GraphQL `resolveReviewThread`.
 - **Force-push after a PR exists**: invalidates prior CI runs; batch all
   local changes into one rebase before the first push whenever possible.
 - **Creating a branch from the current branch**: always use

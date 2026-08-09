@@ -217,7 +217,9 @@ Use the same loop for a new feature and a defect:
 7. repeat until the source and runtime evidence agree;
 8. inspect the diff and stage only named task files;
 9. commit, push, and publish a focused PR using the repository PR template;
-10. let required GitHub checks decide merge eligibility;
+10. let required GitHub checks decide merge eligibility; while they run, use
+    `pnpm run pr:wait -- --pr <number>` so unresolved review threads surface
+    before the final check completes;
 11. merge into `master`;
 12. promote clean current `master` to M4 and run the relevant smoke;
 13. report exact states, revisions, tests, limitations, and rollback.
