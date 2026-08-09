@@ -889,14 +889,7 @@ EOF
         """
         #!/usr/bin/env bash
         set -Eeuo pipefail
-        FAKE_BIN="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
-        FIXTURE_ROOT="$(dirname "${FAKE_BIN}")"
-        HOST_PYTHON="$(tr -d '\n' <"${FIXTURE_ROOT}/state/host-python")"
-        "${HOST_PYTHON}" - <<'PY'
-import time
-
-time.sleep(0.01)
-PY
+        exec /bin/sleep 0.01
         """,
     )
     _write_executable(fake_bin / "docker", _fake_docker_source())
