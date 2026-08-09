@@ -250,6 +250,7 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "mapfile" not in source
     assert "select-pr-backend-tests.py" in source
     assert "contract shards are already covered" in source
+    assert "ci/pytest-backend-durations.json" in source
     assert '"app/api/routes/portal.py"' in selector
     assert '"tests/api/test_portal_routes.py"' in selector
     assert "selecting all tests/api" in selector
