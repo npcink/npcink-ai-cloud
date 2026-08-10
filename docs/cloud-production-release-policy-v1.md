@@ -681,6 +681,21 @@ governed tags against the map before using `docker start` on only the captured
 IDs. The same container IDs and image IDs must still be running before any
 health or readiness gate succeeds.
 
+Before `prepare-only` loads an archive, it may reuse an already-present image
+only when the current daemon tag is proved to represent the same portable
+Config image ID required by the new exact bundle. The preferred proof reuses
+the previous managed release's private, bundle-bound target-daemon image map:
+the role, release reference, portable Config image ID, recorded target-daemon
+ID, current tag ID, managed sibling release path, and platform-bound manifest
+must all agree. A classic Docker daemon ID that directly equals the required
+portable Config ID is also sufficient. Missing, stale, malformed, mismatched,
+or unavailable reuse evidence is only a cache miss and must load the governed
+archive normally; it must never weaken post-load verification, target-daemon
+map publication, rollback tagging, or the exact bundle identity chain. The
+loader reports reused/loaded archive counts and bytes for release timing
+evidence. This reuse state is disposable delivery acceleration, not release,
+image, Git, runtime, or product truth.
+
 The Service Settings pair
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /
 `NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID` and the Runtime Data pair

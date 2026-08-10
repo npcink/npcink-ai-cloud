@@ -88,6 +88,29 @@ def test_target_daemon_map_cli_has_no_arbitrary_path_override(tmp_path: Path) ->
     assert "unrecognized arguments: --target-daemon-map" in completed.stderr
 
 
+def test_malformed_previous_release_map_is_only_a_reuse_cache_miss(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = load_helper_module()
+    observed_id = "sha256:" + "a" * 64
+    monkeypatch.setattr(helper, "current_daemon_image_id", lambda _reference: observed_id)
+
+    def reject_previous_map(_root: Path, _role: str) -> dict[str, str]:
+        raise helper.BundleError("malformed previous map")
+
+    monkeypatch.setattr(helper, "read_target_daemon_map", reject_previous_map)
+    reason = helper.reusable_archive_reason(
+        previous_root=tmp_path / "release-previous",
+        primary={
+            "reference": "npcink-ai-cloud-api:prod",
+            "role": "api",
+            "expected_image_id": "sha256:" + "b" * 64,
+        },
+    )
+
+    assert reason is None
+
+
 def write(path: Path, content: str = "fixture\n") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -1575,6 +1598,168 @@ def test_real_prepare_only_loader_preserves_exact_payload_and_writes_external_st
     assert bundle_file_hashes(bundle) == before
 
 
+def test_prepare_only_reuses_images_proved_by_previous_release_map(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, previous_bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, previous_bundle, records)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    install_stateful_fake_docker(fake_bin)
+    state_dir = tmp_path / "fake-docker-state"
+    state_root = previous_bundle.parent / ".release-state"
+    state_root.mkdir(mode=0o700, exist_ok=True)
+    target_daemon_state_dir(previous_bundle).mkdir(mode=0o700, exist_ok=True)
+    env_file = tmp_path / "release-state" / "env.deploy"
+    write(
+        env_file,
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=fixture-internal-token\n"
+        "NPCINK_CLOUD_COMPOSE_PROJECT_NAME=npcink-ai-cloud\n",
+    )
+    env_file.chmod(0o600)
+
+    env = os.environ.copy()
+    for key in (
+        "COMPOSE_PROJECT_NAME",
+        "NPCINK_CLOUD_BACKEND_ENV_FILE",
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_COMPOSE_FILE",
+        "NPCINK_CLOUD_EXTERNAL_EDGE_READY",
+        "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE",
+    ):
+        env.pop(key, None)
+    env.update(
+        {
+            "FAKE_DOCKER_STATE_DIR": str(state_dir),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(
+                tmp_path / "release-state" / "rollback-first.tsv"
+            ),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "first",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    install_deploy_lock_owner(previous_bundle, env)
+    first = subprocess.run(
+        ["bash", str(previous_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=previous_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode == 0, f"{first.stdout}\n{first.stderr}"
+    assert "image_inventory_reused=0" in first.stdout
+    assert "image_inventory_loaded=4" in first.stdout
+
+    next_bundle = previous_bundle.parent / "release-next"
+    shutil.copytree(previous_bundle, next_bundle)
+    target_daemon_state_dir(next_bundle).mkdir(mode=0o700)
+    env.update(
+        {
+            "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR": str(previous_bundle),
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(
+                tmp_path / "release-state" / "rollback-next.tsv"
+            ),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "next",
+        }
+    )
+    second = subprocess.run(
+        ["bash", str(next_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=next_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
+    assert "image_inventory_reused=4" in second.stdout
+    assert "image_inventory_loaded=0" in second.stdout
+    assert second.stdout.count("docker load skipped") == 4
+    assert "load api image archive" not in second.stdout
+
+
+def test_prepare_only_loads_only_missing_previous_release_image(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, previous_bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, previous_bundle, records)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    install_stateful_fake_docker(fake_bin)
+    state_dir = tmp_path / "fake-docker-state"
+    state_root = previous_bundle.parent / ".release-state"
+    state_root.mkdir(mode=0o700, exist_ok=True)
+    target_daemon_state_dir(previous_bundle).mkdir(mode=0o700, exist_ok=True)
+    env_file = tmp_path / "release-state" / "env.deploy"
+    write(env_file, "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=fixture-internal-token\n")
+    env_file.chmod(0o600)
+    env = os.environ.copy()
+    for key in (
+        "COMPOSE_PROJECT_NAME",
+        "NPCINK_CLOUD_BACKEND_ENV_FILE",
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_COMPOSE_FILE",
+        "NPCINK_CLOUD_EXTERNAL_EDGE_READY",
+        "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE",
+    ):
+        env.pop(key, None)
+    env.update(
+        {
+            "FAKE_DOCKER_STATE_DIR": str(state_dir),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(tmp_path / "rollback-first.tsv"),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "first",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    install_deploy_lock_owner(previous_bundle, env)
+    first = subprocess.run(
+        ["bash", str(previous_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=previous_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode == 0, f"{first.stdout}\n{first.stderr}"
+
+    state_path = state_dir / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["references"].pop("npcink-ai-cloud-frontend:prod")
+    state_path.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+
+    next_bundle = previous_bundle.parent / "release-next"
+    shutil.copytree(previous_bundle, next_bundle)
+    target_daemon_state_dir(next_bundle).mkdir(mode=0o700)
+    env.update(
+        {
+            "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR": str(previous_bundle),
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(tmp_path / "rollback-next.tsv"),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "next",
+        }
+    )
+    second = subprocess.run(
+        ["bash", str(next_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=next_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
+    assert "image_inventory_reused=3" in second.stdout
+    assert "image_inventory_loaded=1" in second.stdout
+    assert "load frontend image archive" in second.stdout
+
+
 def test_real_prepare_only_loader_does_not_treat_docker_failure_as_missing_image(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -1831,7 +2016,7 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     post_index = loader.index("verify loaded image IDs")
     candidate_index = loader.index("up --no-start --pull never --no-build")
     assert pre_index < load_index < post_index < candidate_index
-    assert "load-plan" in loader and "alias-plan" in loader
+    assert "prepare-plan" in loader and "alias-plan" in loader
     assert "--pull never --no-build" in loader
     assert 'docker start "${container_ids_to_start[@]}"' in loader
     assert 'LOAD_MODE="${NPCINK_CLOUD_LOAD_MODE:-}"' in loader

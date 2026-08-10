@@ -2020,6 +2020,108 @@ def emit_image_plan(root: Path, *, aliases: bool) -> None:
             print(f"{archive['path']}\t{primary['role']}\t{primary['reference']}")
 
 
+def current_daemon_image_id(reference: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", reference],
+            text=True,
+            capture_output=True,
+        )
+    except OSError as exc:
+        fail(f"cannot inspect reusable image candidate: {exc}")
+    observed = completed.stdout.strip()
+    if completed.returncode == 0:
+        if IMAGE_ID_RE.fullmatch(observed) is None:
+            fail("reusable image candidate has an invalid daemon ID")
+        return observed
+    try:
+        daemon = subprocess.run(
+            ["docker", "info"],
+            text=True,
+            capture_output=True,
+        )
+    except OSError as exc:
+        fail(f"cannot prove Docker daemon availability: {exc}")
+    if daemon.returncode != 0:
+        fail("Docker daemon availability could not be proven while checking reusable images")
+    return None
+
+
+def validate_previous_release_root(root: Path, previous_root: Path) -> Path:
+    resolved_root = root.resolve()
+    resolved_previous = previous_root.resolve()
+    if (
+        resolved_previous == resolved_root
+        or resolved_previous.parent != resolved_root.parent
+        or RELEASE_NAME_RE.fullmatch(resolved_previous.name) is None
+        or previous_root.is_symlink()
+        or not resolved_previous.is_dir()
+    ):
+        fail("previous release root is not a distinct managed sibling release")
+    metadata = resolved_previous.stat()
+    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o022:
+        fail("previous release root must be operator-owned and not group/world writable")
+    return resolved_previous
+
+
+def reusable_archive_reason(
+    *,
+    previous_root: Path | None,
+    primary: dict[str, Any],
+) -> str | None:
+    reference = primary["reference"]
+    role = primary["role"]
+    expected_portable_id = primary["expected_image_id"]
+    observed_daemon_id = current_daemon_image_id(reference)
+    if observed_daemon_id is None:
+        return None
+    if observed_daemon_id == expected_portable_id:
+        return "portable-id"
+    if previous_root is None:
+        return None
+    try:
+        previous_record = read_target_daemon_map(previous_root, role)
+    except BundleError:
+        return None
+    if (
+        previous_record["reference"] == reference
+        and previous_record["portable_config_image_id"] == expected_portable_id
+        and previous_record["target_daemon_image_id"] == observed_daemon_id
+    ):
+        return "previous-release-map"
+    return None
+
+
+def emit_prepare_plan(root: Path, previous_root: Path | None) -> None:
+    root = root.resolve()
+    verify_directory(root, post_load=False)
+    validated_previous = (
+        validate_previous_release_root(root, previous_root)
+        if previous_root is not None
+        else None
+    )
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    for archive in manifest["archives"]:
+        primary = next(image for image in archive["images"] if image["primary"])
+        reason = reusable_archive_reason(
+            previous_root=validated_previous,
+            primary=primary,
+        )
+        action = "reuse" if reason is not None else "load"
+        print(
+            "\t".join(
+                (
+                    archive["path"],
+                    primary["role"],
+                    primary["reference"],
+                    action,
+                    reason or "missing-or-different",
+                    str(archive["size"]),
+                )
+            )
+        )
+
+
 def emit_loaded_role_daemon_id(root: Path, role: str) -> None:
     root = root.resolve()
     if re.fullmatch(r"[a-z0-9_]+", role) is None:
@@ -2206,6 +2308,9 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--post-load", action="store_true")
     load_plan = subparsers.add_parser("load-plan")
     load_plan.add_argument("--root", required=True)
+    prepare_plan = subparsers.add_parser("prepare-plan")
+    prepare_plan.add_argument("--root", required=True)
+    prepare_plan.add_argument("--previous-root", default="")
     alias_plan = subparsers.add_parser("alias-plan")
     alias_plan.add_argument("--root", required=True)
     loaded_role_daemon_id = subparsers.add_parser("loaded-role-daemon-id")
@@ -2271,6 +2376,11 @@ def main() -> int:
             verify_directory(Path(args.root), post_load=args.post_load)
         elif args.command == "load-plan":
             emit_image_plan(Path(args.root).resolve(), aliases=False)
+        elif args.command == "prepare-plan":
+            emit_prepare_plan(
+                Path(args.root).resolve(),
+                Path(args.previous_root) if args.previous_root else None,
+            )
         elif args.command == "alias-plan":
             emit_image_plan(Path(args.root).resolve(), aliases=True)
         elif args.command == "loaded-role-daemon-id":
