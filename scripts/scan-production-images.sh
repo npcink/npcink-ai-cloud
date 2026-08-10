@@ -313,6 +313,7 @@ docker run --rm \
 overall_status=0
 RECEIPTS=()
 REUSED_INDICES=()
+REFRESHED_INDICES=()
 SCANNED_INDICES=()
 EQUIVALENCE_ARGS=()
 if [ "${RELEASE_SCOPE}" = "1" ]; then
@@ -336,21 +337,23 @@ clear_target_artifacts() {
 		"${OUTPUT_DIR}/${key}.receipt.json"
 }
 
-scan_target() {
+clear_target_evaluation_artifacts() {
+	local key="$1"
+	rm -f -- \
+		"${OUTPUT_DIR}/${key}.grype.json" \
+		"${OUTPUT_DIR}/${key}.receipt.json"
+}
+
+prepare_target_materials() {
 	local index="$1" key reference archive_reference image_id
-	local inspect_path sbom_path report_path receipt_path archive_path
-	local archive_image_id report_tmp
+	local inspect_path sbom_path archive_path archive_image_id
 	key="${TARGET_KEYS[${index}]}"
 	reference="${TARGET_REFS[${index}]}"
 	archive_reference="${TARGET_ARCHIVE_REFS[${index}]}"
 	image_id="${TARGET_IMAGE_IDS[${index}]}"
-	clear_target_artifacts "${key}"
-	echo "[scan] ${key}: scanning ${reference}"
 
 	inspect_path="${OUTPUT_DIR}/${key}.image-inspect.json"
 	sbom_path="${OUTPUT_DIR}/${key}.sbom.cdx.json"
-	report_path="${OUTPUT_DIR}/${key}.grype.json"
-	receipt_path="${OUTPUT_DIR}/${key}.receipt.json"
 	docker_image_inspect "${reference}" >"${inspect_path}"
 	if [ "${archive_reference}" != "${reference}" ]; then
 		docker image tag "${reference}" "${archive_reference}"
@@ -376,6 +379,28 @@ scan_target() {
 	[ -s "${sbom_path}" ] || fail "Syft did not create ${sbom_path}"
 	[ -s "${OUTPUT_DIR}/${key}.syft.json" ] \
 		|| fail "Syft did not create ${OUTPUT_DIR}/${key}.syft.json"
+}
+
+evaluate_target() {
+	local index="$1" key reference archive_reference image_id
+	local inspect_path sbom_path report_path receipt_path archive_path report_tmp
+	key="${TARGET_KEYS[${index}]}"
+	reference="${TARGET_REFS[${index}]}"
+	archive_reference="${TARGET_ARCHIVE_REFS[${index}]}"
+	image_id="${TARGET_IMAGE_IDS[${index}]}"
+	inspect_path="${OUTPUT_DIR}/${key}.image-inspect.json"
+	sbom_path="${OUTPUT_DIR}/${key}.sbom.cdx.json"
+	report_path="${OUTPUT_DIR}/${key}.grype.json"
+	receipt_path="${OUTPUT_DIR}/${key}.receipt.json"
+	archive_path="${OUTPUT_DIR}/${key}.image.tar"
+	for stable_material in \
+		"${archive_path}" \
+		"${inspect_path}" \
+		"${OUTPUT_DIR}/${key}.syft.json" \
+		"${sbom_path}"; do
+		[ -s "${stable_material}" ] \
+			|| fail "stable scan material is missing for ${key}: ${stable_material}"
+	done
 
 	report_tmp="${report_path}.tmp"
 	if ! docker run --rm \
@@ -414,6 +439,24 @@ scan_target() {
 		overall_status=1
 	fi
 	[ -s "${receipt_path}" ] || fail "scan evaluator did not create ${receipt_path}"
+}
+
+scan_target() {
+	local index="$1" key reference
+	key="${TARGET_KEYS[${index}]}"
+	reference="${TARGET_REFS[${index}]}"
+	clear_target_artifacts "${key}"
+	echo "[scan] ${key}: generating archive, SBOM, and vulnerability evaluation for ${reference}"
+	prepare_target_materials "${index}"
+	evaluate_target "${index}"
+}
+
+refresh_target_evaluation() {
+	local index="$1" key
+	key="${TARGET_KEYS[${index}]}"
+	clear_target_evaluation_artifacts "${key}"
+	echo "[refresh] ${key}: reusing archive/SBOM and refreshing Grype evaluation"
+	evaluate_target "${index}"
 }
 
 TARGET_IMAGE_IDS=()
@@ -492,10 +535,10 @@ index_error="${OUTPUT_DIR}/.scan-index-error"
 if ! write_scan_index 2>"${index_error}"; then
 	if [ "${#REUSED_INDICES[@]}" -gt 0 ] \
 		&& grep -Fq "scan receipts do not share one Grype database identity" "${index_error}"; then
-		echo "[reuse-fallback] cached Grype database differs; rescanning reused images only"
+		echo "[reuse-refresh] cached Grype database differs; refreshing vulnerability evaluation for reused images only"
 		for index in "${REUSED_INDICES[@]}"; do
-			scan_target "${index}"
-			SCANNED_INDICES+=("${index}")
+			refresh_target_evaluation "${index}"
+			REFRESHED_INDICES+=("${index}")
 		done
 		REUSED_INDICES=()
 		if ! write_scan_index; then
@@ -508,6 +551,6 @@ if ! write_scan_index 2>"${index_error}"; then
 fi
 rm -f "${index_error}"
 
-echo "[scan-summary] reused=${#REUSED_INDICES[@]} scanned=${#SCANNED_INDICES[@]} total=${#TARGET_KEYS[@]}"
+echo "[scan-summary] reused=${#REUSED_INDICES[@]} refreshed=${#REFRESHED_INDICES[@]} scanned=${#SCANNED_INDICES[@]} total=${#TARGET_KEYS[@]}"
 echo "[scan] reports: ${OUTPUT_DIR}"
 exit "${overall_status}"
