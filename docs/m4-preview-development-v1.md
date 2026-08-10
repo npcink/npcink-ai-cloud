@@ -687,10 +687,20 @@ After a successful deployment, status records:
 - source bundle SHA-256;
 - source transfer mode;
 - dependency and runtime-config fingerprints;
+- frontend source fingerprint, resolved frontend-config fingerprint, and the
+  revision actually served by the frontend;
 - runtime and frontend image IDs and creation times;
 - Alembic revision and deployment UTC time.
 
 This metadata is evidence, not a second source-control system.
+
+Deploy and sync compare the incoming frontend source fingerprint with the last
+successfully deployed frontend. They force-recreate the frontend only when its
+source changed, its image or dependency volume changed, relevant preview
+configuration changed (including protected `.env` or `.env.local` inputs), or
+the managed frontend container is absent. Backend,
+CI, documentation, or release-script-only changes preserve the healthy
+frontend container and its previously served frontend revision.
 
 ## First Replacement Procedure
 

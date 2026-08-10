@@ -284,8 +284,11 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "--max-time 120" in source
     assert "--speed-time 20" in source
     assert "source_dirty_paths" in source
-    assert 'export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"' in source
-    assert '"${compose[@]}" up -d --no-build --pull never frontend' in source
+    assert "frontend_source_fingerprint" in source
+    assert 'export NPCINK_CLOUD_FRONTEND_REVISION="${frontend_runtime_revision}"' in source
+    assert "frontend source, image, and config are unchanged; recreate skipped" in source
+    assert "service-plan frontend_recreate=" in source
+    assert '"${compose[@]}" up -d --no-build --pull never --force-recreate frontend' in source
     assert "acceptance_state" in source
     assert "promotion_pr" in source
     assert "deployed_at_utc" in source
@@ -359,6 +362,97 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "deployed_image_marker" not in prepare_block
     assert "deployed_config_marker" not in prepare_block
     assert source.index("wait_for_http") < source.index('> "${deployed_image_marker}"')
+    assert source.index("wait_for_http") < source.index(
+        '> "${deployed_frontend_source_marker}"'
+    )
+
+
+def test_m4_frontend_recreate_is_selected_only_for_frontend_relevant_change() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    selection = source.split(
+        'if [ "${frontend_source_changed}" = "1" ] ||',
+        1,
+    )[1].split("\nfi\n", 1)[0]
+    assert '"${frontend_config_changed}" = "1"' in selection
+    assert '"${frontend_volume_refresh_required}" = "1"' in selection
+    assert '"${compose[@]}" ps -q frontend' in selection
+    assert "frontend_recreate_required=1" in selection
+    assert "service-plan frontend_recreate=" in source
+    assert '[[ "${previous_frontend_revision}" =~ ^[0-9a-f]{40}$ ]]' in source
+    assert '"${compose[@]}" config --format json' in source
+    assert "deployed_frontend_config_marker" in source
+    assert "frontend_config_sha256" in source
+
+    deploy_block = source.split('elif [ "${mode}" = "deploy" ]; then', 1)[1].split(
+        "\nelse\n",
+        1,
+    )[0]
+    assert (
+        '"${compose[@]}" up -d --no-build --pull never \\\n'
+        "\t\tpostgres redis api worker callback-worker ops-worker"
+    ) in deploy_block
+    assert "postgres redis api frontend worker" not in deploy_block
+    assert '--force-recreate frontend' in deploy_block
+    assert "recreate skipped" in deploy_block
+
+
+def test_m4_frontend_source_fingerprint_ignores_backend_and_tracks_frontend(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    function_body = source.split("frontend_source_fingerprint() {", 1)[1].split(
+        "\n}\n\nsource_path_allowed()",
+        1,
+    )[0]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for relative, content in {
+        "README.md": "backend-only\n",
+        "package.json": "{}\n",
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+        "pnpm-workspace.yaml": "packages: [frontend]\n",
+        "frontend/package.json": "{}\n",
+        "frontend/src/page.tsx": "export default 1;\n",
+    }.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    runner = tmp_path / "fingerprint.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"frontend_source_fingerprint() {{{function_body}\n}}\n"
+        "frontend_source_fingerprint\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    def fingerprint() -> str:
+        return subprocess.run(
+            ["bash", str(runner)],
+            env={**os.environ, "ROOT_DIR": str(repo)},
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    initial = fingerprint()
+    (repo / "README.md").write_text("changed backend-only\n", encoding="utf-8")
+    assert fingerprint() == initial
+
+    (repo / "frontend/src/page.tsx").write_text(
+        "export default 2;\n",
+        encoding="utf-8",
+    )
+    changed = fingerprint()
+    assert changed != initial
+
+    (repo / "frontend/src/page.tsx").unlink()
+    deleted = fingerprint()
+    assert deleted != initial
+    assert deleted != changed
 
 
 def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -> None:
