@@ -291,6 +291,38 @@ jobs:
           name: production-release-plan-${{ github.sha }}
           path: ${{ runner.temp }}/production-release-plan
 
+      - name: Resolve exact application image fingerprints
+        id: application_image_inputs
+        run: |
+          set -euo pipefail
+          plan="${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
+          api_fingerprint="$(jq -er '.application_image_inputs.images[] | select(.key == "api") | .fingerprint' "${plan}")"
+          frontend_fingerprint="$(jq -er '.application_image_inputs.images[] | select(.key == "frontend") | .fingerprint' "${plan}")"
+          [[ "${api_fingerprint}" =~ ^[0-9a-f]{64}$ ]] || exit 64
+          [[ "${frontend_fingerprint}" =~ ^[0-9a-f]{64}$ ]] || exit 64
+          echo "api_fingerprint=${api_fingerprint}" >> "${GITHUB_OUTPUT}"
+          echo "frontend_fingerprint=${frontend_fingerprint}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore exact API application image
+        id: api_application_image_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/api
+          key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
+          restore-keys: |
+            production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-
+
+      - name: Restore exact frontend application image
+        id: frontend_application_image_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/frontend
+          key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
+          restore-keys: |
+            production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-
+
       - name: Restore disposable production image scan evidence
         id: production_scan_cache
         continue-on-error: true
@@ -311,14 +343,33 @@ jobs:
           mkdir -p "${cache_root}/evidence"
 
       - name: Build and scan exact production deploy bundle
+        id: build_bundle
         env:
           NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
+          NPCINK_CLOUD_IMAGE_PLATFORM: linux/amd64
           NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
           NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"
           NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE: ${{ runner.temp }}/production-release-plan/production-release-plan.json
           NPCINK_CLOUD_SCAN_REUSE_DIR: ${{ runner.temp }}/production-image-scan-cache/reuse
           NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR: ${{ runner.temp }}/production-image-scan-cache/evidence
+          NPCINK_CLOUD_APPLICATION_IMAGE_CACHE_ROOT: ${{ runner.temp }}/production-application-image-cache
         run: bash deploy/bundle-images.sh
+
+      - name: Save exact API application image
+        if: steps.build_bundle.outputs.api_cache_save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/api
+          key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
+
+      - name: Save exact frontend application image
+        if: steps.build_bundle.outputs.frontend_cache_save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/frontend
+          key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
 
       - name: Save disposable production image scan evidence
         continue-on-error: true

@@ -252,10 +252,25 @@ and binds its repository, lane, action flags, production SHA, and production
 tree in the bundle manifest. A missing or mismatched plan fails before the
 costly image build begins.
 
-This v2 identity chain still builds a complete exact image set. Scan reuse,
-selective image transfer, and target-daemon image reuse may accelerate delivery
-only through their separately reviewed exact-identity contracts. The remote
-cutover consumes the bound plan conservatively. An exact `backend` plan
+This v2 identity chain still produces a complete exact image set. The bundle
+job may restore API and frontend archives independently from the disposable
+`npcink.production-application-image-cache.v1` Actions cache when the selected
+platform, application-input fingerprint, image key, embedded image labels,
+archive hash, archive reference, and portable config image ID all match. A
+missing, malformed, mismatched, or unloadable cache entry is a cache miss and
+rebuilds only that application image. The bundle reports each application
+action and `image_work=0|1|2`; `image_work=0` means both exact application
+archives were restored, not that release verification was skipped.
+
+The application-image cache is disposable acceleration state, not source,
+image, scan, release, or deployment truth. Every restored image still enters
+the normal exact-ID scan/evidence path; current Grype database evaluation,
+complete bundle verification, external image evidence, and SHA-bound release
+manifest remain mandatory. A newly built application image writes a new cache
+entry only after the current release scan succeeds. Scan reuse, selective image
+transfer, and target-daemon image reuse may accelerate delivery only through
+their separately reviewed exact-identity contracts. The remote cutover
+consumes the bound plan conservatively. An exact `backend` plan
 preserves the running frontend, PostgreSQL, and Redis services, skips the
 data-service phase and migration, and replaces the API and worker runtime while
 retaining operational readiness and baseline health gates. An exact `migration`

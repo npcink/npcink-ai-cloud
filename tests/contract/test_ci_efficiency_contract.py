@@ -165,6 +165,12 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
     assert '"head_tree"' in release_plan
     assert '"backend_image_required"' in release_plan
     assert '"migration_required"' in release_plan
+    assert "Resolve exact application image fingerprints" in workflow
+    assert "production-application-image-v1-linux-amd64-api-" in workflow
+    assert "production-application-image-v1-linux-amd64-frontend-" in workflow
+    assert "NPCINK_CLOUD_IMAGE_PLATFORM: linux/amd64" in workflow
+    assert "steps.build_bundle.outputs.api_cache_save == 'true'" in workflow
+    assert "steps.build_bundle.outputs.frontend_cache_save == 'true'" in workflow
 
 
 def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None:
