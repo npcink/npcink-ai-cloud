@@ -395,6 +395,20 @@ the rollback map and `.deploy-lock`, and repair from the restricted failure
 marker. Do not start an old-runtime rollback. Report success only after every
 tag/map cleanup and lock release is proved.
 
+For the exact ordinary-deploy state
+`phase=finalize-rollback-image-tags` plus
+`outcome=post_commit_cleanup_incomplete`, run the protected GitHub workflow
+`Repair Production Terminalization` with the green recovery-source production
+SHA, the separately recorded active-runtime SHA, and exact confirmation. This
+recovery is cleanup-only: it restores the preserved running
+frontend image's normal tag before removing its temporary rollback tag, removes
+the remaining recorded rollback tags, re-proves governed one-off absence,
+removes terminal evidence, and releases the
+retained lock. It must report
+`terminalization_repair=complete`. It must not rebuild, transfer, migrate,
+refresh Providers, recreate services, or roll back the healthy active release.
+Any mismatch or a second failure retains the lock and stops automatic recovery.
+
 ## Signed Runtime Smoke Semantics
 
 The formal release smoke follows the current hosted runtime contract. It does

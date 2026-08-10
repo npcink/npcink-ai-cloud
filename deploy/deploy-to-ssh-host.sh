@@ -1405,6 +1405,86 @@ discard_rollback_image_tags() {
 	return "${cleanup_failed}"
 }
 
+restore_preserved_frontend_release_tag() {
+	local binding=""
+	local target_reference=""
+	local rollback_reference=""
+	local expected_image_id=""
+	local observed_image_id=""
+
+	[ "${SKIP_FRONTEND_IMAGE}" = "1" ] || return 0
+	binding="$(
+		"${RELEASE_TOOL_PYTHON}" - \
+			"${PRESERVED_SERVICES_EVIDENCE}" "${ROLLBACK_IMAGE_MAP}" \
+			"${RELEASE_DIR}" <<'PY'
+from __future__ import annotations
+
+import json
+import re
+import stat
+import sys
+from pathlib import Path
+
+evidence_path = Path(sys.argv[1])
+rollback_map_path = Path(sys.argv[2])
+release = Path(sys.argv[3])
+
+for path in (evidence_path, rollback_map_path):
+    metadata = path.lstat()
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise SystemExit("[fail] Preserved frontend cleanup evidence is unsafe.")
+
+evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+frontend = evidence.get("services", {}).get("frontend", {})
+expected_image_id = frontend.get("target_daemon_image_id")
+if (
+    evidence.get("schema") != "npcink.preserved_runtime_services.v1"
+    or evidence.get("release_name") != release.name
+    or evidence.get("release_path") != str(release)
+    or re.fullmatch(r"sha256:[0-9a-f]{64}", str(expected_image_id)) is None
+):
+    raise SystemExit("[fail] Preserved frontend cleanup evidence is invalid.")
+
+matches: list[tuple[str, str, str]] = []
+for raw_line in rollback_map_path.read_text(encoding="utf-8").splitlines():
+    if not raw_line:
+        continue
+    fields = raw_line.split("\t")
+    if len(fields) != 3:
+        raise SystemExit("[fail] Rollback image map is malformed during preserved frontend cleanup.")
+    target, rollback, previous_image_id = fields
+    if target == "npcink-ai-cloud-frontend:prod":
+        matches.append((target, rollback, previous_image_id))
+
+if len(matches) != 1:
+    raise SystemExit("[fail] Preserved frontend rollback binding is missing or ambiguous.")
+target, rollback, previous_image_id = matches[0]
+if rollback == "-" or previous_image_id != expected_image_id:
+    raise SystemExit("[fail] Preserved frontend rollback binding does not match runtime evidence.")
+print("\t".join((target, rollback, previous_image_id)))
+PY
+	)" || return 1
+	IFS=$'\t' read -r target_reference rollback_reference expected_image_id <<<"${binding}"
+	observed_image_id="$(docker image inspect --format '{{.Id}}' "${rollback_reference}")" || {
+		echo "[fail] Preserved frontend rollback image tag is unavailable: ${rollback_reference}" >&2
+		return 1
+	}
+	if [ "${observed_image_id}" != "${expected_image_id}" ]; then
+		echo "[fail] Preserved frontend rollback image identity drifted before cleanup." >&2
+		return 1
+	fi
+	if ! docker tag "${rollback_reference}" "${target_reference}"; then
+		echo "[fail] Preserved frontend release tag could not be restored before cleanup." >&2
+		return 1
+	fi
+	observed_image_id="$(docker image inspect --format '{{.Id}}' "${target_reference}")" || return 1
+	if [ "${observed_image_id}" != "${expected_image_id}" ]; then
+		echo "[fail] Preserved frontend release tag has the wrong image identity." >&2
+		return 1
+	fi
+	echo "[ok] Preserved frontend release tag was restored before rollback-tag cleanup."
+}
+
 write_first_install_pending_marker() {
 	local marker_tmp="${FIRST_INSTALL_PENDING_MARKER}.tmp.$$"
 	"${RELEASE_TOOL_PYTHON}" - \
@@ -3489,6 +3569,11 @@ if ! rm -rf -- "${REMOTE_INCOMING_DIR}" || \
 fi
 CUTOVER_PHASE="finalize-rollback-image-tags"
 if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${FIRST_INSTALL_REPAIR}" != "1" ]; then
+	if ! restore_preserved_frontend_release_tag; then
+		record_post_commit_cleanup_failure \
+			"Release activated, but the preserved frontend release tag could not be restored."
+		exit 1
+	fi
 	if ! discard_rollback_image_tags; then
 		record_post_commit_cleanup_failure \
 			"Release activated, but rollback image tag cleanup could not be proved."
