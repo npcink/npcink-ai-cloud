@@ -823,6 +823,96 @@ def test_v2_bundle_binds_exact_production_release_plan(
     assert "release-plan manifest hash mismatch" in rejected.stderr
 
 
+def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    for relative in (
+        "scripts/production-release-plan.py",
+        "scripts/verify-release-bundle-manifest.py",
+    ):
+        write(bundle / relative, (ROOT / relative).read_text(encoding="utf-8"))
+    source_inputs = tmp_path / "source-inputs.json"
+    generated_inputs = run_helper(
+        "source-inputs",
+        "--source-root",
+        str(source),
+        "--output",
+        str(source_inputs),
+    )
+    assert generated_inputs.returncode == 0, generated_inputs.stderr
+    plan_path = tmp_path / "production-release-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema": "npcink.production_release_plan.v1",
+                "repository": "npcink/npcink-ai-cloud",
+                "base_sha": "0" * 40,
+                "head_sha": "a" * 40,
+                "head_tree": "b" * 40,
+                "changed_files": ["deploy/image-lock/production-images.json"],
+                "lane": "full",
+                "deployment_required": True,
+                "backend_image_required": True,
+                "frontend_image_required": True,
+                "migration_required": False,
+                "runtime_config_required": False,
+                "static_payload_required": False,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    created = run_helper(
+        "create",
+        "--schema-version",
+        "npcink.release-bundle.v2",
+        "--release-plan",
+        str(plan_path),
+        "--source-root",
+        str(bundle),
+        "--source-inputs-file",
+        str(source_inputs),
+        "--bundle-root",
+        str(bundle),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--branch",
+        "production",
+        "--image-platform",
+        "linux/amd64",
+        "--gzip-level",
+        "1",
+        "--frontend-included",
+        "1",
+        "--external-images-included",
+        "1",
+        "--image-lock",
+        "deploy/image-lock/production-images.json",
+        "--image-records",
+        str(records),
+    )
+    assert created.returncode == 0, created.stderr
+    bundled_verifier = subprocess.run(
+        [
+            sys.executable,
+            str(bundle / "scripts/verify-release-bundle-manifest.py"),
+            "verify-directory",
+            "--root",
+            str(bundle),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert bundled_verifier.returncode == 0, bundled_verifier.stderr
+    assert not (bundle / "scripts/__pycache__").exists()
+
+
 def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
