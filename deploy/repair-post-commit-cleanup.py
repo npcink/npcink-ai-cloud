@@ -25,6 +25,7 @@ REVISION_RE = re.compile(r"[0-9a-f]{40}")
 IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
 REFERENCE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@:+-]*")
 CONFIRMATION = "Approved for production terminalization repair by operator."
+FRONTEND_RELEASE_REFERENCE = "npcink-ai-cloud-frontend:prod"
 
 
 class RepairError(RuntimeError):
@@ -95,6 +96,21 @@ def _inspect_image(runner: DockerRunner, reference: str) -> str | None:
         return image_id
     _run_docker(runner, "info")
     return None
+
+
+def _require_governed_one_off_absent(managed_root: Path, runner: DockerRunner) -> None:
+    one_off_lock = managed_root / ".release-state" / ".release-one-off.lock"
+    if one_off_lock.exists() or one_off_lock.is_symlink():
+        raise RepairError("governed release one-off lock remains present")
+    container_ids = _run_docker(
+        runner,
+        "ps",
+        "-aq",
+        "--filter",
+        "label=com.docker.compose.service=release-one-off",
+    ).splitlines()
+    if any(container_id for container_id in container_ids):
+        raise RepairError("governed release one-off container remains present")
 
 
 def _parse_marker(path: Path, uid: int) -> dict[str, str]:
@@ -314,32 +330,40 @@ def repair(
         container_image_id = _run_docker(
             docker_runner, "inspect", "--format", "{{.Image}}", frontend_container
         )
-        target_reference = _run_docker(
+        configured_reference = _run_docker(
             docker_runner, "inspect", "--format", "{{.Config.Image}}", frontend_container
         )
         if (
             running != "true"
             or container_image_id != preserved_image_id
-            or REFERENCE_RE.fullmatch(target_reference) is None
+            or REFERENCE_RE.fullmatch(configured_reference) is None
         ):
             raise RepairError("running frontend no longer matches preserved evidence")
 
-        frontend_records = [record for record in records if record[0] == target_reference]
+        frontend_records = [
+            record for record in records if record[0] == FRONTEND_RELEASE_REFERENCE
+        ]
         if len(frontend_records) != 1:
             raise RepairError("preserved frontend rollback binding is missing or ambiguous")
         _, frontend_rollback, previous_image_id = frontend_records[0]
         if frontend_rollback == "-" or previous_image_id != preserved_image_id:
             raise RepairError("preserved frontend rollback binding is invalid")
 
-        target_image_id = _inspect_image(docker_runner, target_reference)
+        target_image_id = _inspect_image(docker_runner, FRONTEND_RELEASE_REFERENCE)
         if target_image_id != preserved_image_id:
             rollback_image_id = _inspect_image(docker_runner, frontend_rollback)
             if rollback_image_id != preserved_image_id:
                 raise RepairError("preserved frontend rollback tag identity drifted")
-            _run_docker(docker_runner, "tag", frontend_rollback, target_reference)
-            if _inspect_image(docker_runner, target_reference) != preserved_image_id:
+            _run_docker(
+                docker_runner, "tag", frontend_rollback, FRONTEND_RELEASE_REFERENCE
+            )
+            if (
+                _inspect_image(docker_runner, FRONTEND_RELEASE_REFERENCE)
+                != preserved_image_id
+            ):
                 raise RepairError("preserved frontend release tag repair did not persist")
 
+        _require_governed_one_off_absent(managed_root, docker_runner)
         removed_tags = 0
         for _target, rollback, _previous_image_id in records:
             if rollback == "-" or _inspect_image(docker_runner, rollback) is None:
@@ -359,6 +383,7 @@ def repair(
             _unlink_and_fsync(marker_path)
             _unlink_and_fsync(rollback_map_path)
             health_check("http://127.0.0.1:8010/health/live")
+            _require_governed_one_off_absent(managed_root, docker_runner)
             _unlink_and_fsync(owner_file)
             os.rmdir(lock_dir)
             if lock_dir.exists() or lock_dir.is_symlink():

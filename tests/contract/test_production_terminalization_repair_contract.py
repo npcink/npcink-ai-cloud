@@ -112,12 +112,14 @@ def _docker_fixture(
         returncode = 0
         if args[:3] == ("ps", "-q", "--filter"):
             stdout = "frontend-container\n"
+        elif args[:3] == ("ps", "-aq", "--filter"):
+            pass
         elif args[:3] == ("inspect", "--format", "{{.State.Running}}"):
             stdout = "true\n"
         elif args[:3] == ("inspect", "--format", "{{.Image}}"):
             stdout = frontend_image + "\n"
         elif args[:3] == ("inspect", "--format", "{{.Config.Image}}"):
-            stdout = "npcink-ai-cloud-frontend:prod\n"
+            stdout = frontend_image + "\n"
         elif args[:3] == ("image", "inspect", "--format"):
             reference = args[-1]
             if reference in tags:
@@ -216,6 +218,28 @@ def test_cleanup_repair_rejects_non_terminalization_failure(tmp_path: Path) -> N
             docker_runner=lambda _args: pytest.fail("docker must not be called"),
             health_check=lambda _url: None,
         )
+
+
+def test_cleanup_repair_rejects_governed_one_off_state(tmp_path: Path) -> None:
+    module = _load_module()
+    root, revision, frontend_image, tags = _fixture(tmp_path)
+    one_off_lock = root / ".release-state/.release-one-off.lock"
+    one_off_lock.mkdir(mode=0o700)
+
+    with pytest.raises(module.RepairError, match="one-off lock remains present"):
+        module.repair(
+            root,
+            revision,
+            "c" * 40,
+            module.CONFIRMATION,
+            expected_uid=os.getuid(),
+            docker_runner=_docker_fixture(frontend_image, tags),
+            health_check=lambda _url: None,
+        )
+
+    assert (root / ".cutover-failed").is_file()
+    assert (root / ".deploy-lock/one-off-owner").is_file()
+    assert any("rollback" in reference for reference in tags)
 
 
 def test_repair_workflow_is_manual_exact_sha_cleanup_only() -> None:

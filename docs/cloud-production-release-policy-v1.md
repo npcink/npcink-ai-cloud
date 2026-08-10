@@ -330,7 +330,8 @@ proves `current` and the bundle manifest match the active-runtime SHA, requires 
 frontend-preserving `backend` or `migration` plan, binds the running frontend
 to `preserved-runtime-services.json` and the rollback map, restores that
 preserved image's normal frontend tag, and only then removes temporary rollback
-tags, the rollback map, failure marker, owner proof, and deploy lock. It performs
+tags, re-proves that no governed release one-off lock or container remains, then
+removes the rollback map, failure marker, owner proof, and deploy lock. It performs
 zero image builds, archive transfers, migrations, service switches, or Provider
 calls. Any other phase, outcome, revision, runtime identity, file protection,
 Docker query, or health result fails closed with the lock retained. This is a

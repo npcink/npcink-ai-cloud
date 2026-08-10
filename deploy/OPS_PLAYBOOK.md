@@ -402,7 +402,8 @@ For the exact ordinary-deploy state
 SHA, the separately recorded active-runtime SHA, and exact confirmation. This
 recovery is cleanup-only: it restores the preserved running
 frontend image's normal tag before removing its temporary rollback tag, removes
-the remaining recorded rollback tags and terminal evidence, and releases the
+the remaining recorded rollback tags, re-proves governed one-off absence,
+removes terminal evidence, and releases the
 retained lock. It must report
 `terminalization_repair=complete`. It must not rebuild, transfer, migrate,
 refresh Providers, recreate services, or roll back the healthy active release.
