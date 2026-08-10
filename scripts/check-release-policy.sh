@@ -779,6 +779,8 @@ require_marker "deploy/deploy-to-ssh-host.sh" '--skip-frontend-image requires an
 require_marker "deploy/deploy-to-ssh-host.sh" 'Release execution plan: lane='
 require_marker "deploy/deploy-to-ssh-host.sh" 'Exact backend release plan preserves the running PostgreSQL and Redis services.'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Exact backend release plan does not require a database migration.'
+require_marker "deploy/deploy-to-ssh-host.sh" 'preserved-runtime-services.json'
+require_marker "scripts/production_wordpress_roundtrip_readiness.py" 'npcink.preserved_runtime_services.v1'
 require_marker "deploy/deploy-to-ssh-host.sh" 'local clean_env=(env -i'
 require_marker "deploy/deploy-to-ssh-host.sh" 'assert_fresh_pg18_install_gate()'
 require_marker "deploy/deploy-to-ssh-host.sh" 'state.get("database_contract") != "pg18_empty_initialization.v1"'

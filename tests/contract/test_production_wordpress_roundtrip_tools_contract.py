@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 READINESS = ROOT / "scripts/production_wordpress_roundtrip_readiness.py"
 ACTIVE_SOAK = ROOT / "scripts/production_internal_validation_active_soak.py"
@@ -66,7 +68,9 @@ def test_readiness_payload_is_read_only_and_denies_acceptance_claims() -> None:
     assert "rollback_image_map" in source
     assert "previous_release" in source
     assert 'item["health"] not in {"healthy", "not_configured"}' in source
-    assert "frontend_revision != source_revision" in source
+    assert 'release_images["frontend_source_revision"]' in source
+    assert "npcink.preserved_runtime_services.v1" in source
+    assert "preserved-runtime-services.json" in source
     assert "SERVICE_IMAGE_ROLES" in source
     assert 'bundle.get("source_revision") != source_revision' in source
     assert "actual_image_id == expected_image_id" in source
@@ -104,6 +108,89 @@ def test_readiness_requires_temporary_rollback_images_until_finalize() -> None:
         pending_marker_present=False,
         completion_sentinel_present=True,
     )
+
+
+def test_readiness_accepts_exact_preserved_frontend_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = importlib.util.spec_from_file_location("production_roundtrip_readiness", READINESS)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    release = tmp_path / "release-next"
+    release.mkdir()
+    revision = "1" * 40
+    frontend_revision = "2" * 40
+    target_image = "sha256:" + "3" * 64
+    preserved_image = "sha256:" + "4" * 64
+    (release / "release-bundle-manifest.json").write_text(
+        json.dumps({"source": {"revision": revision}}) + "\n",
+        encoding="utf-8",
+    )
+    target_images = tmp_path / "target-daemon-images.json"
+    roles = {
+        role: {"target_daemon_image_id": target_image}
+        for role in module.SERVICE_IMAGE_ROLES.values()
+    }
+    target_images.write_text(
+        json.dumps(
+            {
+                "bundle": {
+                    "source_revision": revision,
+                    "release_name": release.name,
+                    "release_path": str(release),
+                },
+                "roles": roles,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    preserved = tmp_path / "preserved-runtime-services.json"
+    preserved.write_text(
+        json.dumps(
+            {
+                "schema": "npcink.preserved_runtime_services.v1",
+                "release_name": release.name,
+                "release_path": str(release),
+                "services": {
+                    "frontend": {
+                        "previous_release": str(tmp_path / "release-previous"),
+                        "source_revision": frontend_revision,
+                        "target_daemon_image_id": preserved_image,
+                    }
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    preserved.chmod(0o600)
+    monkeypatch.setattr(
+        module,
+        "_container_image_id",
+        lambda container_id: (
+            preserved_image if container_id == "frontend-id" else target_image
+        ),
+    )
+    container_ids = {
+        service: "frontend-id" if service == "frontend" else f"{service}-id"
+        for service in module.SERVICE_IMAGE_ROLES
+    }
+
+    evidence = module._release_image_evidence(
+        release,
+        target_images,
+        preserved,
+        container_ids,
+    )
+
+    assert evidence["frontend_source_revision"] == frontend_revision
+    assert evidence["preserved_services"] == ["frontend"]
+    assert evidence["service_images"]["frontend"]["matches"] is True
+    assert all(item["matches"] for item in evidence["service_images"].values())
 
 
 def test_active_soak_freezes_zero_call_and_finalization_boundaries() -> None:

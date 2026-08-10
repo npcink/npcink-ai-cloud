@@ -481,6 +481,8 @@ elif [ "${1:-}" = "inspect" ]; then
                 *) exit 74 ;;
             esac
         fi
+    elif [ "${3:-}" = "{{json .Config.Env}}" ] && [ "${4:-}" = "previous-frontend" ]; then
+        printf '["NPCINK_CLOUD_FRONTEND_REVISION=%040d"]\n' 7
     else
         printf 'true false 0\n'
     fi
@@ -1534,7 +1536,7 @@ def test_post_commit_rollback_map_cleanup_failure_is_fail_closed(
 def test_backend_only_cutover_preserves_existing_frontend_container(
     tmp_path: Path,
 ) -> None:
-    completed, _remote_dir, log_path = _run_remote_cutover(
+    completed, remote_dir, log_path = _run_remote_cutover(
         tmp_path,
         release_plan_lane="backend",
     )
@@ -1550,6 +1552,16 @@ def test_backend_only_cutover_preserves_existing_frontend_container(
     assert "baseline" in log
     assert "load:traffic-only" in log
     assert "lane=backend, data_phase=0, migration=0, preserve_frontend=1" in completed.stdout
+    preserved = json.loads(
+        (
+            remote_dir
+            / ".release-state/release-next/preserved-runtime-services.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert preserved["services"]["frontend"]["source_revision"] == "0" * 39 + "7"
+    assert preserved["services"]["frontend"]["target_daemon_image_id"].startswith(
+        "sha256:"
+    )
 
 
 def test_migration_release_plan_preserves_frontend_but_runs_data_and_migration(
@@ -1610,6 +1622,23 @@ def test_backend_only_cutover_requires_a_running_frontend_to_preserve(
         assert "requires an existing managed release" in completed.stderr
     else:
         assert "found 0" in completed.stderr
+
+
+def test_backend_plan_can_recover_after_migration_failure_with_frontend_running(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        missing_previous_service="api,worker,callback-worker,ops-worker",
+        preexisting_failure_outcome="fail_closed_after_migration_started",
+        release_plan_lane="backend",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    assert "failure evidence matches the stopped previous writers" in completed.stdout
+    assert (remote_dir / "current").resolve() == remote_dir / "release-next"
+    log = log_path.read_text(encoding="utf-8")
+    assert "migrate:" not in log
 
 
 def test_migration_started_fail_closed_state_allows_matched_redeploy(

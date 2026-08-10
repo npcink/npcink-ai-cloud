@@ -260,6 +260,12 @@ missing plans, unsupported schemas, and non-exact flag combinations use the
 complete cutover path. The complete-bundle transfer path remains the fail-closed
 fallback and stage-only behavior remains complete.
 
+When a frontend is preserved, the deploy records its actual daemon image ID,
+embedded source revision, and previous-release binding in the new release's
+private `preserved-runtime-services.json` state before writer shutdown. Read-only
+production readiness accepts that exact preserved identity while continuing to
+require every replaced service to match the new bundle's target-daemon map.
+
 ### Disposable production image scan evidence reuse
 
 Production bundle CI may restore prior per-image scan evidence only as a
