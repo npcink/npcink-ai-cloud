@@ -57,7 +57,31 @@ def collect_file_weights(junit_xml: Path) -> dict[str, float]:
     return dict(weights)
 
 
-def load_duration_payload(path: Path) -> tuple[dict[str, float], dict[str, Any]]:
+def collect_node_weights(junit_xml: Path) -> dict[str, float]:
+    weights: defaultdict[str, float] = defaultdict(float)
+    root = ET.parse(junit_xml).getroot()
+    for case in root.iter("testcase"):
+        classname = case.attrib.get("classname", "").strip()
+        name = case.attrib.get("name", "").strip()
+        if not classname or not name:
+            continue
+        parts = [part for part in classname.split(".") if part]
+        class_parts: list[str] = []
+        while parts and parts[-1][:1].isupper():
+            class_parts.insert(0, parts.pop())
+        path = f"{'/'.join(parts)}.py"
+        node_id = "::".join((path, *class_parts, name.split("[", 1)[0]))
+        try:
+            seconds = max(0.0, float(case.attrib.get("time", "0")))
+        except ValueError:
+            seconds = 0.0
+        weights[node_id] += seconds
+    return dict(weights)
+
+
+def load_duration_payload(
+    path: Path,
+) -> tuple[dict[str, float], dict[str, float], dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     raw_weights = payload.get("weights")
     if not isinstance(raw_weights, dict):
@@ -68,7 +92,15 @@ def load_duration_payload(path: Path) -> tuple[dict[str, float], dict[str, Any]]
             weights[str(raw_path)] = max(0.0, float(raw_seconds))
         except (TypeError, ValueError):
             weights[str(raw_path)] = 0.0
-    return weights, payload
+    raw_node_weights = payload.get("node_weights", {})
+    node_weights: dict[str, float] = {}
+    if isinstance(raw_node_weights, dict):
+        for raw_node_id, raw_seconds in raw_node_weights.items():
+            try:
+                node_weights[str(raw_node_id)] = max(0.0, float(raw_seconds))
+            except (TypeError, ValueError):
+                node_weights[str(raw_node_id)] = 0.0
+    return weights, node_weights, payload
 
 
 def discover_shard_artifacts(root: Path) -> dict[int, tuple[Path, Path]]:
@@ -107,7 +139,7 @@ def summarize(
     file_drift_seconds: float,
     file_drift_ratio: float,
 ) -> dict[str, Any]:
-    weights, payload = load_duration_payload(durations_json)
+    weights, node_weights, payload = load_duration_payload(durations_json)
     artifacts = discover_shard_artifacts(artifact_root)
     shards: list[ShardBalance] = []
     drifts: list[FileDrift] = []
@@ -115,8 +147,10 @@ def summarize(
     for index, (report_path, files_path) in artifacts.items():
         selected_files = _selected_files(files_path)
         actual_weights = collect_file_weights(report_path)
+        actual_node_weights = collect_node_weights(report_path)
         predicted_seconds = sum(
-            weights.get(path, DEFAULT_WEIGHT_SECONDS) for path in selected_files
+            node_weights.get(selector, weights.get(selector, DEFAULT_WEIGHT_SECONDS))
+            for selector in selected_files
         )
         actual_seconds = sum(actual_weights.values())
         shards.append(
@@ -127,14 +161,19 @@ def summarize(
                 actual_seconds=actual_seconds,
             )
         )
-        for path, actual in actual_weights.items():
-            predicted = weights.get(path, DEFAULT_WEIGHT_SECONDS)
+        for selector in selected_files:
+            if "::" in selector:
+                actual = actual_node_weights.get(selector, 0.0)
+                predicted = node_weights.get(selector, DEFAULT_WEIGHT_SECONDS)
+            else:
+                actual = actual_weights.get(selector, 0.0)
+                predicted = weights.get(selector, DEFAULT_WEIGHT_SECONDS)
             absolute = abs(actual - predicted)
             relative = absolute / max(predicted, 0.001)
             if absolute > file_drift_seconds and relative > file_drift_ratio:
                 drifts.append(
                     FileDrift(
-                        path=path,
+                        path=selector,
                         predicted_seconds=predicted,
                         actual_seconds=actual,
                         absolute_drift_seconds=absolute,

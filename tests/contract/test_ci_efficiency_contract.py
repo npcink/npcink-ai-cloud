@@ -283,15 +283,21 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
 
     assert "pytest tests/contract -q --durations=25" in source
     assert "--targeted-contract-shard" in source
-    assert "--shards 2" in source
+    assert "--shards 3" in source
     assert "mapfile" not in source
     assert "select-pr-backend-tests.py" in source
     assert "contract shards are already covered" in source
     assert "ci/pytest-backend-durations.json" in source
+    assert "load_node_duration_weights" in (
+        ROOT / "scripts" / "select-pytest-shard.py"
+    ).read_text(encoding="utf-8")
+    assert "discover_static_test_nodes" in (
+        ROOT / "scripts" / "select-pytest-shard.py"
+    ).read_text(encoding="utf-8")
     assert '"app/api/routes/portal.py"' in selector
     assert '"tests/api/test_portal_routes.py"' in selector
     assert "selecting all tests/api" in selector
-    for lane in ("static", "contract-1", "contract-2", "impacted"):
+    for lane in ("static", "contract-1", "contract-2", "contract-3", "impacted"):
         assert f"lane: {lane}" in workflow
     assert "matrix.needs_node" in workflow
     assert "backend-docs:" in workflow
