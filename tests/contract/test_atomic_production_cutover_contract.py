@@ -187,7 +187,7 @@ fi
             "static_payload_required": False,
         }
         release_plan = {
-            "schema": "npcink.production_release_plan.v1",
+            "schema": "npcink.production_release_plan.v2",
             "lane": release_plan_lane,
             **plan_flags,
         }

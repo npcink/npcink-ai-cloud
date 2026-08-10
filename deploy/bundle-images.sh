@@ -128,6 +128,7 @@ fi
 mkdir -p "${DIST_DIR}"
 LOCAL_STAGE="$(mktemp -d "${DIST_DIR}/.release-bundle-stage.XXXXXX")"
 SOURCE_INPUTS="$(mktemp "${DIST_DIR}/.release-source-inputs.XXXXXX")"
+APPLICATION_IMAGE_INPUTS="$(mktemp "${DIST_DIR}/.release-application-image-inputs.XXXXXX")"
 IMAGE_RECORDS="$(mktemp "${DIST_DIR}/.release-image-records.XXXXXX")"
 FINAL_IMAGE_RECORDS="$(mktemp "${DIST_DIR}/.release-final-image-records.XXXXXX")"
 EXTERNAL_PLAN="$(mktemp "${DIST_DIR}/.release-external-plan.XXXXXX")"
@@ -147,7 +148,7 @@ fi
 cleanup() {
 	local exit_status="$?"
 	trap - EXIT
-	if ! rm -rf "${LOCAL_STAGE}" "${SOURCE_INPUTS}" "${IMAGE_RECORDS}" "${FINAL_IMAGE_RECORDS}" "${EXTERNAL_PLAN}" "${APPLICATION_PLAN}" "${LOCAL_SCAN_DIR}"; then
+	if ! rm -rf "${LOCAL_STAGE}" "${SOURCE_INPUTS}" "${APPLICATION_IMAGE_INPUTS}" "${IMAGE_RECORDS}" "${FINAL_IMAGE_RECORDS}" "${EXTERNAL_PLAN}" "${APPLICATION_PLAN}" "${LOCAL_SCAN_DIR}"; then
 		echo "[warn] Failed to remove one or more release-bundle temporary paths." >&2
 		if [ "${exit_status}" -eq 0 ]; then
 			exit_status=1
@@ -169,6 +170,7 @@ ARCHIVE_PATHS=(
 	frontend/Dockerfile
 	site
 	scripts/production-image-supply.py
+	scripts/production-application-image-inputs.py
 	scripts/production-release-plan.py
 	scripts/scan-production-images.sh
 	scripts/verify-release-bundle-manifest.py
@@ -180,6 +182,18 @@ while IFS=$'\t' read -r key _reference dockerfile _archive; do
 done <"${APPLICATION_PLAN}"
 git -C "${CLOUD_DIR}" archive HEAD -- "${ARCHIVE_PATHS[@]}" | tar -x -C "${LOCAL_STAGE}"
 python3 "${MANIFEST_HELPER}" source-inputs --source-root "${CLOUD_DIR}" --output "${SOURCE_INPUTS}"
+python3 "${CLOUD_DIR}/scripts/production-application-image-inputs.py" \
+	--source-root "${CLOUD_DIR}" \
+	--platform "${MANIFEST_IMAGE_PLATFORM}" \
+	--package-extras "${PACKAGE_EXTRAS}" \
+	--output "${APPLICATION_IMAGE_INPUTS}"
+if [ "${BUNDLE_SCHEMA_VERSION}" = "npcink.release-bundle.v2" ]; then
+	python3 "${MANIFEST_HELPER}" verify-release-plan \
+		--release-plan "${PRODUCTION_RELEASE_PLAN_FILE}" \
+		--revision "${REVISION}" \
+		--tree "${TREE}" \
+		--application-image-inputs "${APPLICATION_IMAGE_INPUTS}"
+fi
 python3 "${MANIFEST_HELPER}" external-plan \
 	--image-lock "${CLOUD_DIR}/${IMAGE_LOCK}" \
 	--output "${EXTERNAL_PLAN}"
@@ -264,7 +278,6 @@ echo "[info] Building frontend image exactly once for ${MANIFEST_IMAGE_PLATFORM}
 set_build_cache_args frontend
 docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
 	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} \
-	--build-arg "NPCINK_CLOUD_SOURCE_REVISION=${REVISION}" \
 	--load -t npcink-ai-cloud-frontend:prod \
 	-f "${CLOUD_DIR}/frontend/Dockerfile" "${CLOUD_DIR}"
 require_image_platform npcink-ai-cloud-frontend:prod

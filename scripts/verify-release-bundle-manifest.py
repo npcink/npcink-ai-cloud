@@ -24,7 +24,7 @@ from typing import Any, Optional
 SCHEMA_VERSION_V1 = "npcink.release-bundle.v1"
 SCHEMA_VERSION_V2 = "npcink.release-bundle.v2"
 SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION_V1, SCHEMA_VERSION_V2}
-PRODUCTION_RELEASE_PLAN_SCHEMA = "npcink.production_release_plan.v1"
+PRODUCTION_RELEASE_PLAN_SCHEMA = "npcink.production_release_plan.v2"
 CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"
 IMAGE_LOCK_SCHEMA = "npcink.production-image-lock.v1"
 SCAN_INDEX_SCHEMA = "npcink.production-image-scan-index.v1"
@@ -161,6 +161,30 @@ def classify_production_release_paths(changed_files: list[str]) -> tuple[str, di
     return lane, flags
 
 
+def validate_application_image_inputs(payload: Any) -> dict[str, Any]:
+    helper_path = Path(__file__).resolve().with_name("production-application-image-inputs.py")
+    if not helper_path.is_file():
+        fail("production application-image input helper is missing")
+    spec = importlib.util.spec_from_file_location(
+        "npcink_production_application_image_inputs",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        fail("production application-image input helper cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.modules[spec.name] = module
+    try:
+        sys.dont_write_bytecode = True
+        spec.loader.exec_module(module)
+        return module.validate_inputs(payload)
+    except Exception as exc:
+        fail(f"production application-image inputs are invalid: {exc}")
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
+        sys.modules.pop(spec.name, None)
+
+
 def validate_production_release_plan(plan: Any, *, revision: str, tree: str) -> dict[str, Any]:
     expected_keys = {
         "schema",
@@ -170,6 +194,7 @@ def validate_production_release_plan(plan: Any, *, revision: str, tree: str) -> 
         "head_tree",
         "changed_files",
         "lane",
+        "application_image_inputs",
         "deployment_required",
         "backend_image_required",
         "frontend_image_required",
@@ -214,6 +239,7 @@ def validate_production_release_plan(plan: Any, *, revision: str, tree: str) -> 
     expected_lane, expected_flags = classify_production_release_paths(changed_files)
     if lane != expected_lane or any(plan[name] != expected_flags[name] for name in flag_names):
         fail("production release plan lane/flags do not match changed_files")
+    validate_application_image_inputs(plan["application_image_inputs"])
     return plan
 
 
@@ -1258,6 +1284,10 @@ def create_manifest(args: argparse.Namespace) -> None:
             "sha256": sha256_file(release_plan_target),
             "repository": plan["repository"],
             "lane": plan["lane"],
+            "application_image_fingerprints": {
+                record["key"]: record["fingerprint"]
+                for record in plan["application_image_inputs"]["images"]
+            },
             "deployment_required": plan["deployment_required"],
             "backend_image_required": plan["backend_image_required"],
             "frontend_image_required": plan["frontend_image_required"],
@@ -1791,6 +1821,7 @@ def verify_directory(
             "sha256",
             "repository",
             "lane",
+            "application_image_fingerprints",
             "deployment_required",
             "backend_image_required",
             "frontend_image_required",
@@ -1817,6 +1848,10 @@ def verify_directory(
             "sha256": sha256_file(plan_path),
             "repository": plan["repository"],
             "lane": plan["lane"],
+            "application_image_fingerprints": {
+                record["key"]: record["fingerprint"]
+                for record in plan["application_image_inputs"]["images"]
+            },
             "deployment_required": plan["deployment_required"],
             "backend_image_required": plan["backend_image_required"],
             "frontend_image_required": plan["frontend_image_required"],
@@ -2932,6 +2967,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_release_plan.add_argument("--release-plan", required=True)
     verify_release_plan.add_argument("--revision", required=True)
     verify_release_plan.add_argument("--tree", required=True)
+    verify_release_plan.add_argument("--application-image-inputs", default="")
     create = subparsers.add_parser("create")
     create.add_argument(
         "--schema-version",
@@ -3045,9 +3081,16 @@ def main() -> int:
                 encoding="utf-8",
             )
         elif args.command == "verify-release-plan":
-            load_production_release_plan(
+            plan = load_production_release_plan(
                 Path(args.release_plan).resolve(), revision=args.revision, tree=args.tree
             )
+            if args.application_image_inputs:
+                expected_inputs = json.loads(
+                    Path(args.application_image_inputs).read_text(encoding="utf-8")
+                )
+                validate_application_image_inputs(expected_inputs)
+                if plan["application_image_inputs"] != expected_inputs:
+                    fail("production release plan application-image inputs do not match source")
         elif args.command == "create":
             create_manifest(args)
         elif args.command == "verify-directory":

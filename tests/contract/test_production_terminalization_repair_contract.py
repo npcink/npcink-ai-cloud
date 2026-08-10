@@ -46,7 +46,7 @@ def _fixture(
         release / "release/production-release-plan.json",
         json.dumps(
             {
-                "schema": "npcink.production_release_plan.v1",
+                "schema": "npcink.production_release_plan.v2",
                 "lane": "backend",
                 "frontend_image_required": False,
             }
