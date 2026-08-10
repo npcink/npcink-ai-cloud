@@ -51,6 +51,7 @@ def image_source(tmp_path: Path) -> Path:
         "scripts/live-site-stage1.py",
         "scripts/live-site-trial-status.py",
         "scripts/production_performance_baseline.py",
+        "scripts/runtime_hot_path_explain.py",
         "package.json",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
@@ -89,6 +90,15 @@ def test_fingerprints_change_only_for_owned_build_inputs(image_source: Path) -> 
         package_extras="[zilliz]",
     )
     assert _by_key(unrelated) == _by_key(before)
+
+    _write(image_source, "scripts/runtime_hot_path_explain.py", "changed\n")
+    runtime_script = image_inputs.create_inputs(
+        image_source,
+        platform="linux/amd64",
+        package_extras="[zilliz]",
+    )
+    assert _by_key(runtime_script)["api"]["fingerprint"] != _by_key(before)["api"]["fingerprint"]
+    assert _by_key(runtime_script)["frontend"] == _by_key(before)["frontend"]
 
     _write(image_source, "app/main.py", "changed\n")
     backend = image_inputs.create_inputs(

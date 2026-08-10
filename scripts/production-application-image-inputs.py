@@ -33,6 +33,7 @@ IMAGE_DEFINITIONS = {
         "scripts/live-site-stage1.py",
         "scripts/live-site-trial-status.py",
         "scripts/production_performance_baseline.py",
+        "scripts/runtime_hot_path_explain.py",
     ),
     "frontend": (
         ".dockerignore",

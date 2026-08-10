@@ -139,6 +139,7 @@ COPY scripts/live-site-save-verify-handoff.py ./scripts/live-site-save-verify-ha
 COPY scripts/live-site-stage1.py ./scripts/live-site-stage1.py
 COPY scripts/live-site-trial-status.py ./scripts/live-site-trial-status.py
 COPY scripts/production_performance_baseline.py ./scripts/production_performance_baseline.py
+COPY scripts/runtime_hot_path_explain.py ./scripts/runtime_hot_path_explain.py
 
 RUN PYTHONPATH=/app python scripts/verify-production-python-lock.py \
         --requirements /usr/local/share/npcink-ai-cloud/requirements.lock.txt \

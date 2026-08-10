@@ -34,8 +34,15 @@ def test_development_runtime_images_include_zilliz_sdk() -> None:
 def test_production_image_packages_runtime_performance_scripts() -> None:
     dockerfile_text = (ROOT / "Dockerfile").read_text()
 
-    assert "COPY scripts ./scripts" in dockerfile_text
-    assert dockerfile_text.count("COPY scripts ./scripts") == 1
+    assert "COPY scripts ./scripts" not in dockerfile_text
+    assert (
+        "COPY scripts/production_performance_baseline.py "
+        "./scripts/production_performance_baseline.py" in dockerfile_text
+    )
+    assert (
+        "COPY scripts/runtime_hot_path_explain.py "
+        "./scripts/runtime_hot_path_explain.py" in dockerfile_text
+    )
     assert (
         "COPY scripts/verify-production-python-lock.py "
         "./scripts/verify-production-python-lock.py" in dockerfile_text
