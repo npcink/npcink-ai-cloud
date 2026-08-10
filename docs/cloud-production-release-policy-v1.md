@@ -296,6 +296,15 @@ missing plans, unsupported schemas, and non-exact flag combinations use the
 complete cutover path. The complete-bundle transfer path remains the fail-closed
 fallback and stage-only behavior remains complete.
 
+An exact `frontend` plan preserves the running API, workers, PostgreSQL, Redis,
+and provider projections. It stops and replaces only frontend and proxy traffic
+services, and skips the data phase, migration, provider refresh, API/worker
+recreation, and the pre-traffic worker-readiness wait. Before restoring public
+traffic, the deploy re-proves that every preserved API, worker, and Redis
+container is stably running on the daemon image ID currently bound to its exact
+governed release tag. Missing, duplicate, unstable, or mismatched preserved
+services fail closed before traffic restoration.
+
 The manually authorized deployment workflow reads that exact bundle-bound plan
 before opening an SSH session. An exact `no_deploy` plan completes without
 production-host mutation or health probing. An exact `static` plan uses the
