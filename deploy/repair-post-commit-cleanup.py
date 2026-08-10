@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,15 @@ IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
 REFERENCE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@:+-]*")
 CONFIRMATION = "Approved for production terminalization repair by operator."
 FRONTEND_RELEASE_REFERENCE = "npcink-ai-cloud-frontend:prod"
+TARGET_DAEMON_MAP_SCHEMA = "npcink.target-daemon-image-map.v1"
+ACTIVE_SERVICE_ROLES = {
+    "redis": "external_redis",
+    "api": "api",
+    "worker": "worker",
+    "callback-worker": "callback_worker",
+    "ops-worker": "ops_worker",
+    "proxy": "external_nginx",
+}
 
 
 class RepairError(RuntimeError):
@@ -113,6 +123,112 @@ def _require_governed_one_off_absent(managed_root: Path, runner: DockerRunner) -
         raise RepairError("governed release one-off container remains present")
 
 
+def _compose_project_name(path: Path, uid: int) -> str:
+    try:
+        lines = _protected_file(path, 0o600, uid).decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise RepairError("release environment is not UTF-8") from exc
+    values: dict[str, str] = {}
+    requested = {"NPCINK_CLOUD_COMPOSE_PROJECT_NAME", "COMPOSE_PROJECT_NAME"}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, separator, value = stripped.partition("=")
+        key = key.strip()
+        if not separator or key not in requested:
+            continue
+        if key in values:
+            raise RepairError(f"duplicate Compose project setting: {key}")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    project = values.get("NPCINK_CLOUD_COMPOSE_PROJECT_NAME") or values.get(
+        "COMPOSE_PROJECT_NAME", "npcink-ai-cloud"
+    )
+    if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project) is None:
+        raise RepairError("release Compose project name is invalid")
+    return project
+
+
+def _target_daemon_roles(
+    path: Path,
+    manifest_path: Path,
+    current_release: Path,
+    expected_revision: str,
+    uid: int,
+) -> dict[str, str]:
+    payload = _read_json(path, 0o600, uid)
+    bundle = payload.get("bundle")
+    roles = payload.get("roles")
+    manifest_sha256 = hashlib.sha256(
+        _protected_file(manifest_path, 0o644, uid)
+    ).hexdigest()
+    if (
+        set(payload) != {"schema_version", "bundle", "roles"}
+        or payload.get("schema_version") != TARGET_DAEMON_MAP_SCHEMA
+        or not isinstance(bundle, dict)
+        or bundle.get("release_name") != current_release.name
+        or bundle.get("release_path") != str(current_release)
+        or bundle.get("source_revision") != expected_revision
+        or bundle.get("manifest_sha256") != manifest_sha256
+        or not isinstance(roles, dict)
+    ):
+        raise RepairError("target-daemon image map is not bound to the active release")
+    expected: dict[str, str] = {}
+    for service, role in ACTIVE_SERVICE_ROLES.items():
+        record = roles.get(role)
+        if (
+            not isinstance(record, dict)
+            or set(record)
+            != {
+                "reference",
+                "portable_config_image_id",
+                "target_daemon_image_id",
+            }
+            or REFERENCE_RE.fullmatch(str(record.get("reference"))) is None
+            or IMAGE_ID_RE.fullmatch(str(record.get("portable_config_image_id"))) is None
+            or IMAGE_ID_RE.fullmatch(str(record.get("target_daemon_image_id"))) is None
+        ):
+            raise RepairError(f"target-daemon image proof is invalid for {service}")
+        expected[service] = str(record["target_daemon_image_id"])
+    return expected
+
+
+def _require_active_service_images(
+    project: str,
+    expected_images: dict[str, str],
+    runner: DockerRunner,
+) -> dict[str, str]:
+    containers: dict[str, str] = {}
+    for service, expected_image_id in expected_images.items():
+        container_ids = _run_docker(
+            runner,
+            "ps",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={project}",
+            "--filter",
+            f"label=com.docker.compose.service={service}",
+            "--filter",
+            "label=com.docker.compose.oneoff=False",
+        ).splitlines()
+        if len(container_ids) != 1 or not container_ids[0]:
+            raise RepairError(f"exactly one active production {service} is required")
+        container_id = container_ids[0]
+        running = _run_docker(
+            runner, "inspect", "--format", "{{.State.Running}}", container_id
+        )
+        image_id = _run_docker(
+            runner, "inspect", "--format", "{{.Image}}", container_id
+        )
+        if running != "true" or image_id != expected_image_id:
+            raise RepairError(f"active {service} image identity drifted")
+        containers[service] = container_id
+    return containers
+
+
 def _parse_marker(path: Path, uid: int) -> dict[str, str]:
     try:
         lines = _protected_file(path, 0o600, uid).decode("utf-8").splitlines()
@@ -146,11 +262,13 @@ def _parse_rollback_map(path: Path, uid: int) -> list[tuple[str, str, str]]:
         if len(fields) != 3:
             raise RepairError("rollback image map is malformed")
         target, rollback, previous_image_id = fields
-        if (
-            REFERENCE_RE.fullmatch(target) is None
-            or (rollback != "-" and REFERENCE_RE.fullmatch(rollback) is None)
-            or IMAGE_ID_RE.fullmatch(previous_image_id) is None
-        ):
+        absent = rollback == "-" and previous_image_id == "-"
+        pinned = (
+            rollback != "-"
+            and REFERENCE_RE.fullmatch(rollback) is not None
+            and IMAGE_ID_RE.fullmatch(previous_image_id) is not None
+        )
+        if REFERENCE_RE.fullmatch(target) is None or not (absent or pinned):
             raise RepairError("rollback image map contains an invalid record")
         records.append((target, rollback, previous_image_id))
     if not records:
@@ -280,7 +398,8 @@ def repair(
         ):
             raise RepairError("healthy current release does not match the failed committed release")
 
-        manifest = _read_json(current_release / "release-bundle-manifest.json", 0o644, expected_uid)
+        manifest_path = current_release / "release-bundle-manifest.json"
+        manifest = _read_json(manifest_path, 0o644, expected_uid)
         source = manifest.get("source")
         if not isinstance(source, dict) or source.get("revision") != expected_active_revision:
             raise RepairError(
@@ -314,30 +433,23 @@ def repair(
         rollback_map_path = state_dir / "rollback-images.tsv"
         rollback_map_payload = _protected_file(rollback_map_path, 0o600, expected_uid)
         records = _parse_rollback_map(rollback_map_path, expected_uid)
-        frontend_ids = _run_docker(
-            docker_runner,
-            "ps",
-            "-q",
-            "--filter",
-            "label=com.docker.compose.service=frontend",
-        ).splitlines()
-        if len(frontend_ids) != 1 or not frontend_ids[0]:
-            raise RepairError("exactly one running frontend container is required")
-        frontend_container = frontend_ids[0]
-        running = _run_docker(
-            docker_runner, "inspect", "--format", "{{.State.Running}}", frontend_container
+        compose_project = _compose_project_name(state_dir / "env.deploy", expected_uid)
+        expected_images = _target_daemon_roles(
+            state_dir / "target-daemon-images.json",
+            manifest_path,
+            current_release,
+            expected_active_revision,
+            expected_uid,
         )
-        container_image_id = _run_docker(
-            docker_runner, "inspect", "--format", "{{.Image}}", frontend_container
+        expected_images["frontend"] = preserved_image_id
+        active_containers = _require_active_service_images(
+            compose_project, expected_images, docker_runner
         )
+        frontend_container = active_containers["frontend"]
         configured_reference = _run_docker(
             docker_runner, "inspect", "--format", "{{.Config.Image}}", frontend_container
         )
-        if (
-            running != "true"
-            or container_image_id != preserved_image_id
-            or REFERENCE_RE.fullmatch(configured_reference) is None
-        ):
+        if REFERENCE_RE.fullmatch(configured_reference) is None:
             raise RepairError("running frontend no longer matches preserved evidence")
 
         frontend_records = [
@@ -401,6 +513,7 @@ def repair(
             "release": current_release.name,
             "lane": plan["lane"],
             "frontend_image_id": preserved_image_id,
+            "active_services_proved": sorted(active_containers),
             "rollback_tags_removed": removed_tags,
             "migration_attempts": 0,
             "service_switches": 0,

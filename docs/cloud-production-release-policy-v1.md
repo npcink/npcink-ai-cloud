@@ -328,7 +328,9 @@ plus the exact operator confirmation. The recovery source must have green exact
 push Cloud CI and CodeQL evidence. Its helper acquires the retained lock inode,
 proves `current` and the bundle manifest match the active-runtime SHA, requires a
 frontend-preserving `backend` or `migration` plan, binds the running frontend
-to `preserved-runtime-services.json` and the rollback map, restores that
+to `preserved-runtime-services.json`, scopes every runtime lookup to the active
+production Compose project, proves every non-frontend active service against the
+release's protected target-daemon map, binds the rollback map, restores that
 preserved image's normal frontend tag, and only then removes temporary rollback
 tags, re-proves that no governed release one-off lock or container remains, then
 removes the rollback map, failure marker, owner proof, and deploy lock. It performs
