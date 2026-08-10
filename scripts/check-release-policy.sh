@@ -1052,6 +1052,12 @@ require_marker "scripts/production-release-preflight.py" \
 require_marker "scripts/production-release-preflight.py" \
 	"production-deploy-bundle-{sha}"
 require_marker "scripts/production-release-preflight.py" \
+	"production-release-plan-{sha}"
+require_marker "scripts/production-release-preflight.py" \
+	'if release_action == "runtime"'
+require_marker "scripts/production-release-preflight.py" \
+	'bundle_artifact_text'
+require_marker "scripts/production-release-preflight.py" \
 	"FORMAL_SMOKE_REQUIRED_SECRETS"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
 require_marker "scripts/production-ci-evidence.py" \

@@ -262,6 +262,12 @@ is `runtime`; static publishing uses the checked-out exact revision, and
 job only for the validated `no_deploy` or `static` action and fails closed for
 unknown action/result combinations.
 
+The mandatory operator preflight follows the same identity chain: it downloads
+and validates the exact plan artifact against the production SHA and commit
+tree, requires the runtime bundle artifact only for `runtime`, and records the
+bundle as not applicable for `no_deploy` or `static`. A missing plan, missing
+runtime bundle, or unexpected non-runtime bundle fails closed before dispatch.
+
 This v2 identity chain still produces a complete exact image set. The bundle
 job may restore API and frontend archives independently from the disposable
 `npcink.production-application-image-cache.v1` Actions cache when the selected

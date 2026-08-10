@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,10 +123,9 @@ def _require_successful_run(run: ExactRun | None) -> str | None:
     return None
 
 
-def _require_bundle_artifact(payload: object, sha: str) -> int:
+def _require_artifact(payload: object, expected_name: str, label: str) -> int:
     if not isinstance(payload, dict) or not isinstance(payload.get("artifacts"), list):
         raise PreflightError("Cloud CI artifact metadata is malformed")
-    expected_name = f"production-deploy-bundle-{sha}"
     matches = [
         artifact
         for artifact in payload["artifacts"]
@@ -138,8 +139,108 @@ def _require_bundle_artifact(payload: object, sha: str) -> int:
         )
     artifact_id = matches[0].get("id")
     if not isinstance(artifact_id, int) or artifact_id <= 0:
-        raise PreflightError("production deploy bundle artifact id is invalid")
+        raise PreflightError(f"{label} artifact id is invalid")
     return artifact_id
+
+
+def _require_plan_artifact(payload: object, sha: str) -> int:
+    return _require_artifact(
+        payload,
+        f"production-release-plan-{sha}",
+        "production release plan",
+    )
+
+
+def _require_bundle_artifact(payload: object, sha: str) -> int:
+    return _require_artifact(
+        payload,
+        f"production-deploy-bundle-{sha}",
+        "production deploy bundle",
+    )
+
+
+def _require_bundle_absent(payload: object, sha: str) -> None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("artifacts"), list):
+        raise PreflightError("Cloud CI artifact metadata is malformed")
+    expected_name = f"production-deploy-bundle-{sha}"
+    matches = [
+        artifact
+        for artifact in payload["artifacts"]
+        if isinstance(artifact, dict)
+        and artifact.get("name") == expected_name
+        and artifact.get("expired") is False
+    ]
+    if matches:
+        raise PreflightError(
+            f"non-runtime release unexpectedly produced {expected_name}"
+        )
+
+
+def _resolve_release_action(
+    plan_path: Path,
+    *,
+    repository: str,
+    sha: str,
+    tree: str,
+) -> str:
+    module_path = Path(__file__).resolve().with_name(
+        "resolve-production-release-action.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "npcink_production_release_action",
+        module_path,
+    )
+    if spec is None or spec.loader is None:
+        raise PreflightError("production release action resolver cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        payload = json.loads(plan_path.read_text(encoding="utf-8"))
+        resolution = module.resolve_plan(
+            payload,
+            expected_repository=repository,
+            expected_head_sha=sha,
+            expected_head_tree=tree,
+        )
+    except Exception as exc:
+        raise PreflightError(f"production release plan validation failed: {exc}") from exc
+    finally:
+        sys.modules.pop(spec.name, None)
+    return str(resolution.action)
+
+
+def _download_release_action(repo: str, run_id: int, sha: str, tree: str) -> str:
+    with tempfile.TemporaryDirectory(prefix="npcink-production-plan-") as directory:
+        try:
+            subprocess.run(
+                [
+                    "gh",
+                    "run",
+                    "download",
+                    str(run_id),
+                    "--repo",
+                    repo,
+                    "--name",
+                    f"production-release-plan-{sha}",
+                    "--dir",
+                    directory,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", "") or str(exc)
+            raise PreflightError(
+                f"production release plan artifact download failed: {detail.strip()}"
+            ) from exc
+        return _resolve_release_action(
+            Path(directory) / "production-release-plan.json",
+            repository=repo,
+            sha=sha,
+            tree=tree,
+        )
 
 
 def _active_deploy_ids(payload: object, sha: str) -> list[int]:
@@ -190,7 +291,19 @@ def evaluate_snapshot(
         joined = ", ".join(str(run_id) for run_id in active_deploys)
         raise PreflightError(f"Deploy Production is already active for this SHA: {joined}")
 
-    artifact_id = _require_bundle_artifact(snapshot.get("artifacts"), sha)
+    plan_artifact_id = _require_plan_artifact(snapshot.get("artifacts"), sha)
+    release_action = str(snapshot.get("release_action") or "")
+    if release_action == "runtime":
+        bundle_artifact_id: int | None = _require_bundle_artifact(
+            snapshot.get("artifacts"), sha
+        )
+    elif release_action in {"no_deploy", "static"}:
+        _require_bundle_absent(snapshot.get("artifacts"), sha)
+        bundle_artifact_id = None
+    else:
+        raise PreflightError(f"unsupported production release action: {release_action}")
+    if require_formal_smoke and release_action != "runtime":
+        raise PreflightError("formal release smoke requires a runtime release action")
     available_secrets = set(snapshot.get("repository_secrets") or []) | set(
         snapshot.get("environment_secrets") or []
     )
@@ -207,7 +320,9 @@ def evaluate_snapshot(
         "production_sha": sha,
         "cloud_ci_run_id": ci_run.run_id,
         "codeql_run_id": codeql_run.run_id,
-        "bundle_artifact_id": artifact_id,
+        "release_action": release_action,
+        "plan_artifact_id": plan_artifact_id,
+        "bundle_artifact_id": bundle_artifact_id,
         "deploy_secrets_ready": True,
         "formal_smoke_secrets_ready": not missing_smoke,
         "missing_formal_smoke_secret_names": missing_smoke,
@@ -243,6 +358,7 @@ def _live_snapshot(repo: str) -> dict[str, Any]:
     )
     deploy_runs: dict[str, Any] = {"workflow_runs": []}
     artifacts: dict[str, Any] = {"artifacts": []}
+    release_action = ""
     repository_secrets: set[str] = set()
     environment_secrets: set[str] = set()
     if checks_ready:
@@ -254,6 +370,12 @@ def _live_snapshot(repo: str) -> dict[str, Any]:
         )
         assert ci_run is not None
         artifacts = _gh_api(repo, f"actions/runs/{ci_run.run_id}/artifacts", per_page="100")
+        _require_plan_artifact(artifacts, sha)
+        commit = _gh_api(repo, f"git/commits/{sha}")
+        if not isinstance(commit, dict) or not isinstance(commit.get("tree"), dict):
+            raise PreflightError("production commit tree metadata is malformed")
+        tree = _require_sha(commit["tree"].get("sha"), "production tree")
+        release_action = _download_release_action(repo, ci_run.run_id, sha, tree)
         repository_secrets = _secret_names(
             ["gh", "secret", "list", "--repo", repo, "--json", "name"]
         )
@@ -277,6 +399,7 @@ def _live_snapshot(repo: str) -> dict[str, Any]:
         "codeql_runs": codeql_runs,
         "deploy_runs": deploy_runs,
         "artifacts": artifacts,
+        "release_action": release_action,
         "repository_secrets": sorted(repository_secrets),
         "environment_secrets": sorted(environment_secrets),
     }
@@ -294,13 +417,19 @@ def _resolve_repo(explicit_repo: str | None) -> str:
 def render_text(result: dict[str, Any]) -> str:
     missing_smoke = result["missing_formal_smoke_secret_names"]
     smoke_status = "ready" if not missing_smoke else "missing:" + ",".join(missing_smoke)
+    bundle_artifact = result["bundle_artifact_id"]
+    bundle_artifact_text = (
+        str(bundle_artifact) if bundle_artifact is not None else "not_applicable"
+    )
     return "\n".join(
         (
             f"production_sha={result['production_sha']}",
             f"dispatch_expected_sha={result['production_sha']}",
             f"cloud_ci_run_id={result['cloud_ci_run_id']}",
             f"codeql_run_id={result['codeql_run_id']}",
-            f"bundle_artifact_id={result['bundle_artifact_id']}",
+            f"release_action={result['release_action']}",
+            f"plan_artifact_id={result['plan_artifact_id']}",
+            f"bundle_artifact_id={bundle_artifact_text}",
             "deploy_secrets=ready",
             f"formal_smoke_secrets={smoke_status}",
             "active_deploy=none",
