@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -20,7 +21,11 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
-SCHEMA_VERSION = "npcink.release-bundle.v1"
+SCHEMA_VERSION_V1 = "npcink.release-bundle.v1"
+SCHEMA_VERSION_V2 = "npcink.release-bundle.v2"
+SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION_V1, SCHEMA_VERSION_V2}
+PRODUCTION_RELEASE_PLAN_SCHEMA = "npcink.production_release_plan.v1"
+CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"
 IMAGE_LOCK_SCHEMA = "npcink.production-image-lock.v1"
 SCAN_INDEX_SCHEMA = "npcink.production-image-scan-index.v1"
 SCAN_RECEIPT_SCHEMA = "npcink.production-image-scan-receipt.v1"
@@ -28,6 +33,7 @@ TARGET_DAEMON_MAP_SCHEMA = "npcink.target-daemon-image-map.v1"
 MANIFEST_NAME = "release-bundle-manifest.json"
 CHECKSUMS_NAME = "SHA256SUMS"
 SCAN_INDEX_PATH = "release/image-scan/scan-index.json"
+PRODUCTION_RELEASE_PLAN_PATH = "release/production-release-plan.json"
 CANONICAL_IMAGE_LOCK_PATH = "deploy/image-lock/production-images.json"
 CANONICAL_ALLOWLIST_PATH = "deploy/image-lock/cve-allowlist.json"
 MAX_TAR_MEMBERS = 20_000
@@ -35,6 +41,7 @@ MAX_TAR_UNCOMPRESSED_BYTES = 20 * 1024 * 1024 * 1024
 MAX_DOCKER_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_TARGET_DAEMON_MAP_BYTES = 256 * 1024
+MAX_PRODUCTION_RELEASE_PLAN_BYTES = 2 * 1024 * 1024
 REQUIRED_MAX_DATABASE_AGE_HOURS = 72
 REQUIRED_MAX_EXCEPTION_DAYS = 30
 MAX_SCAN_TO_BUNDLE_AGE_HOURS = 24
@@ -42,6 +49,7 @@ CLOCK_SKEW = dt.timedelta(minutes=5)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 IMAGE_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 REVISION_RE = re.compile(r"^[0-9a-f]{40,64}$")
+GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 RELEASE_NAME_RE = re.compile(r"^release-[A-Za-z0-9._-]+$")
 REQUIRED_SOURCE_INPUTS = {
     "uv_lock",
@@ -120,6 +128,113 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def classify_production_release_paths(changed_files: list[str]) -> tuple[str, dict[str, bool]]:
+    classifier_path = Path(__file__).resolve().with_name("production-release-plan.py")
+    if not classifier_path.is_file():
+        fail("production release-plan classifier is missing")
+    spec = importlib.util.spec_from_file_location(
+        "npcink_production_release_plan", classifier_path
+    )
+    if spec is None or spec.loader is None:
+        fail("production release-plan classifier cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        lane, flags, normalized_files = module.classify_release(changed_files)
+    except Exception as exc:
+        fail(f"production release-plan classification failed: {exc}")
+    finally:
+        sys.modules.pop(spec.name, None)
+    if list(normalized_files) != changed_files:
+        fail("production release plan changed_files are not canonical")
+    if not isinstance(lane, str) or not isinstance(flags, dict):
+        fail("production release-plan classifier returned an invalid result")
+    return lane, flags
+
+
+def validate_production_release_plan(
+    plan: Any, *, revision: str, tree: str
+) -> dict[str, Any]:
+    expected_keys = {
+        "schema",
+        "repository",
+        "base_sha",
+        "head_sha",
+        "head_tree",
+        "changed_files",
+        "lane",
+        "deployment_required",
+        "backend_image_required",
+        "frontend_image_required",
+        "migration_required",
+        "runtime_config_required",
+        "static_payload_required",
+    }
+    if not isinstance(plan, dict) or set(plan) != expected_keys:
+        fail("production release plan schema is invalid")
+    if plan["schema"] != PRODUCTION_RELEASE_PLAN_SCHEMA:
+        fail("production release plan version is unsupported")
+    repository = plan["repository"]
+    if repository != CANONICAL_REPOSITORY:
+        fail("production release plan repository is not canonical")
+    if any(
+        not isinstance(plan[field], str) or GIT_SHA_RE.fullmatch(plan[field]) is None
+        for field in ("base_sha", "head_sha", "head_tree")
+    ):
+        fail("production release plan Git identity is invalid")
+    if plan["head_sha"] != revision or plan["head_tree"] != tree:
+        fail("production release plan does not match bundle source revision/tree")
+    changed_files = plan["changed_files"]
+    if (
+        not isinstance(changed_files, list)
+        or any(not isinstance(path, str) for path in changed_files)
+        or changed_files != sorted(set(changed_files))
+    ):
+        fail("production release plan changed_files are invalid")
+    for path in changed_files:
+        safe_relative(path)
+    lane = plan["lane"]
+    flag_names = (
+        "deployment_required",
+        "backend_image_required",
+        "frontend_image_required",
+        "migration_required",
+        "runtime_config_required",
+        "static_payload_required",
+    )
+    if any(not isinstance(plan[name], bool) for name in flag_names):
+        fail("production release plan flags are invalid")
+    expected_lane, expected_flags = classify_production_release_paths(changed_files)
+    if lane != expected_lane or any(plan[name] != expected_flags[name] for name in flag_names):
+        fail("production release plan lane/flags do not match changed_files")
+    return plan
+
+
+def load_production_release_plan(path: Path, *, revision: str, tree: str) -> dict[str, Any]:
+    try:
+        if path.stat().st_size > MAX_PRODUCTION_RELEASE_PLAN_BYTES:
+            fail("production release plan is oversized")
+    except OSError as exc:
+        fail(f"production release plan is invalid: {exc}")
+
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                fail(f"production release plan contains a duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    try:
+        plan = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"production release plan is invalid: {exc}")
+    return validate_production_release_plan(plan, revision=revision, tree=tree)
 
 
 def sha256_gzip_payload(path: Path) -> str:
@@ -1106,8 +1221,43 @@ def create_manifest(args: argparse.Namespace) -> None:
         validate_source_inputs(source_inputs)
     else:
         source_inputs = source_input_groups(source_root)
+    schema_version = args.schema_version
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        fail("unsupported release bundle manifest schema")
+    release_plan_meta = None
+    if schema_version == SCHEMA_VERSION_V2:
+        if not args.release_plan:
+            fail("v2 release bundles require an exact production release plan")
+        release_plan_source = Path(args.release_plan).resolve()
+        plan = load_production_release_plan(
+            release_plan_source, revision=args.revision, tree=args.tree
+        )
+        release_plan_target = bundle_root.joinpath(
+            *PurePosixPath(PRODUCTION_RELEASE_PLAN_PATH).parts
+        )
+        release_plan_target.parent.mkdir(parents=True, exist_ok=True)
+        release_plan_target.write_bytes(release_plan_source.read_bytes())
+        release_plan_meta = {
+            "path": PRODUCTION_RELEASE_PLAN_PATH,
+            "schema_version": PRODUCTION_RELEASE_PLAN_SCHEMA,
+            "sha256": sha256_file(release_plan_target),
+            "repository": plan["repository"],
+            "lane": plan["lane"],
+            "deployment_required": plan["deployment_required"],
+            "backend_image_required": plan["backend_image_required"],
+            "frontend_image_required": plan["frontend_image_required"],
+            "migration_required": plan["migration_required"],
+            "runtime_config_required": plan["runtime_config_required"],
+            "static_payload_required": plan["static_payload_required"],
+        }
+        payload_files = [
+            file_record(bundle_root, relative)
+            for relative in regular_files(bundle_root, exclude={MANIFEST_NAME, CHECKSUMS_NAME})
+        ]
+    elif args.release_plan:
+        fail("v1 release bundles cannot contain production release-plan metadata")
     manifest = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "created_at_utc": created_at,
         "source": {
             "revision": args.revision,
@@ -1139,6 +1289,8 @@ def create_manifest(args: argparse.Namespace) -> None:
             "covers": "all_regular_payload_files_except_itself",
         },
     }
+    if release_plan_meta is not None:
+        manifest["production_release_plan"] = release_plan_meta
     if not REVISION_RE.fullmatch(args.revision) or not REVISION_RE.fullmatch(args.tree):
         fail("revision and tree must be full hexadecimal object IDs")
     manifest_path = bundle_root / MANIFEST_NAME
@@ -1546,6 +1698,7 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         fail(f"invalid release bundle manifest JSON: {exc}")
+    schema_version = manifest.get("schema_version") if isinstance(manifest, dict) else None
     expected_top = {
         "schema_version",
         "created_at_utc",
@@ -1558,9 +1711,11 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         "payload_files",
         "checksum_table",
     }
+    if schema_version == SCHEMA_VERSION_V2:
+        expected_top.add("production_release_plan")
     if not isinstance(manifest, dict) or set(manifest) != expected_top:
         fail("release bundle manifest has an unexpected top-level schema")
-    if manifest["schema_version"] != SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         fail("unsupported release bundle manifest schema")
     bundle_created_at = parse_utc_timestamp(manifest["created_at_utc"], "manifest created_at_utc")
     source = manifest["source"]
@@ -1576,6 +1731,49 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
     if source["git_clean_required"] is not True:
         fail("invalid source clean/branch posture")
     validate_branch(source["branch"])
+    if schema_version == SCHEMA_VERSION_V2:
+        plan_meta = manifest["production_release_plan"]
+        expected_plan_meta_keys = {
+            "path",
+            "schema_version",
+            "sha256",
+            "repository",
+            "lane",
+            "deployment_required",
+            "backend_image_required",
+            "frontend_image_required",
+            "migration_required",
+            "runtime_config_required",
+            "static_payload_required",
+        }
+        if not isinstance(plan_meta, dict) or set(plan_meta) != expected_plan_meta_keys:
+            fail("production release-plan manifest metadata is invalid")
+        if (
+            plan_meta["path"] != PRODUCTION_RELEASE_PLAN_PATH
+            or plan_meta["schema_version"] != PRODUCTION_RELEASE_PLAN_SCHEMA
+        ):
+            fail("production release-plan manifest path/schema is invalid")
+        plan_path = ensure_plain_file(root, PRODUCTION_RELEASE_PLAN_PATH)
+        if sha256_file(plan_path) != plan_meta["sha256"]:
+            fail("production release-plan manifest hash mismatch")
+        plan = load_production_release_plan(
+            plan_path, revision=source["revision"], tree=source["tree"]
+        )
+        expected_plan_meta = {
+            "path": PRODUCTION_RELEASE_PLAN_PATH,
+            "schema_version": PRODUCTION_RELEASE_PLAN_SCHEMA,
+            "sha256": sha256_file(plan_path),
+            "repository": plan["repository"],
+            "lane": plan["lane"],
+            "deployment_required": plan["deployment_required"],
+            "backend_image_required": plan["backend_image_required"],
+            "frontend_image_required": plan["frontend_image_required"],
+            "migration_required": plan["migration_required"],
+            "runtime_config_required": plan["runtime_config_required"],
+            "static_payload_required": plan["static_payload_required"],
+        }
+        if plan_meta != expected_plan_meta:
+            fail("production release-plan manifest metadata does not match the receipt")
     build = manifest["build"]
     build_keys = {
         "image_platform",
@@ -1874,7 +2072,10 @@ def verify_archive(bundle: Path, checksum: Path) -> dict[str, Any]:
             checksum_entries = parse_checksum_text(checksum_bytes.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             fail(f"release bundle metadata is invalid: {exc}")
-        if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA_VERSION:
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS
+        ):
             fail("unsupported release bundle manifest schema")
         payload_records = manifest.get("payload_files")
         if not isinstance(payload_records, list):
@@ -1974,7 +2175,17 @@ def build_parser() -> argparse.ArgumentParser:
     inputs = subparsers.add_parser("source-inputs")
     inputs.add_argument("--source-root", required=True)
     inputs.add_argument("--output", required=True)
+    verify_release_plan = subparsers.add_parser("verify-release-plan")
+    verify_release_plan.add_argument("--release-plan", required=True)
+    verify_release_plan.add_argument("--revision", required=True)
+    verify_release_plan.add_argument("--tree", required=True)
     create = subparsers.add_parser("create")
+    create.add_argument(
+        "--schema-version",
+        choices=tuple(sorted(SUPPORTED_SCHEMA_VERSIONS)),
+        default=SCHEMA_VERSION_V1,
+    )
+    create.add_argument("--release-plan", default="")
     create.add_argument("--source-root", required=True)
     create.add_argument("--source-inputs-file", default="")
     create.add_argument("--bundle-root", required=True)
@@ -2049,6 +2260,10 @@ def main() -> int:
             Path(args.output).write_text(
                 json.dumps(groups, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
+            )
+        elif args.command == "verify-release-plan":
+            load_production_release_plan(
+                Path(args.release_plan).resolve(), revision=args.revision, tree=args.tree
             )
         elif args.command == "create":
             create_manifest(args)

@@ -731,6 +731,182 @@ def update_manifest_checksum(bundle: Path) -> None:
     checksum_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def test_v2_bundle_binds_exact_production_release_plan(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    plan_path = tmp_path / "production-release-plan.json"
+    plan = {
+        "schema": "npcink.production_release_plan.v1",
+        "repository": "npcink/npcink-ai-cloud",
+        "base_sha": "0" * 40,
+        "head_sha": "a" * 40,
+        "head_tree": "b" * 40,
+        "changed_files": ["app/main.py"],
+        "lane": "backend",
+        "deployment_required": True,
+        "backend_image_required": True,
+        "frontend_image_required": False,
+        "migration_required": False,
+        "runtime_config_required": False,
+        "static_payload_required": False,
+    }
+    plan_path.write_text(json.dumps(plan, sort_keys=True) + "\n", encoding="utf-8")
+
+    created = run_helper(
+        "create",
+        "--schema-version",
+        "npcink.release-bundle.v2",
+        "--release-plan",
+        str(plan_path),
+        "--source-root",
+        str(source),
+        "--bundle-root",
+        str(bundle),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--branch",
+        "codex/fixture",
+        "--image-platform",
+        "linux/amd64",
+        "--gzip-level",
+        "1",
+        "--frontend-included",
+        "1",
+        "--external-images-included",
+        "1",
+        "--image-lock",
+        "deploy/image-lock/production-images.json",
+        "--image-records",
+        str(records),
+    )
+    assert created.returncode == 0, created.stderr
+
+    bundled_plan = bundle / "release/production-release-plan.json"
+    assert bundled_plan.read_bytes() == plan_path.read_bytes()
+    manifest = json.loads((bundle / "release-bundle-manifest.json").read_text())
+    assert manifest["schema_version"] == "npcink.release-bundle.v2"
+    assert manifest["production_release_plan"]["lane"] == "backend"
+    assert manifest["production_release_plan"]["repository"] == "npcink/npcink-ai-cloud"
+    assert run_helper("verify-directory", "--root", str(bundle)).returncode == 0
+
+    plan["head_sha"] = "c" * 40
+    bundled_plan.write_text(json.dumps(plan, sort_keys=True) + "\n", encoding="utf-8")
+    rejected = run_helper("verify-directory", "--root", str(bundle))
+    assert rejected.returncode == 1
+    assert "release-plan manifest hash mismatch" in rejected.stderr
+
+
+def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    common = (
+        "create",
+        "--schema-version",
+        "npcink.release-bundle.v2",
+        "--source-root",
+        str(source),
+        "--bundle-root",
+        str(bundle),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--branch",
+        "codex/fixture",
+        "--image-platform",
+        "linux/amd64",
+        "--gzip-level",
+        "1",
+        "--frontend-included",
+        "1",
+        "--external-images-included",
+        "1",
+        "--image-lock",
+        "deploy/image-lock/production-images.json",
+        "--image-records",
+        str(records),
+    )
+    missing = run_helper(*common)
+    assert missing.returncode == 1
+    assert "require an exact production release plan" in missing.stderr
+
+    plan_path = tmp_path / "mismatched-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema": "npcink.production_release_plan.v1",
+                "repository": "npcink/npcink-ai-cloud",
+                "base_sha": "0" * 40,
+                "head_sha": "c" * 40,
+                "head_tree": "b" * 40,
+                "changed_files": ["app/main.py"],
+                "lane": "backend",
+                "deployment_required": True,
+                "backend_image_required": True,
+                "frontend_image_required": False,
+                "migration_required": False,
+                "runtime_config_required": False,
+                "static_payload_required": False,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mismatch = run_helper(*common, "--release-plan", str(plan_path))
+    assert mismatch.returncode == 1
+    assert "does not match bundle source revision/tree" in mismatch.stderr
+
+    duplicate_plan = tmp_path / "duplicate-plan.json"
+    duplicate_plan.write_text(
+        plan_path.read_text(encoding="utf-8").replace(
+            '"repository": "npcink/npcink-ai-cloud",',
+            '"repository": "attacker/example", "repository": "npcink/npcink-ai-cloud",',
+        ),
+        encoding="utf-8",
+    )
+    duplicate = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(duplicate_plan),
+        "--revision",
+        "c" * 40,
+        "--tree",
+        "b" * 40,
+    )
+    assert duplicate.returncode == 1
+    assert "duplicate JSON key" in duplicate.stderr
+
+    false_lane_plan = tmp_path / "false-lane-plan.json"
+    false_lane = json.loads(plan_path.read_text(encoding="utf-8"))
+    false_lane.update(
+        {
+            "head_sha": "a" * 40,
+            "lane": "no_deploy",
+            "deployment_required": False,
+            "backend_image_required": False,
+        }
+    )
+    false_lane_plan.write_text(
+        json.dumps(false_lane, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    rejected_lane = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(false_lane_plan),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+    )
+    assert rejected_lane.returncode == 1
+    assert "lane/flags do not match changed_files" in rejected_lane.stderr
+
+
 def test_exact_bundle_verifier_rejects_tamper_missing_extra_and_schema(
     exact_bundle_fixture: tuple[Path, Path, Path],
 ) -> None:

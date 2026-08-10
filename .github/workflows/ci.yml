@@ -175,7 +175,7 @@ jobs:
 
   production-deploy-bundle:
     name: Production deploy bundle
-    needs: [production-promotion-evidence]
+    needs: [production-release-plan, production-promotion-evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
     steps:
@@ -185,10 +185,18 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Download exact production release plan
+        uses: actions/download-artifact@v7
+        with:
+          name: production-release-plan-${{ github.sha }}
+          path: ${{ runner.temp }}/production-release-plan
+
       - name: Build and scan exact production deploy bundle
         env:
           NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
           NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
+          NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"
+          NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE: ${{ runner.temp }}/production-release-plan/production-release-plan.json
         run: bash deploy/bundle-images.sh
 
       - name: Upload exact production deploy bundle

@@ -240,10 +240,19 @@ workflow-only changes may select `no_deploy`; pure `site/terms/**` changes may
 select `static`. A missing, malformed, or SHA/tree-mismatched receipt is not
 deployment authority.
 
-Introducing the receipt does not by itself skip the existing full deploy
-bundle. Build, scan, transfer, image-load, migration, and selective cutover
-optimizations may consume it only after their own exact-digest and runtime
-contracts are implemented and reviewed.
+Production bundle CI now downloads the exact same-run plan before any image
+build and emits `npcink.release-bundle.v2`. The bundle copies the plan to
+`release/production-release-plan.json`, hashes it in the payload/checksum table,
+and binds its repository, lane, action flags, production SHA, and production
+tree in the bundle manifest. A missing or mismatched plan fails before the
+costly image build begins.
+
+This v2 identity chain does not yet skip the existing complete image set.
+Build, scan, transfer, image-load, migration, and selective cutover
+optimizations may consume the bound flags only after their own exact-digest and
+runtime contracts are implemented and reviewed. The v1 complete-bundle path
+remains available for non-production compatibility and rollback during this
+transition.
 
 ### Recovery deployment decision envelope
 
