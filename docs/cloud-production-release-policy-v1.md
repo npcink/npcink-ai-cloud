@@ -280,6 +280,18 @@ missing plans, unsupported schemas, and non-exact flag combinations use the
 complete cutover path. The complete-bundle transfer path remains the fail-closed
 fallback and stage-only behavior remains complete.
 
+The manually authorized deployment workflow reads that exact bundle-bound plan
+before opening an SSH session. An exact `no_deploy` plan completes without
+production-host mutation or health probing. An exact `static` plan uses the
+transactional static-terms publisher, does not upload the runtime bundle, load
+images, run migration, replace services, refresh providers, or execute runtime
+readiness, and relies on that publisher's exact static-page health proof.
+Runtime lanes retain the protected cutover and small-customer preflight.
+Unknown lanes and inconsistent flag combinations fail before host mutation.
+Formal release smoke is a runtime-profile gate; selecting it for `no_deploy` or
+`static` fails before the plan-scoped action instead of silently adding runtime
+health probes.
+
 When a frontend is preserved, the deploy records its actual daemon image ID,
 embedded source revision, and previous-release binding in the new release's
 private `preserved-runtime-services.json` state before writer shutdown. Read-only

@@ -1029,6 +1029,7 @@ reject_marker ".github/workflows/ci.yml" "PROD_SSH_KEY"
 require_file "scripts/production-ci-evidence.py"
 require_file "scripts/production-application-image-inputs.py"
 require_file "scripts/production-release-plan.py"
+require_file "scripts/resolve-production-release-action.py"
 require_file "scripts/production-release-preflight.py"
 require_marker "scripts/production-release-plan.py" \
 	"npcink.production_release_plan.v2"
@@ -1068,7 +1069,7 @@ require_marker ".github/workflows/deploy-production.yml" \
 	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
 require_marker ".github/workflows/deploy-production.yml" "run_formal_release_smoke:"
 require_marker ".github/workflows/deploy-production.yml" \
-	"installation_state == 'complete' && inputs.run_formal_release_smoke"
+	"installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke"
 require_marker ".github/workflows/deploy-production.yml" \
 	"Failed closed because the selected formal release smoke"
 require_marker ".github/workflows/deploy-production.yml" \
@@ -1083,6 +1084,26 @@ require_marker ".github/workflows/deploy-production.yml" 'select(.head_sha == $s
 require_marker ".github/workflows/deploy-production.yml" 'test "${conclusion}" = "success"'
 require_marker ".github/workflows/deploy-production.yml" \
 	"actions/workflows/codeql.yml/runs"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Resolve exact release execution plan"
+require_marker ".github/workflows/deploy-production.yml" \
+	"scripts/resolve-production-release-action.py"
+require_marker ".github/workflows/deploy-production.yml" \
+	"release/production-release-plan.json"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Exact no_deploy release plan requires no production host mutation."
+require_marker ".github/workflows/deploy-production.yml" \
+	"bash deploy/deploy-static-terms-to-ssh-host.sh"
+require_marker ".github/workflows/deploy-production.yml" \
+	"steps.deploy.outputs.health_profile == 'runtime'"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Formal release smoke is valid only for a runtime release plan."
+require_marker ".github/workflows/deploy-production.yml" \
+	"Record plan-scoped verification"
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'An exact `no_deploy` plan completes without'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'An exact `static` plan uses the'
 require_marker ".github/workflows/deploy-production.yml" \
 	'test "${codeql_conclusion}" = "success"'
 require_marker ".github/workflows/deploy-production.yml" 'gh run download "${PRODUCTION_CI_RUN_ID}"'

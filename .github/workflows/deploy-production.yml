@@ -143,7 +143,23 @@ jobs:
           bash deploy/verify-release-bundle.sh --archive \
             dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
 
+      - name: Resolve exact release execution plan
+        id: release_plan
+        run: |
+          set -euo pipefail
+          plan="dist/production-release-plan.json"
+          tar xOf dist/deploy-bundle.tgz \
+            release/production-release-plan.json > "${plan}"
+          python3 scripts/resolve-production-release-action.py \
+            --plan "${plan}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse HEAD^{tree})" \
+            --github-output "${GITHUB_OUTPUT}" \
+            --summary "${GITHUB_STEP_SUMMARY}"
+
       - name: Install SSH key
+        if: steps.release_plan.outputs.action != 'no_deploy'
         env:
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
@@ -184,6 +200,46 @@ jobs:
           NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
+          release_action="${{ steps.release_plan.outputs.action }}"
+          release_lane="${{ steps.release_plan.outputs.lane }}"
+          health_profile="${{ steps.release_plan.outputs.health_profile }}"
+          if [ "${release_action}" = "no_deploy" ]; then
+            if [ "${{ inputs.run_formal_release_smoke }}" = "true" ]; then
+              echo "[fail] Formal release smoke is valid only for a runtime release plan." >&2
+              exit 1
+            fi
+            if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
+              echo "[fail] A no-deploy release cannot request runtime-network repair." >&2
+              exit 1
+            fi
+            echo "[ok] Exact no_deploy release plan requires no production host mutation."
+            {
+              echo "installation_state=complete"
+              echo "release_lane=${release_lane}"
+              echo "release_action=${release_action}"
+              echo "health_profile=${health_profile}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if [ "${release_action}" = "static" ]; then
+            if [ "${{ inputs.run_formal_release_smoke }}" = "true" ]; then
+              echo "[fail] Formal release smoke is valid only for a runtime release plan." >&2
+              exit 1
+            fi
+            if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
+              echo "[fail] A static release cannot request runtime-network repair." >&2
+              exit 1
+            fi
+            bash deploy/deploy-static-terms-to-ssh-host.sh
+            {
+              echo "installation_state=complete"
+              echo "release_lane=${release_lane}"
+              echo "release_action=${release_action}"
+              echo "health_profile=${health_profile}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          test "${release_action}" = "runtime"
           repair_args=()
           if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
             repair_args+=(--finalized-runtime-network-repair)
@@ -224,7 +280,12 @@ jobs:
               exit 1
               ;;
           esac
-          printf 'installation_state=%s\n' "${installation_state}" >> "${GITHUB_OUTPUT}"
+          {
+            printf 'installation_state=%s\n' "${installation_state}"
+            echo "release_lane=${release_lane}"
+            echo "release_action=${release_action}"
+            echo "health_profile=${health_profile}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: First-install operator handoff
         if: steps.deploy.outputs.installation_state == 'pending'
@@ -246,7 +307,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Small-customer preflight
-        if: steps.deploy.outputs.installation_state == 'complete'
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime'
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
         run: |
@@ -255,7 +316,7 @@ jobs:
             --require-alipay-enabled
 
       - name: Formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
@@ -349,11 +410,23 @@ jobs:
             --credentials-file "${credential_file}"
 
       - name: Record deferred formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke == false
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke == false
         run: |
           {
             echo "## Formal Release Smoke"
             echo ""
             echo "Not selected for this deploy. This is not passing formal-smoke evidence."
             echo "For real SMTP, refresh the one-time Portal login code only after deployment, then immediately dispatch the fail-closed Release Smoke workflow from production."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Record plan-scoped verification
+        if: steps.deploy.outputs.health_profile != 'runtime'
+        run: |
+          {
+            echo "## Plan-scoped Production Verification"
+            echo ""
+            echo "- lane=${{ steps.deploy.outputs.release_lane }}"
+            echo "- action=${{ steps.deploy.outputs.release_action }}"
+            echo "- health_profile=${{ steps.deploy.outputs.health_profile }}"
+            echo "- formal_smoke=not_applicable"
           } >> "${GITHUB_STEP_SUMMARY}"

@@ -211,6 +211,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "production-image-supply.py",
         "production-ci-evidence.py",
         "production-release-plan.py",
+        "resolve-production-release-action.py",
         "production-release-preflight.py",
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
@@ -1838,7 +1839,11 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     )
     assert "run_formal_release_smoke:" in workflow
     assert "default: false" in workflow
-    assert "installation_state == 'complete' && inputs.run_formal_release_smoke" in workflow
+    assert (
+        "installation_state == 'complete' && "
+        "steps.deploy.outputs.health_profile == 'runtime' && "
+        "inputs.run_formal_release_smoke"
+    ) in workflow
     assert "Failed closed because the selected formal release smoke" in workflow
     assert "exit 1" in workflow
     assert "Record deferred formal release smoke" in workflow
@@ -1851,6 +1856,18 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     assert "exactly one explicit installation_state=pending|complete" in workflow
     assert "steps.deploy.outputs.installation_state == 'pending'" in workflow
     assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 3
+    assert "Resolve exact release execution plan" in workflow
+    assert "scripts/resolve-production-release-action.py" in workflow
+    assert "release/production-release-plan.json" in workflow
+    assert "Exact no_deploy release plan requires no production host mutation." in workflow
+    assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in workflow
+    assert "steps.release_plan.outputs.action != 'no_deploy'" in workflow
+    assert "steps.deploy.outputs.health_profile == 'runtime'" in workflow
+    assert "Formal release smoke is valid only for a runtime release plan." in workflow
+    assert "Record plan-scoped verification" in workflow
+    assert "formal_smoke=not_applicable" in workflow
+    assert "A no-deploy release cannot request runtime-network repair." in workflow
+    assert "A static release cannot request runtime-network repair." in workflow
     assert "Post-install preflight and release smoke were intentionally skipped." in workflow
     assert (
         "While the lifecycle remains pending, run the complete-only Release Smoke workflow"
@@ -2414,6 +2431,10 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
+    assert "Resolve exact release execution plan" in deploy_workflow
+    assert "release/production-release-plan.json" in deploy_workflow
+    assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in deploy_workflow
+    assert "steps.deploy.outputs.health_profile == 'runtime'" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow
     assert "pnpm/action-setup" not in deploy_workflow
     assert "docker/setup-buildx-action" not in deploy_workflow
