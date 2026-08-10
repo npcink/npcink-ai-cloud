@@ -494,8 +494,18 @@ first-install gate from asking the development API for production setup state;
 it does not alter the production setup contract or production Compose.
 
 The API uses Uvicorn reload for `app/**` and migrations. Next.js development
-mode handles ordinary frontend changes. Runtime, callback, and ops workers are
-restarted after every successful sync because they do not have file watchers.
+mode handles ordinary frontend changes. M4 records separate content
+fingerprints for `app/**` worker source and `alembic.ini + migrations/**`.
+After the first successful marker bootstrap, sync and promotion restart runtime,
+callback, and ops workers only when the worker-source fingerprint changed, and
+run `alembic upgrade head` only when the migration-source fingerprint changed
+or the live database revision no longer equals `alembic heads`. Unrelated
+documentation, tests, deployment helpers, or frontend-only source do not
+restart workers or replay Alembic. Missing markers and database-revision drift
+fail conservatively by running the corresponding operation once and recording
+the marker only after the complete health gate succeeds. A repaired M4 Nginx
+file is reloaded when its live source drifted; only an unchanged file skips the
+reload.
 
 The M4 currently has no host Node or pnpm runtime. `m4:preview:test` therefore
 runs pytest inside the M4 API image. Use `--focused` with exact `tests/` paths
@@ -700,6 +710,8 @@ After a successful deployment, status records:
   runtime-config fingerprints;
 - frontend source fingerprint, resolved frontend-config fingerprint, and the
   revision actually served by the frontend;
+- worker-source and migration-source fingerprints used by the selective sync
+  plan;
 - runtime and frontend image IDs and creation times;
 - Alembic revision and deployment UTC time.
 

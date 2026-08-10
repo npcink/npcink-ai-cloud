@@ -27,6 +27,7 @@ DRY_RUN=0
 TMP_DIR=""
 REMOTE_SOURCE_BUNDLE=""
 SOURCE_BUNDLE_PATH=""
+SOURCE_STAGE_PATH=""
 SOURCE_RELAY_ACTIVE=0
 SOURCE_RELAY_DIR=""
 SOURCE_RELAY_BUNDLE=""
@@ -1146,6 +1147,72 @@ print(digest.hexdigest())
 PY
 }
 
+scoped_source_fingerprint() {
+	local scope_name="$1"
+	shift
+	[ -n "${SOURCE_STAGE_PATH}" ] && [ -d "${SOURCE_STAGE_PATH}" ] ||
+		fail "staged source is unavailable for ${scope_name} fingerprint"
+	python3 - "${SOURCE_STAGE_PATH}" "${scope_name}" "$@" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import os
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+scope_name = sys.argv[2]
+selectors = sys.argv[3:]
+if not selectors:
+    raise SystemExit(f"[m4-preview] {scope_name} source selectors are empty")
+paths: list[str] = []
+for selector in selectors:
+    candidate = root / selector
+    if candidate.is_symlink():
+        raise SystemExit(
+            f"[m4-preview] {scope_name} source input is a symlink: {selector}"
+        )
+    if candidate.is_file():
+        paths.append(candidate.relative_to(root).as_posix())
+    elif candidate.is_dir():
+        paths.extend(
+            path.relative_to(root).as_posix()
+            for path in candidate.rglob("*")
+            if path.is_file() or path.is_symlink()
+        )
+    else:
+        raise SystemExit(
+            f"[m4-preview] {scope_name} source selector is missing: {selector}"
+        )
+paths = sorted(set(paths))
+if not paths:
+    raise SystemExit(f"[m4-preview] {scope_name} source input set is empty")
+digest = hashlib.sha256()
+for relative in paths:
+    path = root / relative
+    if not path.exists():
+        continue
+    if path.is_symlink() or not path.is_file():
+        raise SystemExit(
+            f"[m4-preview] {scope_name} source input is not a regular file: {relative}"
+        )
+    mode = "100755" if os.access(path, os.X_OK) else "100644"
+    content = path.read_bytes()
+    digest.update(relative.encode("utf-8") + b"\0")
+    digest.update(mode.encode("ascii") + b"\0")
+    digest.update(hashlib.sha256(content).hexdigest().encode("ascii") + b"\0")
+print(digest.hexdigest())
+PY
+}
+
+worker_source_fingerprint() {
+	scoped_source_fingerprint worker app
+}
+
+migration_source_fingerprint() {
+	scoped_source_fingerprint migration alembic.ini migrations
+}
+
 source_path_allowed() {
 	local path="$1"
 	case "${path}" in
@@ -1235,6 +1302,7 @@ package_source() {
 	rsync -a --from0 --files-from="${source_list}" "${ROOT_DIR}/" "${source_stage}/"
 	COPYFILE_DISABLE=1 tar -czf "${source_bundle}" -C "${source_stage}" .
 	SOURCE_BUNDLE_PATH="${source_bundle}"
+	SOURCE_STAGE_PATH="${source_stage}"
 }
 
 source_dirty_state() {
@@ -1377,6 +1445,8 @@ upload_and_apply() {
 	local deployment_orchestration_sha=""
 	local config_input_sha=""
 	local frontend_source_sha=""
+	local worker_source_sha=""
+	local migration_source_sha=""
 
 	package_source
 	source_bundle="${SOURCE_BUNDLE_PATH}"
@@ -1390,6 +1460,8 @@ upload_and_apply() {
 	deployment_orchestration_sha="$(deployment_orchestration_fingerprint)"
 	config_input_sha="$(config_fingerprint)"
 	frontend_source_sha="$(frontend_source_fingerprint)"
+	worker_source_sha="$(worker_source_fingerprint)"
+	migration_source_sha="$(migration_source_fingerprint)"
 
 	log "source revision: ${source_revision}"
 	log "source branch: ${source_branch}"
@@ -1402,6 +1474,8 @@ upload_and_apply() {
 	log "deployment orchestration SHA256: ${deployment_orchestration_sha}"
 	log "config input SHA256: ${config_input_sha}"
 	log "frontend source SHA256: ${frontend_source_sha}"
+	log "worker source SHA256: ${worker_source_sha}"
+	log "migration source SHA256: ${migration_source_sha}"
 	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
 
 	if [ "${DRY_RUN}" = "1" ]; then
@@ -1440,6 +1514,8 @@ upload_and_apply() {
 		"${deployment_orchestration_sha}" \
 		"${config_input_sha}" \
 		"${frontend_source_sha}" \
+		"${worker_source_sha}" \
+		"${migration_source_sha}" \
 		"${mode}" \
 		"${RUN_ID}" \
 		"${M4_PORT}" \
@@ -1466,15 +1542,17 @@ frontend_image_input_sha="${10}"
 deployment_orchestration_sha="${11}"
 config_input_sha="${12}"
 frontend_source_sha="${13}"
-mode="${14}"
-run_id="${15}"
-preview_port="${16}"
-postgres_port="${17}"
-redis_port="${18}"
-acceptance_state="${19}"
-promotion_pr="${20}"
-source_transfer_mode="${21}"
-source_relay_url="${22}"
+worker_source_sha="${14}"
+migration_source_sha="${15}"
+mode="${16}"
+run_id="${17}"
+preview_port="${18}"
+postgres_port="${19}"
+redis_port="${20}"
+acceptance_state="${21}"
+promotion_pr="${22}"
+source_transfer_mode="${23}"
+source_relay_url="${24}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -1548,6 +1626,8 @@ deployed_config_marker="${cache_dir}/deployed-config-input.sha256"
 deployed_frontend_source_marker="${cache_dir}/deployed-frontend-source.sha256"
 deployed_frontend_revision_marker="${cache_dir}/deployed-frontend-revision.txt"
 deployed_frontend_config_marker="${cache_dir}/deployed-frontend-config.sha256"
+deployed_worker_source_marker="${cache_dir}/deployed-worker-source.sha256"
+deployed_migration_source_marker="${cache_dir}/deployed-migration-source.sha256"
 state_file="${cache_dir}/last-deploy.txt"
 docker_config="${cache_dir}/docker-config"
 frontend_volume_marker="${cache_dir}/frontend-volume-image.txt"
@@ -1564,6 +1644,8 @@ frontend_recreate_required=0
 previous_frontend_revision=""
 frontend_resolved_config_sha=""
 frontend_config_changed=1
+worker_restart_required=1
+migration_required=1
 runtime_image_needs_build=1
 frontend_image_needs_build=1
 runtime_image_needs_deploy=1
@@ -1582,6 +1664,16 @@ pip_trusted_host_secret=""
 if [ -f "${deployed_config_marker}" ] &&
 	[ "$(cat "${deployed_config_marker}")" = "${config_input_sha}" ]; then
 	config_changed=0
+fi
+if [ -f "${deployed_worker_source_marker}" ] &&
+	[ ! -L "${deployed_worker_source_marker}" ] &&
+	[ "$(cat "${deployed_worker_source_marker}")" = "${worker_source_sha}" ]; then
+	worker_restart_required=0
+fi
+if [ -f "${deployed_migration_source_marker}" ] &&
+	[ ! -L "${deployed_migration_source_marker}" ] &&
+	[ "$(cat "${deployed_migration_source_marker}")" = "${migration_source_sha}" ]; then
+	migration_required=0
 fi
 if [ -f "${deployed_frontend_source_marker}" ] &&
 	[ ! -L "${deployed_frontend_source_marker}" ] &&
@@ -2265,6 +2357,19 @@ if [ -f "${deployed_frontend_config_marker}" ] &&
 	frontend_config_changed=0
 fi
 
+if [ "${mode}" != "prepare" ] && [ "${migration_required}" = "0" ]; then
+	if "${compose[@]}" exec --interactive=false -T api sh -ec '
+expected="$(alembic heads 2>/dev/null)"
+current="$(alembic current 2>/dev/null)"
+[ -n "${expected}" ] && [ "${current}" = "${expected}" ]
+'; then
+		echo '[m4-preview] live database revision matches the expected Alembic head'
+	else
+		migration_required=1
+		echo '[m4-preview] live database revision drifted; Alembic upgrade required'
+	fi
+fi
+
 if [ "${mode}" != "prepare" ]; then
 	if [ "${frontend_source_changed}" = "1" ] ||
 		[ "${frontend_config_changed}" = "1" ] ||
@@ -2272,7 +2377,7 @@ if [ "${mode}" != "prepare" ]; then
 		[ -z "$("${compose[@]}" ps -q frontend)" ]; then
 		frontend_recreate_required=1
 	fi
-	echo "[m4-preview] service-plan frontend_recreate=${frontend_recreate_required} frontend_source_changed=${frontend_source_changed} frontend_config_changed=${frontend_config_changed} config_changed=${config_changed} frontend_volume_refresh=${frontend_volume_refresh_required}"
+	echo "[m4-preview] service-plan migration=${migration_required} worker_restart=${worker_restart_required} frontend_recreate=${frontend_recreate_required} frontend_source_changed=${frontend_source_changed} frontend_config_changed=${frontend_config_changed} config_changed=${config_changed} frontend_volume_refresh=${frontend_volume_refresh_required}"
 fi
 
 python_base_image='npcink-ai-cloud-base-python:m4-pinned'
@@ -2578,9 +2683,18 @@ elif [ "${mode}" = "deploy" ]; then
 	refresh_frontend_dependency_volume
 	stack_touched=1
 	"${compose[@]}" up -d --pull never postgres redis
-	"${compose[@]}" run --interactive=false -T --rm --pull never api alembic upgrade head
+	if [ "${migration_required}" = "1" ]; then
+		"${compose[@]}" run --interactive=false -T --rm --pull never api alembic upgrade head
+	else
+		echo '[m4-preview] migration source is unchanged; Alembic upgrade skipped'
+	fi
 	"${compose[@]}" up -d --no-build --pull never \
 		postgres redis api worker callback-worker ops-worker
+	if [ "${worker_restart_required}" = "1" ]; then
+		"${compose[@]}" restart worker callback-worker ops-worker
+	elif [ "${worker_restart_required}" = "0" ]; then
+		echo '[m4-preview] worker source is unchanged; worker restart skipped'
+	fi
 	if [ "${frontend_recreate_required}" = "1" ]; then
 		"${compose[@]}" up -d --no-build --pull never --force-recreate frontend
 	else
@@ -2592,19 +2706,36 @@ elif [ "${mode}" = "deploy" ]; then
 		"${compose[@]}" up -d --no-build --pull never proxy
 	fi
 else
-	stack_touched=1
-	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
+	# BEGIN selective M4 source sync
+	if [ "${migration_required}" = "1" ]; then
+		stack_touched=1
+		"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
+	else
+		echo '[m4-preview] migration source is unchanged; Alembic upgrade skipped'
+	fi
 	if [ "${frontend_recreate_required}" = "1" ]; then
+		stack_touched=1
 		"${compose[@]}" up -d --no-build --pull never --force-recreate frontend
 	else
 		echo '[m4-preview] frontend source, image, and config are unchanged; recreate skipped'
 	fi
-	"${compose[@]}" restart worker callback-worker ops-worker
-	proxy_id="$("${compose[@]}" ps -q proxy)"
-	if [ -n "${proxy_id}" ]; then
-		"${compose[@]}" exec --interactive=false -T proxy nginx -s reload >/dev/null 2>&1 ||
-			"${compose[@]}" restart proxy
+	if [ "${worker_restart_required}" = "1" ]; then
+		stack_touched=1
+		"${compose[@]}" restart worker callback-worker ops-worker
+	else
+		echo '[m4-preview] worker source is unchanged; worker restart skipped'
 	fi
+	if [ "${nginx_config_changed}" = "1" ]; then
+		stack_touched=1
+		proxy_id="$("${compose[@]}" ps -q proxy)"
+		if [ -n "${proxy_id}" ]; then
+			"${compose[@]}" exec --interactive=false -T proxy nginx -s reload >/dev/null 2>&1 ||
+				"${compose[@]}" restart proxy
+		fi
+	else
+		echo '[m4-preview] proxy config is unchanged; proxy reload skipped'
+	fi
+	# END selective M4 source sync
 fi
 
 wait_for_http() {
@@ -2677,6 +2808,8 @@ printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 printf '%s\n' "${frontend_source_sha}" > "${deployed_frontend_source_marker}"
 printf '%s\n' "${frontend_runtime_revision}" > "${deployed_frontend_revision_marker}"
 printf '%s\n' "${frontend_resolved_config_sha}" > "${deployed_frontend_config_marker}"
+printf '%s\n' "${worker_source_sha}" > "${deployed_worker_source_marker}"
+printf '%s\n' "${migration_source_sha}" > "${deployed_migration_source_marker}"
 
 {
 	printf 'acceptance_state=%s\n' "${acceptance_state}"
@@ -2694,6 +2827,8 @@ printf '%s\n' "${frontend_resolved_config_sha}" > "${deployed_frontend_config_ma
 	printf 'frontend_source_sha256=%s\n' "${frontend_source_sha}"
 	printf 'frontend_source_revision=%s\n' "${frontend_runtime_revision}"
 	printf 'frontend_config_sha256=%s\n' "${frontend_resolved_config_sha}"
+	printf 'worker_source_sha256=%s\n' "${worker_source_sha}"
+	printf 'migration_source_sha256=%s\n' "${migration_source_sha}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"
 	printf 'runtime_image_created=%s\n' "${runtime_image_created}"
 	printf 'frontend_image_id=%s\n' "${frontend_image_id}"
