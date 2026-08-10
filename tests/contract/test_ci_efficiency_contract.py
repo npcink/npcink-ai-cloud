@@ -287,6 +287,7 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
 def test_production_promotion_pr_forces_the_complete_backend_gate(
     tmp_path: Path,
 ) -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     github_output = tmp_path / "github-output"
     environment = {
         **os.environ,
@@ -307,6 +308,24 @@ def test_production_promotion_pr_forces_the_complete_backend_gate(
     assert "Production-promotion PR; full backend gate required." in completed.stdout
     assert "requires_full_backend=1" in completed.stdout
     assert github_output.read_text(encoding="utf-8") == "requires_full_backend=1\n"
+    production_scope_condition = (
+        "github.base_ref == 'production' || "
+        "(needs.classify.outputs.docs_only != 'true' && "
+        "needs.classify.outputs.frontend_only != 'true')"
+    )
+    assert workflow.count(production_scope_condition) == 2
+    assert (
+        "if: github.base_ref != 'production' && "
+        "needs.classify.outputs.docs_only == 'true'"
+    ) in workflow
+    assert (
+        "if: github.base_ref != 'production' && "
+        "needs.classify.outputs.frontend_only == 'true'"
+    ) in workflow
+    assert (
+        "needs.classify.outputs.docs_only == 'true' && "
+        "needs['backend-scope'].outputs.requires_full_backend != '1'"
+    ) in workflow
 
 
 def test_pr_wait_command_monitors_checks_and_review_threads_together() -> None:
