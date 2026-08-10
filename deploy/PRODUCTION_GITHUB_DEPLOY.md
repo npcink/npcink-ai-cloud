@@ -594,6 +594,18 @@ remote transaction writes `outcome=post_commit_cleanup_incomplete`, retains the
 map and lock, and never starts the previous runtime. Success is emitted only
 after cleanup and unlock are proved.
 
+If and only if the recorded phase is `finalize-rollback-image-tags`, use the
+manual `Repair Production Terminalization` workflow after the reviewed recovery
+helper reaches `production`. Bind both that green recovery-source SHA and the
+separately recorded active-runtime SHA. The required confirmation is
+`Approved for production terminalization repair by operator.` The workflow
+does not download a bundle or rerun deployment. It verifies the active release,
+frontend-preserving release plan, protected failure/map/evidence files, running
+preserved frontend image, and live health; restores the preserved frontend's
+normal image tag; removes only the recorded temporary rollback tags and
+terminal files; then proves lock release and live health again. For any other
+post-commit phase, retain the lock and use a separately reviewed recovery plan.
+
 The loader has no default or aggregate phase; the orchestrator must select one
 of `prepare-only`, `data-only`, `api-only`, `workers-only`, or `traffic-only`.
 For every service-start phase it freezes all required daemon IDs from the fixed
