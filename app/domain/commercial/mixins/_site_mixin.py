@@ -1053,6 +1053,16 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.site_not_found",
                     f"site '{site_id}' was not found",
                 )
+            if str(site.status or "") == SITE_STATUS_ARCHIVED:
+                raise CommercialPermissionError(
+                    "service.portal_site_removed",
+                    "removed sites must reconnect before they can be managed",
+                )
+            if str(site.status or "") == SITE_STATUS_SUSPENDED:
+                raise CommercialPermissionError(
+                    "service.portal_site_not_removable",
+                    f"site '{site_id}' cannot be removed from the portal",
+                )
             self._release_principal_site_binding_in_session(
                 repository=repository,
                 site=site,
@@ -1060,24 +1070,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 now=now,
                 reason="portal_user_removed_site",
             )
-            if str(site.status or "") == SITE_STATUS_SUSPENDED:
-                raise CommercialPermissionError(
-                    "service.portal_site_not_removable",
-                    f"site '{site_id}' cannot be removed from the portal",
-                )
-            if str(site.status or "") == SITE_STATUS_ARCHIVED:
-                return {
-                    "site": self._serialize_site(site),
-                    "revoked_key_ids": [],
-                    "relink_policy": {
-                        "enabled": bool(relink_policy.get("enabled", True)),
-                        "cooldown_days": int(relink_policy.get("cooldown_days") or 90),
-                        "same_account_reconnect_allowed": True,
-                        "relink_available_at": self._serialize_datetime(
-                            site.relink_cooldown_until
-                        ),
-                    },
-                }
             metadata = dict(site.metadata_json or {})
             lifecycle = metadata.get("portal_lifecycle")
             lifecycle = dict(lifecycle) if isinstance(lifecycle, dict) else {}

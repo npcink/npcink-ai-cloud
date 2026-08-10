@@ -1253,15 +1253,54 @@ def test_portal_remove_site_soft_removes_record_and_revokes_active_keys(
     assert any(item["event_kind"] == "site.remove" for item in audit_items)
     assert any(item["event_kind"] == "site_key.revoke" for item in audit_items)
 
-    idempotent_response = client.post(
+    removed_site_access_response = client.post(
         "/portal/v1/sites/site_portal_remove/remove",
         headers=build_portal_headers(idempotency_key="portal-remove-site-again"),
     )
-    assert idempotent_response.status_code == 403, idempotent_response.text
     assert (
-        idempotent_response.json()["error_code"]
+        removed_site_access_response.status_code == 403
+    ), removed_site_access_response.text
+    assert (
+        removed_site_access_response.json()["error_code"]
         == "service.principal_site_access_required"
     )
+
+    with get_session(database_url) as session:
+        released_binding = session.scalar(
+            select(PrincipalSiteBinding)
+            .where(PrincipalSiteBinding.site_id == "site_portal_remove")
+            .order_by(PrincipalSiteBinding.bound_at.desc())
+        )
+        assert released_binding is not None
+        stale_binding = PrincipalSiteBinding(
+            binding_id="binding_portal_remove_stale",
+            principal_id=released_binding.principal_id,
+            site_id=released_binding.site_id,
+            account_id=released_binding.account_id,
+            status="active",
+            bound_at=datetime.now(UTC),
+            released_at=None,
+            release_reason=None,
+            metadata_json={"source": "stale_binding_regression"},
+        )
+        session.add(stale_binding)
+        session.commit()
+
+    stale_binding_response = client.post(
+        "/portal/v1/sites/site_portal_remove/remove",
+        headers=build_portal_headers(idempotency_key="portal-remove-site-stale-binding"),
+    )
+    assert stale_binding_response.status_code == 403, stale_binding_response.text
+    assert stale_binding_response.json()["error_code"] == "service.portal_site_removed"
+
+    with get_session(database_url) as session:
+        stale_binding = session.get(
+            PrincipalSiteBinding,
+            "binding_portal_remove_stale",
+        )
+        assert stale_binding is not None
+        assert stale_binding.status == "active"
+        assert stale_binding.released_at is None
 
     dispose_engine(database_url)
 
