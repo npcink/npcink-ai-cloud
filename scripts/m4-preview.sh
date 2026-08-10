@@ -1033,6 +1033,58 @@ config_fingerprint() {
 	) | shasum -a 256 | awk '{print $1}'
 }
 
+frontend_source_fingerprint() {
+	python3 - "${ROOT_DIR}" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+completed = subprocess.run(
+    [
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "frontend",
+    ],
+    cwd=root,
+    check=True,
+    stdout=subprocess.PIPE,
+)
+paths = sorted(
+    path.decode("utf-8")
+    for path in completed.stdout.split(b"\0")
+    if path
+)
+if not paths:
+    raise SystemExit("[m4-preview] frontend source input set is empty")
+digest = hashlib.sha256()
+for relative in paths:
+    path = root / relative
+    if path.is_symlink() or not path.is_file():
+        raise SystemExit(
+            f"[m4-preview] frontend source input is not a regular file: {relative}"
+        )
+    mode = "100755" if os.access(path, os.X_OK) else "100644"
+    content = path.read_bytes()
+    digest.update(relative.encode("utf-8") + b"\0")
+    digest.update(mode.encode("ascii") + b"\0")
+    digest.update(hashlib.sha256(content).hexdigest().encode("ascii") + b"\0")
+print(digest.hexdigest())
+PY
+}
+
 source_path_allowed() {
 	local path="$1"
 	case "${path}" in
@@ -1261,6 +1313,7 @@ upload_and_apply() {
 	local dirty_count=""
 	local image_input_sha=""
 	local config_input_sha=""
+	local frontend_source_sha=""
 
 	package_source
 	source_bundle="${SOURCE_BUNDLE_PATH}"
@@ -1271,6 +1324,7 @@ upload_and_apply() {
 	dirty_count="$(source_dirty_count)"
 	image_input_sha="$(dependency_fingerprint)"
 	config_input_sha="$(config_fingerprint)"
+	frontend_source_sha="$(frontend_source_fingerprint)"
 
 	log "source revision: ${source_revision}"
 	log "source branch: ${source_branch}"
@@ -1280,6 +1334,7 @@ upload_and_apply() {
 	log "source bundle SHA256: ${source_sha}"
 	log "image input SHA256: ${image_input_sha}"
 	log "config input SHA256: ${config_input_sha}"
+	log "frontend source SHA256: ${frontend_source_sha}"
 	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
 
 	if [ "${DRY_RUN}" = "1" ]; then
@@ -1315,6 +1370,7 @@ upload_and_apply() {
 		"${dirty_count}" \
 		"${image_input_sha}" \
 		"${config_input_sha}" \
+		"${frontend_source_sha}" \
 		"${mode}" \
 		"${RUN_ID}" \
 		"${M4_PORT}" \
@@ -1338,16 +1394,16 @@ source_dirty="$7"
 dirty_count="$8"
 image_input_sha="$9"
 config_input_sha="${10}"
-mode="${11}"
-run_id="${12}"
-preview_port="${13}"
-postgres_port="${14}"
-redis_port="${15}"
-acceptance_state="${16}"
-promotion_pr="${17}"
-source_transfer_mode="${18}"
-source_relay_url="${19}"
-export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"
+frontend_source_sha="${11}"
+mode="${12}"
+run_id="${13}"
+preview_port="${14}"
+postgres_port="${15}"
+redis_port="${16}"
+acceptance_state="${17}"
+promotion_pr="${18}"
+source_transfer_mode="${19}"
+source_relay_url="${20}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -1415,6 +1471,8 @@ staging="${remote_dir}.incoming.${run_id}"
 built_image_marker="${cache_dir}/built-image-input.sha256"
 deployed_image_marker="${cache_dir}/deployed-image-input.sha256"
 deployed_config_marker="${cache_dir}/deployed-config-input.sha256"
+deployed_frontend_source_marker="${cache_dir}/deployed-frontend-source.sha256"
+deployed_frontend_revision_marker="${cache_dir}/deployed-frontend-revision.txt"
 state_file="${cache_dir}/last-deploy.txt"
 docker_config="${cache_dir}/docker-config"
 frontend_volume_marker="${cache_dir}/frontend-volume-image.txt"
@@ -1424,6 +1482,11 @@ lock_acquired=0
 frontend_slot_locks_acquired=0
 nginx_config_incoming=""
 nginx_config_changed=0
+config_changed=1
+frontend_source_changed=1
+frontend_runtime_revision="${source_revision}"
+frontend_recreate_required=0
+previous_frontend_revision=""
 prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
@@ -1433,6 +1496,23 @@ package_proxy_cache_max_bytes="2147483648"
 package_proxy_cache_max_age_seconds="1209600"
 pip_index_secret=""
 pip_trusted_host_secret=""
+
+if [ -f "${deployed_config_marker}" ] &&
+	[ "$(cat "${deployed_config_marker}")" = "${config_input_sha}" ]; then
+	config_changed=0
+fi
+if [ -f "${deployed_frontend_source_marker}" ] &&
+	[ ! -L "${deployed_frontend_source_marker}" ] &&
+	[ "$(cat "${deployed_frontend_source_marker}")" = "${frontend_source_sha}" ] &&
+	[ -f "${deployed_frontend_revision_marker}" ] &&
+	[ ! -L "${deployed_frontend_revision_marker}" ]; then
+	previous_frontend_revision="$(cat "${deployed_frontend_revision_marker}")"
+	if [[ "${previous_frontend_revision}" =~ ^[0-9a-f]{40}$ ]]; then
+		frontend_source_changed=0
+		frontend_runtime_revision="${previous_frontend_revision}"
+	fi
+fi
+export NPCINK_CLOUD_FRONTEND_REVISION="${frontend_runtime_revision}"
 
 release_frontend_slot_operation_locks() {
 	local slot=""
@@ -2047,6 +2127,16 @@ compose=(
 
 "${compose[@]}" config --quiet
 
+if [ "${mode}" != "prepare" ]; then
+	if [ "${frontend_source_changed}" = "1" ] ||
+		[ "${config_changed}" = "1" ] ||
+		[ "${frontend_volume_refresh_required}" = "1" ] ||
+		[ -z "$("${compose[@]}" ps -q frontend)" ]; then
+		frontend_recreate_required=1
+	fi
+	echo "[m4-preview] service-plan frontend_recreate=${frontend_recreate_required} frontend_source_changed=${frontend_source_changed} config_changed=${config_changed} frontend_volume_refresh=${frontend_volume_refresh_required}"
+fi
+
 python_base_image='npcink-ai-cloud-base-python:m4-pinned'
 uv_base_image='npcink-ai-cloud-base-uv:m4-pinned'
 node_base_image='npcink-ai-cloud-base-node:m4-current'
@@ -2325,7 +2415,12 @@ elif [ "${mode}" = "deploy" ]; then
 	"${compose[@]}" up -d --pull never postgres redis
 	"${compose[@]}" run --interactive=false -T --rm --pull never api alembic upgrade head
 	"${compose[@]}" up -d --no-build --pull never \
-		postgres redis api frontend worker callback-worker ops-worker
+		postgres redis api worker callback-worker ops-worker
+	if [ "${frontend_recreate_required}" = "1" ]; then
+		"${compose[@]}" up -d --no-build --pull never --force-recreate frontend
+	else
+		echo '[m4-preview] frontend source, image, and config are unchanged; recreate skipped'
+	fi
 	if [ "${nginx_config_changed}" = "1" ]; then
 		"${compose[@]}" up -d --no-build --pull never --force-recreate proxy
 	else
@@ -2334,9 +2429,11 @@ elif [ "${mode}" = "deploy" ]; then
 else
 	stack_touched=1
 	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
-	# The development frontend live-mounts source, but its source-revision
-	# environment still requires a recreate for each candidate sync.
-	"${compose[@]}" up -d --no-build --pull never frontend
+	if [ "${frontend_recreate_required}" = "1" ]; then
+		"${compose[@]}" up -d --no-build --pull never --force-recreate frontend
+	else
+		echo '[m4-preview] frontend source, image, and config are unchanged; recreate skipped'
+	fi
 	"${compose[@]}" restart worker callback-worker ops-worker
 	proxy_id="$("${compose[@]}" ps -q proxy)"
 	if [ -n "${proxy_id}" ]; then
@@ -2410,6 +2507,8 @@ frontend_image_created="$(docker image inspect -f '{{.Created}}' "${frontend_ima
 printf '%s\n' "$(docker image inspect -f '{{.Id}}' "${frontend_image}")" > "${frontend_volume_marker}"
 printf '%s\n' "${image_input_sha}" > "${deployed_image_marker}"
 printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
+printf '%s\n' "${frontend_source_sha}" > "${deployed_frontend_source_marker}"
+printf '%s\n' "${frontend_runtime_revision}" > "${deployed_frontend_revision_marker}"
 
 {
 	printf 'acceptance_state=%s\n' "${acceptance_state}"
@@ -2422,6 +2521,8 @@ printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 	printf 'source_transfer_mode=%s\n' "${source_transfer_mode}"
 	printf 'image_input_sha256=%s\n' "${image_input_sha}"
 	printf 'config_input_sha256=%s\n' "${config_input_sha}"
+	printf 'frontend_source_sha256=%s\n' "${frontend_source_sha}"
+	printf 'frontend_source_revision=%s\n' "${frontend_runtime_revision}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"
 	printf 'runtime_image_created=%s\n' "${runtime_image_created}"
 	printf 'frontend_image_id=%s\n' "${frontend_image_id}"
