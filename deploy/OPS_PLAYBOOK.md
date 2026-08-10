@@ -401,7 +401,8 @@ For the exact ordinary-deploy state
 `Repair Production Terminalization` with the green recovery-source production
 SHA, the separately recorded active-runtime SHA, and exact confirmation. This
 recovery is cleanup-only: it restores the preserved running
-frontend image's normal tag before removing its temporary rollback tag, removes
+frontend image's normal tag only after proving the production-project runtime
+against preserved-frontend and target-daemon evidence, then removes
 the remaining recorded rollback tags, re-proves governed one-off absence,
 removes terminal evidence, and releases the
 retained lock. It must report

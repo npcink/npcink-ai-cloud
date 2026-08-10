@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -28,7 +29,9 @@ def _write(path: Path, payload: str, mode: int) -> None:
     path.chmod(mode)
 
 
-def _fixture(tmp_path: Path) -> tuple[Path, str, str, dict[str, str]]:
+def _fixture(
+    tmp_path: Path,
+) -> tuple[Path, str, str, dict[str, str], dict[str, str]]:
     root = tmp_path / "managed"
     root.mkdir(mode=0o700)
     release = root / "release-current"
@@ -37,11 +40,8 @@ def _fixture(tmp_path: Path) -> tuple[Path, str, str, dict[str, str]]:
     revision = "a" * 40
     frontend_image = "sha256:" + "1" * 64
     new_frontend_image = "sha256:" + "2" * 64
-    _write(
-        release / "release-bundle-manifest.json",
-        json.dumps({"source": {"revision": revision}}),
-        0o644,
-    )
+    manifest_path = release / "release-bundle-manifest.json"
+    _write(manifest_path, json.dumps({"source": {"revision": revision}}), 0o644)
     _write(
         release / "release/production-release-plan.json",
         json.dumps(
@@ -55,6 +55,47 @@ def _fixture(tmp_path: Path) -> tuple[Path, str, str, dict[str, str]]:
     )
     state = root / ".release-state" / release.name
     state.mkdir(parents=True, mode=0o700)
+    _write(state / "env.deploy", "COMPOSE_PROJECT_NAME=npcink-ai-cloud\n", 0o600)
+    service_images = {
+        "redis": "sha256:" + "5" * 64,
+        "api": "sha256:" + "6" * 64,
+        "worker": "sha256:" + "7" * 64,
+        "callback-worker": "sha256:" + "8" * 64,
+        "ops-worker": "sha256:" + "9" * 64,
+        "proxy": "sha256:" + "a" * 64,
+        "frontend": frontend_image,
+    }
+    service_roles = {
+        "external_redis": service_images["redis"],
+        "api": service_images["api"],
+        "worker": service_images["worker"],
+        "callback_worker": service_images["callback-worker"],
+        "ops_worker": service_images["ops-worker"],
+        "external_nginx": service_images["proxy"],
+    }
+    _write(
+        state / "target-daemon-images.json",
+        json.dumps(
+            {
+                "schema_version": "npcink.target-daemon-image-map.v1",
+                "bundle": {
+                    "release_name": release.name,
+                    "release_path": str(release),
+                    "source_revision": revision,
+                    "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                },
+                "roles": {
+                    role: {
+                        "reference": f"npcink-ai-cloud-{role}:prod",
+                        "portable_config_image_id": image_id,
+                        "target_daemon_image_id": image_id,
+                    }
+                    for role, image_id in service_roles.items()
+                },
+            }
+        ),
+        0o600,
+    )
     _write(
         state / "preserved-runtime-services.json",
         json.dumps(
@@ -82,7 +123,8 @@ def _fixture(tmp_path: Path) -> tuple[Path, str, str, dict[str, str]]:
         + "\n"
         + "npcink-ai-cloud-frontend:prod\tnpcink-ai-cloud-rollback:test-frontend\t"
         + frontend_image
-        + "\n",
+        + "\n"
+        + "npcink-ai-cloud-unused:prod\t-\t-\n",
         0o600,
     )
     _write(
@@ -101,25 +143,33 @@ def _fixture(tmp_path: Path) -> tuple[Path, str, str, dict[str, str]]:
         "npcink-ai-cloud-frontend:prod": new_frontend_image,
         **rollback_tags,
     }
-    return root, revision, frontend_image, tags
+    return root, revision, frontend_image, tags, service_images
 
 
 def _docker_fixture(
-    frontend_image: str, tags: dict[str, str]
+    service_images: dict[str, str], tags: dict[str, str]
 ) -> Callable[[Sequence[str]], subprocess.CompletedProcess[str]]:
     def docker(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
         stdout = ""
         returncode = 0
         if args[:3] == ("ps", "-q", "--filter"):
-            stdout = "frontend-container\n"
+            filters = [args[index + 1] for index, value in enumerate(args) if value == "--filter"]
+            assert "label=com.docker.compose.project=npcink-ai-cloud" in filters
+            assert "label=com.docker.compose.oneoff=False" in filters
+            service_filter = next(
+                value for value in filters if value.startswith("label=com.docker.compose.service=")
+            )
+            service = service_filter.rsplit("=", 1)[1]
+            stdout = f"{service}-container\n"
         elif args[:3] == ("ps", "-aq", "--filter"):
             pass
         elif args[:3] == ("inspect", "--format", "{{.State.Running}}"):
             stdout = "true\n"
         elif args[:3] == ("inspect", "--format", "{{.Image}}"):
-            stdout = frontend_image + "\n"
+            service = args[-1].removesuffix("-container")
+            stdout = service_images[service] + "\n"
         elif args[:3] == ("inspect", "--format", "{{.Config.Image}}"):
-            stdout = frontend_image + "\n"
+            stdout = service_images["frontend"] + "\n"
         elif args[:3] == ("image", "inspect", "--format"):
             reference = args[-1]
             if reference in tags:
@@ -143,7 +193,7 @@ def test_cleanup_repair_rebinds_preserved_frontend_and_releases_lock(
     tmp_path: Path,
 ) -> None:
     module = _load_module()
-    root, revision, frontend_image, tags = _fixture(tmp_path)
+    root, revision, frontend_image, tags, service_images = _fixture(tmp_path)
 
     receipt = module.repair(
         root,
@@ -151,12 +201,21 @@ def test_cleanup_repair_rebinds_preserved_frontend_and_releases_lock(
         "c" * 40,
         module.CONFIRMATION,
         expected_uid=os.getuid(),
-        docker_runner=_docker_fixture(frontend_image, tags),
+        docker_runner=_docker_fixture(service_images, tags),
         health_check=lambda _url: None,
     )
 
     assert receipt["status"] == "complete"
     assert receipt["rollback_tags_removed"] == 2
+    assert receipt["active_services_proved"] == [
+        "api",
+        "callback-worker",
+        "frontend",
+        "ops-worker",
+        "proxy",
+        "redis",
+        "worker",
+    ]
     assert tags["npcink-ai-cloud-frontend:prod"] == frontend_image
     assert not any("rollback" in reference for reference in tags)
     assert not (root / ".cutover-failed").exists()
@@ -170,7 +229,7 @@ def test_cleanup_failure_restores_terminal_evidence_and_retains_lock(
     tmp_path: Path,
 ) -> None:
     module = _load_module()
-    root, revision, frontend_image, tags = _fixture(tmp_path)
+    root, revision, _frontend_image, tags, service_images = _fixture(tmp_path)
     original_unlink = module._unlink_and_fsync
 
     def fail_map_cleanup(path: Path) -> None:
@@ -186,7 +245,7 @@ def test_cleanup_failure_restores_terminal_evidence_and_retains_lock(
             "c" * 40,
             module.CONFIRMATION,
             expected_uid=os.getuid(),
-            docker_runner=_docker_fixture(frontend_image, tags),
+            docker_runner=_docker_fixture(service_images, tags),
             health_check=lambda _url: None,
         )
 
@@ -199,7 +258,7 @@ def test_cleanup_failure_restores_terminal_evidence_and_retains_lock(
 
 def test_cleanup_repair_rejects_non_terminalization_failure(tmp_path: Path) -> None:
     module = _load_module()
-    root, revision, _frontend_image, _tags = _fixture(tmp_path)
+    root, revision, _frontend_image, _tags, _service_images = _fixture(tmp_path)
     marker = root / ".cutover-failed"
     marker.write_text(
         marker.read_text(encoding="utf-8").replace(
@@ -222,7 +281,7 @@ def test_cleanup_repair_rejects_non_terminalization_failure(tmp_path: Path) -> N
 
 def test_cleanup_repair_rejects_governed_one_off_state(tmp_path: Path) -> None:
     module = _load_module()
-    root, revision, frontend_image, tags = _fixture(tmp_path)
+    root, revision, _frontend_image, tags, service_images = _fixture(tmp_path)
     one_off_lock = root / ".release-state/.release-one-off.lock"
     one_off_lock.mkdir(mode=0o700)
 
@@ -233,7 +292,28 @@ def test_cleanup_repair_rejects_governed_one_off_state(tmp_path: Path) -> None:
             "c" * 40,
             module.CONFIRMATION,
             expected_uid=os.getuid(),
-            docker_runner=_docker_fixture(frontend_image, tags),
+            docker_runner=_docker_fixture(service_images, tags),
+            health_check=lambda _url: None,
+        )
+
+    assert (root / ".cutover-failed").is_file()
+    assert (root / ".deploy-lock/one-off-owner").is_file()
+    assert any("rollback" in reference for reference in tags)
+
+
+def test_cleanup_repair_rejects_active_service_image_drift(tmp_path: Path) -> None:
+    module = _load_module()
+    root, revision, _frontend_image, tags, service_images = _fixture(tmp_path)
+    service_images["api"] = "sha256:" + "f" * 64
+
+    with pytest.raises(module.RepairError, match="active api image identity drifted"):
+        module.repair(
+            root,
+            revision,
+            "c" * 40,
+            module.CONFIRMATION,
+            expected_uid=os.getuid(),
+            docker_runner=_docker_fixture(service_images, tags),
             health_check=lambda _url: None,
         )
 
