@@ -467,7 +467,7 @@ jobs:
 
   backend-docs:
     needs: [classify, backend-scope]
-    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true' && needs['backend-scope'].outputs.requires_full_backend != '1'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -322,6 +322,10 @@ def test_production_promotion_pr_forces_the_complete_backend_gate(
         "if: github.base_ref != 'production' && "
         "needs.classify.outputs.frontend_only == 'true'"
     ) in workflow
+    assert (
+        "needs.classify.outputs.docs_only == 'true' && "
+        "needs['backend-scope'].outputs.requires_full_backend != '1'"
+    ) in workflow
 
 
 def test_pr_wait_command_monitors_checks_and_review_threads_together() -> None:
