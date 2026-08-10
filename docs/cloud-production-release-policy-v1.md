@@ -285,11 +285,15 @@ that image is scanned normally; cache state is never deployment authority.
 
 Every run rebuilds its own complete scan index. The index continues to require
 one Grype database identity for the release set. When fresh cache hits and new
-scans were produced from different database identities, only the images copied
-from cache are rescanned against the current run database before the index is
-created. The scanner must not weaken the database-identity invariant, combine
-unverified receipts, or fail a release merely because the optional cache is
-absent or unusable.
+scans were produced from different database identities, the scanner may retain
+the already verified normalized archive, image inspection, Syft native JSON,
+and CycloneDX SBOM for each exact cached image, but it must discard the cached
+Grype report and receipt, run Grype again against the current run database, and
+re-evaluate the current allowlist before creating the index. This refresh is
+not a scan-evidence hit: timing evidence records it separately from both full
+scans and unchanged complete-evidence reuse. The scanner must not weaken the
+database-identity invariant, combine unverified receipts, or fail a release
+merely because the optional cache is absent or unusable.
 
 ### Recovery deployment decision envelope
 

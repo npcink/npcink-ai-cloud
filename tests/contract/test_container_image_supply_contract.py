@@ -1207,6 +1207,76 @@ def test_scan_reuse_rejects_image_drift_staleness_and_artifact_tampering(
         )
 
 
+def test_cached_scan_materials_can_be_re_evaluated_with_a_new_database(
+    tmp_path: Path,
+) -> None:
+    supply = _supply_module()
+    lock = _lock()
+    target = supply._scan_targets(lock)["api"]
+    old_built = _utc_text(datetime.now(UTC) - timedelta(hours=2))
+    new_built = _fresh_db_built()
+    receipt_path = Path(
+        _write_release_receipt(supply, tmp_path, "api", built=old_built)
+    )
+    stable_paths = [
+        tmp_path / "api.image.tar",
+        tmp_path / "api.image-inspect.json",
+        tmp_path / "api.syft.json",
+        tmp_path / "api.sbom.cdx.json",
+    ]
+    stable_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in stable_paths
+    }
+
+    report = _scan_report(built=new_built, image_key="api")
+    canonical_allowlist = json.loads(
+        (ROOT / lock["scan_policy"]["allowlist_file"]).read_text()
+    )
+    matches = report["matches"]
+    assert isinstance(matches, list)
+    for entry in canonical_allowlist["entries"]:
+        if entry["image"] == "api":
+            matches.append(
+                {
+                    "vulnerability": {
+                        "id": entry["vulnerability_id"],
+                        "severity": "high",
+                        "fix": {"versions": [], "state": ""},
+                    },
+                    "artifact": {
+                        "name": entry["package"],
+                        "version": entry["package_version"],
+                    },
+                }
+            )
+    _write_json(tmp_path / "api.grype.json", report)
+    args = Namespace(
+        lock=str(LOCK_PATH),
+        allowlist=str(ROOT / lock["scan_policy"]["allowlist_file"]),
+        image_key="api",
+        source_daemon_image_id=SHA256,
+        requested_reference=target["reference"],
+        archive_reference=target["archive_reference"],
+        scope="release",
+        expected_platform="linux/amd64",
+        docker_context="test-local-unix",
+        inspect_json=str(tmp_path / "api.image-inspect.json"),
+        archive=str(tmp_path / "api.image.tar"),
+        syft_json=str(tmp_path / "api.syft.json"),
+        sbom=str(tmp_path / "api.sbom.cdx.json"),
+        report=str(tmp_path / "api.grype.json"),
+        receipt=str(receipt_path),
+    )
+
+    assert supply.evaluate_scan(args) == 0
+    refreshed = json.loads(receipt_path.read_text())
+    assert refreshed["grype_database"]["built"] == new_built
+    assert refreshed["grype_database"]["built"] != old_built
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in stable_paths
+    } == stable_hashes
+
+
 def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
 
@@ -1254,8 +1324,22 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert "scan output must stay outside the Git worktree" in source
     assert "--reuse-dir" in source
     assert 'production-image-supply.py" reuse' in source
-    assert "[reuse-fallback] cached Grype database differs" in source
-    assert "rescanning reused images only" in source
+    assert "[reuse-refresh] cached Grype database differs" in source
+    assert "refreshing vulnerability evaluation for reused images only" in source
+    assert "refresh_target_evaluation" in source
+    assert 'clear_target_evaluation_artifacts "${key}"' in source
+    assert 'evaluate_target "${index}"' in source
+    refresh_function = source.split("refresh_target_evaluation() {", 1)[1].split(
+        "\n}", 1
+    )[0]
+    assert "prepare_target_materials" not in refresh_function
+    assert "docker_image_save" not in refresh_function
+    assert "${SYFT_IMAGE}" not in refresh_function
+    assert (
+        'echo "[scan-summary] reused=${#REUSED_INDICES[@]} '
+        'refreshed=${#REFRESHED_INDICES[@]} scanned=${#SCANNED_INDICES[@]} '
+        'total=${#TARGET_KEYS[@]}"'
+    ) in source
 
 
 def test_formal_bundle_inspects_the_requested_platform_in_multi_platform_stores() -> None:
