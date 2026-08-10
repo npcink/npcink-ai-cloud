@@ -989,12 +989,20 @@ require_marker ".github/workflows/ci.yml" "Production PR CI evidence"
 require_marker ".github/workflows/ci.yml" 'commits/${GITHUB_SHA}/pulls'
 require_marker ".github/workflows/ci.yml" "python3 scripts/production-ci-evidence.py verify"
 require_marker ".github/workflows/ci.yml" "Create production PR CI evidence receipt"
-require_marker ".github/workflows/ci.yml" 'needs: [production-promotion-evidence]'
+require_marker ".github/workflows/ci.yml" 'needs: [production-release-plan, production-promotion-evidence]'
 require_marker ".github/workflows/ci.yml" 'REQUIRES_FULL_BACKEND:'
 require_marker ".github/workflows/ci.yml" '--full-backend "${full_backend}"'
 require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
 require_marker ".github/workflows/ci.yml" 'production-deploy-bundle-${{ github.sha }}'
 require_marker ".github/workflows/ci.yml" "bash deploy/bundle-images.sh"
+require_marker ".github/workflows/ci.yml" "Download exact production release plan"
+require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"'
+require_marker ".github/workflows/ci.yml" "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE:"
+require_marker "scripts/verify-release-bundle-manifest.py" 'npcink.release-bundle.v2'
+require_marker "scripts/verify-release-bundle-manifest.py" 'release/production-release-plan.json'
+require_marker "scripts/verify-release-bundle-manifest.py" 'CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"'
+require_marker ".github/workflows/ci.yml" '${{ runner.temp }}/production-release-plan'
+require_marker "deploy/bundle-images.sh" 'verify-release-plan'
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker ".github/workflows/ci.yml" "frontend_only"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"

@@ -129,7 +129,7 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "production commit tree does not match the tree tested" in evidence_script
     assert "exactly one merged same-repository production PR" in evidence_script
     assert workflow.count(production_push_guard) >= 8
-    assert "needs: [production-promotion-evidence]" in workflow
+    assert "needs: [production-release-plan, production-promotion-evidence]" in workflow
     assert "Create production PR CI evidence receipt" in workflow
     assert "Upload production PR CI evidence receipt" in workflow
     assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
@@ -147,6 +147,10 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
     assert '"${base_sha}" "${GITHUB_SHA}"' in workflow
     assert '"${base_sha}...${GITHUB_SHA}"' not in workflow
     assert "production-release-plan-${{ github.sha }}" in workflow
+    assert "Download exact production release plan" in workflow
+    assert "${{ runner.temp }}/production-release-plan" in workflow
+    assert "NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION" in workflow
+    assert "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE" in workflow
     assert "python3 scripts/production-release-plan.py" in workflow
     assert "PRODUCTION_RELEASE_PLAN_RESULT" in workflow
     assert "npcink.production_release_plan.v1" in release_plan

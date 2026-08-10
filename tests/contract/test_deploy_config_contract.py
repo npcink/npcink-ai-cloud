@@ -2375,7 +2375,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-promotion-evidence:" in ci_workflow
     assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
     assert "Create production PR CI evidence receipt" in ci_workflow
-    assert "needs: [production-promotion-evidence]" in ci_workflow
+    assert "needs: [production-release-plan, production-promotion-evidence]" in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
