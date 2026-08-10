@@ -1100,6 +1100,7 @@ RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"
 RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"
 RELEASE_ENV_TMP=""
 ROLLBACK_IMAGE_MAP="${RELEASE_STATE_DIR}/rollback-images.tsv"
+PRESERVED_SERVICES_EVIDENCE="${RELEASE_STATE_DIR}/preserved-runtime-services.json"
 ROLLBACK_TAG_SUFFIX="${RELEASE_NAME#release-}"
 REMOTE_DIR_CANONICAL="$(readlink -f "${REMOTE_DIR}")"
 PREVIOUS_RELEASE_DIR=""
@@ -1120,6 +1121,9 @@ if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then
 	APPLICATION_SERVICES+=(frontend)
 fi
 APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collector release-one-off)
+RELEASE_PLAN_LANE="full"
+RUN_DATA_PHASE=1
+RUN_MIGRATION=1
 RECOVERY_REQUIRED_SERVICES=(redis proxy frontend api worker callback-worker ops-worker)
 PREVIOUS_WRITER_SERVICES=(api worker callback-worker ops-worker)
 CONFIG_DIR_HOST="${REMOTE_DIR}/shared/config"
@@ -2416,7 +2420,7 @@ assert_previous_writer_project_alignment() {
 		fi
 	done
 	if [ "${fail_closed_recovery}" = "1" ]; then
-		if [ "${stopped_services}" -ne "${#required_services[@]}" ]; then
+		if [ "${stopped_services}" -ne "${#PREVIOUS_WRITER_SERVICES[@]}" ]; then
 			echo "[fail] Migration-started recovery requires every previous write-capable service to remain stopped." >&2
 			return 1
 		fi
@@ -2424,6 +2428,119 @@ assert_previous_writer_project_alignment() {
 		return 0
 	fi
 	echo "[ok] Previous write-capable containers belong to the expected Compose project."
+}
+
+record_preserved_frontend_identity() {
+	local container_ids=""
+	local container_count=0
+	local container_id=""
+
+	[ "${SKIP_FRONTEND_IMAGE}" = "1" ] || return 0
+	container_ids="$(compose_previous_release ps -q frontend)" || return 1
+	container_count="$(printf '%s\n' "${container_ids}" | awk 'NF { count += 1 } END { print count + 0 }')"
+	if [ "${container_count}" -ne 1 ]; then
+		echo "[fail] Preserved frontend evidence requires exactly one running previous frontend." >&2
+		return 1
+	fi
+	container_id="${container_ids}"
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${PRESERVED_SERVICES_EVIDENCE}" "${RELEASE_DIR}" "${PREVIOUS_RELEASE_DIR}" \
+		"${container_id}" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+evidence_raw, release_raw, previous_raw, container_id = sys.argv[1:]
+evidence = Path(evidence_raw)
+release = Path(release_raw)
+previous = Path(previous_raw)
+if evidence.exists() or evidence.is_symlink():
+    raise SystemExit("[fail] Preserved runtime-service evidence already exists.")
+if release.parent != previous.parent or not release.is_dir() or not previous.is_dir():
+    raise SystemExit("[fail] Preserved frontend release binding is invalid.")
+try:
+    image_id = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Image}}", container_id],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    env_raw = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .Config.Env}}", container_id],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+except subprocess.CalledProcessError as exc:
+    raise SystemExit("[fail] Preserved frontend identity inspection failed.") from exc
+if re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+    raise SystemExit("[fail] Preserved frontend image identity is invalid.")
+try:
+    env_values = json.loads(env_raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit("[fail] Preserved frontend environment evidence is invalid.") from exc
+prefix = "NPCINK_CLOUD_FRONTEND_REVISION="
+revisions = (
+    [
+        value[len(prefix) :]
+        for value in env_values
+        if isinstance(value, str) and value.startswith(prefix)
+    ]
+    if isinstance(env_values, list)
+    else []
+)
+if len(revisions) != 1 or re.fullmatch(r"[0-9a-f]{40}", revisions[0]) is None:
+    raise SystemExit("[fail] Preserved frontend source revision is invalid.")
+payload = {
+    "schema": "npcink.preserved_runtime_services.v1",
+    "release_name": release.name,
+    "release_path": str(release),
+    "services": {
+        "frontend": {
+            "previous_release": str(previous),
+            "source_revision": revisions[0],
+            "target_daemon_image_id": image_id,
+        }
+    },
+}
+encoded = (
+    json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
+).encode("utf-8")
+descriptor, temporary_raw = tempfile.mkstemp(prefix=f".{evidence.name}.", dir=evidence.parent)
+temporary = Path(temporary_raw)
+try:
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, evidence)
+    directory_descriptor = os.open(evidence.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
+finally:
+    try:
+        temporary.unlink()
+    except FileNotFoundError:
+        pass
+metadata = evidence.lstat()
+if (
+    evidence.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+):
+    raise SystemExit("[fail] Preserved runtime-service evidence protection is invalid.")
+PY
+	echo "[ok] Preserved frontend image and source identity recorded for release readiness."
 }
 
 assert_previous_release_services_running() {
@@ -2740,6 +2857,57 @@ mkdir -p "${RELEASE_DIR}"
 remote_run_timed "remote extract bundle" tar xzf "${REMOTE_BUNDLE_PATH}" -C "${RELEASE_DIR}"
 
 . "${RELEASE_DIR}/deploy/common.sh"
+
+RELEASE_PLAN_PATH="${RELEASE_DIR}/release/production-release-plan.json"
+if [ -f "${RELEASE_PLAN_PATH}" ] && [ ! -L "${RELEASE_PLAN_PATH}" ]; then
+	RELEASE_PLAN_EXECUTION="$("${RELEASE_TOOL_PYTHON}" - "${RELEASE_PLAN_PATH}" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    plan = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    print("full\t1\t1\t0")
+    raise SystemExit(0)
+
+lane = plan.get("lane")
+flags = {
+    "deployment_required": plan.get("deployment_required"),
+    "backend_image_required": plan.get("backend_image_required"),
+    "frontend_image_required": plan.get("frontend_image_required"),
+    "migration_required": plan.get("migration_required"),
+    "runtime_config_required": plan.get("runtime_config_required"),
+    "static_payload_required": plan.get("static_payload_required"),
+}
+backend = {
+    "deployment_required": True,
+    "backend_image_required": True,
+    "frontend_image_required": False,
+    "migration_required": False,
+    "runtime_config_required": False,
+    "static_payload_required": False,
+}
+migration = {**backend, "migration_required": True}
+typed_flags = all(type(value) is bool for value in flags.values())
+if typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "backend" and flags == backend:
+    print("backend\t0\t0\t1")
+elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "migration" and flags == migration:
+    print("migration\t1\t1\t1")
+else:
+    print("full\t1\t1\t0")
+PY
+)"
+	IFS=$'\t' read -r RELEASE_PLAN_LANE RUN_DATA_PHASE RUN_MIGRATION PLAN_PRESERVE_FRONTEND <<<"${RELEASE_PLAN_EXECUTION}"
+	if [ "${PLAN_PRESERVE_FRONTEND}" = "1" ]; then
+		SKIP_FRONTEND_IMAGE=1
+		APPLICATION_SERVICES=(caddy proxy api worker callback-worker ops-worker jaeger otel-collector release-one-off)
+	fi
+fi
+echo "[info] Release execution plan: lane=${RELEASE_PLAN_LANE}, data_phase=${RUN_DATA_PHASE}, migration=${RUN_MIGRATION}, preserve_frontend=${SKIP_FRONTEND_IMAGE}"
 
 ensure_private_release_state_directory "${RELEASE_STATE_ROOT}"
 ensure_private_release_state_directory "${RELEASE_STATE_DIR}"
@@ -3149,6 +3317,9 @@ remote_run_timed "remote load and up" \
 	NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX="${ROLLBACK_TAG_SUFFIX}" \
 	bash deploy/remote-load-and-up.sh </dev/null
 
+CUTOVER_PHASE="record-preserved-runtime-services"
+remote_run_timed "record preserved runtime service identities" record_preserved_frontend_identity
+
 if [ "${FIRST_INSTALL_PENDING}" = "1" ] || [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
 	CUTOVER_PHASE="publish-first-install-recovery-contract"
 	snapshot_first_install_pending_marker
@@ -3166,14 +3337,22 @@ CUTOVER_PHASE="stop-old-application-services"
 remote_run_timed "stop public and write-capable application services" stop_application_services
 remote_run_timed "assert application services stopped" assert_application_services_stopped
 
-CUTOVER_PHASE="start-data-services"
-remote_run_timed "remote start data services only" \
-	env NPCINK_CLOUD_LOAD_MODE=data-only \
-	bash deploy/remote-load-and-up.sh </dev/null
+if [ "${RUN_DATA_PHASE}" = "1" ]; then
+	CUTOVER_PHASE="start-data-services"
+	remote_run_timed "remote start data services only" \
+		env NPCINK_CLOUD_LOAD_MODE=data-only \
+		bash deploy/remote-load-and-up.sh </dev/null
+else
+	CUTOVER_PHASE="preserve-data-services"
+	echo "[ok] Exact backend release plan preserves the running PostgreSQL and Redis services."
+fi
 
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
 	CUTOVER_PHASE="defer-empty-pg18-migration-to-setup"
 	echo "[ok] Empty PostgreSQL 18 migration is deferred to the authenticated setup installer."
+elif [ "${RUN_MIGRATION}" != "1" ]; then
+	CUTOVER_PHASE="skip-migration-by-release-plan"
+	echo "[ok] Exact backend release plan does not require a database migration."
 else
 	CUTOVER_PHASE="migrate-with-staged-image"
 	# From this assignment forward the old application is never auto-started: a

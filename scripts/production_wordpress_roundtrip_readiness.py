@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
 import urllib.error
@@ -154,6 +156,7 @@ def _frontend_revision(container_id: str) -> str:
 def _release_image_evidence(
     release: Path,
     target_images_path: Path,
+    preserved_services_path: Path,
     container_ids: dict[str, str],
 ) -> dict[str, Any]:
     manifest = _read_json(release / "release-bundle-manifest.json")
@@ -171,6 +174,45 @@ def _release_image_evidence(
     if not isinstance(roles, dict):
         raise ReadinessError("target image role map is invalid")
 
+    preserved_services: dict[str, Any] = {}
+    frontend_source_revision = source_revision
+    if preserved_services_path.exists() or preserved_services_path.is_symlink():
+        preserved = _read_private_json(preserved_services_path)
+        if set(preserved) != {"schema", "release_name", "release_path", "services"}:
+            raise ReadinessError("preserved runtime-service evidence schema is invalid")
+        if preserved.get("schema") != "npcink.preserved_runtime_services.v1":
+            raise ReadinessError("preserved runtime-service evidence version is unsupported")
+        if preserved.get("release_name") != release.name or preserved.get(
+            "release_path"
+        ) != str(release):
+            raise ReadinessError("preserved runtime-service evidence does not match current")
+        preserved_services = preserved.get("services") or {}
+        if not isinstance(preserved_services, dict) or set(preserved_services) != {
+            "frontend"
+        }:
+            raise ReadinessError("preserved runtime-service set is invalid")
+        frontend_record = preserved_services["frontend"]
+        if not isinstance(frontend_record, dict) or set(frontend_record) != {
+            "previous_release",
+            "source_revision",
+            "target_daemon_image_id",
+        }:
+            raise ReadinessError("preserved frontend evidence is invalid")
+        previous_release = Path(str(frontend_record["previous_release"]))
+        frontend_source_revision = str(frontend_record["source_revision"])
+        if (
+            previous_release.parent != release.parent
+            or not re.fullmatch(
+                r"release-[A-Za-z0-9][A-Za-z0-9._-]*", previous_release.name
+            )
+            or not REVISION_RE.fullmatch(frontend_source_revision)
+            or not re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                str(frontend_record["target_daemon_image_id"]),
+            )
+        ):
+            raise ReadinessError("preserved frontend identity is invalid")
+
     service_images: dict[str, dict[str, Any]] = {}
     for service, role in SERVICE_IMAGE_ROLES.items():
         role_record = roles.get(role)
@@ -179,6 +221,10 @@ def _release_image_evidence(
             if isinstance(role_record, dict)
             else ""
         )
+        if service == "frontend" and preserved_services:
+            expected_image_id = str(
+                preserved_services["frontend"]["target_daemon_image_id"]
+            )
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", expected_image_id):
             raise ReadinessError(f"target image identity is missing for {service}")
         actual_image_id = _container_image_id(container_ids[service])
@@ -190,6 +236,8 @@ def _release_image_evidence(
         }
     return {
         "source_revision": source_revision,
+        "frontend_source_revision": frontend_source_revision,
+        "preserved_services": sorted(preserved_services),
         "service_images": service_images,
     }
 
@@ -202,6 +250,21 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ReadinessError(f"protected state is not an object: {path.name}")
     return payload
+
+
+def _read_private_json(path: Path) -> dict[str, Any]:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ReadinessError(f"protected state is unreadable: {path.name}") from error
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_uid != os.geteuid()
+    ):
+        raise ReadinessError(f"protected state has unsafe ownership or mode: {path.name}")
+    return _read_json(path)
 
 
 def _public_health(base_url: str) -> dict[str, Any]:
@@ -547,6 +610,7 @@ def main(argv: list[str] | None = None) -> int:
         release_state = managed_root / ".release-state" / release_name
         rollback_images = release_state / "rollback-images.tsv"
         target_images = release_state / "target-daemon-images.json"
+        preserved_services = release_state / "preserved-runtime-services.json"
         completion_sentinel_present = (managed_root / ".installation-complete").exists()
 
         containers: dict[str, dict[str, Any]] = {}
@@ -557,7 +621,12 @@ def main(argv: list[str] | None = None) -> int:
             containers[service] = _container_state(container_id)
             containers[service]["container_id"] = container_id
 
-        release_images = _release_image_evidence(release, target_images, container_ids)
+        release_images = _release_image_evidence(
+            release,
+            target_images,
+            preserved_services,
+            container_ids,
+        )
         source_revision = release_images["source_revision"]
         frontend_revision = _frontend_revision(container_ids["frontend"])
         cloud = _cloud_evidence(
@@ -580,8 +649,8 @@ def main(argv: list[str] | None = None) -> int:
             for item in containers.values()
         ):
             blockers.append("one or more required containers are not healthy")
-        if frontend_revision != source_revision:
-            blockers.append("frontend revision does not match the current release revision")
+        if frontend_revision != release_images["frontend_source_revision"]:
+            blockers.append("frontend revision does not match its accepted release evidence")
         if any(
             not item["matches"] for item in release_images["service_images"].values()
         ):
