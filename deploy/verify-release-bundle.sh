@@ -2,12 +2,15 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SELECTIVE_TRANSFER_CAPABILITY="npcink.release-selective-transfer.v1"
 HELPER="${ROOT_DIR}/scripts/verify-release-bundle-manifest.py"
 . "${ROOT_DIR}/deploy/common.sh"
 RELEASE_TOOL_PYTHON="$(npcink_ai_cloud_release_tool_python)"
 MODE="pre-load"
 TARGET="${ROOT_DIR}"
 CHECKSUM=""
+TRANSFER_PLAN="${NPCINK_CLOUD_TRANSFER_PLAN:-}"
+REMOTE_DIR="${NPCINK_CLOUD_REMOTE_DIR:-}"
 
 usage() {
 	cat <<'EOF'
@@ -63,15 +66,30 @@ case "${MODE}" in
 		"${RELEASE_TOOL_PYTHON}" "${HELPER}" verify-archive --bundle "${TARGET}" --checksum "${CHECKSUM}"
 		;;
 	pre-load)
-		"${RELEASE_TOOL_PYTHON}" "${HELPER}" verify-directory --root "${TARGET}"
+		VERIFY_ARGS=(verify-directory --root "${TARGET}")
+		if [ -n "${TRANSFER_PLAN}" ]; then
+			[ -n "${REMOTE_DIR}" ] || {
+				echo "[fail] Selective release verification requires NPCINK_CLOUD_REMOTE_DIR." >&2
+				exit 1
+			}
+			VERIFY_ARGS+=(--transfer-plan "${TRANSFER_PLAN}" --remote-dir "${REMOTE_DIR}")
+		fi
+		"${RELEASE_TOOL_PYTHON}" "${HELPER}" "${VERIFY_ARGS[@]}"
 		;;
 	post-load)
 		command -v docker >/dev/null 2>&1 || {
 			echo "[fail] docker is required for post-load image-ID verification" >&2
 			exit 1
 		}
-		"${RELEASE_TOOL_PYTHON}" "${HELPER}" verify-directory \
-			--root "${TARGET}" --post-load
+		VERIFY_ARGS=(verify-directory --root "${TARGET}" --post-load)
+		if [ -n "${TRANSFER_PLAN}" ]; then
+			[ -n "${REMOTE_DIR}" ] || {
+				echo "[fail] Selective release verification requires NPCINK_CLOUD_REMOTE_DIR." >&2
+				exit 1
+			}
+			VERIFY_ARGS+=(--transfer-plan "${TRANSFER_PLAN}" --remote-dir "${REMOTE_DIR}")
+		fi
+		"${RELEASE_TOOL_PYTHON}" "${HELPER}" "${VERIFY_ARGS[@]}"
 		;;
 esac
 

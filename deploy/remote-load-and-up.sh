@@ -2,11 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SELECTIVE_TRANSFER_CAPABILITY="npcink.release-selective-transfer.v1"
 DIST_DIR="${ROOT_DIR}/dist"
 SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 LOAD_MODE="${NPCINK_CLOUD_LOAD_MODE:-}"
 ROLLBACK_IMAGE_MAP="${NPCINK_CLOUD_ROLLBACK_IMAGE_MAP:-}"
 ROLLBACK_TAG_SUFFIX="${NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX:-}"
+TRANSFER_PLAN="${NPCINK_CLOUD_TRANSFER_PLAN:-}"
+MANAGED_REMOTE_DIR="${NPCINK_CLOUD_REMOTE_DIR:-}"
 MANIFEST_HELPER="${ROOT_DIR}/scripts/verify-release-bundle-manifest.py"
 RELEASE_VERIFIER="${ROOT_DIR}/deploy/verify-release-bundle.sh"
 RETIRED_BUNDLE_SERVICES=(postgres caddy jaeger otel-collector)
@@ -746,6 +749,7 @@ prepare_release_images() {
 	local image_reason=""
 	local image_bytes=""
 	local -a prepare_args=()
+	local -a alias_args=()
 	local loaded_count=0
 	local reused_count=0
 	local loaded_bytes=0
@@ -766,11 +770,22 @@ prepare_release_images() {
 	if [ -n "${previous_root}" ]; then
 		prepare_args+=(--previous-root "${previous_root}")
 	fi
+	if [ -n "${TRANSFER_PLAN}" ]; then
+		[ -n "${MANAGED_REMOTE_DIR}" ] || {
+			echo "[fail] Selective image preparation requires NPCINK_CLOUD_REMOTE_DIR." >&2
+			return 1
+		}
+		prepare_args+=(--transfer-plan "${TRANSFER_PLAN}" --remote-dir "${MANAGED_REMOTE_DIR}")
+	fi
 	if ! prepare_plan="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" "${prepare_args[@]}")"; then
 		echo "[fail] Exact release image reuse plan could not be read." >&2
 		return 1
 	fi
-	if ! alias_plan="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" alias-plan --root "${ROOT_DIR}")"; then
+	alias_args=(alias-plan --root "${ROOT_DIR}")
+	if [ -n "${TRANSFER_PLAN}" ]; then
+		alias_args+=(--transfer-plan "${TRANSFER_PLAN}" --remote-dir "${MANAGED_REMOTE_DIR}")
+	fi
+	if ! alias_plan="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" "${alias_args[@]}")"; then
 		echo "[fail] Exact release image alias plan could not be read." >&2
 		return 1
 	fi

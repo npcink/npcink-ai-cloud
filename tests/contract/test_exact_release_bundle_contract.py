@@ -1911,6 +1911,99 @@ def test_exact_bundle_pack_outer_hash_and_archive_preflight(
     assert "outer bundle checksum mismatch" in rejected.stderr
 
 
+def test_selective_transfer_omits_only_remotely_proved_image_archives(
+    exact_bundle_fixture: tuple[Path, Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, bundle, records)
+    helper = load_helper_module()
+    full_archive = tmp_path / "full" / "deploy-bundle.tgz"
+    full_checksum = full_archive.with_suffix(full_archive.suffix + ".sha256")
+    full_archive.parent.mkdir()
+    helper.pack_bundle(bundle, full_archive, gzip_level=1, mtime=0)
+    helper.write_outer_checksum(full_archive, full_checksum)
+
+    release_name = "release-selective-fixture"
+    request = tmp_path / "request.json"
+    plan = tmp_path / "plan.json"
+    helper.write_transfer_request(full_archive, full_checksum, release_name, request)
+
+    def reusable_reason(*, previous_root: Path | None, primary: dict[str, object]) -> str | None:
+        del previous_root
+        return "portable-id" if primary["role"] == "api" else None
+
+    monkeypatch.setattr(helper, "reusable_archive_reason", reusable_reason)
+    helper.prepare_transfer_plan(request, bundle.parent, None, plan)
+
+    selective_archive = tmp_path / "selective" / "deploy-bundle.tgz"
+    selective_checksum = selective_archive.with_suffix(selective_archive.suffix + ".sha256")
+    helper.pack_transfer_archive(
+        full_archive,
+        full_checksum,
+        plan,
+        selective_archive,
+        selective_checksum,
+    )
+    with tarfile.open(selective_archive, "r:gz") as archive:
+        members = {member.name for member in archive}
+    assert "dist/api.tar.gz" not in members
+    assert "dist/frontend.tar.gz" in members
+    assert "release-bundle-manifest.json" in members
+    assert "SHA256SUMS" in members
+
+    helper.verify_transfer_archive(selective_archive, selective_checksum, plan, bundle.parent)
+    extracted = bundle.parent / release_name
+    extracted.mkdir()
+    with tarfile.open(selective_archive, "r:gz") as archive:
+        archive.extractall(extracted, filter="data")
+    helper.verify_directory(
+        extracted,
+        post_load=False,
+        transfer_plan=plan,
+        remote_dir=bundle.parent,
+    )
+
+    monkeypatch.setattr(helper, "reusable_archive_reason", lambda **_kwargs: None)
+    with pytest.raises(helper.BundleError, match="reuse evidence changed for api"):
+        helper.verify_directory(
+            extracted,
+            post_load=False,
+            transfer_plan=plan,
+            remote_dir=bundle.parent,
+        )
+    monkeypatch.setattr(helper, "reusable_archive_reason", reusable_reason)
+
+    (extracted / "dist/frontend.tar.gz").unlink()
+    with pytest.raises(helper.BundleError, match="bundle payload is not a regular file"):
+        helper.verify_directory(
+            extracted,
+            post_load=False,
+            transfer_plan=plan,
+            remote_dir=bundle.parent,
+        )
+
+
+def test_older_exact_bundle_stays_on_complete_transfer_path(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    _, bundle, _ = exact_bundle_fixture
+    helper = load_helper_module()
+    archive = tmp_path / "deploy-bundle.tgz"
+    checksum = archive.with_suffix(archive.suffix + ".sha256")
+    helper.pack_bundle(bundle, archive, gzip_level=1, mtime=0)
+    helper.write_outer_checksum(archive, checksum)
+
+    with pytest.raises(helper.BundleError, match="does not support selective transfer"):
+        helper.write_transfer_request(
+            archive,
+            checksum,
+            "release-older-fixture",
+            tmp_path / "request.json",
+        )
+
+
 def test_external_plan_consumes_only_digest_locked_runtime_inputs(tmp_path: Path) -> None:
     lock = tmp_path / "production-images.json"
     lock.write_text(json.dumps(image_lock()) + "\n", encoding="utf-8")
@@ -2053,7 +2146,12 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "0.0.0.0:${PG18_PROOF_PORT}:5432" in smoke
     assert "local no-TLS fixture; not RDS evidence" in smoke
     assert "@host.docker.internal:%s/npcink_ai_cloud" in smoke
-    assert "preflight_status=\\$?" in ssh_deploy
+    assert "verify-transfer-archive" in ssh_deploy
+    assert (
+        "Remote image inventory was unavailable; uploading the complete exact bundle."
+        in ssh_deploy
+    )
+    assert "cleanup_remote_incoming_on_exit" in ssh_deploy
     assert 'rm -rf $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}")' in ssh_deploy
 
 

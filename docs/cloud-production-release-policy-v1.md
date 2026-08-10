@@ -247,12 +247,12 @@ and binds its repository, lane, action flags, production SHA, and production
 tree in the bundle manifest. A missing or mismatched plan fails before the
 costly image build begins.
 
-This v2 identity chain does not yet skip the existing complete image set.
-Build, scan, transfer, image-load, migration, and selective cutover
-optimizations may consume the bound flags only after their own exact-digest and
-runtime contracts are implemented and reviewed. The v1 complete-bundle path
-remains available for non-production compatibility and rollback during this
-transition.
+This v2 identity chain still builds a complete exact image set. Scan reuse,
+selective image transfer, and target-daemon image reuse may accelerate delivery
+only through their separately reviewed exact-identity contracts. Migration and
+selective cutover optimizations may consume the bound flags only after their own
+runtime contracts are implemented and reviewed. The complete-bundle transfer
+path remains the fail-closed fallback and stage-only behavior remains complete.
 
 ### Disposable production image scan evidence reuse
 
@@ -695,6 +695,28 @@ map publication, rollback tagging, or the exact bundle identity chain. The
 loader reports reused/loaded archive counts and bytes for release timing
 evidence. This reuse state is disposable delivery acceleration, not release,
 image, Git, runtime, or product truth.
+
+Before an ordinary full deployment uploads the large archive, the SSH deployer
+may send a bounded inventory request derived from the already verified complete
+bundle. The remote plan binds the original bundle SHA, manifest and checksum
+hashes, source revision, platform, release name, and every archive path, size,
+hash, role, reference, and portable Config image ID. Only archives whose current
+daemon identity passes the same proof above may be omitted from the transfer
+archive. The transfer archive must retain the original manifest, complete
+checksum table, source/config payload, and scan evidence; its exact member set is
+the original payload minus only those planned image archives.
+
+The target rechecks the plan and current daemon identities before extraction
+and again before image preparation. The plan is copied into the private
+per-release state and remains external to the exact source payload. Missing,
+malformed, stale, mismatched, or non-reusable inventory is a cache miss and the
+deployer uploads the original complete bundle. A reuse race detected after a
+selective upload fails closed before Docker load or service mutation. Selective
+transfer never weakens post-load portable identity proof, target-daemon map
+publication, rollback, or the exact release chain. Exact bundles whose bundled
+loader, verifier, and manifest helper do not all declare the selective-transfer
+contract remain on the complete-transfer path, preserving older rollback and
+replay bundles.
 
 The Service Settings pair
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /
