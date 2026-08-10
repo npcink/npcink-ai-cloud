@@ -10,6 +10,9 @@ weighted shards. Files remain the normal scheduling unit. A file whose rolling
 weight alone exceeds the per-shard target may be divided by statically
 discoverable pytest node ID when the same rolling evidence contains complete
 node weights; otherwise selection fails safe to the whole file.
+Before emitting node selectors, the scheduler compares current pytest
+collection with static source discovery. Any imported, generated, hidden, or
+otherwise unmatched test makes that file fall back to whole-file selection.
 
 Production-promotion pull requests still execute this complete gate. After a
 successful production PR records its exact tested Git tree in the governed CI
@@ -170,8 +173,9 @@ database, external coverage service, or another test execution.
    hotspot is larger than an entire shard target and a source split would only
    duplicate a large test harness, generated node weights may divide that file
    without a hand-maintained node manifest. Static discovery must include new
-   test functions, and incomplete/dynamic discovery must fall back to the whole
-   file. Keep all assertions and recovery semantics.
+   test functions, current pytest collection must match static discovery, and
+   incomplete/dynamic discovery must fall back to the whole file. Keep all
+   assertions and recovery semantics.
 5. Add a fourth shard only when three shards are balanced but the critical path
    still misses the agreed feedback target. Changing from three to four jobs
    increases runner concurrency by 33 percent.

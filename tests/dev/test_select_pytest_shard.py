@@ -76,6 +76,11 @@ def test_oversized_file_is_split_by_observed_static_test_nodes(tmp_path: Path) -
             f"{slow_path}::test_two": 8,
         },
         shard_count=2,
+        collected_node_loader=lambda _path: [
+            f"{slow_path}::test_one",
+            f"{slow_path}::test_two",
+            f"{slow_path}::test_new",
+        ],
     )
 
     assert weighted == [
@@ -101,9 +106,43 @@ def test_oversized_file_falls_back_when_historic_nodes_are_not_static(
         {fast.as_posix(): 4, slow.as_posix(): 20},
         {f"{slow.as_posix()}::test_generated": 20},
         shard_count=2,
+        collected_node_loader=lambda _path: [
+            f"{slow.as_posix()}::test_one",
+            f"{slow.as_posix()}::test_two",
+            f"{slow.as_posix()}::test_generated",
+        ],
     )
 
     assert weighted == [(4, fast.as_posix()), (20, slow.as_posix())]
+
+
+def test_oversized_file_falls_back_when_pytest_collects_a_dynamic_test(
+    tmp_path: Path,
+) -> None:
+    tests_root = tmp_path / "tests" / "contract"
+    tests_root.mkdir(parents=True)
+    slow = tests_root / "test_slow.py"
+    slow.write_text("def test_one(): pass\ndef test_two(): pass\n", encoding="utf-8")
+    fast = tests_root / "test_fast.py"
+    fast.write_text("def test_fast(): pass\n", encoding="utf-8")
+    slow_path = slow.as_posix()
+
+    weighted = select_pytest_shard.build_weighted_selectors(
+        [fast, slow],
+        {fast.as_posix(): 4, slow_path: 20},
+        {
+            f"{slow_path}::test_one": 9,
+            f"{slow_path}::test_two": 8,
+        },
+        shard_count=2,
+        collected_node_loader=lambda _path: [
+            f"{slow_path}::test_one",
+            f"{slow_path}::test_two",
+            f"{slow_path}::test_dynamic",
+        ],
+    )
+
+    assert weighted == [(4, fast.as_posix()), (20, slow_path)]
 
 
 def test_junit_report_writes_per_file_weights(tmp_path: Path) -> None:

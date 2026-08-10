@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -105,11 +107,42 @@ def discover_static_test_nodes(path: Path) -> list[str]:
     return selectors
 
 
+def discover_collected_test_nodes(path: Path) -> list[str]:
+    pytest_python = Path(".venv/bin/python")
+    if not pytest_python.is_file():
+        return []
+    repo_path = normalize_repo_path(path)
+    completed = subprocess.run(
+        [
+            str(pytest_python),
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            repo_path,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return []
+    prefix = f"{repo_path}::"
+    return sorted(
+        {
+            line.strip().split("[", 1)[0]
+            for line in completed.stdout.splitlines()
+            if line.strip().startswith(prefix)
+        }
+    )
+
+
 def build_weighted_selectors(
     files: list[Path],
     file_weights: dict[str, float],
     node_weights: dict[str, float],
     shard_count: int,
+    collected_node_loader: Callable[[Path], list[str]] = discover_collected_test_nodes,
 ) -> list[tuple[float, str]]:
     weighted_files = [
         (file_weights.get(normalize_repo_path(path), DEFAULT_WEIGHT_SECONDS), path)
@@ -123,6 +156,7 @@ def build_weighted_selectors(
             selectors.append((file_weight, repo_path))
             continue
         discovered_nodes = discover_static_test_nodes(path)
+        collected_nodes = collected_node_loader(path)
         historic_nodes = {
             node_id for node_id in node_weights if node_id.startswith(f"{repo_path}::")
         }
@@ -130,6 +164,7 @@ def build_weighted_selectors(
             len(discovered_nodes) < 2
             or not historic_nodes
             or not historic_nodes.issubset(discovered_nodes)
+            or set(collected_nodes) != set(discovered_nodes)
         ):
             selectors.append((file_weight, repo_path))
             continue
