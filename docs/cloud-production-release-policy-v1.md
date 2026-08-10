@@ -318,6 +318,27 @@ production host validates the resulting locked evidence and loads the exact
 images. Installing scanners as long-lived production services is not a recovery
 strategy.
 
+One bounded cleanup-only recovery exists for an ordinary deploy that already
+committed the healthy new runtime and then failed exactly at
+`finalize-rollback-image-tags` with
+`outcome=post_commit_cleanup_incomplete`. The manual
+`Repair Production Terminalization` workflow must bind both the reviewed
+recovery-source `production` SHA and the separately recorded active-runtime SHA,
+plus the exact operator confirmation. The recovery source must have green exact
+push Cloud CI and CodeQL evidence. Its helper acquires the retained lock inode,
+proves `current` and the bundle manifest match the active-runtime SHA, requires a
+frontend-preserving `backend` or `migration` plan, binds the running frontend
+to `preserved-runtime-services.json`, scopes every runtime lookup to the active
+production Compose project, proves every non-frontend active service against the
+release's protected target-daemon map, binds the rollback map, restores that
+preserved image's normal frontend tag, and only then removes temporary rollback
+tags, re-proves that no governed release one-off lock or container remains, then
+removes the rollback map, failure marker, owner proof, and deploy lock. It performs
+zero image builds, archive transfers, migrations, service switches, or Provider
+calls. Any other phase, outcome, revision, runtime identity, file protection,
+Docker query, or health result fails closed with the lock retained. This is a
+terminalization repair, not a deployment retry or rollback route.
+
 If the same phase fails twice with the same signature, stop blind recovery
 deployments. Choose a materially different cache, resumable-transfer, local
 artifact preparation, or source-fix plan, or report the blocker. Time spent on

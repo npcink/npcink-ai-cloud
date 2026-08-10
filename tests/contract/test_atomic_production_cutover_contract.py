@@ -1551,6 +1551,10 @@ def test_backend_only_cutover_preserves_existing_frontend_container(
     assert "operational:1" in log
     assert "baseline" in log
     assert "load:traffic-only" in log
+    assert (
+        "docker:tag npcink-ai-cloud-rollback:test-2 "
+        "npcink-ai-cloud-frontend:prod"
+    ) in log
     assert "lane=backend, data_phase=0, migration=0, preserve_frontend=1" in completed.stdout
     preserved = json.loads(
         (

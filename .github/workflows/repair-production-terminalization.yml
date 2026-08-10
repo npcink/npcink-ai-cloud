@@ -1,0 +1,107 @@
+name: Repair Production Terminalization
+run-name: Repair production terminalization ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_recovery_source_sha:
+        description: "Exact production branch SHA containing the reviewed recovery helper"
+        required: true
+        type: string
+      expected_active_sha:
+        description: "Exact active runtime SHA with committed cleanup failure"
+        required: true
+        type: string
+      confirmation:
+        description: "Type: Approved for production terminalization repair by operator."
+        required: true
+        type: string
+
+concurrency:
+  group: production-host-mutation
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Repair terminalization on cloud.npc.ink
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/production'
+    environment: production
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Validate bounded recovery authority
+        env:
+          EXPECTED_RECOVERY_SOURCE_SHA: ${{ inputs.expected_recovery_source_sha }}
+          EXPECTED_ACTIVE_SHA: ${{ inputs.expected_active_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_RECOVERY_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_ACTIVE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${EXPECTED_RECOVERY_SOURCE_SHA}" = "${GITHUB_SHA}"
+          test "${CONFIRMATION}" = "Approved for production terminalization repair by operator."
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Require successful CI and CodeQL for recovery source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for workflow in ci.yml codeql.yml; do
+            conclusion="$(
+              gh api --method GET \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+                -f branch=production \
+                -f event=push \
+                -f status=completed \
+                -f per_page=20 | \
+                jq -r --arg sha "${GITHUB_SHA}" \
+                  '[.workflow_runs[] | select(.head_sha == $sha)][0].conclusion // ""'
+            )"
+            test "${conclusion}" = "success"
+          done
+
+      - name: Install SSH key
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "${PROD_SSH_KEY}"
+          test -n "${PROD_SSH_HOST}"
+          test "${PROD_SSH_USER}" = "root"
+          test -n "${PROD_SSH_KNOWN_HOSTS}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "${PROD_SSH_KEY}" > ~/.ssh/npcink_prod_repair_key
+          chmod 600 ~/.ssh/npcink_prod_repair_key
+          printf '%s\n' "${PROD_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          lookup="${PROD_SSH_HOST}"
+          if [ "${PROD_SSH_PORT}" != "22" ]; then
+            lookup="[${PROD_SSH_HOST}]:${PROD_SSH_PORT}"
+          fi
+          ssh-keygen -F "${lookup}" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Repair committed cleanup only
+        env:
+          NPCINK_CLOUD_DEPLOY_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          NPCINK_CLOUD_DEPLOY_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE: /home/runner/.ssh/npcink_prod_repair_key
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+          EXPECTED_RECOVERY_SOURCE_SHA: ${{ inputs.expected_recovery_source_sha }}
+          EXPECTED_ACTIVE_SHA: ${{ inputs.expected_active_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          bash deploy/repair-post-commit-cleanup-to-ssh-host.sh \
+            --expected-active-production-sha "${EXPECTED_ACTIVE_SHA}" \
+            --recovery-source-sha "${EXPECTED_RECOVERY_SOURCE_SHA}" \
+            --confirmation "${CONFIRMATION}"
