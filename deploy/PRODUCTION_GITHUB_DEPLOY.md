@@ -91,11 +91,17 @@ never prune images or releases while another host mutation holds that lock.
 
 The manually approved production deploy job:
 
+Before the runtime sequence below, the workflow reads the exact bundle-bound
+release plan. A `no_deploy` plan performs no host mutation. A `static` plan uses
+the transactional static-terms publisher and its focused static-page proof,
+without runtime-bundle upload, image load, migration, service replacement,
+provider refresh, runtime readiness, or broad small-customer preflight.
+
 1. Resolves the successful `Cloud CI` run for the exact production SHA,
    downloads its short-lived `production-deploy-bundle-<sha>` artifact, and
    re-verifies the bundle checksum and manifest. The CI run, not the authorized
    deploy job, owns the one build-and-scan operation.
-2. Uploads the exact bundle and, when supplied, the env file as separate
+2. For runtime lanes, uploads the exact bundle and, when supplied, the env file as separate
    protected incoming objects. The release payload never contains `.env.deploy`.
 3. Installs the selected env source at
    `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`; the two state
