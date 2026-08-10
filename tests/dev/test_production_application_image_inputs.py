@@ -35,6 +35,7 @@ def image_source(tmp_path: Path) -> Path:
     root.mkdir()
     files = {
         "Dockerfile",
+        ".dockerignore",
         "README.md",
         "alembic.ini",
         "pyproject.toml",
@@ -49,6 +50,7 @@ def image_source(tmp_path: Path) -> Path:
         "scripts/live-site-save-verify-handoff.py",
         "scripts/live-site-stage1.py",
         "scripts/live-site-trial-status.py",
+        "scripts/production_performance_baseline.py",
         "package.json",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
@@ -117,6 +119,26 @@ def test_frontend_fingerprint_excludes_release_revision(image_source: Path) -> N
     assert image_inputs.validate_inputs(payload) == payload
 
 
+def test_dockerignore_changes_both_fingerprints(image_source: Path) -> None:
+    before = image_inputs.create_inputs(
+        image_source,
+        platform="linux/amd64",
+        package_extras="[zilliz]",
+    )
+    _write(image_source, ".dockerignore", "app/generated\nfrontend/src/generated\n")
+    after = image_inputs.create_inputs(
+        image_source,
+        platform="linux/amd64",
+        package_extras="[zilliz]",
+    )
+
+    assert _by_key(before)["api"]["fingerprint"] != _by_key(after)["api"]["fingerprint"]
+    assert (
+        _by_key(before)["frontend"]["fingerprint"]
+        != _by_key(after)["frontend"]["fingerprint"]
+    )
+
+
 def test_api_fingerprint_binds_platform_and_package_extras(image_source: Path) -> None:
     amd64 = image_inputs.create_inputs(
         image_source,
@@ -136,6 +158,32 @@ def test_api_fingerprint_binds_platform_and_package_extras(image_source: Path) -
 
     assert _by_key(amd64)["api"]["fingerprint"] != _by_key(arm64)["api"]["fingerprint"]
     assert _by_key(amd64)["api"]["fingerprint"] != _by_key(no_extra)["api"]["fingerprint"]
+
+
+def test_fingerprint_binds_git_file_mode(image_source: Path) -> None:
+    before = image_inputs.create_inputs(
+        image_source,
+        platform="linux/amd64",
+        package_extras="[zilliz]",
+    )
+    subprocess.run(
+        ["git", "update-index", "--chmod=+x", "deploy/wait-for-install.sh"],
+        cwd=image_source,
+        check=True,
+    )
+    after = image_inputs.create_inputs(
+        image_source,
+        platform="linux/amd64",
+        package_extras="[zilliz]",
+    )
+
+    assert _by_key(before)["api"]["fingerprint"] != _by_key(after)["api"]["fingerprint"]
+    wait_script = next(
+        record
+        for record in _by_key(after)["api"]["files"]
+        if record["path"] == "deploy/wait-for-install.sh"
+    )
+    assert wait_script["git_mode"] == "100755"
 
 
 def test_validator_rejects_tampered_fingerprint(image_source: Path) -> None:

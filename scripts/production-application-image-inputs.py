@@ -16,6 +16,7 @@ SUPPORTED_PACKAGE_EXTRAS = {"", "[zilliz]"}
 
 IMAGE_DEFINITIONS = {
     "api": (
+        ".dockerignore",
         "Dockerfile",
         "README.md",
         "alembic.ini",
@@ -31,8 +32,10 @@ IMAGE_DEFINITIONS = {
         "scripts/live-site-save-verify-handoff.py",
         "scripts/live-site-stage1.py",
         "scripts/live-site-trial-status.py",
+        "scripts/production_performance_baseline.py",
     ),
     "frontend": (
+        ".dockerignore",
         "package.json",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
@@ -68,10 +71,10 @@ def _safe_relative(value: str) -> str:
     return value
 
 
-def _tracked_files(root: Path, pathspecs: tuple[str, ...]) -> list[str]:
+def _tracked_files(root: Path, pathspecs: tuple[str, ...]) -> list[tuple[str, str]]:
     try:
         completed = subprocess.run(
-            ["git", "ls-files", "-z", "--", *pathspecs],
+            ["git", "ls-files", "--stage", "-z", "--", *pathspecs],
             cwd=root,
             check=True,
             stdout=subprocess.PIPE,
@@ -79,11 +82,21 @@ def _tracked_files(root: Path, pathspecs: tuple[str, ...]) -> list[str]:
     except (OSError, subprocess.CalledProcessError) as exc:
         raise ImageInputError("cannot resolve tracked production image inputs") from exc
     try:
-        paths = sorted(
-            _safe_relative(raw.decode("utf-8"))
-            for raw in completed.stdout.split(b"\0")
-            if raw
-        )
+        records: list[tuple[str, str]] = []
+        for raw in completed.stdout.split(b"\0"):
+            if not raw:
+                continue
+            if b"\t" not in raw:
+                raise ImageInputError("tracked production image input record is invalid")
+            metadata_raw, path_raw = raw.split(b"\t", 1)
+            metadata = metadata_raw.decode("ascii").split()
+            if len(metadata) != 3:
+                raise ImageInputError("tracked production image input record is invalid")
+            mode, _object_id, stage = metadata
+            if stage != "0" or mode not in {"100644", "100755"}:
+                raise ImageInputError("tracked production image input mode is unsupported")
+            records.append((_safe_relative(path_raw.decode("utf-8")), mode))
+        paths = sorted(records)
     except UnicodeDecodeError as exc:
         raise ImageInputError("tracked production image input path is not UTF-8") from exc
     if not paths:
@@ -91,7 +104,7 @@ def _tracked_files(root: Path, pathspecs: tuple[str, ...]) -> list[str]:
     return paths
 
 
-def _file_record(root: Path, relative: str) -> dict[str, Any]:
+def _file_record(root: Path, relative: str, git_mode: str) -> dict[str, Any]:
     path = root.joinpath(*PurePosixPath(relative).parts)
     try:
         path.resolve(strict=True).relative_to(root)
@@ -104,6 +117,7 @@ def _file_record(root: Path, relative: str) -> dict[str, Any]:
     content = path.read_bytes()
     return {
         "path": relative,
+        "git_mode": git_mode,
         "sha256": hashlib.sha256(content).hexdigest(),
         "size": len(content),
     }
@@ -134,8 +148,8 @@ def create_inputs(
     images: list[dict[str, Any]] = []
     for key, pathspecs in IMAGE_DEFINITIONS.items():
         files = [
-            _file_record(resolved_root, path)
-            for path in _tracked_files(resolved_root, pathspecs)
+            _file_record(resolved_root, path, git_mode)
+            for path, git_mode in _tracked_files(resolved_root, pathspecs)
         ]
         build_parameters = {
             "platform": platform,
@@ -190,11 +204,17 @@ def validate_inputs(payload: object) -> dict[str, Any]:
             raise ImageInputError(f"production application-image files are empty: {key}")
         paths: list[str] = []
         for record in files:
-            if not isinstance(record, dict) or set(record) != {"path", "sha256", "size"}:
+            if not isinstance(record, dict) or set(record) != {
+                "path",
+                "git_mode",
+                "sha256",
+                "size",
+            }:
                 raise ImageInputError(f"production application-image file record is invalid: {key}")
             paths.append(_safe_relative(record["path"]))
             if (
-                not isinstance(record["sha256"], str)
+                record["git_mode"] not in {"100644", "100755"}
+                or not isinstance(record["sha256"], str)
                 or len(record["sha256"]) != 64
                 or any(char not in "0123456789abcdef" for char in record["sha256"])
                 or not isinstance(record["size"], int)
