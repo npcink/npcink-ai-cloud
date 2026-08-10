@@ -881,6 +881,31 @@ def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
     assert duplicate.returncode == 1
     assert "duplicate JSON key" in duplicate.stderr
 
+    false_lane_plan = tmp_path / "false-lane-plan.json"
+    false_lane = json.loads(plan_path.read_text(encoding="utf-8"))
+    false_lane.update(
+        {
+            "head_sha": "a" * 40,
+            "lane": "no_deploy",
+            "deployment_required": False,
+            "backend_image_required": False,
+        }
+    )
+    false_lane_plan.write_text(
+        json.dumps(false_lane, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    rejected_lane = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(false_lane_plan),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+    )
+    assert rejected_lane.returncode == 1
+    assert "lane/flags do not match changed_files" in rejected_lane.stderr
+
 
 def test_exact_bundle_verifier_rejects_tamper_missing_extra_and_schema(
     exact_bundle_fixture: tuple[Path, Path, Path],

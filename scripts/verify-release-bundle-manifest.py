@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -129,6 +130,31 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def classify_production_release_paths(changed_files: list[str]) -> tuple[str, dict[str, bool]]:
+    classifier_path = Path(__file__).resolve().with_name("production-release-plan.py")
+    if not classifier_path.is_file():
+        fail("production release-plan classifier is missing")
+    spec = importlib.util.spec_from_file_location(
+        "npcink_production_release_plan", classifier_path
+    )
+    if spec is None or spec.loader is None:
+        fail("production release-plan classifier cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        lane, flags, normalized_files = module.classify_release(changed_files)
+    except Exception as exc:
+        fail(f"production release-plan classification failed: {exc}")
+    finally:
+        sys.modules.pop(spec.name, None)
+    if list(normalized_files) != changed_files:
+        fail("production release plan changed_files are not canonical")
+    if not isinstance(lane, str) or not isinstance(flags, dict):
+        fail("production release-plan classifier returned an invalid result")
+    return lane, flags
+
+
 def validate_production_release_plan(
     plan: Any, *, revision: str, tree: str
 ) -> dict[str, Any]:
@@ -170,10 +196,7 @@ def validate_production_release_plan(
         fail("production release plan changed_files are invalid")
     for path in changed_files:
         safe_relative(path)
-    lanes = {"no_deploy", "static", "frontend", "backend", "config", "migration", "full"}
     lane = plan["lane"]
-    if lane not in lanes:
-        fail("production release plan lane is invalid")
     flag_names = (
         "deployment_required",
         "backend_image_required",
@@ -184,27 +207,9 @@ def validate_production_release_plan(
     )
     if any(not isinstance(plan[name], bool) for name in flag_names):
         fail("production release plan flags are invalid")
-    if plan["deployment_required"] is not (lane != "no_deploy"):
-        fail("production release plan deployment flag disagrees with its lane")
-    exact_lane_flags = {
-        "no_deploy": (False, False, False, False, False, False),
-        "static": (True, False, False, False, False, True),
-        "frontend": (True, False, True, False, False, False),
-        "backend": (True, True, False, False, False, False),
-        "config": (True, False, False, False, True, False),
-        "migration": (True, True, False, True, False, False),
-    }
-    actual_flags = tuple(plan[name] for name in flag_names)
-    if lane in exact_lane_flags and actual_flags != exact_lane_flags[lane]:
-        fail("production release plan flags disagree with its lane")
-    if lane == "full" and not (
-        plan["deployment_required"]
-        and plan["backend_image_required"]
-        and plan["frontend_image_required"]
-    ):
-        fail("production release plan flags disagree with its lane")
-    if not changed_files and lane != "full":
-        fail("an empty production release path set must fail closed to full")
+    expected_lane, expected_flags = classify_production_release_paths(changed_files)
+    if lane != expected_lane or any(plan[name] != expected_flags[name] for name in flag_names):
+        fail("production release plan lane/flags do not match changed_files")
     return plan
 
 

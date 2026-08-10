@@ -157,6 +157,7 @@ ARCHIVE_PATHS=(
 	frontend/Dockerfile
 	site
 	scripts/production-image-supply.py
+	scripts/production-release-plan.py
 	scripts/scan-production-images.sh
 	scripts/verify-release-bundle-manifest.py
 )

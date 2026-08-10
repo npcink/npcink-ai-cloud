@@ -1003,6 +1003,8 @@ require_marker "scripts/verify-release-bundle-manifest.py" 'release/production-r
 require_marker "scripts/verify-release-bundle-manifest.py" 'CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"'
 require_marker ".github/workflows/ci.yml" '${{ runner.temp }}/production-release-plan'
 require_marker "deploy/bundle-images.sh" 'verify-release-plan'
+require_marker "deploy/bundle-images.sh" 'scripts/production-release-plan.py'
+require_marker "scripts/verify-release-bundle-manifest.py" 'classify_release(changed_files)'
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker ".github/workflows/ci.yml" "frontend_only"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"
