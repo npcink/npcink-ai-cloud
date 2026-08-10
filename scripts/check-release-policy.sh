@@ -1000,6 +1000,9 @@ require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
 require_marker ".github/workflows/ci.yml" 'production-deploy-bundle-${{ github.sha }}'
 require_marker ".github/workflows/ci.yml" "bash deploy/bundle-images.sh"
 require_marker ".github/workflows/ci.yml" "Download exact production release plan"
+require_marker ".github/workflows/ci.yml" 'release_action: ${{ steps.release_plan.outputs.action }}'
+require_marker ".github/workflows/ci.yml" "needs.production-release-plan.outputs.release_action == 'runtime'"
+require_marker ".github/workflows/ci.yml" 'test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "skipped"'
 require_marker ".github/workflows/ci.yml" "Resolve exact application image fingerprints"
 require_marker ".github/workflows/ci.yml" "production-application-image-v1-linux-amd64-api-"
 require_marker ".github/workflows/ci.yml" "production-application-image-v1-linux-amd64-frontend-"
@@ -1049,6 +1052,12 @@ require_marker "scripts/production-release-preflight.py" \
 require_marker "scripts/production-release-preflight.py" \
 	"production-deploy-bundle-{sha}"
 require_marker "scripts/production-release-preflight.py" \
+	"production-release-plan-{sha}"
+require_marker "scripts/production-release-preflight.py" \
+	'if release_action == "runtime"'
+require_marker "scripts/production-release-preflight.py" \
+	'bundle_artifact_text'
+require_marker "scripts/production-release-preflight.py" \
 	"FORMAL_SMOKE_REQUIRED_SECRETS"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
 require_marker "scripts/production-ci-evidence.py" \
@@ -1086,10 +1095,13 @@ require_marker ".github/workflows/deploy-production.yml" \
 	"actions/workflows/codeql.yml/runs"
 require_marker ".github/workflows/deploy-production.yml" \
 	"Resolve exact release execution plan"
+require_marker ".github/workflows/deploy-production.yml" 'production-release-plan-${GITHUB_SHA}'
+require_marker ".github/workflows/deploy-production.yml" \
+	"if: steps.release_plan.outputs.action == 'runtime'"
 require_marker ".github/workflows/deploy-production.yml" \
 	"scripts/resolve-production-release-action.py"
 require_marker ".github/workflows/deploy-production.yml" \
-	"release/production-release-plan.json"
+	'${RUNNER_TEMP}/production-release-plan/production-release-plan.json'
 require_marker ".github/workflows/deploy-production.yml" \
 	"Exact no_deploy release plan requires no production host mutation."
 require_marker ".github/workflows/deploy-production.yml" \

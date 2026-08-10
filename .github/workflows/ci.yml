@@ -19,6 +19,8 @@ jobs:
     name: Production release plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
+    outputs:
+      release_action: ${{ steps.release_plan.outputs.action }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -26,6 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: Create exact production release plan
+        id: release_plan
         env:
           BEFORE_SHA: ${{ github.event.before }}
         run: |
@@ -57,6 +60,12 @@ jobs:
             "${changed_files[@]}"
           cat artifacts/production-release-plan/production-release-plan.json \
             >> "${GITHUB_STEP_SUMMARY}"
+          python3 scripts/resolve-production-release-action.py \
+            --plan artifacts/production-release-plan/production-release-plan.json \
+            --repository "${GITHUB_REPOSITORY}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse "${GITHUB_SHA}^{tree}")" \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Upload exact production release plan
         uses: actions/upload-artifact@v7
@@ -276,7 +285,7 @@ jobs:
   production-deploy-bundle:
     name: Production deploy bundle
     needs: [production-release-plan, production-promotion-evidence]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production' && needs.production-release-plan.outputs.release_action == 'runtime'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -1088,12 +1097,24 @@ jobs:
         env:
           PRODUCTION_PR_EVIDENCE_RESULT: ${{ needs.production-promotion-evidence.result }}
           PRODUCTION_RELEASE_PLAN_RESULT: ${{ needs.production-release-plan.result }}
+          PRODUCTION_RELEASE_ACTION: ${{ needs.production-release-plan.outputs.release_action }}
           PRODUCTION_DEPLOY_BUNDLE_RESULT: ${{ needs.production-deploy-bundle.result }}
         run: |
           set -euo pipefail
           test "${PRODUCTION_RELEASE_PLAN_RESULT}" = "success"
           test "${PRODUCTION_PR_EVIDENCE_RESULT}" = "success"
-          test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
+          case "${PRODUCTION_RELEASE_ACTION}" in
+            runtime)
+              test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
+              ;;
+            no_deploy|static)
+              test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "skipped"
+              ;;
+            *)
+              echo "[fail] Unsupported production release action: ${PRODUCTION_RELEASE_ACTION}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Create production PR CI evidence receipt
         if: github.event_name == 'pull_request' && github.base_ref == 'production'

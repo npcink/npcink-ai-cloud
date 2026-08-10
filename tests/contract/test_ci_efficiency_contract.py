@@ -157,6 +157,12 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
     assert "production-release-plan-${{ github.sha }}" in workflow
     assert "Download exact production release plan" in workflow
     assert "${{ runner.temp }}/production-release-plan" in workflow
+    assert "release_action: ${{ steps.release_plan.outputs.action }}" in workflow
+    assert "python3 scripts/resolve-production-release-action.py" in workflow
+    assert (
+        "needs.production-release-plan.outputs.release_action == 'runtime'" in workflow
+    )
+    assert 'no_deploy|static)' in workflow
     assert "NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION" in workflow
     assert "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE" in workflow
     assert "python3 scripts/production-release-plan.py" in workflow

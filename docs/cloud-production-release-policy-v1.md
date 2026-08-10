@@ -245,12 +245,28 @@ workflow-only changes may select `no_deploy`; pure `site/terms/**` changes may
 select `static`. A missing, malformed, or SHA/tree-mismatched receipt is not
 deployment authority.
 
-Production bundle CI now downloads the exact same-run plan before any image
-build and emits `npcink.release-bundle.v2`. The bundle copies the plan to
+Production CI resolves the exact same-run plan before deciding whether runtime
+bundle work applies. `no_deploy` and `static` actions skip the runtime image
+cache restore, build, vulnerability scan, and bundle upload entirely. Runtime
+actions download the plan before any image build and emit
+`npcink.release-bundle.v2`. The bundle copies the plan to
 `release/production-release-plan.json`, hashes it in the payload/checksum table,
 and binds its repository, lane, action flags, production SHA, and production
 tree in the bundle manifest. A missing or mismatched plan fails before the
 costly image build begins.
+
+The manual production workflow downloads and validates the exact plan artifact
+first. It requests the SHA-bound runtime bundle only when the validated action
+is `runtime`; static publishing uses the checked-out exact revision, and
+`no_deploy` performs no host mutation. CI observability accepts a skipped bundle
+job only for the validated `no_deploy` or `static` action and fails closed for
+unknown action/result combinations.
+
+The mandatory operator preflight follows the same identity chain: it downloads
+and validates the exact plan artifact against the production SHA and commit
+tree, requires the runtime bundle artifact only for `runtime`, and records the
+bundle as not applicable for `no_deploy` or `static`. A missing plan, missing
+runtime bundle, or unexpected non-runtime bundle fails closed before dispatch.
 
 This v2 identity chain still produces a complete exact image set. The bundle
 job may restore API and frontend archives independently from the disposable
