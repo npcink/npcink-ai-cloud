@@ -81,6 +81,8 @@ jobs:
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
+          PRODUCTION_EVIDENCE_MAX_ATTEMPTS: "5"
+          PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS: "10"
         run: |
           set -euo pipefail
           evidence_dir="$(mktemp -d "${RUNNER_TEMP}/production-pr-evidence.XXXXXX")"
@@ -88,72 +90,125 @@ jobs:
 
           gh api "repos/${GITHUB_REPOSITORY}/git/commits/${GITHUB_SHA}" \
             > "${evidence_dir}/production-commit.json"
-          gh api -H 'Accept: application/vnd.github+json' \
-            "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            > "${evidence_dir}/associated-pulls.json"
-
-          matching_prs="$(
-            jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
-              [ .[]
-                | select(.base.ref == "production")
-                | select(.merged_at != null)
-                | select(.merge_commit_sha == $sha)
-                | select(.head.repo.full_name == $repository)
-              ]
-            ' "${evidence_dir}/associated-pulls.json"
-          )"
-          test "$(jq 'length' <<<"${matching_prs}")" -eq 1
-          pr_number="$(jq -r '.[0].number' <<<"${matching_prs}")"
-          pr_head_sha="$(jq -r '.[0].head.sha' <<<"${matching_prs}")"
-          pr_head_ref="$(jq -r '.[0].head.ref' <<<"${matching_prs}")"
-          [[ "${pr_number}" =~ ^[1-9][0-9]*$ ]]
-          [[ "${pr_head_sha}" =~ ^[0-9a-f]{40}$ ]]
-          test -n "${pr_head_ref}"
-
-          gh api --method GET \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch="${pr_head_ref}" \
-            -f event=pull_request \
-            -f status=completed \
-            -f per_page=100 \
-            > "${evidence_dir}/workflow-runs.json"
-
-          artifact_name="production-pr-ci-evidence-${pr_number}-${pr_head_sha}"
-          mapfile -t run_ids < <(
-            jq -r --arg sha "${pr_head_sha}" '
-              .workflow_runs[]
-              | select(.head_sha == $sha)
-              | select(.event == "pull_request")
-              | select(.conclusion == "success")
-              | .id
-            ' "${evidence_dir}/workflow-runs.json"
-          )
-          test "${#run_ids[@]}" -gt 0
-
+          [[ "${PRODUCTION_EVIDENCE_MAX_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}" =~ ^[1-9][0-9]*$ ]]
           verified=false
-          for run_id in "${run_ids[@]}"; do
+          pr_number=""
+          pr_head_sha=""
+          pr_head_ref=""
+          source_ci_run_id=""
+          last_retry_reason="production PR association is not visible"
+          for ((attempt = 1; attempt <= PRODUCTION_EVIDENCE_MAX_ATTEMPTS; attempt++)); do
             rm -rf "${evidence_dir}/download"
             mkdir -p "${evidence_dir}/download"
-            if ! gh run download "${run_id}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --name "${artifact_name}" \
-              --dir "${evidence_dir}/download" >/dev/null 2>&1; then
-              continue
+            if ! gh api -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+              > "${evidence_dir}/associated-pulls.json"; then
+              last_retry_reason="production PR association API is unavailable"
+            else
+              matching_prs="$(
+                jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
+                  [ .[]
+                    | select(.base.ref == "production")
+                    | select(.merged_at != null)
+                    | select(.merge_commit_sha == $sha)
+                    | select(.head.repo.full_name == $repository)
+                  ]
+                ' "${evidence_dir}/associated-pulls.json"
+              )"
+              matching_pr_count="$(jq 'length' <<<"${matching_prs}")"
+              if [ "${matching_pr_count}" -gt 1 ]; then
+                echo "[fail] Production commit matched more than one merged same-repository production PR." >&2
+                exit 1
+              fi
+              if [ "${matching_pr_count}" -eq 0 ]; then
+                last_retry_reason="production PR association is not visible"
+              else
+                pr_number="$(jq -r '.[0].number' <<<"${matching_prs}")"
+                pr_head_sha="$(jq -r '.[0].head.sha' <<<"${matching_prs}")"
+                pr_head_ref="$(jq -r '.[0].head.ref' <<<"${matching_prs}")"
+                [[ "${pr_number}" =~ ^[1-9][0-9]*$ ]]
+                [[ "${pr_head_sha}" =~ ^[0-9a-f]{40}$ ]]
+                test -n "${pr_head_ref}"
+
+                if ! gh api --method GET \
+                  "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+                  -f branch="${pr_head_ref}" \
+                  -f event=pull_request \
+                  -f status=completed \
+                  -f per_page=100 \
+                  > "${evidence_dir}/workflow-runs.json"; then
+                  last_retry_reason="production PR workflow run API is unavailable"
+                else
+                  artifact_name="production-pr-ci-evidence-${pr_number}-${pr_head_sha}"
+                  mapfile -t run_ids < <(
+                    jq -r --arg sha "${pr_head_sha}" '
+                      .workflow_runs[]
+                      | select(.head_sha == $sha)
+                      | select(.event == "pull_request")
+                      | select(.conclusion == "success")
+                      | .id
+                    ' "${evidence_dir}/workflow-runs.json"
+                  )
+                  if [ "${#run_ids[@]}" -eq 0 ]; then
+                    last_retry_reason="successful production PR CI run is not visible"
+                  else
+                    downloaded_artifacts=0
+                    unavailable_run_metadata=0
+                    identity_failures=0
+                    for run_id in "${run_ids[@]}"; do
+                      rm -rf "${evidence_dir}/download"
+                      mkdir -p "${evidence_dir}/download"
+                      if ! gh run download "${run_id}" \
+                        --repo "${GITHUB_REPOSITORY}" \
+                        --name "${artifact_name}" \
+                        --dir "${evidence_dir}/download" >/dev/null 2>&1; then
+                        continue
+                      fi
+                      downloaded_artifacts=$((downloaded_artifacts + 1))
+                      if ! gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+                        > "${evidence_dir}/ci-run.json"; then
+                        unavailable_run_metadata=$((unavailable_run_metadata + 1))
+                        continue
+                      fi
+                      if python3 scripts/production-ci-evidence.py verify \
+                        --repository "${GITHUB_REPOSITORY}" \
+                        --production-sha "${GITHUB_SHA}" \
+                        --production-commit "${evidence_dir}/production-commit.json" \
+                        --associated-pulls "${evidence_dir}/associated-pulls.json" \
+                        --ci-run "${evidence_dir}/ci-run.json" \
+                        --receipt "${evidence_dir}/download/production-pr-ci-evidence.json" \
+                        --output "${evidence_dir}/verification.json"; then
+                        verified=true
+                        source_ci_run_id="${run_id}"
+                        break
+                      fi
+                      identity_failures=$((identity_failures + 1))
+                    done
+                    if [ "${verified}" = "true" ]; then
+                      break
+                    fi
+                    if [ "${identity_failures}" -gt 0 ]; then
+                      echo "[fail] Downloaded production PR CI evidence failed identity or tested-tree verification." >&2
+                      exit 1
+                    fi
+                    if [ "${unavailable_run_metadata}" -gt 0 ]; then
+                      last_retry_reason="production PR CI run metadata is unavailable"
+                    elif [ "${downloaded_artifacts}" -eq 0 ]; then
+                      last_retry_reason="production PR CI evidence artifact is not visible"
+                    else
+                      last_retry_reason="production PR CI evidence is not yet verifiable"
+                    fi
+                  fi
+                fi
+              fi
             fi
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
-              > "${evidence_dir}/ci-run.json"
-            if python3 scripts/production-ci-evidence.py verify \
-              --repository "${GITHUB_REPOSITORY}" \
-              --production-sha "${GITHUB_SHA}" \
-              --production-commit "${evidence_dir}/production-commit.json" \
-              --associated-pulls "${evidence_dir}/associated-pulls.json" \
-              --ci-run "${evidence_dir}/ci-run.json" \
-              --receipt "${evidence_dir}/download/production-pr-ci-evidence.json" \
-              --output "${evidence_dir}/verification.json"; then
-              verified=true
-              source_ci_run_id="${run_id}"
-              break
+            if [ "${attempt}" -eq "${PRODUCTION_EVIDENCE_MAX_ATTEMPTS}" ]; then
+              echo "[fail] Production PR CI evidence remained unavailable after ${attempt} attempts: ${last_retry_reason}." >&2
+              exit 1
             fi
+            echo "[info] Production PR CI evidence attempt ${attempt}/${PRODUCTION_EVIDENCE_MAX_ATTEMPTS} is pending: ${last_retry_reason}; retrying in ${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}s."
+            sleep "${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}"
           done
           test "${verified}" = "true"
 
