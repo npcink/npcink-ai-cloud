@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CANONICAL_LOCK_FILE="${ROOT_DIR}/deploy/image-lock/production-images.json"
 LOCK_FILE="${NPCINK_CLOUD_IMAGE_LOCK_FILE:-${CANONICAL_LOCK_FILE}}"
 OUTPUT_DIR=""
+REUSE_DIR=""
 APPLICATIONS_ONLY=0
 RELEASE_SCOPE=1
 RELEASE_PLATFORM="${NPCINK_CLOUD_RELEASE_PLATFORM:-}"
@@ -22,6 +23,7 @@ Usage: scripts/scan-production-images.sh [options]
 
 Options:
   --output DIR          Empty output directory outside the Git worktree.
+  --reuse-dir DIR       Prior complete scan directory used as disposable cache.
   --applications-only   Scan the API and frontend build outputs only.
   --image KEY=REF       Scan one exact local image reference; repeatable.
   --platform PLATFORM   Explicit linux/amd64 or linux/arm64 release platform.
@@ -43,6 +45,11 @@ while [ "$#" -gt 0 ]; do
 		--applications-only)
 			APPLICATIONS_ONLY=1
 			RELEASE_SCOPE=0
+			;;
+		--reuse-dir)
+			[ "$#" -ge 2 ] || fail "--reuse-dir requires a directory"
+			REUSE_DIR="$2"
+			shift
 			;;
 		--image)
 			[ "$#" -ge 2 ] || fail "--image requires KEY=REF"
@@ -275,6 +282,14 @@ ROOT_REAL="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).res
 case "${OUTPUT_DIR}/" in
 	"${ROOT_REAL}/"*) fail "scan output must stay outside the Git worktree" ;;
 esac
+if [ -n "${REUSE_DIR}" ]; then
+	[ -d "${REUSE_DIR}" ] || fail "--reuse-dir does not exist: ${REUSE_DIR}"
+	REUSE_DIR="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "${REUSE_DIR}")"
+	[ "${REUSE_DIR}" != "${OUTPUT_DIR}" ] || fail "--reuse-dir must differ from --output"
+	case "${REUSE_DIR}/" in
+		"${ROOT_REAL}/"*) fail "scan reuse cache must stay outside the Git worktree" ;;
+	esac
+fi
 chmod 0700 "${OUTPUT_DIR}"
 umask 077
 
@@ -297,6 +312,8 @@ docker run --rm \
 
 overall_status=0
 RECEIPTS=()
+REUSED_INDICES=()
+SCANNED_INDICES=()
 EQUIVALENCE_ARGS=()
 if [ "${RELEASE_SCOPE}" = "1" ]; then
 	EQUIVALENCE_PATH="${OUTPUT_DIR}/application-image-equivalence.json"
@@ -307,30 +324,28 @@ if [ "${RELEASE_SCOPE}" = "1" ]; then
 		--output "${EQUIVALENCE_PATH}" || fail "application worker image IDs are not equivalent"
 	EQUIVALENCE_ARGS=(--equivalence-json "${EQUIVALENCE_PATH}")
 fi
-for index in "${!TARGET_KEYS[@]}"; do
+
+clear_target_artifacts() {
+	local key="$1"
+	rm -f -- \
+		"${OUTPUT_DIR}/${key}.image.tar" \
+		"${OUTPUT_DIR}/${key}.image-inspect.json" \
+		"${OUTPUT_DIR}/${key}.syft.json" \
+		"${OUTPUT_DIR}/${key}.sbom.cdx.json" \
+		"${OUTPUT_DIR}/${key}.grype.json" \
+		"${OUTPUT_DIR}/${key}.receipt.json"
+}
+
+scan_target() {
+	local index="$1" key reference archive_reference image_id
+	local inspect_path sbom_path report_path receipt_path archive_path
+	local archive_image_id report_tmp
 	key="${TARGET_KEYS[${index}]}"
 	reference="${TARGET_REFS[${index}]}"
-	pull="${TARGET_PULL[${index}]}"
 	archive_reference="${TARGET_ARCHIVE_REFS[${index}]}"
-	echo "[scan] ${key}: ${reference}"
-	if [ "${pull}" = "1" ]; then
-		docker pull --platform "${RELEASE_PLATFORM}" "${reference}" >/dev/null
-	fi
-	if ! image_id="$(docker_image_inspect "${reference}" --format '{{.Id}}')"; then
-		fail "image is not available locally: ${reference}"
-	fi
-	case "${image_id}" in
-		sha256:????????????????????????????????????????????????????????????????) ;;
-		*) fail "Docker returned a non-sha256 image ID for ${reference}: ${image_id}" ;;
-	esac
-	actual_platform="$(docker_image_inspect \
-		"${reference}" --format '{{.Os}}/{{.Architecture}}')"
-	case "${actual_platform}" in
-		linux/aarch64) actual_platform="linux/arm64" ;;
-		linux/x86_64) actual_platform="linux/amd64" ;;
-	esac
-	[ "${actual_platform}" = "${RELEASE_PLATFORM}" ] \
-		|| fail "image platform mismatch for ${key}: expected ${RELEASE_PLATFORM}, got ${actual_platform}"
+	image_id="${TARGET_IMAGE_IDS[${index}]}"
+	clear_target_artifacts "${key}"
+	echo "[scan] ${key}: scanning ${reference}"
 
 	inspect_path="${OUTPUT_DIR}/${key}.image-inspect.json"
 	sbom_path="${OUTPUT_DIR}/${key}.sbom.cdx.json"
@@ -399,6 +414,63 @@ for index in "${!TARGET_KEYS[@]}"; do
 		overall_status=1
 	fi
 	[ -s "${receipt_path}" ] || fail "scan evaluator did not create ${receipt_path}"
+}
+
+TARGET_IMAGE_IDS=()
+for index in "${!TARGET_KEYS[@]}"; do
+	key="${TARGET_KEYS[${index}]}"
+	reference="${TARGET_REFS[${index}]}"
+	pull="${TARGET_PULL[${index}]}"
+	archive_reference="${TARGET_ARCHIVE_REFS[${index}]}"
+	echo "[scan] ${key}: resolving ${reference}"
+	if [ "${pull}" = "1" ]; then
+		docker pull --platform "${RELEASE_PLATFORM}" "${reference}" >/dev/null
+	fi
+	if ! image_id="$(docker_image_inspect "${reference}" --format '{{.Id}}')"; then
+		fail "image is not available locally: ${reference}"
+	fi
+	case "${image_id}" in
+		sha256:????????????????????????????????????????????????????????????????) ;;
+		*) fail "Docker returned a non-sha256 image ID for ${reference}: ${image_id}" ;;
+	esac
+	actual_platform="$(docker_image_inspect \
+		"${reference}" --format '{{.Os}}/{{.Architecture}}')"
+	case "${actual_platform}" in
+		linux/aarch64) actual_platform="linux/arm64" ;;
+		linux/x86_64) actual_platform="linux/amd64" ;;
+	esac
+	[ "${actual_platform}" = "${RELEASE_PLATFORM}" ] \
+		|| fail "image platform mismatch for ${key}: expected ${RELEASE_PLATFORM}, got ${actual_platform}"
+	TARGET_IMAGE_IDS+=("${image_id}")
+done
+
+for index in "${!TARGET_KEYS[@]}"; do
+	key="${TARGET_KEYS[${index}]}"
+	reference="${TARGET_REFS[${index}]}"
+	archive_reference="${TARGET_ARCHIVE_REFS[${index}]}"
+	receipt_path="${OUTPUT_DIR}/${key}.receipt.json"
+	reuse_error="${OUTPUT_DIR}/.${key}.reuse-error"
+	if [ -n "${REUSE_DIR}" ] && python3 "${ROOT_DIR}/scripts/production-image-supply.py" reuse \
+		--lock "${LOCK_FILE}" \
+		--image-key "${key}" \
+		--source-daemon-image-id "${TARGET_IMAGE_IDS[${index}]}" \
+		--requested-reference "${reference}" \
+		--archive-reference "${archive_reference}" \
+		--scope "$([ "${RELEASE_SCOPE}" = "1" ] && printf release || printf focused)" \
+		--expected-platform "${RELEASE_PLATFORM}" \
+		--reuse-dir "${REUSE_DIR}" \
+		--output-dir "${OUTPUT_DIR}" 2>"${reuse_error}"; then
+		rm -f "${reuse_error}"
+		echo "[reuse-hit] ${key}: ${TARGET_IMAGE_IDS[${index}]}"
+		REUSED_INDICES+=("${index}")
+	else
+		if [ -s "${reuse_error}" ]; then
+			echo "[reuse-miss] ${key}: $(tail -n 1 "${reuse_error}")"
+		fi
+		rm -f "${reuse_error}"
+		scan_target "${index}"
+		SCANNED_INDICES+=("${index}")
+	fi
 	RECEIPTS+=("${receipt_path}")
 done
 
@@ -406,26 +478,36 @@ INDEX_SCOPE="focused"
 if [ "${RELEASE_SCOPE}" = "1" ]; then
 	INDEX_SCOPE="release"
 fi
-if [ "${RELEASE_SCOPE}" = "1" ]; then
-	if ! python3 "${ROOT_DIR}/scripts/production-image-supply.py" index \
+write_scan_index() {
+	python3 "${ROOT_DIR}/scripts/production-image-supply.py" index \
 		--lock "${LOCK_FILE}" \
 		--scope "${INDEX_SCOPE}" \
 		--expected-platform "${RELEASE_PLATFORM}" \
 		--output "${OUTPUT_DIR}/scan-index.json" \
 		"${EQUIVALENCE_ARGS[@]}" \
-		"${RECEIPTS[@]}"; then
-		overall_status=1
-	fi
-else
-	if ! python3 "${ROOT_DIR}/scripts/production-image-supply.py" index \
-		--lock "${LOCK_FILE}" \
-		--scope "${INDEX_SCOPE}" \
-		--expected-platform "${RELEASE_PLATFORM}" \
-		--output "${OUTPUT_DIR}/scan-index.json" \
-		"${RECEIPTS[@]}"; then
+		"${RECEIPTS[@]}"
+}
+
+index_error="${OUTPUT_DIR}/.scan-index-error"
+if ! write_scan_index 2>"${index_error}"; then
+	if [ "${#REUSED_INDICES[@]}" -gt 0 ] \
+		&& grep -Fq "scan receipts do not share one Grype database identity" "${index_error}"; then
+		echo "[reuse-fallback] cached Grype database differs; rescanning reused images only"
+		for index in "${REUSED_INDICES[@]}"; do
+			scan_target "${index}"
+			SCANNED_INDICES+=("${index}")
+		done
+		REUSED_INDICES=()
+		if ! write_scan_index; then
+			overall_status=1
+		fi
+	else
+		cat "${index_error}" >&2
 		overall_status=1
 	fi
 fi
+rm -f "${index_error}"
 
+echo "[scan-summary] reused=${#REUSED_INDICES[@]} scanned=${#SCANNED_INDICES[@]} total=${#TARGET_KEYS[@]}"
 echo "[scan] reports: ${OUTPUT_DIR}"
 exit "${overall_status}"

@@ -236,6 +236,7 @@ def image_lock() -> dict[str, object]:
         "unknown_severity_policy": "block",
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
         "generated_artifacts_must_not_be_committed": True,
+        "max_scan_age_hours": 24,
         "max_database_age_hours": 72,
         "max_exception_days": 30,
     }
@@ -1814,6 +1815,16 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     ) not in bundle
     assert "docker save" not in bundle
     assert 'gzip -n "-${GZIP_LEVEL}" -c "${archive_path}"' in bundle
+    assert 'SCAN_REUSE_ARGS=(--reuse-dir "${SCAN_REUSE_DIR}")' in bundle
+    assert 'cp -a "${LOCAL_SCAN_DIR}/." "${SCAN_CACHE_OUTPUT_DIR}/"' in bundle
+
+    ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "actions/cache/restore@v4" in ci_workflow
+    assert "actions/cache/save@v4" in ci_workflow
+    assert ci_workflow.count("continue-on-error: true") >= 2
+    assert "production-image-scan-v1-linux-amd64-" in ci_workflow
+    assert "NPCINK_CLOUD_SCAN_REUSE_DIR" in ci_workflow
+    assert "NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR" in ci_workflow
 
     pre_index = loader.index("verify exact bundle before load")
     load_index = loader.index("gzip -dc")

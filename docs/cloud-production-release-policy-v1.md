@@ -254,6 +254,31 @@ runtime contracts are implemented and reviewed. The v1 complete-bundle path
 remains available for non-production compatibility and rollback during this
 transition.
 
+### Disposable production image scan evidence reuse
+
+Production bundle CI may restore prior per-image scan evidence only as a
+disposable acceleration cache. Reuse does not change release, image-lock,
+allowlist, scanner, vulnerability-database, or bundle authority. Each reused
+image must independently pass the current scan verifier before any cached byte
+is copied into the current run.
+
+Reusable evidence is limited to 24 hours and must include the complete retained
+set: normalized Docker archive, image inspect, Syft native JSON, CycloneDX SBOM,
+Grype JSON, and scan receipt. The current image key, requested and archive
+references, source daemon image ID, portable config image ID, platform,
+image-lock hash, allowlist hash, scanner versions, artifact hashes, database
+identity, database freshness, findings, and receipt status must remain exact.
+A missing, stale, incomplete, failed, or mismatched cache entry is a miss and
+that image is scanned normally; cache state is never deployment authority.
+
+Every run rebuilds its own complete scan index. The index continues to require
+one Grype database identity for the release set. When fresh cache hits and new
+scans were produced from different database identities, only the images copied
+from cache are rescanned against the current run database before the index is
+created. The scanner must not weaken the database-identity invariant, combine
+unverified receipts, or fail a release merely because the optional cache is
+absent or unusable.
+
 ### Recovery deployment decision envelope
 
 A production recovery deployment is not a generic rerun button. Before each

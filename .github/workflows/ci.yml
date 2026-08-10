@@ -191,13 +191,41 @@ jobs:
           name: production-release-plan-${{ github.sha }}
           path: ${{ runner.temp }}/production-release-plan
 
+      - name: Restore disposable production image scan evidence
+        id: production_scan_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/production-image-scan-cache/evidence
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
+          restore-keys: |
+            production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-
+
+      - name: Prepare disposable production image scan cache
+        run: |
+          set -euo pipefail
+          cache_root="${RUNNER_TEMP}/production-image-scan-cache"
+          if [ -d "${cache_root}/evidence" ]; then
+            mv "${cache_root}/evidence" "${cache_root}/reuse"
+          fi
+          mkdir -p "${cache_root}/evidence"
+
       - name: Build and scan exact production deploy bundle
         env:
           NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
           NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
           NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"
           NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE: ${{ runner.temp }}/production-release-plan/production-release-plan.json
+          NPCINK_CLOUD_SCAN_REUSE_DIR: ${{ runner.temp }}/production-image-scan-cache/reuse
+          NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR: ${{ runner.temp }}/production-image-scan-cache/evidence
         run: bash deploy/bundle-images.sh
+
+      - name: Save disposable production image scan evidence
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/production-image-scan-cache/evidence
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
 
       - name: Upload exact production deploy bundle
         uses: actions/upload-artifact@v7
