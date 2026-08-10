@@ -695,7 +695,7 @@ snapshot_existing_release_images() {
 	refs_tmp="$(mktemp "${map_dir}/.rollback-refs.XXXXXX")"
 	chmod 0600 "${map_tmp}" "${refs_tmp}"
 
-	while IFS=$'\t' read -r _image_archive _image_role target_reference; do
+	while IFS=$'\t' read -r _image_archive _image_role target_reference _image_action _image_reason _image_bytes; do
 		[ -n "${target_reference}" ] || continue
 		printf '%s\n' "${target_reference}" >>"${refs_tmp}"
 	done <<<"${load_plan}"
@@ -736,8 +736,20 @@ snapshot_existing_release_images() {
 }
 
 prepare_release_images() {
-	local load_plan=""
+	local prepare_plan=""
 	local alias_plan=""
+	local previous_root="${NPCINK_CLOUD_PREVIOUS_RELEASE_DIR:-}"
+	local image_archive=""
+	local image_role=""
+	local image_reference=""
+	local image_action=""
+	local image_reason=""
+	local image_bytes=""
+	local -a prepare_args=()
+	local loaded_count=0
+	local reused_count=0
+	local loaded_bytes=0
+	local reused_bytes=0
 	[ -x "${RELEASE_VERIFIER}" ] || {
 		echo "[fail] Exact release-bundle verifier is missing or not executable." >&2
 		exit 1
@@ -750,8 +762,12 @@ prepare_release_images() {
 	# This is deliberately before the first docker load and before compose up.
 	npcink_ai_cloud_run_timed "verify exact bundle before load" \
 		bash "${RELEASE_VERIFIER}" --pre-load "${ROOT_DIR}"
-	if ! load_plan="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" load-plan --root "${ROOT_DIR}")"; then
-		echo "[fail] Exact release image load plan could not be read." >&2
+	prepare_args=(prepare-plan --root "${ROOT_DIR}")
+	if [ -n "${previous_root}" ]; then
+		prepare_args+=(--previous-root "${previous_root}")
+	fi
+	if ! prepare_plan="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" "${prepare_args[@]}")"; then
+		echo "[fail] Exact release image reuse plan could not be read." >&2
 		return 1
 	fi
 	if ! alias_plan="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" alias-plan --root "${ROOT_DIR}")"; then
@@ -760,14 +776,31 @@ prepare_release_images() {
 	fi
 
 	if [ "${LOAD_MODE}" = "prepare-only" ]; then
-		snapshot_existing_release_images "${load_plan}" "${alias_plan}"
+		snapshot_existing_release_images "${prepare_plan}" "${alias_plan}"
 	fi
 
-	while IFS=$'\t' read -r image_archive image_role image_reference; do
+	while IFS=$'\t' read -r image_archive image_role image_reference image_action image_reason image_bytes; do
 		[ -n "${image_archive}" ] || continue
-		npcink_ai_cloud_run_timed "load ${image_role} image archive" \
-			bash -c 'gzip -dc "$1" | docker load' _ "${ROOT_DIR}/${image_archive}"
-	done <<<"${load_plan}"
+		case "${image_action}" in
+			reuse)
+				reused_count=$((reused_count + 1))
+				reused_bytes=$((reused_bytes + image_bytes))
+				echo "[info] Reusing exact ${image_role} image (${image_reason}); docker load skipped."
+				;;
+			load)
+				loaded_count=$((loaded_count + 1))
+				loaded_bytes=$((loaded_bytes + image_bytes))
+				npcink_ai_cloud_run_timed "load ${image_role} image archive" \
+					bash -c 'gzip -dc "$1" | docker load' _ "${ROOT_DIR}/${image_archive}"
+				;;
+			*)
+				echo "[fail] Unsupported exact image preparation action for ${image_role}: ${image_action}" >&2
+				return 1
+				;;
+		esac
+	done <<<"${prepare_plan}"
+	printf 'image_inventory_reused=%s\nimage_inventory_loaded=%s\nimage_inventory_reused_bytes=%s\nimage_inventory_loaded_bytes=%s\n' \
+		"${reused_count}" "${loaded_count}" "${reused_bytes}" "${loaded_bytes}"
 
 	# Worker/callback/ops roles are aliases of the one API image archive. The
 	# manifest controls the aliases; no role may silently rebuild or load another

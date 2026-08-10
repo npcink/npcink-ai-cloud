@@ -2366,7 +2366,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "scripts/production-python-extras-smoke.sh" in backend_gate
     assert "scripts/production-image-supply.py|scripts/scan-production-images.sh" in backend_gate
     assert 'docker tag "${source_reference}" "${alias_reference}"' in remote_load_script
-    assert "load-plan" in remote_load_script
+    assert "prepare-plan" in remote_load_script
     assert "verify loaded image IDs" in remote_load_script
     assert "static_terms_only" in ci_workflow
     assert "production-deploy-bundle:" in ci_workflow
