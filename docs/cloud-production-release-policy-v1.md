@@ -249,10 +249,16 @@ costly image build begins.
 
 This v2 identity chain still builds a complete exact image set. Scan reuse,
 selective image transfer, and target-daemon image reuse may accelerate delivery
-only through their separately reviewed exact-identity contracts. Migration and
-selective cutover optimizations may consume the bound flags only after their own
-runtime contracts are implemented and reviewed. The complete-bundle transfer
-path remains the fail-closed fallback and stage-only behavior remains complete.
+only through their separately reviewed exact-identity contracts. The remote
+cutover consumes the bound plan conservatively. An exact `backend` plan
+preserves the running frontend, PostgreSQL, and Redis services, skips the
+data-service phase and migration, and replaces the API and worker runtime while
+retaining operational readiness and baseline health gates. An exact `migration`
+plan preserves the running frontend but retains the data-service phase,
+migration, API/worker replacement, and the same health gates. Other lanes,
+missing plans, unsupported schemas, and non-exact flag combinations use the
+complete cutover path. The complete-bundle transfer path remains the fail-closed
+fallback and stage-only behavior remains complete.
 
 ### Disposable production image scan evidence reuse
 
@@ -627,7 +633,13 @@ The previous and new Compose project names and the actual old writer container
 labels must match before image loading or container mutation begins.
 `--skip-frontend-image` additionally requires exactly one running old frontend
 to preserve; it is invalid for a first deploy or a missing frontend. Ordinary
-production deployment is never an implicit host bootstrap: a missing managed
+production deployment automatically applies the same preservation contract for
+an exact `backend` or `migration` release plan. Only the exact `backend` plan may
+skip the data-service start/recreate phase and migration; provider refresh,
+worker operational readiness, traffic restoration, and baseline status remain
+enabled according to their existing deployment controls. Unknown or mismatched
+plan input does not authorize a partial cutover. Ordinary production deployment
+is never an implicit host bootstrap: a missing managed
 `current` release fails before image mutation. Before the first image load, the
 deploy reads the current PostgreSQL Alembic revision through the frozen previous
 release. Revision `20260710_0058` always fails and can advance only through the

@@ -1120,6 +1120,9 @@ if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then
 	APPLICATION_SERVICES+=(frontend)
 fi
 APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collector release-one-off)
+RELEASE_PLAN_LANE="full"
+RUN_DATA_PHASE=1
+RUN_MIGRATION=1
 RECOVERY_REQUIRED_SERVICES=(redis proxy frontend api worker callback-worker ops-worker)
 PREVIOUS_WRITER_SERVICES=(api worker callback-worker ops-worker)
 CONFIG_DIR_HOST="${REMOTE_DIR}/shared/config"
@@ -2741,6 +2744,57 @@ remote_run_timed "remote extract bundle" tar xzf "${REMOTE_BUNDLE_PATH}" -C "${R
 
 . "${RELEASE_DIR}/deploy/common.sh"
 
+RELEASE_PLAN_PATH="${RELEASE_DIR}/release/production-release-plan.json"
+if [ -f "${RELEASE_PLAN_PATH}" ] && [ ! -L "${RELEASE_PLAN_PATH}" ]; then
+	RELEASE_PLAN_EXECUTION="$("${RELEASE_TOOL_PYTHON}" - "${RELEASE_PLAN_PATH}" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    plan = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    print("full\t1\t1\t0")
+    raise SystemExit(0)
+
+lane = plan.get("lane")
+flags = {
+    "deployment_required": plan.get("deployment_required"),
+    "backend_image_required": plan.get("backend_image_required"),
+    "frontend_image_required": plan.get("frontend_image_required"),
+    "migration_required": plan.get("migration_required"),
+    "runtime_config_required": plan.get("runtime_config_required"),
+    "static_payload_required": plan.get("static_payload_required"),
+}
+backend = {
+    "deployment_required": True,
+    "backend_image_required": True,
+    "frontend_image_required": False,
+    "migration_required": False,
+    "runtime_config_required": False,
+    "static_payload_required": False,
+}
+migration = {**backend, "migration_required": True}
+typed_flags = all(type(value) is bool for value in flags.values())
+if typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "backend" and flags == backend:
+    print("backend\t0\t0\t1")
+elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "migration" and flags == migration:
+    print("migration\t1\t1\t1")
+else:
+    print("full\t1\t1\t0")
+PY
+)"
+	IFS=$'\t' read -r RELEASE_PLAN_LANE RUN_DATA_PHASE RUN_MIGRATION PLAN_PRESERVE_FRONTEND <<<"${RELEASE_PLAN_EXECUTION}"
+	if [ "${PLAN_PRESERVE_FRONTEND}" = "1" ]; then
+		SKIP_FRONTEND_IMAGE=1
+		APPLICATION_SERVICES=(caddy proxy api worker callback-worker ops-worker jaeger otel-collector release-one-off)
+	fi
+fi
+echo "[info] Release execution plan: lane=${RELEASE_PLAN_LANE}, data_phase=${RUN_DATA_PHASE}, migration=${RUN_MIGRATION}, preserve_frontend=${SKIP_FRONTEND_IMAGE}"
+
 ensure_private_release_state_directory "${RELEASE_STATE_ROOT}"
 ensure_private_release_state_directory "${RELEASE_STATE_DIR}"
 if [ -n "${REMOTE_TRANSFER_PLAN_PATH}" ]; then
@@ -3166,14 +3220,22 @@ CUTOVER_PHASE="stop-old-application-services"
 remote_run_timed "stop public and write-capable application services" stop_application_services
 remote_run_timed "assert application services stopped" assert_application_services_stopped
 
-CUTOVER_PHASE="start-data-services"
-remote_run_timed "remote start data services only" \
-	env NPCINK_CLOUD_LOAD_MODE=data-only \
-	bash deploy/remote-load-and-up.sh </dev/null
+if [ "${RUN_DATA_PHASE}" = "1" ]; then
+	CUTOVER_PHASE="start-data-services"
+	remote_run_timed "remote start data services only" \
+		env NPCINK_CLOUD_LOAD_MODE=data-only \
+		bash deploy/remote-load-and-up.sh </dev/null
+else
+	CUTOVER_PHASE="preserve-data-services"
+	echo "[ok] Exact backend release plan preserves the running PostgreSQL and Redis services."
+fi
 
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
 	CUTOVER_PHASE="defer-empty-pg18-migration-to-setup"
 	echo "[ok] Empty PostgreSQL 18 migration is deferred to the authenticated setup installer."
+elif [ "${RUN_MIGRATION}" != "1" ]; then
+	CUTOVER_PHASE="skip-migration-by-release-plan"
+	echo "[ok] Exact backend release plan does not require a database migration."
 else
 	CUTOVER_PHASE="migrate-with-staged-image"
 	# From this assignment forward the old application is never auto-started: a
