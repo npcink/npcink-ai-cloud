@@ -125,7 +125,33 @@ jobs:
             echo "- production_sha=${GITHUB_SHA}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Download exact production release plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          artifact_name="production-release-plan-${GITHUB_SHA}"
+          gh run download "${PRODUCTION_CI_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact_name}" \
+            --dir "${RUNNER_TEMP}/production-release-plan"
+          test -f "${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
+
+      - name: Resolve exact release execution plan
+        id: release_plan
+        run: |
+          set -euo pipefail
+          python3 scripts/resolve-production-release-action.py \
+            --plan "${RUNNER_TEMP}/production-release-plan/production-release-plan.json" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse HEAD^{tree})" \
+            --github-output "${GITHUB_OUTPUT}" \
+            --summary "${GITHUB_STEP_SUMMARY}"
+
       - name: Download exact production deploy bundle
+        if: steps.release_plan.outputs.action == 'runtime'
         env:
           GH_TOKEN: ${{ github.token }}
           PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
@@ -142,21 +168,6 @@ jobs:
           test -f dist/deploy-bundle.tgz.sha256
           bash deploy/verify-release-bundle.sh --archive \
             dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
-
-      - name: Resolve exact release execution plan
-        id: release_plan
-        run: |
-          set -euo pipefail
-          plan="dist/production-release-plan.json"
-          tar xOf dist/deploy-bundle.tgz \
-            release/production-release-plan.json > "${plan}"
-          python3 scripts/resolve-production-release-action.py \
-            --plan "${plan}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --head-sha "${GITHUB_SHA}" \
-            --head-tree "$(git rev-parse HEAD^{tree})" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --summary "${GITHUB_STEP_SUMMARY}"
 
       - name: Install SSH key
         if: steps.release_plan.outputs.action != 'no_deploy'

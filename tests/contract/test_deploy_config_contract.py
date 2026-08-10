@@ -1858,7 +1858,7 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 3
     assert "Resolve exact release execution plan" in workflow
     assert "scripts/resolve-production-release-action.py" in workflow
-    assert "release/production-release-plan.json" in workflow
+    assert "${RUNNER_TEMP}/production-release-plan/production-release-plan.json" in workflow
     assert "Exact no_deploy release plan requires no production host mutation." in workflow
     assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in workflow
     assert "steps.release_plan.outputs.action != 'no_deploy'" in workflow
@@ -2401,6 +2401,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-deploy-bundle:" in ci_workflow
     assert "production-deploy-bundle-${{ github.sha }}" in ci_workflow
     assert "bash deploy/bundle-images.sh" in ci_workflow
+    assert "release_action: ${{ steps.release_plan.outputs.action }}" in ci_workflow
+    assert "needs.production-release-plan.outputs.release_action == 'runtime'" in ci_workflow
+    assert 'test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "skipped"' in ci_workflow
     assert "production-promotion-evidence:" in ci_workflow
     assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
     assert "Create production PR CI evidence receipt" in ci_workflow
@@ -2431,8 +2434,13 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
+    assert "production-release-plan-${GITHUB_SHA}" in deploy_workflow
     assert "Resolve exact release execution plan" in deploy_workflow
-    assert "release/production-release-plan.json" in deploy_workflow
+    assert "if: steps.release_plan.outputs.action == 'runtime'" in deploy_workflow
+    assert (
+        "${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
+        in deploy_workflow
+    )
     assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in deploy_workflow
     assert "steps.deploy.outputs.health_profile == 'runtime'" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow
