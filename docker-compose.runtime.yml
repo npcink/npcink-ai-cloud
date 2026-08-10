@@ -47,6 +47,7 @@ services:
       CLOUD_API_BASE_URL: http://api:8000
       CLOUD_PUBLIC_BASE_URL: ${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}
       NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE: /run/npcink-frontend-config/internal-auth-token
+      NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}
       NODE_ENV: production
     group_add:
       - "999"

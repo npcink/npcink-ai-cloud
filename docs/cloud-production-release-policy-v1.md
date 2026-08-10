@@ -226,12 +226,17 @@ plan, and prevents broad validation from expanding a narrow production repair.
 
 Every exact `production` push emits a short-lived
 `production-release-plan-<sha>` artifact containing the versioned
-`npcink.production_release_plan.v1` receipt. The receipt binds the repository,
-event-before SHA, production SHA, production tree, sorted changed paths, and
-the selected `no_deploy`, `static`, `frontend`, `backend`, `config`,
+`npcink.production_release_plan.v2` receipt. The receipt binds the repository,
+event-before SHA, production SHA, production tree, sorted changed paths,
+stable API/frontend application-image input fingerprints, and the selected
+`no_deploy`, `static`, `frontend`, `backend`, `config`,
 `migration`, or `full` lane. It separately records whether deployment, backend
 or frontend images, migration, runtime configuration, or static payload work
 is required so later release stages do not infer scope from the lane name.
+The content fingerprints deliberately exclude the release SHA. Frontend source
+revision remains exact release evidence, but is injected into the container at
+runtime instead of forcing byte-identical frontend source to rebuild for every
+promotion commit.
 
 The plan compares the exact event-before and production revisions. Empty or
 unknown path sets, Dockerfiles, dependency locks, image locks, and mixed

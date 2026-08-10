@@ -23,6 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "verify-release-bundle-manifest.py"
+IMAGE_INPUT_HELPER = ROOT / "scripts" / "production-application-image-inputs.py"
 
 
 def load_helper_module():
@@ -31,6 +32,16 @@ def load_helper_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def application_image_inputs(
+    *, platform: str = "linux/amd64", package_extras: str = "[zilliz]"
+) -> dict[str, object]:
+    spec = importlib.util.spec_from_file_location("application_image_inputs", IMAGE_INPUT_HELPER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.create_inputs(ROOT, platform=platform, package_extras=package_extras)
 
 
 def run_helper(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -761,13 +772,14 @@ def test_v2_bundle_binds_exact_production_release_plan(
     source, bundle, records = exact_bundle_fixture
     plan_path = tmp_path / "production-release-plan.json"
     plan = {
-        "schema": "npcink.production_release_plan.v1",
+        "schema": "npcink.production_release_plan.v2",
         "repository": "npcink/npcink-ai-cloud",
         "base_sha": "0" * 40,
         "head_sha": "a" * 40,
         "head_tree": "b" * 40,
         "changed_files": ["app/main.py"],
         "lane": "backend",
+        "application_image_inputs": application_image_inputs(),
         "deployment_required": True,
         "backend_image_required": True,
         "frontend_image_required": False,
@@ -816,6 +828,43 @@ def test_v2_bundle_binds_exact_production_release_plan(
     assert manifest["production_release_plan"]["repository"] == "npcink/npcink-ai-cloud"
     assert run_helper("verify-directory", "--root", str(bundle)).returncode == 0
 
+    current_inputs = tmp_path / "application-image-inputs.json"
+    current_inputs.write_text(
+        json.dumps(plan["application_image_inputs"], sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    verified_plan = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(plan_path),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--application-image-inputs",
+        str(current_inputs),
+    )
+    assert verified_plan.returncode == 0, verified_plan.stderr
+
+    different_inputs = tmp_path / "different-application-image-inputs.json"
+    different_inputs.write_text(
+        json.dumps(application_image_inputs(platform="linux/arm64"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    rejected_inputs = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(plan_path),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--application-image-inputs",
+        str(different_inputs),
+    )
+    assert rejected_inputs.returncode == 1
+    assert "application-image inputs do not match source" in rejected_inputs.stderr
+
     plan["head_sha"] = "c" * 40
     bundled_plan.write_text(json.dumps(plan, sort_keys=True) + "\n", encoding="utf-8")
     rejected = run_helper("verify-directory", "--root", str(bundle))
@@ -828,6 +877,7 @@ def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
 ) -> None:
     source, bundle, records = exact_bundle_fixture
     for relative in (
+        "scripts/production-application-image-inputs.py",
         "scripts/production-release-plan.py",
         "scripts/verify-release-bundle-manifest.py",
     ):
@@ -845,13 +895,14 @@ def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
     plan_path.write_text(
         json.dumps(
             {
-                "schema": "npcink.production_release_plan.v1",
+                "schema": "npcink.production_release_plan.v2",
                 "repository": "npcink/npcink-ai-cloud",
                 "base_sha": "0" * 40,
                 "head_sha": "a" * 40,
                 "head_tree": "b" * 40,
                 "changed_files": ["deploy/image-lock/production-images.json"],
                 "lane": "full",
+                "application_image_inputs": application_image_inputs(),
                 "deployment_required": True,
                 "backend_image_required": True,
                 "frontend_image_required": True,
@@ -952,13 +1003,14 @@ def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
     plan_path.write_text(
         json.dumps(
             {
-                "schema": "npcink.production_release_plan.v1",
+                "schema": "npcink.production_release_plan.v2",
                 "repository": "npcink/npcink-ai-cloud",
                 "base_sha": "0" * 40,
                 "head_sha": "c" * 40,
                 "head_tree": "b" * 40,
                 "changed_files": ["app/main.py"],
                 "lane": "backend",
+                "application_image_inputs": application_image_inputs(),
                 "deployment_required": True,
                 "backend_image_required": True,
                 "frontend_image_required": False,

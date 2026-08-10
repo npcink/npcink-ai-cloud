@@ -207,6 +207,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "dev-compose.sh",
         "dev-frontend-recover.sh",
         "local-alpha-smoke.sh",
+        "production-application-image-inputs.py",
         "production-image-supply.py",
         "production-ci-evidence.py",
         "production-release-plan.py",
@@ -680,6 +681,10 @@ def _run_runtime_network_contract_prepare(
         release / "docker-compose.runtime.yml",
     )
     (release / "docker-compose.prod.yml").write_text("services: {}\n", encoding="utf-8")
+    (release / "release-bundle-manifest.json").write_text(
+        json.dumps({"source": {"revision": "a" * 40}}) + "\n",
+        encoding="utf-8",
+    )
 
     for helper in ("verify-release-bundle.sh", "certificate-renewal-readiness.sh"):
         helper_path = deploy / helper
@@ -1384,12 +1389,14 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
             "NEXT_PUBLIC_ENV",
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE",
             "NPCINK_CLOUD_SETUP_STATE_OVERRIDE",
+            "NPCINK_CLOUD_FRONTEND_REVISION",
             "NODE_ENV",
         },
         "docker-compose.runtime.yml": {
             "CLOUD_API_BASE_URL",
             "CLOUD_PUBLIC_BASE_URL",
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE",
+            "NPCINK_CLOUD_FRONTEND_REVISION",
             "NODE_ENV",
         },
     }
@@ -2178,9 +2185,11 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
         in frontend_dockerfile
     )
     assert "pnpm install --frozen-lockfile --filter frontend..." in frontend_dockerfile
-    assert "ARG NPCINK_CLOUD_SOURCE_REVISION=unknown" in frontend_dockerfile
-    assert "ENV NPCINK_CLOUD_FRONTEND_REVISION=${NPCINK_CLOUD_SOURCE_REVISION}" in (
-        frontend_dockerfile
+    assert "NPCINK_CLOUD_SOURCE_REVISION" not in frontend_dockerfile
+    assert "NPCINK_CLOUD_FRONTEND_REVISION" not in frontend_dockerfile
+    assert (
+        "NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}"
+        in compose_text
     )
 
     assert "CLOUD_API_BASE_URL: process.env.CLOUD_API_BASE_URL" not in next_config
@@ -2249,7 +2258,8 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "proxy_pass http://npcink_ai_cloud_api;" in nginx_prod_conf
     assert "./site:/usr/share/nginx/html/npcink-site:ro" in runtime_compose_text
     assert 'git -C "${CLOUD_DIR}" archive HEAD --' in bundle_script
-    assert '--build-arg "NPCINK_CLOUD_SOURCE_REVISION=${REVISION}"' in bundle_script
+    assert "NPCINK_CLOUD_SOURCE_REVISION" not in bundle_script
+    assert "production-application-image-inputs.py" in bundle_script
     archive_paths_block = bundle_script.split("ARCHIVE_PATHS=(", 1)[1].split("\n)", 1)[0]
     assert "\n\tsite\n" in archive_paths_block
     for public_frontend_path in (
@@ -2364,7 +2374,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     backend_gate = (cloud_root / "scripts" / "check-pr-backend-gate.sh").read_text()
     assert "deploy/image-lock/*|deploy/image-lock/**/*" in backend_gate
     assert "scripts/production-python-extras-smoke.sh" in backend_gate
-    assert "scripts/production-image-supply.py|scripts/scan-production-images.sh" in backend_gate
+    assert "scripts/production-application-image-inputs.py|scripts/production-image-supply.py" in (
+        backend_gate
+    )
     assert 'docker tag "${source_reference}" "${alias_reference}"' in remote_load_script
     assert "prepare-plan" in remote_load_script
     assert "verify loaded image IDs" in remote_load_script

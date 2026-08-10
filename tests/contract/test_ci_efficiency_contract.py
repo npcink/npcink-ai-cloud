@@ -161,7 +161,7 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
     assert "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE" in workflow
     assert "python3 scripts/production-release-plan.py" in workflow
     assert "PRODUCTION_RELEASE_PLAN_RESULT" in workflow
-    assert "npcink.production_release_plan.v1" in release_plan
+    assert "npcink.production_release_plan.v2" in release_plan
     assert '"head_tree"' in release_plan
     assert '"backend_image_required"' in release_plan
     assert '"migration_required"' in release_plan

@@ -409,7 +409,7 @@ def repair(
             current_release / "release/production-release-plan.json", 0o644, expected_uid
         )
         if (
-            plan.get("schema") != "npcink.production_release_plan.v1"
+            plan.get("schema") != "npcink.production_release_plan.v2"
             or plan.get("lane") not in {"backend", "migration"}
             or plan.get("frontend_image_required") is not False
         ):

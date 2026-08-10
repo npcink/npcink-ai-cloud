@@ -137,7 +137,7 @@ while IFS= read -r path; do
 		deploy/image-lock/*|deploy/image-lock/**/*|scripts/production-python-extras-smoke.sh|scripts/verify-production-python-lock.py)
 			requires_full_backend=1
 			;;
-		scripts/production-image-supply.py|scripts/scan-production-images.sh|scripts/verify-production-images.sh)
+		scripts/production-application-image-inputs.py|scripts/production-image-supply.py|scripts/scan-production-images.sh|scripts/verify-production-images.sh)
 			requires_full_backend=1
 			;;
 		.github/workflows/ci.yml|ci/pytest-backend-durations.json|tests/conftest.py|tests/fixtures/*|migrations/*|migrations/**/*)

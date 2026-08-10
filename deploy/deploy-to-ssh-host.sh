@@ -2973,9 +2973,9 @@ backend = {
 }
 migration = {**backend, "migration_required": True}
 typed_flags = all(type(value) is bool for value in flags.values())
-if typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "backend" and flags == backend:
+if typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "backend" and flags == backend:
     print("backend\t0\t0\t1")
-elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "migration" and flags == migration:
+elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "migration" and flags == migration:
     print("migration\t1\t1\t1")
 else:
     print("full\t1\t1\t0")

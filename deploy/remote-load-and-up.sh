@@ -74,6 +74,24 @@ PY
 # the caller's original relative value in the environment would let validation
 # and execution resolve the same spelling against different working directories.
 export NPCINK_CLOUD_COMPOSE_FILE="${COMPOSE_FILE}"
+NPCINK_CLOUD_FRONTEND_REVISION="$(
+	"${RELEASE_TOOL_PYTHON}" - "${ROOT_DIR}/release-bundle-manifest.json" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+try:
+    manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    raise SystemExit("[fail] Exact release source revision cannot be read.") from exc
+revision = (manifest.get("source") or {}).get("revision")
+if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+    raise SystemExit("[fail] Exact release source revision is invalid.")
+print(revision)
+PY
+)" || exit 1
+export NPCINK_CLOUD_FRONTEND_REVISION
 
 npcink_ai_cloud_require_cmd docker
 npcink_ai_cloud_require_cmd curl

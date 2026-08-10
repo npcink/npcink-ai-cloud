@@ -110,7 +110,11 @@ def test_release_plan_fails_closed_to_full(paths: tuple[str, ...]) -> None:
 def test_release_plan_keeps_exact_revision_and_sorted_unique_paths() -> None:
     plan = _plan("app/z.py", "docs/readme.md", "app/a.py", "app/z.py")
 
-    assert plan["schema"] == "npcink.production_release_plan.v1"
+    assert plan["schema"] == "npcink.production_release_plan.v2"
+    assert [record["key"] for record in plan["application_image_inputs"]["images"]] == [
+        "api",
+        "frontend",
+    ]
     assert plan["repository"] == "npcink/npcink-ai-cloud"
     assert plan["base_sha"] == BASE_SHA
     assert plan["head_sha"] == HEAD_SHA
