@@ -89,8 +89,13 @@ def _write_image_archive(
     archive_reference: str,
     repo_tags: list[str] | None = None,
     layer_sources: object | None = None,
+    config_labels: dict[str, str] | None = None,
 ) -> None:
-    config_name = f"blobs/sha256/{SHA256.split(':', 1)[1]}"
+    config_payload = json.loads(CONFIG_BYTES)
+    if config_labels is not None:
+        config_payload["config"] = {"Labels": config_labels}
+    config_bytes = json.dumps(config_payload, separators=(",", ":")).encode()
+    config_name = f"blobs/sha256/{hashlib.sha256(config_bytes).hexdigest()}"
     layer_name = "blobs/sha256/" + "e" * 64
     manifest_entry: dict[str, object] = {
         "Config": config_name,
@@ -102,7 +107,7 @@ def _write_image_archive(
     manifest = json.dumps([manifest_entry], separators=(",", ":")).encode()
     with tarfile.open(path, mode="w") as archive:
         _add_tar_bytes(archive, "manifest.json", manifest)
-        _add_tar_bytes(archive, config_name, CONFIG_BYTES)
+        _add_tar_bytes(archive, config_name, config_bytes)
         _add_tar_bytes(archive, layer_name, b"x")
 
 
@@ -807,6 +812,96 @@ def test_normalize_archive_rejects_invalid_layer_sources(tmp_path: Path) -> None
     args = Namespace(archive=str(archive_path), archive_reference=archive_reference)
     with pytest.raises(supply.SupplyError, match="LayerSources"):
         supply.normalize_archive(args)
+
+
+def test_application_image_cache_binds_fingerprint_platform_and_archive(
+    tmp_path: Path,
+) -> None:
+    supply = _supply_module()
+    fingerprint = "1" * 64
+    archive_path = tmp_path / "api.image.tar"
+    _write_image_archive(
+        archive_path,
+        archive_reference="npcink-ai-cloud-api:prod",
+        config_labels={
+            supply.APPLICATION_IMAGE_KEY_LABEL: "api",
+            supply.APPLICATION_IMAGE_FINGERPRINT_LABEL: fingerprint,
+        },
+    )
+    cache_dir = tmp_path / "cache" / "api"
+    write_args = Namespace(
+        lock=str(LOCK_PATH),
+        image_key="api",
+        application_fingerprint=fingerprint,
+        expected_platform="linux/amd64",
+        archive=str(archive_path),
+        output_dir=str(cache_dir),
+    )
+
+    assert supply.write_application_cache(write_args) == 0
+    manifest = json.loads((cache_dir / "manifest.json").read_text())
+    assert manifest["schema"] == supply.APPLICATION_IMAGE_CACHE_CONTRACT
+    assert manifest["application_fingerprint"] == fingerprint
+    assert manifest["archive_sha256"] == hashlib.sha256(
+        (cache_dir / "image.tar").read_bytes()
+    ).hexdigest()
+
+    verify_args = Namespace(
+        lock=str(LOCK_PATH),
+        image_key="api",
+        application_fingerprint=fingerprint,
+        expected_platform="linux/amd64",
+        cache_dir=str(cache_dir),
+    )
+    assert supply.verify_application_cache(verify_args) == 0
+
+
+def test_application_image_cache_rejects_wrong_label_or_tampered_archive(
+    tmp_path: Path,
+) -> None:
+    supply = _supply_module()
+    fingerprint = "2" * 64
+    archive_path = tmp_path / "api.image.tar"
+    _write_image_archive(
+        archive_path,
+        archive_reference="npcink-ai-cloud-api:prod",
+        config_labels={
+            supply.APPLICATION_IMAGE_KEY_LABEL: "api",
+            supply.APPLICATION_IMAGE_FINGERPRINT_LABEL: "3" * 64,
+        },
+    )
+    args = Namespace(
+        lock=str(LOCK_PATH),
+        image_key="api",
+        application_fingerprint=fingerprint,
+        expected_platform="linux/amd64",
+        archive=str(archive_path),
+        output_dir=str(tmp_path / "wrong-label"),
+    )
+    with pytest.raises(supply.SupplyError, match="source label mismatch"):
+        supply.write_application_cache(args)
+
+    _write_image_archive(
+        archive_path,
+        archive_reference="npcink-ai-cloud-api:prod",
+        config_labels={
+            supply.APPLICATION_IMAGE_KEY_LABEL: "api",
+            supply.APPLICATION_IMAGE_FINGERPRINT_LABEL: fingerprint,
+        },
+    )
+    args.output_dir = str(tmp_path / "valid")
+    assert supply.write_application_cache(args) == 0
+    cached_archive = Path(args.output_dir) / "image.tar"
+    cached_archive.write_bytes(cached_archive.read_bytes() + b"tampered")
+    verify_args = Namespace(
+        lock=str(LOCK_PATH),
+        image_key="api",
+        application_fingerprint=fingerprint,
+        expected_platform="linux/amd64",
+        cache_dir=args.output_dir,
+    )
+    with pytest.raises(supply.SupplyError, match="archive_size mismatch"):
+        supply.verify_application_cache(verify_args)
 
 
 def test_receipt_separates_portable_config_id_from_multiarch_daemon_id(tmp_path: Path) -> None:

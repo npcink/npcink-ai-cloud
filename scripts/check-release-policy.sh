@@ -1000,6 +1000,9 @@ require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
 require_marker ".github/workflows/ci.yml" 'production-deploy-bundle-${{ github.sha }}'
 require_marker ".github/workflows/ci.yml" "bash deploy/bundle-images.sh"
 require_marker ".github/workflows/ci.yml" "Download exact production release plan"
+require_marker ".github/workflows/ci.yml" "Resolve exact application image fingerprints"
+require_marker ".github/workflows/ci.yml" "production-application-image-v1-linux-amd64-api-"
+require_marker ".github/workflows/ci.yml" "production-application-image-v1-linux-amd64-frontend-"
 require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"'
 require_marker ".github/workflows/ci.yml" "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE:"
 require_marker "scripts/verify-release-bundle-manifest.py" 'npcink.release-bundle.v2'
@@ -1007,7 +1010,12 @@ require_marker "scripts/verify-release-bundle-manifest.py" 'release/production-r
 require_marker "scripts/verify-release-bundle-manifest.py" 'CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"'
 require_marker ".github/workflows/ci.yml" '${{ runner.temp }}/production-release-plan'
 require_marker "deploy/bundle-images.sh" 'verify-release-plan'
+require_marker "deploy/bundle-images.sh" 'verify-application-cache'
+require_marker "deploy/bundle-images.sh" 'write-application-cache'
+require_marker "deploy/bundle-images.sh" 'image_work=${IMAGE_WORK}'
 require_marker "deploy/bundle-images.sh" 'scripts/production-release-plan.py'
+require_marker "scripts/production-image-supply.py" \
+	"npcink.production-application-image-cache.v1"
 require_marker "scripts/verify-release-bundle-manifest.py" 'classify_release(changed_files)'
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker ".github/workflows/ci.yml" "frontend_only"
@@ -1032,6 +1040,8 @@ require_marker "scripts/production-release-plan.py" \
 	'"migration_required"'
 require_marker "docs/cloud-production-release-policy-v1.md" \
 	"npcink.production_release_plan.v2"
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	"npcink.production-application-image-cache.v1"
 require_marker "package.json" '"production:release:preflight":'
 require_marker "scripts/production-release-preflight.py" \
 	"npcink.production_release_preflight.v1"

@@ -2188,6 +2188,194 @@ def test_formal_bundle_dirty_tree_fails_before_docker(tmp_path: Path) -> None:
     assert "docker is required" not in completed.stderr
 
 
+@pytest.mark.parametrize(
+    ("cached_keys", "expected_api", "expected_frontend", "expected_work", "builds"),
+    [
+        (("api", "frontend"), "restored", "restored", 0, ()),
+        (("frontend",), "built", "restored", 1, ("api",)),
+        (("api",), "restored", "built", 1, ("frontend",)),
+        ((), "built", "built", 2, ("api", "frontend")),
+    ],
+)
+def test_formal_bundle_selects_application_image_work_independently(
+    tmp_path: Path,
+    cached_keys: tuple[str, ...],
+    expected_api: str,
+    expected_frontend: str,
+    expected_work: int,
+    builds: tuple[str, ...],
+) -> None:
+    repo = tmp_path / "repo"
+    fake_bin = tmp_path / "fake-bin"
+    cache_root = tmp_path / "application-cache"
+    fake_bin.mkdir()
+    for relative in (
+        "deploy/image-lock/production-images.json",
+        "deploy/image-lock/cve-allowlist.json",
+        "Dockerfile",
+        "docker-compose.prod.yml",
+        "docker-compose.runtime.yml",
+        "frontend/Dockerfile",
+        "site/.keep",
+    ):
+        write(repo / relative, "{}\n" if relative.endswith(".json") else "fixture\n")
+    bundle_script = repo / "deploy/bundle-images.sh"
+    bundle_script.write_bytes((ROOT / "deploy/bundle-images.sh").read_bytes())
+    bundle_script.chmod(0o755)
+    write(
+        repo / "scripts/verify-release-bundle-manifest.py",
+        """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+command = args[0]
+if command in {"application-plan", "external-plan"}:
+    Path(args[args.index("--output") + 1]).write_text("")
+elif command == "source-inputs":
+    Path(args[args.index("--output") + 1]).write_text("{}\\n")
+else:
+    raise SystemExit(2)
+""",
+    )
+    write(
+        repo / "scripts/production-application-image-inputs.py",
+        """#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+Path(args[args.index("--output") + 1]).write_text(json.dumps({"images": [
+    {"key": "api", "fingerprint": "a" * 64},
+    {"key": "frontend", "fingerprint": "f" * 64},
+]}) + "\\n")
+""",
+    )
+    write(
+        repo / "scripts/production-image-supply.py",
+        """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+if args[0] != "verify-application-cache":
+    raise SystemExit(2)
+cache_dir = Path(args[args.index("--cache-dir") + 1])
+raise SystemExit(0 if (cache_dir / ".valid").is_file() else 1)
+""",
+    )
+    write(repo / "scripts/production-release-plan.py", "fixture\n")
+    write(repo / "scripts/scan-production-images.sh", "#!/usr/bin/env bash\nexit 88\n")
+    docker_log = tmp_path / "docker.log"
+    write(
+        fake_bin / "docker",
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+state_path = Path(os.environ["FAKE_DOCKER_STATE"])
+state = json.loads(state_path.read_text()) if state_path.exists() else {}
+def save(): state_path.write_text(json.dumps(state))
+if args == ["buildx", "version"]: raise SystemExit(0)
+if args[:3] in (["image", "inspect", "--help"], ["image", "save", "--help"]):
+    print("--platform")
+    raise SystemExit(0)
+if args[:2] == ["version", "--format"]:
+    print("1.49")
+    raise SystemExit(0)
+if args[:2] == ["info", "--format"]:
+    print("linux/amd64")
+    raise SystemExit(0)
+if args[:2] == ["buildx", "build"]:
+    reference = args[args.index("-t") + 1]
+    key = "api" if reference.endswith("-api:prod") else "frontend"
+    fingerprint = "a" * 64 if key == "api" else "f" * 64
+    state[reference] = {"key": key, "fingerprint": fingerprint}
+    save()
+    Path(os.environ["FAKE_DOCKER_LOG"]).open("a").write("build:" + key + "\\n")
+    raise SystemExit(0)
+if args[:1] == ["load"]:
+    key = Path(args[args.index("--input") + 1]).parent.name
+    reference = f"npcink-ai-cloud-{key}:prod"
+    state[reference] = {"key": key, "fingerprint": "a" * 64 if key == "api" else "f" * 64}
+    save()
+    raise SystemExit(0)
+if args[:1] == ["tag"]:
+    state[args[2]] = state[args[1]]
+    save()
+    raise SystemExit(0)
+if args[:2] == ["image", "inspect"]:
+    record = state.get(args[-1])
+    if record is None: raise SystemExit(1)
+    format_value = args[args.index("--format") + 1]
+    if ".Os" in format_value: print("linux/amd64")
+    elif "application-image-key" in format_value: print(record["key"])
+    elif "application-input-fingerprint" in format_value: print(record["fingerprint"])
+    elif ".Id" in format_value: print("sha256:" + record["fingerprint"])
+    else: raise SystemExit(2)
+    raise SystemExit(0)
+raise SystemExit(2)
+""",
+    )
+    for executable in (
+        repo / "scripts/verify-release-bundle-manifest.py",
+        repo / "scripts/production-application-image-inputs.py",
+        repo / "scripts/production-image-supply.py",
+        repo / "scripts/scan-production-images.sh",
+        fake_bin / "docker",
+    ):
+        executable.chmod(0o755)
+    for key in cached_keys:
+        write(cache_root / key / "image.tar")
+        write(cache_root / key / ".valid")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.com",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    env = os.environ.copy()
+    env.update(
+        {
+            "FAKE_DOCKER_LOG": str(docker_log),
+            "FAKE_DOCKER_STATE": str(tmp_path / "docker-state.json"),
+            "NPCINK_CLOUD_APPLICATION_IMAGE_CACHE_ROOT": str(cache_root),
+            "NPCINK_CLOUD_IMAGE_PLATFORM": "linux/amd64",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+
+    completed = subprocess.run(
+        ["bash", str(bundle_script)],
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 88
+    assert (
+        f"[image-work] api={expected_api} frontend={expected_frontend} "
+        f"image_work={expected_work}"
+    ) in completed.stdout
+    observed_builds = tuple(
+        line.removeprefix("build:")
+        for line in docker_log.read_text().splitlines()
+    ) if docker_log.exists() else ()
+    assert observed_builds == builds
+
+
 def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> None:
     bundle = (ROOT / "deploy/bundle-images.sh").read_text(encoding="utf-8")
     loader = (ROOT / "deploy/remote-load-and-up.sh").read_text(encoding="utf-8")
@@ -2245,6 +2433,18 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "production-image-scan-v1-linux-amd64-" in ci_workflow
     assert "NPCINK_CLOUD_SCAN_REUSE_DIR" in ci_workflow
     assert "NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR" in ci_workflow
+    assert "Resolve exact application image fingerprints" in ci_workflow
+    assert "production-application-image-v1-linux-amd64-api-" in ci_workflow
+    assert "production-application-image-v1-linux-amd64-frontend-" in ci_workflow
+    assert "NPCINK_CLOUD_APPLICATION_IMAGE_CACHE_ROOT" in ci_workflow
+    assert "steps.build_bundle.outputs.api_cache_save == 'true'" in ci_workflow
+    assert "steps.build_bundle.outputs.frontend_cache_save == 'true'" in ci_workflow
+    assert "verify-application-cache" in bundle
+    assert "write-application-cache" in bundle
+    assert "[image-cache-hit]" in bundle
+    assert "Docker loaded cache identity did not match the verified archive" in bundle
+    assert "image_work=${IMAGE_WORK}" in bundle
+    assert "APPLICATION_IMAGE_FINGERPRINT_LABEL" in bundle
 
     pre_index = loader.index("verify exact bundle before load")
     load_index = loader.index("gzip -dc")

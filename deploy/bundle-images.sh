@@ -16,6 +16,9 @@ BUNDLE_SCHEMA_VERSION="${NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION:-npcink.rele
 PRODUCTION_RELEASE_PLAN_FILE="${NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE:-}"
 SCAN_REUSE_DIR="${NPCINK_CLOUD_SCAN_REUSE_DIR:-}"
 SCAN_CACHE_OUTPUT_DIR="${NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR:-}"
+APPLICATION_IMAGE_CACHE_ROOT="${NPCINK_CLOUD_APPLICATION_IMAGE_CACHE_ROOT:-}"
+APPLICATION_IMAGE_KEY_LABEL="ink.npc.cloud.application-image-key"
+APPLICATION_IMAGE_FINGERPRINT_LABEL="ink.npc.cloud.application-input-fingerprint"
 
 fail() {
 	echo "[fail] $*" >&2
@@ -144,6 +147,15 @@ if [ -n "${SCAN_CACHE_OUTPUT_DIR}" ]; then
 	[ -z "$(ls -A "${SCAN_CACHE_OUTPUT_DIR}")" ] \
 		|| fail "scan cache output directory must be empty"
 fi
+if [ -n "${APPLICATION_IMAGE_CACHE_ROOT}" ]; then
+	mkdir -p "${APPLICATION_IMAGE_CACHE_ROOT}"
+	APPLICATION_IMAGE_CACHE_ROOT="$(cd "${APPLICATION_IMAGE_CACHE_ROOT}" && pwd -P)"
+	[ "${APPLICATION_IMAGE_CACHE_ROOT}" != "/" ] \
+		|| fail "application image cache root cannot be the filesystem root"
+	case "${APPLICATION_IMAGE_CACHE_ROOT}/" in
+		"${CLOUD_DIR}/"*) fail "application image cache must stay outside the Git worktree" ;;
+	esac
+fi
 
 cleanup() {
 	local exit_status="$?"
@@ -187,6 +199,27 @@ python3 "${CLOUD_DIR}/scripts/production-application-image-inputs.py" \
 	--platform "${MANIFEST_IMAGE_PLATFORM}" \
 	--package-extras "${PACKAGE_EXTRAS}" \
 	--output "${APPLICATION_IMAGE_INPUTS}"
+API_IMAGE_FINGERPRINT=""
+FRONTEND_IMAGE_FINGERPRINT=""
+while IFS=$'\t' read -r image_key image_fingerprint; do
+	case "${image_key}" in
+		api) API_IMAGE_FINGERPRINT="${image_fingerprint}" ;;
+		frontend) FRONTEND_IMAGE_FINGERPRINT="${image_fingerprint}" ;;
+		*) fail "unexpected production application image key: ${image_key}" ;;
+	esac
+done < <(
+	python3 - "${APPLICATION_IMAGE_INPUTS}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for record in payload["images"]:
+    print(record["key"], record["fingerprint"], sep="\t")
+PY
+)
+[ -n "${API_IMAGE_FINGERPRINT}" ] || fail "API application image fingerprint is missing"
+[ -n "${FRONTEND_IMAGE_FINGERPRINT}" ] || fail "frontend application image fingerprint is missing"
 if [ "${BUNDLE_SCHEMA_VERSION}" = "npcink.release-bundle.v2" ]; then
 	python3 "${MANIFEST_HELPER}" verify-release-plan \
 		--release-plan "${PRODUCTION_RELEASE_PLAN_FILE}" \
@@ -254,6 +287,61 @@ require_image_platform() {
 	[ "${actual_platform}" = "${MANIFEST_IMAGE_PLATFORM}" ] || fail "image platform mismatch for ${reference}: expected ${MANIFEST_IMAGE_PLATFORM}, got ${actual_platform:-missing}"
 }
 
+require_application_image_identity() {
+	local reference="$1" key="$2" fingerprint="$3" actual_key actual_fingerprint
+	require_image_platform "${reference}"
+	actual_key="$(docker_image_inspect \
+		--format "{{ index .Config.Labels \"${APPLICATION_IMAGE_KEY_LABEL}\" }}" \
+		"${reference}" 2>/dev/null || true)"
+	actual_fingerprint="$(docker_image_inspect \
+		--format "{{ index .Config.Labels \"${APPLICATION_IMAGE_FINGERPRINT_LABEL}\" }}" \
+		"${reference}" 2>/dev/null || true)"
+	[ "${actual_key}" = "${key}" ] \
+		|| fail "application image key label mismatch for ${reference}"
+	[ "${actual_fingerprint}" = "${fingerprint}" ] \
+		|| fail "application image fingerprint label mismatch for ${reference}"
+}
+
+restore_application_image() {
+	local key="$1" reference="$2" fingerprint="$3" cache_dir verify_error
+	local actual_platform actual_key actual_fingerprint
+	[ -n "${APPLICATION_IMAGE_CACHE_ROOT}" ] || return 1
+	cache_dir="${APPLICATION_IMAGE_CACHE_ROOT}/${key}"
+	verify_error="${DIST_DIR}/.application-image-cache-${key}.error"
+	if ! python3 "${CLOUD_DIR}/scripts/production-image-supply.py" \
+		verify-application-cache \
+		--lock "${CLOUD_DIR}/${IMAGE_LOCK}" \
+		--image-key "${key}" \
+		--application-fingerprint "${fingerprint}" \
+		--expected-platform "${MANIFEST_IMAGE_PLATFORM}" \
+		--cache-dir "${cache_dir}" > /dev/null 2>"${verify_error}"; then
+		if [ -s "${verify_error}" ]; then
+			echo "[image-cache-miss] ${key}: $(tail -n 1 "${verify_error}")"
+		fi
+		rm -f "${verify_error}"
+		return 1
+	fi
+	rm -f "${verify_error}"
+	if ! docker load --input "${cache_dir}/image.tar" >/dev/null; then
+		echo "[image-cache-miss] ${key}: Docker could not load the verified cache archive"
+		return 1
+	fi
+	actual_platform="$(image_platform "${reference}" 2>/dev/null || true)"
+	actual_key="$(docker_image_inspect \
+		--format "{{ index .Config.Labels \"${APPLICATION_IMAGE_KEY_LABEL}\" }}" \
+		"${reference}" 2>/dev/null || true)"
+	actual_fingerprint="$(docker_image_inspect \
+		--format "{{ index .Config.Labels \"${APPLICATION_IMAGE_FINGERPRINT_LABEL}\" }}" \
+		"${reference}" 2>/dev/null || true)"
+	if [ "${actual_platform}" != "${MANIFEST_IMAGE_PLATFORM}" ] \
+		|| [ "${actual_key}" != "${key}" ] \
+		|| [ "${actual_fingerprint}" != "${fingerprint}" ]; then
+		echo "[image-cache-miss] ${key}: Docker loaded cache identity did not match the verified archive"
+		return 1
+	fi
+	echo "[image-cache-hit] ${key}: ${fingerprint}"
+}
+
 ensure_image() {
 	local reference="$1" actual_platform
 	actual_platform="$(image_platform "${reference}" 2>/dev/null || true)"
@@ -264,23 +352,44 @@ ensure_image() {
 	require_image_platform "${reference}"
 }
 
-echo "[info] Building API image exactly once for ${REVISION} on ${MANIFEST_IMAGE_PLATFORM}"
-set_build_cache_args api
-docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
-	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} "${BUILD_ARGS[@]}" --load \
-	-t npcink-ai-cloud-api:prod -f "${CLOUD_DIR}/Dockerfile" "${CLOUD_DIR}"
+API_IMAGE_ACTION="restored"
+if ! restore_application_image \
+	api npcink-ai-cloud-api:prod "${API_IMAGE_FINGERPRINT}"; then
+	API_IMAGE_ACTION="built"
+	echo "[info] Building API image exactly once for ${REVISION} on ${MANIFEST_IMAGE_PLATFORM}"
+	set_build_cache_args api
+	docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
+		${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} "${BUILD_ARGS[@]}" --load \
+		--label "${APPLICATION_IMAGE_KEY_LABEL}=api" \
+		--label "${APPLICATION_IMAGE_FINGERPRINT_LABEL}=${API_IMAGE_FINGERPRINT}" \
+		-t npcink-ai-cloud-api:prod -f "${CLOUD_DIR}/Dockerfile" "${CLOUD_DIR}"
+fi
 docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-worker:prod
 docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-callback-worker:prod
 docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-ops-worker:prod
-require_image_platform npcink-ai-cloud-api:prod
+require_application_image_identity \
+	npcink-ai-cloud-api:prod api "${API_IMAGE_FINGERPRINT}"
 
-echo "[info] Building frontend image exactly once for ${MANIFEST_IMAGE_PLATFORM}"
-set_build_cache_args frontend
-docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
-	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} \
-	--load -t npcink-ai-cloud-frontend:prod \
-	-f "${CLOUD_DIR}/frontend/Dockerfile" "${CLOUD_DIR}"
-require_image_platform npcink-ai-cloud-frontend:prod
+FRONTEND_IMAGE_ACTION="restored"
+if ! restore_application_image \
+	frontend npcink-ai-cloud-frontend:prod "${FRONTEND_IMAGE_FINGERPRINT}"; then
+	FRONTEND_IMAGE_ACTION="built"
+	echo "[info] Building frontend image exactly once for ${MANIFEST_IMAGE_PLATFORM}"
+	set_build_cache_args frontend
+	docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
+		${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} \
+		--label "${APPLICATION_IMAGE_KEY_LABEL}=frontend" \
+		--label "${APPLICATION_IMAGE_FINGERPRINT_LABEL}=${FRONTEND_IMAGE_FINGERPRINT}" \
+		--load -t npcink-ai-cloud-frontend:prod \
+		-f "${CLOUD_DIR}/frontend/Dockerfile" "${CLOUD_DIR}"
+fi
+require_application_image_identity \
+	npcink-ai-cloud-frontend:prod frontend "${FRONTEND_IMAGE_FINGERPRINT}"
+
+IMAGE_WORK=0
+[ "${API_IMAGE_ACTION}" = "restored" ] || IMAGE_WORK=$((IMAGE_WORK + 1))
+[ "${FRONTEND_IMAGE_ACTION}" = "restored" ] || IMAGE_WORK=$((IMAGE_WORK + 1))
+echo "[image-work] api=${API_IMAGE_ACTION} frontend=${FRONTEND_IMAGE_ACTION} image_work=${IMAGE_WORK}"
 
 while IFS=$'\t' read -r key reference dockerfile _archive; do
 	[ -n "${key}" ] || continue
@@ -342,13 +451,53 @@ fi
 	export DOCKER_DEFAULT_PLATFORM="${MANIFEST_IMAGE_PLATFORM}"
 	bash "${CLOUD_DIR}/scripts/scan-production-images.sh" \
 		--platform "${MANIFEST_IMAGE_PLATFORM}" \
-		"${SCAN_REUSE_ARGS[@]}" \
+		${SCAN_REUSE_ARGS[@]+"${SCAN_REUSE_ARGS[@]}"} \
 		--output "${LOCAL_SCAN_DIR}"
 )
 if [ -n "${SCAN_CACHE_OUTPUT_DIR}" ]; then
 	if ! cp -a "${LOCAL_SCAN_DIR}/." "${SCAN_CACHE_OUTPUT_DIR}/"; then
 		echo "[warn] Scan evidence cache copy failed; the verified current scan remains authoritative." >&2
 	fi
+fi
+
+API_CACHE_SAVE=false
+FRONTEND_CACHE_SAVE=false
+write_application_image_cache() {
+	local key="$1" fingerprint="$2" cache_dir
+	[ -n "${APPLICATION_IMAGE_CACHE_ROOT}" ] || return 1
+	cache_dir="${APPLICATION_IMAGE_CACHE_ROOT}/${key}"
+	rm -rf -- "${cache_dir}"
+	python3 "${CLOUD_DIR}/scripts/production-image-supply.py" \
+		write-application-cache \
+		--lock "${CLOUD_DIR}/${IMAGE_LOCK}" \
+		--image-key "${key}" \
+		--application-fingerprint "${fingerprint}" \
+		--expected-platform "${MANIFEST_IMAGE_PLATFORM}" \
+		--archive "${LOCAL_SCAN_DIR}/${key}.image.tar" \
+		--output-dir "${cache_dir}" >/dev/null
+}
+if [ "${API_IMAGE_ACTION}" = "built" ]; then
+	if write_application_image_cache api "${API_IMAGE_FINGERPRINT}"; then
+		API_CACHE_SAVE=true
+	else
+		echo "[warn] API application image cache write failed; current scan remains authoritative." >&2
+	fi
+fi
+if [ "${FRONTEND_IMAGE_ACTION}" = "built" ]; then
+	if write_application_image_cache frontend "${FRONTEND_IMAGE_FINGERPRINT}"; then
+		FRONTEND_CACHE_SAVE=true
+	else
+		echo "[warn] frontend application image cache write failed; current scan remains authoritative." >&2
+	fi
+fi
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+	{
+		echo "api_image_action=${API_IMAGE_ACTION}"
+		echo "frontend_image_action=${FRONTEND_IMAGE_ACTION}"
+		echo "image_work=${IMAGE_WORK}"
+		echo "api_cache_save=${API_CACHE_SAVE}"
+		echo "frontend_cache_save=${FRONTEND_CACHE_SAVE}"
+	} >>"${GITHUB_OUTPUT}"
 fi
 mkdir -p "${LOCAL_STAGE}/release/image-scan"
 for scan_evidence in "${LOCAL_SCAN_DIR}"/*; do
