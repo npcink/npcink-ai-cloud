@@ -82,6 +82,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PRODUCTION_EVIDENCE_MAX_ATTEMPTS: "5"
+          PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES: "2"
           PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS: "10"
         run: |
           set -euo pipefail
@@ -91,6 +92,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/git/commits/${GITHUB_SHA}" \
             > "${evidence_dir}/production-commit.json"
           [[ "${PRODUCTION_EVIDENCE_MAX_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES}" =~ ^[1-9][0-9]*$ ]]
           [[ "${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}" =~ ^[1-9][0-9]*$ ]]
           verified=false
           pr_number=""
@@ -98,13 +100,17 @@ jobs:
           pr_head_ref=""
           source_ci_run_id=""
           last_retry_reason="production PR association is not visible"
+          last_external_failure_signature=""
+          consecutive_external_failures=0
           for ((attempt = 1; attempt <= PRODUCTION_EVIDENCE_MAX_ATTEMPTS; attempt++)); do
+            external_failure_signature=""
             rm -rf "${evidence_dir}/download"
             mkdir -p "${evidence_dir}/download"
             if ! gh api -H 'Accept: application/vnd.github+json' \
               "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
               > "${evidence_dir}/associated-pulls.json"; then
               last_retry_reason="production PR association API is unavailable"
+              external_failure_signature="associated-pulls-api"
             else
               matching_prs="$(
                 jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
@@ -139,6 +145,7 @@ jobs:
                   -f per_page=100 \
                   > "${evidence_dir}/workflow-runs.json"; then
                   last_retry_reason="production PR workflow run API is unavailable"
+                  external_failure_signature="workflow-runs-api"
                 else
                   artifact_name="production-pr-ci-evidence-${pr_number}-${pr_head_sha}"
                   mapfile -t run_ids < <(
@@ -154,22 +161,44 @@ jobs:
                     last_retry_reason="successful production PR CI run is not visible"
                   else
                     downloaded_artifacts=0
-                    unavailable_run_metadata=0
                     identity_failures=0
                     for run_id in "${run_ids[@]}"; do
                       rm -rf "${evidence_dir}/download"
                       mkdir -p "${evidence_dir}/download"
+                      if ! gh api --method GET \
+                        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                        -f per_page=100 \
+                        > "${evidence_dir}/run-artifacts.json"; then
+                        last_retry_reason="production PR CI artifact inventory API is unavailable"
+                        external_failure_signature="artifact-inventory-api:${run_id}"
+                        break
+                      fi
+                      matching_artifact_count="$(
+                        jq --arg name "${artifact_name}" \
+                          '[.artifacts[] | select(.name == $name and .expired == false)] | length' \
+                          "${evidence_dir}/run-artifacts.json"
+                      )"
+                      if [ "${matching_artifact_count}" -gt 1 ]; then
+                        echo "[fail] Production PR CI run exposed duplicate reusable evidence artifacts." >&2
+                        exit 1
+                      fi
+                      if [ "${matching_artifact_count}" -eq 0 ]; then
+                        continue
+                      fi
                       if ! gh run download "${run_id}" \
                         --repo "${GITHUB_REPOSITORY}" \
                         --name "${artifact_name}" \
                         --dir "${evidence_dir}/download" >/dev/null 2>&1; then
-                        continue
+                        last_retry_reason="production PR CI evidence artifact download failed"
+                        external_failure_signature="artifact-download:${run_id}"
+                        break
                       fi
                       downloaded_artifacts=$((downloaded_artifacts + 1))
                       if ! gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
                         > "${evidence_dir}/ci-run.json"; then
-                        unavailable_run_metadata=$((unavailable_run_metadata + 1))
-                        continue
+                        last_retry_reason="production PR CI run metadata API is unavailable"
+                        external_failure_signature="run-metadata-api:${run_id}"
+                        break
                       fi
                       if python3 scripts/production-ci-evidence.py verify \
                         --repository "${GITHUB_REPOSITORY}" \
@@ -192,16 +221,29 @@ jobs:
                       echo "[fail] Downloaded production PR CI evidence failed identity or tested-tree verification." >&2
                       exit 1
                     fi
-                    if [ "${unavailable_run_metadata}" -gt 0 ]; then
-                      last_retry_reason="production PR CI run metadata is unavailable"
-                    elif [ "${downloaded_artifacts}" -eq 0 ]; then
+                    if [ -z "${external_failure_signature}" ] && [ "${downloaded_artifacts}" -eq 0 ]; then
                       last_retry_reason="production PR CI evidence artifact is not visible"
-                    else
+                    elif [ -z "${external_failure_signature}" ]; then
                       last_retry_reason="production PR CI evidence is not yet verifiable"
                     fi
                   fi
                 fi
               fi
+            fi
+            if [ -n "${external_failure_signature}" ]; then
+              if [ "${external_failure_signature}" = "${last_external_failure_signature}" ]; then
+                consecutive_external_failures=$((consecutive_external_failures + 1))
+              else
+                last_external_failure_signature="${external_failure_signature}"
+                consecutive_external_failures=1
+              fi
+              if [ "${consecutive_external_failures}" -ge "${PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES}" ]; then
+                echo "[fail] Production PR CI evidence external operation failed ${consecutive_external_failures} consecutive times with signature ${external_failure_signature}; automatic retries stopped." >&2
+                exit 1
+              fi
+            else
+              last_external_failure_signature=""
+              consecutive_external_failures=0
             fi
             if [ "${attempt}" -eq "${PRODUCTION_EVIDENCE_MAX_ATTEMPTS}" ]; then
               echo "[fail] Production PR CI evidence remained unavailable after ${attempt} attempts: ${last_retry_reason}." >&2
