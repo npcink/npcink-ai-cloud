@@ -359,13 +359,21 @@ pnpm run m4:frontend:logs -- --slot 1
 pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
 ```
 
-`deploy` builds the runtime and frontend images on M4. It never calls local
-Docker and never relays a locally built image. `sync` refuses to continue when
-a dependency input, Dockerfile, lock file, Compose file, or proxy configuration
-requires `deploy`. `prepare` builds from an isolated incoming directory and
-does not change the active source mirror, running containers, or deployed
-fingerprint markers. If `prepare` produced newer images, `sync` refuses to
-apply source until `deploy` has successfully validated those images.
+`deploy` builds only the runtime or frontend image whose own fingerprint is
+stale on M4. Runtime and frontend fingerprints cover separate dependency files
+and separate bounded build-recipe blocks inside the preview script, so an
+orchestration-only script edit does not invalidate either image and a
+runtime-only dependency change does not refresh the frontend dependency volume.
+The script outside those recipe blocks has its own deployment-orchestration
+fingerprint: changing migration, service-switch, marker, or other deployment
+logic requires `deploy` but does not rebuild an otherwise valid image. It never
+calls local Docker and never relays a locally built image. `sync` refuses to
+continue when either image fingerprint, the deployment-orchestration
+fingerprint, a Compose file, or proxy configuration requires `deploy`.
+`prepare` builds from an isolated incoming directory and does not change the
+active source mirror, running containers, or deployed fingerprint markers. If
+`prepare` produced a newer runtime or frontend image, `sync` refuses to apply
+source until `deploy` has successfully validated that image.
 
 The M4 Docker Desktop proxy currently truncates redirected registry blob
 downloads. The M4-only builder therefore uses host-side `crane` to fetch the
@@ -531,8 +539,9 @@ pnpm run m4:preview:status
 ```
 
 Promotion verifies the PR is merged into `master` through GitHub, then uses
-`sync` by default. If dependency, Dockerfile, lock-file, Compose, proxy, or M4
-deployment-script inputs changed, it fails closed with the explicit fallback:
+`sync` by default. If an image dependency, Dockerfile, lock file, bounded M4
+image-build recipe, deployment-orchestration input, Compose file, or proxy input
+changed, it fails closed with the explicit fallback:
 
 ```bash
 pnpm run m4:preview:promote -- --pr <merged-pr-number> --deploy
@@ -561,10 +570,11 @@ must be promoted again before completion is reported.
 Frontend-only slots do not replace the primary accepted status. They record
 their own owner, TTL, frontend revision, source bundle hash, and the accepted
 primary revision they consumed. Ordinary slot start/sync refuses an active
-primary operation, a candidate primary, fingerprint drift, or an unhealthy
-API. The `--allow-candidate-primary` flag is reserved for validating the slot
-machinery itself and requires exact candidate revision and full source-bundle
-equality.
+primary operation, a candidate primary, frontend-image fingerprint drift, or
+an unhealthy API. Runtime-image-only dependency changes do not invalidate an
+otherwise compatible frontend slot. The `--allow-candidate-primary` flag is
+reserved for validating the slot machinery itself and requires exact candidate
+revision and full source-bundle equality.
 
 Slots 1 and 2 map M4 loopback ports `8021` and `8022` to authoring-Mac
 foreground tunnel ports `18021` and `18022`. Slot 3 maps `8023` to `18023` and
@@ -686,7 +696,8 @@ After a successful deployment, status records:
 - clean or dirty state and dirty path count;
 - source bundle SHA-256;
 - source transfer mode;
-- dependency and runtime-config fingerprints;
+- independent runtime-image, frontend-image, deployment-orchestration, and
+  runtime-config fingerprints;
 - frontend source fingerprint, resolved frontend-config fingerprint, and the
   revision actually served by the frontend;
 - runtime and frontend image IDs and creation times;

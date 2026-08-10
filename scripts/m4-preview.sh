@@ -990,27 +990,86 @@ echo '[m4-preview] managed Ollama restarted'
 REMOTE_OLLAMA_RESTART
 }
 
-dependency_fingerprint() {
-	local files=(
-		Dockerfile
-		pyproject.toml
-		uv.lock
-		frontend/Dockerfile.dev
-		.dockerignore
-		frontend/package.json
-		package.json
-		pnpm-lock.yaml
-		pnpm-workspace.yaml
-		scripts/m4-package-proxy.py
-		scripts/m4-preview.sh
-	)
+image_fingerprint() {
+	local recipe_name="$1"
+	shift
+	local files=("$@")
 	local file=""
 	(
 		cd "${ROOT_DIR}"
 		for file in "${files[@]}"; do
-			test -f "${file}" || fail "missing dependency input: ${file}"
+			test -f "${file}" || fail "missing ${recipe_name} image input: ${file}"
 			shasum -a 256 "${file}"
 		done
+		awk \
+			-v begin_marker="# BEGIN M4 ${recipe_name} image build recipe" \
+			-v end_marker="# END M4 ${recipe_name} image build recipe" '
+			$0 == begin_marker {
+				if (inside || found) exit 65
+				inside = 1
+				found = 1
+			}
+			inside { print }
+			$0 == end_marker {
+				if (!inside) exit 65
+				inside = 0
+			}
+			END {
+				if (!found || inside) exit 65
+			}
+		' scripts/m4-preview.sh | shasum -a 256
+	) | shasum -a 256 | awk '{print $1}'
+}
+
+runtime_image_fingerprint() {
+	image_fingerprint runtime \
+		Dockerfile \
+		pyproject.toml \
+		uv.lock \
+		.dockerignore
+}
+
+frontend_image_fingerprint() {
+	image_fingerprint frontend \
+		frontend/Dockerfile.dev \
+		frontend/package.json \
+		package.json \
+		pnpm-lock.yaml \
+		pnpm-workspace.yaml \
+		.dockerignore
+}
+
+deployment_orchestration_fingerprint() {
+	(
+		cd "${ROOT_DIR}"
+		awk '
+			$0 == "# BEGIN M4 runtime image build recipe" {
+				if (inside || runtime_found) exit 65
+				inside = 1
+				runtime_found = 1
+				next
+			}
+			$0 == "# END M4 runtime image build recipe" {
+				if (!inside || !runtime_found) exit 65
+				inside = 0
+				next
+			}
+			$0 == "# BEGIN M4 frontend image build recipe" {
+				if (inside || frontend_found) exit 65
+				inside = 1
+				frontend_found = 1
+				next
+			}
+			$0 == "# END M4 frontend image build recipe" {
+				if (!inside || !frontend_found) exit 65
+				inside = 0
+				next
+			}
+			!inside { print }
+			END {
+				if (inside || !runtime_found || !frontend_found) exit 65
+			}
+		' scripts/m4-preview.sh | shasum -a 256
 	) | shasum -a 256 | awk '{print $1}'
 }
 
@@ -1313,7 +1372,9 @@ upload_and_apply() {
 	local source_branch=""
 	local source_dirty=""
 	local dirty_count=""
-	local image_input_sha=""
+	local runtime_image_input_sha=""
+	local frontend_image_input_sha=""
+	local deployment_orchestration_sha=""
 	local config_input_sha=""
 	local frontend_source_sha=""
 
@@ -1324,7 +1385,9 @@ upload_and_apply() {
 	source_branch="$(git -C "${ROOT_DIR}" symbolic-ref --quiet --short HEAD || printf 'detached')"
 	source_dirty="$(source_dirty_state)"
 	dirty_count="$(source_dirty_count)"
-	image_input_sha="$(dependency_fingerprint)"
+	runtime_image_input_sha="$(runtime_image_fingerprint)"
+	frontend_image_input_sha="$(frontend_image_fingerprint)"
+	deployment_orchestration_sha="$(deployment_orchestration_fingerprint)"
 	config_input_sha="$(config_fingerprint)"
 	frontend_source_sha="$(frontend_source_fingerprint)"
 
@@ -1334,7 +1397,9 @@ upload_and_apply() {
 	log "acceptance state: ${acceptance_state}"
 	log "promotion PR: ${promotion_pr}"
 	log "source bundle SHA256: ${source_sha}"
-	log "image input SHA256: ${image_input_sha}"
+	log "runtime image input SHA256: ${runtime_image_input_sha}"
+	log "frontend image input SHA256: ${frontend_image_input_sha}"
+	log "deployment orchestration SHA256: ${deployment_orchestration_sha}"
 	log "config input SHA256: ${config_input_sha}"
 	log "frontend source SHA256: ${frontend_source_sha}"
 	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
@@ -1370,7 +1435,9 @@ upload_and_apply() {
 		"${source_branch}" \
 		"${source_dirty}" \
 		"${dirty_count}" \
-		"${image_input_sha}" \
+		"${runtime_image_input_sha}" \
+		"${frontend_image_input_sha}" \
+		"${deployment_orchestration_sha}" \
 		"${config_input_sha}" \
 		"${frontend_source_sha}" \
 		"${mode}" \
@@ -1394,18 +1461,20 @@ source_revision="$5"
 source_branch="$6"
 source_dirty="$7"
 dirty_count="$8"
-image_input_sha="$9"
-config_input_sha="${10}"
-frontend_source_sha="${11}"
-mode="${12}"
-run_id="${13}"
-preview_port="${14}"
-postgres_port="${15}"
-redis_port="${16}"
-acceptance_state="${17}"
-promotion_pr="${18}"
-source_transfer_mode="${19}"
-source_relay_url="${20}"
+runtime_image_input_sha="$9"
+frontend_image_input_sha="${10}"
+deployment_orchestration_sha="${11}"
+config_input_sha="${12}"
+frontend_source_sha="${13}"
+mode="${14}"
+run_id="${15}"
+preview_port="${16}"
+postgres_port="${17}"
+redis_port="${18}"
+acceptance_state="${19}"
+promotion_pr="${20}"
+source_transfer_mode="${21}"
+source_relay_url="${22}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -1470,8 +1539,11 @@ esac
 cache_dir="$HOME/.cache/${project_name}"
 lock_dir="${cache_dir}/operation.lock"
 staging="${remote_dir}.incoming.${run_id}"
-built_image_marker="${cache_dir}/built-image-input.sha256"
-deployed_image_marker="${cache_dir}/deployed-image-input.sha256"
+built_runtime_image_marker="${cache_dir}/built-runtime-image-input.sha256"
+built_frontend_image_marker="${cache_dir}/built-frontend-image-input.sha256"
+deployed_runtime_image_marker="${cache_dir}/deployed-runtime-image-input.sha256"
+deployed_frontend_image_marker="${cache_dir}/deployed-frontend-image-input.sha256"
+deployed_orchestration_marker="${cache_dir}/deployed-orchestration-input.sha256"
 deployed_config_marker="${cache_dir}/deployed-config-input.sha256"
 deployed_frontend_source_marker="${cache_dir}/deployed-frontend-source.sha256"
 deployed_frontend_revision_marker="${cache_dir}/deployed-frontend-revision.txt"
@@ -1492,6 +1564,11 @@ frontend_recreate_required=0
 previous_frontend_revision=""
 frontend_resolved_config_sha=""
 frontend_config_changed=1
+runtime_image_needs_build=1
+frontend_image_needs_build=1
+runtime_image_needs_deploy=1
+frontend_image_needs_deploy=1
+deployment_orchestration_changed=1
 prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
@@ -2012,18 +2089,41 @@ validate_staged_runtime_inputs() {
 
 validate_staged_runtime_inputs
 
-needs_build=0
-if [ ! -f "${built_image_marker}" ] ||
-	[ "$(cat "${built_image_marker}")" != "${image_input_sha}" ]; then
-	needs_build=1
+# Prepared and deployed markers stay separate so prepare can cache one image
+# without allowing sync to activate it before a successful deploy.
+if [ -f "${built_runtime_image_marker}" ] &&
+	[ ! -L "${built_runtime_image_marker}" ] &&
+	[ "$(cat "${built_runtime_image_marker}")" = "${runtime_image_input_sha}" ] &&
+	docker image inspect "${runtime_image}" >/dev/null 2>&1; then
+	runtime_image_needs_build=0
 fi
-if ! docker image inspect "${runtime_image}" >/dev/null 2>&1 ||
-	! docker image inspect "${frontend_image}" >/dev/null 2>&1; then
-	needs_build=1
+if [ -f "${built_frontend_image_marker}" ] &&
+	[ ! -L "${built_frontend_image_marker}" ] &&
+	[ "$(cat "${built_frontend_image_marker}")" = "${frontend_image_input_sha}" ] &&
+	docker image inspect "${frontend_image}" >/dev/null 2>&1; then
+	frontend_image_needs_build=0
+fi
+if [ -f "${deployed_runtime_image_marker}" ] &&
+	[ ! -L "${deployed_runtime_image_marker}" ] &&
+	[ "$(cat "${deployed_runtime_image_marker}")" = "${runtime_image_input_sha}" ]; then
+	runtime_image_needs_deploy=0
+fi
+if [ -f "${deployed_frontend_image_marker}" ] &&
+	[ ! -L "${deployed_frontend_image_marker}" ] &&
+	[ "$(cat "${deployed_frontend_image_marker}")" = "${frontend_image_input_sha}" ]; then
+	frontend_image_needs_deploy=0
+fi
+if [ -f "${deployed_orchestration_marker}" ] &&
+	[ ! -L "${deployed_orchestration_marker}" ] &&
+	[ "$(cat "${deployed_orchestration_marker}")" = "${deployment_orchestration_sha}" ]; then
+	deployment_orchestration_changed=0
 fi
 
+echo "[m4-preview] image-plan runtime_build=${runtime_image_needs_build} frontend_build=${frontend_image_needs_build} runtime_deploy=${runtime_image_needs_deploy} frontend_deploy=${frontend_image_needs_deploy} orchestration_changed=${deployment_orchestration_changed}"
+
 if [ "${mode}" = "sync" ]; then
-	if [ "${needs_build}" = "1" ]; then
+	if [ "${runtime_image_needs_build}" = "1" ] ||
+		[ "${frontend_image_needs_build}" = "1" ]; then
 		if [ "${acceptance_state}" = "accepted" ]; then
 			echo "[m4-preview] dependency inputs changed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
 		else
@@ -2031,14 +2131,22 @@ if [ "${mode}" = "sync" ]; then
 		fi
 		exit 42
 	fi
-	if [ ! -f "${deployed_image_marker}" ] ||
-		[ "$(cat "${deployed_image_marker}")" != "${image_input_sha}" ]; then
+	if [ "${runtime_image_needs_deploy}" = "1" ] ||
+		[ "${frontend_image_needs_deploy}" = "1" ]; then
 		if [ "${acceptance_state}" = "accepted" ]; then
 			echo "[m4-preview] prepared image inputs are not deployed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
 		else
 			echo '[m4-preview] prepared image inputs are not deployed; run m4:preview:deploy' >&2
 		fi
 		exit 42
+	fi
+	if [ "${deployment_orchestration_changed}" = "1" ]; then
+		if [ "${acceptance_state}" = "accepted" ]; then
+			echo "[m4-preview] deployment orchestration changed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
+		else
+			echo '[m4-preview] deployment orchestration changed; run m4:preview:deploy' >&2
+		fi
+		exit 44
 	fi
 	if [ ! -f "${deployed_config_marker}" ] ||
 		[ "$(cat "${deployed_config_marker}")" != "${config_input_sha}" ]; then
@@ -2053,7 +2161,7 @@ fi
 
 frontend_volume_refresh_required=0
 if [ "${mode}" = "deploy" ]; then
-	if [ "${needs_build}" = "1" ]; then
+	if [ "${frontend_image_needs_build}" = "1" ]; then
 		frontend_volume_refresh_required=1
 	elif docker image inspect "${frontend_image}" >/dev/null 2>&1; then
 		current_frontend_descriptor="$(
@@ -2316,22 +2424,22 @@ prefetch_base_image() {
 	echo "[m4-preview] base image ready: ${marker_name} (${remote_digest})"
 }
 
-prefetch_base_images() {
+# BEGIN M4 runtime image build recipe
+prefetch_python_base_image() {
 	prefetch_base_image \
 		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92' \
 		"${python_base_image}" \
 		python \
 		'sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92'
+}
+
+prefetch_runtime_base_images() {
+	prefetch_python_base_image
 	prefetch_base_image \
 		'ghcr.nju.edu.cn/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc' \
 		"${uv_base_image}" \
 		uv \
 		'sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc'
-	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/node:22-alpine' \
-		"${node_base_image}" \
-		node \
-		''
 }
 
 build_runtime_image() {
@@ -2364,6 +2472,17 @@ build_runtime_image() {
 		. 2>&1 |
 		python3 -u scripts/redact-m4-preview-logs.py --env-file .env --env-file .env.local
 }
+# END M4 runtime image build recipe
+
+# BEGIN M4 frontend image build recipe
+prefetch_frontend_base_image() {
+	prefetch_base_image \
+		'm.daocloud.io/docker.io/library/node:22-alpine' \
+		"${node_base_image}" \
+		node \
+		''
+}
+
 build_frontend_image() {
 	first_line="$(sed -n '1p' frontend/Dockerfile.dev)"
 	test "${first_line}" = 'FROM node:22-alpine' || {
@@ -2396,16 +2515,32 @@ build_frontend_image() {
 			. 2>&1 |
 		python3 -u scripts/redact-m4-preview-logs.py --env-file .env --env-file .env.local
 }
+# END M4 frontend image build recipe
 
-if [ "${mode}" != "sync" ] && [ "${needs_build}" = "1" ]; then
-	prefetch_base_images
+if [ "${mode}" != "sync" ] &&
+	{ [ "${runtime_image_needs_build}" = "1" ] ||
+		[ "${frontend_image_needs_build}" = "1" ]; }; then
+	if [ "${runtime_image_needs_build}" = "1" ]; then
+		prefetch_runtime_base_images
+	elif [ "${frontend_image_needs_build}" = "1" ]; then
+		# The package-proxy container reachability probe uses this pinned image.
+		prefetch_python_base_image
+	fi
+	if [ "${frontend_image_needs_build}" = "1" ]; then
+		prefetch_frontend_base_image
+	fi
 	start_package_proxy
-	echo '[m4-preview] building runtime image on M4'
-	build_runtime_image
-	echo '[m4-preview] building frontend image on M4'
-	build_frontend_image
+	if [ "${runtime_image_needs_build}" = "1" ]; then
+		echo '[m4-preview] building runtime image on M4'
+		build_runtime_image
+		printf '%s\n' "${runtime_image_input_sha}" > "${built_runtime_image_marker}"
+	fi
+	if [ "${frontend_image_needs_build}" = "1" ]; then
+		echo '[m4-preview] building frontend image on M4'
+		build_frontend_image
+		printf '%s\n' "${frontend_image_input_sha}" > "${built_frontend_image_marker}"
+	fi
 	stop_package_proxy
-	printf '%s\n' "${image_input_sha}" > "${built_image_marker}"
 fi
 
 refresh_frontend_dependency_volume() {
@@ -2535,7 +2670,9 @@ runtime_image_created="$(docker image inspect -f '{{.Created}}' "${runtime_image
 frontend_image_id="$(docker image inspect -f '{{.Id}}' "${frontend_image}")"
 frontend_image_created="$(docker image inspect -f '{{.Created}}' "${frontend_image}")"
 printf '%s\n' "$(docker image inspect -f '{{.Id}}' "${frontend_image}")" > "${frontend_volume_marker}"
-printf '%s\n' "${image_input_sha}" > "${deployed_image_marker}"
+printf '%s\n' "${runtime_image_input_sha}" > "${deployed_runtime_image_marker}"
+printf '%s\n' "${frontend_image_input_sha}" > "${deployed_frontend_image_marker}"
+printf '%s\n' "${deployment_orchestration_sha}" > "${deployed_orchestration_marker}"
 printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 printf '%s\n' "${frontend_source_sha}" > "${deployed_frontend_source_marker}"
 printf '%s\n' "${frontend_runtime_revision}" > "${deployed_frontend_revision_marker}"
@@ -2550,7 +2687,9 @@ printf '%s\n' "${frontend_resolved_config_sha}" > "${deployed_frontend_config_ma
 	printf 'source_dirty_paths=%s\n' "${dirty_count}"
 	printf 'source_bundle_sha256=%s\n' "${source_sha}"
 	printf 'source_transfer_mode=%s\n' "${source_transfer_mode}"
-	printf 'image_input_sha256=%s\n' "${image_input_sha}"
+	printf 'runtime_image_input_sha256=%s\n' "${runtime_image_input_sha}"
+	printf 'frontend_image_input_sha256=%s\n' "${frontend_image_input_sha}"
+	printf 'deployment_orchestration_sha256=%s\n' "${deployment_orchestration_sha}"
 	printf 'config_input_sha256=%s\n' "${config_input_sha}"
 	printf 'frontend_source_sha256=%s\n' "${frontend_source_sha}"
 	printf 'frontend_source_revision=%s\n' "${frontend_runtime_revision}"

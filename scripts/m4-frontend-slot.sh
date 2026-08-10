@@ -115,7 +115,7 @@ run_up_or_sync() {
 	local source_base_revision=""
 	local source_branch=""
 	local source_dirty=""
-	local image_input_sha=""
+	local frontend_image_input_sha=""
 	local config_input_sha=""
 	local remote_port=""
 	local tunnel_port=""
@@ -128,7 +128,7 @@ run_up_or_sync() {
 	)"
 	source_branch="$(git -C "${ROOT_DIR}" symbolic-ref --quiet --short HEAD || printf 'detached')"
 	source_dirty="$(source_dirty_state)"
-	image_input_sha="$(dependency_fingerprint)"
+	frontend_image_input_sha="$(frontend_image_fingerprint)"
 	config_input_sha="$(config_fingerprint)"
 	remote_port="$(slot_remote_port "${slot}")"
 	tunnel_port="$(slot_tunnel_port "${slot}")"
@@ -169,7 +169,7 @@ run_up_or_sync() {
 		"${source_branch}" \
 		"${source_dirty}" \
 		"${source_sha}" \
-		"${image_input_sha}" \
+		"${frontend_image_input_sha}" \
 		"${config_input_sha}" \
 		"${allow_candidate}" \
 		"${SOURCE_RELAY_URL}" \
@@ -193,7 +193,7 @@ source_revision="$8"
 source_branch="$9"
 source_dirty="${10}"
 source_sha="${11}"
-image_input_sha="${12}"
+frontend_image_input_sha="${12}"
 config_input_sha="${13}"
 allow_candidate="${14}"
 source_url="${15}"
@@ -296,7 +296,9 @@ primary_acceptance="$(state_value acceptance_state "${primary_state_file}")"
 primary_revision="$(state_value source_revision "${primary_state_file}")"
 primary_branch="$(state_value source_branch "${primary_state_file}")"
 primary_dirty="$(state_value source_dirty "${primary_state_file}")"
-primary_image_sha="$(state_value image_input_sha256 "${primary_state_file}")"
+primary_frontend_image_sha="$(
+	state_value frontend_image_input_sha256 "${primary_state_file}"
+)"
 primary_config_sha="$(state_value config_input_sha256 "${primary_state_file}")"
 
 if [ "${primary_acceptance}" = "accepted" ]; then
@@ -316,7 +318,7 @@ else
 	echo "[m4-frontend-slot] primary runtime must be accepted; current state=${primary_acceptance:-missing}" >&2
 	exit 65
 fi
-[ "${primary_image_sha}" = "${image_input_sha}" ] || {
+[ "${primary_frontend_image_sha}" = "${frontend_image_input_sha}" ] || {
 	echo '[m4-frontend-slot] primary frontend dependency image does not match this worktree' >&2
 	exit 42
 }
