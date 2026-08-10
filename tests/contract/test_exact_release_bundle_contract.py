@@ -1916,7 +1916,8 @@ def test_selective_transfer_omits_only_remotely_proved_image_archives(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, bundle, _ = exact_bundle_fixture
+    source, bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, bundle, records)
     helper = load_helper_module()
     full_archive = tmp_path / "full" / "deploy-bundle.tgz"
     full_checksum = full_archive.with_suffix(full_archive.suffix + ".sha256")
@@ -1981,6 +1982,25 @@ def test_selective_transfer_omits_only_remotely_proved_image_archives(
             post_load=False,
             transfer_plan=plan,
             remote_dir=bundle.parent,
+        )
+
+
+def test_older_exact_bundle_stays_on_complete_transfer_path(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    _, bundle, _ = exact_bundle_fixture
+    helper = load_helper_module()
+    archive = tmp_path / "deploy-bundle.tgz"
+    checksum = archive.with_suffix(archive.suffix + ".sha256")
+    helper.pack_bundle(bundle, archive, gzip_level=1, mtime=0)
+    helper.write_outer_checksum(archive, checksum)
+
+    with pytest.raises(helper.BundleError, match="does not support selective transfer"):
+        helper.write_transfer_request(
+            archive,
+            checksum,
+            "release-older-fixture",
+            tmp_path / "request.json",
         )
 
 

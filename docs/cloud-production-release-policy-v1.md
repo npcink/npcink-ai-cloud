@@ -713,7 +713,10 @@ malformed, stale, mismatched, or non-reusable inventory is a cache miss and the
 deployer uploads the original complete bundle. A reuse race detected after a
 selective upload fails closed before Docker load or service mutation. Selective
 transfer never weakens post-load portable identity proof, target-daemon map
-publication, rollback, or the exact release chain.
+publication, rollback, or the exact release chain. Exact bundles whose bundled
+loader, verifier, and manifest helper do not all declare the selective-transfer
+contract remain on the complete-transfer path, preserving older rollback and
+replay bundles.
 
 The Service Settings pair
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /

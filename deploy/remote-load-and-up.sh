@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SELECTIVE_TRANSFER_CAPABILITY="npcink.release-selective-transfer.v1"
 DIST_DIR="${ROOT_DIR}/dist"
 SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 LOAD_MODE="${NPCINK_CLOUD_LOAD_MODE:-}"

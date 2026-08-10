@@ -32,6 +32,7 @@ SCAN_RECEIPT_SCHEMA = "npcink.production-image-scan-receipt.v1"
 TARGET_DAEMON_MAP_SCHEMA = "npcink.target-daemon-image-map.v1"
 TRANSFER_REQUEST_SCHEMA = "npcink.release-transfer-request.v1"
 TRANSFER_PLAN_SCHEMA = "npcink.release-transfer-plan.v1"
+SELECTIVE_TRANSFER_CAPABILITY = "npcink.release-selective-transfer.v1"
 MANIFEST_NAME = "release-bundle-manifest.json"
 CHECKSUMS_NAME = "SHA256SUMS"
 SCAN_INDEX_PATH = "release/image-scan/scan-index.json"
@@ -44,6 +45,7 @@ MAX_DOCKER_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_TARGET_DAEMON_MAP_BYTES = 256 * 1024
 MAX_TRANSFER_PLAN_BYTES = 1024 * 1024
+MAX_TRANSFER_CAPABILITY_FILE_BYTES = 2 * 1024 * 1024
 MAX_PRODUCTION_RELEASE_PLAN_BYTES = 2 * 1024 * 1024
 REQUIRED_MAX_DATABASE_AGE_HOURS = 72
 REQUIRED_MAX_EXCEPTION_DAYS = 30
@@ -2206,6 +2208,37 @@ def archive_metadata(bundle: Path) -> tuple[dict[str, Any], str, str]:
     )
 
 
+def require_selective_transfer_capability(bundle: Path) -> None:
+    required_members = {
+        "deploy/remote-load-and-up.sh",
+        "deploy/verify-release-bundle.sh",
+        "scripts/verify-release-bundle-manifest.py",
+    }
+    observed: set[str] = set()
+    with tarfile.open(bundle, "r:gz") as archive:
+        for member in archive:
+            relative = safe_relative(member.name)
+            if relative not in required_members:
+                continue
+            if not member.isfile() or member.size > MAX_TRANSFER_CAPABILITY_FILE_BYTES:
+                fail(f"selective transfer capability file is invalid: {relative}")
+            source = archive.extractfile(member)
+            if source is None:
+                fail(f"selective transfer capability file cannot be read: {relative}")
+            content = source.read(MAX_TRANSFER_CAPABILITY_FILE_BYTES + 1)
+            if len(content) > MAX_TRANSFER_CAPABILITY_FILE_BYTES:
+                fail(f"selective transfer capability file is oversized: {relative}")
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                fail(f"selective transfer capability file is not UTF-8: {relative}: {exc}")
+            if SELECTIVE_TRANSFER_CAPABILITY not in text:
+                fail(f"exact bundle does not support selective transfer: {relative}")
+            observed.add(relative)
+    if observed != required_members:
+        fail("exact bundle does not contain the complete selective transfer capability")
+
+
 def transfer_bundle_binding(
     *,
     bundle_sha256: str,
@@ -2291,6 +2324,7 @@ def write_transfer_request(bundle: Path, checksum: Path, release_name: str, outp
     match = re.fullmatch(r"([0-9a-f]{64})  ([^/\r\n]+)", expected_line)
     if match is None or match.group(2) != bundle.name:
         fail("release transfer request checksum receipt is invalid")
+    require_selective_transfer_capability(bundle)
     manifest, manifest_sha256, checksums_sha256 = archive_metadata(bundle)
     payload = {
         "schema_version": TRANSFER_REQUEST_SCHEMA,

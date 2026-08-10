@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SELECTIVE_TRANSFER_CAPABILITY="npcink.release-selective-transfer.v1"
 HELPER="${ROOT_DIR}/scripts/verify-release-bundle-manifest.py"
 . "${ROOT_DIR}/deploy/common.sh"
 RELEASE_TOOL_PYTHON="$(npcink_ai_cloud_release_tool_python)"
