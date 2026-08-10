@@ -204,6 +204,10 @@ jobs:
           release_lane="${{ steps.release_plan.outputs.lane }}"
           health_profile="${{ steps.release_plan.outputs.health_profile }}"
           if [ "${release_action}" = "no_deploy" ]; then
+            if [ "${{ inputs.run_formal_release_smoke }}" = "true" ]; then
+              echo "[fail] Formal release smoke is valid only for a runtime release plan." >&2
+              exit 1
+            fi
             if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
               echo "[fail] A no-deploy release cannot request runtime-network repair." >&2
               exit 1
@@ -218,6 +222,10 @@ jobs:
             exit 0
           fi
           if [ "${release_action}" = "static" ]; then
+            if [ "${{ inputs.run_formal_release_smoke }}" = "true" ]; then
+              echo "[fail] Formal release smoke is valid only for a runtime release plan." >&2
+              exit 1
+            fi
             if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
               echo "[fail] A static release cannot request runtime-network repair." >&2
               exit 1
@@ -308,7 +316,7 @@ jobs:
             --require-alipay-enabled
 
       - name: Formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
@@ -402,11 +410,23 @@ jobs:
             --credentials-file "${credential_file}"
 
       - name: Record deferred formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke == false
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke == false
         run: |
           {
             echo "## Formal Release Smoke"
             echo ""
             echo "Not selected for this deploy. This is not passing formal-smoke evidence."
             echo "For real SMTP, refresh the one-time Portal login code only after deployment, then immediately dispatch the fail-closed Release Smoke workflow from production."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Record plan-scoped verification
+        if: steps.deploy.outputs.health_profile != 'runtime'
+        run: |
+          {
+            echo "## Plan-scoped Production Verification"
+            echo ""
+            echo "- lane=${{ steps.deploy.outputs.release_lane }}"
+            echo "- action=${{ steps.deploy.outputs.release_action }}"
+            echo "- health_profile=${{ steps.deploy.outputs.health_profile }}"
+            echo "- formal_smoke=not_applicable"
           } >> "${GITHUB_STEP_SUMMARY}"

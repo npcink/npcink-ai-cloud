@@ -1839,7 +1839,11 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     )
     assert "run_formal_release_smoke:" in workflow
     assert "default: false" in workflow
-    assert "installation_state == 'complete' && inputs.run_formal_release_smoke" in workflow
+    assert (
+        "installation_state == 'complete' && "
+        "steps.deploy.outputs.health_profile == 'runtime' && "
+        "inputs.run_formal_release_smoke"
+    ) in workflow
     assert "Failed closed because the selected formal release smoke" in workflow
     assert "exit 1" in workflow
     assert "Record deferred formal release smoke" in workflow
@@ -1859,6 +1863,9 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in workflow
     assert "steps.release_plan.outputs.action != 'no_deploy'" in workflow
     assert "steps.deploy.outputs.health_profile == 'runtime'" in workflow
+    assert "Formal release smoke is valid only for a runtime release plan." in workflow
+    assert "Record plan-scoped verification" in workflow
+    assert "formal_smoke=not_applicable" in workflow
     assert "A no-deploy release cannot request runtime-network repair." in workflow
     assert "A static release cannot request runtime-network repair." in workflow
     assert "Post-install preflight and release smoke were intentionally skipped." in workflow

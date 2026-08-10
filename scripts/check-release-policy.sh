@@ -1069,7 +1069,7 @@ require_marker ".github/workflows/deploy-production.yml" \
 	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
 require_marker ".github/workflows/deploy-production.yml" "run_formal_release_smoke:"
 require_marker ".github/workflows/deploy-production.yml" \
-	"installation_state == 'complete' && inputs.run_formal_release_smoke"
+	"installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke"
 require_marker ".github/workflows/deploy-production.yml" \
 	"Failed closed because the selected formal release smoke"
 require_marker ".github/workflows/deploy-production.yml" \
@@ -1096,6 +1096,10 @@ require_marker ".github/workflows/deploy-production.yml" \
 	"bash deploy/deploy-static-terms-to-ssh-host.sh"
 require_marker ".github/workflows/deploy-production.yml" \
 	"steps.deploy.outputs.health_profile == 'runtime'"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Formal release smoke is valid only for a runtime release plan."
+require_marker ".github/workflows/deploy-production.yml" \
+	"Record plan-scoped verification"
 require_marker "docs/cloud-production-release-policy-v1.md" \
 	'An exact `no_deploy` plan completes without'
 require_marker "docs/cloud-production-release-policy-v1.md" \

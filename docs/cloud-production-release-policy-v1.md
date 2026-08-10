@@ -288,6 +288,9 @@ images, run migration, replace services, refresh providers, or execute runtime
 readiness, and relies on that publisher's exact static-page health proof.
 Runtime lanes retain the protected cutover and small-customer preflight.
 Unknown lanes and inconsistent flag combinations fail before host mutation.
+Formal release smoke is a runtime-profile gate; selecting it for `no_deploy` or
+`static` fails before the plan-scoped action instead of silently adding runtime
+health probes.
 
 When a frontend is preserved, the deploy records its actual daemon image ID,
 embedded source revision, and previous-release binding in the new release's
