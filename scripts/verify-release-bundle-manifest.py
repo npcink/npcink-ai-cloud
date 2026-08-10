@@ -143,13 +143,16 @@ def classify_production_release_paths(changed_files: list[str]) -> tuple[str, di
     if spec is None or spec.loader is None:
         fail("production release-plan classifier cannot be loaded")
     module = importlib.util.module_from_spec(spec)
+    previous_dont_write_bytecode = sys.dont_write_bytecode
     sys.modules[spec.name] = module
     try:
+        sys.dont_write_bytecode = True
         spec.loader.exec_module(module)
         lane, flags, normalized_files = module.classify_release(changed_files)
     except Exception as exc:
         fail(f"production release-plan classification failed: {exc}")
     finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
         sys.modules.pop(spec.name, None)
     if list(normalized_files) != changed_files:
         fail("production release plan changed_files are not canonical")
