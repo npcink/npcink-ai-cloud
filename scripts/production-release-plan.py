@@ -27,7 +27,10 @@ def _application_image_inputs(
     package_extras: str,
 ) -> dict[str, object]:
     helper_path = Path(__file__).resolve().with_name("production-application-image-inputs.py")
-    spec = importlib.util.spec_from_file_location("npcink_production_application_image_inputs", helper_path)
+    spec = importlib.util.spec_from_file_location(
+        "npcink_production_application_image_inputs",
+        helper_path,
+    )
     if spec is None or spec.loader is None:
         raise ReleasePlanError("production application-image input helper cannot be loaded")
     module = importlib.util.module_from_spec(spec)

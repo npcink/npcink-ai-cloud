@@ -96,7 +96,9 @@ def _file_record(root: Path, relative: str) -> dict[str, Any]:
     try:
         path.resolve(strict=True).relative_to(root)
     except (OSError, ValueError) as exc:
-        raise ImageInputError(f"production image input escapes the source root: {relative}") from exc
+        raise ImageInputError(
+            f"production image input escapes the source root: {relative}"
+        ) from exc
     if path.is_symlink() or not path.is_file():
         raise ImageInputError(f"production image input is not a regular file: {relative}")
     content = path.read_bytes()
@@ -131,7 +133,10 @@ def create_inputs(
 
     images: list[dict[str, Any]] = []
     for key, pathspecs in IMAGE_DEFINITIONS.items():
-        files = [_file_record(resolved_root, path) for path in _tracked_files(resolved_root, pathspecs)]
+        files = [
+            _file_record(resolved_root, path)
+            for path in _tracked_files(resolved_root, pathspecs)
+        ]
         build_parameters = {
             "platform": platform,
             "package_extras": package_extras if key == "api" else "",
@@ -172,7 +177,9 @@ def validate_inputs(payload: object) -> dict[str, Any]:
         seen.add(key)
         parameters = image["build_parameters"]
         if not isinstance(parameters, dict) or set(parameters) != {"platform", "package_extras"}:
-            raise ImageInputError(f"production application-image build parameters are invalid: {key}")
+            raise ImageInputError(
+                f"production application-image build parameters are invalid: {key}"
+            )
         if parameters["platform"] not in SUPPORTED_PLATFORMS:
             raise ImageInputError(f"production application-image platform is invalid: {key}")
         expected_extras = SUPPORTED_PACKAGE_EXTRAS if key == "api" else {""}
@@ -193,7 +200,9 @@ def validate_inputs(payload: object) -> dict[str, Any]:
                 or not isinstance(record["size"], int)
                 or record["size"] < 0
             ):
-                raise ImageInputError(f"production application-image file identity is invalid: {key}")
+                raise ImageInputError(
+                    f"production application-image file identity is invalid: {key}"
+                )
         if paths != sorted(set(paths)):
             raise ImageInputError(f"production application-image paths are not canonical: {key}")
         subject = {
