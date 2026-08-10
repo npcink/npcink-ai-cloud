@@ -126,6 +126,14 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "commits/${GITHUB_SHA}/pulls" in workflow
     assert "production-pr-ci-evidence-${pr_number}-${pr_head_sha}" in workflow
     assert "python3 scripts/production-ci-evidence.py verify" in workflow
+    assert 'PRODUCTION_EVIDENCE_MAX_ATTEMPTS: "5"' in workflow
+    assert 'PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES: "2"' in workflow
+    assert 'PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS: "10"' in workflow
+    assert "for ((attempt = 1; attempt <= PRODUCTION_EVIDENCE_MAX_ATTEMPTS; attempt++))" in workflow
+    assert 'sleep "${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}"' in workflow
+    assert "production PR CI evidence artifact is not visible" in workflow
+    assert "consecutive times with signature" in workflow
+    assert "Downloaded production PR CI evidence failed identity" in workflow
     assert "production commit tree does not match the tree tested" in evidence_script
     assert "exactly one merged same-repository production PR" in evidence_script
     assert workflow.count(production_push_guard) >= 8
