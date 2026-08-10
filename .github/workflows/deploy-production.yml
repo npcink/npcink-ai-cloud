@@ -4,10 +4,19 @@ run-name: Deploy production ${{ github.sha }}
 on:
   workflow_dispatch:
     inputs:
+      expected_sha:
+        description: "Paste dispatch_expected_sha from production:release:preflight"
+        required: true
+        type: string
       confirmation:
         description: "Type: Approved for production validation by operator."
         required: true
         type: string
+      run_formal_release_smoke:
+        description: "Run fail-closed authenticated smoke after a completed ordinary deploy"
+        required: true
+        default: false
+        type: boolean
       finalized_runtime_network_repair:
         description: "Repair missing finalized active-release runtime-network state before ordinary deployment"
         required: true
@@ -54,11 +63,14 @@ jobs:
 
       - name: Validate operator confirmation
         env:
+          EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}
           OPERATOR_CONFIRMATION: ${{ inputs.confirmation }}
           FINALIZED_RUNTIME_NETWORK_REPAIR: ${{ inputs.finalized_runtime_network_repair }}
           FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
+          [[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"
           test "${OPERATOR_CONFIRMATION}" = "Approved for production validation by operator."
           if [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "true" ]; then
             test "${FINALIZED_RUNTIME_NETWORK_REPAIR_CONFIRMATION}" = "Approved for finalized runtime-network repair by operator."
@@ -69,7 +81,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Require successful CI for this production commit
+      - name: Require successful CI and CodeQL for this production commit
         id: production_ci
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,7 +101,29 @@ jobs:
           ci_run_id="$(jq -r '.id // ""' <<<"${ci_run}")"
           test "${conclusion}" = "success"
           [[ "${ci_run_id}" =~ ^[0-9]+$ ]]
+          codeql_run="$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/codeql.yml/runs" \
+              -f branch=production \
+              -f event=push \
+              -f status=completed \
+              -f per_page=20 |
+              jq -c --arg sha "${GITHUB_SHA}" \
+                '[.workflow_runs[] | select(.head_sha == $sha)][0] // {}'
+          )"
+          codeql_conclusion="$(jq -r '.conclusion // ""' <<<"${codeql_run}")"
+          codeql_run_id="$(jq -r '.id // ""' <<<"${codeql_run}")"
+          test "${codeql_conclusion}" = "success"
+          [[ "${codeql_run_id}" =~ ^[0-9]+$ ]]
           printf 'run_id=%s\n' "${ci_run_id}" >> "${GITHUB_OUTPUT}"
+          printf 'codeql_run_id=%s\n' "${codeql_run_id}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "## Exact Production Checks"
+            echo ""
+            echo "- cloud_ci_run=${ci_run_id}"
+            echo "- codeql_run=${codeql_run_id}"
+            echo "- production_sha=${GITHUB_SHA}"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Download exact production deploy bundle
         env:
@@ -220,8 +254,8 @@ jobs:
             --base-url "${NPCINK_CLOUD_BASE_URL}" \
             --require-alipay-enabled
 
-      - name: Optional formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete'
+      - name: Formal release smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
@@ -251,8 +285,8 @@ jobs:
           if [ "${missing}" = "1" ]; then
             echo "## Formal Release Smoke" >> "${GITHUB_STEP_SUMMARY}"
             echo "" >> "${GITHUB_STEP_SUMMARY}"
-            echo "Skipped because one or more formal release smoke secrets are not configured." >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
+            echo "Failed closed because the selected formal release smoke is missing one or more protected secrets." >> "${GITHUB_STEP_SUMMARY}"
+            exit 1
           fi
           credential_dir="$(mktemp -d)"
           credential_file="${credential_dir}/release-smoke-credentials.json"
@@ -313,3 +347,13 @@ jobs:
             NPCINK_CLOUD_RELEASE_KEY_SECRET
           bash deploy/release-smoke.sh --base-url "${NPCINK_CLOUD_BASE_URL}" \
             --credentials-file "${credential_file}"
+
+      - name: Record deferred formal release smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke == false
+        run: |
+          {
+            echo "## Formal Release Smoke"
+            echo ""
+            echo "Not selected for this deploy. This is not passing formal-smoke evidence."
+            echo "For real SMTP, refresh the one-time Portal login code only after deployment, then immediately dispatch the fail-closed Release Smoke workflow from production."
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -48,15 +48,26 @@ the job summary.
 
 Ordinary production deployment has one trigger: manually dispatch
 `Deploy Production` from the exact `production` revision after `Cloud CI` is
-green. The operator must enter
-`Approved for production validation by operator.` exactly. In the current
+green. Before dispatch, run
+`pnpm run production:release:preflight -- --sha <production-sha>` and require
+`release_preflight=ready`; add `--require-formal-smoke` when authenticated
+formal smoke is part of the release gate. This read-only command waits for the
+exact Cloud CI and CodeQL runs, verifies the SHA-bound bundle artifact and
+secret-name readiness, and rejects an already active deploy without reading
+secret values or mutating production. The operator must paste the reported
+`dispatch_expected_sha` into the required `expected_sha` workflow input, then
+enter `Approved for production validation by operator.` exactly. The workflow
+fails before checkout or host mutation if the full lowercase SHA does not equal
+the exact `production` revision selected for the run. In the current
 single-operator AI-development model, that manual dispatch is the one human
 production authorization. The GitHub Environment named `production` retains
 protected secrets and production-branch policy without adding a second hidden
 reviewer wait. The workflow then deploys and runs the small-customer preflight
-plus optional formal release smoke. Missing optional smoke secrets produce an
-explicit skip, never a secret-bearing log. Neither a normal `production` push
-nor a static-terms-only push deploys automatically. The only temporary
+plus formal release smoke only when `run_formal_release_smoke` is explicitly
+selected. A selected smoke fails closed if any protected credential is missing
+or stale; a default-off deferred smoke is recorded as not-passed evidence,
+never as a successful skip. Neither a normal `production` push nor a
+static-terms-only push deploys automatically. The only temporary
 exception is the exact
 bundle-bound trusted-workstation path for the current empty-host PostgreSQL 18
 first install described below; it is not reusable after finalization.
@@ -182,7 +193,8 @@ PROD_REMOTE_DIR=/opt/npcink-ai-cloud
 PROD_BASE_URL=https://cloud.npc.ink
 ```
 
-Optional formal release-smoke secrets used by the manually dispatched deploy:
+Protected formal release-smoke secrets used by either an explicitly selected
+deploy smoke or the separate `Release Smoke` workflow:
 
 ```text
 NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=<internal readiness token>
@@ -193,6 +205,20 @@ NPCINK_CLOUD_RELEASE_SITE_ID=<runtime smoke site id>
 NPCINK_CLOUD_RELEASE_KEY_ID=<runtime smoke key id>
 NPCINK_CLOUD_RELEASE_KEY_SECRET=<runtime smoke key secret>
 ```
+
+The Portal login code is single-use and expires after 10 minutes by default.
+Do not keep an old code as durable release configuration. If the deployment may
+outlast that TTL, leave `run_formal_release_smoke=false`, finish the deploy,
+request and store a fresh code through the protected operator path, then
+immediately dispatch `Release Smoke` from `production`, pasting the successful
+deploy's full SHA into `expected_deployed_sha`. The smoke fails before checkout
+unless that SHA equals the selected workflow revision and has a successful
+`Deploy Production` run. Before selecting the inline smoke, run the release
+preflight with `--require-formal-smoke`; missing
+secret names or a stale code must stop the smoke rather than be reported as a
+skip. The operator-only admin key must be captured at setup/rotation time and
+stored directly in the protected `production` Environment; the bootstrap or
+internal token is not a substitute.
 
 Keep generated database credentials and runtime security roots outside both the
 release payload and `.env.deploy`, under the protected shared config root. The

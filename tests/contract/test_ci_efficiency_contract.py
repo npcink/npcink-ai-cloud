@@ -16,6 +16,8 @@ PR_WAITER = ROOT / "scripts" / "wait-pr-readiness.py"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
 CHANGED_COVERAGE_REPORT = ROOT / "scripts" / "report-changed-code-coverage.py"
+PRODUCTION_CI_EVIDENCE = ROOT / "scripts" / "production-ci-evidence.py"
+PRODUCTION_RELEASE_PLAN = ROOT / "scripts" / "production-release-plan.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
@@ -112,6 +114,51 @@ def test_codeql_runs_for_master_and_production_pull_requests() -> None:
     assert "pull_request:\n    branches: [master, production]" in workflow
 
 
+def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    evidence_script = PRODUCTION_CI_EVIDENCE.read_text(encoding="utf-8")
+    production_push_guard = (
+        "github.event_name != 'push' || github.ref != 'refs/heads/production'"
+    )
+
+    assert "production-promotion-evidence:" in workflow
+    assert "Production PR CI evidence" in workflow
+    assert "commits/${GITHUB_SHA}/pulls" in workflow
+    assert "production-pr-ci-evidence-${pr_number}-${pr_head_sha}" in workflow
+    assert "python3 scripts/production-ci-evidence.py verify" in workflow
+    assert "production commit tree does not match the tree tested" in evidence_script
+    assert "exactly one merged same-repository production PR" in evidence_script
+    assert workflow.count(production_push_guard) >= 8
+    assert "needs: [production-release-plan, production-promotion-evidence]" in workflow
+    assert "Create production PR CI evidence receipt" in workflow
+    assert "Upload production PR CI evidence receipt" in workflow
+    assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
+    assert "REQUIRES_FULL_BACKEND" in workflow
+    assert '--full-backend "${full_backend}"' in workflow
+
+
+def test_production_push_creates_exact_release_plan_evidence() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    release_plan = PRODUCTION_RELEASE_PLAN.read_text(encoding="utf-8")
+
+    assert "production-release-plan:" in workflow
+    assert "Create exact production release plan" in workflow
+    assert "git diff --no-renames --name-only --diff-filter=ACMRD" in workflow
+    assert '"${base_sha}" "${GITHUB_SHA}"' in workflow
+    assert '"${base_sha}...${GITHUB_SHA}"' not in workflow
+    assert "production-release-plan-${{ github.sha }}" in workflow
+    assert "Download exact production release plan" in workflow
+    assert "${{ runner.temp }}/production-release-plan" in workflow
+    assert "NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION" in workflow
+    assert "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE" in workflow
+    assert "python3 scripts/production-release-plan.py" in workflow
+    assert "PRODUCTION_RELEASE_PLAN_RESULT" in workflow
+    assert "npcink.production_release_plan.v1" in release_plan
+    assert '"head_tree"' in release_plan
+    assert '"backend_image_required"' in release_plan
+    assert '"migration_required"' in release_plan
+
+
 def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None:
     for path in (
         "frontend/src/app/portal/page.tsx",
@@ -157,7 +204,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "specialized_quality_required: "
         "${{ steps.changed.outputs.specialized_quality_required }}" in workflow
     )
-    assert workflow.count("--diff-filter=ACMRD") == 3
+    assert workflow.count("--diff-filter=ACMRD") == 5
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
     assert "specialized-quality:" in workflow
@@ -226,6 +273,7 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "mapfile" not in source
     assert "select-pr-backend-tests.py" in source
     assert "contract shards are already covered" in source
+    assert "ci/pytest-backend-durations.json" in source
     assert '"app/api/routes/portal.py"' in selector
     assert '"tests/api/test_portal_routes.py"' in selector
     assert "selecting all tests/api" in selector
@@ -234,6 +282,50 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "matrix.needs_node" in workflow
     assert "backend-docs:" in workflow
     assert "docs-only backend gate did not pass" in workflow
+
+
+def test_production_promotion_pr_forces_the_complete_backend_gate(
+    tmp_path: Path,
+) -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    github_output = tmp_path / "github-output"
+    environment = {
+        **os.environ,
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_BASE_REF": "production",
+        "GITHUB_OUTPUT": str(github_output),
+    }
+
+    completed = subprocess.run(
+        ["bash", str(BACKEND_GATE), "--classify-only"],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert "Production-promotion PR; full backend gate required." in completed.stdout
+    assert "requires_full_backend=1" in completed.stdout
+    assert github_output.read_text(encoding="utf-8") == "requires_full_backend=1\n"
+    production_scope_condition = (
+        "github.base_ref == 'production' || "
+        "(needs.classify.outputs.docs_only != 'true' && "
+        "needs.classify.outputs.frontend_only != 'true')"
+    )
+    assert workflow.count(production_scope_condition) == 2
+    assert (
+        "if: github.base_ref != 'production' && "
+        "needs.classify.outputs.docs_only == 'true'"
+    ) in workflow
+    assert (
+        "if: github.base_ref != 'production' && "
+        "needs.classify.outputs.frontend_only == 'true'"
+    ) in workflow
+    assert (
+        "needs.classify.outputs.docs_only == 'true' && "
+        "needs['backend-scope'].outputs.requires_full_backend != '1'"
+    ) in workflow
 
 
 def test_pr_wait_command_monitors_checks_and_review_threads_together() -> None:

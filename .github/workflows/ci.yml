@@ -8,14 +8,174 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 concurrency:
   group: cloud-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  production-release-plan:
+    name: Production release plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create exact production release plan
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base_sha="${BEFORE_SHA}"
+          if [ -z "${base_sha}" ] || [[ "${base_sha}" =~ ^0+$ ]]; then
+            base_sha="0000000000000000000000000000000000000000"
+            mapfile -t changed_files < <(
+              git diff-tree --root --no-commit-id --name-only -r --diff-filter=ACMRD "${GITHUB_SHA}"
+            )
+          else
+            mapfile -t changed_files < <(
+              git diff --no-renames --name-only --diff-filter=ACMRD \
+                "${base_sha}" "${GITHUB_SHA}"
+            )
+          fi
+
+          mkdir -p artifacts/production-release-plan
+          python3 scripts/production-release-plan.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --base-sha "${base_sha}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse "${GITHUB_SHA}^{tree}")" \
+            --output artifacts/production-release-plan/production-release-plan.json \
+            -- \
+            "${changed_files[@]}"
+          cat artifacts/production-release-plan/production-release-plan.json \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload exact production release plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-release-plan-${{ github.sha }}
+          path: artifacts/production-release-plan/production-release-plan.json
+          if-no-files-found: error
+          retention-days: 14
+
+  production-promotion-evidence:
+    name: Production PR CI evidence
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    outputs:
+      pull_request_number: ${{ steps.verify.outputs.pull_request_number }}
+      source_ci_run_id: ${{ steps.verify.outputs.source_ci_run_id }}
+      tested_tree: ${{ steps.verify.outputs.tested_tree }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify merged production PR CI evidence
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          evidence_dir="$(mktemp -d "${RUNNER_TEMP}/production-pr-evidence.XXXXXX")"
+          trap 'rm -rf "${evidence_dir}"' EXIT
+
+          gh api "repos/${GITHUB_REPOSITORY}/git/commits/${GITHUB_SHA}" \
+            > "${evidence_dir}/production-commit.json"
+          gh api -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            > "${evidence_dir}/associated-pulls.json"
+
+          matching_prs="$(
+            jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
+              [ .[]
+                | select(.base.ref == "production")
+                | select(.merged_at != null)
+                | select(.merge_commit_sha == $sha)
+                | select(.head.repo.full_name == $repository)
+              ]
+            ' "${evidence_dir}/associated-pulls.json"
+          )"
+          test "$(jq 'length' <<<"${matching_prs}")" -eq 1
+          pr_number="$(jq -r '.[0].number' <<<"${matching_prs}")"
+          pr_head_sha="$(jq -r '.[0].head.sha' <<<"${matching_prs}")"
+          pr_head_ref="$(jq -r '.[0].head.ref' <<<"${matching_prs}")"
+          [[ "${pr_number}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${pr_head_sha}" =~ ^[0-9a-f]{40}$ ]]
+          test -n "${pr_head_ref}"
+
+          gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch="${pr_head_ref}" \
+            -f event=pull_request \
+            -f status=completed \
+            -f per_page=100 \
+            > "${evidence_dir}/workflow-runs.json"
+
+          artifact_name="production-pr-ci-evidence-${pr_number}-${pr_head_sha}"
+          mapfile -t run_ids < <(
+            jq -r --arg sha "${pr_head_sha}" '
+              .workflow_runs[]
+              | select(.head_sha == $sha)
+              | select(.event == "pull_request")
+              | select(.conclusion == "success")
+              | .id
+            ' "${evidence_dir}/workflow-runs.json"
+          )
+          test "${#run_ids[@]}" -gt 0
+
+          verified=false
+          for run_id in "${run_ids[@]}"; do
+            rm -rf "${evidence_dir}/download"
+            mkdir -p "${evidence_dir}/download"
+            if ! gh run download "${run_id}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --name "${artifact_name}" \
+              --dir "${evidence_dir}/download" >/dev/null 2>&1; then
+              continue
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              > "${evidence_dir}/ci-run.json"
+            if python3 scripts/production-ci-evidence.py verify \
+              --repository "${GITHUB_REPOSITORY}" \
+              --production-sha "${GITHUB_SHA}" \
+              --production-commit "${evidence_dir}/production-commit.json" \
+              --associated-pulls "${evidence_dir}/associated-pulls.json" \
+              --ci-run "${evidence_dir}/ci-run.json" \
+              --receipt "${evidence_dir}/download/production-pr-ci-evidence.json" \
+              --output "${evidence_dir}/verification.json"; then
+              verified=true
+              source_ci_run_id="${run_id}"
+              break
+            fi
+          done
+          test "${verified}" = "true"
+
+          tested_tree="$(jq -r '.production_tree' "${evidence_dir}/verification.json")"
+          {
+            echo "pull_request_number=${pr_number}"
+            echo "source_ci_run_id=${source_ci_run_id}"
+            echo "tested_tree=${tested_tree}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo "## Production PR CI Evidence"
+            echo ""
+            echo "- production_sha=${GITHUB_SHA}"
+            echo "- production_tree=${tested_tree}"
+            echo "- production_pr=${pr_number}"
+            echo "- reused_ci_run=${source_ci_run_id}"
+            echo "- evidence_reused=true"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   production-deploy-bundle:
     name: Production deploy bundle
+    needs: [production-release-plan, production-promotion-evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
     steps:
@@ -25,11 +185,47 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Download exact production release plan
+        uses: actions/download-artifact@v7
+        with:
+          name: production-release-plan-${{ github.sha }}
+          path: ${{ runner.temp }}/production-release-plan
+
+      - name: Restore disposable production image scan evidence
+        id: production_scan_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/production-image-scan-cache/evidence
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
+          restore-keys: |
+            production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-
+
+      - name: Prepare disposable production image scan cache
+        run: |
+          set -euo pipefail
+          cache_root="${RUNNER_TEMP}/production-image-scan-cache"
+          if [ -d "${cache_root}/evidence" ]; then
+            mv "${cache_root}/evidence" "${cache_root}/reuse"
+          fi
+          mkdir -p "${cache_root}/evidence"
+
       - name: Build and scan exact production deploy bundle
         env:
           NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
           NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
+          NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"
+          NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE: ${{ runner.temp }}/production-release-plan/production-release-plan.json
+          NPCINK_CLOUD_SCAN_REUSE_DIR: ${{ runner.temp }}/production-image-scan-cache/reuse
+          NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR: ${{ runner.temp }}/production-image-scan-cache/evidence
         run: bash deploy/bundle-images.sh
+
+      - name: Save disposable production image scan evidence
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/production-image-scan-cache/evidence
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
 
       - name: Upload exact production deploy bundle
         uses: actions/upload-artifact@v7
@@ -146,36 +342,36 @@ jobs:
 
   backend-scope:
     needs: [classify]
-    if: needs.classify.outputs.static_terms_only != 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     outputs:
       requires_full_backend: ${{ steps.scope.outputs.requires_full_backend || steps.docs_scope.outputs.requires_full_backend || steps.frontend_scope.outputs.requires_full_backend }}
     steps:
       - name: Checkout
-        if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
+        if: github.base_ref == 'production' || (needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true')
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Classify backend gate scope
         id: scope
-        if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
+        if: github.base_ref == 'production' || (needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true')
         run: bash scripts/check-pr-backend-gate.sh --classify-only
 
       - name: Select docs-only backend gate
         id: docs_scope
-        if: needs.classify.outputs.docs_only == 'true'
+        if: github.base_ref != 'production' && needs.classify.outputs.docs_only == 'true'
         run: echo "requires_full_backend=0" >> "${GITHUB_OUTPUT}"
 
       - name: Select frontend-only backend gate
         id: frontend_scope
-        if: needs.classify.outputs.frontend_only == 'true'
+        if: github.base_ref != 'production' && needs.classify.outputs.frontend_only == 'true'
         run: echo "requires_full_backend=0" >> "${GITHUB_OUTPUT}"
 
   python-dependency-audit:
     name: Python dependency audit
     needs: [classify]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -271,7 +467,7 @@ jobs:
 
   backend-docs:
     needs: [classify, backend-scope]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true' && needs['backend-scope'].outputs.requires_full_backend != '1'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -287,7 +483,7 @@ jobs:
 
   backend-static:
     needs: [classify, backend-scope]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -327,7 +523,7 @@ jobs:
 
   backend-pytest:
     needs: [classify, backend-scope]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -447,7 +643,7 @@ jobs:
   backend-postgres-cutover:
     name: PostgreSQL 16 encryption cutover regression
     needs: [classify, backend-scope]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -488,7 +684,7 @@ jobs:
   backend:
     name: backend
     needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, backend-static, backend-pytest, backend-postgres-cutover]
-    if: always() && needs.classify.outputs.static_terms_only != 'true'
+    if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Verify backend gate result
@@ -615,7 +811,7 @@ jobs:
 
   frontend:
     needs: [classify]
-    if: needs.classify.outputs.static_terms_only != 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -678,7 +874,7 @@ jobs:
 
   static-terms:
     needs: [classify]
-    if: needs.classify.outputs.static_terms_only == 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -697,6 +893,8 @@ jobs:
   ci-observability:
     name: CI observability
     needs:
+      - production-release-plan
+      - production-promotion-evidence
       - production-deploy-bundle
       - secret-scan
       - classify
@@ -734,10 +932,54 @@ jobs:
       - name: Verify production deploy bundle result
         if: github.event_name == 'push' && github.ref == 'refs/heads/production'
         env:
+          PRODUCTION_PR_EVIDENCE_RESULT: ${{ needs.production-promotion-evidence.result }}
+          PRODUCTION_RELEASE_PLAN_RESULT: ${{ needs.production-release-plan.result }}
           PRODUCTION_DEPLOY_BUNDLE_RESULT: ${{ needs.production-deploy-bundle.result }}
         run: |
           set -euo pipefail
+          test "${PRODUCTION_RELEASE_PLAN_RESULT}" = "success"
+          test "${PRODUCTION_PR_EVIDENCE_RESULT}" = "success"
           test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
+
+      - name: Create production PR CI evidence receipt
+        if: github.event_name == 'pull_request' && github.base_ref == 'production'
+        env:
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          STATIC_TERMS_RESULT: ${{ needs.static-terms.result }}
+          STATIC_TERMS_ONLY: ${{ needs.classify.outputs.static_terms_only }}
+          REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/production-pr-ci-evidence
+          full_backend=false
+          if [ "${REQUIRES_FULL_BACKEND}" = "1" ]; then
+            full_backend=true
+          fi
+          python3 scripts/production-ci-evidence.py create \
+            --repository "${GITHUB_REPOSITORY}" \
+            --pr-number "${{ github.event.pull_request.number }}" \
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --tested-sha "$(git rev-parse HEAD)" \
+            --tested-tree "$(git rev-parse HEAD^{tree})" \
+            --static-terms-only "${STATIC_TERMS_ONLY}" \
+            --full-backend "${full_backend}" \
+            --secret-scan "${SECRET_SCAN_RESULT}" \
+            --backend "${BACKEND_RESULT}" \
+            --frontend "${FRONTEND_RESULT}" \
+            --static-terms "${STATIC_TERMS_RESULT}" \
+            --output artifacts/production-pr-ci-evidence/production-pr-ci-evidence.json
+
+      - name: Upload production PR CI evidence receipt
+        if: github.event_name == 'pull_request' && github.base_ref == 'production'
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-pr-ci-evidence-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: artifacts/production-pr-ci-evidence/production-pr-ci-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Summarize pytest shard balance
         env:

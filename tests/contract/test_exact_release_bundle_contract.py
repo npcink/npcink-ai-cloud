@@ -88,6 +88,29 @@ def test_target_daemon_map_cli_has_no_arbitrary_path_override(tmp_path: Path) ->
     assert "unrecognized arguments: --target-daemon-map" in completed.stderr
 
 
+def test_malformed_previous_release_map_is_only_a_reuse_cache_miss(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    helper = load_helper_module()
+    observed_id = "sha256:" + "a" * 64
+    monkeypatch.setattr(helper, "current_daemon_image_id", lambda _reference: observed_id)
+
+    def reject_previous_map(_root: Path, _role: str) -> dict[str, str]:
+        raise helper.BundleError("malformed previous map")
+
+    monkeypatch.setattr(helper, "read_target_daemon_map", reject_previous_map)
+    reason = helper.reusable_archive_reason(
+        previous_root=tmp_path / "release-previous",
+        primary={
+            "reference": "npcink-ai-cloud-api:prod",
+            "role": "api",
+            "expected_image_id": "sha256:" + "b" * 64,
+        },
+    )
+
+    assert reason is None
+
+
 def write(path: Path, content: str = "fixture\n") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -236,6 +259,7 @@ def image_lock() -> dict[str, object]:
         "unknown_severity_policy": "block",
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
         "generated_artifacts_must_not_be_committed": True,
+        "max_scan_age_hours": 24,
         "max_database_age_hours": 72,
         "max_exception_days": 30,
     }
@@ -729,6 +753,182 @@ def update_manifest_checksum(bundle: Path) -> None:
         for line in lines
     ]
     checksum_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_v2_bundle_binds_exact_production_release_plan(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    plan_path = tmp_path / "production-release-plan.json"
+    plan = {
+        "schema": "npcink.production_release_plan.v1",
+        "repository": "npcink/npcink-ai-cloud",
+        "base_sha": "0" * 40,
+        "head_sha": "a" * 40,
+        "head_tree": "b" * 40,
+        "changed_files": ["app/main.py"],
+        "lane": "backend",
+        "deployment_required": True,
+        "backend_image_required": True,
+        "frontend_image_required": False,
+        "migration_required": False,
+        "runtime_config_required": False,
+        "static_payload_required": False,
+    }
+    plan_path.write_text(json.dumps(plan, sort_keys=True) + "\n", encoding="utf-8")
+
+    created = run_helper(
+        "create",
+        "--schema-version",
+        "npcink.release-bundle.v2",
+        "--release-plan",
+        str(plan_path),
+        "--source-root",
+        str(source),
+        "--bundle-root",
+        str(bundle),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--branch",
+        "codex/fixture",
+        "--image-platform",
+        "linux/amd64",
+        "--gzip-level",
+        "1",
+        "--frontend-included",
+        "1",
+        "--external-images-included",
+        "1",
+        "--image-lock",
+        "deploy/image-lock/production-images.json",
+        "--image-records",
+        str(records),
+    )
+    assert created.returncode == 0, created.stderr
+
+    bundled_plan = bundle / "release/production-release-plan.json"
+    assert bundled_plan.read_bytes() == plan_path.read_bytes()
+    manifest = json.loads((bundle / "release-bundle-manifest.json").read_text())
+    assert manifest["schema_version"] == "npcink.release-bundle.v2"
+    assert manifest["production_release_plan"]["lane"] == "backend"
+    assert manifest["production_release_plan"]["repository"] == "npcink/npcink-ai-cloud"
+    assert run_helper("verify-directory", "--root", str(bundle)).returncode == 0
+
+    plan["head_sha"] = "c" * 40
+    bundled_plan.write_text(json.dumps(plan, sort_keys=True) + "\n", encoding="utf-8")
+    rejected = run_helper("verify-directory", "--root", str(bundle))
+    assert rejected.returncode == 1
+    assert "release-plan manifest hash mismatch" in rejected.stderr
+
+
+def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    common = (
+        "create",
+        "--schema-version",
+        "npcink.release-bundle.v2",
+        "--source-root",
+        str(source),
+        "--bundle-root",
+        str(bundle),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--branch",
+        "codex/fixture",
+        "--image-platform",
+        "linux/amd64",
+        "--gzip-level",
+        "1",
+        "--frontend-included",
+        "1",
+        "--external-images-included",
+        "1",
+        "--image-lock",
+        "deploy/image-lock/production-images.json",
+        "--image-records",
+        str(records),
+    )
+    missing = run_helper(*common)
+    assert missing.returncode == 1
+    assert "require an exact production release plan" in missing.stderr
+
+    plan_path = tmp_path / "mismatched-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema": "npcink.production_release_plan.v1",
+                "repository": "npcink/npcink-ai-cloud",
+                "base_sha": "0" * 40,
+                "head_sha": "c" * 40,
+                "head_tree": "b" * 40,
+                "changed_files": ["app/main.py"],
+                "lane": "backend",
+                "deployment_required": True,
+                "backend_image_required": True,
+                "frontend_image_required": False,
+                "migration_required": False,
+                "runtime_config_required": False,
+                "static_payload_required": False,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mismatch = run_helper(*common, "--release-plan", str(plan_path))
+    assert mismatch.returncode == 1
+    assert "does not match bundle source revision/tree" in mismatch.stderr
+
+    duplicate_plan = tmp_path / "duplicate-plan.json"
+    duplicate_plan.write_text(
+        plan_path.read_text(encoding="utf-8").replace(
+            '"repository": "npcink/npcink-ai-cloud",',
+            '"repository": "attacker/example", "repository": "npcink/npcink-ai-cloud",',
+        ),
+        encoding="utf-8",
+    )
+    duplicate = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(duplicate_plan),
+        "--revision",
+        "c" * 40,
+        "--tree",
+        "b" * 40,
+    )
+    assert duplicate.returncode == 1
+    assert "duplicate JSON key" in duplicate.stderr
+
+    false_lane_plan = tmp_path / "false-lane-plan.json"
+    false_lane = json.loads(plan_path.read_text(encoding="utf-8"))
+    false_lane.update(
+        {
+            "head_sha": "a" * 40,
+            "lane": "no_deploy",
+            "deployment_required": False,
+            "backend_image_required": False,
+        }
+    )
+    false_lane_plan.write_text(
+        json.dumps(false_lane, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    rejected_lane = run_helper(
+        "verify-release-plan",
+        "--release-plan",
+        str(false_lane_plan),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+    )
+    assert rejected_lane.returncode == 1
+    assert "lane/flags do not match changed_files" in rejected_lane.stderr
 
 
 def test_exact_bundle_verifier_rejects_tamper_missing_extra_and_schema(
@@ -1398,6 +1598,168 @@ def test_real_prepare_only_loader_preserves_exact_payload_and_writes_external_st
     assert bundle_file_hashes(bundle) == before
 
 
+def test_prepare_only_reuses_images_proved_by_previous_release_map(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, previous_bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, previous_bundle, records)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    install_stateful_fake_docker(fake_bin)
+    state_dir = tmp_path / "fake-docker-state"
+    state_root = previous_bundle.parent / ".release-state"
+    state_root.mkdir(mode=0o700, exist_ok=True)
+    target_daemon_state_dir(previous_bundle).mkdir(mode=0o700, exist_ok=True)
+    env_file = tmp_path / "release-state" / "env.deploy"
+    write(
+        env_file,
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=fixture-internal-token\n"
+        "NPCINK_CLOUD_COMPOSE_PROJECT_NAME=npcink-ai-cloud\n",
+    )
+    env_file.chmod(0o600)
+
+    env = os.environ.copy()
+    for key in (
+        "COMPOSE_PROJECT_NAME",
+        "NPCINK_CLOUD_BACKEND_ENV_FILE",
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_COMPOSE_FILE",
+        "NPCINK_CLOUD_EXTERNAL_EDGE_READY",
+        "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE",
+    ):
+        env.pop(key, None)
+    env.update(
+        {
+            "FAKE_DOCKER_STATE_DIR": str(state_dir),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(
+                tmp_path / "release-state" / "rollback-first.tsv"
+            ),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "first",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    install_deploy_lock_owner(previous_bundle, env)
+    first = subprocess.run(
+        ["bash", str(previous_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=previous_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode == 0, f"{first.stdout}\n{first.stderr}"
+    assert "image_inventory_reused=0" in first.stdout
+    assert "image_inventory_loaded=4" in first.stdout
+
+    next_bundle = previous_bundle.parent / "release-next"
+    shutil.copytree(previous_bundle, next_bundle)
+    target_daemon_state_dir(next_bundle).mkdir(mode=0o700)
+    env.update(
+        {
+            "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR": str(previous_bundle),
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(
+                tmp_path / "release-state" / "rollback-next.tsv"
+            ),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "next",
+        }
+    )
+    second = subprocess.run(
+        ["bash", str(next_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=next_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
+    assert "image_inventory_reused=4" in second.stdout
+    assert "image_inventory_loaded=0" in second.stdout
+    assert second.stdout.count("docker load skipped") == 4
+    assert "load api image archive" not in second.stdout
+
+
+def test_prepare_only_loads_only_missing_previous_release_image(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, previous_bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, previous_bundle, records)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    install_stateful_fake_docker(fake_bin)
+    state_dir = tmp_path / "fake-docker-state"
+    state_root = previous_bundle.parent / ".release-state"
+    state_root.mkdir(mode=0o700, exist_ok=True)
+    target_daemon_state_dir(previous_bundle).mkdir(mode=0o700, exist_ok=True)
+    env_file = tmp_path / "release-state" / "env.deploy"
+    write(env_file, "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=fixture-internal-token\n")
+    env_file.chmod(0o600)
+    env = os.environ.copy()
+    for key in (
+        "COMPOSE_PROJECT_NAME",
+        "NPCINK_CLOUD_BACKEND_ENV_FILE",
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_COMPOSE_FILE",
+        "NPCINK_CLOUD_EXTERNAL_EDGE_READY",
+        "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE",
+    ):
+        env.pop(key, None)
+    env.update(
+        {
+            "FAKE_DOCKER_STATE_DIR": str(state_dir),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(tmp_path / "rollback-first.tsv"),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "first",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    install_deploy_lock_owner(previous_bundle, env)
+    first = subprocess.run(
+        ["bash", str(previous_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=previous_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode == 0, f"{first.stdout}\n{first.stderr}"
+
+    state_path = state_dir / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["references"].pop("npcink-ai-cloud-frontend:prod")
+    state_path.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+
+    next_bundle = previous_bundle.parent / "release-next"
+    shutil.copytree(previous_bundle, next_bundle)
+    target_daemon_state_dir(next_bundle).mkdir(mode=0o700)
+    env.update(
+        {
+            "NPCINK_CLOUD_PREVIOUS_RELEASE_DIR": str(previous_bundle),
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(tmp_path / "rollback-next.tsv"),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "next",
+        }
+    )
+    second = subprocess.run(
+        ["bash", str(next_bundle / "deploy/remote-load-and-up.sh")],
+        cwd=next_bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
+    assert "image_inventory_reused=3" in second.stdout
+    assert "image_inventory_loaded=1" in second.stdout
+    assert "load frontend image archive" in second.stdout
+
+
 def test_real_prepare_only_loader_does_not_treat_docker_failure_as_missing_image(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -1549,6 +1911,99 @@ def test_exact_bundle_pack_outer_hash_and_archive_preflight(
     assert "outer bundle checksum mismatch" in rejected.stderr
 
 
+def test_selective_transfer_omits_only_remotely_proved_image_archives(
+    exact_bundle_fixture: tuple[Path, Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, bundle, records)
+    helper = load_helper_module()
+    full_archive = tmp_path / "full" / "deploy-bundle.tgz"
+    full_checksum = full_archive.with_suffix(full_archive.suffix + ".sha256")
+    full_archive.parent.mkdir()
+    helper.pack_bundle(bundle, full_archive, gzip_level=1, mtime=0)
+    helper.write_outer_checksum(full_archive, full_checksum)
+
+    release_name = "release-selective-fixture"
+    request = tmp_path / "request.json"
+    plan = tmp_path / "plan.json"
+    helper.write_transfer_request(full_archive, full_checksum, release_name, request)
+
+    def reusable_reason(*, previous_root: Path | None, primary: dict[str, object]) -> str | None:
+        del previous_root
+        return "portable-id" if primary["role"] == "api" else None
+
+    monkeypatch.setattr(helper, "reusable_archive_reason", reusable_reason)
+    helper.prepare_transfer_plan(request, bundle.parent, None, plan)
+
+    selective_archive = tmp_path / "selective" / "deploy-bundle.tgz"
+    selective_checksum = selective_archive.with_suffix(selective_archive.suffix + ".sha256")
+    helper.pack_transfer_archive(
+        full_archive,
+        full_checksum,
+        plan,
+        selective_archive,
+        selective_checksum,
+    )
+    with tarfile.open(selective_archive, "r:gz") as archive:
+        members = {member.name for member in archive}
+    assert "dist/api.tar.gz" not in members
+    assert "dist/frontend.tar.gz" in members
+    assert "release-bundle-manifest.json" in members
+    assert "SHA256SUMS" in members
+
+    helper.verify_transfer_archive(selective_archive, selective_checksum, plan, bundle.parent)
+    extracted = bundle.parent / release_name
+    extracted.mkdir()
+    with tarfile.open(selective_archive, "r:gz") as archive:
+        archive.extractall(extracted, filter="data")
+    helper.verify_directory(
+        extracted,
+        post_load=False,
+        transfer_plan=plan,
+        remote_dir=bundle.parent,
+    )
+
+    monkeypatch.setattr(helper, "reusable_archive_reason", lambda **_kwargs: None)
+    with pytest.raises(helper.BundleError, match="reuse evidence changed for api"):
+        helper.verify_directory(
+            extracted,
+            post_load=False,
+            transfer_plan=plan,
+            remote_dir=bundle.parent,
+        )
+    monkeypatch.setattr(helper, "reusable_archive_reason", reusable_reason)
+
+    (extracted / "dist/frontend.tar.gz").unlink()
+    with pytest.raises(helper.BundleError, match="bundle payload is not a regular file"):
+        helper.verify_directory(
+            extracted,
+            post_load=False,
+            transfer_plan=plan,
+            remote_dir=bundle.parent,
+        )
+
+
+def test_older_exact_bundle_stays_on_complete_transfer_path(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    _, bundle, _ = exact_bundle_fixture
+    helper = load_helper_module()
+    archive = tmp_path / "deploy-bundle.tgz"
+    checksum = archive.with_suffix(archive.suffix + ".sha256")
+    helper.pack_bundle(bundle, archive, gzip_level=1, mtime=0)
+    helper.write_outer_checksum(archive, checksum)
+
+    with pytest.raises(helper.BundleError, match="does not support selective transfer"):
+        helper.write_transfer_request(
+            archive,
+            checksum,
+            "release-older-fixture",
+            tmp_path / "request.json",
+        )
+
+
 def test_external_plan_consumes_only_digest_locked_runtime_inputs(tmp_path: Path) -> None:
     lock = tmp_path / "production-images.json"
     lock.write_text(json.dumps(image_lock()) + "\n", encoding="utf-8")
@@ -1638,13 +2093,23 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     ) not in bundle
     assert "docker save" not in bundle
     assert 'gzip -n "-${GZIP_LEVEL}" -c "${archive_path}"' in bundle
+    assert 'SCAN_REUSE_ARGS=(--reuse-dir "${SCAN_REUSE_DIR}")' in bundle
+    assert 'cp -a "${LOCAL_SCAN_DIR}/." "${SCAN_CACHE_OUTPUT_DIR}/"' in bundle
+
+    ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "actions/cache/restore@v4" in ci_workflow
+    assert "actions/cache/save@v4" in ci_workflow
+    assert ci_workflow.count("continue-on-error: true") >= 2
+    assert "production-image-scan-v1-linux-amd64-" in ci_workflow
+    assert "NPCINK_CLOUD_SCAN_REUSE_DIR" in ci_workflow
+    assert "NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR" in ci_workflow
 
     pre_index = loader.index("verify exact bundle before load")
     load_index = loader.index("gzip -dc")
     post_index = loader.index("verify loaded image IDs")
     candidate_index = loader.index("up --no-start --pull never --no-build")
     assert pre_index < load_index < post_index < candidate_index
-    assert "load-plan" in loader and "alias-plan" in loader
+    assert "prepare-plan" in loader and "alias-plan" in loader
     assert "--pull never --no-build" in loader
     assert 'docker start "${container_ids_to_start[@]}"' in loader
     assert 'LOAD_MODE="${NPCINK_CLOUD_LOAD_MODE:-}"' in loader
@@ -1681,7 +2146,12 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "0.0.0.0:${PG18_PROOF_PORT}:5432" in smoke
     assert "local no-TLS fixture; not RDS evidence" in smoke
     assert "@host.docker.internal:%s/npcink_ai_cloud" in smoke
-    assert "preflight_status=\\$?" in ssh_deploy
+    assert "verify-transfer-archive" in ssh_deploy
+    assert (
+        "Remote image inventory was unavailable; uploading the complete exact bundle."
+        in ssh_deploy
+    )
+    assert "cleanup_remote_incoming_on_exit" in ssh_deploy
     assert 'rm -rf $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}")' in ssh_deploy
 
 

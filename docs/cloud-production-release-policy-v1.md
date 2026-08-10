@@ -126,6 +126,38 @@ Recommended repository gate:
 pnpm run check:release-policy
 ```
 
+Before manually dispatching `Deploy Production`, run the read-only exact-SHA
+release preflight:
+
+```bash
+pnpm run production:release:preflight -- --sha <production-sha>
+```
+
+The command waits up to 15 minutes for the exact production push Cloud CI and
+CodeQL runs, requires the unexpired SHA-bound deploy bundle, rejects another
+active deploy for the same revision, and checks only the names of repository
+and protected `production` Environment secrets. It never reads or prints secret
+values and never dispatches or mutates production. Formal authenticated smoke
+secret readiness is always reported and can be made fail-closed with
+`--require-formal-smoke`. Copy the reported `dispatch_expected_sha` into the
+required `expected_sha` workflow input. The workflow rejects the dispatch
+before checkout or host mutation unless that full lowercase SHA still equals
+the exact `production` revision selected by GitHub for the run.
+
+`run_formal_release_smoke` is default-off because a Portal login code is
+single-use and expires after the configured short TTL (10 minutes by default),
+while deployment may take longer. Selecting it makes the post-deploy formal
+smoke fail closed when any protected credential is absent or stale; it never
+silently converts missing credentials into green evidence. For a deployment
+that may exceed the code TTL, leave it off, complete the deploy, issue and store
+a fresh code through the protected operator path, and immediately dispatch the
+separate fail-closed `Release Smoke` workflow from the exact `production`
+revision. Paste that successfully deployed full SHA into its required
+`expected_deployed_sha` input. The smoke workflow rejects a different selected
+revision and requires a successful `Deploy Production` run for the exact SHA
+before checkout. A deferred smoke is explicitly recorded as not-passed
+evidence.
+
 ### Bounded release verification
 
 Production safety and operator time are both release constraints. A release
@@ -155,9 +187,109 @@ Release verification follows these rules:
   risk-question change invalidates only the evidence that depends on the
   changed value. It is not authority to replay every other gate.
 
+### Production PR CI evidence reuse
+
+The exact `production` push Cloud CI may reuse the complete backend, frontend,
+and static-terms result from the merged production-promotion PR instead of
+running the same complete suites again. This is evidence reuse, not a reduced
+production gate, and is valid only when all of the following fail-closed checks
+pass:
+
+- the exact production commit is associated with exactly one merged
+  same-repository PR whose base is `production`;
+- the production PR's successful `Cloud CI` run emitted the versioned
+  `npcink.production_pr_ci_evidence.v1` receipt after its applicable secret,
+  complete backend/frontend, or static-terms gates passed; every non-static
+  production-promotion PR is forced into the complete backend lane regardless
+  of ordinary changed-file targeting;
+- the receipt PR number, head SHA, workflow run ID, repository, workflow path,
+  and gate results match the GitHub API evidence;
+- the Git tree tested by the production PR is byte-identical to the exact
+  merged production commit tree;
+- the exact production push still runs its own secret scan, CodeQL workflow,
+  production bundle build/scan, and CI evidence verification before manual
+  deployment can consume the SHA-bound bundle; the deploy workflow separately
+  requires successful exact-SHA Cloud CI and CodeQL workflow runs.
+
+A missing artifact, expired artifact, forked PR, ambiguous associated PR,
+failed or mismatched workflow run, changed tree, or malformed receipt fails the
+production push. It must not fall back to trusting a branch name, commit
+message, prior `master` run, or an unbound green status. Recovery is a new
+reviewed production-promotion PR or restoration of the required exact evidence,
+not a manual bypass.
+
 This rule does not permit a failed required gate to be relabeled as passed. It
 keeps successful evidence attributable, limits retries to an actual recovery
 plan, and prevents broad validation from expanding a narrow production repair.
+
+### Exact production release plan
+
+Every exact `production` push emits a short-lived
+`production-release-plan-<sha>` artifact containing the versioned
+`npcink.production_release_plan.v1` receipt. The receipt binds the repository,
+event-before SHA, production SHA, production tree, sorted changed paths, and
+the selected `no_deploy`, `static`, `frontend`, `backend`, `config`,
+`migration`, or `full` lane. It separately records whether deployment, backend
+or frontend images, migration, runtime configuration, or static payload work
+is required so later release stages do not infer scope from the lane name.
+
+The plan compares the exact event-before and production revisions. Empty or
+unknown path sets, Dockerfiles, dependency locks, image locks, and mixed
+backend/frontend impact fail closed to `full`. Documentation, tests, and CI
+workflow-only changes may select `no_deploy`; pure `site/terms/**` changes may
+select `static`. A missing, malformed, or SHA/tree-mismatched receipt is not
+deployment authority.
+
+Production bundle CI now downloads the exact same-run plan before any image
+build and emits `npcink.release-bundle.v2`. The bundle copies the plan to
+`release/production-release-plan.json`, hashes it in the payload/checksum table,
+and binds its repository, lane, action flags, production SHA, and production
+tree in the bundle manifest. A missing or mismatched plan fails before the
+costly image build begins.
+
+This v2 identity chain still builds a complete exact image set. Scan reuse,
+selective image transfer, and target-daemon image reuse may accelerate delivery
+only through their separately reviewed exact-identity contracts. The remote
+cutover consumes the bound plan conservatively. An exact `backend` plan
+preserves the running frontend, PostgreSQL, and Redis services, skips the
+data-service phase and migration, and replaces the API and worker runtime while
+retaining operational readiness and baseline health gates. An exact `migration`
+plan preserves the running frontend but retains the data-service phase,
+migration, API/worker replacement, and the same health gates. Other lanes,
+missing plans, unsupported schemas, and non-exact flag combinations use the
+complete cutover path. The complete-bundle transfer path remains the fail-closed
+fallback and stage-only behavior remains complete.
+
+When a frontend is preserved, the deploy records its actual daemon image ID,
+embedded source revision, and previous-release binding in the new release's
+private `preserved-runtime-services.json` state before writer shutdown. Read-only
+production readiness accepts that exact preserved identity while continuing to
+require every replaced service to match the new bundle's target-daemon map.
+
+### Disposable production image scan evidence reuse
+
+Production bundle CI may restore prior per-image scan evidence only as a
+disposable acceleration cache. Reuse does not change release, image-lock,
+allowlist, scanner, vulnerability-database, or bundle authority. Each reused
+image must independently pass the current scan verifier before any cached byte
+is copied into the current run.
+
+Reusable evidence is limited to 24 hours and must include the complete retained
+set: normalized Docker archive, image inspect, Syft native JSON, CycloneDX SBOM,
+Grype JSON, and scan receipt. The current image key, requested and archive
+references, source daemon image ID, portable config image ID, platform,
+image-lock hash, allowlist hash, scanner versions, artifact hashes, database
+identity, database freshness, findings, and receipt status must remain exact.
+A missing, stale, incomplete, failed, or mismatched cache entry is a miss and
+that image is scanned normally; cache state is never deployment authority.
+
+Every run rebuilds its own complete scan index. The index continues to require
+one Grype database identity for the release set. When fresh cache hits and new
+scans were produced from different database identities, only the images copied
+from cache are rescanned against the current run database before the index is
+created. The scanner must not weaken the database-identity invariant, combine
+unverified receipts, or fail a release merely because the optional cache is
+absent or unusable.
 
 ### Recovery deployment decision envelope
 
@@ -507,7 +639,13 @@ The previous and new Compose project names and the actual old writer container
 labels must match before image loading or container mutation begins.
 `--skip-frontend-image` additionally requires exactly one running old frontend
 to preserve; it is invalid for a first deploy or a missing frontend. Ordinary
-production deployment is never an implicit host bootstrap: a missing managed
+production deployment automatically applies the same preservation contract for
+an exact `backend` or `migration` release plan. Only the exact `backend` plan may
+skip the data-service start/recreate phase and migration; provider refresh,
+worker operational readiness, traffic restoration, and baseline status remain
+enabled according to their existing deployment controls. Unknown or mismatched
+plan input does not authorize a partial cutover. Ordinary production deployment
+is never an implicit host bootstrap: a missing managed
 `current` release fails before image mutation. Before the first image load, the
 deploy reads the current PostgreSQL Alembic revision through the frozen previous
 release. Revision `20260710_0058` always fails and can advance only through the
@@ -560,6 +698,43 @@ IDs, creates force-recreated candidates with
 governed tags against the map before using `docker start` on only the captured
 IDs. The same container IDs and image IDs must still be running before any
 health or readiness gate succeeds.
+
+Before `prepare-only` loads an archive, it may reuse an already-present image
+only when the current daemon tag is proved to represent the same portable
+Config image ID required by the new exact bundle. The preferred proof reuses
+the previous managed release's private, bundle-bound target-daemon image map:
+the role, release reference, portable Config image ID, recorded target-daemon
+ID, current tag ID, managed sibling release path, and platform-bound manifest
+must all agree. A classic Docker daemon ID that directly equals the required
+portable Config ID is also sufficient. Missing, stale, malformed, mismatched,
+or unavailable reuse evidence is only a cache miss and must load the governed
+archive normally; it must never weaken post-load verification, target-daemon
+map publication, rollback tagging, or the exact bundle identity chain. The
+loader reports reused/loaded archive counts and bytes for release timing
+evidence. This reuse state is disposable delivery acceleration, not release,
+image, Git, runtime, or product truth.
+
+Before an ordinary full deployment uploads the large archive, the SSH deployer
+may send a bounded inventory request derived from the already verified complete
+bundle. The remote plan binds the original bundle SHA, manifest and checksum
+hashes, source revision, platform, release name, and every archive path, size,
+hash, role, reference, and portable Config image ID. Only archives whose current
+daemon identity passes the same proof above may be omitted from the transfer
+archive. The transfer archive must retain the original manifest, complete
+checksum table, source/config payload, and scan evidence; its exact member set is
+the original payload minus only those planned image archives.
+
+The target rechecks the plan and current daemon identities before extraction
+and again before image preparation. The plan is copied into the private
+per-release state and remains external to the exact source payload. Missing,
+malformed, stale, mismatched, or non-reusable inventory is a cache miss and the
+deployer uploads the original complete bundle. A reuse race detected after a
+selective upload fails closed before Docker load or service mutation. Selective
+transfer never weakens post-load portable identity proof, target-daemon map
+publication, rollback, or the exact release chain. Exact bundles whose bundled
+loader, verifier, and manifest helper do not all declare the selective-transfer
+contract remain on the complete-transfer path, preserving older rollback and
+replay bundles.
 
 The Service Settings pair
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /

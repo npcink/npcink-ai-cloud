@@ -8,6 +8,12 @@ The default branch keeps the complete backend pytest gate, but distributes
 `tests/api`, `tests/contract`, and `tests/domain` across three deterministic
 file-level shards.
 
+Production-promotion pull requests still execute this complete gate. After a
+successful production PR records its exact tested Git tree in the governed CI
+evidence receipt, the byte-identical production push reuses that result and
+does not create a duplicate pytest timing sample. Only natural successful
+`master` push artifacts remain scheduling-weight input.
+
 This mechanism is CI scheduling evidence only. It must not change test
 assertions, skip coverage, weaken release gates, or introduce a second runtime
 control plane. The stable required check remains `backend`.
@@ -177,9 +183,10 @@ For changes to this mechanism, run:
 bash -n scripts/check-pr-backend-gate.sh scripts/refresh-pytest-duration-weights.sh
 ```
 
-When `.github/workflows/ci.yml` changes, the pull request intentionally enters
-the complete backend lane. That exact GitHub Actions run is the orchestration
-and integration authority; do not duplicate it with local Docker or M4.
+When `.github/workflows/ci.yml` or `ci/pytest-backend-durations.json` changes,
+the pull request intentionally enters the complete backend lane. That exact
+GitHub Actions run is the orchestration and integration authority; do not
+duplicate it with local Docker or M4.
 
 Before committing generated weights, inspect `source_run_ids`, verify that each
 run is a successful `master` push with three timing artifacts, and replay the

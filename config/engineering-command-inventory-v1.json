@@ -605,6 +605,23 @@
     },
     {
       "package": "root",
+      "profile": "ci_read",
+      "owner_doc": "docs/cloud-production-release-policy-v1.md",
+      "used_by": ["release", "runbook", "manual", "contract"],
+      "status": "active",
+      "evidence": [
+        "docs/cloud-production-release-policy-v1.md",
+        "deploy/PRODUCTION_GITHUB_DEPLOY.md",
+        "deploy/RELEASE_CHECKLIST.md",
+        "scripts/production-release-preflight.py",
+        "tests/dev/test_production_release_preflight.py"
+      ],
+      "commands": {
+        "production:release:preflight": "Verify exact production CI, CodeQL, bundle, active-deploy, and secret-name readiness before manual dispatch."
+      }
+    },
+    {
+      "package": "root",
       "profile": "local_read",
       "owner_doc": "deploy/RELEASE_CHECKLIST.md",
       "used_by": ["release", "runbook"],

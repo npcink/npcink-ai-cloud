@@ -208,6 +208,9 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "dev-frontend-recover.sh",
         "local-alpha-smoke.sh",
         "production-image-supply.py",
+        "production-ci-evidence.py",
+        "production-release-plan.py",
+        "production-release-preflight.py",
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
         "pg18-semantic-proof.py",
@@ -1819,13 +1822,28 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     deploy = (cloud_root / "deploy" / "deploy-to-ssh-host.sh").read_text()
     workflow = (cloud_root / ".github" / "workflows" / "deploy-production.yml").read_text()
 
+    assert "expected_sha:" in workflow
+    assert 'EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}' in workflow
+    assert '[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]' in workflow
+    assert 'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"' in workflow
+    assert workflow.index('test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"') < workflow.index(
+        "uses: actions/checkout@v6"
+    )
+    assert "run_formal_release_smoke:" in workflow
+    assert "default: false" in workflow
+    assert "installation_state == 'complete' && inputs.run_formal_release_smoke" in workflow
+    assert "Failed closed because the selected formal release smoke" in workflow
+    assert "exit 1" in workflow
+    assert "Record deferred formal release smoke" in workflow
+    assert "This is not passing formal-smoke evidence." in workflow
+    assert "Skipped because one or more formal release smoke secrets" not in workflow
     assert "printf 'installation_state=pending\\n'" in deploy
     assert "printf 'installation_state=complete\\n'" in deploy
     assert "id: deploy" in workflow
     assert "^installation_state=(pending|complete)$" in workflow
     assert "exactly one explicit installation_state=pending|complete" in workflow
     assert "steps.deploy.outputs.installation_state == 'pending'" in workflow
-    assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 2
+    assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 3
     assert "Post-install preflight and release smoke were intentionally skipped." in workflow
     assert (
         "While the lifecycle remains pending, run the complete-only Release Smoke workflow"
@@ -2348,12 +2366,16 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "scripts/production-python-extras-smoke.sh" in backend_gate
     assert "scripts/production-image-supply.py|scripts/scan-production-images.sh" in backend_gate
     assert 'docker tag "${source_reference}" "${alias_reference}"' in remote_load_script
-    assert "load-plan" in remote_load_script
+    assert "prepare-plan" in remote_load_script
     assert "verify loaded image IDs" in remote_load_script
     assert "static_terms_only" in ci_workflow
     assert "production-deploy-bundle:" in ci_workflow
     assert "production-deploy-bundle-${{ github.sha }}" in ci_workflow
     assert "bash deploy/bundle-images.sh" in ci_workflow
+    assert "production-promotion-evidence:" in ci_workflow
+    assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
+    assert "Create production PR CI evidence receipt" in ci_workflow
+    assert "needs: [production-release-plan, production-promotion-evidence]" in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
@@ -2375,6 +2397,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "Approved for production validation by operator." in deploy_workflow
     assert "select(.head_sha == $sha)" in deploy_workflow
     assert 'test "${conclusion}" = "success"' in deploy_workflow
+    assert "actions/workflows/codeql.yml/runs" in deploy_workflow
+    assert 'test "${codeql_conclusion}" = "success"' in deploy_workflow
+    assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow
@@ -2521,8 +2546,18 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
         assert removed_marker not in release_smoke_env_example
 
     assert "workflow_dispatch:" in release_smoke_workflow
+    assert "expected_deployed_sha:" in release_smoke_workflow
     assert "github.ref == 'refs/heads/production'" in release_smoke_workflow
     assert "environment: production" in release_smoke_workflow
+    assert "actions: read" in release_smoke_workflow
+    assert 'EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}' in release_smoke_workflow
+    assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
+    assert 'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"' in release_smoke_workflow
+    assert "actions/workflows/deploy-production.yml/runs" in release_smoke_workflow
+    assert '.head_sha == $sha and .conclusion == "success"' in release_smoke_workflow
+    assert release_smoke_workflow.index(
+        'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+    ) < release_smoke_workflow.index("uses: actions/checkout@v6")
     assert "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN" in release_smoke_workflow
     assert "NPCINK_CLOUD_ADMIN_KEY" in release_smoke_workflow
     assert "NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN" not in release_smoke_workflow

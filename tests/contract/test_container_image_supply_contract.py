@@ -463,6 +463,7 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
         "severity_threshold": "high",
         "unfixed_policy": "block",
         "unknown_severity_policy": "block",
+        "max_scan_age_hours": 24,
         "max_database_age_hours": 72,
         "max_exception_days": 30,
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
@@ -1117,6 +1118,95 @@ def test_release_index_rejects_mixed_grype_database_identities(tmp_path: Path) -
         supply.write_index(args)
 
 
+def _reuse_args(
+    *, reuse_dir: Path, output_dir: Path, source_daemon_image_id: str = SHA256
+) -> Namespace:
+    supply = _supply_module()
+    target = supply._scan_targets(_lock())["api"]
+    return Namespace(
+        lock=str(LOCK_PATH),
+        image_key="api",
+        source_daemon_image_id=source_daemon_image_id,
+        requested_reference=target["reference"],
+        archive_reference=target["archive_reference"],
+        scope="release",
+        expected_platform="linux/amd64",
+        reuse_dir=str(reuse_dir),
+        output_dir=str(output_dir),
+    )
+
+
+def test_scan_reuse_copies_only_fresh_exact_complete_evidence(tmp_path: Path) -> None:
+    supply = _supply_module()
+    reuse_dir = tmp_path / "reuse"
+    reuse_dir.mkdir()
+    _write_release_receipt(supply, reuse_dir, "api", built=_fresh_db_built())
+    output_dir = tmp_path / "output"
+
+    assert supply.reuse_scan_evidence(
+        _reuse_args(reuse_dir=reuse_dir, output_dir=output_dir)
+    ) == 0
+    expected_names = {
+        "api.image.tar",
+        "api.image-inspect.json",
+        "api.syft.json",
+        "api.sbom.cdx.json",
+        "api.grype.json",
+        "api.receipt.json",
+    }
+    assert {path.name for path in output_dir.iterdir()} == expected_names
+    assert all(
+        (output_dir / name).read_bytes() == (reuse_dir / name).read_bytes()
+        for name in expected_names
+    )
+
+
+def test_scan_reuse_rejects_image_drift_staleness_and_artifact_tampering(
+    tmp_path: Path,
+) -> None:
+    supply = _supply_module()
+    reuse_dir = tmp_path / "reuse"
+    reuse_dir.mkdir()
+    receipt_path = Path(
+        _write_release_receipt(supply, reuse_dir, "api", built=_fresh_db_built())
+    )
+
+    with pytest.raises(supply.SupplyError, match="image ID changed"):
+        supply.reuse_scan_evidence(
+            _reuse_args(
+                reuse_dir=reuse_dir,
+                output_dir=tmp_path / "image-drift",
+                source_daemon_image_id=OTHER_SHA256,
+            )
+        )
+    assert not (tmp_path / "image-drift").exists() or not any(
+        (tmp_path / "image-drift").iterdir()
+    )
+
+    receipt = json.loads(receipt_path.read_text())
+    receipt["generated_at_utc"] = _utc_text(datetime.now(UTC) - timedelta(hours=25))
+    _write_json(receipt_path, receipt)
+    with pytest.raises(supply.SupplyError, match="evidence is stale"):
+        supply.reuse_scan_evidence(
+            _reuse_args(reuse_dir=reuse_dir, output_dir=tmp_path / "stale")
+        )
+
+    receipt["generated_at_utc"] = _utc_text(datetime.now(UTC))
+    _write_json(receipt_path, receipt)
+    (reuse_dir / "api.sbom.cdx.json").write_text("{}\n")
+    with pytest.raises(supply.SupplyError, match="artifact hash mismatch"):
+        supply.reuse_scan_evidence(
+            _reuse_args(reuse_dir=reuse_dir, output_dir=tmp_path / "tampered")
+        )
+
+    receipt_path.unlink()
+    receipt_path.symlink_to(reuse_dir / "api.grype.json")
+    with pytest.raises(supply.SupplyError, match="must not be a symbolic link"):
+        supply.reuse_scan_evidence(
+            _reuse_args(reuse_dir=reuse_dir, output_dir=tmp_path / "symlink")
+        )
+
+
 def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
 
@@ -1162,6 +1252,10 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert "--only-fixed" not in source
     assert "--ignore" not in source
     assert "scan output must stay outside the Git worktree" in source
+    assert "--reuse-dir" in source
+    assert 'production-image-supply.py" reuse' in source
+    assert "[reuse-fallback] cached Grype database differs" in source
+    assert "rescanning reused images only" in source
 
 
 def test_formal_bundle_inspects_the_requested_platform_in_multi_platform_stores() -> None:

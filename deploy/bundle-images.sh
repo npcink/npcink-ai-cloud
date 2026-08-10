@@ -12,6 +12,10 @@ SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-1}"
 GZIP_LEVEL="${NPCINK_CLOUD_BUNDLE_GZIP_LEVEL:-1}"
 BUILD_CACHE_SCOPE_PREFIX="${NPCINK_CLOUD_BUILD_CACHE_SCOPE_PREFIX:-npcink-ai-cloud}"
+BUNDLE_SCHEMA_VERSION="${NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION:-npcink.release-bundle.v1}"
+PRODUCTION_RELEASE_PLAN_FILE="${NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE:-}"
+SCAN_REUSE_DIR="${NPCINK_CLOUD_SCAN_REUSE_DIR:-}"
+SCAN_CACHE_OUTPUT_DIR="${NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR:-}"
 
 fail() {
 	echo "[fail] $*" >&2
@@ -32,6 +36,21 @@ COMMIT_EPOCH="$(git -C "${CLOUD_DIR}" show -s --format=%ct HEAD)"
 git -C "${CLOUD_DIR}" ls-files --error-unmatch "${IMAGE_LOCK}" >/dev/null 2>&1 || fail "production image lock is not committed"
 git -C "${CLOUD_DIR}" ls-files --error-unmatch "${IMAGE_ALLOWLIST}" >/dev/null 2>&1 || fail "production CVE allowlist is not committed"
 git -C "${CLOUD_DIR}" ls-files --error-unmatch scripts/verify-release-bundle-manifest.py >/dev/null 2>&1 || fail "bundle manifest helper is not committed"
+
+case "${BUNDLE_SCHEMA_VERSION}" in
+	npcink.release-bundle.v1)
+		[ -z "${PRODUCTION_RELEASE_PLAN_FILE}" ] || fail "v1 release bundles do not accept a production release plan"
+		;;
+	npcink.release-bundle.v2)
+		[ -n "${PRODUCTION_RELEASE_PLAN_FILE}" ] || fail "v2 release bundles require NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE"
+		[ -f "${PRODUCTION_RELEASE_PLAN_FILE}" ] || fail "production release plan file is missing"
+		python3 "${MANIFEST_HELPER}" verify-release-plan \
+			--release-plan "${PRODUCTION_RELEASE_PLAN_FILE}" \
+			--revision "${REVISION}" \
+			--tree "${TREE}"
+		;;
+	*) fail "unsupported NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: ${BUNDLE_SCHEMA_VERSION}" ;;
+esac
 
 # Release scan evidence is valid only for the canonical repository policy and
 # the local Unix Docker daemon. The finished verified bundle is what crosses
@@ -115,6 +134,16 @@ EXTERNAL_PLAN="$(mktemp "${DIST_DIR}/.release-external-plan.XXXXXX")"
 APPLICATION_PLAN="$(mktemp "${DIST_DIR}/.release-application-plan.XXXXXX")"
 LOCAL_SCAN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/npcink-release-image-scan.XXXXXX")"
 
+if [ -n "${SCAN_CACHE_OUTPUT_DIR}" ]; then
+	mkdir -p "${SCAN_CACHE_OUTPUT_DIR}"
+	SCAN_CACHE_OUTPUT_DIR="$(cd "${SCAN_CACHE_OUTPUT_DIR}" && pwd -P)"
+	case "${SCAN_CACHE_OUTPUT_DIR}/" in
+		"${CLOUD_DIR}/"*) fail "scan cache output must stay outside the Git worktree" ;;
+	esac
+	[ -z "$(ls -A "${SCAN_CACHE_OUTPUT_DIR}")" ] \
+		|| fail "scan cache output directory must be empty"
+fi
+
 cleanup() {
 	local exit_status="$?"
 	trap - EXIT
@@ -140,6 +169,7 @@ ARCHIVE_PATHS=(
 	frontend/Dockerfile
 	site
 	scripts/production-image-supply.py
+	scripts/production-release-plan.py
 	scripts/scan-production-images.sh
 	scripts/verify-release-bundle-manifest.py
 )
@@ -290,13 +320,23 @@ done <"${EXTERNAL_PLAN}"
 # Scan the exact IDs after the single application build and exact external
 # pulls, then archive those same IDs without any intervening build/pull. The
 # child environment cannot redirect the release scan to an alternate policy.
+SCAN_REUSE_ARGS=()
+if [ -n "${SCAN_REUSE_DIR}" ] && [ -d "${SCAN_REUSE_DIR}" ]; then
+	SCAN_REUSE_ARGS=(--reuse-dir "${SCAN_REUSE_DIR}")
+fi
 (
 	unset NPCINK_CLOUD_IMAGE_LOCK_FILE DOCKER_HOST DOCKER_CONTEXT
 	export DOCKER_DEFAULT_PLATFORM="${MANIFEST_IMAGE_PLATFORM}"
 	bash "${CLOUD_DIR}/scripts/scan-production-images.sh" \
 		--platform "${MANIFEST_IMAGE_PLATFORM}" \
+		"${SCAN_REUSE_ARGS[@]}" \
 		--output "${LOCAL_SCAN_DIR}"
 )
+if [ -n "${SCAN_CACHE_OUTPUT_DIR}" ]; then
+	if ! cp -a "${LOCAL_SCAN_DIR}/." "${SCAN_CACHE_OUTPUT_DIR}/"; then
+		echo "[warn] Scan evidence cache copy failed; the verified current scan remains authoritative." >&2
+	fi
+fi
 mkdir -p "${LOCAL_STAGE}/release/image-scan"
 for scan_evidence in "${LOCAL_SCAN_DIR}"/*; do
 	case "${scan_evidence}" in
@@ -333,7 +373,12 @@ while IFS=$'\t' read -r key _source_reference release_reference archive; do
 	package_scanned_image "${key}" "${archive}"
 done <"${EXTERNAL_PLAN}"
 
+MANIFEST_CREATE_ARGS=(--schema-version "${BUNDLE_SCHEMA_VERSION}")
+if [ "${BUNDLE_SCHEMA_VERSION}" = "npcink.release-bundle.v2" ]; then
+	MANIFEST_CREATE_ARGS+=(--release-plan "${PRODUCTION_RELEASE_PLAN_FILE}")
+fi
 python3 "${MANIFEST_HELPER}" create \
+	"${MANIFEST_CREATE_ARGS[@]}" \
 	--source-root "${LOCAL_STAGE}" \
 	--source-inputs-file "${SOURCE_INPUTS}" \
 	--bundle-root "${LOCAL_STAGE}" \

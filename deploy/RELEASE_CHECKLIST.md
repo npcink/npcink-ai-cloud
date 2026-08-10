@@ -25,6 +25,22 @@ Cloud may be promoted for controlled production validation with explicit
 operator approval. It may be declared generally available only when every
 `Required` item below is complete.
 
+Immediately before the manual deploy dispatch, run
+`pnpm run production:release:preflight -- --sha <production-sha>`. Do not
+dispatch until it reports `release_preflight=ready`; use
+`--require-formal-smoke` whenever the formal authenticated smoke is required
+for the release. Paste its `dispatch_expected_sha` value into the required
+`expected_sha` input when dispatching `Deploy Production`; the workflow must
+reject any value that is not a full lowercase SHA or no longer equals the
+revision selected for that run.
+
+Set `run_formal_release_smoke=true` only when every protected smoke credential
+is ready and the one-time Portal code will remain valid until the post-deploy
+step. A selected smoke fails closed. For a deployment that may exceed the
+default 10-minute code TTL, keep the input false, treat the recorded deferral as
+not-passed evidence, then refresh the code and immediately run the separate
+`Release Smoke` workflow after deployment.
+
 Current deployment authority is the fresh PostgreSQL 18 contract:
 
 - first deployment must report the explicit non-secret state
@@ -467,10 +483,16 @@ Preferred GitHub Actions path:
   its explicit `installation_state` output. For `pending`, confirm both
   post-install steps were skipped, then follow the Setup, independent smoke,
   WordPress/RDS/observation, and finalization handoff. For `complete`, confirm
-  `Small-customer preflight` passed and optional
-  `Formal release smoke` either passed or explicitly reported that the required
-  secrets were not configured;
-- manually run the `Release Smoke` workflow from the `production` branch;
+  `Small-customer preflight` passed. If `run_formal_release_smoke=true`, require
+  `Formal release smoke` to pass; missing or stale credentials fail the deploy
+  job. If it was false, the summary is a deferral, not smoke evidence;
+- because the Portal code is single-use and expires after 10 minutes by
+  default, request it only immediately before the smoke that will consume it.
+  After a long deploy, update the protected secret;
+- manually run the `Release Smoke` workflow from the `production` branch at
+  the exact deployed revision. Paste the successful deploy's full SHA into
+  `expected_deployed_sha`; require the workflow's exact-SHA deploy-run binding
+  step to pass before accepting smoke evidence;
 - keep `require_alipay_enabled=true` for a paid trial release;
 - treat a green `Release Smoke` run as the formal smoke evidence for the items
   below, but not as a replacement for the real WordPress plugin runtime flow in

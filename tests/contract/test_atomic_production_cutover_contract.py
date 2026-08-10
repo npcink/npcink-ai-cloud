@@ -76,7 +76,7 @@ networks:
 """
 
 
-def _stub_bundle(source: Path) -> None:
+def _stub_bundle(source: Path, *, release_plan_lane: str = "full") -> None:
     verifier = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf 'verify:%s:%s\n' "${1:-}" "${2:-}" >>"${CUTOVER_LOG}"
@@ -177,6 +177,24 @@ fi
 """
 
     (source / "deploy").mkdir(parents=True, exist_ok=True)
+    if release_plan_lane != "absent":
+        plan_flags = {
+            "deployment_required": True,
+            "backend_image_required": True,
+            "frontend_image_required": release_plan_lane == "full",
+            "migration_required": release_plan_lane == "migration",
+            "runtime_config_required": False,
+            "static_payload_required": False,
+        }
+        release_plan = {
+            "schema": "npcink.production_release_plan.v1",
+            "lane": release_plan_lane,
+            **plan_flags,
+        }
+        _write(
+            source / "release/production-release-plan.json",
+            json.dumps(release_plan, sort_keys=True) + "\n",
+        )
     portable_common = (ROOT / "deploy/common.sh").read_text(encoding="utf-8").replace(
         "--uid 999 --gid 999",
         f"--uid {os.geteuid()} --gid {os.getegid()}",
@@ -463,6 +481,8 @@ elif [ "${1:-}" = "inspect" ]; then
                 *) exit 74 ;;
             esac
         fi
+    elif [ "${3:-}" = "{{json .Config.Env}}" ] && [ "${4:-}" = "previous-frontend" ]; then
+        printf '["NPCINK_CLOUD_FRONTEND_REVISION=%040d"]\n' 7
     else
         printf 'true false 0\n'
     fi
@@ -564,6 +584,7 @@ def _run_remote_cutover(
     multiple_previous_containers: bool = False,
     recovery_wrong_image_service: str = "",
     skip_frontend_image: bool = False,
+    release_plan_lane: str = "full",
     actual_container_project_name: str = "npcink-ai-cloud",
     missing_previous_service: str = "",
     preexisting_failure_outcome: str = "",
@@ -763,7 +784,7 @@ def _run_remote_cutover(
         one_off_lock = remote_dir / ".release-state" / ".release-one-off.lock"
         one_off_lock.mkdir(parents=True, mode=0o700)
         (remote_dir / ".release-state").chmod(0o700)
-    _stub_bundle(bundle_source)
+    _stub_bundle(bundle_source, release_plan_lane=release_plan_lane)
     _fake_docker(fake_bin / "docker")
     _fake_linux_file_commands(fake_bin)
     _write(fake_bin / "curl", "#!/usr/bin/env bash\nexit 0\n", executable=True)
@@ -1515,15 +1536,64 @@ def test_post_commit_rollback_map_cleanup_failure_is_fail_closed(
 def test_backend_only_cutover_preserves_existing_frontend_container(
     tmp_path: Path,
 ) -> None:
-    completed, _remote_dir, log_path = _run_remote_cutover(
+    completed, remote_dir, log_path = _run_remote_cutover(
         tmp_path,
-        skip_frontend_image=True,
+        release_plan_lane="backend",
     )
 
     assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
     log = log_path.read_text(encoding="utf-8")
     assert "service=frontend" not in log
+    assert "load:data-only" not in log
+    assert "migrate:" not in log
+    assert "load:api-only" in log
+    assert "load:workers-only" in log
+    assert "operational:1" in log
+    assert "baseline" in log
     assert "load:traffic-only" in log
+    assert "lane=backend, data_phase=0, migration=0, preserve_frontend=1" in completed.stdout
+    preserved = json.loads(
+        (
+            remote_dir
+            / ".release-state/release-next/preserved-runtime-services.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert preserved["services"]["frontend"]["source_revision"] == "0" * 39 + "7"
+    assert preserved["services"]["frontend"]["target_daemon_image_id"].startswith(
+        "sha256:"
+    )
+
+
+def test_migration_release_plan_preserves_frontend_but_runs_data_and_migration(
+    tmp_path: Path,
+) -> None:
+    completed, _remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        release_plan_lane="migration",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    log = log_path.read_text(encoding="utf-8")
+    assert "service=frontend" not in log
+    assert "load:data-only" in log
+    assert "migrate:0" in log
+    assert "lane=migration, data_phase=1, migration=1, preserve_frontend=1" in completed.stdout
+
+
+def test_missing_release_plan_uses_complete_fail_closed_execution(
+    tmp_path: Path,
+) -> None:
+    completed, _remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        release_plan_lane="absent",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    log = log_path.read_text(encoding="utf-8")
+    assert "load:data-only" in log
+    assert "migrate:0" in log
+    assert "service=frontend" in log
+    assert "lane=full, data_phase=1, migration=1, preserve_frontend=0" in completed.stdout
 
 
 @pytest.mark.parametrize(
@@ -1552,6 +1622,23 @@ def test_backend_only_cutover_requires_a_running_frontend_to_preserve(
         assert "requires an existing managed release" in completed.stderr
     else:
         assert "found 0" in completed.stderr
+
+
+def test_backend_plan_can_recover_after_migration_failure_with_frontend_running(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        missing_previous_service="api,worker,callback-worker,ops-worker",
+        preexisting_failure_outcome="fail_closed_after_migration_started",
+        release_plan_lane="backend",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    assert "failure evidence matches the stopped previous writers" in completed.stdout
+    assert (remote_dir / "current").resolve() == remote_dir / "release-next"
+    log = log_path.read_text(encoding="utf-8")
+    assert "migrate:" not in log
 
 
 def test_migration_started_fail_closed_state_allows_matched_redeploy(

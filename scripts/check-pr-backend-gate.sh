@@ -85,6 +85,20 @@ if [ -n "${GITHUB_EVENT_NAME:-}" ] && [ "${GITHUB_EVENT_NAME}" != "pull_request"
 	exit 0
 fi
 
+if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] && [ "${GITHUB_BASE_REF:-}" = "production" ]; then
+	echo "[info] Production-promotion PR; full backend gate required."
+	emit_scope_output 1
+	if [ "${MODE}" = "classify-only" ]; then
+		exit 0
+	fi
+	if [ "${TARGETED_MODE}" = "1" ]; then
+		echo "[error] targeted-only mode cannot run a production-promotion full backend gate." >&2
+		exit 1
+	fi
+	run_full_backend_gate
+	exit 0
+fi
+
 if ! git -C "${ROOT_DIR}" rev-parse --verify --quiet "${BASE_REF}" >/dev/null; then
 	git -C "${ROOT_DIR}" fetch origin "${GITHUB_BASE_REF:-master}" --depth=1
 fi
@@ -126,7 +140,7 @@ while IFS= read -r path; do
 		scripts/production-image-supply.py|scripts/scan-production-images.sh|scripts/verify-production-images.sh)
 			requires_full_backend=1
 			;;
-		.github/workflows/ci.yml|tests/conftest.py|tests/fixtures/*|migrations/*|migrations/**/*)
+		.github/workflows/ci.yml|ci/pytest-backend-durations.json|tests/conftest.py|tests/fixtures/*|migrations/*|migrations/**/*)
 			requires_full_backend=1
 			;;
 		app/core/config.py|app/core/db.py|app/core/models.py|app/api/auth.py)

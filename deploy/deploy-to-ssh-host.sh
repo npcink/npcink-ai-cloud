@@ -638,13 +638,26 @@ REMOTE_INCOMING_DIR="${REMOTE_DIR}/.incoming/${UPLOAD_ID}"
 REMOTE_BUNDLE_PATH="${REMOTE_INCOMING_DIR}/deploy-bundle.tgz"
 REMOTE_BUNDLE_CHECKSUM_PATH="${REMOTE_BUNDLE_PATH}.sha256"
 REMOTE_PREFLIGHT_DIR="${REMOTE_INCOMING_DIR}/preflight"
+REMOTE_TRANSFER_REQUEST_PATH="${REMOTE_PREFLIGHT_DIR}/release-transfer-request.json"
+REMOTE_TRANSFER_PLAN_PATH="${REMOTE_INCOMING_DIR}/release-transfer-plan.json"
 REMOTE_ENV_BASENAME=".env.deploy"
 REMOTE_ENV_PATH=""
 REMOTE_DEPLOY_INPUT_PATH="${REMOTE_INCOMING_DIR}/deploy-input.json"
 LOCAL_DEPLOY_INPUT_DIR=""
 LOCAL_DEPLOY_INPUT_PATH=""
 LOCAL_DEPLOY_INPUT_NEEDS_CLEANUP=0
+LOCAL_TRANSFER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/npcink-cloud-transfer.XXXXXX")"
+LOCAL_TRANSFER_REQUEST_PATH="${LOCAL_TRANSFER_DIR}/release-transfer-request.json"
+LOCAL_TRANSFER_PLAN_PATH="${LOCAL_TRANSFER_DIR}/release-transfer-plan.json"
+LOCAL_TRANSFER_BUNDLE_PATH="${LOCAL_TRANSFER_DIR}/deploy-bundle.tgz"
+LOCAL_TRANSFER_BUNDLE_CHECKSUM_PATH="${LOCAL_TRANSFER_BUNDLE_PATH}.sha256"
+LOCAL_TRANSFER_NEEDS_CLEANUP=1
+UPLOAD_BUNDLE_PATH="${BUNDLE_PATH}"
+UPLOAD_BUNDLE_CHECKSUM_PATH="${BUNDLE_CHECKSUM_PATH}"
+SELECTIVE_TRANSFER=0
+REMOTE_TRANSFER_PLAN_ARG=""
 REMOTE_INCOMING_NEEDS_CLEANUP=1
+chmod 0700 "${LOCAL_TRANSFER_DIR}"
 
 cleanup_remote_incoming_on_exit() {
 	local exit_status="$?"
@@ -655,6 +668,12 @@ cleanup_remote_incoming_on_exit() {
 		rm -f -- "${LOCAL_DEPLOY_INPUT_PATH}" || cleanup_failed=1
 		rmdir -- "${LOCAL_DEPLOY_INPUT_DIR}" || cleanup_failed=1
 		if [ -e "${LOCAL_DEPLOY_INPUT_DIR}" ] || [ -L "${LOCAL_DEPLOY_INPUT_DIR}" ]; then
+			cleanup_failed=1
+		fi
+	fi
+	if [ "${LOCAL_TRANSFER_NEEDS_CLEANUP}" = "1" ]; then
+		rm -rf -- "${LOCAL_TRANSFER_DIR}" || cleanup_failed=1
+		if [ -e "${LOCAL_TRANSFER_DIR}" ] || [ -L "${LOCAL_TRANSFER_DIR}" ]; then
 			cleanup_failed=1
 		fi
 	fi
@@ -682,11 +701,6 @@ npcink_ai_cloud_run_timed "prepare remote directory" \
 	ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
 		"mkdir -p $(remote_shell_arg "${REMOTE_DIR}") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/deploy") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/scripts") && chmod 0700 $(remote_shell_arg "${REMOTE_INCOMING_DIR}")"
 
-echo "[info] Uploading deploy bundle"
-npcink_ai_cloud_run_timed "upload deploy bundle" \
-	scp "${SCP_ARGS[@]}" "${BUNDLE_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_PATH}"
-npcink_ai_cloud_run_timed "upload deploy bundle checksum" \
-	scp "${SCP_ARGS[@]}" "${BUNDLE_CHECKSUM_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_CHECKSUM_PATH}"
 npcink_ai_cloud_run_timed "upload deploy bundle preflight" \
 	scp "${SCP_ARGS[@]}" \
 	"${ROOT_DIR}/deploy/verify-release-bundle.sh" \
@@ -699,9 +713,91 @@ npcink_ai_cloud_run_timed "upload deploy bundle manifest verifier" \
 	scp "${SCP_ARGS[@]}" \
 	"${ROOT_DIR}/scripts/verify-release-bundle-manifest.py" \
 	"${SSH_TARGET}:${REMOTE_PREFLIGHT_DIR}/scripts/verify-release-bundle-manifest.py"
-npcink_ai_cloud_run_timed "verify remote deploy bundle before extraction" \
-	ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
-		"set +e; NPCINK_CLOUD_RELEASE_TOOL_PYTHON=$(remote_shell_arg "${DEPLOY_HOST_PYTHON}") bash $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/deploy/verify-release-bundle.sh") --archive $(remote_shell_arg "${REMOTE_BUNDLE_PATH}") $(remote_shell_arg "${REMOTE_BUNDLE_CHECKSUM_PATH}"); preflight_status=\$?; rm -rf $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}"); exit \${preflight_status}"
+
+if [ "${STAGE_ONLY}" != "1" ]; then
+	if "${LOCAL_RELEASE_TOOL_PYTHON}" "${ROOT_DIR}/scripts/verify-release-bundle-manifest.py" \
+		transfer-request \
+		--bundle "${BUNDLE_PATH}" \
+		--checksum "${BUNDLE_CHECKSUM_PATH}" \
+		--release-name "${RELEASE_NAME}" \
+		--output "${LOCAL_TRANSFER_REQUEST_PATH}"; then
+		if npcink_ai_cloud_run_timed "upload image transfer inventory request" \
+			scp "${SCP_ARGS[@]}" "${LOCAL_TRANSFER_REQUEST_PATH}" \
+			"${SSH_TARGET}:${REMOTE_TRANSFER_REQUEST_PATH}" && \
+			npcink_ai_cloud_run_timed "prepare remote image transfer inventory" \
+			ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" bash -s -- \
+			"$(remote_shell_arg "${DEPLOY_HOST_PYTHON}")" \
+			"$(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/scripts/verify-release-bundle-manifest.py")" \
+			"$(remote_shell_arg "${REMOTE_TRANSFER_REQUEST_PATH}")" \
+			"$(remote_shell_arg "${REMOTE_DIR}")" \
+			"$(remote_shell_arg "${REMOTE_TRANSFER_PLAN_PATH}")" <<'INVENTORY_EOF'
+set -euo pipefail
+release_python="$1"
+helper="$2"
+request="$3"
+remote_dir="$4"
+output="$5"
+previous_root=""
+if [ -L "${remote_dir}/current" ]; then
+	previous_root="$(readlink -f "${remote_dir}/current")"
+elif [ -e "${remote_dir}/current" ]; then
+	echo "[fail] Managed current release path must be a symbolic link." >&2
+	exit 1
+fi
+args=(prepare-transfer-plan --request "${request}" --remote-dir "${remote_dir}" --output "${output}")
+if [ -n "${previous_root}" ]; then
+	args+=(--previous-root "${previous_root}")
+fi
+"${release_python}" "${helper}" "${args[@]}"
+chmod 0600 "${output}"
+INVENTORY_EOF
+		then
+			if scp "${SCP_ARGS[@]}" "${SSH_TARGET}:${REMOTE_TRANSFER_PLAN_PATH}" \
+				"${LOCAL_TRANSFER_PLAN_PATH}" && \
+				"${LOCAL_RELEASE_TOOL_PYTHON}" \
+					"${ROOT_DIR}/scripts/verify-release-bundle-manifest.py" \
+					pack-transfer-archive \
+					--bundle "${BUNDLE_PATH}" \
+					--checksum "${BUNDLE_CHECKSUM_PATH}" \
+					--plan "${LOCAL_TRANSFER_PLAN_PATH}" \
+					--output "${LOCAL_TRANSFER_BUNDLE_PATH}" \
+					--output-checksum "${LOCAL_TRANSFER_BUNDLE_CHECKSUM_PATH}"; then
+				UPLOAD_BUNDLE_PATH="${LOCAL_TRANSFER_BUNDLE_PATH}"
+				UPLOAD_BUNDLE_CHECKSUM_PATH="${LOCAL_TRANSFER_BUNDLE_CHECKSUM_PATH}"
+				SELECTIVE_TRANSFER=1
+				REMOTE_TRANSFER_PLAN_ARG="${REMOTE_TRANSFER_PLAN_PATH}"
+				echo "[info] Remote image inventory matched; reusable image archives will not be uploaded."
+			else
+				echo "[info] Remote image inventory was not reusable; uploading the complete exact bundle."
+				ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
+					"rm -f $(remote_shell_arg "${REMOTE_TRANSFER_PLAN_PATH}")" >/dev/null 2>&1 || true
+			fi
+		else
+			echo "[info] Remote image inventory was unavailable; uploading the complete exact bundle."
+			ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
+				"rm -f $(remote_shell_arg "${REMOTE_TRANSFER_PLAN_PATH}")" >/dev/null 2>&1 || true
+		fi
+	else
+		echo "[info] Local image inventory request was unavailable; uploading the complete exact bundle."
+	fi
+fi
+
+echo "[info] Uploading deploy bundle payload"
+npcink_ai_cloud_run_timed "upload deploy bundle" \
+	scp "${SCP_ARGS[@]}" "${UPLOAD_BUNDLE_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_PATH}"
+npcink_ai_cloud_run_timed "upload deploy bundle checksum" \
+	scp "${SCP_ARGS[@]}" "${UPLOAD_BUNDLE_CHECKSUM_PATH}" "${SSH_TARGET}:${REMOTE_BUNDLE_CHECKSUM_PATH}"
+if [ "${SELECTIVE_TRANSFER}" = "1" ]; then
+	npcink_ai_cloud_run_timed "verify selective remote deploy bundle before extraction" \
+		ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
+			"$(remote_shell_arg "${DEPLOY_HOST_PYTHON}") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/scripts/verify-release-bundle-manifest.py") verify-transfer-archive --bundle $(remote_shell_arg "${REMOTE_BUNDLE_PATH}") --checksum $(remote_shell_arg "${REMOTE_BUNDLE_CHECKSUM_PATH}") --plan $(remote_shell_arg "${REMOTE_TRANSFER_PLAN_PATH}") --remote-dir $(remote_shell_arg "${REMOTE_DIR}")"
+else
+	npcink_ai_cloud_run_timed "verify remote deploy bundle before extraction" \
+		ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
+			"NPCINK_CLOUD_RELEASE_TOOL_PYTHON=$(remote_shell_arg "${DEPLOY_HOST_PYTHON}") bash $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/deploy/verify-release-bundle.sh") --archive $(remote_shell_arg "${REMOTE_BUNDLE_PATH}") $(remote_shell_arg "${REMOTE_BUNDLE_CHECKSUM_PATH}")"
+fi
+ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
+	"rm -rf $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}")" >/dev/null
 
 if [ -n "${ENV_FILE}" ]; then
 	REMOTE_ENV_PATH="${REMOTE_INCOMING_DIR}/${REMOTE_ENV_BASENAME}"
@@ -811,6 +907,7 @@ else
 		"${REMOTE_BUNDLE_PATH}"
 		"${REMOTE_INCOMING_DIR}"
 		"${DEPLOY_HOST_PYTHON}"
+		"${REMOTE_TRANSFER_PLAN_ARG}"
 	)
 fi
 REMOTE_SEQUENCE_ARGS=()
@@ -831,6 +928,7 @@ if [ "$#" -lt 1 ]; then
 fi
 REMOTE_SEQUENCE_MODE="$1"
 shift
+REMOTE_TRANSFER_PLAN_PATH=""
 
 case "${REMOTE_SEQUENCE_MODE}" in
 	stage-only)
@@ -873,8 +971,8 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		STAGE_ONLY=1
 		;;
 	deploy)
-		[ "$#" -eq 5 ] || {
-			echo "[fail] Full remote deployment entry requires exactly five non-secret arguments." >&2
+		{ [ "$#" -eq 5 ] || [ "$#" -eq 6 ]; } || {
+			echo "[fail] Full remote deployment entry requires five or six non-secret arguments." >&2
 			exit 64
 		}
 		REMOTE_DIR="$1"
@@ -882,6 +980,7 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		REMOTE_BUNDLE_PATH="$3"
 		REMOTE_INCOMING_DIR="$4"
 		RELEASE_TOOL_PYTHON="$5"
+		REMOTE_TRANSFER_PLAN_PATH="${6:-}"
 		REMOTE_DEPLOY_INPUT_PATH="${REMOTE_INCOMING_DIR}/deploy-input.json"
 		if [ "$(id -u)" != "0" ] || [ -L "${REMOTE_DEPLOY_INPUT_PATH}" ] || \
 			[ ! -f "${REMOTE_DEPLOY_INPUT_PATH}" ] || \
@@ -1001,6 +1100,7 @@ RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"
 RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"
 RELEASE_ENV_TMP=""
 ROLLBACK_IMAGE_MAP="${RELEASE_STATE_DIR}/rollback-images.tsv"
+PRESERVED_SERVICES_EVIDENCE="${RELEASE_STATE_DIR}/preserved-runtime-services.json"
 ROLLBACK_TAG_SUFFIX="${RELEASE_NAME#release-}"
 REMOTE_DIR_CANONICAL="$(readlink -f "${REMOTE_DIR}")"
 PREVIOUS_RELEASE_DIR=""
@@ -1021,6 +1121,9 @@ if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then
 	APPLICATION_SERVICES+=(frontend)
 fi
 APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collector release-one-off)
+RELEASE_PLAN_LANE="full"
+RUN_DATA_PHASE=1
+RUN_MIGRATION=1
 RECOVERY_REQUIRED_SERVICES=(redis proxy frontend api worker callback-worker ops-worker)
 PREVIOUS_WRITER_SERVICES=(api worker callback-worker ops-worker)
 CONFIG_DIR_HOST="${REMOTE_DIR}/shared/config"
@@ -2317,7 +2420,7 @@ assert_previous_writer_project_alignment() {
 		fi
 	done
 	if [ "${fail_closed_recovery}" = "1" ]; then
-		if [ "${stopped_services}" -ne "${#required_services[@]}" ]; then
+		if [ "${stopped_services}" -ne "${#PREVIOUS_WRITER_SERVICES[@]}" ]; then
 			echo "[fail] Migration-started recovery requires every previous write-capable service to remain stopped." >&2
 			return 1
 		fi
@@ -2325,6 +2428,119 @@ assert_previous_writer_project_alignment() {
 		return 0
 	fi
 	echo "[ok] Previous write-capable containers belong to the expected Compose project."
+}
+
+record_preserved_frontend_identity() {
+	local container_ids=""
+	local container_count=0
+	local container_id=""
+
+	[ "${SKIP_FRONTEND_IMAGE}" = "1" ] || return 0
+	container_ids="$(compose_previous_release ps -q frontend)" || return 1
+	container_count="$(printf '%s\n' "${container_ids}" | awk 'NF { count += 1 } END { print count + 0 }')"
+	if [ "${container_count}" -ne 1 ]; then
+		echo "[fail] Preserved frontend evidence requires exactly one running previous frontend." >&2
+		return 1
+	fi
+	container_id="${container_ids}"
+	"${RELEASE_TOOL_PYTHON}" - \
+		"${PRESERVED_SERVICES_EVIDENCE}" "${RELEASE_DIR}" "${PREVIOUS_RELEASE_DIR}" \
+		"${container_id}" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+evidence_raw, release_raw, previous_raw, container_id = sys.argv[1:]
+evidence = Path(evidence_raw)
+release = Path(release_raw)
+previous = Path(previous_raw)
+if evidence.exists() or evidence.is_symlink():
+    raise SystemExit("[fail] Preserved runtime-service evidence already exists.")
+if release.parent != previous.parent or not release.is_dir() or not previous.is_dir():
+    raise SystemExit("[fail] Preserved frontend release binding is invalid.")
+try:
+    image_id = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Image}}", container_id],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    env_raw = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .Config.Env}}", container_id],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+except subprocess.CalledProcessError as exc:
+    raise SystemExit("[fail] Preserved frontend identity inspection failed.") from exc
+if re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+    raise SystemExit("[fail] Preserved frontend image identity is invalid.")
+try:
+    env_values = json.loads(env_raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit("[fail] Preserved frontend environment evidence is invalid.") from exc
+prefix = "NPCINK_CLOUD_FRONTEND_REVISION="
+revisions = (
+    [
+        value[len(prefix) :]
+        for value in env_values
+        if isinstance(value, str) and value.startswith(prefix)
+    ]
+    if isinstance(env_values, list)
+    else []
+)
+if len(revisions) != 1 or re.fullmatch(r"[0-9a-f]{40}", revisions[0]) is None:
+    raise SystemExit("[fail] Preserved frontend source revision is invalid.")
+payload = {
+    "schema": "npcink.preserved_runtime_services.v1",
+    "release_name": release.name,
+    "release_path": str(release),
+    "services": {
+        "frontend": {
+            "previous_release": str(previous),
+            "source_revision": revisions[0],
+            "target_daemon_image_id": image_id,
+        }
+    },
+}
+encoded = (
+    json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
+).encode("utf-8")
+descriptor, temporary_raw = tempfile.mkstemp(prefix=f".{evidence.name}.", dir=evidence.parent)
+temporary = Path(temporary_raw)
+try:
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, evidence)
+    directory_descriptor = os.open(evidence.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
+finally:
+    try:
+        temporary.unlink()
+    except FileNotFoundError:
+        pass
+metadata = evidence.lstat()
+if (
+    evidence.is_symlink()
+    or not stat.S_ISREG(metadata.st_mode)
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+):
+    raise SystemExit("[fail] Preserved runtime-service evidence protection is invalid.")
+PY
+	echo "[ok] Preserved frontend image and source identity recorded for release readiness."
 }
 
 assert_previous_release_services_running() {
@@ -2642,8 +2858,83 @@ remote_run_timed "remote extract bundle" tar xzf "${REMOTE_BUNDLE_PATH}" -C "${R
 
 . "${RELEASE_DIR}/deploy/common.sh"
 
+RELEASE_PLAN_PATH="${RELEASE_DIR}/release/production-release-plan.json"
+if [ -f "${RELEASE_PLAN_PATH}" ] && [ ! -L "${RELEASE_PLAN_PATH}" ]; then
+	RELEASE_PLAN_EXECUTION="$("${RELEASE_TOOL_PYTHON}" - "${RELEASE_PLAN_PATH}" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    plan = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    print("full\t1\t1\t0")
+    raise SystemExit(0)
+
+lane = plan.get("lane")
+flags = {
+    "deployment_required": plan.get("deployment_required"),
+    "backend_image_required": plan.get("backend_image_required"),
+    "frontend_image_required": plan.get("frontend_image_required"),
+    "migration_required": plan.get("migration_required"),
+    "runtime_config_required": plan.get("runtime_config_required"),
+    "static_payload_required": plan.get("static_payload_required"),
+}
+backend = {
+    "deployment_required": True,
+    "backend_image_required": True,
+    "frontend_image_required": False,
+    "migration_required": False,
+    "runtime_config_required": False,
+    "static_payload_required": False,
+}
+migration = {**backend, "migration_required": True}
+typed_flags = all(type(value) is bool for value in flags.values())
+if typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "backend" and flags == backend:
+    print("backend\t0\t0\t1")
+elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "migration" and flags == migration:
+    print("migration\t1\t1\t1")
+else:
+    print("full\t1\t1\t0")
+PY
+)"
+	IFS=$'\t' read -r RELEASE_PLAN_LANE RUN_DATA_PHASE RUN_MIGRATION PLAN_PRESERVE_FRONTEND <<<"${RELEASE_PLAN_EXECUTION}"
+	if [ "${PLAN_PRESERVE_FRONTEND}" = "1" ]; then
+		SKIP_FRONTEND_IMAGE=1
+		APPLICATION_SERVICES=(caddy proxy api worker callback-worker ops-worker jaeger otel-collector release-one-off)
+	fi
+fi
+echo "[info] Release execution plan: lane=${RELEASE_PLAN_LANE}, data_phase=${RUN_DATA_PHASE}, migration=${RUN_MIGRATION}, preserve_frontend=${SKIP_FRONTEND_IMAGE}"
+
 ensure_private_release_state_directory "${RELEASE_STATE_ROOT}"
 ensure_private_release_state_directory "${RELEASE_STATE_DIR}"
+if [ -n "${REMOTE_TRANSFER_PLAN_PATH}" ]; then
+	if [ -L "${REMOTE_TRANSFER_PLAN_PATH}" ] || [ ! -f "${REMOTE_TRANSFER_PLAN_PATH}" ] || \
+		[ "$(stat -c '%u' "${REMOTE_TRANSFER_PLAN_PATH}")" != "0" ] || \
+		[ "$(stat -c '%a' "${REMOTE_TRANSFER_PLAN_PATH}")" != "600" ]; then
+		echo "[fail] Selective release transfer plan must be a root-owned mode-0600 regular file." >&2
+		exit 1
+	fi
+	RELEASE_TRANSFER_PLAN="${RELEASE_STATE_DIR}/release-transfer-plan.json"
+	RELEASE_TRANSFER_PLAN_TMP="${RELEASE_STATE_DIR}/.release-transfer-plan.tmp.$$"
+	if [ -e "${RELEASE_TRANSFER_PLAN}" ] || [ -L "${RELEASE_TRANSFER_PLAN}" ] || \
+		[ -e "${RELEASE_TRANSFER_PLAN_TMP}" ] || [ -L "${RELEASE_TRANSFER_PLAN_TMP}" ]; then
+		echo "[fail] Selective release transfer state path already exists." >&2
+		exit 1
+	fi
+	(umask 077 && cp --no-preserve=mode,ownership,timestamps \
+		"${REMOTE_TRANSFER_PLAN_PATH}" "${RELEASE_TRANSFER_PLAN_TMP}")
+	chmod 0600 "${RELEASE_TRANSFER_PLAN_TMP}"
+	mv -T "${RELEASE_TRANSFER_PLAN_TMP}" "${RELEASE_TRANSFER_PLAN}"
+	export NPCINK_CLOUD_TRANSFER_PLAN="${RELEASE_TRANSFER_PLAN}"
+	export NPCINK_CLOUD_REMOTE_DIR="${REMOTE_DIR_CANONICAL}"
+else
+	unset NPCINK_CLOUD_TRANSFER_PLAN
+	export NPCINK_CLOUD_REMOTE_DIR="${REMOTE_DIR_CANONICAL}"
+fi
 export NPCINK_CLOUD_CONFIG_DIR_HOST="${CONFIG_DIR_HOST}"
 
 "${RELEASE_TOOL_PYTHON}" - "${CONFIG_DIR_HOST}" <<'PY'
@@ -3021,9 +3312,13 @@ CUTOVER_MUTATION_STARTED=1
 remote_run_timed "remote load and up" \
 	env \
 	NPCINK_CLOUD_LOAD_MODE=prepare-only \
+	NPCINK_CLOUD_PREVIOUS_RELEASE_DIR="${PREVIOUS_RELEASE_DIR}" \
 	NPCINK_CLOUD_ROLLBACK_IMAGE_MAP="${ROLLBACK_IMAGE_MAP}" \
 	NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX="${ROLLBACK_TAG_SUFFIX}" \
 	bash deploy/remote-load-and-up.sh </dev/null
+
+CUTOVER_PHASE="record-preserved-runtime-services"
+remote_run_timed "record preserved runtime service identities" record_preserved_frontend_identity
 
 if [ "${FIRST_INSTALL_PENDING}" = "1" ] || [ "${FIRST_INSTALL_REPAIR}" = "1" ]; then
 	CUTOVER_PHASE="publish-first-install-recovery-contract"
@@ -3042,14 +3337,22 @@ CUTOVER_PHASE="stop-old-application-services"
 remote_run_timed "stop public and write-capable application services" stop_application_services
 remote_run_timed "assert application services stopped" assert_application_services_stopped
 
-CUTOVER_PHASE="start-data-services"
-remote_run_timed "remote start data services only" \
-	env NPCINK_CLOUD_LOAD_MODE=data-only \
-	bash deploy/remote-load-and-up.sh </dev/null
+if [ "${RUN_DATA_PHASE}" = "1" ]; then
+	CUTOVER_PHASE="start-data-services"
+	remote_run_timed "remote start data services only" \
+		env NPCINK_CLOUD_LOAD_MODE=data-only \
+		bash deploy/remote-load-and-up.sh </dev/null
+else
+	CUTOVER_PHASE="preserve-data-services"
+	echo "[ok] Exact backend release plan preserves the running PostgreSQL and Redis services."
+fi
 
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
 	CUTOVER_PHASE="defer-empty-pg18-migration-to-setup"
 	echo "[ok] Empty PostgreSQL 18 migration is deferred to the authenticated setup installer."
+elif [ "${RUN_MIGRATION}" != "1" ]; then
+	CUTOVER_PHASE="skip-migration-by-release-plan"
+	echo "[ok] Exact backend release plan does not require a database migration."
 else
 	CUTOVER_PHASE="migrate-with-staged-image"
 	# From this assignment forward the old application is never auto-started: a
@@ -3236,6 +3539,12 @@ fi
 CUTOVER_PHASE="finalize-current-release"
 EOF
 
+if ! rm -rf -- "${LOCAL_TRANSFER_DIR}" || \
+	[ -e "${LOCAL_TRANSFER_DIR}" ] || [ -L "${LOCAL_TRANSFER_DIR}" ]; then
+	echo "[fail] Could not clean the local selective-transfer workspace." >&2
+	exit 1
+fi
+LOCAL_TRANSFER_NEEDS_CLEANUP=0
 REMOTE_INCOMING_NEEDS_CLEANUP=0
 if ! cleanup_ssh_control; then
 	echo "[fail] Could not clean the private SSH control directory." >&2

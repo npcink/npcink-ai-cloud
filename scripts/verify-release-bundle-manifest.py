@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -20,14 +21,22 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
-SCHEMA_VERSION = "npcink.release-bundle.v1"
+SCHEMA_VERSION_V1 = "npcink.release-bundle.v1"
+SCHEMA_VERSION_V2 = "npcink.release-bundle.v2"
+SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION_V1, SCHEMA_VERSION_V2}
+PRODUCTION_RELEASE_PLAN_SCHEMA = "npcink.production_release_plan.v1"
+CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"
 IMAGE_LOCK_SCHEMA = "npcink.production-image-lock.v1"
 SCAN_INDEX_SCHEMA = "npcink.production-image-scan-index.v1"
 SCAN_RECEIPT_SCHEMA = "npcink.production-image-scan-receipt.v1"
 TARGET_DAEMON_MAP_SCHEMA = "npcink.target-daemon-image-map.v1"
+TRANSFER_REQUEST_SCHEMA = "npcink.release-transfer-request.v1"
+TRANSFER_PLAN_SCHEMA = "npcink.release-transfer-plan.v1"
+SELECTIVE_TRANSFER_CAPABILITY = "npcink.release-selective-transfer.v1"
 MANIFEST_NAME = "release-bundle-manifest.json"
 CHECKSUMS_NAME = "SHA256SUMS"
 SCAN_INDEX_PATH = "release/image-scan/scan-index.json"
+PRODUCTION_RELEASE_PLAN_PATH = "release/production-release-plan.json"
 CANONICAL_IMAGE_LOCK_PATH = "deploy/image-lock/production-images.json"
 CANONICAL_ALLOWLIST_PATH = "deploy/image-lock/cve-allowlist.json"
 MAX_TAR_MEMBERS = 20_000
@@ -35,6 +44,9 @@ MAX_TAR_UNCOMPRESSED_BYTES = 20 * 1024 * 1024 * 1024
 MAX_DOCKER_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_TARGET_DAEMON_MAP_BYTES = 256 * 1024
+MAX_TRANSFER_PLAN_BYTES = 1024 * 1024
+MAX_TRANSFER_CAPABILITY_FILE_BYTES = 2 * 1024 * 1024
+MAX_PRODUCTION_RELEASE_PLAN_BYTES = 2 * 1024 * 1024
 REQUIRED_MAX_DATABASE_AGE_HOURS = 72
 REQUIRED_MAX_EXCEPTION_DAYS = 30
 MAX_SCAN_TO_BUNDLE_AGE_HOURS = 24
@@ -42,6 +54,7 @@ CLOCK_SKEW = dt.timedelta(minutes=5)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 IMAGE_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 REVISION_RE = re.compile(r"^[0-9a-f]{40,64}$")
+GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 RELEASE_NAME_RE = re.compile(r"^release-[A-Za-z0-9._-]+$")
 REQUIRED_SOURCE_INPUTS = {
     "uv_lock",
@@ -120,6 +133,107 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def classify_production_release_paths(changed_files: list[str]) -> tuple[str, dict[str, bool]]:
+    classifier_path = Path(__file__).resolve().with_name("production-release-plan.py")
+    if not classifier_path.is_file():
+        fail("production release-plan classifier is missing")
+    spec = importlib.util.spec_from_file_location("npcink_production_release_plan", classifier_path)
+    if spec is None or spec.loader is None:
+        fail("production release-plan classifier cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        lane, flags, normalized_files = module.classify_release(changed_files)
+    except Exception as exc:
+        fail(f"production release-plan classification failed: {exc}")
+    finally:
+        sys.modules.pop(spec.name, None)
+    if list(normalized_files) != changed_files:
+        fail("production release plan changed_files are not canonical")
+    if not isinstance(lane, str) or not isinstance(flags, dict):
+        fail("production release-plan classifier returned an invalid result")
+    return lane, flags
+
+
+def validate_production_release_plan(plan: Any, *, revision: str, tree: str) -> dict[str, Any]:
+    expected_keys = {
+        "schema",
+        "repository",
+        "base_sha",
+        "head_sha",
+        "head_tree",
+        "changed_files",
+        "lane",
+        "deployment_required",
+        "backend_image_required",
+        "frontend_image_required",
+        "migration_required",
+        "runtime_config_required",
+        "static_payload_required",
+    }
+    if not isinstance(plan, dict) or set(plan) != expected_keys:
+        fail("production release plan schema is invalid")
+    if plan["schema"] != PRODUCTION_RELEASE_PLAN_SCHEMA:
+        fail("production release plan version is unsupported")
+    repository = plan["repository"]
+    if repository != CANONICAL_REPOSITORY:
+        fail("production release plan repository is not canonical")
+    if any(
+        not isinstance(plan[field], str) or GIT_SHA_RE.fullmatch(plan[field]) is None
+        for field in ("base_sha", "head_sha", "head_tree")
+    ):
+        fail("production release plan Git identity is invalid")
+    if plan["head_sha"] != revision or plan["head_tree"] != tree:
+        fail("production release plan does not match bundle source revision/tree")
+    changed_files = plan["changed_files"]
+    if (
+        not isinstance(changed_files, list)
+        or any(not isinstance(path, str) for path in changed_files)
+        or changed_files != sorted(set(changed_files))
+    ):
+        fail("production release plan changed_files are invalid")
+    for path in changed_files:
+        safe_relative(path)
+    lane = plan["lane"]
+    flag_names = (
+        "deployment_required",
+        "backend_image_required",
+        "frontend_image_required",
+        "migration_required",
+        "runtime_config_required",
+        "static_payload_required",
+    )
+    if any(not isinstance(plan[name], bool) for name in flag_names):
+        fail("production release plan flags are invalid")
+    expected_lane, expected_flags = classify_production_release_paths(changed_files)
+    if lane != expected_lane or any(plan[name] != expected_flags[name] for name in flag_names):
+        fail("production release plan lane/flags do not match changed_files")
+    return plan
+
+
+def load_production_release_plan(path: Path, *, revision: str, tree: str) -> dict[str, Any]:
+    try:
+        if path.stat().st_size > MAX_PRODUCTION_RELEASE_PLAN_BYTES:
+            fail("production release plan is oversized")
+    except OSError as exc:
+        fail(f"production release plan is invalid: {exc}")
+
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                fail(f"production release plan contains a duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"production release plan is invalid: {exc}")
+    return validate_production_release_plan(plan, revision=revision, tree=tree)
 
 
 def sha256_gzip_payload(path: Path) -> str:
@@ -445,7 +559,9 @@ def validate_scan_evidence(
     expected_platform: str,
     scan_index_relative: str = SCAN_INDEX_PATH,
     bundle_created_at: Optional[dt.datetime] = None,  # noqa: UP045
+    omitted_archives: Optional[set[str]] = None,  # noqa: UP045
 ) -> dict[str, Any]:
+    omitted_archives = omitted_archives or set()
     if scan_index_relative != SCAN_INDEX_PATH:
         fail("production scan index must use the frozen bundle path")
     scan_path = ensure_plain_file(root, scan_index_relative)
@@ -747,12 +863,15 @@ def validate_scan_evidence(
                 fail(f"production image scan artifact hash mismatch for {key}")
         role_name = key if key in application_keys else f"external_{key}"
         bundled_role = roles.get(role_name)
+        archive_is_omitted = (
+            bundled_role is not None and bundled_role["archive"] in omitted_archives
+        )
         bundled_subject = (
             docker_archive_subject(
                 ensure_plain_file(root, bundled_role["archive"]),
                 archive_reference=record["archive_reference"],
             )
-            if bundled_role is not None
+            if bundled_role is not None and not archive_is_omitted
             else None
         )
         if (
@@ -761,10 +880,18 @@ def validate_scan_evidence(
             or bundled_role["source_reference"] != record["requested_reference"]
             or bundled_role["expected_image_id"] != record["config_image_id"]
             or bundled_role["source_daemon_image_id"] != record["source_daemon_image_id"]
-            or sha256_gzip_payload(ensure_plain_file(root, bundled_role["archive"]))
-            != record["archive_sha256"]
-            or bundled_subject
-            != {"config_image_id": record["config_image_id"], "platform": expected_platform}
+            or (
+                not archive_is_omitted
+                and (
+                    sha256_gzip_payload(ensure_plain_file(root, bundled_role["archive"]))
+                    != record["archive_sha256"]
+                    or bundled_subject
+                    != {
+                        "config_image_id": record["config_image_id"],
+                        "platform": expected_platform,
+                    }
+                )
+            )
         ):
             fail(f"bundled Docker archive is not the scanned archive for {key}")
         if key in external_keys:
@@ -1106,8 +1233,43 @@ def create_manifest(args: argparse.Namespace) -> None:
         validate_source_inputs(source_inputs)
     else:
         source_inputs = source_input_groups(source_root)
+    schema_version = args.schema_version
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        fail("unsupported release bundle manifest schema")
+    release_plan_meta = None
+    if schema_version == SCHEMA_VERSION_V2:
+        if not args.release_plan:
+            fail("v2 release bundles require an exact production release plan")
+        release_plan_source = Path(args.release_plan).resolve()
+        plan = load_production_release_plan(
+            release_plan_source, revision=args.revision, tree=args.tree
+        )
+        release_plan_target = bundle_root.joinpath(
+            *PurePosixPath(PRODUCTION_RELEASE_PLAN_PATH).parts
+        )
+        release_plan_target.parent.mkdir(parents=True, exist_ok=True)
+        release_plan_target.write_bytes(release_plan_source.read_bytes())
+        release_plan_meta = {
+            "path": PRODUCTION_RELEASE_PLAN_PATH,
+            "schema_version": PRODUCTION_RELEASE_PLAN_SCHEMA,
+            "sha256": sha256_file(release_plan_target),
+            "repository": plan["repository"],
+            "lane": plan["lane"],
+            "deployment_required": plan["deployment_required"],
+            "backend_image_required": plan["backend_image_required"],
+            "frontend_image_required": plan["frontend_image_required"],
+            "migration_required": plan["migration_required"],
+            "runtime_config_required": plan["runtime_config_required"],
+            "static_payload_required": plan["static_payload_required"],
+        }
+        payload_files = [
+            file_record(bundle_root, relative)
+            for relative in regular_files(bundle_root, exclude={MANIFEST_NAME, CHECKSUMS_NAME})
+        ]
+    elif args.release_plan:
+        fail("v1 release bundles cannot contain production release-plan metadata")
     manifest = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "created_at_utc": created_at,
         "source": {
             "revision": args.revision,
@@ -1139,6 +1301,8 @@ def create_manifest(args: argparse.Namespace) -> None:
             "covers": "all_regular_payload_files_except_itself",
         },
     }
+    if release_plan_meta is not None:
+        manifest["production_release_plan"] = release_plan_meta
     if not REVISION_RE.fullmatch(args.revision) or not REVISION_RE.fullmatch(args.tree):
         fail("revision and tree must be full hexadecimal object IDs")
     manifest_path = bundle_root / MANIFEST_NAME
@@ -1538,7 +1702,43 @@ def read_target_daemon_map(root: Path, role: str) -> dict[str, str]:
     return roles[role]
 
 
-def verify_directory(root: Path, *, post_load: bool) -> None:
+def directory_transfer_omissions(
+    root: Path, manifest: dict[str, Any], plan_path: Path | None, remote_dir: Path | None
+) -> set[str]:
+    if plan_path is None:
+        return set()
+    if remote_dir is None:
+        fail("release transfer plan verification requires the managed remote root")
+    payload = strict_json_file(
+        plan_path, context="release transfer plan", max_bytes=MAX_TRANSFER_PLAN_BYTES
+    )
+    plan_bundle, plan_archives, previous_release = validate_transfer_plan_payload(payload)
+    manifest_path = ensure_plain_file(root, MANIFEST_NAME)
+    checksum_path = ensure_plain_file(root, CHECKSUMS_NAME)
+    expected_bundle = transfer_bundle_binding(
+        bundle_sha256=plan_bundle["bundle_sha256"],
+        release_name=root.resolve().name,
+        manifest=manifest,
+        manifest_sha256=sha256_file(manifest_path),
+        checksums_sha256=sha256_file(checksum_path),
+    )
+    validate_transfer_plan_payload(
+        payload,
+        expected_bundle=expected_bundle,
+        expected_archives=transfer_archive_records(manifest),
+    )
+    return prove_transfer_reuse(
+        plan_archives, remote_dir=remote_dir, previous_release=previous_release
+    )
+
+
+def verify_directory(
+    root: Path,
+    *,
+    post_load: bool,
+    transfer_plan: Path | None = None,
+    remote_dir: Path | None = None,
+) -> None:
     root = root.resolve()
     manifest_path = ensure_plain_file(root, MANIFEST_NAME)
     checksum_path = ensure_plain_file(root, CHECKSUMS_NAME)
@@ -1546,6 +1746,7 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         fail(f"invalid release bundle manifest JSON: {exc}")
+    schema_version = manifest.get("schema_version") if isinstance(manifest, dict) else None
     expected_top = {
         "schema_version",
         "created_at_utc",
@@ -1558,10 +1759,13 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         "payload_files",
         "checksum_table",
     }
+    if schema_version == SCHEMA_VERSION_V2:
+        expected_top.add("production_release_plan")
     if not isinstance(manifest, dict) or set(manifest) != expected_top:
         fail("release bundle manifest has an unexpected top-level schema")
-    if manifest["schema_version"] != SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         fail("unsupported release bundle manifest schema")
+    omitted_archives = directory_transfer_omissions(root, manifest, transfer_plan, remote_dir)
     bundle_created_at = parse_utc_timestamp(manifest["created_at_utc"], "manifest created_at_utc")
     source = manifest["source"]
     if not isinstance(source, dict) or set(source) != {
@@ -1576,6 +1780,49 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
     if source["git_clean_required"] is not True:
         fail("invalid source clean/branch posture")
     validate_branch(source["branch"])
+    if schema_version == SCHEMA_VERSION_V2:
+        plan_meta = manifest["production_release_plan"]
+        expected_plan_meta_keys = {
+            "path",
+            "schema_version",
+            "sha256",
+            "repository",
+            "lane",
+            "deployment_required",
+            "backend_image_required",
+            "frontend_image_required",
+            "migration_required",
+            "runtime_config_required",
+            "static_payload_required",
+        }
+        if not isinstance(plan_meta, dict) or set(plan_meta) != expected_plan_meta_keys:
+            fail("production release-plan manifest metadata is invalid")
+        if (
+            plan_meta["path"] != PRODUCTION_RELEASE_PLAN_PATH
+            or plan_meta["schema_version"] != PRODUCTION_RELEASE_PLAN_SCHEMA
+        ):
+            fail("production release-plan manifest path/schema is invalid")
+        plan_path = ensure_plain_file(root, PRODUCTION_RELEASE_PLAN_PATH)
+        if sha256_file(plan_path) != plan_meta["sha256"]:
+            fail("production release-plan manifest hash mismatch")
+        plan = load_production_release_plan(
+            plan_path, revision=source["revision"], tree=source["tree"]
+        )
+        expected_plan_meta = {
+            "path": PRODUCTION_RELEASE_PLAN_PATH,
+            "schema_version": PRODUCTION_RELEASE_PLAN_SCHEMA,
+            "sha256": sha256_file(plan_path),
+            "repository": plan["repository"],
+            "lane": plan["lane"],
+            "deployment_required": plan["deployment_required"],
+            "backend_image_required": plan["backend_image_required"],
+            "frontend_image_required": plan["frontend_image_required"],
+            "migration_required": plan["migration_required"],
+            "runtime_config_required": plan["runtime_config_required"],
+            "static_payload_required": plan["static_payload_required"],
+        }
+        if plan_meta != expected_plan_meta:
+            fail("production release-plan manifest metadata does not match the receipt")
     build = manifest["build"]
     build_keys = {
         "image_platform",
@@ -1631,9 +1878,10 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         if relative in payload_by_path or relative in {MANIFEST_NAME, CHECKSUMS_NAME}:
             fail(f"duplicate or reserved payload path: {relative}")
         payload_by_path[relative] = record
-        actual = file_record(root, relative)
-        if actual != record:
-            fail(f"payload hash/size mismatch: {relative}")
+        if relative not in omitted_archives:
+            actual = file_record(root, relative)
+            if actual != record:
+                fail(f"payload hash/size mismatch: {relative}")
 
     source_records = {
         record["path"]: record for group in manifest["source_inputs"] for record in group["files"]
@@ -1643,15 +1891,18 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
             fail(f"source input and bundled payload disagree: {relative}")
 
     actual_files = set(regular_files(root))
-    expected_files = set(payload_by_path) | {MANIFEST_NAME, CHECKSUMS_NAME}
+    expected_files = (set(payload_by_path) - omitted_archives) | {MANIFEST_NAME, CHECKSUMS_NAME}
     if actual_files != expected_files:
         fail("bundle payload file set does not match manifest")
     checksums = parse_checksum_table(checksum_path)
-    expected_checksums = expected_files - {CHECKSUMS_NAME}
+    expected_checksums = set(payload_by_path) | {MANIFEST_NAME}
     if set(checksums) != expected_checksums:
         fail("SHA256SUMS does not cover the complete payload file set")
     for relative, digest in checksums.items():
-        if sha256_file(ensure_plain_file(root, relative)) != digest:
+        if (
+            relative not in omitted_archives
+            and sha256_file(ensure_plain_file(root, relative)) != digest
+        ):
             fail(f"SHA256SUMS mismatch: {relative}")
 
     checksum_meta = manifest["checksum_table"]
@@ -1800,6 +2051,7 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         archives,
         build["image_platform"],
         bundle_created_at=bundle_created_at,
+        omitted_archives=omitted_archives,
     )
     if manifest["production_image_scan"] != scan_meta:
         fail("production image scan metadata does not match bundled scan evidence")
@@ -1809,8 +2061,19 @@ def verify_directory(root: Path, *, post_load: bool) -> None:
         write_target_daemon_map(root, manifest, target_roles)
 
 
-def emit_image_plan(root: Path, *, aliases: bool) -> None:
-    verify_directory(root, post_load=False)
+def emit_image_plan(
+    root: Path,
+    *,
+    aliases: bool,
+    transfer_plan: Path | None = None,
+    remote_dir: Path | None = None,
+) -> None:
+    verify_directory(
+        root,
+        post_load=False,
+        transfer_plan=transfer_plan,
+        remote_dir=remote_dir,
+    )
     manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
     for archive in manifest["archives"]:
         primary = next(image for image in archive["images"] if image["primary"])
@@ -1820,6 +2083,514 @@ def emit_image_plan(root: Path, *, aliases: bool) -> None:
                     print(f"{primary['reference']}\t{image['reference']}")
         else:
             print(f"{archive['path']}\t{primary['role']}\t{primary['reference']}")
+
+
+def current_daemon_image_id(reference: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", reference],
+            text=True,
+            capture_output=True,
+        )
+    except OSError as exc:
+        fail(f"cannot inspect reusable image candidate: {exc}")
+    observed = completed.stdout.strip()
+    if completed.returncode == 0:
+        if IMAGE_ID_RE.fullmatch(observed) is None:
+            fail("reusable image candidate has an invalid daemon ID")
+        return observed
+    try:
+        daemon = subprocess.run(
+            ["docker", "info"],
+            text=True,
+            capture_output=True,
+        )
+    except OSError as exc:
+        fail(f"cannot prove Docker daemon availability: {exc}")
+    if daemon.returncode != 0:
+        fail("Docker daemon availability could not be proven while checking reusable images")
+    return None
+
+
+def validate_previous_release_root(root: Path, previous_root: Path) -> Path:
+    resolved_root = root.resolve()
+    resolved_previous = previous_root.resolve()
+    if (
+        resolved_previous == resolved_root
+        or resolved_previous.parent != resolved_root.parent
+        or RELEASE_NAME_RE.fullmatch(resolved_previous.name) is None
+        or previous_root.is_symlink()
+        or not resolved_previous.is_dir()
+    ):
+        fail("previous release root is not a distinct managed sibling release")
+    metadata = resolved_previous.stat()
+    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o022:
+        fail("previous release root must be operator-owned and not group/world writable")
+    return resolved_previous
+
+
+def reusable_archive_reason(
+    *,
+    previous_root: Path | None,
+    primary: dict[str, Any],
+) -> str | None:
+    reference = primary["reference"]
+    role = primary["role"]
+    expected_portable_id = primary["expected_image_id"]
+    observed_daemon_id = current_daemon_image_id(reference)
+    if observed_daemon_id is None:
+        return None
+    if observed_daemon_id == expected_portable_id:
+        return "portable-id"
+    if previous_root is None:
+        return None
+    try:
+        previous_record = read_target_daemon_map(previous_root, role)
+    except BundleError:
+        return None
+    if (
+        previous_record["reference"] == reference
+        and previous_record["portable_config_image_id"] == expected_portable_id
+        and previous_record["target_daemon_image_id"] == observed_daemon_id
+    ):
+        return "previous-release-map"
+    return None
+
+
+def strict_json_file(path: Path, *, context: str, max_bytes: int) -> Any:
+    if path.is_symlink() or not path.is_file():
+        fail(f"{context} must be a regular file")
+    if path.stat().st_size > max_bytes:
+        fail(f"{context} is oversized")
+
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                fail(f"{context} contains a duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        fail(f"{context} is invalid JSON: {exc}")
+
+
+def archive_metadata(bundle: Path) -> tuple[dict[str, Any], str, str]:
+    with tarfile.open(bundle, "r:gz") as archive:
+        members = {member.name: member for member in archive}
+        manifest_member = members.get(MANIFEST_NAME)
+        checksums_member = members.get(CHECKSUMS_NAME)
+        if manifest_member is None or checksums_member is None:
+            fail("required bundle metadata member is missing")
+        manifest_stream = archive.extractfile(manifest_member)
+        checksums_stream = archive.extractfile(checksums_member)
+        if manifest_stream is None or checksums_stream is None:
+            fail("release bundle metadata cannot be read")
+        manifest_bytes = manifest_stream.read(MAX_MANIFEST_BYTES + 1)
+        checksums_bytes = checksums_stream.read(MAX_MANIFEST_BYTES + 1)
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES or len(checksums_bytes) > MAX_MANIFEST_BYTES:
+        fail("release bundle metadata exceeds the byte limit")
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"release bundle metadata is invalid: {exc}")
+    if not isinstance(manifest, dict):
+        fail("release bundle manifest is invalid")
+    return (
+        manifest,
+        hashlib.sha256(manifest_bytes).hexdigest(),
+        hashlib.sha256(checksums_bytes).hexdigest(),
+    )
+
+
+def require_selective_transfer_capability(bundle: Path) -> None:
+    required_members = {
+        "deploy/remote-load-and-up.sh",
+        "deploy/verify-release-bundle.sh",
+        "scripts/verify-release-bundle-manifest.py",
+    }
+    observed: set[str] = set()
+    with tarfile.open(bundle, "r:gz") as archive:
+        for member in archive:
+            relative = safe_relative(member.name)
+            if relative not in required_members:
+                continue
+            if not member.isfile() or member.size > MAX_TRANSFER_CAPABILITY_FILE_BYTES:
+                fail(f"selective transfer capability file is invalid: {relative}")
+            source = archive.extractfile(member)
+            if source is None:
+                fail(f"selective transfer capability file cannot be read: {relative}")
+            content = source.read(MAX_TRANSFER_CAPABILITY_FILE_BYTES + 1)
+            if len(content) > MAX_TRANSFER_CAPABILITY_FILE_BYTES:
+                fail(f"selective transfer capability file is oversized: {relative}")
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                fail(f"selective transfer capability file is not UTF-8: {relative}: {exc}")
+            if SELECTIVE_TRANSFER_CAPABILITY not in text:
+                fail(f"exact bundle does not support selective transfer: {relative}")
+            observed.add(relative)
+    if observed != required_members:
+        fail("exact bundle does not contain the complete selective transfer capability")
+
+
+def transfer_bundle_binding(
+    *,
+    bundle_sha256: str,
+    release_name: str,
+    manifest: dict[str, Any],
+    manifest_sha256: str,
+    checksums_sha256: str,
+) -> dict[str, str]:
+    source = manifest.get("source")
+    build = manifest.get("build")
+    if (
+        SHA256_RE.fullmatch(bundle_sha256) is None
+        or RELEASE_NAME_RE.fullmatch(release_name) is None
+        or not isinstance(source, dict)
+        or REVISION_RE.fullmatch(str(source.get("revision", ""))) is None
+        or not isinstance(build, dict)
+        or build.get("image_platform") not in {"linux/amd64", "linux/arm64"}
+        or SHA256_RE.fullmatch(manifest_sha256) is None
+        or SHA256_RE.fullmatch(checksums_sha256) is None
+    ):
+        fail("release transfer bundle binding is invalid")
+    return {
+        "bundle_sha256": bundle_sha256,
+        "checksums_sha256": checksums_sha256,
+        "image_platform": build["image_platform"],
+        "manifest_sha256": manifest_sha256,
+        "release_name": release_name,
+        "source_revision": source["revision"],
+    }
+
+
+def transfer_archive_records(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    archives = manifest.get("archives")
+    if not isinstance(archives, list) or not archives:
+        fail("release transfer request has no image archives")
+    records: list[dict[str, Any]] = []
+    observed_paths: set[str] = set()
+    for archive in archives:
+        if not isinstance(archive, dict) or set(archive) != {
+            "path",
+            "sha256",
+            "size",
+            "required",
+            "images",
+        }:
+            fail("release transfer archive record is invalid")
+        path = archive["path"]
+        validate_payload_record({key: archive[key] for key in ("path", "sha256", "size")})
+        if path in observed_paths or archive["required"] is not True:
+            fail("release transfer archive set is duplicate or optional")
+        observed_paths.add(path)
+        images = archive["images"]
+        if not isinstance(images, list):
+            fail("release transfer archive image list is invalid")
+        primaries = [
+            image for image in images if isinstance(image, dict) and image.get("primary") is True
+        ]
+        if len(primaries) != 1:
+            fail("release transfer archive must have one primary image")
+        primary = primaries[0]
+        if (
+            not isinstance(primary.get("role"), str)
+            or re.fullmatch(r"[a-z0-9_]+", primary["role"]) is None
+            or not isinstance(primary.get("reference"), str)
+            or IMAGE_ID_RE.fullmatch(str(primary.get("expected_image_id", ""))) is None
+        ):
+            fail("release transfer primary image identity is invalid")
+        records.append(
+            {
+                "expected_image_id": primary["expected_image_id"],
+                "path": path,
+                "reference": primary["reference"],
+                "role": primary["role"],
+                "sha256": archive["sha256"],
+                "size": archive["size"],
+            }
+        )
+    return records
+
+
+def write_transfer_request(bundle: Path, checksum: Path, release_name: str, output: Path) -> None:
+    expected_line = checksum.read_text(encoding="utf-8").strip()
+    match = re.fullmatch(r"([0-9a-f]{64})  ([^/\r\n]+)", expected_line)
+    if match is None or match.group(2) != bundle.name:
+        fail("release transfer request checksum receipt is invalid")
+    require_selective_transfer_capability(bundle)
+    manifest, manifest_sha256, checksums_sha256 = archive_metadata(bundle)
+    payload = {
+        "schema_version": TRANSFER_REQUEST_SCHEMA,
+        "bundle": transfer_bundle_binding(
+            bundle_sha256=match.group(1),
+            release_name=release_name,
+            manifest=manifest,
+            manifest_sha256=manifest_sha256,
+            checksums_sha256=checksums_sha256,
+        ),
+        "archives": transfer_archive_records(manifest),
+    }
+    output.write_text(
+        json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    output.chmod(0o600)
+
+
+def validate_transfer_request(payload: Any) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    if not isinstance(payload, dict) or set(payload) != {"schema_version", "bundle", "archives"}:
+        fail("release transfer request schema is invalid")
+    if payload["schema_version"] != TRANSFER_REQUEST_SCHEMA:
+        fail("release transfer request version is unsupported")
+    bundle = payload["bundle"]
+    expected_bundle_keys = {
+        "bundle_sha256",
+        "checksums_sha256",
+        "image_platform",
+        "manifest_sha256",
+        "release_name",
+        "source_revision",
+    }
+    if not isinstance(bundle, dict) or set(bundle) != expected_bundle_keys:
+        fail("release transfer request bundle binding is invalid")
+    if (
+        any(
+            SHA256_RE.fullmatch(str(bundle[key])) is None
+            for key in ("bundle_sha256", "checksums_sha256", "manifest_sha256")
+        )
+        or bundle["image_platform"] not in {"linux/amd64", "linux/arm64"}
+        or RELEASE_NAME_RE.fullmatch(str(bundle["release_name"])) is None
+        or REVISION_RE.fullmatch(str(bundle["source_revision"])) is None
+    ):
+        fail("release transfer request bundle identity is invalid")
+    archives = payload["archives"]
+    expected_archive_keys = {"expected_image_id", "path", "reference", "role", "sha256", "size"}
+    if not isinstance(archives, list) or not archives:
+        fail("release transfer request archive list is invalid")
+    seen: set[str] = set()
+    for record in archives:
+        if not isinstance(record, dict) or set(record) != expected_archive_keys:
+            fail("release transfer request archive record is invalid")
+        validate_payload_record({key: record[key] for key in ("path", "sha256", "size")})
+        if (
+            record["path"] in seen
+            or re.fullmatch(r"[a-z0-9_]+", str(record["role"])) is None
+            or not isinstance(record["reference"], str)
+            or IMAGE_ID_RE.fullmatch(str(record["expected_image_id"])) is None
+        ):
+            fail("release transfer request archive identity is invalid")
+        seen.add(record["path"])
+    return bundle, archives
+
+
+def validate_inventory_previous_root(remote_dir: Path, previous_root: Path) -> Path:
+    managed_root = remote_dir.resolve()
+    resolved_previous = previous_root.resolve()
+    if (
+        remote_dir.is_symlink()
+        or not managed_root.is_dir()
+        or resolved_previous.parent != managed_root
+        or RELEASE_NAME_RE.fullmatch(resolved_previous.name) is None
+        or previous_root.is_symlink()
+        or not resolved_previous.is_dir()
+    ):
+        fail("release transfer previous root is not a managed release")
+    for directory in (managed_root, resolved_previous):
+        metadata = directory.stat()
+        if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o022:
+            fail("release transfer managed roots must be operator-owned and not writable")
+    return resolved_previous
+
+
+def prepare_transfer_plan(
+    request_path: Path, remote_dir: Path, previous_root: Path | None, output: Path
+) -> None:
+    request = strict_json_file(
+        request_path, context="release transfer request", max_bytes=MAX_TRANSFER_PLAN_BYTES
+    )
+    bundle, archives = validate_transfer_request(request)
+    validated_previous = (
+        validate_inventory_previous_root(remote_dir, previous_root)
+        if previous_root is not None
+        else None
+    )
+    plan_archives: list[dict[str, Any]] = []
+    for record in archives:
+        primary = {
+            "expected_image_id": record["expected_image_id"],
+            "reference": record["reference"],
+            "role": record["role"],
+        }
+        reason = reusable_archive_reason(previous_root=validated_previous, primary=primary)
+        plan_archives.append(
+            {
+                **record,
+                "action": "reuse" if reason is not None else "transfer",
+                "reason": reason or "missing-or-different",
+            }
+        )
+    payload = {
+        "schema_version": TRANSFER_PLAN_SCHEMA,
+        "bundle": bundle,
+        "previous_release": validated_previous.name if validated_previous is not None else None,
+        "archives": plan_archives,
+    }
+    encoded = (
+        json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    if len(encoded) > MAX_TRANSFER_PLAN_BYTES:
+        fail("release transfer plan is oversized")
+    output.write_bytes(encoded)
+    output.chmod(0o600)
+
+
+def validate_transfer_plan_payload(
+    payload: Any,
+    *,
+    expected_bundle: dict[str, str] | None = None,
+    expected_archives: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, str], list[dict[str, Any]], str | None]:
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version",
+        "bundle",
+        "previous_release",
+        "archives",
+    }:
+        fail("release transfer plan schema is invalid")
+    if payload["schema_version"] != TRANSFER_PLAN_SCHEMA:
+        fail("release transfer plan version is unsupported")
+    archives = payload["archives"]
+    plan_archive_keys = {
+        "action",
+        "expected_image_id",
+        "path",
+        "reason",
+        "reference",
+        "role",
+        "sha256",
+        "size",
+    }
+    if (
+        not isinstance(archives, list)
+        or not archives
+        or any(
+            not isinstance(record, dict) or set(record) != plan_archive_keys for record in archives
+        )
+    ):
+        fail("release transfer plan archive decision is invalid")
+    bundle, request_archives = validate_transfer_request(
+        {
+            "schema_version": TRANSFER_REQUEST_SCHEMA,
+            "bundle": payload["bundle"],
+            "archives": [
+                {
+                    key: record[key]
+                    for key in ("expected_image_id", "path", "reference", "role", "sha256", "size")
+                }
+                for record in archives
+            ],
+        }
+    )
+    if len(archives) != len(request_archives):
+        fail("release transfer plan archive set is invalid")
+    for record in archives:
+        if record["action"] not in {"reuse", "transfer"}:
+            fail("release transfer plan archive decision is invalid")
+        valid_reason = (
+            record["reason"] in {"portable-id", "previous-release-map"}
+            if record["action"] == "reuse"
+            else record["reason"] == "missing-or-different"
+        )
+        if not valid_reason:
+            fail("release transfer plan archive reason is invalid")
+    previous_release = payload["previous_release"]
+    if previous_release is not None and (
+        not isinstance(previous_release, str) or RELEASE_NAME_RE.fullmatch(previous_release) is None
+    ):
+        fail("release transfer plan previous release is invalid")
+    if expected_bundle is not None and bundle != expected_bundle:
+        fail("release transfer plan does not match the exact bundle")
+    if expected_archives is not None and request_archives != expected_archives:
+        fail("release transfer plan archive set does not match the exact bundle")
+    return bundle, archives, previous_release
+
+
+def load_transfer_plan(path: Path) -> tuple[dict[str, str], list[dict[str, Any]], str | None]:
+    payload = strict_json_file(
+        path, context="release transfer plan", max_bytes=MAX_TRANSFER_PLAN_BYTES
+    )
+    return validate_transfer_plan_payload(payload)
+
+
+def prove_transfer_reuse(
+    archives: list[dict[str, Any]], *, remote_dir: Path, previous_release: str | None
+) -> set[str]:
+    previous_root = (
+        validate_inventory_previous_root(remote_dir, remote_dir / previous_release)
+        if previous_release is not None
+        else None
+    )
+    omitted: set[str] = set()
+    for record in archives:
+        if record["action"] != "reuse":
+            continue
+        reason = reusable_archive_reason(
+            previous_root=previous_root,
+            primary={
+                "expected_image_id": record["expected_image_id"],
+                "reference": record["reference"],
+                "role": record["role"],
+            },
+        )
+        if reason is None:
+            fail(f"release transfer reuse evidence changed for {record['role']}")
+        omitted.add(record["path"])
+    return omitted
+
+
+def emit_prepare_plan(
+    root: Path,
+    previous_root: Path | None,
+    transfer_plan: Path | None = None,
+    remote_dir: Path | None = None,
+) -> None:
+    root = root.resolve()
+    verify_directory(
+        root,
+        post_load=False,
+        transfer_plan=transfer_plan,
+        remote_dir=remote_dir,
+    )
+    validated_previous = (
+        validate_previous_release_root(root, previous_root) if previous_root is not None else None
+    )
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    for archive in manifest["archives"]:
+        primary = next(image for image in archive["images"] if image["primary"])
+        reason = reusable_archive_reason(
+            previous_root=validated_previous,
+            primary=primary,
+        )
+        action = "reuse" if reason is not None else "load"
+        print(
+            "\t".join(
+                (
+                    archive["path"],
+                    primary["role"],
+                    primary["reference"],
+                    action,
+                    reason or "missing-or-different",
+                    str(archive["size"]),
+                )
+            )
+        )
 
 
 def emit_loaded_role_daemon_id(root: Path, role: str) -> None:
@@ -1874,7 +2645,10 @@ def verify_archive(bundle: Path, checksum: Path) -> dict[str, Any]:
             checksum_entries = parse_checksum_text(checksum_bytes.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             fail(f"release bundle metadata is invalid: {exc}")
-        if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA_VERSION:
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS
+        ):
             fail("unsupported release bundle manifest schema")
         payload_records = manifest.get("payload_files")
         if not isinstance(payload_records, list):
@@ -1920,6 +2694,183 @@ def verify_archive(bundle: Path, checksum: Path) -> dict[str, Any]:
                     fail(f"tar member hash mismatch: {relative}")
                 destination.chmod(member.mode & 0o777)
             verify_directory(temp_root, post_load=False)
+    return manifest
+
+
+def exact_transfer_subject(
+    bundle: Path, checksum: Path, release_name: str
+) -> tuple[dict[str, Any], dict[str, str], list[dict[str, Any]]]:
+    expected_line = checksum.read_text(encoding="utf-8").strip()
+    match = re.fullmatch(r"([0-9a-f]{64})  ([^/\r\n]+)", expected_line)
+    if match is None or match.group(2) != bundle.name:
+        fail("release transfer source checksum receipt is invalid")
+    manifest, manifest_sha256, checksums_sha256 = archive_metadata(bundle)
+    binding = transfer_bundle_binding(
+        bundle_sha256=match.group(1),
+        release_name=release_name,
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+        checksums_sha256=checksums_sha256,
+    )
+    return manifest, binding, transfer_archive_records(manifest)
+
+
+def pack_transfer_archive(
+    bundle: Path,
+    checksum: Path,
+    plan_path: Path,
+    output: Path,
+    output_checksum: Path,
+) -> None:
+    plan_bundle, plan_archives, _previous_release = load_transfer_plan(plan_path)
+    manifest, expected_bundle, expected_archives = exact_transfer_subject(
+        bundle, checksum, plan_bundle["release_name"]
+    )
+    validate_transfer_plan_payload(
+        strict_json_file(
+            plan_path, context="release transfer plan", max_bytes=MAX_TRANSFER_PLAN_BYTES
+        ),
+        expected_bundle=expected_bundle,
+        expected_archives=expected_archives,
+    )
+    omitted = {record["path"] for record in plan_archives if record["action"] == "reuse"}
+    if not omitted:
+        fail("release transfer archive requires at least one reusable image archive")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.tmp-{os.getpid()}")
+    try:
+        with tarfile.open(bundle, "r:gz") as source_archive:
+            with temporary.open("wb") as raw:
+                with gzip.GzipFile(
+                    filename="", mode="wb", compresslevel=6, mtime=0, fileobj=raw
+                ) as gz:
+                    with tarfile.open(fileobj=gz, mode="w|", format=tarfile.PAX_FORMAT) as target:
+                        for member in source_archive:
+                            relative = safe_relative(member.name)
+                            if relative in omitted:
+                                continue
+                            source = source_archive.extractfile(member)
+                            if source is None:
+                                fail(f"release transfer member cannot be read: {relative}")
+                            info = tarfile.TarInfo(relative)
+                            info.size = member.size
+                            info.mode = member.mode & 0o777
+                            info.mtime = member.mtime
+                            info.uid = 0
+                            info.gid = 0
+                            info.uname = "root"
+                            info.gname = "root"
+                            target.addfile(info, source)
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+    write_outer_checksum(output, output_checksum)
+    reused_records = [record for record in plan_archives if record["action"] == "reuse"]
+    transferred_records = [
+        record for record in plan_archives if record["action"] == "transfer"
+    ]
+    print(f"image_transfer_reused={len(reused_records)}")
+    print(f"image_transfer_uploaded={len(transferred_records)}")
+    print(f"image_transfer_reused_bytes={sum(record['size'] for record in reused_records)}")
+    print(
+        "image_transfer_uploaded_bytes="
+        f"{sum(record['size'] for record in transferred_records)}"
+    )
+
+
+def verify_transfer_archive(
+    bundle: Path,
+    checksum: Path,
+    plan_path: Path,
+    remote_dir: Path,
+) -> dict[str, Any]:
+    expected_line = checksum.read_text(encoding="utf-8").strip()
+    match = re.fullmatch(r"([0-9a-f]{64})  ([^/\r\n]+)", expected_line)
+    if match is None or match.group(2) != bundle.name or sha256_file(bundle) != match.group(1):
+        fail("release transfer archive checksum is invalid")
+    plan_payload = strict_json_file(
+        plan_path, context="release transfer plan", max_bytes=MAX_TRANSFER_PLAN_BYTES
+    )
+    plan_bundle, plan_archives, previous_release = validate_transfer_plan_payload(plan_payload)
+    omitted = prove_transfer_reuse(
+        plan_archives, remote_dir=remote_dir, previous_release=previous_release
+    )
+    if not omitted:
+        fail("release transfer archive has no remotely reusable image archive")
+    with tarfile.open(bundle, "r:gz") as archive:
+        member_by_name: dict[str, tarfile.TarInfo] = {}
+        total_size = 0
+        for member in archive:
+            if len(member_by_name) >= MAX_TAR_MEMBERS:
+                fail("release transfer archive exceeds the tar member limit")
+            relative = safe_relative(member.name)
+            if relative in member_by_name or not member.isfile():
+                fail(f"release transfer archive member is duplicate or unsafe: {relative}")
+            member_by_name[relative] = member
+            total_size += member.size
+            if total_size > MAX_TAR_UNCOMPRESSED_BYTES:
+                fail("release transfer archive exceeds the uncompressed byte limit")
+        manifest_member = member_by_name.get(MANIFEST_NAME)
+        checksums_member = member_by_name.get(CHECKSUMS_NAME)
+        if manifest_member is None or checksums_member is None:
+            fail("release transfer archive metadata is missing")
+        manifest_stream = archive.extractfile(manifest_member)
+        checksums_stream = archive.extractfile(checksums_member)
+        if manifest_stream is None or checksums_stream is None:
+            fail("release transfer archive metadata cannot be read")
+        manifest_bytes = manifest_stream.read(MAX_MANIFEST_BYTES + 1)
+        checksums_bytes = checksums_stream.read(MAX_MANIFEST_BYTES + 1)
+        if (
+            len(manifest_bytes) > MAX_MANIFEST_BYTES
+            or len(checksums_bytes) > MAX_MANIFEST_BYTES
+            or hashlib.sha256(manifest_bytes).hexdigest() != plan_bundle["manifest_sha256"]
+            or hashlib.sha256(checksums_bytes).hexdigest() != plan_bundle["checksums_sha256"]
+        ):
+            fail("release transfer archive metadata binding is invalid")
+        try:
+            manifest = json.loads(manifest_bytes.decode("utf-8"))
+            checksum_entries = parse_checksum_text(checksums_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            fail(f"release transfer archive metadata is invalid: {exc}")
+        expected_bundle = transfer_bundle_binding(
+            bundle_sha256=plan_bundle["bundle_sha256"],
+            release_name=plan_bundle["release_name"],
+            manifest=manifest,
+            manifest_sha256=plan_bundle["manifest_sha256"],
+            checksums_sha256=plan_bundle["checksums_sha256"],
+        )
+        validate_transfer_plan_payload(
+            plan_payload,
+            expected_bundle=expected_bundle,
+            expected_archives=transfer_archive_records(manifest),
+        )
+        payload_records = manifest.get("payload_files")
+        if not isinstance(payload_records, list):
+            fail("release transfer manifest has no payload list")
+        expected_sizes: dict[str, int] = {}
+        for record in payload_records:
+            validate_payload_record(record)
+            expected_sizes[record["path"]] = record["size"]
+        expected_members = (set(expected_sizes) - omitted) | {MANIFEST_NAME, CHECKSUMS_NAME}
+        if set(member_by_name) != expected_members:
+            fail("release transfer archive member set is not the exact planned subset")
+        if set(checksum_entries) != set(expected_sizes) | {MANIFEST_NAME}:
+            fail("release transfer SHA256SUMS is not the original complete table")
+        for relative in expected_members - {CHECKSUMS_NAME}:
+            member = member_by_name[relative]
+            if relative in expected_sizes and member.size != expected_sizes[relative]:
+                fail(f"release transfer member size mismatch: {relative}")
+            source = archive.extractfile(member)
+            if source is None:
+                fail(f"release transfer member cannot be read: {relative}")
+            digest = hashlib.sha256()
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+            if digest.hexdigest() != checksum_entries[relative]:
+                fail(f"release transfer member hash mismatch: {relative}")
     return manifest
 
 
@@ -1974,7 +2925,17 @@ def build_parser() -> argparse.ArgumentParser:
     inputs = subparsers.add_parser("source-inputs")
     inputs.add_argument("--source-root", required=True)
     inputs.add_argument("--output", required=True)
+    verify_release_plan = subparsers.add_parser("verify-release-plan")
+    verify_release_plan.add_argument("--release-plan", required=True)
+    verify_release_plan.add_argument("--revision", required=True)
+    verify_release_plan.add_argument("--tree", required=True)
     create = subparsers.add_parser("create")
+    create.add_argument(
+        "--schema-version",
+        choices=tuple(sorted(SUPPORTED_SCHEMA_VERSIONS)),
+        default=SCHEMA_VERSION_V1,
+    )
+    create.add_argument("--release-plan", default="")
     create.add_argument("--source-root", required=True)
     create.add_argument("--source-inputs-file", default="")
     create.add_argument("--bundle-root", required=True)
@@ -1993,10 +2954,19 @@ def build_parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify-directory")
     verify.add_argument("--root", required=True)
     verify.add_argument("--post-load", action="store_true")
+    verify.add_argument("--transfer-plan", default="")
+    verify.add_argument("--remote-dir", default="")
     load_plan = subparsers.add_parser("load-plan")
     load_plan.add_argument("--root", required=True)
+    prepare_plan = subparsers.add_parser("prepare-plan")
+    prepare_plan.add_argument("--root", required=True)
+    prepare_plan.add_argument("--previous-root", default="")
+    prepare_plan.add_argument("--transfer-plan", default="")
+    prepare_plan.add_argument("--remote-dir", default="")
     alias_plan = subparsers.add_parser("alias-plan")
     alias_plan.add_argument("--root", required=True)
+    alias_plan.add_argument("--transfer-plan", default="")
+    alias_plan.add_argument("--remote-dir", default="")
     loaded_role_daemon_id = subparsers.add_parser("loaded-role-daemon-id")
     loaded_role_daemon_id.add_argument("--root", required=True)
     loaded_role_daemon_id.add_argument("--role", required=True)
@@ -2014,6 +2984,27 @@ def build_parser() -> argparse.ArgumentParser:
     checksum = subparsers.add_parser("checksum")
     checksum.add_argument("--bundle", required=True)
     checksum.add_argument("--output", required=True)
+    transfer_request = subparsers.add_parser("transfer-request")
+    transfer_request.add_argument("--bundle", required=True)
+    transfer_request.add_argument("--checksum", required=True)
+    transfer_request.add_argument("--release-name", required=True)
+    transfer_request.add_argument("--output", required=True)
+    transfer_plan = subparsers.add_parser("prepare-transfer-plan")
+    transfer_plan.add_argument("--request", required=True)
+    transfer_plan.add_argument("--remote-dir", required=True)
+    transfer_plan.add_argument("--previous-root", default="")
+    transfer_plan.add_argument("--output", required=True)
+    transfer_pack = subparsers.add_parser("pack-transfer-archive")
+    transfer_pack.add_argument("--bundle", required=True)
+    transfer_pack.add_argument("--checksum", required=True)
+    transfer_pack.add_argument("--plan", required=True)
+    transfer_pack.add_argument("--output", required=True)
+    transfer_pack.add_argument("--output-checksum", required=True)
+    transfer_verify = subparsers.add_parser("verify-transfer-archive")
+    transfer_verify.add_argument("--bundle", required=True)
+    transfer_verify.add_argument("--checksum", required=True)
+    transfer_verify.add_argument("--plan", required=True)
+    transfer_verify.add_argument("--remote-dir", required=True)
     return parser
 
 
@@ -2050,14 +3041,35 @@ def main() -> int:
                 json.dumps(groups, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+        elif args.command == "verify-release-plan":
+            load_production_release_plan(
+                Path(args.release_plan).resolve(), revision=args.revision, tree=args.tree
+            )
         elif args.command == "create":
             create_manifest(args)
         elif args.command == "verify-directory":
-            verify_directory(Path(args.root), post_load=args.post_load)
+            verify_directory(
+                Path(args.root),
+                post_load=args.post_load,
+                transfer_plan=Path(args.transfer_plan) if args.transfer_plan else None,
+                remote_dir=Path(args.remote_dir) if args.remote_dir else None,
+            )
         elif args.command == "load-plan":
             emit_image_plan(Path(args.root).resolve(), aliases=False)
+        elif args.command == "prepare-plan":
+            emit_prepare_plan(
+                Path(args.root).resolve(),
+                Path(args.previous_root) if args.previous_root else None,
+                Path(args.transfer_plan) if args.transfer_plan else None,
+                Path(args.remote_dir) if args.remote_dir else None,
+            )
         elif args.command == "alias-plan":
-            emit_image_plan(Path(args.root).resolve(), aliases=True)
+            emit_image_plan(
+                Path(args.root).resolve(),
+                aliases=True,
+                transfer_plan=Path(args.transfer_plan) if args.transfer_plan else None,
+                remote_dir=Path(args.remote_dir) if args.remote_dir else None,
+            )
         elif args.command == "loaded-role-daemon-id":
             emit_loaded_role_daemon_id(Path(args.root).resolve(), args.role)
         elif args.command == "verify-archive":
@@ -2069,6 +3081,32 @@ def main() -> int:
             pack_bundle(Path(args.root), Path(args.output), args.gzip_level, args.mtime)
         elif args.command == "checksum":
             write_outer_checksum(Path(args.bundle), Path(args.output))
+        elif args.command == "transfer-request":
+            write_transfer_request(
+                Path(args.bundle), Path(args.checksum), args.release_name, Path(args.output)
+            )
+        elif args.command == "prepare-transfer-plan":
+            prepare_transfer_plan(
+                Path(args.request),
+                Path(args.remote_dir),
+                Path(args.previous_root) if args.previous_root else None,
+                Path(args.output),
+            )
+        elif args.command == "pack-transfer-archive":
+            pack_transfer_archive(
+                Path(args.bundle),
+                Path(args.checksum),
+                Path(args.plan),
+                Path(args.output),
+                Path(args.output_checksum),
+            )
+        elif args.command == "verify-transfer-archive":
+            verify_transfer_archive(
+                Path(args.bundle),
+                Path(args.checksum),
+                Path(args.plan),
+                Path(args.remote_dir),
+            )
         return 0
     except (BundleError, OSError, subprocess.CalledProcessError, tarfile.TarError) as exc:
         print(f"[fail] {exc}", file=sys.stderr)
