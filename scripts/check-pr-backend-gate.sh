@@ -30,9 +30,9 @@ case "${MODE}" in
 		MODE="targeted-contract-shard"
 		CONTRACT_SHARD="$2"
 		case "${CONTRACT_SHARD}" in
-			1|2) ;;
+			1|2|3) ;;
 			*)
-				echo "[error] contract shard must be 1 or 2" >&2
+				echo "[error] contract shard must be 1, 2, or 3" >&2
 				exit 2
 				;;
 		esac
@@ -179,7 +179,7 @@ run_targeted_contract() {
 run_targeted_contract_shard() {
 	local shard="$1"
 	python3 scripts/select-pytest-shard.py \
-		--shards 2 \
+		--shards 3 \
 		--shard "${shard}" \
 		tests/contract > "${TMP_TESTS}"
 	contract_tests=()
@@ -190,7 +190,7 @@ run_targeted_contract_shard() {
 		echo "[error] contract shard ${shard} selected no tests" >&2
 		exit 1
 	}
-	echo "[run] pytest contract shard ${shard}/2 (${#contract_tests[@]} files)"
+	echo "[run] pytest contract shard ${shard}/3 (${#contract_tests[@]} selectors)"
 	.venv/bin/python -m pytest "${contract_tests[@]}" -q --durations=25
 }
 

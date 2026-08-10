@@ -6,7 +6,10 @@ Status: active engineering standard.
 
 The default branch keeps the complete backend pytest gate, but distributes
 `tests/api`, `tests/contract`, and `tests/domain` across three deterministic
-file-level shards.
+weighted shards. Files remain the normal scheduling unit. A file whose rolling
+weight alone exceeds the per-shard target may be divided by statically
+discoverable pytest node ID when the same rolling evidence contains complete
+node weights; otherwise selection fails safe to the whole file.
 
 Production-promotion pull requests still execute this complete gate. After a
 successful production PR records its exact tested Git tree in the governed CI
@@ -18,15 +21,19 @@ This mechanism is CI scheduling evidence only. It must not change test
 assertions, skip coverage, weaken release gates, or introduce a second runtime
 control plane. The stable required check remains `backend`.
 
-Targeted pull requests use a separate four-lane fast gate:
+Targeted pull requests use a separate five-lane fast gate:
 
 1. changed-source static and anti-drift checks;
 2. deterministic contract shard 1;
 3. deterministic contract shard 2;
-4. impacted API/domain tests selected from changed paths.
+4. deterministic contract shard 3;
+5. impacted API/domain tests selected from changed paths.
 
-The lanes run in parallel and still aggregate into the stable required
-`backend` check. `scripts/select-pr-backend-tests.py` owns the impacted-test
+The three contract lanes keep the same complete contract test set while
+reducing the critical path of the persistent encryption-cutover hotspot. Their
+total pytest work is unchanged; the incremental cost is one bounded environment
+bootstrap. All lanes run in parallel and still aggregate into the stable
+required `backend` check. `scripts/select-pr-backend-tests.py` owns the impacted-test
 mapping. Central API/bootstrap files intentionally select all `tests/api`;
 unknown future `app/api/**` files also fall back to all API tests with a
 warning. A missing mapping therefore costs time but cannot silently reduce
@@ -55,10 +62,10 @@ pnpm run ci:pytest:weights:refresh -- \
   <run-id-1> <run-id-2> <run-id-3> <run-id-4> <run-id-5>
 ```
 
-The generator first sums all shard reports within each run. For every file it
-stores the five-run mean plus population standard deviation. This safety margin
-prevents a high-variance file from being grouped with several other hotspots
-merely because its median run was fast. Runs without all three shard reports
+The generator first sums all shard reports within each run. For every file and
+test node it stores the five-run mean plus population standard deviation. This
+safety margin prevents a high-variance file from being grouped with several
+other hotspots merely because its median run was fast. Runs without all three shard reports
 are rejected in explicit mode and skipped in recent-master discovery mode. The
 checked-in payload records every source run ID and the aggregation method.
 
@@ -159,15 +166,20 @@ database, external coverage service, or another test execution.
 3. Treat the three-run median as the decision value. The target is
    `max/min <= 1.30`, with the slowest shard normally below 10 minutes.
 4. If imbalance remains, first split consistently slow test files by coherent
-   test scenario or remove repeated expensive fixture setup. Keep all
-   assertions and recovery semantics.
+   test scenario or remove repeated expensive fixture setup. When one stable
+   hotspot is larger than an entire shard target and a source split would only
+   duplicate a large test harness, generated node weights may divide that file
+   without a hand-maintained node manifest. Static discovery must include new
+   test functions, and incomplete/dynamic discovery must fall back to the whole
+   file. Keep all assertions and recovery semantics.
 5. Add a fourth shard only when three shards are balanced but the critical path
    still misses the agreed feedback target. Changing from three to four jobs
    increases runner concurrency by 33 percent.
 
 The first files to investigate are the sustained timing leaders shown by the
 rolling report, not files selected from one isolated run. Node-ID sharding is a
-last resort because it adds a second scheduling manifest and more drift risk.
+last resort. It must reuse the generated rolling weight payload rather than add
+a hand-maintained scheduling manifest.
 
 ## Verification
 

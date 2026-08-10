@@ -579,6 +579,9 @@ jobs:
           - lane: contract-2
             command: --targeted-contract-shard 2
             needs_node: false
+          - lane: contract-3
+            command: --targeted-contract-shard 3
+            needs_node: false
           - lane: impacted
             command: --targeted-impacted
             needs_node: false

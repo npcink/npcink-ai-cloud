@@ -20,6 +20,16 @@ def classname_to_path(classname: str) -> str:
     return f"{'/'.join(parts)}.py"
 
 
+def testcase_to_node_id(classname: str, name: str) -> str:
+    parts = [part for part in classname.strip().split(".") if part]
+    class_parts: list[str] = []
+    while parts and parts[-1][:1].isupper():
+        class_parts.insert(0, parts.pop())
+    path = f"{'/'.join(parts)}.py"
+    test_name = name.split("[", 1)[0]
+    return "::".join((path, *class_parts, test_name))
+
+
 def _report_paths(junit_xml: Path | Iterable[Path]) -> list[Path]:
     if isinstance(junit_xml, Path):
         return [junit_xml]
@@ -42,14 +52,33 @@ def collect_file_weights(junit_xml: Path | Iterable[Path]) -> dict[str, float]:
     return {path: round(seconds, 3) for path, seconds in sorted(weights.items())}
 
 
+def collect_node_weights(junit_xml: Path | Iterable[Path]) -> dict[str, float]:
+    weights: defaultdict[str, float] = defaultdict(float)
+    for report_path in _report_paths(junit_xml):
+        root = ET.parse(report_path).getroot()
+        for case in root.iter("testcase"):
+            classname = case.attrib.get("classname", "").strip()
+            name = case.attrib.get("name", "").strip()
+            if not classname or not name:
+                continue
+            try:
+                seconds = max(0.0, float(case.attrib.get("time", "0")))
+            except ValueError:
+                seconds = 0.0
+            weights[testcase_to_node_id(classname, name)] += seconds
+    return {node_id: round(seconds, 3) for node_id, seconds in sorted(weights.items())}
+
+
 def build_payload(
     junit_xml: Path | Iterable[Path],
     source_label: str,
 ) -> dict[str, object]:
     weights = collect_file_weights(junit_xml)
+    node_weights = collect_node_weights(junit_xml)
     return {
-        "schema": "pytest-duration-weights-v1",
+        "schema": "pytest-duration-weights-v3",
         "source": source_label,
+        "node_weights": node_weights,
         "weights": weights,
     }
 
@@ -92,10 +121,15 @@ def build_aggregate_payload(
         (collect_file_weights(reports) for reports in report_groups),
         aggregation=aggregation,
     )
+    node_weights = aggregate_run_weights(
+        (collect_node_weights(reports) for reports in report_groups),
+        aggregation=aggregation,
+    )
     return {
-        "schema": "pytest-duration-weights-v2",
+        "schema": "pytest-duration-weights-v3",
         "source": f"GitHub Actions runs {', '.join(run_ids)} pytest-backend timing shards",
         "aggregation": aggregation,
+        "node_weights": node_weights,
         "source_run_ids": run_ids,
         "weights": weights,
     }

@@ -46,11 +46,64 @@ def test_weighted_shards_balance_slowest_files_first(tmp_path: Path) -> None:
 
     shards = select_pytest_shard.assign_files(files, weights, shard_count=2)
 
-    assert [path.name for path in shards[0].files] == ["test_a.py", "test_d.py"]
-    assert [path.name for path in shards[1].files] == [
+    assert [Path(selector).name for selector in shards[0].selectors] == [
+        "test_a.py",
+        "test_d.py",
+    ]
+    assert [Path(selector).name for selector in shards[1].selectors] == [
         "test_b.py",
         "test_c.py",
     ]
+
+
+def test_oversized_file_is_split_by_observed_static_test_nodes(tmp_path: Path) -> None:
+    tests_root = tmp_path / "tests" / "contract"
+    tests_root.mkdir(parents=True)
+    slow = tests_root / "test_slow.py"
+    slow.write_text(
+        "def test_one(): pass\ndef test_two(): pass\ndef test_new(): pass\n",
+        encoding="utf-8",
+    )
+    fast = tests_root / "test_fast.py"
+    fast.write_text("def test_fast(): pass\n", encoding="utf-8")
+    slow_path = slow.as_posix()
+
+    weighted = select_pytest_shard.build_weighted_selectors(
+        [fast, slow],
+        {fast.as_posix(): 4, slow_path: 20},
+        {
+            f"{slow_path}::test_one": 9,
+            f"{slow_path}::test_two": 8,
+        },
+        shard_count=2,
+    )
+
+    assert weighted == [
+        (4, fast.as_posix()),
+        (9, f"{slow_path}::test_one"),
+        (8, f"{slow_path}::test_two"),
+        (1.0, f"{slow_path}::test_new"),
+    ]
+
+
+def test_oversized_file_falls_back_when_historic_nodes_are_not_static(
+    tmp_path: Path,
+) -> None:
+    tests_root = tmp_path / "tests" / "contract"
+    tests_root.mkdir(parents=True)
+    slow = tests_root / "test_slow.py"
+    slow.write_text("def test_one(): pass\ndef test_two(): pass\n", encoding="utf-8")
+    fast = tests_root / "test_fast.py"
+    fast.write_text("def test_fast(): pass\n", encoding="utf-8")
+
+    weighted = select_pytest_shard.build_weighted_selectors(
+        [fast, slow],
+        {fast.as_posix(): 4, slow.as_posix(): 20},
+        {f"{slow.as_posix()}::test_generated": 20},
+        shard_count=2,
+    )
+
+    assert weighted == [(4, fast.as_posix()), (20, slow.as_posix())]
 
 
 def test_junit_report_writes_per_file_weights(tmp_path: Path) -> None:
@@ -71,8 +124,14 @@ def test_junit_report_writes_per_file_weights(tmp_path: Path) -> None:
     payload = write_pytest_duration_weights.build_payload(report, "fixture")
 
     assert payload == {
-        "schema": "pytest-duration-weights-v1",
+        "schema": "pytest-duration-weights-v3",
         "source": "fixture",
+        "node_weights": {
+            "tests/api/test_auth.py::TestDecodePortalBearerToken::test_decode": 0.75,
+            "tests/api/test_runtime.py::test_one": 1.25,
+            "tests/api/test_runtime.py::test_two": 2.0,
+            "tests/contract/test_release.py::test_release": 0.5,
+        },
         "weights": {
             "tests/api/test_auth.py": 0.75,
             "tests/api/test_runtime.py": 3.25,
@@ -105,6 +164,11 @@ def test_junit_reports_merge_per_file_weights_across_shards(tmp_path: Path) -> N
     payload = write_pytest_duration_weights.build_payload([first, second], "fixture shards")
 
     assert payload["source"] == "fixture shards"
+    assert payload["node_weights"] == {
+        "tests/contract/test_release.py::test_one": 2.0,
+        "tests/contract/test_release.py::test_two": 3.0,
+        "tests/domain/test_runtime.py::test_three": 1.0,
+    }
     assert payload["weights"] == {
         "tests/contract/test_release.py": 5.0,
         "tests/domain/test_runtime.py": 1.0,
@@ -134,9 +198,13 @@ def test_junit_run_groups_use_variance_aware_weights_and_preserve_sources(
     )
 
     assert payload == {
-        "schema": "pytest-duration-weights-v2",
+        "schema": "pytest-duration-weights-v3",
         "source": "GitHub Actions runs 101, 102, 103 pytest-backend timing shards",
         "aggregation": "mean-plus-stddev",
+        "node_weights": {
+            "tests/api/test_auth.py::test_two": 1.0,
+            "tests/api/test_runtime.py::test_one": 5.633,
+        },
         "source_run_ids": ["101", "102", "103"],
         "weights": {
             "tests/api/test_auth.py": 1.0,
@@ -232,3 +300,55 @@ def test_shard_balance_report_compares_predictions_and_actual_drift(
     assert [drift.path for drift in summary["file_drifts"]] == ["tests/api/test_a.py"]
     assert "Actual max/min ratio: `4.00`" in markdown
     assert "tests/api/test_a.py" in markdown
+
+
+def test_shard_balance_report_compares_split_nodes_without_full_file_drift(
+    tmp_path: Path,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    node_one = "tests/contract/test_slow.py::test_one"
+    node_two = "tests/contract/test_slow.py::test_two"
+    (artifact_root / "pytest-files-shard-1.txt").write_text(
+        f"{node_one}\n",
+        encoding="utf-8",
+    )
+    (artifact_root / "pytest-files-shard-2.txt").write_text(
+        f"{node_two}\n",
+        encoding="utf-8",
+    )
+    for index, name in ((1, "test_one"), (2, "test_two")):
+        (artifact_root / f"pytest-backend-shard-{index}.xml").write_text(
+            f"""
+<testsuite>
+  <testcase classname="tests.contract.test_slow" name="{name}" time="10" />
+</testsuite>
+""",
+            encoding="utf-8",
+        )
+    durations = tmp_path / "durations.json"
+    durations.write_text(
+        json.dumps(
+            {
+                "schema": "pytest-duration-weights-v3",
+                "source": "fixture runs",
+                "aggregation": "mean-plus-stddev",
+                "source_run_ids": ["1", "2", "3"],
+                "weights": {"tests/contract/test_slow.py": 20},
+                "node_weights": {node_one: 10, node_two: 10},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = report_pytest_shard_balance.summarize(
+        artifact_root,
+        durations,
+        ratio_warning=1.30,
+        file_drift_seconds=1,
+        file_drift_ratio=0.1,
+    )
+
+    assert summary["predicted_max_min_ratio"] == 1
+    assert summary["actual_max_min_ratio"] == 1
+    assert summary["file_drifts"] == []
