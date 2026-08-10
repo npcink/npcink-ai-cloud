@@ -141,6 +141,7 @@
     "severity_threshold": "high",
     "unfixed_policy": "block",
     "unknown_severity_policy": "block",
+    "max_scan_age_hours": 24,
     "max_database_age_hours": 72,
     "max_exception_days": 30,
     "allowlist_file": "deploy/image-lock/cve-allowlist.json",

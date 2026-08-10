@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -803,6 +804,7 @@ def validate_lock(lock_path: Path, *, online: bool) -> dict[str, Any]:
         "severity_threshold": "high",
         "unfixed_policy": "block",
         "unknown_severity_policy": "block",
+        "max_scan_age_hours": 24,
         "max_database_age_hours": 72,
         "max_exception_days": 30,
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
@@ -1835,6 +1837,114 @@ def write_index(args: argparse.Namespace) -> int:
     return 0 if status == "passed" else 1
 
 
+def reuse_scan_evidence(args: argparse.Namespace) -> int:
+    lock_path = Path(args.lock).resolve()
+    release_gate = args.scope == "release"
+    if release_gate and lock_path != DEFAULT_LOCK.resolve():
+        raise SupplyError("release scan reuse must use the canonical repository image lock")
+    if args.expected_platform not in {"linux/amd64", "linux/arm64"}:
+        raise SupplyError("scan reuse expected platform must be linux/amd64 or linux/arm64")
+    if not IMAGE_ID_RE.fullmatch(args.source_daemon_image_id):
+        raise SupplyError("scan reuse source daemon image ID must be an exact sha256 ID")
+
+    lock = _load_json(lock_path)
+    policy = lock.get("scan_policy")
+    if not isinstance(policy, dict):
+        raise SupplyError("scan policy is missing")
+    max_scan_age_hours = policy.get("max_scan_age_hours")
+    if (
+        not isinstance(max_scan_age_hours, int)
+        or isinstance(max_scan_age_hours, bool)
+        or max_scan_age_hours < 1
+        or max_scan_age_hours > 168
+    ):
+        raise SupplyError("scan policy max_scan_age_hours must be an integer from 1 to 168")
+
+    image_key = _required_text(args.image_key, "image_key")
+    targets = _scan_targets(lock)
+    if image_key not in targets:
+        raise SupplyError(f"unknown scan reuse image key {image_key!r}")
+    target = targets[image_key]
+    if release_gate and args.requested_reference != target["reference"]:
+        raise SupplyError(f"release scan reuse reference mismatch for {image_key}")
+    if release_gate and args.archive_reference != target["archive_reference"]:
+        raise SupplyError(f"release scan reuse archive reference mismatch for {image_key}")
+
+    reuse_dir = Path(args.reuse_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    if not reuse_dir.is_dir():
+        raise SupplyError("scan reuse directory does not exist")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if reuse_dir == output_dir:
+        raise SupplyError("scan reuse input and output directories must differ")
+
+    receipt_path = reuse_dir / f"{image_key}.receipt.json"
+    if not receipt_path.is_file():
+        raise SupplyError(f"scan reuse receipt is missing for {image_key}")
+    if receipt_path.is_symlink():
+        raise SupplyError(f"scan reuse receipt must not be a symbolic link for {image_key}")
+    receipt = _load_json(receipt_path)
+    _validate_index_receipt(
+        lock=lock,
+        lock_path=lock_path,
+        receipt=receipt,
+        receipt_path=receipt_path,
+        release_gate=release_gate,
+        expected_platform=args.expected_platform,
+    )
+    if receipt.get("status") != "passed":
+        raise SupplyError(f"scan reuse receipt did not pass for {image_key}")
+    if receipt.get("source_daemon_image_id") != args.source_daemon_image_id:
+        raise SupplyError(f"scan reuse image ID changed for {image_key}")
+    if receipt.get("requested_reference") != args.requested_reference:
+        raise SupplyError(f"scan reuse requested reference changed for {image_key}")
+    if receipt.get("archive_reference") != args.archive_reference:
+        raise SupplyError(f"scan reuse archive reference changed for {image_key}")
+
+    generated_at = _parse_utc_timestamp(
+        receipt.get("generated_at_utc"), "scan_receipt.generated_at_utc"
+    )
+    scan_age_hours = (_utc_now() - generated_at).total_seconds() / 3600
+    if scan_age_hours < 0 or scan_age_hours > max_scan_age_hours:
+        raise SupplyError(
+            f"scan reuse evidence is stale for {image_key}: "
+            f"{scan_age_hours:.2f}h > {max_scan_age_hours}h"
+        )
+
+    filenames = (
+        f"{image_key}.image.tar",
+        f"{image_key}.image-inspect.json",
+        f"{image_key}.syft.json",
+        f"{image_key}.sbom.cdx.json",
+        f"{image_key}.grype.json",
+        f"{image_key}.receipt.json",
+    )
+    for filename in filenames:
+        source = reuse_dir / filename
+        if not source.is_file() or source.is_symlink() or source.resolve().parent != reuse_dir:
+            raise SupplyError(f"scan reuse artifact must be a direct regular file: {filename}")
+    for filename in filenames:
+        destination = output_dir / filename
+        if destination.exists():
+            raise SupplyError(f"scan reuse output already exists: {destination}")
+    for filename in filenames:
+        shutil.copy2(reuse_dir / filename, output_dir / filename)
+    print(
+        json.dumps(
+            {
+                "status": "reused",
+                "image_key": image_key,
+                "source_daemon_image_id": args.source_daemon_image_id,
+                "scan_age_hours": round(scan_age_hours, 3),
+                "grype_database": receipt["grype_database"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1868,6 +1978,17 @@ def parse_args() -> argparse.Namespace:
     index.add_argument("--equivalence-json")
     index.add_argument("receipts", nargs="+")
 
+    reuse = subparsers.add_parser("reuse")
+    reuse.add_argument("--lock", default=str(DEFAULT_LOCK))
+    reuse.add_argument("--image-key", required=True)
+    reuse.add_argument("--source-daemon-image-id", required=True)
+    reuse.add_argument("--requested-reference", required=True)
+    reuse.add_argument("--archive-reference", required=True)
+    reuse.add_argument("--scope", choices=("release", "focused"), required=True)
+    reuse.add_argument("--expected-platform", required=True)
+    reuse.add_argument("--reuse-dir", required=True)
+    reuse.add_argument("--output-dir", required=True)
+
     equivalence = subparsers.add_parser("equivalence")
     equivalence.add_argument("--lock", default=str(DEFAULT_LOCK))
     equivalence.add_argument("--output", required=True)
@@ -1894,6 +2015,8 @@ def main() -> int:
             return evaluate_scan(args)
         if args.command == "index":
             return write_index(args)
+        if args.command == "reuse":
+            return reuse_scan_evidence(args)
         if args.command == "equivalence":
             return verify_equivalence(args)
         if args.command == "normalize-archive":

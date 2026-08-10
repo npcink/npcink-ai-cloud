@@ -14,6 +14,8 @@ GZIP_LEVEL="${NPCINK_CLOUD_BUNDLE_GZIP_LEVEL:-1}"
 BUILD_CACHE_SCOPE_PREFIX="${NPCINK_CLOUD_BUILD_CACHE_SCOPE_PREFIX:-npcink-ai-cloud}"
 BUNDLE_SCHEMA_VERSION="${NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION:-npcink.release-bundle.v1}"
 PRODUCTION_RELEASE_PLAN_FILE="${NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE:-}"
+SCAN_REUSE_DIR="${NPCINK_CLOUD_SCAN_REUSE_DIR:-}"
+SCAN_CACHE_OUTPUT_DIR="${NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR:-}"
 
 fail() {
 	echo "[fail] $*" >&2
@@ -131,6 +133,16 @@ FINAL_IMAGE_RECORDS="$(mktemp "${DIST_DIR}/.release-final-image-records.XXXXXX")
 EXTERNAL_PLAN="$(mktemp "${DIST_DIR}/.release-external-plan.XXXXXX")"
 APPLICATION_PLAN="$(mktemp "${DIST_DIR}/.release-application-plan.XXXXXX")"
 LOCAL_SCAN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/npcink-release-image-scan.XXXXXX")"
+
+if [ -n "${SCAN_CACHE_OUTPUT_DIR}" ]; then
+	mkdir -p "${SCAN_CACHE_OUTPUT_DIR}"
+	SCAN_CACHE_OUTPUT_DIR="$(cd "${SCAN_CACHE_OUTPUT_DIR}" && pwd -P)"
+	case "${SCAN_CACHE_OUTPUT_DIR}/" in
+		"${CLOUD_DIR}/"*) fail "scan cache output must stay outside the Git worktree" ;;
+	esac
+	[ -z "$(ls -A "${SCAN_CACHE_OUTPUT_DIR}")" ] \
+		|| fail "scan cache output directory must be empty"
+fi
 
 cleanup() {
 	local exit_status="$?"
@@ -308,13 +320,23 @@ done <"${EXTERNAL_PLAN}"
 # Scan the exact IDs after the single application build and exact external
 # pulls, then archive those same IDs without any intervening build/pull. The
 # child environment cannot redirect the release scan to an alternate policy.
+SCAN_REUSE_ARGS=()
+if [ -n "${SCAN_REUSE_DIR}" ] && [ -d "${SCAN_REUSE_DIR}" ]; then
+	SCAN_REUSE_ARGS=(--reuse-dir "${SCAN_REUSE_DIR}")
+fi
 (
 	unset NPCINK_CLOUD_IMAGE_LOCK_FILE DOCKER_HOST DOCKER_CONTEXT
 	export DOCKER_DEFAULT_PLATFORM="${MANIFEST_IMAGE_PLATFORM}"
 	bash "${CLOUD_DIR}/scripts/scan-production-images.sh" \
 		--platform "${MANIFEST_IMAGE_PLATFORM}" \
+		"${SCAN_REUSE_ARGS[@]}" \
 		--output "${LOCAL_SCAN_DIR}"
 )
+if [ -n "${SCAN_CACHE_OUTPUT_DIR}" ]; then
+	if ! cp -a "${LOCAL_SCAN_DIR}/." "${SCAN_CACHE_OUTPUT_DIR}/"; then
+		echo "[warn] Scan evidence cache copy failed; the verified current scan remains authoritative." >&2
+	fi
+fi
 mkdir -p "${LOCAL_STAGE}/release/image-scan"
 for scan_evidence in "${LOCAL_SCAN_DIR}"/*; do
 	case "${scan_evidence}" in
