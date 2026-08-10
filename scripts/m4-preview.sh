@@ -1072,6 +1072,8 @@ if not paths:
 digest = hashlib.sha256()
 for relative in paths:
     path = root / relative
+    if not path.exists():
+        continue
     if path.is_symlink() or not path.is_file():
         raise SystemExit(
             f"[m4-preview] frontend source input is not a regular file: {relative}"
@@ -1473,6 +1475,7 @@ deployed_image_marker="${cache_dir}/deployed-image-input.sha256"
 deployed_config_marker="${cache_dir}/deployed-config-input.sha256"
 deployed_frontend_source_marker="${cache_dir}/deployed-frontend-source.sha256"
 deployed_frontend_revision_marker="${cache_dir}/deployed-frontend-revision.txt"
+deployed_frontend_config_marker="${cache_dir}/deployed-frontend-config.sha256"
 state_file="${cache_dir}/last-deploy.txt"
 docker_config="${cache_dir}/docker-config"
 frontend_volume_marker="${cache_dir}/frontend-volume-image.txt"
@@ -1487,6 +1490,8 @@ frontend_source_changed=1
 frontend_runtime_revision="${source_revision}"
 frontend_recreate_required=0
 previous_frontend_revision=""
+frontend_resolved_config_sha=""
+frontend_config_changed=1
 prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
@@ -2126,15 +2131,40 @@ compose=(
 )
 
 "${compose[@]}" config --quiet
+frontend_resolved_config_sha="$(
+	"${compose[@]}" config --format json |
+		python3 -c '
+import hashlib
+import json
+import sys
+
+payload = json.load(sys.stdin)
+frontend = payload.get("services", {}).get("frontend")
+if not isinstance(frontend, dict):
+    raise SystemExit("[m4-preview] resolved frontend service config is missing")
+encoded = json.dumps(
+    frontend,
+    ensure_ascii=True,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
+print(hashlib.sha256(encoded).hexdigest())
+'
+)"
+if [ -f "${deployed_frontend_config_marker}" ] &&
+	[ ! -L "${deployed_frontend_config_marker}" ] &&
+	[ "$(cat "${deployed_frontend_config_marker}")" = "${frontend_resolved_config_sha}" ]; then
+	frontend_config_changed=0
+fi
 
 if [ "${mode}" != "prepare" ]; then
 	if [ "${frontend_source_changed}" = "1" ] ||
-		[ "${config_changed}" = "1" ] ||
+		[ "${frontend_config_changed}" = "1" ] ||
 		[ "${frontend_volume_refresh_required}" = "1" ] ||
 		[ -z "$("${compose[@]}" ps -q frontend)" ]; then
 		frontend_recreate_required=1
 	fi
-	echo "[m4-preview] service-plan frontend_recreate=${frontend_recreate_required} frontend_source_changed=${frontend_source_changed} config_changed=${config_changed} frontend_volume_refresh=${frontend_volume_refresh_required}"
+	echo "[m4-preview] service-plan frontend_recreate=${frontend_recreate_required} frontend_source_changed=${frontend_source_changed} frontend_config_changed=${frontend_config_changed} config_changed=${config_changed} frontend_volume_refresh=${frontend_volume_refresh_required}"
 fi
 
 python_base_image='npcink-ai-cloud-base-python:m4-pinned'
@@ -2509,6 +2539,7 @@ printf '%s\n' "${image_input_sha}" > "${deployed_image_marker}"
 printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 printf '%s\n' "${frontend_source_sha}" > "${deployed_frontend_source_marker}"
 printf '%s\n' "${frontend_runtime_revision}" > "${deployed_frontend_revision_marker}"
+printf '%s\n' "${frontend_resolved_config_sha}" > "${deployed_frontend_config_marker}"
 
 {
 	printf 'acceptance_state=%s\n' "${acceptance_state}"
@@ -2523,6 +2554,7 @@ printf '%s\n' "${frontend_runtime_revision}" > "${deployed_frontend_revision_mar
 	printf 'config_input_sha256=%s\n' "${config_input_sha}"
 	printf 'frontend_source_sha256=%s\n' "${frontend_source_sha}"
 	printf 'frontend_source_revision=%s\n' "${frontend_runtime_revision}"
+	printf 'frontend_config_sha256=%s\n' "${frontend_resolved_config_sha}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"
 	printf 'runtime_image_created=%s\n' "${runtime_image_created}"
 	printf 'frontend_image_id=%s\n' "${frontend_image_id}"

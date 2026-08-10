@@ -374,12 +374,15 @@ def test_m4_frontend_recreate_is_selected_only_for_frontend_relevant_change() ->
         'if [ "${frontend_source_changed}" = "1" ] ||',
         1,
     )[1].split("\nfi\n", 1)[0]
-    assert '"${config_changed}" = "1"' in selection
+    assert '"${frontend_config_changed}" = "1"' in selection
     assert '"${frontend_volume_refresh_required}" = "1"' in selection
     assert '"${compose[@]}" ps -q frontend' in selection
     assert "frontend_recreate_required=1" in selection
     assert "service-plan frontend_recreate=" in source
     assert '[[ "${previous_frontend_revision}" =~ ^[0-9a-f]{40}$ ]]' in source
+    assert '"${compose[@]}" config --format json' in source
+    assert "deployed_frontend_config_marker" in source
+    assert "frontend_config_sha256" in source
 
     deploy_block = source.split('elif [ "${mode}" = "deploy" ]; then', 1)[1].split(
         "\nelse\n",
@@ -443,7 +446,13 @@ def test_m4_frontend_source_fingerprint_ignores_backend_and_tracks_frontend(
         "export default 2;\n",
         encoding="utf-8",
     )
-    assert fingerprint() != initial
+    changed = fingerprint()
+    assert changed != initial
+
+    (repo / "frontend/src/page.tsx").unlink()
+    deleted = fingerprint()
+    assert deleted != initial
+    assert deleted != changed
 
 
 def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -> None:
