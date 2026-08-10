@@ -348,24 +348,24 @@ jobs:
       requires_full_backend: ${{ steps.scope.outputs.requires_full_backend || steps.docs_scope.outputs.requires_full_backend || steps.frontend_scope.outputs.requires_full_backend }}
     steps:
       - name: Checkout
-        if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
+        if: github.base_ref == 'production' || (needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true')
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Classify backend gate scope
         id: scope
-        if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
+        if: github.base_ref == 'production' || (needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true')
         run: bash scripts/check-pr-backend-gate.sh --classify-only
 
       - name: Select docs-only backend gate
         id: docs_scope
-        if: needs.classify.outputs.docs_only == 'true'
+        if: github.base_ref != 'production' && needs.classify.outputs.docs_only == 'true'
         run: echo "requires_full_backend=0" >> "${GITHUB_OUTPUT}"
 
       - name: Select frontend-only backend gate
         id: frontend_scope
-        if: needs.classify.outputs.frontend_only == 'true'
+        if: github.base_ref != 'production' && needs.classify.outputs.frontend_only == 'true'
         run: echo "requires_full_backend=0" >> "${GITHUB_OUTPUT}"
 
   python-dependency-audit:
@@ -467,7 +467,7 @@ jobs:
 
   backend-docs:
     needs: [classify, backend-scope]
-    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true'
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only == 'true' && needs['backend-scope'].outputs.requires_full_backend != '1'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
