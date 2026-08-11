@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 BASE_REF="${NPCINK_CLOUD_PR_BASE_REF:-origin/${GITHUB_BASE_REF:-master}}"
 TMP_CHANGED="$(mktemp)"
 TMP_TESTS="$(mktemp)"
-trap 'rm -f "${TMP_CHANGED}" "${TMP_TESTS}"' EXIT
+TMP_CONTRACTS="$(mktemp)"
+trap 'rm -f "${TMP_CHANGED}" "${TMP_TESTS}" "${TMP_CONTRACTS}"' EXIT
 
 MODE="${1:-auto}"
 CONTRACT_SHARD=""
@@ -106,16 +107,16 @@ fi
 if git -C "${ROOT_DIR}" rev-parse --verify --quiet "${BASE_REF}" >/dev/null; then
 	MERGE_BASE="$(git -C "${ROOT_DIR}" merge-base HEAD "${BASE_REF}")"
 	{
-		git -C "${ROOT_DIR}" diff --name-only --diff-filter=ACMR "${MERGE_BASE}...HEAD"
-		git -C "${ROOT_DIR}" diff --name-only --cached --diff-filter=ACMR
-		git -C "${ROOT_DIR}" diff --name-only --diff-filter=ACMR
+		git -C "${ROOT_DIR}" diff --no-renames --name-only --diff-filter=ACMRD "${MERGE_BASE}...HEAD"
+		git -C "${ROOT_DIR}" diff --no-renames --name-only --cached --diff-filter=ACMRD
+		git -C "${ROOT_DIR}" diff --no-renames --name-only --diff-filter=ACMRD
 		git -C "${ROOT_DIR}" ls-files --others --exclude-standard
 	} | sort -u > "${TMP_CHANGED}"
 else
 	{
-		git -C "${ROOT_DIR}" diff --name-only --diff-filter=ACMR HEAD~1...HEAD
-		git -C "${ROOT_DIR}" diff --name-only --cached --diff-filter=ACMR
-		git -C "${ROOT_DIR}" diff --name-only --diff-filter=ACMR
+		git -C "${ROOT_DIR}" diff --no-renames --name-only --diff-filter=ACMRD HEAD~1...HEAD
+		git -C "${ROOT_DIR}" diff --no-renames --name-only --cached --diff-filter=ACMRD
+		git -C "${ROOT_DIR}" diff --no-renames --name-only --diff-filter=ACMRD
 		git -C "${ROOT_DIR}" ls-files --others --exclude-standard
 	} | sort -u > "${TMP_CHANGED}"
 fi
@@ -172,43 +173,69 @@ run_targeted_static() {
 }
 
 run_targeted_contract() {
-	echo "[run] pytest contract gate"
-	.venv/bin/python -m pytest tests/contract -q --durations=25
+	local -a changed_paths=()
+	local -a contract_tests=()
+	while IFS= read -r changed_path; do
+		[ -n "${changed_path}" ] && changed_paths+=("${changed_path}")
+	done < "${TMP_CHANGED}"
+	.venv/bin/python scripts/select-pr-contract-tests.py "${changed_paths[@]}" > "${TMP_CONTRACTS}"
+	while IFS= read -r test_path; do
+		[ -n "${test_path}" ] && contract_tests+=("${test_path}")
+	done < "${TMP_CONTRACTS}"
+	if [ "${#contract_tests[@]}" -eq 0 ]; then
+		echo "[ok] No contract tests are affected by this focused backend test-only change."
+		return
+	fi
+	echo "[run] pytest selected contract gate (${#contract_tests[@]} files)"
+	.venv/bin/python -m pytest "${contract_tests[@]}" -q --durations=25
 }
 
 run_targeted_contract_shard() {
 	local shard="$1"
-	python3 scripts/select-pytest-shard.py \
+	local -a changed_paths=()
+	local -a selected_contracts=()
+	local -a contract_tests=()
+	while IFS= read -r changed_path; do
+		[ -n "${changed_path}" ] && changed_paths+=("${changed_path}")
+	done < "${TMP_CHANGED}"
+	.venv/bin/python scripts/select-pr-contract-tests.py "${changed_paths[@]}" > "${TMP_CONTRACTS}"
+	if [ ! -s "${TMP_CONTRACTS}" ]; then
+		echo "[ok] Contract shard ${shard}/3 has no affected contracts for this focused backend test-only change."
+		return
+	fi
+	while IFS= read -r test_path; do
+		[ -n "${test_path}" ] && selected_contracts+=("${test_path}")
+	done < "${TMP_CONTRACTS}"
+	.venv/bin/python scripts/select-pytest-shard.py \
 		--shards 3 \
 		--shard "${shard}" \
-		tests/contract > "${TMP_TESTS}"
-	contract_tests=()
+		"${selected_contracts[@]}" > "${TMP_TESTS}"
 	while IFS= read -r test_path; do
 		[ -n "${test_path}" ] && contract_tests+=("${test_path}")
 	done < "${TMP_TESTS}"
-	[ "${#contract_tests[@]}" -gt 0 ] || {
-		echo "[error] contract shard ${shard} selected no tests" >&2
-		exit 1
-	}
+	if [ "${#contract_tests[@]}" -eq 0 ]; then
+		echo "[ok] Contract shard ${shard}/3 is empty after affected-contract balancing."
+		return
+	fi
 	echo "[run] pytest contract shard ${shard}/3 (${#contract_tests[@]} selectors)"
 	.venv/bin/python -m pytest "${contract_tests[@]}" -q --durations=25
 }
 
 run_targeted_impacted() {
-	changed_paths=()
+	local -a changed_paths=()
+	local -a impacted_tests=()
 	while IFS= read -r changed_path; do
 		[ -n "${changed_path}" ] && changed_paths+=("${changed_path}")
 	done < "${TMP_CHANGED}"
-	python3 scripts/select-pr-backend-tests.py "${changed_paths[@]}" > "${TMP_TESTS}"
+	.venv/bin/python scripts/select-pr-backend-tests.py "${changed_paths[@]}" > "${TMP_TESTS}"
 	if [ -s "${TMP_TESTS}" ]; then
-		impacted_tests=()
 		while IFS= read -r test_path; do
 			[ -n "${test_path}" ] && impacted_tests+=("${test_path}")
 		done < "${TMP_TESTS}"
 		echo "[run] pytest impacted test files (${#impacted_tests[@]} files)"
 		.venv/bin/python -m pytest "${impacted_tests[@]}" -q --durations=25
 	else
-		echo "[ok] No additional impacted pytest files detected; contract shards are already covered."
+		echo "[ok] No additional impacted pytest files detected; selected contract lanes cover contract impacts."
 	fi
 }
 

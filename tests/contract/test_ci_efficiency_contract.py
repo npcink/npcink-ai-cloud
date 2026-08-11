@@ -12,6 +12,7 @@ CLASSIFIER = ROOT / "scripts" / "classify-ci-changes.sh"
 DOCS_GATE = ROOT / "scripts" / "check-docs-only.sh"
 BACKEND_GATE = ROOT / "scripts" / "check-pr-backend-gate.sh"
 BACKEND_SELECTOR = ROOT / "scripts" / "select-pr-backend-tests.py"
+CONTRACT_SELECTOR = ROOT / "scripts" / "select-pr-contract-tests.py"
 PR_WAITER = ROOT / "scripts" / "wait-pr-readiness.py"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
@@ -347,14 +348,23 @@ def test_docs_only_gate_runs_fail_closed_with_system_bash() -> None:
 def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests() -> None:
     source = BACKEND_GATE.read_text(encoding="utf-8")
     selector = BACKEND_SELECTOR.read_text(encoding="utf-8")
+    contract_selector = CONTRACT_SELECTOR.read_text(encoding="utf-8")
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "pytest tests/contract -q --durations=25" in source
+    assert 'pytest "${contract_tests[@]}" -q --durations=25' in source
     assert "--targeted-contract-shard" in source
     assert "--shards 3" in source
     assert "mapfile" not in source
+    assert '$(<"${TMP_CONTRACTS}")' not in source
+    assert source.count("--diff-filter=ACMRD") == 6
+    assert source.count("--no-renames") == 6
+    assert "--diff-filter=ACMR " not in source
     assert "select-pr-backend-tests.py" in source
-    assert "contract shards are already covered" in source
+    assert "select-pr-contract-tests.py" in source
+    assert "selected contract lanes cover contract impacts" in source
+    assert "GLOBAL_APP_SCAN_CONTRACTS" in contract_selector
+    assert "non-ordinary backend path requires all contracts" in contract_selector
+    assert "changed application source is missing or deleted" in contract_selector
     assert "ci/pytest-backend-durations.json" in source
     assert "load_node_duration_weights" in (
         ROOT / "scripts" / "select-pytest-shard.py"
