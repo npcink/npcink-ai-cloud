@@ -45,7 +45,7 @@ IMAGE_DEFINITIONS = {
         "frontend/next-env.d.ts",
         "frontend/next.config.mjs",
         "frontend/postcss.config.mjs",
-        "frontend/proxy.ts",
+        "frontend/src/proxy.ts",
         "frontend/src",
         "frontend/tailwind.config.ts",
         "frontend/tsconfig.json",
