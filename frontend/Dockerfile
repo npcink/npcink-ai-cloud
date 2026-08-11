@@ -22,7 +22,7 @@ WORKDIR /app
 
 COPY --from=deps /app ./
 COPY frontend/next-env.d.ts frontend/next.config.mjs frontend/postcss.config.mjs \
-    frontend/proxy.ts frontend/tailwind.config.ts frontend/tsconfig.json ./frontend/
+    frontend/tailwind.config.ts frontend/tsconfig.json ./frontend/
 COPY frontend/src ./frontend/src
 
 RUN mkdir -p frontend/public
