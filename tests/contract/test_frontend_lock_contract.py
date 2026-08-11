@@ -97,6 +97,9 @@ def test_production_frontend_runner_has_no_unused_node_package_managers() -> Non
     dockerfile = _read("frontend/Dockerfile")
     runner = dockerfile.split("FROM base AS runner", maxsplit=1)[1]
 
+    assert "frontend/proxy.ts" not in dockerfile
+    assert "COPY frontend/src ./frontend/src" in dockerfile
+
     # Build stages retain Corepack for the frozen pnpm install; the final runtime does not.
     assert "corepack prepare" in dockerfile.split("FROM base AS runner", maxsplit=1)[0]
     assert 'test "$(command -v node)" = /usr/local/bin/node' in runner
