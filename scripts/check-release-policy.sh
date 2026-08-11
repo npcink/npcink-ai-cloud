@@ -1026,8 +1026,12 @@ require_marker "scripts/production-image-supply.py" \
 require_marker "scripts/verify-release-bundle-manifest.py" 'classify_release(changed_files)'
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker ".github/workflows/ci.yml" "frontend_only"
+require_marker ".github/workflows/ci.yml" "frontend_required"
+require_marker ".github/workflows/ci.yml" "frontend_backend_contracts_required"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"
 require_marker "scripts/classify-ci-changes.sh" "frontend_only"
+require_marker "scripts/classify-ci-changes.sh" "frontend_required"
+require_marker "scripts/classify-ci-changes.sh" "frontend_backend_contracts_required"
 require_marker ".github/workflows/ci.yml" "targeted backend gate should be skipped for frontend-only changes"
 reject_marker ".github/workflows/ci.yml" "environment: production"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"

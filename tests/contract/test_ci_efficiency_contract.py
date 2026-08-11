@@ -39,6 +39,8 @@ def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
+        "frontend_required": "true",
+        "frontend_backend_contracts_required": "false",
         "frontend_e2e_required": "true",
     }
 
@@ -54,6 +56,8 @@ def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
         "static_terms_only": "false",
         "docs_only": "true",
         "frontend_only": "false",
+        "frontend_required": "false",
+        "frontend_backend_contracts_required": "false",
         "frontend_e2e_required": "false",
     }
 
@@ -72,6 +76,8 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "static_terms_only": "true",
         "docs_only": "false",
         "frontend_only": "false",
+        "frontend_required": "false",
+        "frontend_backend_contracts_required": "false",
         "frontend_e2e_required": "false",
     }
 
@@ -80,6 +86,8 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
+        "frontend_required": "false",
+        "frontend_backend_contracts_required": "false",
         "frontend_e2e_required": "false",
     }
     assert _classify(".github/workflows/ci.yml") == {
@@ -87,6 +95,8 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
+        "frontend_required": "true",
+        "frontend_backend_contracts_required": "false",
         "frontend_e2e_required": "true",
     }
 
@@ -105,6 +115,37 @@ def test_ci_change_classifier_selects_only_frontend_tree_changes() -> None:
         "pnpm-lock.yaml",
     )["frontend_only"] == "false"
     assert _classify(".github/workflows/ci.yml")["frontend_only"] == "false"
+
+
+def test_ci_change_classifier_runs_frontend_only_for_changed_frontend_seams() -> None:
+    assert _classify("app/domain/sites.py")["frontend_required"] == "false"
+    assert _classify("deploy/deploy-to-ssh-host.sh")["frontend_required"] == "false"
+    assert _classify("tests/api/test_sites.py")["frontend_required"] == "false"
+    assert _classify("frontend/src/app/portal/page.tsx")["frontend_required"] == "true"
+    assert _classify("package.json")["frontend_required"] == "true"
+    assert _classify("pnpm-lock.yaml")["frontend_required"] == "true"
+    assert _classify("pnpm-workspace.yaml")["frontend_required"] == "true"
+    assert _classify(".github/workflows/ci.yml")["frontend_required"] == "true"
+    assert _classify("scripts/classify-ci-changes.sh")["frontend_required"] == "true"
+    assert _classify("scripts/report-release-timing.py")["frontend_required"] == "false"
+    assert _classify("scripts/check-release-policy.sh")["frontend_required"] == "false"
+    assert _classify("scripts/check-cloud-frontend-scope.js")["frontend_required"] == "true"
+    assert _classify("unknown-shared-tooling.toml")["frontend_required"] == "true"
+
+
+def test_ci_change_classifier_keeps_cross_layer_frontend_contracts() -> None:
+    for path in (
+        "app/domain/commercial/mixins/_account_mixin.py",
+        "app/domain/commercial/mixins/_admin_mixin.py",
+    ):
+        classification = _classify(path)
+        assert classification["frontend_required"] == "false"
+        assert classification["frontend_backend_contracts_required"] == "true"
+
+    assert (
+        _classify("app/domain/sites.py")["frontend_backend_contracts_required"]
+        == "false"
+    )
 
 
 def test_codeql_runs_for_master_and_production_pull_requests() -> None:
@@ -216,6 +257,11 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
 
     assert "docs_only: ${{ steps.changed.outputs.docs_only }}" in workflow
     assert "frontend_only: ${{ steps.changed.outputs.frontend_only }}" in workflow
+    assert "frontend_required: ${{ steps.changed.outputs.frontend_required }}" in workflow
+    assert (
+        "frontend_backend_contracts_required: "
+        "${{ steps.changed.outputs.frontend_backend_contracts_required }}" in workflow
+    )
     assert (
         "frontend_e2e_required: "
         "${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
@@ -232,7 +278,23 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "--specialized-only" in workflow
     assert "specialized changed-domain quality gates did not pass" in workflow
     assert "specialized changed-domain quality gates must stay PR-only" in workflow
-    assert "Docs-only frontend acknowledgement" in workflow
+    assert "Unchanged frontend acknowledgement" in workflow
+    frontend_gate_condition = (
+        "github.event_name != 'pull_request' || github.base_ref == 'production' || "
+        "needs.classify.outputs.frontend_required == 'true'"
+    )
+    assert workflow.count(frontend_gate_condition) == 8
+    assert workflow.count(
+        "needs.classify.outputs.frontend_backend_contracts_required == 'true'"
+    ) == 3
+    assert "Backend-owned frontend contracts" in workflow
+    assert "node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs" in workflow
+    assert "node frontend/tests/unit/admin-coverage-workspace-contract.mjs" in workflow
+    assert (
+        "github.event_name == 'pull_request' && github.base_ref != 'production' && "
+        "needs.classify.outputs.frontend_required != 'true' && "
+        "needs.classify.outputs.frontend_backend_contracts_required != 'true'"
+    ) in workflow
     assert (
         "python dependency audit should be skipped for docs-only or frontend-only changes"
         in workflow
