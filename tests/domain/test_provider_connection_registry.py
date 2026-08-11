@@ -9,9 +9,10 @@ from app.adapters.providers.registry import (
     build_provider_adapters,
     resolve_execution_provider_adapters,
 )
+from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import ProviderConnection
+from app.core.models import ProviderConnection, RunRecord, Site
 from app.domain.provider_connections.model_allowlist import build_provider_model_allowlist
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
@@ -339,6 +340,149 @@ def test_provider_connection_image_delivery_config_round_trips_and_fails_closed(
         "provider_connection.image_output_hosts_invalid"
     )
 
+    dispose_engine(database_url)
+
+
+def test_siliconflow_existing_connection_exposes_image_generation_capability(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = ProviderConnectionAdminService(database_url, _settings(database_url))
+    service.save_connection(
+        {
+            "connection_id": "siliconflow_primary",
+            "provider_id": "siliconflow",
+            "provider_type": "siliconflow",
+            "kind": "siliconflow",
+            "display_name": "SiliconFlow",
+            "enabled": True,
+            "base_url": "https://api.siliconflow.cn/v1",
+            "capability_ids": ["text_generation", "embedding"],
+            "runtime_profile_ids": ["text.ai", "embed.default"],
+            "config": {},
+            "credential": "siliconflow-key",
+        }
+    )
+
+    listed = service.list_connections()["connections"][0]
+
+    assert listed["capability_ids"] == [
+        "text_generation",
+        "embedding",
+        "image_generation",
+    ]
+    assert listed["attention_reasons"] == [
+        "verification_not_observed",
+        "image_delivery_unconfirmed",
+    ]
+    dispose_engine(database_url)
+
+
+def test_approve_detected_image_host_revalidates_run_evidence_and_appends_exact_host(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    service.save_connection(
+        {
+            "connection_id": "siliconflow_primary",
+            "provider_id": "siliconflow",
+            "provider_type": "siliconflow",
+            "kind": "siliconflow",
+            "display_name": "SiliconFlow",
+            "enabled": True,
+            "base_url": "https://api.siliconflow.cn/v1",
+            "capability_ids": ["text_generation", "embedding"],
+            "runtime_profile_ids": ["text.ai", "embed.default"],
+            "config": {},
+            "metadata": {},
+            "credential": "siliconflow-key",
+        }
+    )
+    with get_session(database_url) as session:
+        session.add(
+            Site(site_id="site_image_repair", name="Image repair", status="active")
+        )
+        run = RuntimeRepository(session).create_run(
+            run_id="run_image_host_repair",
+            site_id="site_image_repair",
+            account_id=None,
+            subscription_id=None,
+            plan_version_id=None,
+            ability_name="image_generate",
+            ability_family="image_generation",
+            skill_id="",
+            workflow_id="",
+            contract_version="image_generation_request.v1",
+            channel="wordpress_ai_connector",
+            execution_kind="image_generation",
+            execution_tier="cloud",
+            execution_pattern="request_response",
+            data_classification="internal",
+            profile_id="image.generate.hosted",
+            canonical_run_id=None,
+            status="failed",
+            idempotency_key="idem-image-host-repair",
+            request_fingerprint="fingerprint-image-host-repair",
+            trace_id="trace-image-host-repair",
+            input_json={},
+            execution_input_ciphertext=None,
+            policy_json={},
+            selected_provider_id="siliconflow",
+        )
+        run.error_code = "image_generation.artifact_materialization_failed"
+        run.error_message = "provider image host is not allowlisted"
+        row = session.get(ProviderConnection, "siliconflow_primary")
+        assert row is not None
+        row.metadata_json = {
+            "image_delivery_repair": {
+                "status": "pending",
+                "reason_code": "host_not_allowlisted",
+                "detected_host": "IMAGES.Provider.Example.",
+                "run_id": run.run_id,
+                "provider_id": "siliconflow",
+                "observed_at": "2026-08-11T00:00:00+00:00",
+            }
+        }
+        session.commit()
+
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, "run_image_host_repair")
+        assert run is not None
+        run.error_code = "provider.output_contract_invalid"
+        session.commit()
+    with pytest.raises(ProviderConnectionAdminError) as mismatch:
+        service.approve_detected_image_output_host(
+            "siliconflow_primary",
+            evidence_run_id="run_image_host_repair",
+        )
+    assert mismatch.value.error_code == "provider_connection.image_host_evidence_mismatch"
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, "run_image_host_repair")
+        assert run is not None
+        run.error_code = "image_generation.artifact_materialization_failed"
+        session.commit()
+
+    approved = service.approve_detected_image_output_host(
+        "siliconflow_primary",
+        evidence_run_id="run_image_host_repair",
+    )
+
+    assert approved["approved_image_output_host"] == "images.provider.example"
+    connection = approved["connection"]
+    assert connection["config"]["image_response_format"] == "url"
+    assert connection["config"]["image_output_hosts"] == ["images.provider.example"]
+    assert "image_generation" in connection["capability_ids"]
+    assert connection["image_delivery_repair"]["status"] == "approved"
+    with pytest.raises(ProviderConnectionAdminError) as stale:
+        service.approve_detected_image_output_host(
+            "siliconflow_primary",
+            evidence_run_id="run_image_host_repair",
+        )
+    assert stale.value.error_code == "provider_connection.image_host_evidence_stale"
     dispose_engine(database_url)
 
 

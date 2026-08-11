@@ -39,6 +39,14 @@ export type SupplierConnection = {
   detail_href?: string;
   managed_by?: string;
   metadata?: Record<string, unknown>;
+  image_delivery_repair?: {
+    status?: 'pending' | 'approved' | string;
+    reason_code?: string;
+    detected_host?: string;
+    run_id?: string;
+    observed_at?: string;
+    approved_at?: string;
+  };
 };
 
 export type ProviderConnectionTestResult = {

@@ -432,6 +432,7 @@ function AiResourcesContent() {
   const [connectionSearch, setConnectionSearch] = useState('');
   const [savingConnection, setSavingConnection] = useState(false);
   const [testingConnectionId, setTestingConnectionId] = useState('');
+  const [approvingImageHostConnectionId, setApprovingImageHostConnectionId] = useState('');
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState(false);
@@ -683,6 +684,41 @@ function AiResourcesContent() {
       toast.error(deleteMessage, t('common.error'));
     } finally {
       setDeletingConnectionId('');
+    }
+  }
+
+  async function approveDetectedImageHost(connection: Connection) {
+    const evidenceRunId = String(connection.image_delivery_repair?.run_id || '');
+    if (!evidenceRunId) return;
+    setApprovingImageHostConnectionId(connection.connection_id);
+    setError('');
+    setMessage('');
+    try {
+      const response = await aiResourcesClient.request<{
+        approved_image_output_host?: string;
+        receipt?: AdminMutationReceiptPayload | null;
+      }>(
+        `/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}/approve-image-host`,
+        {
+          method: 'POST',
+          body: { evidence_run_id: evidenceRunId },
+        }
+      );
+      setLastReceipt(response.data.receipt || null);
+      await loadResources();
+      toast.success(
+        aiText('image_host_repair_success', 'Exact image host approved. Retry the image generation request.'),
+        t('common.success')
+      );
+    } catch (approvalError) {
+      const approvalMessage = resolveUiErrorMessage(
+        approvalError,
+        aiText('image_host_repair_error', 'Failed to approve the detected image host.')
+      );
+      setError(approvalMessage);
+      toast.error(approvalMessage, t('common.error'));
+    } finally {
+      setApprovingImageHostConnectionId('');
     }
   }
 
@@ -2392,6 +2428,7 @@ function AiResourcesContent() {
           onClearFilters={handleClearConnectionFilters}
           testResults={connectionTestResults}
           testingConnectionId={testingConnectionId}
+          approvingImageHostConnectionId={approvingImageHostConnectionId}
           deletingConnectionId={deletingConnectionId}
           confirmingDeleteConnectionId={confirmingDeleteConnectionId}
           providerKindLabel={providerKindLabel}
@@ -2400,6 +2437,7 @@ function AiResourcesContent() {
           referenceLinksForConnection={connectionExternalLinkItems}
           onConfigure={editProviderConnection}
           onTest={(connectionId) => void runProviderConnectionTest(connectionId)}
+          onApproveImageHost={(connection) => void approveDetectedImageHost(connection)}
           onDelete={(connection) => void deleteProviderConnection(connection)}
           onRequestDelete={setConfirmingDeleteConnectionId}
           onCancelDelete={() => setConfirmingDeleteConnectionId('')}

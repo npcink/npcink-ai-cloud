@@ -491,7 +491,13 @@ class CatalogService:
                 continue
             capability_ids = config.get("capability_ids")
             if not isinstance(capability_ids, list):
-                continue
+                capability_ids = []
+            if (
+                str(config.get("kind") or connection.provider_type or "").strip().lower()
+                == "siliconflow"
+                and "image_generation" not in capability_ids
+            ):
+                capability_ids = [*capability_ids, "image_generation"]
             provider_capabilities.setdefault(provider_id, set()).update(
                 str(capability_id or "").strip()
                 for capability_id in capability_ids

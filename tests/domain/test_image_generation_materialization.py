@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.adapters.providers.base import ProviderMediaCandidate
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import MediaArtifact, RunRecord, Site
+from app.core.models import MediaArtifact, ProviderConnection, RunRecord, Site
 from app.domain.image_generation.materialization import (
     ImageGenerationArtifactCleanupUncertainError,
     ImageGenerationArtifactMaterializationError,
@@ -284,6 +284,20 @@ def test_url_fetch_failure_preserves_safe_reason_and_logs_hostname_only(
     caplog.set_level(logging.WARNING)
     with get_session(database_url) as session:
         run = _create_run(session, run_id="run_image_fetch_rejected")
+        run.selected_provider_id = "siliconflow"
+        session.add(
+            ProviderConnection(
+                connection_id="siliconflow_primary",
+                provider_type="siliconflow",
+                display_name="SiliconFlow",
+                enabled=True,
+                base_url="https://api.siliconflow.cn/v1",
+                config_json={"provider_id": "siliconflow", "kind": "siliconflow"},
+                status="ready",
+                source_role="execution_source",
+            )
+        )
+        session.flush()
         with pytest.raises(ImageGenerationArtifactMaterializationError) as error:
             materialize_image_generation_candidates(
                 session=session,
@@ -294,12 +308,24 @@ def test_url_fetch_failure_preserves_safe_reason_and_logs_hostname_only(
                         index=1,
                         source_url=signed_url,
                         image_output_hosts=("images.expected.test",),
+                        provider_connection_id="siliconflow_primary",
                         claimed_mime_type="image/png",
                     ),
                 ),
                 provider_output={"candidate_count": 1},
                 url_fetcher=rejected_fetch,
             )
+        connection = session.get(ProviderConnection, "siliconflow_primary")
+        assert connection is not None
+        repair = (connection.metadata_json or {})["image_delivery_repair"]
+        assert repair == {
+            "status": "pending",
+            "reason_code": "host_not_allowlisted",
+            "detected_host": "images.provider.test",
+            "run_id": "run_image_fetch_rejected",
+            "provider_id": "siliconflow",
+            "observed_at": repair["observed_at"],
+        }
 
     assert error.value.error_code == "image_generation.artifact_materialization_failed"
     assert error.value.message == "provider image host is not allowlisted"

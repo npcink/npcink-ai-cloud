@@ -14,12 +14,14 @@ from app.adapters.providers.base import (
     CatalogModelSeed,
     ProviderCatalogSnapshot,
 )
+from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import get_session
 from app.core.models import (
     ModelReferenceModel,
     ModelReferenceSource,
     ProviderConnection,
     ServiceAuditEvent,
+    Site,
 )
 from app.core.secrets import (
     decrypt_provider_connection_secret,
@@ -30,6 +32,7 @@ from app.domain.hosted_model_defaults import (
     TEXT_AI_PROFILE_ID,
 )
 from app.domain.model_references import MODELS_DEV_API_URL
+from app.domain.provider_connections.service import ProviderConnectionAdminService
 from app.domain.web_search.service import (
     TavilyWebSearchProvider,
     WebSearchExecutionResult,
@@ -93,6 +96,107 @@ def test_admin_image_source_provider_env_settings_route_is_retired(
 
     assert get_response.status_code == 404
     assert post_response.status_code == 404
+
+
+def test_admin_provider_image_host_approval_uses_persisted_run_evidence_and_audit(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    services = client.app.state.services
+    ProviderConnectionAdminService(database_url, services.settings).save_connection(
+        {
+            "connection_id": "siliconflow_primary",
+            "provider_id": "siliconflow",
+            "provider_type": "siliconflow",
+            "kind": "siliconflow",
+            "display_name": "SiliconFlow",
+            "enabled": True,
+            "base_url": "https://api.siliconflow.cn/v1",
+            "capability_ids": ["text_generation", "embedding"],
+            "runtime_profile_ids": ["text.ai", "embed.default"],
+            "config": {},
+            "credential": "siliconflow-key",
+        }
+    )
+    with get_session(database_url) as session:
+        session.add(
+            Site(site_id="site_image_approval", name="Image approval", status="active")
+        )
+        run = RuntimeRepository(session).create_run(
+            run_id="run_admin_image_host_approval",
+            site_id="site_image_approval",
+            account_id=None,
+            subscription_id=None,
+            plan_version_id=None,
+            ability_name="image_generate",
+            ability_family="image_generation",
+            skill_id="",
+            workflow_id="",
+            contract_version="image_generation_request.v1",
+            channel="wordpress_ai_connector",
+            execution_kind="image_generation",
+            execution_tier="cloud",
+            execution_pattern="request_response",
+            data_classification="internal",
+            profile_id="image.generate.hosted",
+            canonical_run_id=None,
+            status="failed",
+            idempotency_key="idem-admin-image-host-approval",
+            request_fingerprint="fingerprint-admin-image-host-approval",
+            trace_id="trace-admin-image-host-approval",
+            input_json={},
+            execution_input_ciphertext=None,
+            policy_json={},
+            selected_provider_id="siliconflow",
+        )
+        run.error_code = "image_generation.artifact_materialization_failed"
+        run.error_message = "provider image host is not allowlisted"
+        row = session.get(ProviderConnection, "siliconflow_primary")
+        assert row is not None
+        row.metadata_json = {
+            "image_delivery_repair": {
+                "status": "pending",
+                "reason_code": "host_not_allowlisted",
+                "detected_host": "images.siliconflow.example",
+                "run_id": run.run_id,
+                "provider_id": "siliconflow",
+                "observed_at": "2026-08-11T00:00:00+00:00",
+            }
+        }
+        session.commit()
+
+    response = client.post(
+        "/internal/service/admin/provider-connections/siliconflow_primary/approve-image-host",
+        headers=build_internal_headers(idempotency_key="approve-siliconflow-image-host"),
+        json={"evidence_run_id": "run_admin_image_host_approval"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["data"]["approved_image_output_host"] == "images.siliconflow.example"
+    assert payload["data"]["connection"]["config"]["image_output_hosts"] == [
+        "images.siliconflow.example"
+    ]
+    assert payload["data"]["receipt"]["event_kind"] == (
+        "provider_connection.image_host_approve"
+    )
+    serialized = json.dumps(payload)
+    assert "siliconflow-key" not in serialized
+    with get_session(database_url) as session:
+        audit_event = session.scalar(
+            select(ServiceAuditEvent)
+            .where(
+                ServiceAuditEvent.event_kind == "provider_connection.image_host_approve",
+                ServiceAuditEvent.scope_id == "siliconflow_primary",
+            )
+            .order_by(ServiceAuditEvent.id.desc())
+        )
+        assert audit_event is not None
+        assert audit_event.payload_json["result"]["approved_image_output_host"] == (
+            "images.siliconflow.example"
+        )
+        assert "siliconflow-key" not in json.dumps(audit_event.payload_json)
 
 
 def test_admin_audio_provider_env_settings_routes_are_retired(
