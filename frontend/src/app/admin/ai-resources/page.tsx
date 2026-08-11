@@ -62,6 +62,7 @@ import {
 import type {
   ConnectionStatusFilter,
   ProviderConnectionTestResult,
+  ProviderImageDeliveryProbeResult,
   SupplierConnection as Connection,
 } from '@/features/admin/ai-resources/types';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
@@ -432,6 +433,8 @@ function AiResourcesContent() {
   const [connectionSearch, setConnectionSearch] = useState('');
   const [savingConnection, setSavingConnection] = useState(false);
   const [testingConnectionId, setTestingConnectionId] = useState('');
+  const [probingImageDeliveryConnectionId, setProbingImageDeliveryConnectionId] = useState('');
+  const [imageDeliveryProbeResult, setImageDeliveryProbeResult] = useState<ProviderImageDeliveryProbeResult | null>(null);
   const [approvingImageHostConnectionId, setApprovingImageHostConnectionId] = useState('');
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
@@ -569,13 +572,6 @@ function AiResourcesContent() {
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
     const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
-    if (providerConnectionForm.imageResponseFormat === 'url' && !imageOutputHosts.length) {
-      setError(aiText(
-        'error_image_output_hosts_required',
-        'Enter the exact image download host when the provider returns image URLs.'
-      ));
-      return;
-    }
     if (!imageOutputHostsAreExact(imageOutputHosts)) {
       setError(aiText(
         'error_image_output_hosts_invalid',
@@ -687,9 +683,10 @@ function AiResourcesContent() {
     }
   }
 
-  async function approveDetectedImageHost(connection: Connection) {
+  async function approveDetectedImageHost(connection: Connection, probeId = '') {
     const evidenceRunId = String(connection.image_delivery_repair?.run_id || '');
-    if (!evidenceRunId) return;
+    const evidenceProbeId = probeId || String(connection.image_delivery_repair?.probe_id || '');
+    if (!evidenceRunId && !evidenceProbeId) return;
     setApprovingImageHostConnectionId(connection.connection_id);
     setError('');
     setMessage('');
@@ -701,13 +698,28 @@ function AiResourcesContent() {
         `/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}/approve-image-host`,
         {
           method: 'POST',
-          body: { evidence_run_id: evidenceRunId },
+          body: evidenceProbeId
+            ? { evidence_probe_id: evidenceProbeId }
+            : { evidence_run_id: evidenceRunId },
         }
       );
       setLastReceipt(response.data.receipt || null);
+      const approvedHost = String(response.data.approved_image_output_host || '');
+      if (approvedHost && providerConnectionForm.connectionId === connection.connection_id) {
+        updateProviderConnectionForm({
+          imageResponseFormat: 'url',
+          imageOutputHosts: uniqueList([
+            ...splitList(providerConnectionForm.imageOutputHosts),
+            approvedHost,
+          ]).join(', '),
+        });
+      }
+      setImageDeliveryProbeResult((current) => current && current.probe_id === evidenceProbeId
+        ? { ...current, status: 'host_approved', host_approved: true }
+        : current);
       await loadResources();
       toast.success(
-        aiText('image_host_repair_success', 'Exact image host approved. Retry the image generation request.'),
+        aiText('image_host_repair_success', 'Exact image host approved. Run the image delivery test again.'),
         t('common.success')
       );
     } catch (approvalError) {
@@ -719,6 +731,46 @@ function AiResourcesContent() {
       toast.error(approvalMessage, t('common.error'));
     } finally {
       setApprovingImageHostConnectionId('');
+    }
+  }
+
+  async function runImageDeliveryProbe(): Promise<void> {
+    const connectionId = providerConnectionForm.connectionId;
+    if (providerFormMode !== 'edit' || !connectionId) return;
+    setProbingImageDeliveryConnectionId(connectionId);
+    setImageDeliveryProbeResult(null);
+    setError('');
+    try {
+      const response = await aiResourcesClient.request<ProviderImageDeliveryProbeResult & {
+        receipt?: AdminMutationReceiptPayload | null;
+      }>(
+        `/api/admin/provider-connections/${encodeURIComponent(connectionId)}/image-delivery-probes`,
+        { method: 'POST' }
+      );
+      setImageDeliveryProbeResult(response.data);
+      setLastReceipt(response.data.receipt || null);
+      await loadResources();
+      toast.success(
+        response.data.status === 'approval_required'
+          ? aiText('image_delivery_probe_host_detected', 'Image host detected. Approve the exact host to continue.')
+          : aiText('image_delivery_probe_passed', 'Image delivery test passed.'),
+        t('common.success')
+      );
+    } catch (probeError) {
+      const probeErrorCode = probeError instanceof ApiError ? probeError.errorCode : '';
+      const probeFallback = probeErrorCode === 'provider_connection.image_probe_model_required'
+        ? aiText('image_delivery_probe_model_required', 'Enable and save at least one image-generation model before testing delivery.')
+        : probeErrorCode === 'provider_connection.image_generation_not_enabled'
+          ? aiText('image_delivery_probe_capability_required', 'Enable image generation for this connection before testing delivery.')
+          : aiText('image_delivery_probe_failed', 'Image delivery test failed.');
+      const probeMessage = resolveUiErrorMessage(
+        probeError,
+        probeFallback
+      );
+      setError(probeMessage);
+      toast.error(probeMessage, t('common.error'));
+    } finally {
+      setProbingImageDeliveryConnectionId('');
     }
   }
 
@@ -751,13 +803,6 @@ function AiResourcesContent() {
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
     const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
-    if (providerConnectionForm.imageResponseFormat === 'url' && !imageOutputHosts.length) {
-      setError(aiText(
-        'error_image_output_hosts_required',
-        'Enter the exact image download host when the provider returns image URLs.'
-      ));
-      return;
-    }
     if (!imageOutputHostsAreExact(imageOutputHosts)) {
       setError(aiText(
         'error_image_output_hosts_invalid',
@@ -969,6 +1014,7 @@ function AiResourcesContent() {
 
   function openNewProviderConnection() {
     setConfirmingDeleteConnectionId('');
+    setImageDeliveryProbeResult(null);
     setProviderWorkbenchSection('connection');
     dispatchProviderWorkbench({
       type: 'open_create',
@@ -983,6 +1029,7 @@ function AiResourcesContent() {
 
   function editProviderConnection(connection: Connection) {
     setConfirmingDeleteConnectionId('');
+    setImageDeliveryProbeResult(null);
     setProviderWorkbenchSection('connection');
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
@@ -997,6 +1044,7 @@ function AiResourcesContent() {
   }
 
   function closeProviderForm() {
+    setImageDeliveryProbeResult(null);
     dispatchProviderWorkbench({ type: 'close' });
     setProviderWorkbenchSection('connection');
     setMessage('');
@@ -1234,6 +1282,14 @@ function AiResourcesContent() {
   const providerUsesImageGeneration = splitList(
     providerConnectionForm.capabilityIds
   ).includes('image_generation');
+  const activeProviderConnection = data?.connections.find(
+    (connection) => connection.connection_id === providerConnectionForm.connectionId
+  );
+  const activeImageDeliveryProbe = imageDeliveryProbeResult
+    || activeProviderConnection?.image_delivery_probe
+    || null;
+  const activeImageDeliveryRepair = activeProviderConnection?.image_delivery_repair;
+  const isProbingImageDelivery = probingImageDeliveryConnectionId === providerConnectionForm.connectionId;
   const providerFormExternalLinkItems = providerExternalLinkItems(
     providerReferenceLinksForForm(providerConnectionForm)
   );
@@ -1742,7 +1798,7 @@ function AiResourcesContent() {
                           </select>
                         )}
                         detail={(
-                          <span className="grid gap-0.5">
+                          <span className="grid gap-2">
                             {!providerConnectionForm.imageResponseFormat && !splitList(providerConnectionForm.imageOutputHosts).length ? (
                               <span className="font-medium text-amber-700 dark:text-amber-300">
                                 {aiText('image_delivery_unconfirmed_compact', 'Delivery format not confirmed')}
@@ -1751,13 +1807,70 @@ function AiResourcesContent() {
                               <span>{aiText('status_configured', 'Configured')}</span>
                             )}
                             <span>{aiText('image_delivery_test_not_proof_compact', 'Connection testing does not prove image delivery.')}</span>
+                            {providerFormMode === 'edit' ? (
+                              <span className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={isProbingImageDelivery || savingConnection}
+                                  onClick={() => void runImageDeliveryProbe()}
+                                >
+                                  {isProbingImageDelivery
+                                    ? aiText('image_delivery_probe_testing', 'Testing image delivery...')
+                                    : aiText('image_delivery_probe_action', 'Test image delivery')}
+                                </button>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                  {aiText('image_delivery_probe_cost_notice', 'Generates one test image and may incur a small provider charge.')}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                {aiText('image_delivery_probe_save_first', 'Save the connection first, then test image delivery here.')}
+                              </span>
+                            )}
+                            {activeImageDeliveryProbe?.status === 'ready' ? (
+                              <span role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                                {activeImageDeliveryProbe.delivery_format === 'base64'
+                                  ? aiText('image_delivery_probe_ready_base64', 'Confirmed: provider returned a valid Base64 image.')
+                                  : aiText('image_delivery_probe_ready_url', 'Confirmed: image URL from {{host}} was downloaded and validated.', {
+                                    host: String(activeImageDeliveryProbe.detected_host || ''),
+                                  })}
+                              </span>
+                            ) : null}
+                            {activeImageDeliveryProbe?.status === 'host_approved' ? (
+                              <span role="status" className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                                {aiText('image_delivery_probe_host_approved', 'Exact host approved. Run the test again to validate the download.')}
+                              </span>
+                            ) : null}
+                            {activeImageDeliveryProbe?.status === 'approval_required' ? (
+                              <span role="alert" className="flex flex-wrap items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                                <span>
+                                  {aiText('image_delivery_probe_approval_required', 'Detected exact host: {{host}}', {
+                                    host: String(activeImageDeliveryProbe.detected_host || ''),
+                                  })}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={approvingImageHostConnectionId === providerConnectionForm.connectionId}
+                                  onClick={() => activeProviderConnection && void approveDetectedImageHost(
+                                    activeProviderConnection,
+                                    String(activeImageDeliveryProbe.probe_id || activeImageDeliveryRepair?.probe_id || '')
+                                  )}
+                                >
+                                  {approvingImageHostConnectionId === providerConnectionForm.connectionId
+                                    ? aiText('image_host_repair_approving', 'Approving...')
+                                    : aiText('image_host_repair_action', 'Approve this exact host')}
+                                </button>
+                              </span>
+                            ) : null}
                           </span>
                         )}
                       />
                       {providerConnectionForm.imageResponseFormat === 'url' ? (
                         <AdminConfigurationRow
                           rowId="image-output-hosts"
-                          label={aiText('field_image_output_hosts', 'Image download hosts')}
+                          label={aiText('field_image_output_hosts_advanced', 'Manual exact hosts (advanced)')}
                           value={(
                             <input
                               className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
@@ -1765,12 +1878,11 @@ function AiResourcesContent() {
                               onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
                               placeholder="images.provider.example, assets.provider.example"
                               aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
-                              required
                             />
                           )}
                           detail={aiText(
-                            'image_delivery_security_note_compact',
-                            'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
+                            'image_delivery_manual_host_note',
+                            'Normally use the image delivery test. Manual entry accepts exact hosts only; no scheme, path, port, or wildcard.'
                           )}
                         />
                       ) : null}

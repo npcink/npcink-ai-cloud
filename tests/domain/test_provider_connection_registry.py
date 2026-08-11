@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
+from app.adapters.providers.base import (
+    CatalogInstanceSeed,
+    CatalogModelSeed,
+    ProviderCatalogSnapshot,
+    ProviderExecutionRequest,
+    ProviderExecutionResult,
+    ProviderMediaCandidate,
+)
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.adapters.providers.registry import (
     build_provider_adapters,
@@ -13,6 +23,8 @@ from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import ProviderConnection, RunRecord, Site
+from app.domain.catalog.service import CatalogService
+from app.domain.image_generation.provider_fetch import ProviderFetchedImage
 from app.domain.provider_connections.model_allowlist import build_provider_model_allowlist
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
@@ -55,6 +67,73 @@ def _settings(database_url: str) -> Settings:
         openai_api_key="env-openai-key",
         openai_base_url="https://env-openai.example/v1",
     )
+
+
+def _png_bytes(*, width: int = 8, height: int = 6) -> bytes:
+    image = Image.new("RGB", (width, height), "blue")
+    output = io.BytesIO()
+    try:
+        image.save(output, format="PNG")
+        return output.getvalue()
+    finally:
+        image.close()
+        output.close()
+
+
+def _configure_image_probe_connection(
+    database_url: str,
+    settings: Settings,
+    *,
+    image_response_format: str = "url",
+    image_output_hosts: list[str] | None = None,
+) -> ProviderConnectionAdminService:
+    service = ProviderConnectionAdminService(database_url, settings)
+    image_config: dict[str, object] = {
+        "model_ids": ["siliconflow/Kwai-Kolors/Kolors"],
+        "image_response_format": image_response_format,
+    }
+    if image_output_hosts is not None:
+        image_config["image_output_hosts"] = image_output_hosts
+    service.save_connection(
+        {
+            "connection_id": "siliconflow_primary",
+            "provider_id": "siliconflow",
+            "provider_type": "siliconflow",
+            "kind": "siliconflow",
+            "display_name": "SiliconFlow",
+            "enabled": True,
+            "base_url": "https://api.siliconflow.cn/v1",
+            "capability_ids": ["image_generation"],
+            "runtime_profile_ids": ["grok-imagine-image-quality"],
+            "config": image_config,
+            "credential": "siliconflow-key",
+        }
+    )
+    CatalogService(database_url, providers={}, settings=settings).store_provider_snapshot(
+        ProviderCatalogSnapshot(
+            provider_id="siliconflow",
+            display_name="SiliconFlow",
+            adapter_type="siliconflow",
+            models=[
+                CatalogModelSeed(
+                    model_id="siliconflow/Kwai-Kolors/Kolors",
+                    family="kolors",
+                    feature="image_generation",
+                    status="active",
+                    instances=[
+                        CatalogInstanceSeed(
+                            instance_id="siliconflow-kolors-image-generations",
+                            endpoint_variant="image_generations",
+                            region="default",
+                            capability_tags=["image_generation", "default"],
+                            is_default=True,
+                        )
+                    ],
+                )
+            ],
+        )
+    )
+    return service
 
 
 def test_provider_model_allowlist_does_not_block_catalog_when_no_execution_connections(
@@ -150,10 +229,13 @@ def test_provider_model_allowlist_uses_declared_models_without_decrypting_secret
     allowlist = build_provider_model_allowlist(database_url, settings=_settings(database_url))
 
     assert allowlist.enforced is True
-    assert allowlist.allows(
-        provider_id="openai",
-        model_id="gpt-wp-ai-connector-test",
-    ) is True
+    assert (
+        allowlist.allows(
+            provider_id="openai",
+            model_id="gpt-wp-ai-connector-test",
+        )
+        is True
+    )
     assert allowlist.allows(provider_id="openai", model_id="gpt-4o") is False
 
     dispose_engine(database_url)
@@ -267,7 +349,7 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
     dispose_engine(database_url)
 
 
-def test_provider_connection_image_delivery_config_round_trips_and_fails_closed(
+def test_provider_connection_image_delivery_config_round_trips_and_stays_fail_closed(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -309,20 +391,19 @@ def test_provider_connection_image_delivery_config_round_trips_and_fails_closed(
         "assets.example",
     ]
 
-    with pytest.raises(ProviderConnectionAdminError) as missing_hosts:
-        service.save_connection(
-            {
-                **payload,
-                "config": {
-                    "model_ids": ["Tongyi-MAI/Z-Image-Turbo"],
-                    "image_response_format": "url",
-                },
+    incomplete = service.save_connection(
+        {
+            **payload,
+            "config": {
+                "model_ids": ["Tongyi-MAI/Z-Image-Turbo"],
+                "image_response_format": "url",
             },
-            connection_id="image_gateway",
-        )
-    assert missing_hosts.value.error_code == (
-        "provider_connection.image_output_hosts_required"
+        },
+        connection_id="image_gateway",
     )
+    assert incomplete["config"]["image_response_format"] == "url"
+    assert "image_output_hosts" not in incomplete["config"]
+    assert "image_output_hosts_missing" in incomplete["attention_reasons"]
 
     with pytest.raises(ProviderConnectionAdminError) as wildcard_host:
         service.save_connection(
@@ -336,10 +417,200 @@ def test_provider_connection_image_delivery_config_round_trips_and_fails_closed(
             },
             connection_id="image_gateway",
         )
-    assert wildcard_host.value.error_code == (
-        "provider_connection.image_output_hosts_invalid"
+    assert wildcard_host.value.error_code == ("provider_connection.image_output_hosts_invalid")
+
+    dispose_engine(database_url)
+
+
+def test_image_delivery_probe_detects_and_approves_server_observed_exact_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = _configure_image_probe_connection(database_url, settings)
+
+    class ProbeAdapter:
+        timeout_seconds = 30.0
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            assert request.model_id == "siliconflow/Kwai-Kolors/Kolors"
+            assert request.input_payload["extra"] == {
+                "image_size": "1024x1024",
+                "batch_size": 1,
+            }
+            return ProviderExecutionResult(
+                output={"candidate_count": 1},
+                latency_ms=321,
+                tokens_in=0,
+                tokens_out=0,
+                cost=0.0123,
+                media_candidates=(
+                    ProviderMediaCandidate(
+                        index=1,
+                        source_url=(
+                            "https://IMAGES.Provider.Example/generated/test.png?signature=secret"
+                        ),
+                        provider_connection_id="siliconflow_primary",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.build_provider_adapter_from_connection",
+        lambda settings, row: ProbeAdapter(),
     )
 
+    result = service.test_image_delivery("siliconflow_primary")
+
+    assert result["status"] == "approval_required"
+    assert result["ok"] is False
+    assert result["delivery_format"] == "url"
+    assert result["detected_host"] == "images.provider.example"
+    assert result["provider_call_billable"] is True
+    assert result["model_id"] == "siliconflow/Kwai-Kolors/Kolors"
+    assert "signature" not in str(result)
+    listed = service.list_connections()["connections"][0]
+    assert listed["image_delivery_probe"]["probe_id"] == result["probe_id"]
+    assert listed["image_delivery_repair"] == {
+        "status": "pending",
+        "reason_code": "host_not_allowlisted",
+        "detected_host": "images.provider.example",
+        "evidence_kind": "admin_probe",
+        "probe_id": result["probe_id"],
+        "run_id": "",
+        "observed_at": listed["image_delivery_repair"]["observed_at"],
+        "approved_at": "",
+    }
+
+    approved = service.approve_detected_image_output_host(
+        "siliconflow_primary",
+        evidence_probe_id=result["probe_id"],
+    )
+
+    assert approved["approved_image_output_host"] == "images.provider.example"
+    assert approved["connection"]["config"]["image_output_hosts"] == ["images.provider.example"]
+    assert approved["connection"]["image_delivery_probe"]["status"] == "host_approved"
+    dispose_engine(database_url)
+
+
+def test_image_delivery_probe_validates_base64_image_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = _configure_image_probe_connection(
+        database_url,
+        settings,
+        image_response_format="b64_json",
+    )
+
+    class ProbeAdapter:
+        timeout_seconds = 30.0
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            return ProviderExecutionResult(
+                output={"candidate_count": 1},
+                latency_ms=123,
+                tokens_in=0,
+                tokens_out=0,
+                cost=0.01,
+                media_candidates=(
+                    ProviderMediaCandidate(
+                        index=1,
+                        content_bytes=_png_bytes(width=8, height=6),
+                        provider_connection_id="siliconflow_primary",
+                        claimed_mime_type="image/png",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.build_provider_adapter_from_connection",
+        lambda settings, row: ProbeAdapter(),
+    )
+
+    result = service.test_image_delivery("siliconflow_primary")
+
+    assert result["status"] == "ready"
+    assert result["ok"] is True
+    assert result["delivery_format"] == "base64"
+    assert result["content_type"] == "image/png"
+    assert (result["width"], result["height"]) == (8, 6)
+    assert result["connection"]["image_delivery_repair"] == {}
+    dispose_engine(database_url)
+
+
+def test_image_delivery_probe_fetches_and_validates_an_approved_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = _configure_image_probe_connection(
+        database_url,
+        settings,
+        image_output_hosts=["images.provider.example"],
+    )
+    source_url = "https://images.provider.example/generated/test.png?signature=secret"
+
+    class ProbeAdapter:
+        timeout_seconds = 30.0
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            return ProviderExecutionResult(
+                output={"candidate_count": 1},
+                latency_ms=234,
+                tokens_in=0,
+                tokens_out=0,
+                cost=0.02,
+                media_candidates=(
+                    ProviderMediaCandidate(
+                        index=1,
+                        source_url=source_url,
+                        image_output_hosts=("images.provider.example",),
+                        provider_connection_id="siliconflow_primary",
+                        claimed_mime_type="image/png",
+                    ),
+                ),
+            )
+
+    def fake_fetch(
+        candidate_url: str,
+        *,
+        allowed_hosts: tuple[str, ...],
+    ) -> ProviderFetchedImage:
+        assert candidate_url == source_url
+        assert allowed_hosts == ("images.provider.example",)
+        payload = _png_bytes(width=9, height=7)
+        return ProviderFetchedImage(
+            stream=io.BytesIO(payload),
+            byte_size=len(payload),
+            declared_mime_type="image/png",
+        )
+
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.build_provider_adapter_from_connection",
+        lambda settings, row: ProbeAdapter(),
+    )
+    monkeypatch.setattr(
+        "app.domain.provider_connections.service.fetch_provider_image_url",
+        fake_fetch,
+    )
+
+    result = service.test_image_delivery("siliconflow_primary")
+
+    assert result["status"] == "ready"
+    assert result["ok"] is True
+    assert result["delivery_format"] == "url"
+    assert result["detected_host"] == "images.provider.example"
+    assert result["content_type"] == "image/png"
+    assert (result["width"], result["height"]) == (9, 7)
+    assert "signature" not in str(result)
     dispose_engine(database_url)
 
 
@@ -403,9 +674,7 @@ def test_approve_detected_image_host_revalidates_run_evidence_and_appends_exact_
         }
     )
     with get_session(database_url) as session:
-        session.add(
-            Site(site_id="site_image_repair", name="Image repair", status="active")
-        )
+        session.add(Site(site_id="site_image_repair", name="Image repair", status="active"))
         run = RuntimeRepository(session).create_run(
             run_id="run_image_host_repair",
             site_id="site_image_repair",
@@ -726,9 +995,7 @@ def test_runtime_settings_project_capability_provider_connections(
     assert settings.site_knowledge_vector_backend == "postgres_json"
 
     serialized = service.list_connections()
-    serialized_connections = {
-        item["connection_id"]: item for item in serialized["connections"]
-    }
+    serialized_connections = {item["connection_id"]: item for item in serialized["connections"]}
     assert serialized_connections["search_tavily"]["enabled"] is False
     assert serialized_connections["search_zhihu"]["enabled"] is True
     assert serialized_connections["embedding_siliconflow"]["enabled"] is False
@@ -839,15 +1106,11 @@ def test_runtime_settings_keep_m4_ollama_embedding_on_postgres_json(
             "capability_ids": ["vector_store"],
             "runtime_profile_ids": ["site-knowledge.vector-store"],
             "config": {
-                "site_knowledge_vector_store_profile_id": (
-                    SITE_KNOWLEDGE_VECTOR_PROFILE_ID
-                ),
+                "site_knowledge_vector_store_profile_id": (SITE_KNOWLEDGE_VECTOR_PROFILE_ID),
                 "site_knowledge_vector_store_probe_revision": (
                     SITE_KNOWLEDGE_VECTOR_STORE_PROBE_REVISION
                 ),
-                "site_knowledge_vector_store_dimensions": (
-                    SITE_KNOWLEDGE_VECTOR_DIMENSIONS
-                ),
+                "site_knowledge_vector_store_dimensions": (SITE_KNOWLEDGE_VECTOR_DIMENSIONS),
                 "site_knowledge_vector_store_metric": SITE_KNOWLEDGE_VECTOR_METRIC,
                 "collection": SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
                 "uri": "https://zilliz.example",
@@ -1151,9 +1414,9 @@ def test_clearing_external_service_credential_persists_disabled_runtime_state(
         connection_id="image_unsplash",
     )
 
-    stored = {
-        item["connection_id"]: item for item in service.list_connections()["connections"]
-    }["image_unsplash"]
+    stored = {item["connection_id"]: item for item in service.list_connections()["connections"]}[
+        "image_unsplash"
+    ]
     assert stored["enabled"] is False
     assert stored["configured"] is False
     assert stored["status"] == "disabled"

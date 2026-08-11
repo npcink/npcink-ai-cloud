@@ -114,6 +114,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Providers, Media, and Quality
 
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
+- [Operator-initiated Provider Image Delivery Probe](decisions/042-operator-initiated-provider-image-delivery-probe.md)
 - [Model Reference Metadata](model-reference-metadata-v1.md)
 - [Cloud Web Search Runtime Contract](cloud-web-search-runtime-contract-v1.md)
 - [Cloud Image Context Evidence Runtime Contract](cloud-image-context-evidence-runtime-contract-v1.md)
