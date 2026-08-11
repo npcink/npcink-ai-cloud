@@ -685,7 +685,7 @@ def test_m4_worker_and_migration_source_fingerprints_are_independent(
     assert fingerprint("migration") != initial_migration
 
 
-def test_m4_unchanged_source_sync_skips_runtime_mutations() -> None:
+def test_m4_source_sync_refreshes_identity_and_skips_unrelated_runtime_mutations() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     sync_block = _marked_shell_block(source, "selective M4 source sync")
 
@@ -708,6 +708,7 @@ def test_m4_unchanged_source_sync_skips_runtime_mutations() -> None:
 
     assert "alembic upgrade head" in migration_guard
     assert "stack_touched=1" in migration_guard
+    assert 'up -d --no-build --pull never --force-recreate api' in sync_block
     assert "restart worker callback-worker ops-worker" in worker_guard
     assert "stack_touched=1" in worker_guard
     assert "--force-recreate frontend" in frontend_guard

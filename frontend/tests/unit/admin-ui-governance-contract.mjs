@@ -149,6 +149,16 @@ assert.match(
   'compact controls must reduce height, padding, radius, select inset, and focus ring together'
 );
 assert.match(layoutSource, /admin-sidebar[\s\S]*admin-shell-content/, 'the admin shell must consume shared geometry classes');
+assert.match(
+  layoutSource,
+  /request<AdminSessionData>\('\/admin\/session'\)[\s\S]*response\.data\.deployment/,
+  'the admin shell must reuse its authenticated session request for deployment identity'
+);
+assert.match(
+  layoutSource,
+  /sourceRevision\.slice\(0, 12\)[\s\S]*sourceDirty \? '\+dirty'/,
+  'the deployment footer must keep dirty state visible beside the short revision'
+);
 assert.doesNotMatch(
   layoutSource,
   /(?:w-52|w-60|lg:pl-52|lg:pl-60)/,

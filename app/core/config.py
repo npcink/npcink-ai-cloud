@@ -45,6 +45,10 @@ class Settings(BaseSettings):
 
     project_name: str = Field(default="Npcink AI Cloud")
     environment: str = Field(default="development")
+    deployment_release: str = Field(default="development")
+    deployment_source_revision: str = Field(default="unknown")
+    deployment_source_dirty: bool = Field(default=False)
+    deployment_created_at: str = Field(default="unknown")
     log_level: str = Field(default="INFO")
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8000)

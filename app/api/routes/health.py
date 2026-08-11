@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.api.auth import authorize_internal_request
 from app.api.envelope import build_envelope
+from app.core.deployment_identity import DeploymentIdentity
 from app.core.services import CloudServices
 from app.domain.observability.service import ObservabilityService
 
@@ -21,9 +22,13 @@ def _get_services(request: Request) -> CloudServices:
 
 
 @router.get("/live")
-async def live(request: Request) -> dict[str, object]:
+async def live(request: Request, response: Response) -> dict[str, object]:
     services = _get_services(request)
     payload = await services.get_live_payload()
+    deployment = DeploymentIdentity.from_settings(services.settings)
+    response.headers["X-Npcink-Release"] = deployment.release
+    response.headers["X-Npcink-Revision"] = deployment.short_revision
+    response.headers["X-Npcink-Dirty"] = str(deployment.source_dirty).lower()
 
     return build_envelope(
         status="ok",
@@ -42,6 +47,7 @@ async def ready(request: Request) -> JSONResponse:
         return auth
 
     services = _get_services(request)
+    deployment = DeploymentIdentity.from_settings(services.settings)
     report = await services.get_ready_report()
     status_code = 200 if report.ok else 503
     status = "ok" if report.ok else "error"
@@ -57,6 +63,7 @@ async def ready(request: Request) -> JSONResponse:
             data={
                 "checks": report.checks,
                 "details": report.details,
+                "deployment": deployment.internal_payload(),
             },
         ),
     )
