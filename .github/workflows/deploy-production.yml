@@ -256,6 +256,7 @@ jobs:
             repair_args+=(--finalized-runtime-network-repair)
           fi
           deploy_output_file="$(mktemp)"
+          timing_receipt="artifacts/release-timing/production-deploy-phase-timing.json"
           cleanup_deploy_output() {
             exit_status="$?"
             trap - EXIT
@@ -263,6 +264,8 @@ jobs:
             exit "${exit_status}"
           }
           trap cleanup_deploy_output EXIT
+          mkdir -p "$(dirname "${timing_receipt}")"
+          set +e
           bash deploy/deploy-to-ssh-host.sh \
             --no-user-internal-validation \
             --skip-bundle-build \
@@ -271,7 +274,34 @@ jobs:
             --refresh-providers \
             --with-operational-ready \
             "${repair_args[@]}" \
-            --remote-compose-file docker-compose.runtime.yml | tee "${deploy_output_file}"
+            --remote-compose-file docker-compose.runtime.yml 2>&1 | tee "${deploy_output_file}"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          deploy_status="${pipeline_status[0]}"
+          tee_status="${pipeline_status[1]}"
+          effective_status="${deploy_status}"
+          if [ "${effective_status}" = "0" ] && [ "${tee_status}" != "0" ]; then
+            effective_status="${tee_status}"
+          fi
+          if ! python3 scripts/report-release-timing.py \
+            --deploy-log "${deploy_output_file}" \
+            --source-repository "${GITHUB_REPOSITORY}" \
+            --source-sha "${GITHUB_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --release-lane "${release_lane}" \
+            --release-action "${release_action}" \
+            --deploy-exit-status "${effective_status}" \
+            --receipt-output "${timing_receipt}" \
+            >> "${GITHUB_STEP_SUMMARY}"; then
+            {
+              echo "## Production Deploy Phase Timing"
+              echo ""
+              echo "Structured phase timing was unavailable; deployment authority is unchanged."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ "${effective_status}" != "0" ]; then
+            exit "${effective_status}"
+          fi
           installation_state_count="$(
             awk '/^installation_state=(pending|complete)$/ { count += 1 } END { print count + 0 }' \
               "${deploy_output_file}"
@@ -297,6 +327,15 @@ jobs:
             echo "release_action=${release_action}"
             echo "health_profile=${health_profile}"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Upload production deploy timing receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-deploy-timing-${{ github.run_id }}-${{ github.sha }}
+          path: artifacts/release-timing/production-deploy-phase-timing.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: First-install operator handoff
         if: steps.deploy.outputs.installation_state == 'pending'

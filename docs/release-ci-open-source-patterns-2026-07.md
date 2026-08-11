@@ -43,9 +43,28 @@ This keeps PR feedback faster without weakening release branches.
 Large CI systems treat timing data as release evidence instead of relying on
 manual log reading. Cloud CI now emits:
 
-- a run-level timing summary through `scripts/report-release-timing.py`;
+- a run-level timing summary and optional versioned JSON receipt through
+  `scripts/report-release-timing.py`;
 - pytest JUnit artifacts for full backend shard runs;
 - a slow-test markdown summary through `scripts/report-junit-timing.py`.
+
+The same reporter parses the existing production deploy `[timing]` lines into
+the versioned `npcink.release_timing.v1` receipt. Runtime production deploys
+upload a 14-day artifact with exact recorded phases grouped as bundle,
+transfer, image load, migration, cutover, health, and other. The enclosing
+remote-sequence timer remains visible but is not added to category totals, so
+its direct child phases are counted while their nested child timers remain raw
+detail only. Nested remote work is therefore not double-counted. Timing-report
+failure is advisory:
+it must not convert a successful production mutation into a false deployment
+failure or authorize a retry.
+
+After a normal backend PR completes, capture its exact completed run timing with:
+
+```bash
+pnpm run release:timing -- <run-id> --format json \
+  --receipt-output artifacts/release-timing/backend-pr-<run-id>.json
+```
 
 The immediate goal is observability. Test splitting is based on collected
 slow-test evidence instead of guesses. `ci/pytest-backend-durations.json` stores
