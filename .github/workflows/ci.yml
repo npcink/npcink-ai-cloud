@@ -419,6 +419,8 @@ jobs:
       static_terms_only: ${{ steps.changed.outputs.static_terms_only }}
       docs_only: ${{ steps.changed.outputs.docs_only }}
       frontend_only: ${{ steps.changed.outputs.frontend_only }}
+      frontend_required: ${{ steps.changed.outputs.frontend_required }}
+      frontend_backend_contracts_required: ${{ steps.changed.outputs.frontend_backend_contracts_required }}
       frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}
       specialized_quality_required: ${{ steps.changed.outputs.specialized_quality_required }}
     steps:
@@ -978,15 +980,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: actions/checkout@v6
 
       - name: Setup pnpm
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -994,24 +996,30 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm install --frozen-lockfile --filter frontend...
 
       - name: Lint
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run lint
 
       - name: Type Check
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run type-check
 
       - name: Unit Tests
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run test:unit
 
       - name: Frontend Contracts
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run test:contracts
+
+      - name: Backend-owned frontend contracts
+        if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required == 'true'
+        run: |
+          node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs
+          node frontend/tests/unit/admin-coverage-workspace-contract.mjs
 
       - name: Install Playwright Chromium
         if: needs.classify.outputs.frontend_e2e_required == 'true'
@@ -1031,9 +1039,9 @@ jobs:
           --grep
           'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections stay idle|account-level support stays available'
 
-      - name: Docs-only frontend acknowledgement
-        if: needs.classify.outputs.docs_only == 'true'
-        run: echo "Frontend gate is not required for documentation-only changes."
+      - name: Unchanged frontend acknowledgement
+        if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'
+        run: echo "Frontend source and toolchain are unchanged; the PR keeps the stable frontend check without reinstalling or retesting the frontend."
 
   static-terms:
     needs: [classify]

@@ -31,12 +31,20 @@ Mature projects avoid running every expensive gate for every small change. The
 current Cloud CI keeps that pattern:
 
 - pull requests use a targeted backend gate by default;
+- pull requests run the full frontend install/lint/type/unit/contract chain only
+  when frontend source, the shared Node workspace inputs, or the CI workflow
+  changes; backend-only and release-tooling PRs retain the stable `frontend`
+  check name through a no-work acknowledgement, except for backend files read
+  directly by cross-layer frontend contracts, which run only those zero-install
+  Node contract scripts;
 - high-risk backend or release surfaces escalate to the full backend gate;
 - `master`, `main`, and `production` pushes still run the full backend gate;
 - the full backend gate is split into static checks and pytest shards only
   after scope classification says the full gate is required.
 
-This keeps PR feedback faster without weakening release branches.
+Production-targeting pull requests and integration-branch pushes continue to
+run the complete frontend gate regardless of the path classifier. This keeps
+ordinary PR feedback faster without weakening release branches.
 
 ### Timing as an artifact
 
