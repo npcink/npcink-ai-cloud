@@ -179,11 +179,16 @@ def compare_production(
     candidate_categories = category_map(candidate)
     if baseline_categories.keys() != candidate_categories.keys():
         raise ComparisonError("production timing category sets do not match")
-    baseline_total = baseline.get("remote_sequence_seconds")
-    candidate_total = candidate.get("remote_sequence_seconds")
+    baseline_total = baseline.get("recorded_total_seconds")
+    candidate_total = candidate.get("recorded_total_seconds")
     if not isinstance(baseline_total, int) or not isinstance(candidate_total, int):
+        raise ComparisonError("production recorded phase total is missing")
+    baseline_remote = baseline.get("remote_sequence_seconds")
+    candidate_remote = candidate.get("remote_sequence_seconds")
+    if not isinstance(baseline_remote, int) or not isinstance(candidate_remote, int):
         raise ComparisonError("production remote sequence timing is missing")
-    metrics = [metric("remote_sequence", baseline_total, candidate_total)]
+    metrics = [metric("recorded_total", baseline_total, candidate_total)]
+    metrics.append(metric("remote_sequence", baseline_remote, candidate_remote))
     metrics.extend(
         metric(
             f"category:{name}",

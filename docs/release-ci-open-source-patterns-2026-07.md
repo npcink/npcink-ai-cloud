@@ -54,10 +54,27 @@ upload a 14-day artifact with exact recorded phases grouped as bundle,
 transfer, image load, migration, cutover, health, and other. The enclosing
 remote-sequence timer remains visible but is not added to category totals, so
 its direct child phases are counted while their nested child timers remain raw
-detail only. Nested remote work is therefore not double-counted. Timing-report
-failure is advisory:
+detail only. Wrapper-aware tracking keeps parallel child timers, such as
+per-service shutdowns, attached to the same enclosing cutover phase instead of
+mistaking them for nested siblings or top-level work. Nested remote work is
+therefore not double-counted. Timing-report failure is advisory:
 it must not convert a successful production mutation into a false deployment
 failure or authorize a retry.
+
+The production receipt exposes both `recorded_total_seconds` and
+`remote_sequence_seconds`. The recorded total sums every non-duplicated local
+and remote phase, including verification and transfer, and is the primary
+comparison metric. The remote sequence remains a separate view of host-side
+deployment work.
+
+The optimization-before production baseline is successful `Deploy Production`
+run `31364293862` for revision
+`e1a5ed6148a9fdc788ec54518f4fcced8ea7b2e6`, full lane and runtime action. Its
+replayed receipt records 226 seconds across all non-duplicated phases and 172
+seconds for the remote sequence: bundle 11, transfer 48, image load 78,
+migration 14, cutover 50, health 25, and other 0 seconds. Compare it only with
+a later successful full-lane runtime production receipt; an M4, CI-only, or
+different-lane run is not an optimization-after production sample.
 
 After a normal backend PR completes, capture its exact completed run timing with:
 

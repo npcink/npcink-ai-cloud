@@ -56,6 +56,7 @@ def production_receipt(*, run_id: str, total: int, transfer: int) -> dict:
         "release_lane": "backend",
         "release_action": "runtime",
         "status": "success",
+        "recorded_total_seconds": total + transfer,
         "remote_sequence_seconds": total,
         "category_seconds": {
             "bundle": 0,
@@ -121,7 +122,14 @@ def test_compare_production_receipts_requires_same_lane_and_action() -> None:
 
     comparison = compare_receipts(baseline, candidate)
 
-    assert comparison["primary_metric"]["improvement_percent"] == 25.0
+    assert comparison["primary_metric"]["name"] == "recorded_total"
+    assert comparison["primary_metric"]["improvement_percent"] == 34.38
+    remote_sequence = next(
+        item
+        for item in comparison["metrics"]
+        if item["name"] == "remote_sequence"
+    )
+    assert remote_sequence["improvement_percent"] == 25.0
     transfer = next(
         item
         for item in comparison["metrics"]
@@ -131,4 +139,13 @@ def test_compare_production_receipts_requires_same_lane_and_action() -> None:
 
     candidate["release_lane"] = "migration"
     with pytest.raises(ComparisonError, match="release_lane"):
+        compare_receipts(baseline, candidate)
+
+
+def test_compare_production_receipts_requires_recorded_total() -> None:
+    baseline = production_receipt(run_id="10", total=120, transfer=40)
+    candidate = production_receipt(run_id="11", total=90, transfer=15)
+    del candidate["recorded_total_seconds"]
+
+    with pytest.raises(ComparisonError, match="recorded phase total is missing"):
         compare_receipts(baseline, candidate)

@@ -38,6 +38,16 @@ DEPLOY_TIMING_PATTERN = re.compile(
     r"(?: \(failed: (?P<exit_status>[0-9]+)\))?$"
 )
 DEPLOY_TIMING_START_PATTERN = re.compile(r"^\[timing\] (?P<label>.+): start$")
+DEPLOY_TIMING_WRAPPER_LABELS = {
+    "remote deploy sequence",
+    "remote load and up",
+    "stop public and write-capable application services",
+    "remote start data services only",
+    "remote migrate",
+    "remote start new API only",
+    "remote start new workers after API readiness",
+    "remote restore frontend and proxy traffic last",
+}
 DEPLOY_CATEGORIES = (
     "bundle",
     "transfer",
@@ -208,12 +218,19 @@ def classify_deploy_phase(label: str) -> str:
 
 def collect_deploy_phase_timings(log_text: str) -> list[DeployPhaseTiming]:
     phases: list[DeployPhaseTiming] = []
-    active_labels: list[str] = []
+    active_wrappers: list[str] = []
+    active_phase_starts: dict[str, list[tuple[int, str | None]]] = {}
     for raw_line in log_text.splitlines():
         line = raw_line.strip()
         start_match = DEPLOY_TIMING_START_PATTERN.match(line)
         if start_match is not None:
-            active_labels.append(start_match.group("label"))
+            label = start_match.group("label")
+            parent_label = active_wrappers[-1] if active_wrappers else None
+            active_phase_starts.setdefault(label, []).append(
+                (len(active_wrappers), parent_label)
+            )
+            if label in DEPLOY_TIMING_WRAPPER_LABELS:
+                active_wrappers.append(label)
             continue
         match = DEPLOY_TIMING_PATTERN.match(line)
         if match is None:
@@ -221,12 +238,16 @@ def collect_deploy_phase_timings(log_text: str) -> list[DeployPhaseTiming]:
         label = match.group("label")
         depth: int | None = None
         parent_label: str | None = None
-        for index in range(len(active_labels) - 1, -1, -1):
-            if active_labels[index] == label:
-                depth = index
-                parent_label = active_labels[index - 1] if index > 0 else None
-                del active_labels[index:]
-                break
+        starts = active_phase_starts.get(label)
+        if starts:
+            depth, parent_label = starts.pop()
+            if not starts:
+                del active_phase_starts[label]
+        if label in DEPLOY_TIMING_WRAPPER_LABELS:
+            for index in range(len(active_wrappers) - 1, -1, -1):
+                if active_wrappers[index] == label:
+                    del active_wrappers[index]
+                    break
         exit_status = int(match.group("exit_status") or "0")
         category = classify_deploy_phase(label)
         counted_in_category_totals = category != "wrapper" and (
@@ -270,6 +291,7 @@ def summarize_deploy_log(
         ),
         None,
     )
+    recorded_total_seconds = sum(category_seconds.values())
     return {
         "schema": "npcink.release_timing.v1",
         "kind": "production_deploy_phases",
@@ -280,6 +302,7 @@ def summarize_deploy_log(
         "release_action": release_action,
         "status": "success" if deploy_exit_status == 0 else "failure",
         "deploy_exit_status": deploy_exit_status,
+        "recorded_total_seconds": recorded_total_seconds,
         "remote_sequence_seconds": remote_sequence_seconds,
         "category_seconds": category_seconds,
         "phases": [
@@ -316,12 +339,14 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
 def render_deploy_markdown(summary: dict[str, Any]) -> str:
     remote_sequence = summary["remote_sequence_seconds"]
+    recorded_total = summary["recorded_total_seconds"]
     lines = [
         "# Production Deploy Phase Timing",
         "",
         f"- Release lane: {summary['release_lane']}",
         f"- Release action: {summary['release_action']}",
         f"- Deploy status: {summary['status']}",
+        f"- Recorded phase total: {format_duration(recorded_total)}",
         f"- Remote sequence: {format_duration(remote_sequence)}",
         "",
         "| Category | Duration |",
