@@ -31,6 +31,12 @@ Mature projects avoid running every expensive gate for every small change. The
 current Cloud CI keeps that pattern:
 
 - pull requests use a targeted backend gate by default;
+- ordinary `app/**/*.py` pull requests select contract files from the static
+  Python import closure, exact source-path references, and a fixed set of
+  whole-`app` boundary scans; backend test-only pull requests do not rerun
+  unrelated contracts, while scripts, deployment inputs, contract tests,
+  unknown paths, deleted app modules, and dependency-graph failures fall back
+  to the complete contract suite;
 - pull requests run the full frontend install/lint/type/unit/contract chain only
   when frontend source, the shared Node workspace inputs, or the CI workflow
   changes; backend-only and release-tooling PRs retain the stable `frontend`
