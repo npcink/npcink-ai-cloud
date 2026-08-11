@@ -252,6 +252,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_catalog',
   },
   {
+    methods: ['POST'],
+    pattern: /^provider-connections\/[^/]+\/image-delivery-probes$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
     methods: ['PATCH', 'DELETE'],
     pattern: /^provider-connections\/[^/]+$/,
     namespace: 'admin',

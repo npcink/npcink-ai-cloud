@@ -252,7 +252,10 @@ export function ModelSupplierTable({
               const imageDeliveryRepair = connection.image_delivery_repair;
               const hasPendingImageHostRepair = imageDeliveryRepair?.status === 'pending'
                 && imageDeliveryRepair.reason_code === 'host_not_allowlisted'
-                && Boolean(imageDeliveryRepair.detected_host && imageDeliveryRepair.run_id);
+                && Boolean(
+                  imageDeliveryRepair.detected_host
+                  && (imageDeliveryRepair.run_id || imageDeliveryRepair.probe_id)
+                );
               const hasFeedback = Boolean(testResult || connection.last_error_code || isConfirmingDelete || hasPendingImageHostRepair);
               const selectConnection = () => onSelectConnection(connection.connection_id);
               return (
