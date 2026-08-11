@@ -60,7 +60,7 @@ def image_source(tmp_path: Path) -> Path:
         "frontend/next-env.d.ts",
         "frontend/next.config.mjs",
         "frontend/postcss.config.mjs",
-        "frontend/proxy.ts",
+        "frontend/src/proxy.ts",
         "frontend/src/app/page.tsx",
         "frontend/tailwind.config.ts",
         "frontend/tsconfig.json",
