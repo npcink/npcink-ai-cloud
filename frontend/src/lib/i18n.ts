@@ -2162,6 +2162,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.site_detail.inspect_site_runtime_action': 'Inspect site runtime',
     'admin.site_detail.inspect_site_runtime_desc': 'Keep the next step on the site surface first so runtime signals stay tied to the affected asset.',
     'admin.footer': 'Admin Console - Internal Use Only',
+    'admin.deployment_identity': 'Deployment identity',
     'admin.overview_title': 'Admin Overview',
     'admin.service_settings_title': 'Service Settings',
     'admin.service_settings_desc':
@@ -8164,6 +8165,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.site_detail.inspect_site_runtime_action': '检查站点运行时',
     'admin.site_detail.inspect_site_runtime_desc': '下一步先留在站点页面上，这样运行时信号仍然绑定在受影响的资产上。',
     'admin.footer': '管理后台 - 仅内部使用',
+    'admin.deployment_identity': '部署身份',
     'admin.overview_title': '后台概览',
     'admin.service_settings_title': '服务配置',
     'admin.service_settings_desc':

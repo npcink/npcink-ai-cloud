@@ -683,7 +683,13 @@ def _run_runtime_network_contract_prepare(
     )
     (release / "docker-compose.prod.yml").write_text("services: {}\n", encoding="utf-8")
     (release / "release-bundle-manifest.json").write_text(
-        json.dumps({"source": {"revision": "a" * 40}}) + "\n",
+        json.dumps(
+            {
+                "created_at_utc": "2026-08-11T00:00:00+00:00",
+                "source": {"revision": "a" * 40},
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -1391,6 +1397,7 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE",
             "NPCINK_CLOUD_SETUP_STATE_OVERRIDE",
             "NPCINK_CLOUD_FRONTEND_REVISION",
+            "NPCINK_CLOUD_DEPLOYMENT_RELEASE",
             "NODE_ENV",
         },
         "docker-compose.runtime.yml": {
@@ -1398,6 +1405,7 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
             "CLOUD_PUBLIC_BASE_URL",
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE",
             "NPCINK_CLOUD_FRONTEND_REVISION",
+            "NPCINK_CLOUD_DEPLOYMENT_RELEASE",
             "NODE_ENV",
         },
     }

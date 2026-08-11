@@ -68,6 +68,16 @@ assert.match(
   /X-Npcink-Frontend-Revision/,
   'machine health must return the frontend source revision as an inspectable response header'
 );
+assert.match(
+  health,
+  /backend_revision:[\s\S]*X-Npcink-Backend-Revision/,
+  'machine health must project the backend revision in its body and response headers'
+);
+assert.match(
+  health,
+  /deployment:[\s\S]*release[\s\S]*frontend_revision[\s\S]*backend_revision[\s\S]*backend_source_dirty/,
+  'machine health must expose a bounded deployment identity projection'
+);
 assert.match(home, /<PublicStatusSummary/, 'home must expose a public service-status summary');
 assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the minimal public health endpoint');
 assert.match(publicStatus, /AbortSignal\.timeout\(5_000\)/, 'home status must not remain checking forever');

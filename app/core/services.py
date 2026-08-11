@@ -13,6 +13,7 @@ from app.adapters.queue.base import RuntimeQueue
 from app.adapters.queue.redis_runtime_queue import RedisRuntimeQueue
 from app.core.config import Settings
 from app.core.db import check_database_connection
+from app.core.deployment_identity import DeploymentIdentity
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
@@ -36,10 +37,11 @@ class CloudServices:
     callback_dispatcher: RuntimeCallbackDispatcher | None = None
     portal_email_sender: PortalEmailSender | None = None
 
-    async def get_live_payload(self) -> dict[str, str]:
+    async def get_live_payload(self) -> dict[str, object]:
         return {
             "service": self.settings.project_name,
             "environment": self.settings.environment,
+            "deployment": DeploymentIdentity.from_settings(self.settings).public_payload(),
         }
 
     async def get_ready_report(self) -> ReadyReport:

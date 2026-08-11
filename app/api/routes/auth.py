@@ -26,6 +26,7 @@ from app.api.portal_session import (
 from app.api.portal_session import (
     portal_cookie_secure,
 )
+from app.core.deployment_identity import DeploymentIdentity
 from app.core.models import PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.identity import (
@@ -604,10 +605,14 @@ async def web_admin_session(request: Request) -> Any:
     session = _require_admin_session_json(request)
     if isinstance(session, JSONResponse):
         return session
+    deployment = DeploymentIdentity.from_settings(get_cloud_services(request).settings)
     return build_envelope(
         status="ok",
         message="admin session loaded",
-        data=session,
+        data={
+            **session,
+            "deployment": deployment.internal_payload(),
+        },
         revision="m6",
     )
 

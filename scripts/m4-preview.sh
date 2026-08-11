@@ -1773,6 +1773,10 @@ if [ -f "${deployed_frontend_source_marker}" ] &&
 	fi
 fi
 export NPCINK_CLOUD_FRONTEND_REVISION="${frontend_runtime_revision}"
+export NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION="${source_revision}"
+export NPCINK_CLOUD_DEPLOYMENT_SOURCE_DIRTY="${source_dirty}"
+export NPCINK_CLOUD_DEPLOYMENT_RELEASE="m4-preview"
+export NPCINK_CLOUD_DEPLOYMENT_CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 release_frontend_slot_operation_locks() {
 	local slot=""
@@ -2799,6 +2803,11 @@ else
 	else
 		echo '[m4-preview] migration source is unchanged; Alembic upgrade skipped'
 	fi
+	# Source sync and promotion update deployment identity through Compose
+	# environment values, so the API must be recreated even when its image is
+	# unchanged. Uvicorn source reload cannot refresh a container environment.
+	stack_touched=1
+	"${compose[@]}" up -d --no-build --pull never --force-recreate api
 	if [ "${frontend_recreate_required}" = "1" ]; then
 		stack_touched=1
 		"${compose[@]}" up -d --no-build --pull never --force-recreate frontend

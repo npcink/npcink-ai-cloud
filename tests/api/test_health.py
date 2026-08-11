@@ -20,12 +20,21 @@ class StubServices:
             database_url="sqlite+pysqlite:///:memory:",
             redis_url="redis://localhost:6379/0",
             internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
+            deployment_release="release-test",
+            deployment_source_revision="a" * 40,
+            deployment_source_dirty=True,
+            deployment_created_at="2026-08-11T01:02:03Z",
         )
 
-    async def get_live_payload(self) -> dict[str, str]:
+    async def get_live_payload(self) -> dict[str, object]:
         return {
             "service": self.settings.project_name,
             "environment": self.settings.environment,
+            "deployment": {
+                "release": "release-test",
+                "source_revision": "a" * 12,
+                "source_dirty": True,
+            },
         }
 
     async def get_ready_report(self) -> ReadyReport:
@@ -63,6 +72,14 @@ def test_live_endpoint_returns_ok_envelope() -> None:
     assert payload["status"] == "ok"
     assert payload["error_code"] == ""
     assert payload["data"]["service"] == "Npcink AI Cloud Test"
+    assert payload["data"]["deployment"] == {
+        "release": "release-test",
+        "source_revision": "a" * 12,
+        "source_dirty": True,
+    }
+    assert response.headers["x-npcink-release"] == "release-test"
+    assert response.headers["x-npcink-revision"] == "a" * 12
+    assert response.headers["x-npcink-dirty"] == "true"
 
 
 def test_live_endpoint_emits_request_span_when_tracing_is_configured() -> None:
@@ -104,6 +121,13 @@ def test_ready_endpoint_returns_ok_envelope() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["data"]["checks"] == {"database": True, "redis": True}
+    assert payload["data"]["deployment"] == {
+        "release": "release-test",
+        "source_revision": "a" * 40,
+        "source_dirty": True,
+        "created_at": "2026-08-11T01:02:03Z",
+        "environment": "test",
+    }
 
 
 def test_ready_endpoint_requires_internal_token() -> None:

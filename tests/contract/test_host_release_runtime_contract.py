@@ -25,7 +25,13 @@ def _write(path: Path, text: str, *, executable: bool = False) -> None:
 def _write_release_manifest(release_root: Path) -> None:
     _write(
         release_root / "release-bundle-manifest.json",
-        json.dumps({"source": {"revision": "a" * 40}}) + "\n",
+        json.dumps(
+            {
+                "created_at_utc": "2026-08-11T00:00:00Z",
+                "source": {"revision": "a" * 40},
+            }
+        )
+        + "\n",
     )
 
 
