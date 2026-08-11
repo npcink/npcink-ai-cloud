@@ -3,6 +3,7 @@ import { buildBackendUrl } from '@/app/api/admin/_shared';
 import { readInstallationState } from '@/lib/installation-state';
 
 function buildHealthResponse({
+  backendRelease,
   backendRevision,
   backendSourceDirty,
   checkedAt,
@@ -12,6 +13,7 @@ function buildHealthResponse({
   status,
   statusCode,
 }: {
+  backendRelease: string;
   backendRevision: string;
   backendSourceDirty: boolean;
   checkedAt: string;
@@ -29,6 +31,7 @@ function buildHealthResponse({
     deployment: {
       release,
       frontend_revision: revision,
+      backend_release: backendRelease,
       backend_revision: backendRevision,
       backend_source_dirty: backendSourceDirty,
     },
@@ -37,6 +40,7 @@ function buildHealthResponse({
     headers: {
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'X-Npcink-Frontend-Revision': revision,
+      'X-Npcink-Backend-Release': backendRelease,
       'X-Npcink-Backend-Revision': backendRevision,
       'X-Npcink-Backend-Dirty': String(backendSourceDirty),
       'X-Npcink-Release': release,
@@ -73,12 +77,14 @@ function readBackendDeployment(payload: unknown): { release: string; sourceRevis
 export async function GET() {
   const checkedAt = new Date().toISOString();
   const revision = String(process.env.NPCINK_CLOUD_FRONTEND_REVISION || 'unknown').trim();
-  let release = String(process.env.NPCINK_CLOUD_DEPLOYMENT_RELEASE || 'unknown').trim() || 'unknown';
+  const release = String(process.env.NPCINK_CLOUD_DEPLOYMENT_RELEASE || 'unknown').trim() || 'unknown';
+  let backendRelease = 'unknown';
   let backendRevision = 'unknown';
   let backendSourceDirty = false;
   const installation = await readInstallationState();
   if (installation.ok && installation.installationState !== 'complete') {
     return buildHealthResponse({
+      backendRelease,
       backendRevision,
       backendSourceDirty,
       checkedAt,
@@ -98,12 +104,11 @@ export async function GET() {
       throw new Error('Portal API liveness check failed');
     }
     const backendDeployment = readBackendDeployment(await backendResponse.json());
+    backendRelease = backendDeployment.release;
     backendRevision = backendDeployment.sourceRevision;
     backendSourceDirty = backendDeployment.sourceDirty;
-    if (backendDeployment.release !== 'unknown') {
-      release = backendDeployment.release;
-    }
     return buildHealthResponse({
+      backendRelease,
       backendRevision,
       backendSourceDirty,
       checkedAt,
@@ -115,6 +120,7 @@ export async function GET() {
     });
   } catch {
     return buildHealthResponse({
+      backendRelease,
       backendRevision,
       backendSourceDirty,
       checkedAt,
