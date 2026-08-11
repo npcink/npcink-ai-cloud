@@ -629,6 +629,7 @@
       "evidence": ["deploy/PRODUCTION_GITHUB_DEPLOY.md", "deploy/RELEASE_CHECKLIST.md"],
       "commands": {
         "release:timing": "Report release workflow timing evidence.",
+        "release:timing:compare": "Compare compatible release timing evidence.",
         "release:junit-timing": "Report pytest JUnit timing evidence."
       }
     },

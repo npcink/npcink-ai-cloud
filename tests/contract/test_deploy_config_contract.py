@@ -2474,6 +2474,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "pytest-backend-timing-shard-${{ matrix.shard }}" in ci_workflow
     assert (cloud_root / "ci" / "pytest-backend-durations.json").is_file()
     assert "deploy:static-terms:ssh" in package_json
+    assert "release:timing:compare" in package_json
     assert "release:junit-timing" in package_json
     assert 'CURRENT_LINK="${REMOTE_DIR}/current"' in static_terms_deploy_script
     assert 'tar czf "${TERMS_BUNDLE}" -C "${ROOT_DIR}/site" terms' in (static_terms_deploy_script)
