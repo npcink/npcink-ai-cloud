@@ -43,6 +43,7 @@ def image_source(tmp_path: Path) -> Path:
         "app/main.py",
         "migrations/env.py",
         "deploy/wait-for-install.sh",
+        "scripts/alembic_revision_gate.py",
         "scripts/verify-production-python-lock.py",
         "scripts/live-site-addon-rollback.py",
         "scripts/live-site-runtime-execute-smoke.py",
@@ -99,6 +100,18 @@ def test_fingerprints_change_only_for_owned_build_inputs(image_source: Path) -> 
     )
     assert _by_key(runtime_script)["api"]["fingerprint"] != _by_key(before)["api"]["fingerprint"]
     assert _by_key(runtime_script)["frontend"] == _by_key(before)["frontend"]
+
+    _write(image_source, "scripts/alembic_revision_gate.py", "changed\n")
+    revision_gate = image_inputs.create_inputs(
+        image_source,
+        platform="linux/amd64",
+        package_extras="[zilliz]",
+    )
+    assert (
+        _by_key(revision_gate)["api"]["fingerprint"]
+        != _by_key(runtime_script)["api"]["fingerprint"]
+    )
+    assert _by_key(revision_gate)["frontend"] == _by_key(runtime_script)["frontend"]
 
     _write(image_source, "app/main.py", "changed\n")
     backend = image_inputs.create_inputs(
