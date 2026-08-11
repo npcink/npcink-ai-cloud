@@ -68,6 +68,36 @@ assert.match(
   /X-Npcink-Frontend-Revision/,
   'machine health must return the frontend source revision as an inspectable response header'
 );
+assert.match(
+  health,
+  /backend_revision:[\s\S]*X-Npcink-Backend-Revision/,
+  'machine health must project the backend revision in its body and response headers'
+);
+assert.match(
+  health,
+  /deployment:[\s\S]*release[\s\S]*frontend_revision[\s\S]*backend_release[\s\S]*backend_revision[\s\S]*backend_source_dirty/,
+  'machine health must expose distinct frontend and backend deployment identity'
+);
+assert.match(
+  health,
+  /const release = String\(process\.env\.NPCINK_CLOUD_DEPLOYMENT_RELEASE/,
+  'machine health must source the frontend release from the frontend container environment'
+);
+assert.match(
+  health,
+  /backendRelease = backendDeployment\.release/,
+  'machine health must project the backend release separately'
+);
+assert.match(
+  health,
+  /'X-Npcink-Backend-Release': backendRelease[\s\S]*'X-Npcink-Release': release/,
+  'machine health must expose separate frontend and backend release headers'
+);
+assert.doesNotMatch(
+  health,
+  /release = backendDeployment\.release/,
+  'machine health must not overwrite the frontend release with the backend release'
+);
 assert.match(home, /<PublicStatusSummary/, 'home must expose a public service-status summary');
 assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the minimal public health endpoint');
 assert.match(publicStatus, /AbortSignal\.timeout\(5_000\)/, 'home status must not remain checking forever');

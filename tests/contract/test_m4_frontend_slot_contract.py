@@ -38,6 +38,9 @@ def test_m4_frontend_slot_shell_is_fail_closed_and_non_destructive() -> None:
     assert "primary runtime must be accepted" in source
     assert "primary M4 operation is active" in source
     assert "primary frontend dependency image does not match" in source
+    assert 'frontend_image_input_sha="$(frontend_image_fingerprint)"' in source
+    assert "state_value frontend_image_input_sha256" in source
+    assert "state_value image_input_sha256" not in source
     assert "primary preview configuration does not match" in source
     assert 'primary_revision}" = "${source_base_revision}' in source
     assert 'primary_revision}" = "${source_revision}' in source

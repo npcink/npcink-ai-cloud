@@ -31,21 +31,87 @@ Mature projects avoid running every expensive gate for every small change. The
 current Cloud CI keeps that pattern:
 
 - pull requests use a targeted backend gate by default;
+- ordinary `app/**/*.py` pull requests select contract files from the static
+  Python import closure, exact source-path references, and a fixed set of
+  whole-`app` boundary scans; backend test-only pull requests do not rerun
+  unrelated contracts, while scripts, deployment inputs, contract tests,
+  unknown paths, deleted app modules, and dependency-graph failures fall back
+  to the complete contract suite;
+- pull requests run the full frontend install/lint/type/unit/contract chain only
+  when frontend source, the shared Node workspace inputs, or the CI workflow
+  changes; backend-only and release-tooling PRs retain the stable `frontend`
+  check name through a no-work acknowledgement, except for backend files read
+  directly by cross-layer frontend contracts, which run only those zero-install
+  Node contract scripts;
 - high-risk backend or release surfaces escalate to the full backend gate;
 - `master`, `main`, and `production` pushes still run the full backend gate;
 - the full backend gate is split into static checks and pytest shards only
   after scope classification says the full gate is required.
 
-This keeps PR feedback faster without weakening release branches.
+Production-targeting pull requests and integration-branch pushes continue to
+run the complete frontend gate regardless of the path classifier. This keeps
+ordinary PR feedback faster without weakening release branches.
 
 ### Timing as an artifact
 
 Large CI systems treat timing data as release evidence instead of relying on
 manual log reading. Cloud CI now emits:
 
-- a run-level timing summary through `scripts/report-release-timing.py`;
+- a run-level timing summary and optional versioned JSON receipt through
+  `scripts/report-release-timing.py`;
 - pytest JUnit artifacts for full backend shard runs;
 - a slow-test markdown summary through `scripts/report-junit-timing.py`.
+
+The same reporter parses the existing production deploy `[timing]` lines into
+the versioned `npcink.release_timing.v1` receipt. Runtime production deploys
+upload a 14-day artifact with exact recorded phases grouped as bundle,
+transfer, image load, migration, cutover, health, and other. The enclosing
+remote-sequence timer remains visible but is not added to category totals, so
+its direct child phases are counted while their nested child timers remain raw
+detail only. Wrapper-aware tracking keeps parallel child timers, such as
+per-service shutdowns, attached to the same enclosing cutover phase instead of
+mistaking them for nested siblings or top-level work. Nested remote work is
+therefore not double-counted. Timing-report failure is advisory:
+it must not convert a successful production mutation into a false deployment
+failure or authorize a retry.
+
+The production receipt exposes both `recorded_total_seconds` and
+`remote_sequence_seconds`. The recorded total sums every non-duplicated local
+and remote phase, including verification and transfer, and is the primary
+comparison metric. The remote sequence remains a separate view of host-side
+deployment work.
+
+The optimization-before production baseline is successful `Deploy Production`
+run `31364293862` for revision
+`e1a5ed6148a9fdc788ec54518f4fcced8ea7b2e6`, full lane and runtime action. Its
+replayed receipt records 226 seconds across all non-duplicated phases and 172
+seconds for the remote sequence: bundle 11, transfer 48, image load 78,
+migration 14, cutover 50, health 25, and other 0 seconds. Compare it only with
+a later successful full-lane runtime production receipt; an M4, CI-only, or
+different-lane run is not an optimization-after production sample.
+
+After a normal backend PR completes, capture its exact completed run timing with:
+
+```bash
+pnpm run release:timing -- <run-id> --format json \
+  --receipt-output artifacts/release-timing/backend-pr-<run-id>.json
+```
+
+Compare only compatible successful receipts:
+
+```bash
+pnpm run release:timing:compare -- \
+  --baseline artifacts/release-timing/backend-pr-<baseline-run>.json \
+  --candidate artifacts/release-timing/backend-pr-<candidate-run>.json \
+  --format json \
+  --output artifacts/release-timing/backend-comparison.json
+```
+
+The comparator fails closed when receipt kinds, workflow/event identities,
+executed GitHub job sets, repositories, production lanes, release actions, or
+successful completion states differ. It reports measured direction, absolute
+delta, and percentage improvement; it does not choose samples or convert an
+incompatible comparison into a speedup claim.
 
 The immediate goal is observability. Test splitting is based on collected
 slow-test evidence instead of guesses. `ci/pytest-backend-durations.json` stores

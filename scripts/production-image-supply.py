@@ -50,6 +50,11 @@ SEVERITY_ORDER = {
 }
 UTC_ZONE = timezone(timedelta(0))
 RECEIPT_CONTRACT = "npcink.production-image-scan-receipt.v1"
+APPLICATION_IMAGE_CACHE_CONTRACT = "npcink.production-application-image-cache.v1"
+APPLICATION_IMAGE_KEY_LABEL = "ink.npc.cloud.application-image-key"
+APPLICATION_IMAGE_FINGERPRINT_LABEL = (
+    "ink.npc.cloud.application-input-fingerprint"
+)
 GRYPE_BUILTIN_IGNORE_RULES = [
     {
         "vulnerability": "",
@@ -217,6 +222,21 @@ def _docker_archive_subject(path: Path, *, archive_reference: str) -> dict[str, 
         raise SupplyError("Docker archive Config must be a JSON object")
     os_name = _required_text(config.get("os"), "docker_archive.config.os")
     architecture = _required_text(config.get("architecture"), "docker_archive.config.architecture")
+    config_section = config.get("config")
+    labels: dict[str, str] = {}
+    if config_section is not None:
+        if not isinstance(config_section, dict):
+            raise SupplyError("Docker archive config.config must be a JSON object")
+        raw_labels = config_section.get("Labels")
+        if raw_labels is not None:
+            if not isinstance(raw_labels, dict) or any(
+                not isinstance(key, str)
+                or not key
+                or not isinstance(value, str)
+                for key, value in raw_labels.items()
+            ):
+                raise SupplyError("Docker archive config labels must be a string map")
+            labels = dict(sorted(raw_labels.items()))
     if architecture == "aarch64":
         architecture = "arm64"
     elif architecture == "x86_64":
@@ -224,9 +244,186 @@ def _docker_archive_subject(path: Path, *, archive_reference: str) -> dict[str, 
     return {
         "archive_sha256": _sha256(path),
         "config_image_id": f"sha256:{config_hex}",
+        "labels": labels,
         "platform": f"{os_name}/{architecture}",
         "repo_tags": sorted(repo_tags),
     }
+
+
+def _application_cache_target(lock: dict[str, Any], image_key: str) -> dict[str, str]:
+    matching = [
+        record
+        for record in lock.get("application_outputs", [])
+        if isinstance(record, dict) and record.get("key") == image_key
+    ]
+    if len(matching) != 1:
+        raise SupplyError(f"unknown application image cache key {image_key!r}")
+    record = matching[0]
+    if record.get("scan_by_default") is not True or record.get("scan_equivalent_to"):
+        raise SupplyError(
+            f"application image cache key {image_key!r} is not a primary scanned output"
+        )
+    return {
+        "key": image_key,
+        "reference": _required_text(
+            record.get("reference"), f"application_outputs.{image_key}.reference"
+        ),
+    }
+
+
+def _application_fingerprint(value: object) -> str:
+    fingerprint = _required_text(value, "application_fingerprint")
+    if re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+        raise SupplyError("application fingerprint must be 64 lowercase hex characters")
+    return fingerprint
+
+
+def _outside_repository(path: Path, label: str) -> Path:
+    resolved = path.resolve()
+    if resolved == ROOT or resolved.is_relative_to(ROOT):
+        raise SupplyError(f"{label} must stay outside the Git worktree")
+    return resolved
+
+
+def _validate_application_cache(
+    *,
+    lock_path: Path,
+    image_key: str,
+    application_fingerprint: str,
+    expected_platform: str,
+    cache_dir: Path,
+) -> dict[str, Any]:
+    if expected_platform not in {"linux/amd64", "linux/arm64"}:
+        raise SupplyError("application cache platform must be linux/amd64 or linux/arm64")
+    fingerprint = _application_fingerprint(application_fingerprint)
+    lock = _load_json(lock_path)
+    target = _application_cache_target(lock, image_key)
+    cache_root = _outside_repository(cache_dir, "application image cache")
+    if not cache_root.is_dir() or cache_root.is_symlink():
+        raise SupplyError("application image cache directory is unavailable")
+    entries = {path.name for path in cache_root.iterdir()}
+    if entries != {"image.tar", "manifest.json"}:
+        raise SupplyError("application image cache has unknown or missing files")
+    archive_path = cache_root / "image.tar"
+    manifest_path = cache_root / "manifest.json"
+    for path in (archive_path, manifest_path):
+        if not path.is_file() or path.is_symlink() or path.resolve().parent != cache_root:
+            raise SupplyError("application image cache files must be direct regular files")
+    manifest = _load_json(manifest_path)
+    expected_fields = {
+        "schema",
+        "image_key",
+        "application_fingerprint",
+        "platform",
+        "reference",
+        "archive_sha256",
+        "archive_size",
+        "config_image_id",
+    }
+    if set(manifest) != expected_fields:
+        raise SupplyError("application image cache manifest has unknown or missing fields")
+    expected_values = {
+        "schema": APPLICATION_IMAGE_CACHE_CONTRACT,
+        "image_key": image_key,
+        "application_fingerprint": fingerprint,
+        "platform": expected_platform,
+        "reference": target["reference"],
+    }
+    for field, expected in expected_values.items():
+        if manifest.get(field) != expected:
+            raise SupplyError(f"application image cache {field} mismatch")
+    archive_size = manifest.get("archive_size")
+    if (
+        not isinstance(archive_size, int)
+        or isinstance(archive_size, bool)
+        or archive_size < 1
+        or archive_size != archive_path.stat().st_size
+    ):
+        raise SupplyError("application image cache archive_size mismatch")
+    archive_sha256 = manifest.get("archive_sha256")
+    if (
+        not isinstance(archive_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", archive_sha256) is None
+        or archive_sha256 != _sha256(archive_path)
+    ):
+        raise SupplyError("application image cache archive_sha256 mismatch")
+    subject = _docker_archive_subject(
+        archive_path, archive_reference=target["reference"]
+    )
+    if subject["platform"] != expected_platform:
+        raise SupplyError("application image cache archive platform mismatch")
+    if subject["config_image_id"] != manifest.get("config_image_id"):
+        raise SupplyError("application image cache config_image_id mismatch")
+    expected_labels = {
+        APPLICATION_IMAGE_KEY_LABEL: image_key,
+        APPLICATION_IMAGE_FINGERPRINT_LABEL: fingerprint,
+    }
+    for label, expected in expected_labels.items():
+        if subject["labels"].get(label) != expected:
+            raise SupplyError(f"application image cache label mismatch: {label}")
+    return manifest
+
+
+def write_application_cache(args: argparse.Namespace) -> int:
+    lock_path = Path(args.lock).resolve()
+    fingerprint = _application_fingerprint(args.application_fingerprint)
+    lock = _load_json(lock_path)
+    target = _application_cache_target(lock, args.image_key)
+    source_archive = Path(args.archive).resolve()
+    if not source_archive.is_file() or source_archive.is_symlink():
+        raise SupplyError("application cache source archive must be a regular file")
+    subject = _docker_archive_subject(
+        source_archive, archive_reference=target["reference"]
+    )
+    if subject["platform"] != args.expected_platform:
+        raise SupplyError("application cache source archive platform mismatch")
+    for label, expected in {
+        APPLICATION_IMAGE_KEY_LABEL: args.image_key,
+        APPLICATION_IMAGE_FINGERPRINT_LABEL: fingerprint,
+    }.items():
+        if subject["labels"].get(label) != expected:
+            raise SupplyError(f"application cache source label mismatch: {label}")
+    output_dir = _outside_repository(Path(args.output_dir), "application image cache output")
+    if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
+        raise SupplyError("application image cache output directory must be empty")
+    output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    cached_archive = output_dir / "image.tar"
+    shutil.copy2(source_archive, cached_archive)
+    cached_archive.chmod(0o600)
+    manifest = {
+        "schema": APPLICATION_IMAGE_CACHE_CONTRACT,
+        "image_key": args.image_key,
+        "application_fingerprint": fingerprint,
+        "platform": args.expected_platform,
+        "reference": target["reference"],
+        "archive_sha256": _sha256(cached_archive),
+        "archive_size": cached_archive.stat().st_size,
+        "config_image_id": subject["config_image_id"],
+    }
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    manifest_path.chmod(0o600)
+    _validate_application_cache(
+        lock_path=lock_path,
+        image_key=args.image_key,
+        application_fingerprint=fingerprint,
+        expected_platform=args.expected_platform,
+        cache_dir=output_dir,
+    )
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+    return 0
+
+
+def verify_application_cache(args: argparse.Namespace) -> int:
+    manifest = _validate_application_cache(
+        lock_path=Path(args.lock).resolve(),
+        image_key=args.image_key,
+        application_fingerprint=args.application_fingerprint,
+        expected_platform=args.expected_platform,
+        cache_dir=Path(args.cache_dir),
+    )
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+    return 0
 
 
 def normalize_archive(args: argparse.Namespace) -> int:
@@ -2001,6 +2198,23 @@ def parse_args() -> argparse.Namespace:
     normalize = subparsers.add_parser("normalize-archive")
     normalize.add_argument("--archive", required=True)
     normalize.add_argument("--archive-reference", required=True)
+    cache_write = subparsers.add_parser("write-application-cache")
+    cache_write.add_argument("--lock", default=str(DEFAULT_LOCK))
+    cache_write.add_argument("--image-key", required=True)
+    cache_write.add_argument("--application-fingerprint", required=True)
+    cache_write.add_argument(
+        "--expected-platform", choices=("linux/amd64", "linux/arm64"), required=True
+    )
+    cache_write.add_argument("--archive", required=True)
+    cache_write.add_argument("--output-dir", required=True)
+    cache_verify = subparsers.add_parser("verify-application-cache")
+    cache_verify.add_argument("--lock", default=str(DEFAULT_LOCK))
+    cache_verify.add_argument("--image-key", required=True)
+    cache_verify.add_argument("--application-fingerprint", required=True)
+    cache_verify.add_argument(
+        "--expected-platform", choices=("linux/amd64", "linux/arm64"), required=True
+    )
+    cache_verify.add_argument("--cache-dir", required=True)
     return parser.parse_args()
 
 
@@ -2021,6 +2235,10 @@ def main() -> int:
             return verify_equivalence(args)
         if args.command == "normalize-archive":
             return normalize_archive(args)
+        if args.command == "write-application-cache":
+            return write_application_cache(args)
+        if args.command == "verify-application-cache":
+            return verify_application_cache(args)
         raise SupplyError(f"unsupported command {args.command!r}")
     except SupplyError as error:
         print(f"[fail] {error}", file=sys.stderr)

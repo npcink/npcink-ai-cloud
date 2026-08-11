@@ -18,7 +18,7 @@ class FailingStubServices:
             internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
         )
 
-    async def get_live_payload(self) -> dict[str, str]:
+    async def get_live_payload(self) -> dict[str, object]:
         return {
             "service": self.settings.project_name,
             "environment": self.settings.environment,

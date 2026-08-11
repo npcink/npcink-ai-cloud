@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 
 from app.adapters.notifications.base import PortalEmailDeliveryError
 from app.adapters.notifications.smtp import build_portal_email_sender
@@ -392,6 +393,13 @@ class ProviderConnectionPayload(BaseModel):
     credential: str | None = None
     secret: str | None = None
     secretless: bool = False
+
+
+class ProviderImageHostApprovalPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_run_id: str = Field(default="", max_length=191)
+    evidence_probe_id: str = Field(default="", max_length=191)
 
 
 class SiteKnowledgeVectorProfilePayload(BaseModel):
@@ -845,6 +853,9 @@ def _provider_connection_result_summary(result: dict[str, Any]) -> dict[str, Any
     if not connection and str(result.get("connection_id") or ""):
         connection = result
     summary: dict[str, Any] = {}
+    if result.get("approved_image_output_host"):
+        summary["approved_image_output_host"] = str(result.get("approved_image_output_host") or "")
+        summary["evidence_run_id"] = str(result.get("evidence_run_id") or "")
     if connection:
         summary["connection"] = {
             "connection_id": str(connection.get("connection_id") or ""),
@@ -2420,9 +2431,9 @@ async def get_admin_overview(
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     ready_report = await services.get_ready_report()
-    operational_readiness = ObservabilityService(
-        services.settings
-    ).build_operational_readiness(ready_report=ready_report)
+    operational_readiness = ObservabilityService(services.settings).build_operational_readiness(
+        ready_report=ready_report
+    )
     result["operational_readiness"] = _build_admin_operational_readiness_projection(
         operational_readiness
     )
@@ -3744,9 +3755,7 @@ async def get_admin_editor_assist_quality(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = EditorAssistQualityService(
-        services.settings.database_url
-    ).get_summary(
+    result = EditorAssistQualityService(services.settings.database_url).get_summary(
         window_hours=window_hours,
         site_id=site_id.strip(),
         task_key=task_key.strip(),
@@ -4910,6 +4919,134 @@ async def test_admin_provider_connection(request: Request, connection_id: str) -
     )
 
 
+@router.post("/admin/provider-connections/{connection_id}/approve-image-host")
+async def approve_admin_provider_connection_image_host(
+    request: Request,
+    connection_id: str,
+    payload: ProviderImageHostApprovalPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ProviderConnectionAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).approve_detected_image_output_host(
+            connection_id,
+            evidence_run_id=payload.evidence_run_id,
+            evidence_probe_id=payload.evidence_probe_id,
+        )
+    except ProviderConnectionAdminError as error:
+        _record_provider_connection_audit(
+            request,
+            event_kind="provider_connection.image_host_approve",
+            outcome="error",
+            scope_id=connection_id,
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    audit_event = _record_provider_connection_audit(
+        request,
+        event_kind="provider_connection.image_host_approve",
+        outcome="succeeded",
+        scope_id=connection_id,
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="provider image host approved",
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind="provider_connection.image_host_approve",
+                scope_kind="provider_connection",
+                scope_id=connection_id,
+                outcome="succeeded",
+                effective_summary=(
+                    "Approved exact provider image host "
+                    f"{str(result.get('approved_image_output_host') or '')}."
+                ),
+                audit_event=audit_event,
+            ),
+        ),
+        revision="m6",
+    )
+
+
+@router.post("/admin/provider-connections/{connection_id}/image-delivery-probes")
+async def create_admin_provider_connection_image_delivery_probe(
+    request: Request,
+    connection_id: str,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        provider_connection_service = ProviderConnectionAdminService(
+            services.settings.database_url,
+            services.settings,
+        )
+        result = await run_in_threadpool(
+            provider_connection_service.test_image_delivery,
+            connection_id,
+        )
+    except ProviderConnectionAdminError as error:
+        _record_provider_connection_audit(
+            request,
+            event_kind="provider_connection.image_delivery_probe",
+            outcome="error",
+            scope_id=connection_id,
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    audit_event = _record_provider_connection_audit(
+        request,
+        event_kind="provider_connection.image_delivery_probe",
+        outcome="succeeded",
+        scope_id=connection_id,
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message=str(result.get("message") or "provider image delivery probe completed"),
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind="provider_connection.image_delivery_probe",
+                scope_kind="provider_connection",
+                scope_id=connection_id,
+                outcome="succeeded",
+                effective_summary=str(
+                    result.get("message") or "Provider image delivery probe completed."
+                ),
+                audit_event=audit_event,
+            ),
+        ),
+        revision="m6",
+    )
+
+
 @router.get("/admin/model-references")
 async def list_admin_model_references(
     request: Request,
@@ -5447,9 +5584,7 @@ async def get_provider_runtime_evidence_summary(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(
-        services.settings.database_url
-    ).get_provider_runtime_evidence_summary(
+    result = RuntimeService(services.settings.database_url).get_provider_runtime_evidence_summary(
         site_id=site_id,
         provider_id=provider_id,
         model_id=model_id,

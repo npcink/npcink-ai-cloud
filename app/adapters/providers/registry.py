@@ -205,6 +205,8 @@ def _build_provider_adapter_from_connection(
         secretless=secretless,
         config=config,
     )
+    if adapter is not None:
+        cast(Any, adapter).provider_connection_id = connection.connection_id
     return adapter
 
 

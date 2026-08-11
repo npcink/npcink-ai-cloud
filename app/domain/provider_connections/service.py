@@ -4,12 +4,20 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import Any
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 from sqlalchemy import select
 
-from app.adapters.providers.base import ProviderCatalogSnapshot
+from app.adapters.providers.base import (
+    ProviderCatalogSnapshot,
+    ProviderExecutionError,
+    ProviderExecutionRequest,
+    ProviderMediaCandidate,
+)
 from app.adapters.providers.openai import (
     ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS,
     normalize_provider_image_output_hosts,
@@ -17,9 +25,18 @@ from app.adapters.providers.openai import (
 from app.adapters.providers.registry import build_provider_adapter_from_connection
 from app.core.config import Settings
 from app.core.db import get_session
-from app.core.models import ProviderConnection
+from app.core.models import CatalogInstance, CatalogModel, ProviderConnection, RunRecord
 from app.core.secrets import decrypt_provider_connection_secret, encrypt_provider_connection_secret
 from app.domain.catalog.service import CatalogService
+from app.domain.image_generation.materialization import (
+    ImageGenerationArtifactMaterializationError,
+    clean_provider_image,
+)
+from app.domain.image_generation.provider_fetch import (
+    PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+    ProviderImageFetchError,
+    fetch_provider_image_url,
+)
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
@@ -31,6 +48,8 @@ from app.domain.web_search.service import WebSearchService
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,63}$")
 _ALLOWED_SOURCE_ROLES = frozenset({"execution_source", "runtime_metadata", "diagnostic_source"})
+_SERVER_OWNED_PROVIDER_METADATA_KEYS = frozenset({"image_delivery_probe", "image_delivery_repair"})
+_IMAGE_DELIVERY_PROBE_PROMPT = "A simple blue circle centered on a plain white background, no text."
 _SECRET_CONFIG_KEY_PARTS = (
     "secret",
     "credential",
@@ -53,6 +72,7 @@ _PUBLIC_PROVIDER_TEST_ERROR_CODES = {
     "provider.error": "provider.error",
     "provider.invalid_response": "provider.invalid_response",
     "provider.network_error": "provider.network_error",
+    "provider.output_contract_invalid": "provider.output_contract_invalid",
     "provider.rate_limited": "provider.rate_limited",
     "provider.reader_error": "provider.reader_error",
     "provider.response_too_large": "provider.response_too_large",
@@ -148,6 +168,7 @@ class ProviderConnectionAdminService:
                 )
                 session.add(row)
             else:
+                existing_metadata = dict(_dict(row.metadata_json))
                 verification_inputs_changed = (
                     row.provider_type != normalized["provider_type"]
                     or bool(row.enabled) != normalized["enabled"]
@@ -162,7 +183,12 @@ class ProviderConnectionAdminService:
                 row.base_url = normalized["base_url"]
                 row.config_json = normalized["config_json"]
                 row.source_role = normalized["source_role"]
-                row.metadata_json = normalized["metadata_json"]
+                next_metadata = dict(normalized["metadata_json"])
+                if not verification_inputs_changed:
+                    for key in _SERVER_OWNED_PROVIDER_METADATA_KEYS:
+                        if key in existing_metadata:
+                            next_metadata[key] = existing_metadata[key]
+                row.metadata_json = next_metadata
                 row.updated_at = now
                 if verification_inputs_changed:
                     row.last_tested_at = None
@@ -219,6 +245,270 @@ class ProviderConnectionAdminService:
             session.delete(row)
             session.commit()
         return {"deleted": True, "connection": serialized}
+
+    def approve_detected_image_output_host(
+        self,
+        connection_id: str,
+        *,
+        evidence_run_id: str = "",
+        evidence_probe_id: str = "",
+    ) -> dict[str, Any]:
+        normalized_id = _normalize_identifier(connection_id, field="connection_id")
+        normalized_run_id = _string(evidence_run_id)
+        normalized_probe_id = _string(evidence_probe_id)
+        if (
+            bool(normalized_run_id) == bool(normalized_probe_id)
+            or max(len(normalized_run_id), len(normalized_probe_id)) > 191
+        ):
+            raise ProviderConnectionAdminError(
+                "provider_connection.image_host_evidence_invalid",
+                "exactly one image host evidence identifier is required",
+            )
+        now = datetime.now(UTC)
+        with get_session(self.database_url) as session:
+            row = session.get(ProviderConnection, normalized_id)
+            if row is None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.not_found",
+                    "provider connection was not found",
+                    status_code=404,
+                )
+            metadata = dict(_dict(row.metadata_json))
+            evidence = _dict(metadata.get("image_delivery_repair"))
+            evidence_kind = _string(evidence.get("evidence_kind")) or "runtime_run"
+            evidence_identifier_matches = (
+                evidence_kind == "admin_probe"
+                and _string(evidence.get("probe_id")) == normalized_probe_id
+            ) or (
+                evidence_kind == "runtime_run"
+                and _string(evidence.get("run_id")) == normalized_run_id
+            )
+            if (
+                evidence.get("status") != "pending"
+                or _string(evidence.get("reason_code")) != "host_not_allowlisted"
+                or not evidence_identifier_matches
+            ):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_stale",
+                    "image host approval evidence is missing or no longer current",
+                    status_code=409,
+                )
+            config = dict(_dict(row.config_json))
+            provider_id = _string(config.get("provider_id") or row.connection_id)
+            if _string(evidence.get("provider_id")) != provider_id:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_mismatch",
+                    "image host approval evidence does not match this provider connection",
+                    status_code=409,
+                )
+            if evidence_kind == "runtime_run":
+                run = session.get(RunRecord, normalized_run_id)
+                if (
+                    run is None
+                    or _string(run.status) != "failed"
+                    or _string(run.execution_kind) != "image_generation"
+                    or _string(run.error_code) != "image_generation.artifact_materialization_failed"
+                    or _string(run.selected_provider_id) != provider_id
+                ):
+                    raise ProviderConnectionAdminError(
+                        "provider_connection.image_host_evidence_mismatch",
+                        "image host approval evidence does not match this provider connection",
+                        status_code=409,
+                    )
+            elif evidence_kind != "admin_probe":
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_invalid",
+                    "image host approval evidence kind is invalid",
+                    status_code=409,
+                )
+            try:
+                approved_host = normalize_provider_image_output_hosts(
+                    [_string(evidence.get("detected_host"))]
+                )[0]
+            except (IndexError, ValueError) as error:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_invalid",
+                    "detected image host is invalid",
+                    status_code=409,
+                ) from error
+
+            raw_existing_hosts = config.get("image_output_hosts")
+            existing_hosts_input = (
+                [item for item in raw_existing_hosts if isinstance(item, str)]
+                if isinstance(raw_existing_hosts, list)
+                else []
+            )
+            existing_hosts = list(normalize_provider_image_output_hosts(existing_hosts_input))
+            if approved_host not in existing_hosts:
+                existing_hosts.append(approved_host)
+            config["image_response_format"] = "url"
+            config["image_output_hosts"] = existing_hosts
+            capability_ids = _effective_capability_ids(config, row.provider_type)
+            config["capability_ids"] = capability_ids
+            row.config_json = config
+            metadata["image_delivery_repair"] = {
+                **evidence,
+                "status": "approved",
+                "approved_at": now.isoformat(),
+            }
+            probe = _dict(metadata.get("image_delivery_probe"))
+            if evidence_kind == "admin_probe" and _string(probe.get("probe_id")) == (
+                normalized_probe_id
+            ):
+                metadata["image_delivery_probe"] = {
+                    **probe,
+                    "status": "host_approved",
+                    "host_approved_at": now.isoformat(),
+                }
+            row.metadata_json = metadata
+            row.last_tested_at = None
+            row.last_error_code = None
+            row.last_error_message = None
+            row.updated_at = now
+            session.commit()
+            session.refresh(row)
+            return {
+                "approved_image_output_host": approved_host,
+                "evidence_run_id": normalized_run_id,
+                "evidence_probe_id": normalized_probe_id,
+                "connection": self._serialize(row),
+            }
+
+    def test_image_delivery(self, connection_id: str) -> dict[str, Any]:
+        normalized_id = _normalize_identifier(connection_id, field="connection_id")
+        probe_id = f"image-probe-{uuid4().hex}"
+        with get_session(self.database_url) as session:
+            row = session.get(ProviderConnection, normalized_id)
+            if row is None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.not_found",
+                    "provider connection was not found",
+                    status_code=404,
+                )
+            serialized = self._serialize(row)
+            if not bool(row.enabled):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.disabled",
+                    "provider connection must be enabled before testing image delivery",
+                    status_code=409,
+                )
+            if not bool(serialized.get("configured")):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.missing_secret",
+                    "provider credential is required before testing image delivery",
+                    status_code=409,
+                )
+            if "image_generation" not in serialized.get("capability_ids", []):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_generation_not_enabled",
+                    "image generation must be enabled before testing image delivery",
+                    status_code=409,
+                )
+
+            verification_inputs = _image_delivery_probe_verification_inputs(row)
+            model, instance = _select_image_delivery_probe_target(session, row)
+            adapter = build_provider_adapter_from_connection(self.settings, row)
+            if adapter is None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.unsupported_provider_kind",
+                    "provider kind is not supported by the runtime adapter registry",
+                )
+            provider_id = _string(serialized.get("provider_id"))
+            request = ProviderExecutionRequest(
+                run_id=probe_id,
+                site_id="admin_provider_connection_probe",
+                ability_name="admin.provider_image_delivery_probe",
+                profile_id="admin.image_delivery_probe",
+                execution_kind="image_generation",
+                model_id=model.model_id,
+                instance_id=instance.instance_id,
+                endpoint_variant=instance.endpoint_variant,
+                trace_id=probe_id,
+                input_payload=_image_delivery_probe_input(provider_id),
+                policy={"allow_fallback": False},
+                timeout_ms=_image_delivery_probe_timeout_ms(adapter),
+            )
+            try:
+                execution_result = adapter.execute(request)
+                probe_result = _inspect_image_delivery_probe_candidate(
+                    execution_result.media_candidates,
+                )
+            except ProviderExecutionError as error:
+                raise ProviderConnectionAdminError(
+                    _map_test_error_code(error),
+                    "provider image delivery probe failed",
+                    status_code=502,
+                ) from error
+            except (ImageGenerationArtifactMaterializationError, ProviderImageFetchError) as error:
+                reason_code = _string(getattr(error, "reason_code", ""))
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_delivery_probe_failed",
+                    (
+                        f"provider image delivery validation failed: {reason_code}"
+                        if reason_code
+                        else "provider image delivery validation failed"
+                    ),
+                    status_code=502,
+                ) from error
+
+            session.refresh(row)
+            if verification_inputs != _image_delivery_probe_verification_inputs(row):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_delivery_probe_stale",
+                    (
+                        "provider connection changed while image delivery was being tested; "
+                        "run the test again"
+                    ),
+                    status_code=409,
+                )
+            now = datetime.now(UTC)
+            metadata = dict(_dict(row.metadata_json))
+            probe_evidence = {
+                "probe_id": probe_id,
+                "status": probe_result["status"],
+                "provider_id": provider_id,
+                "model_id": model.model_id,
+                "delivery_format": probe_result["delivery_format"],
+                "detected_host": probe_result.get("detected_host", ""),
+                "tested_at": now.isoformat(),
+            }
+            metadata["image_delivery_probe"] = probe_evidence
+            if probe_result["status"] == "approval_required":
+                metadata["image_delivery_repair"] = {
+                    "status": "pending",
+                    "reason_code": "host_not_allowlisted",
+                    "detected_host": probe_result["detected_host"],
+                    "evidence_kind": "admin_probe",
+                    "probe_id": probe_id,
+                    "provider_id": provider_id,
+                    "model_id": model.model_id,
+                    "observed_at": now.isoformat(),
+                }
+            else:
+                metadata.pop("image_delivery_repair", None)
+            row.metadata_json = metadata
+            row.updated_at = now
+            session.commit()
+            session.refresh(row)
+
+            return {
+                **probe_evidence,
+                "connection_id": row.connection_id,
+                "ok": probe_result["status"] == "ready",
+                "host_approved": bool(probe_result.get("host_approved")),
+                "content_type": probe_result.get("content_type", ""),
+                "width": probe_result.get("width", 0),
+                "height": probe_result.get("height", 0),
+                "latency_ms": int(execution_result.latency_ms),
+                "estimated_cost": float(execution_result.cost),
+                "provider_call_billable": True,
+                "message": (
+                    "provider image host approval is required"
+                    if probe_result["status"] == "approval_required"
+                    else "provider image delivery probe passed"
+                ),
+                "connection": self._serialize(row),
+            }
 
     def test_connection(self, connection_id: str) -> dict[str, Any]:
         normalized_id = _normalize_identifier(connection_id, field="connection_id")
@@ -632,6 +922,8 @@ class ProviderConnectionAdminService:
         capability_ids = _normalize_id_list(payload.get("capability_ids"))
         runtime_profile_ids = _normalize_id_list(payload.get("runtime_profile_ids"))
         metadata = _sanitize_config(_dict(payload.get("metadata")))
+        for key in _SERVER_OWNED_PROVIDER_METADATA_KEYS:
+            metadata.pop(key, None)
         metadata.pop("note", None)
         metadata.pop("operator_note", None)
         metadata.pop("priority", None)
@@ -668,9 +960,14 @@ class ProviderConnectionAdminService:
 
     def _serialize(self, row: ProviderConnection) -> dict[str, Any]:
         config = _dict(row.config_json)
-        capability_ids = _normalize_id_list(config.get("capability_ids"))
+        kind = _string(config.get("kind") or row.provider_type)
+        capability_ids = _effective_capability_ids(config, kind)
         runtime_profile_ids = _normalize_id_list(config.get("runtime_profile_ids"))
-        metadata = _dict(row.metadata_json)
+        metadata = dict(_dict(row.metadata_json))
+        image_delivery_repair = _public_image_delivery_repair(metadata)
+        image_delivery_probe = _public_image_delivery_probe(metadata)
+        metadata.pop("image_delivery_repair", None)
+        metadata.pop("image_delivery_probe", None)
         metadata.pop("note", None)
         metadata.pop("operator_note", None)
         metadata.pop("priority", None)
@@ -698,13 +995,14 @@ class ProviderConnectionAdminService:
             verification_status=verification_status,
             capability_ids=capability_ids,
             config=config,
+            image_delivery_probe=image_delivery_probe,
         )
         return {
             "connection_id": row.connection_id,
             "provider_id": provider_id,
             "provider_type": row.provider_type,
             "display_name": row.display_name,
-            "kind": _string(config.get("kind") or row.provider_type),
+            "kind": kind,
             "enabled": bool(row.enabled),
             "configured": configured,
             "status": status,
@@ -725,6 +1023,8 @@ class ProviderConnectionAdminService:
             },
             "config": _public_config(config),
             "metadata": metadata,
+            "image_delivery_probe": image_delivery_probe,
+            "image_delivery_repair": image_delivery_repair,
             "last_tested_at": _iso(row.last_tested_at),
             "last_sync_at": _iso(row.last_sync_at),
             "last_error_code": row.last_error_code or "",
@@ -733,6 +1033,181 @@ class ProviderConnectionAdminService:
             "managed_by": "cloud_provider_connections",
             "boundary": _boundary(),
         }
+
+
+def _image_delivery_probe_verification_inputs(row: ProviderConnection) -> dict[str, Any]:
+    return {
+        "provider_type": _string(row.provider_type),
+        "enabled": bool(row.enabled),
+        "base_url": _string(row.base_url),
+        "config": dict(_dict(row.config_json)),
+        "source_role": _string(row.source_role),
+        "secret_ciphertext": _string(row.secret_ciphertext),
+    }
+
+
+def _select_image_delivery_probe_target(
+    session: Any,
+    row: ProviderConnection,
+) -> tuple[CatalogModel, CatalogInstance]:
+    config = _dict(row.config_json)
+    selected_model_ids = _normalize_id_list(config.get("model_ids"))
+    if not selected_model_ids:
+        selected_model_ids = _normalize_id_list(_dict(row.metadata_json).get("model_ids"))
+    if not selected_model_ids:
+        raise ProviderConnectionAdminError(
+            "provider_connection.image_probe_model_required",
+            "enable and save at least one image-generation model before testing delivery",
+            status_code=409,
+        )
+    provider_id = _string(config.get("provider_id") or row.connection_id)
+    rows = session.execute(
+        select(CatalogModel, CatalogInstance)
+        .join(CatalogInstance, CatalogInstance.model_id == CatalogModel.model_id)
+        .where(
+            CatalogModel.provider_id == provider_id,
+            CatalogModel.feature == "image_generation",
+            CatalogModel.status != "unavailable",
+            CatalogModel.is_deprecated.is_(False),
+            CatalogInstance.endpoint_variant == "image_generations",
+            CatalogInstance.health_status != "unhealthy",
+        )
+    ).all()
+    targets_by_key: dict[str, list[tuple[CatalogModel, CatalogInstance]]] = {}
+    for model, instance in rows:
+        for key in _provider_model_identity_keys(model.model_id, provider_id):
+            targets_by_key.setdefault(key, []).append((model, instance))
+    for selected_model_id in selected_model_ids:
+        candidates: list[tuple[CatalogModel, CatalogInstance]] = []
+        for key in _provider_model_identity_keys(selected_model_id, provider_id):
+            candidates.extend(targets_by_key.get(key, []))
+        if candidates:
+            candidates.sort(
+                key=lambda item: (
+                    not bool(item[1].is_default),
+                    -int(item[1].weight),
+                    item[1].instance_id,
+                )
+            )
+            return candidates[0]
+    raise ProviderConnectionAdminError(
+        "provider_connection.image_probe_model_required",
+        "the saved model selection contains no verified image-generation model",
+        status_code=409,
+    )
+
+
+def _provider_model_identity_keys(model_id: str, provider_id: str) -> set[str]:
+    normalized_model_id = _string(model_id).lower()
+    normalized_provider_id = _string(provider_id).lower()
+    if not normalized_model_id:
+        return set()
+    keys = {normalized_model_id}
+    if "/" in normalized_model_id:
+        keys.add(normalized_model_id.split("/", 1)[1])
+    if normalized_provider_id and normalized_model_id.startswith(f"{normalized_provider_id}/"):
+        keys.add(normalized_model_id[len(normalized_provider_id) + 1 :])
+    if normalized_provider_id and not normalized_model_id.startswith(f"{normalized_provider_id}/"):
+        keys.add(f"{normalized_provider_id}/{normalized_model_id}")
+    return keys
+
+
+def _image_delivery_probe_input(provider_id: str) -> dict[str, Any]:
+    input_payload: dict[str, Any] = {
+        "prompt": _IMAGE_DELIVERY_PROBE_PROMPT,
+        "n": 1,
+    }
+    if provider_id == "siliconflow":
+        input_payload["extra"] = {
+            "image_size": "1024x1024",
+            "batch_size": 1,
+        }
+    return input_payload
+
+
+def _image_delivery_probe_timeout_ms(adapter: Any) -> int:
+    try:
+        timeout_seconds = float(getattr(adapter, "timeout_seconds", 30.0))
+    except (TypeError, ValueError):
+        timeout_seconds = 30.0
+    return max(1_000, min(120_000, int(timeout_seconds * 1_000)))
+
+
+def _inspect_image_delivery_probe_candidate(
+    media_candidates: tuple[ProviderMediaCandidate, ...],
+) -> dict[str, Any]:
+    if len(media_candidates) != 1:
+        raise ImageGenerationArtifactMaterializationError(
+            "image delivery probe must return exactly one candidate"
+        )
+    candidate = media_candidates[0]
+    if candidate.content_bytes is not None:
+        cleaned = clean_provider_image(
+            BytesIO(candidate.content_bytes),
+            declared_mime_types=tuple(value for value in (candidate.claimed_mime_type,) if value),
+            max_output_bytes=PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+        )
+        try:
+            return {
+                "status": "ready",
+                "delivery_format": "base64",
+                "host_approved": True,
+                "content_type": cleaned.content_type,
+                "width": cleaned.width,
+                "height": cleaned.height,
+            }
+        finally:
+            cleaned.stream.close()
+
+    source_url = _string(candidate.source_url)
+    hostname = _normalized_probe_hostname(source_url)
+    allowed_hosts = tuple(candidate.image_output_hosts)
+    if hostname not in allowed_hosts:
+        return {
+            "status": "approval_required",
+            "delivery_format": "url",
+            "detected_host": hostname,
+            "host_approved": False,
+        }
+
+    fetched = fetch_provider_image_url(
+        source_url,
+        allowed_hosts=allowed_hosts,
+    )
+    try:
+        cleaned = clean_provider_image(
+            fetched.stream,
+            declared_mime_types=tuple(
+                value
+                for value in (candidate.claimed_mime_type, fetched.declared_mime_type)
+                if value
+            ),
+            max_output_bytes=PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+        )
+        try:
+            return {
+                "status": "ready",
+                "delivery_format": "url",
+                "detected_host": hostname,
+                "host_approved": True,
+                "content_type": cleaned.content_type,
+                "width": cleaned.width,
+                "height": cleaned.height,
+            }
+        finally:
+            cleaned.stream.close()
+    finally:
+        fetched.close()
+
+
+def _normalized_probe_hostname(source_url: str) -> str:
+    try:
+        hostname = urlsplit(source_url).hostname or ""
+        return normalize_provider_image_output_hosts([hostname])[0]
+    except (IndexError, ValueError) as error:
+        raise ImageGenerationArtifactMaterializationError(
+            "provider image delivery probe returned an invalid host"
+        ) from error
 
 
 def _boundary() -> dict[str, Any]:
@@ -804,6 +1279,7 @@ def _connection_attention_reasons(
     verification_status: str,
     capability_ids: list[str],
     config: dict[str, Any],
+    image_delivery_probe: dict[str, Any] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if configuration_status != "ready":
@@ -815,7 +1291,8 @@ def _connection_attention_reasons(
 
     if "image_generation" in capability_ids:
         image_response_format = _string(config.get("image_response_format")).lower()
-        if not image_response_format:
+        probe_status = _string((image_delivery_probe or {}).get("status"))
+        if not image_response_format and probe_status != "ready":
             reasons.append("image_delivery_unconfirmed")
         elif image_response_format == "url" and not _normalize_id_list(
             config.get("image_output_hosts")
@@ -924,6 +1401,45 @@ def _normalize_id_list(value: object) -> list[str]:
     return normalized
 
 
+def _effective_capability_ids(config: dict[str, Any], kind: str) -> list[str]:
+    capability_ids = _normalize_id_list(config.get("capability_ids"))
+    if _string(kind).lower() == "siliconflow" and "image_generation" not in capability_ids:
+        capability_ids.append("image_generation")
+    return capability_ids
+
+
+def _public_image_delivery_repair(metadata: dict[str, Any]) -> dict[str, Any]:
+    evidence = _dict(metadata.get("image_delivery_repair"))
+    if not evidence:
+        return {}
+    return {
+        "status": _string(evidence.get("status")),
+        "reason_code": _string(evidence.get("reason_code")),
+        "detected_host": _string(evidence.get("detected_host")),
+        "evidence_kind": _string(evidence.get("evidence_kind")) or "runtime_run",
+        "probe_id": _string(evidence.get("probe_id")),
+        "run_id": _string(evidence.get("run_id")),
+        "observed_at": _string(evidence.get("observed_at")),
+        "approved_at": _string(evidence.get("approved_at")),
+    }
+
+
+def _public_image_delivery_probe(metadata: dict[str, Any]) -> dict[str, Any]:
+    evidence = _dict(metadata.get("image_delivery_probe"))
+    if not evidence:
+        return {}
+    return {
+        "probe_id": _string(evidence.get("probe_id")),
+        "status": _string(evidence.get("status")),
+        "provider_id": _string(evidence.get("provider_id")),
+        "model_id": _string(evidence.get("model_id")),
+        "delivery_format": _string(evidence.get("delivery_format")),
+        "detected_host": _string(evidence.get("detected_host")),
+        "tested_at": _string(evidence.get("tested_at")),
+        "host_approved_at": _string(evidence.get("host_approved_at")),
+    }
+
+
 def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(config)
     response_format = _string(normalized.get("image_response_format")).lower()
@@ -957,12 +1473,6 @@ def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
             "provider_connection.image_output_hosts_invalid",
             "image_output_hosts must contain exact host names without schemes, paths, or wildcards",
         ) from error
-
-    if response_format == "url" and not image_output_hosts:
-        raise ProviderConnectionAdminError(
-            "provider_connection.image_output_hosts_required",
-            "image_output_hosts is required when image_response_format is url",
-        )
 
     if response_format:
         normalized["image_response_format"] = response_format

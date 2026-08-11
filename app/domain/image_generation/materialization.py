@@ -13,7 +13,7 @@ from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.core.models import MediaArtifact, RunRecord
+from app.core.models import MediaArtifact, ProviderConnection, RunRecord
 from app.domain.image_generation.contracts import IMAGE_GENERATION_RESULT_CONTRACT
 from app.domain.image_generation.provider_fetch import (
     PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
@@ -63,6 +63,9 @@ class ProviderMediaCandidateLike(Protocol):
 
     @property
     def image_output_hosts(self) -> Sequence[str]: ...
+
+    @property
+    def provider_connection_id(self) -> str: ...
 
     @property
     def index(self) -> int: ...
@@ -149,6 +152,7 @@ def materialize_image_generation_candidates(
     artifacts: list[MediaArtifact] = []
     run_io_bytes = 0
     provider_image_host = ""
+    provider_connection_id = ""
     savepoint = session.begin_nested()
 
     try:
@@ -159,6 +163,9 @@ def materialize_image_generation_candidates(
                 content_bytes = getattr(candidate, "content_bytes", None)
                 source_url = str(getattr(candidate, "source_url", None) or "").strip()
                 provider_image_host = _safe_provider_image_hostname(source_url)
+                provider_connection_id = str(
+                    getattr(candidate, "provider_connection_id", "") or ""
+                ).strip()
                 if bool(content_bytes) == bool(source_url):
                     raise ImageGenerationArtifactMaterializationError(
                         "generated image candidate must have exactly one source"
@@ -260,6 +267,13 @@ def materialize_image_generation_candidates(
         if savepoint.is_active:
             savepoint.rollback()
         if isinstance(error, ProviderImageFetchError):
+            _record_provider_image_fetch_evidence(
+                session,
+                run=run,
+                connection_id=provider_connection_id,
+                reason_code=error.reason_code,
+                detected_host=provider_image_host,
+            )
             _LOGGER.warning(
                 "provider image fetch failed run_id=%s site_id=%s reason=%s host=%s",
                 run.run_id,
@@ -312,6 +326,36 @@ def _safe_provider_image_hostname(source_url: str) -> str:
         return hostname.encode("idna").decode("ascii")
     except (UnicodeError, ValueError):
         return ""
+
+
+def _record_provider_image_fetch_evidence(
+    session: Session,
+    *,
+    run: RunRecord,
+    connection_id: str,
+    reason_code: str,
+    detected_host: str,
+) -> None:
+    if reason_code != "host_not_allowlisted" or not connection_id or not detected_host:
+        return
+    connection = session.get(ProviderConnection, connection_id)
+    if connection is None:
+        return
+    config = connection.config_json if isinstance(connection.config_json, dict) else {}
+    provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+    if provider_id != str(run.selected_provider_id or "").strip():
+        return
+    metadata = dict(connection.metadata_json) if isinstance(connection.metadata_json, dict) else {}
+    metadata["image_delivery_repair"] = {
+        "status": "pending",
+        "reason_code": reason_code,
+        "detected_host": detected_host,
+        "run_id": run.run_id,
+        "provider_id": provider_id,
+        "observed_at": datetime.now(UTC).isoformat(),
+    }
+    connection.metadata_json = metadata
+    session.flush()
 
 
 def clean_provider_image(

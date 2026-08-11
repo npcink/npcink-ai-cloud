@@ -296,6 +296,141 @@ test('supplier row keeps test feedback nearby and deletion under more actions', 
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toHaveCount(0);
 });
 
+test('detected provider image host stays contextual and requires evidence-bound approval', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page);
+  let approved = false;
+  let approvalPayload: unknown = null;
+  await page.route('**/api/admin/ai-resources', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    const repairConnections = connections.map((connection) => (
+      connection.connection_id === 'model_ready'
+        ? {
+          ...connection,
+          config: approved
+            ? { image_response_format: 'url', image_output_hosts: ['images.provider.example'] }
+            : connection.config,
+          image_delivery_repair: approved ? { status: 'approved' } : {
+            status: 'pending',
+            reason_code: 'host_not_allowlisted',
+            detected_host: 'images.provider.example',
+            run_id: 'run_image_host_review',
+            observed_at: '2026-08-11T00:00:00Z',
+          },
+        }
+        : connection
+    ));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({ connections: repairConnections })),
+    });
+  });
+  await page.route('**/api/admin/provider-connections/model_ready/approve-image-host', async (route) => {
+    approvalPayload = route.request().postDataJSON();
+    approved = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        approved_image_output_host: 'images.provider.example',
+        receipt: {
+          event_kind: 'provider_connection.image_host_approve',
+          scope_kind: 'provider_connection',
+          scope_id: 'model_ready',
+          outcome: 'succeeded',
+        },
+      })),
+    });
+  });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+
+  const repair = page.locator('[data-ui="provider-image-host-repair"]');
+  await expect(repair).toContainText('images.provider.example');
+  const approvalButton = repair.getByRole('button', { name: /Approve this exact host|批准此精确域名/i });
+  await expect(approvalButton).toBeVisible();
+  await approvalButton.click();
+
+  await expect(repair).toHaveCount(0);
+  expect(approvalPayload).toEqual({ evidence_run_id: 'run_image_host_review' });
+  await expect(page.getByText(/Exact image host approved|精确图片域名已批准/i)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await testInfo.attach('provider-image-host-approval', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
+});
+
+test('image delivery probe discovers the exact host without manual entry', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page);
+  let approvalPayload: unknown = null;
+  await page.route('**/api/admin/provider-connections/model_ready/image-delivery-probes', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        probe_id: 'image-probe-browser',
+        connection_id: 'model_ready',
+        provider_id: 'openai',
+        model_id: 'gpt-image-2',
+        status: 'approval_required',
+        ok: false,
+        delivery_format: 'url',
+        detected_host: 'images.provider.example',
+        host_approved: false,
+        latency_ms: 321,
+        estimated_cost: 0.0123,
+        provider_call_billable: true,
+        tested_at: '2026-08-11T00:00:00Z',
+        message: 'provider image host approval is required',
+        receipt: {
+          event_kind: 'provider_connection.image_delivery_probe',
+          scope_kind: 'provider_connection',
+          scope_id: 'model_ready',
+          outcome: 'succeeded',
+        },
+      })),
+    });
+  });
+  await page.route('**/api/admin/provider-connections/model_ready/approve-image-host', async (route) => {
+    approvalPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        approved_image_output_host: 'images.provider.example',
+        evidence_probe_id: 'image-probe-browser',
+        receipt: {
+          event_kind: 'provider_connection.image_host_approve',
+          scope_kind: 'provider_connection',
+          scope_id: 'model_ready',
+          outcome: 'succeeded',
+        },
+      })),
+    });
+  });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+
+  await page.locator('[data-connection-id="model_ready"]')
+    .getByRole('button', { name: /^Configure$|^配置$/i })
+    .click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText(/may incur a small provider charge|可能收取少量费用/i)).toBeVisible();
+  await dialog.getByRole('button', { name: /Test image delivery|测试图片交付/i }).click();
+  await expect(dialog.getByText(/images\.provider\.example/)).toBeVisible();
+  await dialog.getByRole('button', { name: /Approve this exact host|批准此精确域名/i }).click();
+
+  expect(approvalPayload).toEqual({ evidence_probe_id: 'image-probe-browser' });
+  await expect(dialog.getByText(/Run the test again|再次测试/i)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test('failed supplier test keeps its canonical error and audit receipt', async ({ page }) => {
   await installProviderDirectoryHarness(page);
   await page.route('**/api/admin/provider-connections/model_attention/test', async (route) => {

@@ -1124,6 +1124,7 @@ APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collect
 RELEASE_PLAN_LANE="full"
 RUN_DATA_PHASE=1
 RUN_MIGRATION=1
+PLAN_PRESERVE_BACKEND=0
 RECOVERY_REQUIRED_SERVICES=(redis proxy frontend api worker callback-worker ops-worker)
 PREVIOUS_WRITER_SERVICES=(api worker callback-worker ops-worker)
 CONFIG_DIR_HOST="${REMOTE_DIR}/shared/config"
@@ -2623,6 +2624,55 @@ PY
 	echo "[ok] Preserved frontend image and source identity recorded for release readiness."
 }
 
+assert_preserved_backend_services_running() {
+	local service=""
+	local role=""
+	local container_ids=""
+	local container_count=0
+	local container_id=""
+	local expected_image_id=""
+	local actual_image_id=""
+	local state=""
+
+	[ "${PLAN_PRESERVE_BACKEND}" = "1" ] || return 0
+	while IFS=$'\t' read -r service role; do
+		[ -n "${service}" ] || continue
+		container_ids="$(compose_previous_release ps -q "${service}")" || return 1
+		container_count="$(printf '%s\n' "${container_ids}" | awk 'NF { count += 1 } END { print count + 0 }')"
+		if [ "${container_count}" -ne 1 ]; then
+			echo "[fail] Frontend-only release requires exactly one running preserved ${service} container." >&2
+			return 1
+		fi
+		container_id="$(printf '%s\n' "${container_ids}" | awk 'NF { print; exit }')"
+		expected_image_id="$(
+			"${RELEASE_TOOL_PYTHON}" \
+				"${RELEASE_DIR}/scripts/verify-release-bundle-manifest.py" \
+				loaded-role-daemon-id --root "${RELEASE_DIR}" --role "${role}"
+		)" || {
+			echo "[fail] Frontend-only release could not prove the exact ${service} target-daemon image ID." >&2
+			return 1
+		}
+		[[ "${expected_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+		actual_image_id="$(docker inspect --format '{{.Image}}' "${container_id}")" || return 1
+		state="$(docker inspect --format '{{.State.Running}} {{.State.Restarting}}' "${container_id}")" || return 1
+		if [ "${actual_image_id}" != "${expected_image_id}" ]; then
+			echo "[fail] Preserved ${service} container does not use the exact current daemon image ID." >&2
+			return 1
+		fi
+		if [ "${state}" != "true false" ]; then
+			echo "[fail] Preserved ${service} container is not stably running." >&2
+			return 1
+		fi
+	done <<'SERVICES'
+redis	external_redis
+api	api
+worker	worker
+callback-worker	callback_worker
+ops-worker	ops_worker
+SERVICES
+	echo "[ok] Frontend-only release preserved exact API, worker, and Redis container identities."
+}
+
 assert_previous_release_services_running() {
 	local previous_compose_config="$1"
 	local service_name=""
@@ -2951,7 +3001,7 @@ path = Path(sys.argv[1])
 try:
     plan = json.loads(path.read_text(encoding="utf-8"))
 except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-    print("full\t1\t1\t0")
+    print("full\t1\t1\t0\t0")
     raise SystemExit(0)
 
 lane = plan.get("lane")
@@ -2972,22 +3022,47 @@ backend = {
     "static_payload_required": False,
 }
 migration = {**backend, "migration_required": True}
+frontend = {
+    "deployment_required": True,
+    "backend_image_required": False,
+    "frontend_image_required": True,
+    "migration_required": False,
+    "runtime_config_required": False,
+    "static_payload_required": False,
+}
 typed_flags = all(type(value) is bool for value in flags.values())
-if typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "backend" and flags == backend:
-    print("backend\t0\t0\t1")
-elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v1" and lane == "migration" and flags == migration:
-    print("migration\t1\t1\t1")
+if typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "backend" and flags == backend:
+    print("backend\t0\t0\t1\t0")
+elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "migration" and flags == migration:
+    print("migration\t1\t1\t1\t0")
+elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "frontend" and flags == frontend:
+    print("frontend\t0\t0\t0\t1")
 else:
-    print("full\t1\t1\t0")
+    print("full\t1\t1\t0\t0")
 PY
 )"
-	IFS=$'\t' read -r RELEASE_PLAN_LANE RUN_DATA_PHASE RUN_MIGRATION PLAN_PRESERVE_FRONTEND <<<"${RELEASE_PLAN_EXECUTION}"
+	IFS=$'\t' read -r RELEASE_PLAN_LANE RUN_DATA_PHASE RUN_MIGRATION PLAN_PRESERVE_FRONTEND PLAN_PRESERVE_BACKEND <<<"${RELEASE_PLAN_EXECUTION}"
 	if [ "${PLAN_PRESERVE_FRONTEND}" = "1" ]; then
 		SKIP_FRONTEND_IMAGE=1
 		APPLICATION_SERVICES=(caddy proxy api worker callback-worker ops-worker jaeger otel-collector release-one-off)
 	fi
+	if [ "${PLAN_PRESERVE_BACKEND}" = "1" ]; then
+		if [ "${SKIP_FRONTEND_IMAGE}" = "1" ]; then
+			echo "[fail] Frontend-only release cannot also preserve the previous frontend." >&2
+			exit 1
+		fi
+		if [ -z "${PREVIOUS_RELEASE_DIR}" ]; then
+			echo "[fail] Frontend-only release requires an existing managed current release." >&2
+			exit 1
+		fi
+		if [ "${FIRST_INSTALL_PENDING_REPAIR}" = "1" ] || [ "${FINALIZED_RUNTIME_NETWORK_REPAIR}" = "1" ]; then
+			echo "[fail] Frontend-only release cannot be combined with a runtime repair mode." >&2
+			exit 1
+		fi
+		APPLICATION_SERVICES=(caddy proxy frontend release-one-off)
+	fi
 fi
-echo "[info] Release execution plan: lane=${RELEASE_PLAN_LANE}, data_phase=${RUN_DATA_PHASE}, migration=${RUN_MIGRATION}, preserve_frontend=${SKIP_FRONTEND_IMAGE}"
+echo "[info] Release execution plan: lane=${RELEASE_PLAN_LANE}, data_phase=${RUN_DATA_PHASE}, migration=${RUN_MIGRATION}, preserve_frontend=${SKIP_FRONTEND_IMAGE}, preserve_backend=${PLAN_PRESERVE_BACKEND}"
 
 ensure_private_release_state_directory "${RELEASE_STATE_ROOT}"
 ensure_private_release_state_directory "${RELEASE_STATE_DIR}"
@@ -3081,6 +3156,10 @@ case "${INSTALLATION_STATE}" in
 	complete)
 		;;
 esac
+if [ "${PLAN_PRESERVE_BACKEND}" = "1" ] && [ "${INSTALLATION_STATE}" != "complete" ]; then
+	echo "[fail] Frontend-only release requires installation_state=complete." >&2
+	exit 1
+fi
 
 if [ "${FIRST_INSTALL_PENDING_MARKER_PRESENT}" = "1" ]; then
 	if [ "${FIRST_INSTALL_PENDING_REPAIR}" != "1" ]; then
@@ -3424,7 +3503,7 @@ if [ "${RUN_DATA_PHASE}" = "1" ]; then
 		bash deploy/remote-load-and-up.sh </dev/null
 else
 	CUTOVER_PHASE="preserve-data-services"
-	echo "[ok] Exact backend release plan preserves the running PostgreSQL and Redis services."
+	echo "[ok] Exact ${RELEASE_PLAN_LANE} release plan preserves the running PostgreSQL and Redis services."
 fi
 
 if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
@@ -3432,7 +3511,7 @@ if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
 	echo "[ok] Empty PostgreSQL 18 migration is deferred to the authenticated setup installer."
 elif [ "${RUN_MIGRATION}" != "1" ]; then
 	CUTOVER_PHASE="skip-migration-by-release-plan"
-	echo "[ok] Exact backend release plan does not require a database migration."
+	echo "[ok] Exact ${RELEASE_PLAN_LANE} release plan does not require a database migration."
 else
 	CUTOVER_PHASE="migrate-with-staged-image"
 	# From this assignment forward the old application is never auto-started: a
@@ -3442,41 +3521,51 @@ else
 		bash deploy/remote-migrate.sh </dev/null
 fi
 
-if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${REFRESH_PROVIDERS}" = "1" ]; then
+if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${REFRESH_PROVIDERS}" = "1" ] && \
+	[ "${PLAN_PRESERVE_BACKEND}" != "1" ]; then
 	CUTOVER_PHASE="refresh-provider-projections-with-staged-image"
 	remote_run_timed "remote refresh providers" \
 		bash deploy/remote-refresh-providers.sh </dev/null
+elif [ "${PLAN_PRESERVE_BACKEND}" = "1" ]; then
+	CUTOVER_PHASE="preserve-provider-projections"
+	echo "[ok] Frontend-only release preserves backend provider projections."
 fi
 
 CUTOVER_PHASE="activate-new-release-pointer"
 atomic_set_current "${RELEASE_DIR}"
 
-CUTOVER_PHASE="start-new-api"
-remote_run_timed "remote start new API only" \
-	env NPCINK_CLOUD_LOAD_MODE=api-only \
-	bash deploy/remote-load-and-up.sh </dev/null
+if [ "${PLAN_PRESERVE_BACKEND}" = "1" ]; then
+	CUTOVER_PHASE="prove-preserved-backend-services"
+	remote_run_timed "prove preserved backend service identities" \
+		assert_preserved_backend_services_running
+else
+	CUTOVER_PHASE="start-new-api"
+	remote_run_timed "remote start new API only" \
+		env NPCINK_CLOUD_LOAD_MODE=api-only \
+		bash deploy/remote-load-and-up.sh </dev/null
 
-CUTOVER_PHASE="start-new-workers"
-WORKER_CUTOFF="$("${RELEASE_TOOL_PYTHON}" - <<'PY'
+	CUTOVER_PHASE="start-new-workers"
+	WORKER_CUTOFF="$("${RELEASE_TOOL_PYTHON}" - <<'PY'
 from datetime import datetime, timezone
 
 print(datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"))
 PY
 )"
-remote_run_timed "remote start new workers after API readiness" \
-	env NPCINK_CLOUD_LOAD_MODE=workers-only \
-	bash deploy/remote-load-and-up.sh </dev/null
+	remote_run_timed "remote start new workers after API readiness" \
+		env NPCINK_CLOUD_LOAD_MODE=workers-only \
+		bash deploy/remote-load-and-up.sh </dev/null
 
-if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
-	CUTOVER_PHASE="workers-wait-for-first-install"
-	echo "[ok] Worker containers are running the bounded install-state wait wrapper."
-else
-	CUTOVER_PHASE="verify-worker-operational-readiness"
-	remote_run_timed "remote internal operational readiness before traffic" \
-		env NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL=1 \
-		bash deploy/remote-operational-ready.sh \
-			--base-url "${BASE_URL}" \
-			--worker-cutoff "${WORKER_CUTOFF}" </dev/null
+	if [ "${FIRST_INSTALL_PENDING}" = "1" ]; then
+		CUTOVER_PHASE="workers-wait-for-first-install"
+		echo "[ok] Worker containers are running the bounded install-state wait wrapper."
+	else
+		CUTOVER_PHASE="verify-worker-operational-readiness"
+		remote_run_timed "remote internal operational readiness before traffic" \
+			env NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL=1 \
+			bash deploy/remote-operational-ready.sh \
+				--base-url "${BASE_URL}" \
+				--worker-cutoff "${WORKER_CUTOFF}" </dev/null
+	fi
 fi
 
 CUTOVER_PHASE="restore-frontend-and-proxy-traffic"

@@ -207,9 +207,11 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "dev-compose.sh",
         "dev-frontend-recover.sh",
         "local-alpha-smoke.sh",
+        "production-application-image-inputs.py",
         "production-image-supply.py",
         "production-ci-evidence.py",
         "production-release-plan.py",
+        "resolve-production-release-action.py",
         "production-release-preflight.py",
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
@@ -680,6 +682,16 @@ def _run_runtime_network_contract_prepare(
         release / "docker-compose.runtime.yml",
     )
     (release / "docker-compose.prod.yml").write_text("services: {}\n", encoding="utf-8")
+    (release / "release-bundle-manifest.json").write_text(
+        json.dumps(
+            {
+                "created_at_utc": "2026-08-11T00:00:00+00:00",
+                "source": {"revision": "a" * 40},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     for helper in ("verify-release-bundle.sh", "certificate-renewal-readiness.sh"):
         helper_path = deploy / helper
@@ -1384,12 +1396,16 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
             "NEXT_PUBLIC_ENV",
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE",
             "NPCINK_CLOUD_SETUP_STATE_OVERRIDE",
+            "NPCINK_CLOUD_FRONTEND_REVISION",
+            "NPCINK_CLOUD_DEPLOYMENT_RELEASE",
             "NODE_ENV",
         },
         "docker-compose.runtime.yml": {
             "CLOUD_API_BASE_URL",
             "CLOUD_PUBLIC_BASE_URL",
             "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE",
+            "NPCINK_CLOUD_FRONTEND_REVISION",
+            "NPCINK_CLOUD_DEPLOYMENT_RELEASE",
             "NODE_ENV",
         },
     }
@@ -1831,7 +1847,11 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     )
     assert "run_formal_release_smoke:" in workflow
     assert "default: false" in workflow
-    assert "installation_state == 'complete' && inputs.run_formal_release_smoke" in workflow
+    assert (
+        "installation_state == 'complete' && "
+        "steps.deploy.outputs.health_profile == 'runtime' && "
+        "inputs.run_formal_release_smoke"
+    ) in workflow
     assert "Failed closed because the selected formal release smoke" in workflow
     assert "exit 1" in workflow
     assert "Record deferred formal release smoke" in workflow
@@ -1844,6 +1864,18 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     assert "exactly one explicit installation_state=pending|complete" in workflow
     assert "steps.deploy.outputs.installation_state == 'pending'" in workflow
     assert workflow.count("steps.deploy.outputs.installation_state == 'complete'") == 3
+    assert "Resolve exact release execution plan" in workflow
+    assert "scripts/resolve-production-release-action.py" in workflow
+    assert "${RUNNER_TEMP}/production-release-plan/production-release-plan.json" in workflow
+    assert "Exact no_deploy release plan requires no production host mutation." in workflow
+    assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in workflow
+    assert "steps.release_plan.outputs.action != 'no_deploy'" in workflow
+    assert "steps.deploy.outputs.health_profile == 'runtime'" in workflow
+    assert "Formal release smoke is valid only for a runtime release plan." in workflow
+    assert "Record plan-scoped verification" in workflow
+    assert "formal_smoke=not_applicable" in workflow
+    assert "A no-deploy release cannot request runtime-network repair." in workflow
+    assert "A static release cannot request runtime-network repair." in workflow
     assert "Post-install preflight and release smoke were intentionally skipped." in workflow
     assert (
         "While the lifecycle remains pending, run the complete-only Release Smoke workflow"
@@ -2178,9 +2210,11 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
         in frontend_dockerfile
     )
     assert "pnpm install --frozen-lockfile --filter frontend..." in frontend_dockerfile
-    assert "ARG NPCINK_CLOUD_SOURCE_REVISION=unknown" in frontend_dockerfile
-    assert "ENV NPCINK_CLOUD_FRONTEND_REVISION=${NPCINK_CLOUD_SOURCE_REVISION}" in (
-        frontend_dockerfile
+    assert "NPCINK_CLOUD_SOURCE_REVISION" not in frontend_dockerfile
+    assert "NPCINK_CLOUD_FRONTEND_REVISION" not in frontend_dockerfile
+    assert (
+        "NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}"
+        in compose_text
     )
 
     assert "CLOUD_API_BASE_URL: process.env.CLOUD_API_BASE_URL" not in next_config
@@ -2249,7 +2283,8 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "proxy_pass http://npcink_ai_cloud_api;" in nginx_prod_conf
     assert "./site:/usr/share/nginx/html/npcink-site:ro" in runtime_compose_text
     assert 'git -C "${CLOUD_DIR}" archive HEAD --' in bundle_script
-    assert '--build-arg "NPCINK_CLOUD_SOURCE_REVISION=${REVISION}"' in bundle_script
+    assert "NPCINK_CLOUD_SOURCE_REVISION" not in bundle_script
+    assert "production-application-image-inputs.py" in bundle_script
     archive_paths_block = bundle_script.split("ARCHIVE_PATHS=(", 1)[1].split("\n)", 1)[0]
     assert "\n\tsite\n" in archive_paths_block
     for public_frontend_path in (
@@ -2364,7 +2399,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     backend_gate = (cloud_root / "scripts" / "check-pr-backend-gate.sh").read_text()
     assert "deploy/image-lock/*|deploy/image-lock/**/*" in backend_gate
     assert "scripts/production-python-extras-smoke.sh" in backend_gate
-    assert "scripts/production-image-supply.py|scripts/scan-production-images.sh" in backend_gate
+    assert "scripts/production-application-image-inputs.py|scripts/production-image-supply.py" in (
+        backend_gate
+    )
     assert 'docker tag "${source_reference}" "${alias_reference}"' in remote_load_script
     assert "prepare-plan" in remote_load_script
     assert "verify loaded image IDs" in remote_load_script
@@ -2372,6 +2409,9 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-deploy-bundle:" in ci_workflow
     assert "production-deploy-bundle-${{ github.sha }}" in ci_workflow
     assert "bash deploy/bundle-images.sh" in ci_workflow
+    assert "release_action: ${{ steps.release_plan.outputs.action }}" in ci_workflow
+    assert "needs.production-release-plan.outputs.release_action == 'runtime'" in ci_workflow
+    assert 'test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "skipped"' in ci_workflow
     assert "production-promotion-evidence:" in ci_workflow
     assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
     assert "Create production PR CI evidence receipt" in ci_workflow
@@ -2402,12 +2442,30 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
+    assert "production-release-plan-${GITHUB_SHA}" in deploy_workflow
+    assert "Resolve exact release execution plan" in deploy_workflow
+    assert "if: steps.release_plan.outputs.action == 'runtime'" in deploy_workflow
+    assert (
+        "${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
+        in deploy_workflow
+    )
+    assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in deploy_workflow
+    assert "steps.deploy.outputs.health_profile == 'runtime'" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow
     assert "pnpm/action-setup" not in deploy_workflow
     assert "docker/setup-buildx-action" not in deploy_workflow
     assert "bash deploy/small-customer-trial-preflight.sh" in deploy_workflow
     assert "--require-alipay-enabled" in deploy_workflow
     assert "bash deploy/release-smoke.sh --base-url" in deploy_workflow
+    assert "--deploy-log" in deploy_workflow
+    assert "--source-repository" in deploy_workflow
+    assert "--source-sha" in deploy_workflow
+    assert "--workflow-run-id" in deploy_workflow
+    assert "production-deploy-phase-timing.json" in deploy_workflow
+    assert "production-deploy-timing-${{ github.run_id }}-${{ github.sha }}" in (
+        deploy_workflow
+    )
+    assert 'pipeline_status=("${PIPESTATUS[@]}")' in deploy_workflow
     assert "ci-observability:" in ci_workflow
     assert "python3 scripts/report-release-timing.py" in ci_workflow
     assert "artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" in ci_workflow
@@ -2424,6 +2482,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "pytest-backend-timing-shard-${{ matrix.shard }}" in ci_workflow
     assert (cloud_root / "ci" / "pytest-backend-durations.json").is_file()
     assert "deploy:static-terms:ssh" in package_json
+    assert "release:timing:compare" in package_json
     assert "release:junit-timing" in package_json
     assert 'CURRENT_LINK="${REMOTE_DIR}/current"' in static_terms_deploy_script
     assert 'tar czf "${TERMS_BUNDLE}" -C "${ROOT_DIR}/site" terms' in (static_terms_deploy_script)

@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -257,9 +258,14 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert 'if ! mkdir "${lock_dir}"' in source
     assert "lock_acquired=0" in source
     assert 'if [ "${lock_acquired}" = "1" ]; then' in source
-    assert "built_image_marker" in source
-    assert "deployed_image_marker" in source
+    assert "built_runtime_image_marker" in source
+    assert "built_frontend_image_marker" in source
+    assert "deployed_runtime_image_marker" in source
+    assert "deployed_frontend_image_marker" in source
+    assert "deployed_orchestration_marker" in source
     assert "deployed_config_marker" in source
+    assert "deployed_worker_source_marker" in source
+    assert "deployed_migration_source_marker" in source
     assert "prepared image inputs are not deployed" in source
     assert 'test ! -L "${remote_dir}"' in source
     assert 'resolved_remote_dir="$(cd "${remote_dir}" && pwd -P)"' in source
@@ -284,8 +290,18 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "--max-time 120" in source
     assert "--speed-time 20" in source
     assert "source_dirty_paths" in source
-    assert 'export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"' in source
-    assert '"${compose[@]}" up -d --no-build --pull never frontend' in source
+    assert "frontend_source_fingerprint" in source
+    assert 'export NPCINK_CLOUD_FRONTEND_REVISION="${frontend_runtime_revision}"' in source
+    assert "frontend source, image, and config are unchanged; recreate skipped" in source
+    assert "frontend_recreate=" in source
+    assert "service-plan migration=" in source
+    assert "worker_restart=" in source
+    assert "migration source is unchanged; Alembic upgrade skipped" in source
+    assert "live database revision matches the expected Alembic head" in source
+    assert "live database revision drifted; Alembic upgrade required" in source
+    assert "worker source is unchanged; worker restart skipped" in source
+    assert "proxy config is unchanged; proxy reload skipped" in source
+    assert '"${compose[@]}" up -d --no-build --pull never --force-recreate frontend' in source
     assert "acceptance_state" in source
     assert "promotion_pr" in source
     assert "deployed_at_utc" in source
@@ -301,6 +317,12 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "docker compose" in source
     assert "exec --interactive=false -T" in source
     assert "building runtime image on M4" in source
+    assert "building frontend image on M4" in source
+    assert "image-plan runtime_build=" in source
+    assert "runtime_image_input_sha256" in source
+    assert "frontend_image_input_sha256" in source
+    assert "deployment_orchestration_sha256" in source
+    assert "deployment orchestration changed" in source
     assert "ghcr.nju.edu.cn/astral-sh/uv:" in source
     assert "m.daocloud.io/docker.io/library/python:" in source
     assert "m.daocloud.io/docker.io/library/node:" in source
@@ -356,9 +378,389 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
         'elif [ "${mode}" = "deploy" ]; then',
         1,
     )[0]
-    assert "deployed_image_marker" not in prepare_block
+    assert "deployed_runtime_image_marker" not in prepare_block
+    assert "deployed_frontend_image_marker" not in prepare_block
+    assert "deployed_orchestration_marker" not in prepare_block
     assert "deployed_config_marker" not in prepare_block
-    assert source.index("wait_for_http") < source.index('> "${deployed_image_marker}"')
+    assert source.index("wait_for_http") < source.index(
+        '> "${deployed_runtime_image_marker}"'
+    )
+    assert source.index("wait_for_http") < source.index(
+        '> "${deployed_frontend_image_marker}"'
+    )
+    assert source.index("wait_for_http") < source.index(
+        '> "${deployed_orchestration_marker}"'
+    )
+    assert source.index("wait_for_http") < source.index(
+        '> "${deployed_frontend_source_marker}"'
+    )
+
+
+def test_m4_frontend_recreate_is_selected_only_for_frontend_relevant_change() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    selection = source.split(
+        'if [ "${frontend_source_changed}" = "1" ] ||',
+        1,
+    )[1].split("\nfi\n", 1)[0]
+    assert '"${frontend_config_changed}" = "1"' in selection
+    assert '"${frontend_volume_refresh_required}" = "1"' in selection
+    assert '"${compose[@]}" ps -q frontend' in selection
+    assert "frontend_recreate_required=1" in selection
+    assert "service-plan migration=" in source
+    assert "worker_restart=" in source
+    assert "frontend_recreate=" in source
+    assert '[[ "${previous_frontend_revision}" =~ ^[0-9a-f]{40}$ ]]' in source
+    assert '"${compose[@]}" config --format json' in source
+    assert "deployed_frontend_config_marker" in source
+    assert "frontend_config_sha256" in source
+
+    deploy_block = source.split('elif [ "${mode}" = "deploy" ]; then', 1)[1].split(
+        "\nelse\n",
+        1,
+    )[0]
+    assert (
+        '"${compose[@]}" up -d --no-build --pull never \\\n'
+        "\t\tpostgres redis api worker callback-worker ops-worker"
+    ) in deploy_block
+    assert "postgres redis api frontend worker" not in deploy_block
+    assert '--force-recreate frontend' in deploy_block
+    assert "recreate skipped" in deploy_block
+
+
+def test_m4_frontend_source_fingerprint_ignores_backend_and_tracks_frontend(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    function_body = source.split("frontend_source_fingerprint() {", 1)[1].split(
+        "\n}\n\nsource_path_allowed()",
+        1,
+    )[0]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for relative, content in {
+        "README.md": "backend-only\n",
+        "package.json": "{}\n",
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+        "pnpm-workspace.yaml": "packages: [frontend]\n",
+        "frontend/package.json": "{}\n",
+        "frontend/src/page.tsx": "export default 1;\n",
+    }.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    runner = tmp_path / "fingerprint.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"frontend_source_fingerprint() {{{function_body}\n}}\n"
+        "frontend_source_fingerprint\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    def fingerprint() -> str:
+        return subprocess.run(
+            ["bash", str(runner)],
+            env={**os.environ, "ROOT_DIR": str(repo)},
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    initial = fingerprint()
+    (repo / "README.md").write_text("changed backend-only\n", encoding="utf-8")
+    assert fingerprint() == initial
+
+    (repo / "frontend/src/page.tsx").write_text(
+        "export default 2;\n",
+        encoding="utf-8",
+    )
+    changed = fingerprint()
+    assert changed != initial
+
+    (repo / "frontend/src/page.tsx").unlink()
+    deleted = fingerprint()
+    assert deleted != initial
+    assert deleted != changed
+
+
+def test_m4_runtime_and_frontend_image_fingerprints_are_independent(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    fingerprint_functions = "image_fingerprint() {" + source.split(
+        "image_fingerprint() {",
+        1,
+    )[1].split("\nconfig_fingerprint() {", 1)[0]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for relative, content in {
+        "Dockerfile": "runtime dockerfile\n",
+        "pyproject.toml": "[project]\nname='runtime'\n",
+        "uv.lock": "version = 1\n",
+        ".dockerignore": ".git\n",
+        "frontend/Dockerfile.dev": "frontend dockerfile\n",
+        "frontend/package.json": "{}\n",
+        "package.json": "{}\n",
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+        "pnpm-workspace.yaml": "packages: [frontend]\n",
+        "scripts/m4-preview.sh": (
+            "orchestration=v1\n"
+            "# BEGIN M4 runtime image build recipe\n"
+            "runtime_recipe=v1\n"
+            "# END M4 runtime image build recipe\n"
+            "# BEGIN M4 frontend image build recipe\n"
+            "frontend_recipe=v1\n"
+            "# END M4 frontend image build recipe\n"
+        ),
+    }.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    runner = tmp_path / "image-fingerprint.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"{fingerprint_functions}\n"
+        'case "$1" in\n'
+        "  runtime) runtime_image_fingerprint ;;\n"
+        "  frontend) frontend_image_fingerprint ;;\n"
+        "  orchestration) deployment_orchestration_fingerprint ;;\n"
+        "  *) exit 64 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+    shasum = tmp_path / "shasum"
+    shasum.write_text(
+        "#!/usr/bin/env python3\n"
+        "import hashlib\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if args[:2] != ['-a', '256']:\n"
+        "    raise SystemExit(64)\n"
+        "paths = args[2:]\n"
+        "if paths:\n"
+        "    for path in paths:\n"
+        "        digest = hashlib.sha256(open(path, 'rb').read()).hexdigest()\n"
+        "        print(f'{digest}  {path}')\n"
+        "else:\n"
+        "    digest = hashlib.sha256(sys.stdin.buffer.read()).hexdigest()\n"
+        "    print(f'{digest}  -')\n",
+        encoding="utf-8",
+    )
+    shasum.chmod(0o755)
+
+    def fingerprint(kind: str) -> str:
+        return subprocess.run(
+            ["bash", str(runner), kind],
+            env={
+                **os.environ,
+                "PATH": f"{tmp_path}:{os.environ['PATH']}",
+                "ROOT_DIR": str(repo),
+            },
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    initial_runtime = fingerprint("runtime")
+    initial_frontend = fingerprint("frontend")
+    initial_orchestration = fingerprint("orchestration")
+
+    preview_script = repo / "scripts/m4-preview.sh"
+    preview_script.write_text(
+        preview_script.read_text(encoding="utf-8").replace(
+            "orchestration=v1",
+            "orchestration=v2",
+        ),
+        encoding="utf-8",
+    )
+    assert fingerprint("runtime") == initial_runtime
+    assert fingerprint("frontend") == initial_frontend
+    changed_orchestration = fingerprint("orchestration")
+    assert changed_orchestration != initial_orchestration
+
+    (repo / "Dockerfile").write_text("runtime dockerfile v2\n", encoding="utf-8")
+    assert fingerprint("runtime") != initial_runtime
+    assert fingerprint("frontend") == initial_frontend
+    assert fingerprint("orchestration") == changed_orchestration
+    (repo / "Dockerfile").write_text("runtime dockerfile\n", encoding="utf-8")
+
+    (repo / "frontend/Dockerfile.dev").write_text(
+        "frontend dockerfile v2\n",
+        encoding="utf-8",
+    )
+    assert fingerprint("runtime") == initial_runtime
+    assert fingerprint("frontend") != initial_frontend
+    assert fingerprint("orchestration") == changed_orchestration
+    (repo / "frontend/Dockerfile.dev").write_text(
+        "frontend dockerfile\n",
+        encoding="utf-8",
+    )
+
+    preview_script.write_text(
+        preview_script.read_text(encoding="utf-8").replace(
+            "runtime_recipe=v1",
+            "runtime_recipe=v2",
+        ),
+        encoding="utf-8",
+    )
+    assert fingerprint("runtime") != initial_runtime
+    assert fingerprint("frontend") == initial_frontend
+    assert fingerprint("orchestration") == changed_orchestration
+
+
+def test_m4_worker_and_migration_source_fingerprints_are_independent(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    fingerprint_functions = "scoped_source_fingerprint() {" + source.split(
+        "scoped_source_fingerprint() {",
+        1,
+    )[1].split("\nsource_path_allowed() {", 1)[0]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for relative, content in {
+        "README.md": "unrelated\n",
+        "alembic.ini": "[alembic]\n",
+        "app/main.py": "VALUE = 1\n",
+        "migrations/env.py": "VALUE = 1\n",
+        "migrations/versions/0001_test.py": "VALUE = 1\n",
+    }.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    source_stage = tmp_path / "source-stage"
+    shutil.copytree(repo, source_stage)
+    runner = tmp_path / "source-fingerprint.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"{fingerprint_functions}\n"
+        'case "$1" in\n'
+        "  worker) worker_source_fingerprint ;;\n"
+        "  migration) migration_source_fingerprint ;;\n"
+        "  *) exit 64 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    def fingerprint(kind: str) -> str:
+        return subprocess.run(
+            ["bash", str(runner), kind],
+            cwd=repo,
+            env={
+                **os.environ,
+                "ROOT_DIR": str(repo),
+                "SOURCE_STAGE_PATH": str(source_stage),
+            },
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    initial_worker = fingerprint("worker")
+    initial_migration = fingerprint("migration")
+    (source_stage / "README.md").write_text("unrelated change\n", encoding="utf-8")
+    assert fingerprint("worker") == initial_worker
+    assert fingerprint("migration") == initial_migration
+
+    (repo / "app/main.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert fingerprint("worker") == initial_worker
+    (source_stage / "app/main.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert fingerprint("worker") != initial_worker
+    assert fingerprint("migration") == initial_migration
+    (source_stage / "app/main.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    (source_stage / "migrations/versions/0001_test.py").write_text(
+        "VALUE = 2\n",
+        encoding="utf-8",
+    )
+    assert fingerprint("worker") == initial_worker
+    assert fingerprint("migration") != initial_migration
+
+
+def test_m4_source_sync_refreshes_identity_and_skips_unrelated_runtime_mutations() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    sync_block = _marked_shell_block(source, "selective M4 source sync")
+
+    migration_guard = sync_block.split(
+        'if [ "${migration_required}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    worker_guard = sync_block.split(
+        'if [ "${worker_restart_required}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    frontend_guard = sync_block.split(
+        'if [ "${frontend_recreate_required}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    proxy_guard = sync_block.split(
+        'if [ "${nginx_config_changed}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+
+    assert "alembic upgrade head" in migration_guard
+    assert "stack_touched=1" in migration_guard
+    assert 'up -d --no-build --pull never --force-recreate api' in sync_block
+    assert "restart worker callback-worker ops-worker" in worker_guard
+    assert "stack_touched=1" in worker_guard
+    assert "--force-recreate frontend" in frontend_guard
+    assert "stack_touched=1" in frontend_guard
+    assert "nginx -s reload" in proxy_guard
+    assert "restart proxy" in proxy_guard
+    assert "proxy config is unchanged; proxy reload skipped" in sync_block
+
+
+def test_m4_migration_skip_requires_live_database_head_proof() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    proof_start = source.index(
+        'if [ "${mode}" != "prepare" ] && [ "${migration_required}" = "0" ]; then'
+    )
+    proof_end = source.index('\nfi\n\nif [ "${mode}" != "prepare" ]; then', proof_start)
+    proof = source[proof_start:proof_end]
+
+    assert "alembic heads" in proof
+    assert "alembic current" in proof
+    assert "migration_required=1" in proof
+    assert source.index("service-plan migration=", proof_end) > proof_end
+
+
+def test_m4_image_build_and_frontend_volume_plans_are_independent() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    build_block = source.split(
+        'if [ "${mode}" != "sync" ] &&',
+        1,
+    )[1].split("\nfi\n\nrefresh_frontend_dependency_volume()", 1)[0]
+    image_builds = build_block.split("\n\tstart_package_proxy\n", 1)[1]
+    runtime_branch = image_builds.split(
+        'if [ "${runtime_image_needs_build}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    frontend_branch = image_builds.split(
+        'if [ "${frontend_image_needs_build}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    assert "build_runtime_image" in runtime_branch
+    assert "build_frontend_image" not in runtime_branch
+    assert "built_runtime_image_marker" in runtime_branch
+    assert "build_frontend_image" in frontend_branch
+    assert "build_runtime_image" not in frontend_branch
+    assert "built_frontend_image_marker" in frontend_branch
+
+    volume_plan = source.split("frontend_volume_refresh_required=0", 1)[1].split(
+        'if [ "${mode}" = "prepare" ]; then',
+        1,
+    )[0]
+    assert 'if [ "${frontend_image_needs_build}" = "1" ]; then' in volume_plan
+    assert '"${runtime_image_needs_build}" = "1"' not in volume_plan
 
 
 def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -> None:
@@ -386,12 +788,7 @@ def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -
     staged_validation = source.index("\nvalidate_staged_runtime_inputs\n")
     live_rsync = source.index("\trs" + "ync -a --delay-updates --delete-delay")
     live_stack_touched = source.rindex("\tstack_touched=1", guard_call, live_rsync)
-    build_call = source.index(
-        "\tprefetch_base_images\n"
-        "\tstart_package_proxy\n"
-        "\techo '[m4-preview] building runtime image on M4'",
-        guard_call,
-    )
+    build_call = source.index("\n\tstart_package_proxy\n", guard_call)
     refresh_call = source.index("\trefresh_frontend_dependency_volume", build_call)
     migrate = source.index(
         '"${compose[@]}" run --interactive=false -T --rm --pull never api '
@@ -1492,6 +1889,10 @@ def test_m4_ollama_ownership_preflight_is_early_and_fail_closed() -> None:
 
     preflight = source[
         source.index("remote_ollama_preflight() {") :
+        source.index("remote_ollama_postflight() {")
+    ]
+    postflight = source[
+        source.index("remote_ollama_postflight() {") :
         source.index("remote_ollama_install() {")
     ]
     promote = source[
@@ -1512,10 +1913,27 @@ def test_m4_ollama_ownership_preflight_is_early_and_fail_closed() -> None:
     assert promote.index("remote_ollama_preflight") < promote.index(
         "upload_and_apply"
     )
+    assert deploy_case.index("upload_and_apply") < deploy_case.index(
+        "remote_ollama_postflight"
+    )
+    assert promote.index("upload_and_apply") < promote.index(
+        "remote_ollama_postflight"
+    )
+    assert "remote_ollama_restart" not in deploy_case
+    assert "remote_ollama_restart" not in promote
+    assert "launchctl kickstart" not in postflight
+    assert "launchctl bootstrap" not in postflight
+    assert "launchctl enable" not in postflight
+    assert "kill " not in postflight
+    assert "managed Ollama PID changed during deployment" in postflight
+    assert "127.0.0.1:" in postflight
+    assert "/api/version" in postflight
     assert "before source transfer" in runbook
+    assert "does not restart a healthy managed" in runbook
     assert "unknown listener process" in runbook
     assert "MUST be checked before source transfer" in standard
     assert "MUST NOT automatically stop" in standard
+    assert "MUST use a read-only postflight" in standard
 
 
 def test_m4_deploy_stops_before_packaging_when_ollama_preflight_fails(

@@ -777,8 +777,12 @@ require_marker "deploy/deploy-to-ssh-host.sh" 'Compose project rename is not sup
 require_marker "deploy/deploy-to-ssh-host.sh" 'com.docker.compose.project'
 require_marker "deploy/deploy-to-ssh-host.sh" '--skip-frontend-image requires an existing managed release'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Release execution plan: lane='
-require_marker "deploy/deploy-to-ssh-host.sh" 'Exact backend release plan preserves the running PostgreSQL and Redis services.'
-require_marker "deploy/deploy-to-ssh-host.sh" 'Exact backend release plan does not require a database migration.'
+require_marker "deploy/deploy-to-ssh-host.sh" 'Exact ${RELEASE_PLAN_LANE} release plan preserves the running PostgreSQL and Redis services.'
+require_marker "deploy/deploy-to-ssh-host.sh" 'Exact ${RELEASE_PLAN_LANE} release plan does not require a database migration.'
+require_marker "deploy/deploy-to-ssh-host.sh" 'PLAN_PRESERVE_BACKEND=0'
+require_marker "deploy/deploy-to-ssh-host.sh" 'assert_preserved_backend_services_running'
+require_marker "deploy/deploy-to-ssh-host.sh" 'Frontend-only release preserves backend provider projections.'
+require_marker "docs/cloud-production-release-policy-v1.md" 'An exact `frontend` plan preserves the running API'
 require_marker "deploy/deploy-to-ssh-host.sh" 'preserved-runtime-services.json'
 require_marker "deploy/deploy-to-ssh-host.sh" 'local clean_env=(env -i'
 require_marker "deploy/deploy-to-ssh-host.sh" 'assert_fresh_pg18_install_gate()'
@@ -1000,6 +1004,12 @@ require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
 require_marker ".github/workflows/ci.yml" 'production-deploy-bundle-${{ github.sha }}'
 require_marker ".github/workflows/ci.yml" "bash deploy/bundle-images.sh"
 require_marker ".github/workflows/ci.yml" "Download exact production release plan"
+require_marker ".github/workflows/ci.yml" 'release_action: ${{ steps.release_plan.outputs.action }}'
+require_marker ".github/workflows/ci.yml" "needs.production-release-plan.outputs.release_action == 'runtime'"
+require_marker ".github/workflows/ci.yml" 'test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "skipped"'
+require_marker ".github/workflows/ci.yml" "Resolve exact application image fingerprints"
+require_marker ".github/workflows/ci.yml" "production-application-image-v1-linux-amd64-api-"
+require_marker ".github/workflows/ci.yml" "production-application-image-v1-linux-amd64-frontend-"
 require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"'
 require_marker ".github/workflows/ci.yml" "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE:"
 require_marker "scripts/verify-release-bundle-manifest.py" 'npcink.release-bundle.v2'
@@ -1007,33 +1017,54 @@ require_marker "scripts/verify-release-bundle-manifest.py" 'release/production-r
 require_marker "scripts/verify-release-bundle-manifest.py" 'CANONICAL_REPOSITORY = "npcink/npcink-ai-cloud"'
 require_marker ".github/workflows/ci.yml" '${{ runner.temp }}/production-release-plan'
 require_marker "deploy/bundle-images.sh" 'verify-release-plan'
+require_marker "deploy/bundle-images.sh" 'verify-application-cache'
+require_marker "deploy/bundle-images.sh" 'write-application-cache'
+require_marker "deploy/bundle-images.sh" 'image_work=${IMAGE_WORK}'
 require_marker "deploy/bundle-images.sh" 'scripts/production-release-plan.py'
+require_marker "scripts/production-image-supply.py" \
+	"npcink.production-application-image-cache.v1"
 require_marker "scripts/verify-release-bundle-manifest.py" 'classify_release(changed_files)'
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker ".github/workflows/ci.yml" "frontend_only"
+require_marker ".github/workflows/ci.yml" "frontend_required"
+require_marker ".github/workflows/ci.yml" "frontend_backend_contracts_required"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"
 require_marker "scripts/classify-ci-changes.sh" "frontend_only"
+require_marker "scripts/classify-ci-changes.sh" "frontend_required"
+require_marker "scripts/classify-ci-changes.sh" "frontend_backend_contracts_required"
 require_marker ".github/workflows/ci.yml" "targeted backend gate should be skipped for frontend-only changes"
 reject_marker ".github/workflows/ci.yml" "environment: production"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "PROD_SSH_KEY"
 require_file "scripts/production-ci-evidence.py"
+require_file "scripts/production-application-image-inputs.py"
 require_file "scripts/production-release-plan.py"
+require_file "scripts/resolve-production-release-action.py"
 require_file "scripts/production-release-preflight.py"
 require_marker "scripts/production-release-plan.py" \
-	"npcink.production_release_plan.v1"
+	"npcink.production_release_plan.v2"
+require_marker "scripts/production-application-image-inputs.py" \
+	"npcink.production_application_image_inputs.v1"
 require_marker "scripts/production-release-plan.py" \
 	'"deployment_required"'
 require_marker "scripts/production-release-plan.py" \
 	'"migration_required"'
 require_marker "docs/cloud-production-release-policy-v1.md" \
-	"npcink.production_release_plan.v1"
+	"npcink.production_release_plan.v2"
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	"npcink.production-application-image-cache.v1"
 require_marker "package.json" '"production:release:preflight":'
 require_marker "scripts/production-release-preflight.py" \
 	"npcink.production_release_preflight.v1"
 require_marker "scripts/production-release-preflight.py" \
 	"production-deploy-bundle-{sha}"
+require_marker "scripts/production-release-preflight.py" \
+	"production-release-plan-{sha}"
+require_marker "scripts/production-release-preflight.py" \
+	'if release_action == "runtime"'
+require_marker "scripts/production-release-preflight.py" \
+	'bundle_artifact_text'
 require_marker "scripts/production-release-preflight.py" \
 	"FORMAL_SMOKE_REQUIRED_SECRETS"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
@@ -1055,7 +1086,7 @@ require_marker ".github/workflows/deploy-production.yml" \
 	'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"'
 require_marker ".github/workflows/deploy-production.yml" "run_formal_release_smoke:"
 require_marker ".github/workflows/deploy-production.yml" \
-	"installation_state == 'complete' && inputs.run_formal_release_smoke"
+	"installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke"
 require_marker ".github/workflows/deploy-production.yml" \
 	"Failed closed because the selected formal release smoke"
 require_marker ".github/workflows/deploy-production.yml" \
@@ -1070,6 +1101,29 @@ require_marker ".github/workflows/deploy-production.yml" 'select(.head_sha == $s
 require_marker ".github/workflows/deploy-production.yml" 'test "${conclusion}" = "success"'
 require_marker ".github/workflows/deploy-production.yml" \
 	"actions/workflows/codeql.yml/runs"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Resolve exact release execution plan"
+require_marker ".github/workflows/deploy-production.yml" 'production-release-plan-${GITHUB_SHA}'
+require_marker ".github/workflows/deploy-production.yml" \
+	"if: steps.release_plan.outputs.action == 'runtime'"
+require_marker ".github/workflows/deploy-production.yml" \
+	"scripts/resolve-production-release-action.py"
+require_marker ".github/workflows/deploy-production.yml" \
+	'${RUNNER_TEMP}/production-release-plan/production-release-plan.json'
+require_marker ".github/workflows/deploy-production.yml" \
+	"Exact no_deploy release plan requires no production host mutation."
+require_marker ".github/workflows/deploy-production.yml" \
+	"bash deploy/deploy-static-terms-to-ssh-host.sh"
+require_marker ".github/workflows/deploy-production.yml" \
+	"steps.deploy.outputs.health_profile == 'runtime'"
+require_marker ".github/workflows/deploy-production.yml" \
+	"Formal release smoke is valid only for a runtime release plan."
+require_marker ".github/workflows/deploy-production.yml" \
+	"Record plan-scoped verification"
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'An exact `no_deploy` plan completes without'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'An exact `static` plan uses the'
 require_marker ".github/workflows/deploy-production.yml" \
 	'test "${codeql_conclusion}" = "success"'
 require_marker ".github/workflows/deploy-production.yml" 'gh run download "${PRODUCTION_CI_RUN_ID}"'

@@ -4,18 +4,49 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
+import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-SCHEMA = "npcink.production_release_plan.v1"
+SCHEMA = "npcink.production_release_plan.v2"
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 class ReleasePlanError(ValueError):
     """Raised when release-plan input cannot be trusted."""
+
+
+def _application_image_inputs(
+    source_root: Path,
+    *,
+    image_platform: str,
+    package_extras: str,
+) -> dict[str, object]:
+    helper_path = Path(__file__).resolve().with_name("production-application-image-inputs.py")
+    spec = importlib.util.spec_from_file_location(
+        "npcink_production_application_image_inputs",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        raise ReleasePlanError("production application-image input helper cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        payload = module.create_inputs(
+            source_root,
+            platform=image_platform,
+            package_extras=package_extras,
+        )
+        return module.validate_inputs(payload)
+    except Exception as exc:
+        raise ReleasePlanError(f"production application-image inputs failed: {exc}") from exc
+    finally:
+        sys.modules.pop(spec.name, None)
 
 
 @dataclass(frozen=True)
@@ -146,6 +177,9 @@ def create_plan(
     head_sha: str,
     head_tree: str,
     changed_files: Iterable[str],
+    source_root: Path | None = None,
+    image_platform: str = "linux/amd64",
+    package_extras: str = "[zilliz]",
 ) -> dict[str, object]:
     normalized_repository = repository.strip()
     repository_parts = normalized_repository.split("/")
@@ -161,6 +195,11 @@ def create_plan(
         "head_tree": _require_sha(head_tree, "head tree"),
         "changed_files": list(normalized_files),
         "lane": lane,
+        "application_image_inputs": _application_image_inputs(
+            source_root or Path.cwd(),
+            image_platform=image_platform,
+            package_extras=package_extras,
+        ),
         **flags,
     }
 
@@ -171,6 +210,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--head-tree", required=True)
+    parser.add_argument("--source-root", type=Path, default=Path.cwd())
+    parser.add_argument("--image-platform", default="linux/amd64")
+    parser.add_argument("--package-extras", default="[zilliz]")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("changed_files", nargs="*")
     return parser.parse_args()
@@ -185,6 +227,9 @@ def main() -> int:
             head_sha=args.head_sha,
             head_tree=args.head_tree,
             changed_files=args.changed_files,
+            source_root=args.source_root,
+            image_platform=args.image_platform,
+            package_extras=args.package_extras,
         )
     except ReleasePlanError as exc:
         raise SystemExit(f"production release plan failed: {exc}") from exc

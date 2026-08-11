@@ -55,6 +55,8 @@ deleting the old decision history.
 ## Engineering and Delivery Standards
 
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
+- [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
+- [Development and Delivery Efficiency Closeout and Retrospective](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
@@ -112,6 +114,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Providers, Media, and Quality
 
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
+- [Operator-initiated Provider Image Delivery Probe](decisions/042-operator-initiated-provider-image-delivery-probe.md)
 - [Model Reference Metadata](model-reference-metadata-v1.md)
 - [Cloud Web Search Runtime Contract](cloud-web-search-runtime-contract-v1.md)
 - [Cloud Image Context Evidence Runtime Contract](cloud-image-context-evidence-runtime-contract-v1.md)

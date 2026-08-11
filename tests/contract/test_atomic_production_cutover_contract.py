@@ -175,19 +175,46 @@ if [ "${FAIL_AT:-}" = "preflight" ]; then
     exit 48
 fi
 """
+    manifest_helper = r'''#!/usr/bin/env python3
+from __future__ import annotations
+
+import subprocess
+import sys
+
+if len(sys.argv) != 6 or sys.argv[1] != "loaded-role-daemon-id":
+    raise SystemExit(2)
+role = sys.argv[5]
+references = {
+    "external_redis": "npcink-ai-cloud-external-redis:prod",
+    "api": "npcink-ai-cloud-api:prod",
+    "worker": "npcink-ai-cloud-worker:prod",
+    "callback_worker": "npcink-ai-cloud-callback-worker:prod",
+    "ops_worker": "npcink-ai-cloud-ops-worker:prod",
+}
+reference = references.get(role)
+if reference is None:
+    raise SystemExit(2)
+completed = subprocess.run(
+    ["docker", "image", "inspect", "--format", "{{.Id}}", reference],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+print(completed.stdout.strip())
+'''
 
     (source / "deploy").mkdir(parents=True, exist_ok=True)
     if release_plan_lane != "absent":
         plan_flags = {
             "deployment_required": True,
-            "backend_image_required": True,
-            "frontend_image_required": release_plan_lane == "full",
+            "backend_image_required": release_plan_lane in {"full", "backend", "migration"},
+            "frontend_image_required": release_plan_lane in {"full", "frontend"},
             "migration_required": release_plan_lane == "migration",
             "runtime_config_required": False,
             "static_payload_required": False,
         }
         release_plan = {
-            "schema": "npcink.production_release_plan.v1",
+            "schema": "npcink.production_release_plan.v2",
             "lane": release_plan_lane,
             **plan_flags,
         }
@@ -226,6 +253,11 @@ fi
     _write(source / "deploy/remote-operational-ready.sh", operational)
     _write(source / "deploy/remote-baseline-status.sh", baseline)
     _write(source / "deploy/remote-runtime-config-preflight.sh", runtime_preflight)
+    _write(
+        source / "scripts/verify-release-bundle-manifest.py",
+        manifest_helper,
+        executable=True,
+    )
     _write(source / "docker-compose.prod.yml", "services: {}\n")
     _write(source / "docker-compose.runtime.yml", _runtime_compose_source())
 
@@ -360,6 +392,11 @@ if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
         [ ! -f "${ROLLBACK_REFERENCE_REMOVED}" ] || exit 1
         printf '%s\n' "${WRONG_RECOVERY_IMAGE_ID}"
     else
+        if [ "${PRESERVED_API_TAG_DRIFT:-0}" = "1" ] && \
+            [ "${inspected_reference}" = "npcink-ai-cloud-api:prod" ]; then
+            printf '%s\n' "${WRONG_RECOVERY_IMAGE_ID}"
+            exit 0
+        fi
         case "${inspected_reference}" in
             npcink-ai-cloud-api:prod|npcink-ai-cloud-rollback:test-1)
                 printf '%s\n' "${OLD_API_IMAGE_ID}" ;;
@@ -451,6 +488,8 @@ elif [ "${1:-}" = "inspect" ]; then
         printf '%s\n' "${ACTUAL_CONTAINER_PROJECT_NAME:-npcink-ai-cloud}"
     elif [ "${3:-}" = "{{.State.Running}}" ]; then
         printf 'true\n'
+    elif [ "${3:-}" = "{{.State.Running}} {{.State.Restarting}}" ]; then
+        printf 'true false\n'
     elif [ "${3:-}" = "{{.Config.Image}}" ]; then
         case "${4:-}" in
             previous-postgres) printf '%s\n' 'npcink-ai-cloud-postgres:prod' ;;
@@ -609,6 +648,7 @@ def _run_remote_cutover(
     finalized_runtime_network_repair_approval: str | None = None,
     preexisting_failure_phase: str = "initialize",
     preexisting_failure_previous: str | None = None,
+    preserved_api_tag_drift: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -929,6 +969,7 @@ def _run_remote_cutover(
                 else ""
             ),
             "RUNTIME_NETWORK_LIVE_VARIANT": runtime_network_live_variant,
+            "PRESERVED_API_TAG_DRIFT": "1" if preserved_api_tag_drift else "0",
         }
     )
     fake_config = {
@@ -947,6 +988,7 @@ def _run_remote_cutover(
         "RECOVERY_STILL_RUNNING": "1" if recovery_still_running else "0",
         "ROLLBACK_REFERENCE_REMOVED": str(rollback_reference_removed),
         "RUNTIME_NETWORK_LIVE_VARIANT": runtime_network_live_variant,
+        "PRESERVED_API_TAG_DRIFT": "1" if preserved_api_tag_drift else "0",
     }
     _write(
         tmp_path / "fake-docker-config",
@@ -1582,6 +1624,53 @@ def test_migration_release_plan_preserves_frontend_but_runs_data_and_migration(
     assert "load:data-only" in log
     assert "migrate:0" in log
     assert "lane=migration, data_phase=1, migration=1, preserve_frontend=1" in completed.stdout
+
+
+def test_frontend_only_cutover_preserves_backend_workers_and_data(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        release_plan_lane="frontend",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    log = log_path.read_text(encoding="utf-8")
+    assert "load:prepare-only" in log
+    assert "load:data-only" not in log
+    assert "migrate:" not in log
+    assert "refresh:governed" not in log
+    assert "load:api-only" not in log
+    assert "load:workers-only" not in log
+    assert "operational:1" not in log
+    assert "load:traffic-only" in log
+    assert "baseline" in log
+    assert (
+        "lane=frontend, data_phase=0, migration=0, preserve_frontend=0, "
+        "preserve_backend=1"
+    ) in completed.stdout
+    assert (
+        "Frontend-only release preserved exact API, worker, and Redis "
+        "container identities."
+    ) in completed.stdout
+    assert (remote_dir / "current").resolve() == remote_dir / "release-next"
+
+
+def test_frontend_only_cutover_rejects_preserved_backend_image_drift(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        release_plan_lane="frontend",
+        preserved_api_tag_drift=True,
+    )
+
+    assert completed.returncode != 0
+    assert "Preserved api container does not use the exact current daemon image ID." in (
+        completed.stderr
+    )
+    assert "load:traffic-only" not in log_path.read_text(encoding="utf-8")
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
 
 
 def test_missing_release_plan_uses_complete_fail_closed_execution(

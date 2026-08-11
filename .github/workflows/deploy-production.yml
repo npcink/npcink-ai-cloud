@@ -125,7 +125,33 @@ jobs:
             echo "- production_sha=${GITHUB_SHA}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Download exact production release plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          artifact_name="production-release-plan-${GITHUB_SHA}"
+          gh run download "${PRODUCTION_CI_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact_name}" \
+            --dir "${RUNNER_TEMP}/production-release-plan"
+          test -f "${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
+
+      - name: Resolve exact release execution plan
+        id: release_plan
+        run: |
+          set -euo pipefail
+          python3 scripts/resolve-production-release-action.py \
+            --plan "${RUNNER_TEMP}/production-release-plan/production-release-plan.json" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse HEAD^{tree})" \
+            --github-output "${GITHUB_OUTPUT}" \
+            --summary "${GITHUB_STEP_SUMMARY}"
+
       - name: Download exact production deploy bundle
+        if: steps.release_plan.outputs.action == 'runtime'
         env:
           GH_TOKEN: ${{ github.token }}
           PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
@@ -144,6 +170,7 @@ jobs:
             dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
 
       - name: Install SSH key
+        if: steps.release_plan.outputs.action != 'no_deploy'
         env:
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
@@ -184,11 +211,52 @@ jobs:
           NPCINK_CLOUD_FINALIZED_RUNTIME_NETWORK_REPAIR_APPROVAL: ${{ inputs.finalized_runtime_network_repair_confirmation }}
         run: |
           set -euo pipefail
+          release_action="${{ steps.release_plan.outputs.action }}"
+          release_lane="${{ steps.release_plan.outputs.lane }}"
+          health_profile="${{ steps.release_plan.outputs.health_profile }}"
+          if [ "${release_action}" = "no_deploy" ]; then
+            if [ "${{ inputs.run_formal_release_smoke }}" = "true" ]; then
+              echo "[fail] Formal release smoke is valid only for a runtime release plan." >&2
+              exit 1
+            fi
+            if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
+              echo "[fail] A no-deploy release cannot request runtime-network repair." >&2
+              exit 1
+            fi
+            echo "[ok] Exact no_deploy release plan requires no production host mutation."
+            {
+              echo "installation_state=complete"
+              echo "release_lane=${release_lane}"
+              echo "release_action=${release_action}"
+              echo "health_profile=${health_profile}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if [ "${release_action}" = "static" ]; then
+            if [ "${{ inputs.run_formal_release_smoke }}" = "true" ]; then
+              echo "[fail] Formal release smoke is valid only for a runtime release plan." >&2
+              exit 1
+            fi
+            if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
+              echo "[fail] A static release cannot request runtime-network repair." >&2
+              exit 1
+            fi
+            bash deploy/deploy-static-terms-to-ssh-host.sh
+            {
+              echo "installation_state=complete"
+              echo "release_lane=${release_lane}"
+              echo "release_action=${release_action}"
+              echo "health_profile=${health_profile}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          test "${release_action}" = "runtime"
           repair_args=()
           if [ "${{ inputs.finalized_runtime_network_repair }}" = "true" ]; then
             repair_args+=(--finalized-runtime-network-repair)
           fi
           deploy_output_file="$(mktemp)"
+          timing_receipt="artifacts/release-timing/production-deploy-phase-timing.json"
           cleanup_deploy_output() {
             exit_status="$?"
             trap - EXIT
@@ -196,6 +264,8 @@ jobs:
             exit "${exit_status}"
           }
           trap cleanup_deploy_output EXIT
+          mkdir -p "$(dirname "${timing_receipt}")"
+          set +e
           bash deploy/deploy-to-ssh-host.sh \
             --no-user-internal-validation \
             --skip-bundle-build \
@@ -204,7 +274,34 @@ jobs:
             --refresh-providers \
             --with-operational-ready \
             "${repair_args[@]}" \
-            --remote-compose-file docker-compose.runtime.yml | tee "${deploy_output_file}"
+            --remote-compose-file docker-compose.runtime.yml 2>&1 | tee "${deploy_output_file}"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          deploy_status="${pipeline_status[0]}"
+          tee_status="${pipeline_status[1]}"
+          effective_status="${deploy_status}"
+          if [ "${effective_status}" = "0" ] && [ "${tee_status}" != "0" ]; then
+            effective_status="${tee_status}"
+          fi
+          if ! python3 scripts/report-release-timing.py \
+            --deploy-log "${deploy_output_file}" \
+            --source-repository "${GITHUB_REPOSITORY}" \
+            --source-sha "${GITHUB_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --release-lane "${release_lane}" \
+            --release-action "${release_action}" \
+            --deploy-exit-status "${effective_status}" \
+            --receipt-output "${timing_receipt}" \
+            >> "${GITHUB_STEP_SUMMARY}"; then
+            {
+              echo "## Production Deploy Phase Timing"
+              echo ""
+              echo "Structured phase timing was unavailable; deployment authority is unchanged."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ "${effective_status}" != "0" ]; then
+            exit "${effective_status}"
+          fi
           installation_state_count="$(
             awk '/^installation_state=(pending|complete)$/ { count += 1 } END { print count + 0 }' \
               "${deploy_output_file}"
@@ -224,7 +321,21 @@ jobs:
               exit 1
               ;;
           esac
-          printf 'installation_state=%s\n' "${installation_state}" >> "${GITHUB_OUTPUT}"
+          {
+            printf 'installation_state=%s\n' "${installation_state}"
+            echo "release_lane=${release_lane}"
+            echo "release_action=${release_action}"
+            echo "health_profile=${health_profile}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Upload production deploy timing receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-deploy-timing-${{ github.run_id }}-${{ github.sha }}
+          path: artifacts/release-timing/production-deploy-phase-timing.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: First-install operator handoff
         if: steps.deploy.outputs.installation_state == 'pending'
@@ -246,7 +357,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Small-customer preflight
-        if: steps.deploy.outputs.installation_state == 'complete'
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime'
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
         run: |
@@ -255,7 +366,7 @@ jobs:
             --require-alipay-enabled
 
       - name: Formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke
         env:
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
@@ -349,11 +460,23 @@ jobs:
             --credentials-file "${credential_file}"
 
       - name: Record deferred formal release smoke
-        if: steps.deploy.outputs.installation_state == 'complete' && inputs.run_formal_release_smoke == false
+        if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke == false
         run: |
           {
             echo "## Formal Release Smoke"
             echo ""
             echo "Not selected for this deploy. This is not passing formal-smoke evidence."
             echo "For real SMTP, refresh the one-time Portal login code only after deployment, then immediately dispatch the fail-closed Release Smoke workflow from production."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Record plan-scoped verification
+        if: steps.deploy.outputs.health_profile != 'runtime'
+        run: |
+          {
+            echo "## Plan-scoped Production Verification"
+            echo ""
+            echo "- lane=${{ steps.deploy.outputs.release_lane }}"
+            echo "- action=${{ steps.deploy.outputs.release_action }}"
+            echo "- health_profile=${{ steps.deploy.outputs.health_profile }}"
+            echo "- formal_smoke=not_applicable"
           } >> "${GITHUB_STEP_SUMMARY}"

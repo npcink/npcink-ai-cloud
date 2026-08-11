@@ -226,12 +226,17 @@ plan, and prevents broad validation from expanding a narrow production repair.
 
 Every exact `production` push emits a short-lived
 `production-release-plan-<sha>` artifact containing the versioned
-`npcink.production_release_plan.v1` receipt. The receipt binds the repository,
-event-before SHA, production SHA, production tree, sorted changed paths, and
-the selected `no_deploy`, `static`, `frontend`, `backend`, `config`,
+`npcink.production_release_plan.v2` receipt. The receipt binds the repository,
+event-before SHA, production SHA, production tree, sorted changed paths,
+stable API/frontend application-image input fingerprints, and the selected
+`no_deploy`, `static`, `frontend`, `backend`, `config`,
 `migration`, or `full` lane. It separately records whether deployment, backend
 or frontend images, migration, runtime configuration, or static payload work
 is required so later release stages do not infer scope from the lane name.
+The content fingerprints deliberately exclude the release SHA. Frontend source
+revision remains exact release evidence, but is injected into the container at
+runtime instead of forcing byte-identical frontend source to rebuild for every
+promotion commit.
 
 The plan compares the exact event-before and production revisions. Empty or
 unknown path sets, Dockerfiles, dependency locks, image locks, and mixed
@@ -240,17 +245,48 @@ workflow-only changes may select `no_deploy`; pure `site/terms/**` changes may
 select `static`. A missing, malformed, or SHA/tree-mismatched receipt is not
 deployment authority.
 
-Production bundle CI now downloads the exact same-run plan before any image
-build and emits `npcink.release-bundle.v2`. The bundle copies the plan to
+Production CI resolves the exact same-run plan before deciding whether runtime
+bundle work applies. `no_deploy` and `static` actions skip the runtime image
+cache restore, build, vulnerability scan, and bundle upload entirely. Runtime
+actions download the plan before any image build and emit
+`npcink.release-bundle.v2`. The bundle copies the plan to
 `release/production-release-plan.json`, hashes it in the payload/checksum table,
 and binds its repository, lane, action flags, production SHA, and production
 tree in the bundle manifest. A missing or mismatched plan fails before the
 costly image build begins.
 
-This v2 identity chain still builds a complete exact image set. Scan reuse,
-selective image transfer, and target-daemon image reuse may accelerate delivery
-only through their separately reviewed exact-identity contracts. The remote
-cutover consumes the bound plan conservatively. An exact `backend` plan
+The manual production workflow downloads and validates the exact plan artifact
+first. It requests the SHA-bound runtime bundle only when the validated action
+is `runtime`; static publishing uses the checked-out exact revision, and
+`no_deploy` performs no host mutation. CI observability accepts a skipped bundle
+job only for the validated `no_deploy` or `static` action and fails closed for
+unknown action/result combinations.
+
+The mandatory operator preflight follows the same identity chain: it downloads
+and validates the exact plan artifact against the production SHA and commit
+tree, requires the runtime bundle artifact only for `runtime`, and records the
+bundle as not applicable for `no_deploy` or `static`. A missing plan, missing
+runtime bundle, or unexpected non-runtime bundle fails closed before dispatch.
+
+This v2 identity chain still produces a complete exact image set. The bundle
+job may restore API and frontend archives independently from the disposable
+`npcink.production-application-image-cache.v1` Actions cache when the selected
+platform, application-input fingerprint, image key, embedded image labels,
+archive hash, archive reference, and portable config image ID all match. A
+missing, malformed, mismatched, or unloadable cache entry is a cache miss and
+rebuilds only that application image. The bundle reports each application
+action and `image_work=0|1|2`; `image_work=0` means both exact application
+archives were restored, not that release verification was skipped.
+
+The application-image cache is disposable acceleration state, not source,
+image, scan, release, or deployment truth. Every restored image still enters
+the normal exact-ID scan/evidence path; current Grype database evaluation,
+complete bundle verification, external image evidence, and SHA-bound release
+manifest remain mandatory. A newly built application image writes a new cache
+entry only after the current release scan succeeds. Scan reuse, selective image
+transfer, and target-daemon image reuse may accelerate delivery only through
+their separately reviewed exact-identity contracts. The remote cutover
+consumes the bound plan conservatively. An exact `backend` plan
 preserves the running frontend, PostgreSQL, and Redis services, skips the
 data-service phase and migration, and replaces the API and worker runtime while
 retaining operational readiness and baseline health gates. An exact `migration`
@@ -259,6 +295,27 @@ migration, API/worker replacement, and the same health gates. Other lanes,
 missing plans, unsupported schemas, and non-exact flag combinations use the
 complete cutover path. The complete-bundle transfer path remains the fail-closed
 fallback and stage-only behavior remains complete.
+
+An exact `frontend` plan preserves the running API, workers, PostgreSQL, Redis,
+and provider projections. It stops and replaces only frontend and proxy traffic
+services, and skips the data phase, migration, provider refresh, API/worker
+recreation, and the pre-traffic worker-readiness wait. Before restoring public
+traffic, the deploy re-proves that every preserved API, worker, and Redis
+container is stably running on the daemon image ID currently bound to its exact
+governed release tag. Missing, duplicate, unstable, or mismatched preserved
+services fail closed before traffic restoration.
+
+The manually authorized deployment workflow reads that exact bundle-bound plan
+before opening an SSH session. An exact `no_deploy` plan completes without
+production-host mutation or health probing. An exact `static` plan uses the
+transactional static-terms publisher, does not upload the runtime bundle, load
+images, run migration, replace services, refresh providers, or execute runtime
+readiness, and relies on that publisher's exact static-page health proof.
+Runtime lanes retain the protected cutover and small-customer preflight.
+Unknown lanes and inconsistent flag combinations fail before host mutation.
+Formal release smoke is a runtime-profile gate; selecting it for `no_deploy` or
+`static` fails before the plan-scoped action instead of silently adding runtime
+health probes.
 
 When a frontend is preserved, the deploy records its actual daemon image ID,
 embedded source revision, and previous-release binding in the new release's
@@ -285,11 +342,15 @@ that image is scanned normally; cache state is never deployment authority.
 
 Every run rebuilds its own complete scan index. The index continues to require
 one Grype database identity for the release set. When fresh cache hits and new
-scans were produced from different database identities, only the images copied
-from cache are rescanned against the current run database before the index is
-created. The scanner must not weaken the database-identity invariant, combine
-unverified receipts, or fail a release merely because the optional cache is
-absent or unusable.
+scans were produced from different database identities, the scanner may retain
+the already verified normalized archive, image inspection, Syft native JSON,
+and CycloneDX SBOM for each exact cached image, but it must discard the cached
+Grype report and receipt, run Grype again against the current run database, and
+re-evaluate the current allowlist before creating the index. This refresh is
+not a scan-evidence hit: timing evidence records it separately from both full
+scans and unchanged complete-evidence reuse. The scanner must not weaken the
+database-identity invariant, combine unverified receipts, or fail a release
+merely because the optional cache is absent or unusable.
 
 ### Recovery deployment decision envelope
 

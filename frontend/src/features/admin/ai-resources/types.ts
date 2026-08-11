@@ -39,6 +39,46 @@ export type SupplierConnection = {
   detail_href?: string;
   managed_by?: string;
   metadata?: Record<string, unknown>;
+  image_delivery_probe?: {
+    probe_id?: string;
+    status?: 'ready' | 'approval_required' | 'host_approved' | string;
+    provider_id?: string;
+    model_id?: string;
+    delivery_format?: 'url' | 'base64' | string;
+    detected_host?: string;
+    tested_at?: string;
+    host_approved_at?: string;
+  };
+  image_delivery_repair?: {
+    status?: 'pending' | 'approved' | string;
+    reason_code?: string;
+    detected_host?: string;
+    evidence_kind?: 'runtime_run' | 'admin_probe' | string;
+    probe_id?: string;
+    run_id?: string;
+    observed_at?: string;
+    approved_at?: string;
+  };
+};
+
+export type ProviderImageDeliveryProbeResult = {
+  probe_id: string;
+  connection_id: string;
+  provider_id: string;
+  model_id: string;
+  status: 'ready' | 'approval_required' | 'host_approved' | string;
+  ok: boolean;
+  delivery_format: 'url' | 'base64' | string;
+  detected_host?: string;
+  host_approved: boolean;
+  content_type?: string;
+  width?: number;
+  height?: number;
+  latency_ms: number;
+  estimated_cost: number;
+  provider_call_billable: true;
+  tested_at: string;
+  message: string;
 };
 
 export type ProviderConnectionTestResult = {

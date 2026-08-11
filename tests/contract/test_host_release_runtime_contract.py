@@ -22,6 +22,19 @@ def _write(path: Path, text: str, *, executable: bool = False) -> None:
         path.chmod(0o755)
 
 
+def _write_release_manifest(release_root: Path) -> None:
+    _write(
+        release_root / "release-bundle-manifest.json",
+        json.dumps(
+            {
+                "created_at_utc": "2026-08-11T00:00:00Z",
+                "source": {"revision": "a" * 40},
+            }
+        )
+        + "\n",
+    )
+
+
 def _install_deploy_lock_owner(
     release_root: Path, environment: dict[str, str]
 ) -> str:
@@ -945,6 +958,7 @@ def _run_remote_data_only_with_distinct_portable_and_daemon_ids(
 
     (release / "deploy").mkdir(parents=True)
     (release / "scripts").mkdir()
+    _write_release_manifest(release)
     fake_bin.mkdir()
     shutil.copy2(ROOT / "deploy/common.sh", release / "deploy/common.sh")
     shutil.copy2(
@@ -1237,6 +1251,7 @@ def _run_remote_service_phase(
 
     (release / "deploy").mkdir(parents=True)
     (release / "scripts").mkdir()
+    _write_release_manifest(release)
     fake_bin.mkdir()
     shutil.copy2(ROOT / "deploy/common.sh", release / "deploy/common.sh")
     shutil.copy2(

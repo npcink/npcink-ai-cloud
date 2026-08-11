@@ -365,6 +365,13 @@ def test_web_admin_key_issues_cookie_session(tmp_path: Path) -> None:
     assert session_response.json()["data"]["identity_type"] == "platform_admin"
     assert session_response.json()["data"]["role"] == "platform_admin"
     assert session_response.json()["data"]["auth_mode"] == "admin_key"
+    assert session_response.json()["data"]["deployment"] == {
+        "release": "development",
+        "source_revision": "unknown",
+        "source_dirty": False,
+        "created_at": "unknown",
+        "environment": "test",
+    }
     token = client.cookies.get("npcink_admin_session_token")
     assert token
     claims = jwt.decode(token, options={"verify_signature": False})

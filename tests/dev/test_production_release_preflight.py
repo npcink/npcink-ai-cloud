@@ -68,11 +68,17 @@ def _snapshot() -> dict[str, Any]:
             "artifacts": [
                 {
                     "id": 103,
+                    "name": f"production-release-plan-{SHA}",
+                    "expired": False,
+                },
+                {
+                    "id": 104,
                     "name": f"production-deploy-bundle-{SHA}",
                     "expired": False,
                 }
             ]
         },
+        "release_action": "runtime",
         "repository_secrets": sorted(deploy_secrets),
         "environment_secrets": sorted(smoke_secrets),
     }
@@ -93,7 +99,9 @@ def test_ready_snapshot_binds_exact_checks_bundle_and_secret_names() -> None:
         "production_sha": SHA,
         "cloud_ci_run_id": 101,
         "codeql_run_id": 102,
-        "bundle_artifact_id": 103,
+        "release_action": "runtime",
+        "plan_artifact_id": 103,
+        "bundle_artifact_id": 104,
         "deploy_secrets_ready": True,
         "formal_smoke_secrets_ready": True,
         "missing_formal_smoke_secret_names": [],
@@ -103,6 +111,52 @@ def test_ready_snapshot_binds_exact_checks_bundle_and_secret_names() -> None:
     rendered = module.render_text(result)
     assert f"dispatch_expected_sha={SHA}" in rendered
     assert "release_preflight=ready" in rendered
+
+
+@pytest.mark.parametrize("release_action", ["no_deploy", "static"])
+def test_plan_scoped_release_requires_plan_without_runtime_bundle(
+    release_action: str,
+) -> None:
+    module = _load_module()
+    snapshot = _snapshot()
+    snapshot["release_action"] = release_action
+    snapshot["artifacts"]["artifacts"] = snapshot["artifacts"]["artifacts"][:1]
+
+    result = module.evaluate_snapshot(
+        snapshot,
+        expected_sha=SHA,
+        require_formal_smoke=False,
+    )
+
+    assert result["release_action"] == release_action
+    assert result["plan_artifact_id"] == 103
+    assert result["bundle_artifact_id"] is None
+    assert "bundle_artifact_id=not_applicable" in module.render_text(result)
+    with pytest.raises(
+        module.PreflightError,
+        match="formal release smoke requires a runtime release action",
+    ):
+        module.evaluate_snapshot(
+            snapshot,
+            expected_sha=SHA,
+            require_formal_smoke=True,
+        )
+
+
+def test_plan_scoped_release_rejects_unexpected_runtime_bundle() -> None:
+    module = _load_module()
+    snapshot = _snapshot()
+    snapshot["release_action"] = "static"
+
+    with pytest.raises(
+        module.PreflightError,
+        match="non-runtime release unexpectedly produced",
+    ):
+        module.evaluate_snapshot(
+            snapshot,
+            expected_sha=SHA,
+            require_formal_smoke=False,
+        )
 
 
 def test_formal_smoke_gap_is_visible_and_optionally_fail_closed() -> None:
@@ -150,7 +204,7 @@ def test_formal_smoke_gap_is_visible_and_optionally_fail_closed() -> None:
             "missing deployment secret names",
         ),
         (
-            lambda snapshot: snapshot["artifacts"]["artifacts"][0].update(expired=True),
+            lambda snapshot: snapshot["artifacts"]["artifacts"][1].update(expired=True),
             "expected exactly one unexpired",
         ),
     ],

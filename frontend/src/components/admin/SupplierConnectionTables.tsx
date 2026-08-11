@@ -116,6 +116,7 @@ type SharedTableProps = {
   onSelectConnection: (connectionId: string) => void;
   testResults: Record<string, ProviderConnectionTestResult>;
   testingConnectionId: string;
+  approvingImageHostConnectionId: string;
   deletingConnectionId: string;
   confirmingDeleteConnectionId: string;
   onDelete: (connection: SupplierConnection) => void;
@@ -124,6 +125,7 @@ type SharedTableProps = {
   providerTestStageLabel: (stage: string) => string;
   providerTestMessage: (result: ProviderConnectionTestResult) => string;
   onTest: (connectionId: string) => void;
+  onApproveImageHost: (connection: SupplierConnection) => void;
   translate: Translate;
 };
 
@@ -190,6 +192,7 @@ export function ModelSupplierTable({
   onSelectConnection,
   testResults,
   testingConnectionId,
+  approvingImageHostConnectionId,
   deletingConnectionId,
   confirmingDeleteConnectionId,
   providerKindLabel,
@@ -200,6 +203,7 @@ export function ModelSupplierTable({
   hasActiveFilters,
   onClearFilters,
   onTest,
+  onApproveImageHost,
   onDelete,
   onRequestDelete,
   onCancelDelete,
@@ -241,10 +245,18 @@ export function ModelSupplierTable({
               const modelCount = connection.model_ids?.length || 0;
               const isSelected = connection.connection_id === selectedConnectionId;
               const isTesting = testingConnectionId === connection.connection_id;
+              const isApprovingImageHost = approvingImageHostConnectionId === connection.connection_id;
               const isDeleting = deletingConnectionId === connection.connection_id;
               const isConfirmingDelete = confirmingDeleteConnectionId === connection.connection_id;
               const providerLinks = referenceLinksForConnection(connection);
-              const hasFeedback = Boolean(testResult || connection.last_error_code || isConfirmingDelete);
+              const imageDeliveryRepair = connection.image_delivery_repair;
+              const hasPendingImageHostRepair = imageDeliveryRepair?.status === 'pending'
+                && imageDeliveryRepair.reason_code === 'host_not_allowlisted'
+                && Boolean(
+                  imageDeliveryRepair.detected_host
+                  && (imageDeliveryRepair.run_id || imageDeliveryRepair.probe_id)
+                );
+              const hasFeedback = Boolean(testResult || connection.last_error_code || isConfirmingDelete || hasPendingImageHostRepair);
               const selectConnection = () => onSelectConnection(connection.connection_id);
               return (
                 <Fragment key={connection.connection_id}>
@@ -351,6 +363,25 @@ export function ModelSupplierTable({
                           <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
                             {connectionErrorLabel(connection.last_error_code, translate)}
                           </p>
+                        ) : null}
+                        {hasPendingImageHostRepair ? (
+                          <div role="alert" data-ui="provider-image-host-repair" className="flex flex-wrap items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
+                            <span>
+                              {translate('image_host_repair_detected', 'Image delivery was blocked because {{host}} is not approved.', {
+                                host: String(imageDeliveryRepair?.detected_host || ''),
+                              })}
+                            </span>
+                            <button
+                              type="button"
+                              className={TABLE_ACTION_BUTTON_CLASS}
+                              disabled={isApprovingImageHost || isDeleting}
+                              onClick={() => onApproveImageHost(connection)}
+                            >
+                              {isApprovingImageHost
+                                ? translate('image_host_repair_approving', 'Approving...')
+                                : translate('image_host_repair_action', 'Approve this exact host')}
+                            </button>
+                          </div>
                         ) : null}
                         {isConfirmingDelete ? (
                           <div role="alert" className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-800 dark:text-rose-200">

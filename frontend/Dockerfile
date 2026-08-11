@@ -21,7 +21,9 @@ FROM base AS builder
 WORKDIR /app
 
 COPY --from=deps /app ./
-COPY frontend ./frontend
+COPY frontend/next-env.d.ts frontend/next.config.mjs frontend/postcss.config.mjs \
+    frontend/proxy.ts frontend/tailwind.config.ts frontend/tsconfig.json ./frontend/
+COPY frontend/src ./frontend/src
 
 RUN mkdir -p frontend/public
 
@@ -35,8 +37,6 @@ ENV CLOUD_PUBLIC_BASE_URL=${CLOUD_PUBLIC_BASE_URL}
 RUN cd frontend && ./node_modules/.bin/next build
 
 FROM base AS runner
-
-ARG NPCINK_CLOUD_SOURCE_REVISION=unknown
 
 RUN set -eux; \
     apk add --no-cache dumb-init=1.2.5-r4; \
@@ -87,7 +87,6 @@ EXPOSE 3000
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NPCINK_CLOUD_FRONTEND_REVISION=${NPCINK_CLOUD_SOURCE_REVISION}
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 

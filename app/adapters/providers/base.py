@@ -74,6 +74,7 @@ class ProviderMediaCandidate:
     content_bytes: bytes | None = field(default=None, repr=False)
     source_url: str | None = field(default=None, repr=False)
     image_output_hosts: tuple[str, ...] = ()
+    provider_connection_id: str = ""
     claimed_mime_type: str = ""
     revised_prompt: str = ""
     claimed_width: int | None = None
@@ -96,6 +97,8 @@ class ProviderMediaCandidate:
             raise TypeError("provider media candidate content_bytes must be bytes")
         if any(not isinstance(host, str) or not host for host in self.image_output_hosts):
             raise ValueError("provider media candidate image_output_hosts must be exact hosts")
+        if not isinstance(self.provider_connection_id, str):
+            raise TypeError("provider media candidate provider_connection_id must be a string")
 
 
 @dataclass(slots=True)

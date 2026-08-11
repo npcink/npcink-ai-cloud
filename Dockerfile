@@ -130,8 +130,16 @@ COPY --from=builder /tmp/production-python-lock.json /usr/local/share/npcink-ai-
 COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY app ./app
 COPY migrations ./migrations
-COPY deploy ./deploy
-COPY scripts ./scripts
+COPY deploy/wait-for-install.sh ./deploy/wait-for-install.sh
+COPY scripts/verify-production-python-lock.py ./scripts/verify-production-python-lock.py
+COPY scripts/live-site-addon-rollback.py ./scripts/live-site-addon-rollback.py
+COPY scripts/live-site-runtime-execute-smoke.py ./scripts/live-site-runtime-execute-smoke.py
+COPY scripts/live-site-runtime-smoke.py ./scripts/live-site-runtime-smoke.py
+COPY scripts/live-site-save-verify-handoff.py ./scripts/live-site-save-verify-handoff.py
+COPY scripts/live-site-stage1.py ./scripts/live-site-stage1.py
+COPY scripts/live-site-trial-status.py ./scripts/live-site-trial-status.py
+COPY scripts/production_performance_baseline.py ./scripts/production_performance_baseline.py
+COPY scripts/runtime_hot_path_explain.py ./scripts/runtime_hot_path_explain.py
 
 RUN PYTHONPATH=/app python scripts/verify-production-python-lock.py \
         --requirements /usr/local/share/npcink-ai-cloud/requirements.lock.txt \

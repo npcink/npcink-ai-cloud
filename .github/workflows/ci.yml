@@ -19,6 +19,8 @@ jobs:
     name: Production release plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
+    outputs:
+      release_action: ${{ steps.release_plan.outputs.action }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -26,6 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: Create exact production release plan
+        id: release_plan
         env:
           BEFORE_SHA: ${{ github.event.before }}
         run: |
@@ -49,11 +52,20 @@ jobs:
             --base-sha "${base_sha}" \
             --head-sha "${GITHUB_SHA}" \
             --head-tree "$(git rev-parse "${GITHUB_SHA}^{tree}")" \
+            --source-root "${GITHUB_WORKSPACE}" \
+            --image-platform linux/amd64 \
+            --package-extras '[zilliz]' \
             --output artifacts/production-release-plan/production-release-plan.json \
             -- \
             "${changed_files[@]}"
           cat artifacts/production-release-plan/production-release-plan.json \
             >> "${GITHUB_STEP_SUMMARY}"
+          python3 scripts/resolve-production-release-action.py \
+            --plan artifacts/production-release-plan/production-release-plan.json \
+            --repository "${GITHUB_REPOSITORY}" \
+            --head-sha "${GITHUB_SHA}" \
+            --head-tree "$(git rev-parse "${GITHUB_SHA}^{tree}")" \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Upload exact production release plan
         uses: actions/upload-artifact@v7
@@ -81,6 +93,9 @@ jobs:
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
+          PRODUCTION_EVIDENCE_MAX_ATTEMPTS: "5"
+          PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES: "2"
+          PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS: "10"
         run: |
           set -euo pipefail
           evidence_dir="$(mktemp -d "${RUNNER_TEMP}/production-pr-evidence.XXXXXX")"
@@ -88,72 +103,166 @@ jobs:
 
           gh api "repos/${GITHUB_REPOSITORY}/git/commits/${GITHUB_SHA}" \
             > "${evidence_dir}/production-commit.json"
-          gh api -H 'Accept: application/vnd.github+json' \
-            "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            > "${evidence_dir}/associated-pulls.json"
-
-          matching_prs="$(
-            jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
-              [ .[]
-                | select(.base.ref == "production")
-                | select(.merged_at != null)
-                | select(.merge_commit_sha == $sha)
-                | select(.head.repo.full_name == $repository)
-              ]
-            ' "${evidence_dir}/associated-pulls.json"
-          )"
-          test "$(jq 'length' <<<"${matching_prs}")" -eq 1
-          pr_number="$(jq -r '.[0].number' <<<"${matching_prs}")"
-          pr_head_sha="$(jq -r '.[0].head.sha' <<<"${matching_prs}")"
-          pr_head_ref="$(jq -r '.[0].head.ref' <<<"${matching_prs}")"
-          [[ "${pr_number}" =~ ^[1-9][0-9]*$ ]]
-          [[ "${pr_head_sha}" =~ ^[0-9a-f]{40}$ ]]
-          test -n "${pr_head_ref}"
-
-          gh api --method GET \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch="${pr_head_ref}" \
-            -f event=pull_request \
-            -f status=completed \
-            -f per_page=100 \
-            > "${evidence_dir}/workflow-runs.json"
-
-          artifact_name="production-pr-ci-evidence-${pr_number}-${pr_head_sha}"
-          mapfile -t run_ids < <(
-            jq -r --arg sha "${pr_head_sha}" '
-              .workflow_runs[]
-              | select(.head_sha == $sha)
-              | select(.event == "pull_request")
-              | select(.conclusion == "success")
-              | .id
-            ' "${evidence_dir}/workflow-runs.json"
-          )
-          test "${#run_ids[@]}" -gt 0
-
+          [[ "${PRODUCTION_EVIDENCE_MAX_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}" =~ ^[1-9][0-9]*$ ]]
           verified=false
-          for run_id in "${run_ids[@]}"; do
+          pr_number=""
+          pr_head_sha=""
+          pr_head_ref=""
+          source_ci_run_id=""
+          last_retry_reason="production PR association is not visible"
+          last_external_failure_signature=""
+          consecutive_external_failures=0
+          for ((attempt = 1; attempt <= PRODUCTION_EVIDENCE_MAX_ATTEMPTS; attempt++)); do
+            external_failure_signature=""
             rm -rf "${evidence_dir}/download"
             mkdir -p "${evidence_dir}/download"
-            if ! gh run download "${run_id}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --name "${artifact_name}" \
-              --dir "${evidence_dir}/download" >/dev/null 2>&1; then
-              continue
+            if ! gh api -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+              > "${evidence_dir}/associated-pulls.json"; then
+              last_retry_reason="production PR association API is unavailable"
+              external_failure_signature="associated-pulls-api"
+            else
+              matching_prs="$(
+                jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
+                  [ .[]
+                    | select(.base.ref == "production")
+                    | select(.merged_at != null)
+                    | select(.merge_commit_sha == $sha)
+                    | select(.head.repo.full_name == $repository)
+                  ]
+                ' "${evidence_dir}/associated-pulls.json"
+              )"
+              matching_pr_count="$(jq 'length' <<<"${matching_prs}")"
+              if [ "${matching_pr_count}" -gt 1 ]; then
+                echo "[fail] Production commit matched more than one merged same-repository production PR." >&2
+                exit 1
+              fi
+              if [ "${matching_pr_count}" -eq 0 ]; then
+                last_retry_reason="production PR association is not visible"
+              else
+                pr_number="$(jq -r '.[0].number' <<<"${matching_prs}")"
+                pr_head_sha="$(jq -r '.[0].head.sha' <<<"${matching_prs}")"
+                pr_head_ref="$(jq -r '.[0].head.ref' <<<"${matching_prs}")"
+                [[ "${pr_number}" =~ ^[1-9][0-9]*$ ]]
+                [[ "${pr_head_sha}" =~ ^[0-9a-f]{40}$ ]]
+                test -n "${pr_head_ref}"
+
+                if ! gh api --method GET \
+                  "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+                  -f branch="${pr_head_ref}" \
+                  -f event=pull_request \
+                  -f status=completed \
+                  -f per_page=100 \
+                  > "${evidence_dir}/workflow-runs.json"; then
+                  last_retry_reason="production PR workflow run API is unavailable"
+                  external_failure_signature="workflow-runs-api"
+                else
+                  artifact_name="production-pr-ci-evidence-${pr_number}-${pr_head_sha}"
+                  mapfile -t run_ids < <(
+                    jq -r --arg sha "${pr_head_sha}" '
+                      .workflow_runs[]
+                      | select(.head_sha == $sha)
+                      | select(.event == "pull_request")
+                      | select(.conclusion == "success")
+                      | .id
+                    ' "${evidence_dir}/workflow-runs.json"
+                  )
+                  if [ "${#run_ids[@]}" -eq 0 ]; then
+                    last_retry_reason="successful production PR CI run is not visible"
+                  else
+                    downloaded_artifacts=0
+                    identity_failures=0
+                    for run_id in "${run_ids[@]}"; do
+                      rm -rf "${evidence_dir}/download"
+                      mkdir -p "${evidence_dir}/download"
+                      if ! gh api --method GET \
+                        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                        -f per_page=100 \
+                        > "${evidence_dir}/run-artifacts.json"; then
+                        last_retry_reason="production PR CI artifact inventory API is unavailable"
+                        external_failure_signature="artifact-inventory-api:${run_id}"
+                        break
+                      fi
+                      matching_artifact_count="$(
+                        jq --arg name "${artifact_name}" \
+                          '[.artifacts[] | select(.name == $name and .expired == false)] | length' \
+                          "${evidence_dir}/run-artifacts.json"
+                      )"
+                      if [ "${matching_artifact_count}" -gt 1 ]; then
+                        echo "[fail] Production PR CI run exposed duplicate reusable evidence artifacts." >&2
+                        exit 1
+                      fi
+                      if [ "${matching_artifact_count}" -eq 0 ]; then
+                        continue
+                      fi
+                      if ! gh run download "${run_id}" \
+                        --repo "${GITHUB_REPOSITORY}" \
+                        --name "${artifact_name}" \
+                        --dir "${evidence_dir}/download" >/dev/null 2>&1; then
+                        last_retry_reason="production PR CI evidence artifact download failed"
+                        external_failure_signature="artifact-download:${run_id}"
+                        break
+                      fi
+                      downloaded_artifacts=$((downloaded_artifacts + 1))
+                      if ! gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+                        > "${evidence_dir}/ci-run.json"; then
+                        last_retry_reason="production PR CI run metadata API is unavailable"
+                        external_failure_signature="run-metadata-api:${run_id}"
+                        break
+                      fi
+                      if python3 scripts/production-ci-evidence.py verify \
+                        --repository "${GITHUB_REPOSITORY}" \
+                        --production-sha "${GITHUB_SHA}" \
+                        --production-commit "${evidence_dir}/production-commit.json" \
+                        --associated-pulls "${evidence_dir}/associated-pulls.json" \
+                        --ci-run "${evidence_dir}/ci-run.json" \
+                        --receipt "${evidence_dir}/download/production-pr-ci-evidence.json" \
+                        --output "${evidence_dir}/verification.json"; then
+                        verified=true
+                        source_ci_run_id="${run_id}"
+                        break
+                      fi
+                      identity_failures=$((identity_failures + 1))
+                    done
+                    if [ "${verified}" = "true" ]; then
+                      break
+                    fi
+                    if [ "${identity_failures}" -gt 0 ]; then
+                      echo "[fail] Downloaded production PR CI evidence failed identity or tested-tree verification." >&2
+                      exit 1
+                    fi
+                    if [ -z "${external_failure_signature}" ] && [ "${downloaded_artifacts}" -eq 0 ]; then
+                      last_retry_reason="production PR CI evidence artifact is not visible"
+                    elif [ -z "${external_failure_signature}" ]; then
+                      last_retry_reason="production PR CI evidence is not yet verifiable"
+                    fi
+                  fi
+                fi
+              fi
             fi
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
-              > "${evidence_dir}/ci-run.json"
-            if python3 scripts/production-ci-evidence.py verify \
-              --repository "${GITHUB_REPOSITORY}" \
-              --production-sha "${GITHUB_SHA}" \
-              --production-commit "${evidence_dir}/production-commit.json" \
-              --associated-pulls "${evidence_dir}/associated-pulls.json" \
-              --ci-run "${evidence_dir}/ci-run.json" \
-              --receipt "${evidence_dir}/download/production-pr-ci-evidence.json" \
-              --output "${evidence_dir}/verification.json"; then
-              verified=true
-              source_ci_run_id="${run_id}"
-              break
+            if [ -n "${external_failure_signature}" ]; then
+              if [ "${external_failure_signature}" = "${last_external_failure_signature}" ]; then
+                consecutive_external_failures=$((consecutive_external_failures + 1))
+              else
+                last_external_failure_signature="${external_failure_signature}"
+                consecutive_external_failures=1
+              fi
+              if [ "${consecutive_external_failures}" -ge "${PRODUCTION_EVIDENCE_MAX_EXTERNAL_FAILURES}" ]; then
+                echo "[fail] Production PR CI evidence external operation failed ${consecutive_external_failures} consecutive times with signature ${external_failure_signature}; automatic retries stopped." >&2
+                exit 1
+              fi
+            else
+              last_external_failure_signature=""
+              consecutive_external_failures=0
             fi
+            if [ "${attempt}" -eq "${PRODUCTION_EVIDENCE_MAX_ATTEMPTS}" ]; then
+              echo "[fail] Production PR CI evidence remained unavailable after ${attempt} attempts: ${last_retry_reason}." >&2
+              exit 1
+            fi
+            echo "[info] Production PR CI evidence attempt ${attempt}/${PRODUCTION_EVIDENCE_MAX_ATTEMPTS} is pending: ${last_retry_reason}; retrying in ${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}s."
+            sleep "${PRODUCTION_EVIDENCE_RETRY_DELAY_SECONDS}"
           done
           test "${verified}" = "true"
 
@@ -176,7 +285,7 @@ jobs:
   production-deploy-bundle:
     name: Production deploy bundle
     needs: [production-release-plan, production-promotion-evidence]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production' && needs.production-release-plan.outputs.release_action == 'runtime'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -190,6 +299,38 @@ jobs:
         with:
           name: production-release-plan-${{ github.sha }}
           path: ${{ runner.temp }}/production-release-plan
+
+      - name: Resolve exact application image fingerprints
+        id: application_image_inputs
+        run: |
+          set -euo pipefail
+          plan="${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
+          api_fingerprint="$(jq -er '.application_image_inputs.images[] | select(.key == "api") | .fingerprint' "${plan}")"
+          frontend_fingerprint="$(jq -er '.application_image_inputs.images[] | select(.key == "frontend") | .fingerprint' "${plan}")"
+          [[ "${api_fingerprint}" =~ ^[0-9a-f]{64}$ ]] || exit 64
+          [[ "${frontend_fingerprint}" =~ ^[0-9a-f]{64}$ ]] || exit 64
+          echo "api_fingerprint=${api_fingerprint}" >> "${GITHUB_OUTPUT}"
+          echo "frontend_fingerprint=${frontend_fingerprint}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore exact API application image
+        id: api_application_image_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/api
+          key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
+          restore-keys: |
+            production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-
+
+      - name: Restore exact frontend application image
+        id: frontend_application_image_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/frontend
+          key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
+          restore-keys: |
+            production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-
 
       - name: Restore disposable production image scan evidence
         id: production_scan_cache
@@ -211,14 +352,33 @@ jobs:
           mkdir -p "${cache_root}/evidence"
 
       - name: Build and scan exact production deploy bundle
+        id: build_bundle
         env:
           NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"
+          NPCINK_CLOUD_IMAGE_PLATFORM: linux/amd64
           NPCINK_CLOUD_PACKAGE_EXTRAS: "[zilliz]"
           NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION: "npcink.release-bundle.v2"
           NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE: ${{ runner.temp }}/production-release-plan/production-release-plan.json
           NPCINK_CLOUD_SCAN_REUSE_DIR: ${{ runner.temp }}/production-image-scan-cache/reuse
           NPCINK_CLOUD_SCAN_CACHE_OUTPUT_DIR: ${{ runner.temp }}/production-image-scan-cache/evidence
+          NPCINK_CLOUD_APPLICATION_IMAGE_CACHE_ROOT: ${{ runner.temp }}/production-application-image-cache
         run: bash deploy/bundle-images.sh
+
+      - name: Save exact API application image
+        if: steps.build_bundle.outputs.api_cache_save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/api
+          key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
+
+      - name: Save exact frontend application image
+        if: steps.build_bundle.outputs.frontend_cache_save == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/production-application-image-cache/frontend
+          key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
 
       - name: Save disposable production image scan evidence
         continue-on-error: true
@@ -259,6 +419,8 @@ jobs:
       static_terms_only: ${{ steps.changed.outputs.static_terms_only }}
       docs_only: ${{ steps.changed.outputs.docs_only }}
       frontend_only: ${{ steps.changed.outputs.frontend_only }}
+      frontend_required: ${{ steps.changed.outputs.frontend_required }}
+      frontend_backend_contracts_required: ${{ steps.changed.outputs.frontend_backend_contracts_required }}
       frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}
       specialized_quality_required: ${{ steps.changed.outputs.specialized_quality_required }}
     steps:
@@ -427,6 +589,9 @@ jobs:
             needs_node: false
           - lane: contract-2
             command: --targeted-contract-shard 2
+            needs_node: false
+          - lane: contract-3
+            command: --targeted-contract-shard 3
             needs_node: false
           - lane: impacted
             command: --targeted-impacted
@@ -815,15 +980,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: actions/checkout@v6
 
       - name: Setup pnpm
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -831,24 +996,30 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm install --frozen-lockfile --filter frontend...
 
       - name: Lint
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run lint
 
       - name: Type Check
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run type-check
 
       - name: Unit Tests
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run test:unit
 
       - name: Frontend Contracts
-        if: needs.classify.outputs.docs_only != 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
         run: pnpm --dir frontend run test:contracts
+
+      - name: Backend-owned frontend contracts
+        if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required == 'true'
+        run: |
+          node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs
+          node frontend/tests/unit/admin-coverage-workspace-contract.mjs
 
       - name: Install Playwright Chromium
         if: needs.classify.outputs.frontend_e2e_required == 'true'
@@ -868,9 +1039,9 @@ jobs:
           --grep
           'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections stay idle|account-level support stays available'
 
-      - name: Docs-only frontend acknowledgement
-        if: needs.classify.outputs.docs_only == 'true'
-        run: echo "Frontend gate is not required for documentation-only changes."
+      - name: Unchanged frontend acknowledgement
+        if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'
+        run: echo "Frontend source and toolchain are unchanged; the PR keeps the stable frontend check without reinstalling or retesting the frontend."
 
   static-terms:
     needs: [classify]
@@ -934,12 +1105,24 @@ jobs:
         env:
           PRODUCTION_PR_EVIDENCE_RESULT: ${{ needs.production-promotion-evidence.result }}
           PRODUCTION_RELEASE_PLAN_RESULT: ${{ needs.production-release-plan.result }}
+          PRODUCTION_RELEASE_ACTION: ${{ needs.production-release-plan.outputs.release_action }}
           PRODUCTION_DEPLOY_BUNDLE_RESULT: ${{ needs.production-deploy-bundle.result }}
         run: |
           set -euo pipefail
           test "${PRODUCTION_RELEASE_PLAN_RESULT}" = "success"
           test "${PRODUCTION_PR_EVIDENCE_RESULT}" = "success"
-          test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
+          case "${PRODUCTION_RELEASE_ACTION}" in
+            runtime)
+              test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "success"
+              ;;
+            no_deploy|static)
+              test "${PRODUCTION_DEPLOY_BUNDLE_RESULT}" = "skipped"
+              ;;
+            *)
+              echo "[fail] Unsupported production release action: ${PRODUCTION_RELEASE_ACTION}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Create production PR CI evidence receipt
         if: github.event_name == 'pull_request' && github.base_ref == 'production'

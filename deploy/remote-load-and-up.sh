@@ -74,6 +74,41 @@ PY
 # the caller's original relative value in the environment would let validation
 # and execution resolve the same spelling against different working directories.
 export NPCINK_CLOUD_COMPOSE_FILE="${COMPOSE_FILE}"
+IFS=$'\t' read -r NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION \
+	NPCINK_CLOUD_DEPLOYMENT_RELEASE NPCINK_CLOUD_DEPLOYMENT_CREATED_AT < <(
+	"${RELEASE_TOOL_PYTHON}" - "${ROOT_DIR}/release-bundle-manifest.json" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+try:
+    manifest_path = Path(sys.argv[1]).resolve(strict=True)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    raise SystemExit("[fail] Exact release deployment identity cannot be read.") from exc
+revision = (manifest.get("source") or {}).get("revision")
+if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+    raise SystemExit("[fail] Exact release source revision is invalid.")
+release = manifest_path.parent.name
+if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", release) is None:
+    raise SystemExit("[fail] Exact release name is invalid.")
+created_at = manifest.get("created_at_utc")
+if not isinstance(created_at, str) or "\t" in created_at or "\n" in created_at:
+    raise SystemExit("[fail] Exact release creation time is invalid.")
+print(revision, release, created_at, sep="\t")
+PY
+) || exit 1
+[ -n "${NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION}" ] || exit 1
+[ -n "${NPCINK_CLOUD_DEPLOYMENT_RELEASE}" ] || exit 1
+[ -n "${NPCINK_CLOUD_DEPLOYMENT_CREATED_AT}" ] || exit 1
+NPCINK_CLOUD_FRONTEND_REVISION="${NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION}"
+NPCINK_CLOUD_DEPLOYMENT_SOURCE_DIRTY=false
+export NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION
+export NPCINK_CLOUD_DEPLOYMENT_RELEASE
+export NPCINK_CLOUD_DEPLOYMENT_CREATED_AT
+export NPCINK_CLOUD_DEPLOYMENT_SOURCE_DIRTY
+export NPCINK_CLOUD_FRONTEND_REVISION
 
 npcink_ai_cloud_require_cmd docker
 npcink_ai_cloud_require_cmd curl

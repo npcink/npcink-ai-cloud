@@ -40,6 +40,20 @@ type AdminCommandItem = AdminNavItem & {
   href: string;
 };
 
+type AdminDeploymentIdentity = {
+  release: string;
+  sourceRevision: string;
+  sourceDirty: boolean;
+};
+
+type AdminSessionData = {
+  deployment?: {
+    release?: unknown;
+    source_revision?: unknown;
+    source_dirty?: unknown;
+  };
+};
+
 const ADMIN_SIDEBAR_STORAGE_KEY = 'npcink_admin_sidebar_collapsed';
 const adminLayoutSessionClient = createApiClient({ idempotencyPrefix: 'admin_layout_session' });
 
@@ -68,6 +82,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
   const [adminSessionReady, setAdminSessionReady] = useState(isLoginPage);
+  const [deploymentIdentity, setDeploymentIdentity] = useState<AdminDeploymentIdentity | null>(null);
   const commandDialogRef = useDialogKeyboard<HTMLDivElement>({
     open: commandOpen,
     onClose: () => setCommandOpen(false),
@@ -81,10 +96,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     let cancelled = false;
     void adminLayoutSessionClient
-      .request('/admin/session')
-      .then(() => {
+      .request<AdminSessionData>('/admin/session')
+      .then((response) => {
         if (cancelled) {
           return;
+        }
+        const deployment = response.data.deployment;
+        const release = typeof deployment?.release === 'string' ? deployment.release.trim() : '';
+        const sourceRevision = typeof deployment?.source_revision === 'string'
+          ? deployment.source_revision.trim()
+          : '';
+        if (release || sourceRevision) {
+          setDeploymentIdentity({
+            release: release || 'unknown',
+            sourceRevision: sourceRevision || 'unknown',
+            sourceDirty: deployment?.source_dirty === true,
+          });
         }
         setAdminSessionReady(true);
       })
@@ -706,8 +733,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Admin Footer */}
         <footer className="border-t border-gray-200 py-2 dark:border-gray-800">
-          <div className="mx-auto w-full max-w-[110rem] px-4 text-center text-xs text-gray-500 md:px-5">
-            <p>{t('admin.footer')}</p>
+          <div className="mx-auto flex w-full max-w-[110rem] flex-wrap items-center justify-center gap-x-2 px-4 text-center text-xs text-gray-500 md:px-5">
+            <span>{t('admin.footer')}</span>
+            {deploymentIdentity ? (
+              <span
+                aria-label={t('admin.deployment_identity', {}, 'Deployment identity')}
+                title={`${deploymentIdentity.release} · ${deploymentIdentity.sourceRevision}${deploymentIdentity.sourceDirty ? '+dirty' : ''}`}
+              >
+                · {deploymentIdentity.release}
+                {' · '}
+                {deploymentIdentity.sourceRevision.slice(0, 12)}
+                {deploymentIdentity.sourceDirty ? '+dirty' : ''}
+              </span>
+            ) : null}
           </div>
         </footer>
       </div>

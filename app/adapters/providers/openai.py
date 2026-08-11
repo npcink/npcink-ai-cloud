@@ -1011,6 +1011,9 @@ class OpenAIProviderAdapter:
                     ProviderMediaCandidate(
                         index=index,
                         content_bytes=content_bytes,
+                        provider_connection_id=str(
+                            getattr(self, "provider_connection_id", "") or ""
+                        ),
                         claimed_mime_type=claimed_mime_type,
                         revised_prompt=revised_prompt,
                         claimed_width=claimed_width,
@@ -1028,6 +1031,9 @@ class OpenAIProviderAdapter:
                     index=index,
                     source_url=source_url,
                     image_output_hosts=self.image_output_hosts,
+                    provider_connection_id=str(
+                        getattr(self, "provider_connection_id", "") or ""
+                    ),
                     claimed_mime_type=claimed_mime_type,
                     revised_prompt=revised_prompt,
                     claimed_width=claimed_width,
@@ -1148,6 +1154,9 @@ class OpenAIProviderAdapter:
                 ProviderMediaCandidate(
                     index=1,
                     content_bytes=SAMPLE_IMAGE_PNG,
+                    provider_connection_id=str(
+                        getattr(self, "provider_connection_id", "") or ""
+                    ),
                     claimed_mime_type="image/png",
                     revised_prompt=source_text,
                     claimed_width=1,

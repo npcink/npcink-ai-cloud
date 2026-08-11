@@ -359,13 +359,21 @@ pnpm run m4:frontend:logs -- --slot 1
 pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
 ```
 
-`deploy` builds the runtime and frontend images on M4. It never calls local
-Docker and never relays a locally built image. `sync` refuses to continue when
-a dependency input, Dockerfile, lock file, Compose file, or proxy configuration
-requires `deploy`. `prepare` builds from an isolated incoming directory and
-does not change the active source mirror, running containers, or deployed
-fingerprint markers. If `prepare` produced newer images, `sync` refuses to
-apply source until `deploy` has successfully validated those images.
+`deploy` builds only the runtime or frontend image whose own fingerprint is
+stale on M4. Runtime and frontend fingerprints cover separate dependency files
+and separate bounded build-recipe blocks inside the preview script, so an
+orchestration-only script edit does not invalidate either image and a
+runtime-only dependency change does not refresh the frontend dependency volume.
+The script outside those recipe blocks has its own deployment-orchestration
+fingerprint: changing migration, service-switch, marker, or other deployment
+logic requires `deploy` but does not rebuild an otherwise valid image. It never
+calls local Docker and never relays a locally built image. `sync` refuses to
+continue when either image fingerprint, the deployment-orchestration
+fingerprint, a Compose file, or proxy configuration requires `deploy`.
+`prepare` builds from an isolated incoming directory and does not change the
+active source mirror, running containers, or deployed fingerprint markers. If
+`prepare` produced a newer runtime or frontend image, `sync` refuses to apply
+source until `deploy` has successfully validated that image.
 
 The M4 Docker Desktop proxy currently truncates redirected registry blob
 downloads. The M4-only builder therefore uses host-side `crane` to fetch the
@@ -486,8 +494,18 @@ first-install gate from asking the development API for production setup state;
 it does not alter the production setup contract or production Compose.
 
 The API uses Uvicorn reload for `app/**` and migrations. Next.js development
-mode handles ordinary frontend changes. Runtime, callback, and ops workers are
-restarted after every successful sync because they do not have file watchers.
+mode handles ordinary frontend changes. M4 records separate content
+fingerprints for `app/**` worker source and `alembic.ini + migrations/**`.
+After the first successful marker bootstrap, sync and promotion restart runtime,
+callback, and ops workers only when the worker-source fingerprint changed, and
+run `alembic upgrade head` only when the migration-source fingerprint changed
+or the live database revision no longer equals `alembic heads`. Unrelated
+documentation, tests, deployment helpers, or frontend-only source do not
+restart workers or replay Alembic. Missing markers and database-revision drift
+fail conservatively by running the corresponding operation once and recording
+the marker only after the complete health gate succeeds. A repaired M4 Nginx
+file is reloaded when its live source drifted; only an unchanged file skips the
+reload.
 
 The M4 currently has no host Node or pnpm runtime. `m4:preview:test` therefore
 runs pytest inside the M4 API image. Use `--focused` with exact `tests/` paths
@@ -531,8 +549,9 @@ pnpm run m4:preview:status
 ```
 
 Promotion verifies the PR is merged into `master` through GitHub, then uses
-`sync` by default. If dependency, Dockerfile, lock-file, Compose, proxy, or M4
-deployment-script inputs changed, it fails closed with the explicit fallback:
+`sync` by default. If an image dependency, Dockerfile, lock file, bounded M4
+image-build recipe, deployment-orchestration input, Compose file, or proxy input
+changed, it fails closed with the explicit fallback:
 
 ```bash
 pnpm run m4:preview:promote -- --pr <merged-pr-number> --deploy
@@ -561,10 +580,11 @@ must be promoted again before completion is reported.
 Frontend-only slots do not replace the primary accepted status. They record
 their own owner, TTL, frontend revision, source bundle hash, and the accepted
 primary revision they consumed. Ordinary slot start/sync refuses an active
-primary operation, a candidate primary, fingerprint drift, or an unhealthy
-API. The `--allow-candidate-primary` flag is reserved for validating the slot
-machinery itself and requires exact candidate revision and full source-bundle
-equality.
+primary operation, a candidate primary, frontend-image fingerprint drift, or
+an unhealthy API. Runtime-image-only dependency changes do not invalidate an
+otherwise compatible frontend slot. The `--allow-candidate-primary` flag is
+reserved for validating the slot machinery itself and requires exact candidate
+revision and full source-bundle equality.
 
 Slots 1 and 2 map M4 loopback ports `8021` and `8022` to authoring-Mac
 foreground tunnel ports `18021` and `18022`. Slot 3 maps `8023` to `18023` and
@@ -613,7 +633,8 @@ listener_owner=managed
   -> continue
 
 listener missing
-  -> continue; the managed restart recovers it after deployment
+  -> continue; LaunchAgent KeepAlive must recover it before the read-only
+     postflight timeout
 
 listener_owner=unmanaged
   -> fail before source transfer
@@ -626,8 +647,13 @@ unknown listener process
 ```
 
 The preflight never installs Ollama, kills an unknown process, or changes the
-listener. Keep the final post-deploy PID and loopback-binding verification as
-a race-safe check even after the early preflight passes. Do not substitute
+listener. Deploy records the managed PID before source transfer and uses a
+read-only postflight to verify the API, loopback binding, LaunchAgent ownership,
+and unchanged PID after the deployment. It does not restart a healthy managed
+Ollama process. If the listener was initially missing, the postflight accepts
+the PID restored by LaunchAgent KeepAlive but performs no bootstrap, enable,
+kickstart, stop, takeover, or install action itself. Keep this final check as a
+race-safe verification even after the early preflight passes. Do not substitute
 `m4:preview:recover` for an ownership handoff: recovery only restarts the
 managed job and must remain blocked while another process owns `11434`.
 
@@ -686,11 +712,24 @@ After a successful deployment, status records:
 - clean or dirty state and dirty path count;
 - source bundle SHA-256;
 - source transfer mode;
-- dependency and runtime-config fingerprints;
+- independent runtime-image, frontend-image, deployment-orchestration, and
+  runtime-config fingerprints;
+- frontend source fingerprint, resolved frontend-config fingerprint, and the
+  revision actually served by the frontend;
+- worker-source and migration-source fingerprints used by the selective sync
+  plan;
 - runtime and frontend image IDs and creation times;
 - Alembic revision and deployment UTC time.
 
 This metadata is evidence, not a second source-control system.
+
+Deploy and sync compare the incoming frontend source fingerprint with the last
+successfully deployed frontend. They force-recreate the frontend only when its
+source changed, its image or dependency volume changed, relevant preview
+configuration changed (including protected `.env` or `.env.local` inputs), or
+the managed frontend container is absent. Backend,
+CI, documentation, or release-script-only changes preserve the healthy
+frontend container and its previously served frontend revision.
 
 ## First Replacement Procedure
 
