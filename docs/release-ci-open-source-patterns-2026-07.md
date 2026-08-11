@@ -66,6 +66,22 @@ pnpm run release:timing -- <run-id> --format json \
   --receipt-output artifacts/release-timing/backend-pr-<run-id>.json
 ```
 
+Compare only compatible successful receipts:
+
+```bash
+pnpm run release:timing:compare -- \
+  --baseline artifacts/release-timing/backend-pr-<baseline-run>.json \
+  --candidate artifacts/release-timing/backend-pr-<candidate-run>.json \
+  --format json \
+  --output artifacts/release-timing/backend-comparison.json
+```
+
+The comparator fails closed when receipt kinds, workflow/event identities,
+executed GitHub job sets, repositories, production lanes, release actions, or
+successful completion states differ. It reports measured direction, absolute
+delta, and percentage improvement; it does not choose samples or convert an
+incompatible comparison into a speedup claim.
+
 The immediate goal is observability. Test splitting is based on collected
 slow-test evidence instead of guesses. `ci/pytest-backend-durations.json` stores
 the current per-file duration weights generated from the production CI JUnit
