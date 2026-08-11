@@ -69,8 +69,12 @@ def test_deploy_timing_summary_groups_release_phases_without_double_counting_wra
 [timing] alembic upgrade: 6s
 [timing] remote migrate: 7s
 [timing] stop public and write-capable application services: start
-[timing] stop application service api (abc123): start
-[timing] stop application service api (abc123): 2s
+[timing] stop application service api (api123): start
+[timing] stop application service worker (worker123): start
+[timing] stop application service ops-worker (ops123): start
+[timing] stop application service api (api123): 0s
+[timing] stop application service worker (worker123): 2s
+[timing] stop application service ops-worker (ops123): 2s
 [timing] stop public and write-capable application services: 3s
 [timing] remote operational readiness: start
 [timing] remote operational readiness: 9s
@@ -92,6 +96,7 @@ def test_deploy_timing_summary_groups_release_phases_without_double_counting_wra
     assert summary["repository"] == "npcink/npcink-ai-cloud"
     assert summary["head_sha"] == "a" * 40
     assert summary["workflow_run_id"] == "12345"
+    assert summary["recorded_total_seconds"] == 62
     assert summary["remote_sequence_seconds"] == 58
     assert summary["category_seconds"] == {
         "bundle": 0,
@@ -102,7 +107,7 @@ def test_deploy_timing_summary_groups_release_phases_without_double_counting_wra
         "health": 9,
         "other": 0,
     }
-    assert len(summary["phases"]) == 9
+    assert len(summary["phases"]) == 11
     nested = {
         phase["label"]: phase
         for phase in summary["phases"]
@@ -110,7 +115,13 @@ def test_deploy_timing_summary_groups_release_phases_without_double_counting_wra
     }
     assert nested["verify exact bundle before load"]["counted_in_category_totals"] is False
     assert nested["alembic upgrade"]["counted_in_category_totals"] is False
-    assert nested["stop application service api (abc123)"][
+    assert nested["stop application service api (api123)"][
+        "counted_in_category_totals"
+    ] is False
+    assert nested["stop application service worker (worker123)"][
+        "counted_in_category_totals"
+    ] is False
+    assert nested["stop application service ops-worker (ops123)"][
         "counted_in_category_totals"
     ] is False
     assert summary["status"] == "success"
