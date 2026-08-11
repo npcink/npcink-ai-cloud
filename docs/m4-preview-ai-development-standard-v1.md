@@ -338,7 +338,12 @@ migration, or container mutation. An unmanaged listener MUST fail closed with
 an actionable status/install path. An AI agent MUST NOT automatically stop,
 replace, or take over that listener; the standard Ollama.app handoff requires
 explicit operator approval, and an unknown process requires read-only
-investigation.
+investigation. After deployment, the operation MUST use a read-only postflight
+to verify the API, loopback binding, managed LaunchAgent ownership, and an
+unchanged healthy preflight PID. A missing preflight listener MAY recover through
+LaunchAgent KeepAlive, but the postflight MUST NOT bootstrap, enable, kickstart,
+stop, install, or take over Ollama. Explicit restart and recovery commands keep
+their existing lifecycle authority.
 
 M4 source application MUST validate the fully extracted incoming Compose and
 Nginx inputs before changing the live source mirror. A configuration failure

@@ -633,7 +633,8 @@ listener_owner=managed
   -> continue
 
 listener missing
-  -> continue; the managed restart recovers it after deployment
+  -> continue; LaunchAgent KeepAlive must recover it before the read-only
+     postflight timeout
 
 listener_owner=unmanaged
   -> fail before source transfer
@@ -646,8 +647,13 @@ unknown listener process
 ```
 
 The preflight never installs Ollama, kills an unknown process, or changes the
-listener. Keep the final post-deploy PID and loopback-binding verification as
-a race-safe check even after the early preflight passes. Do not substitute
+listener. Deploy records the managed PID before source transfer and uses a
+read-only postflight to verify the API, loopback binding, LaunchAgent ownership,
+and unchanged PID after the deployment. It does not restart a healthy managed
+Ollama process. If the listener was initially missing, the postflight accepts
+the PID restored by LaunchAgent KeepAlive but performs no bootstrap, enable,
+kickstart, stop, takeover, or install action itself. Keep this final check as a
+race-safe verification even after the early preflight passes. Do not substitute
 `m4:preview:recover` for an ownership handoff: recovery only restarts the
 managed job and must remain blocked while another process owns `11434`.
 

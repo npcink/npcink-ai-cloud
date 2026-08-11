@@ -339,6 +339,7 @@ verify_promotion_preconditions() {
 promote_accepted_master() {
 	local pr_number=""
 	local mode="sync"
+	local ollama_preflight_pid=""
 
 	while [ "$#" -gt 0 ]; do
 		case "$1" in
@@ -368,10 +369,11 @@ promote_accepted_master() {
 	verify_promotion_preconditions "${pr_number}"
 	if [ "${mode}" = "deploy" ] && [ "${DRY_RUN}" = "0" ]; then
 		remote_ollama_preflight
+		ollama_preflight_pid="${OLLAMA_PREFLIGHT_PID}"
 	fi
 	upload_and_apply "${mode}" accepted "${pr_number}"
 	if [ "${mode}" = "deploy" ] && [ "${DRY_RUN}" = "0" ]; then
-		remote_ollama_restart 1
+		remote_ollama_postflight "${ollama_preflight_pid}"
 	fi
 }
 
@@ -729,8 +731,9 @@ REMOTE_OLLAMA_STATUS
 }
 
 remote_ollama_preflight() {
+	local output=""
 	require_cmd ssh
-	ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" bash -s -- \
+	output="$(ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" bash -s -- \
 		"${M4_OLLAMA_LABEL}" \
 		"${M4_OLLAMA_PORT}" <<'REMOTE_OLLAMA_PREFLIGHT'
 set -euo pipefail
@@ -744,6 +747,7 @@ plist="${HOME}/Library/LaunchAgents/${label}.plist"
 
 if [ ! -f "${plist}" ]; then
 	echo '[m4-preview] managed Ollama is not installed; skipping ownership preflight'
+	echo 'ollama_preflight_pid=not-installed'
 	exit 0
 fi
 
@@ -758,11 +762,13 @@ listener_pid="$(
 )"
 
 if [ -z "${listener_pid}" ]; then
-	echo '[m4-preview] managed Ollama ownership preflight passed; listener will be recovered'
+	echo '[m4-preview] managed Ollama ownership preflight passed; waiting for LaunchAgent KeepAlive recovery'
+	echo 'ollama_preflight_pid=missing'
 	exit 0
 fi
 if [ -n "${managed_pid}" ] && [ "${listener_pid}" = "${managed_pid}" ]; then
 	echo "[m4-preview] managed Ollama ownership preflight passed; pid=${managed_pid}"
+	echo "ollama_preflight_pid=${managed_pid}"
 	exit 0
 fi
 
@@ -772,6 +778,86 @@ echo '[m4-preview] inspect with: pnpm run m4:preview:ollama:status' >&2
 echo '[m4-preview] after operator approval, hand off standard Ollama.app with: pnpm run m4:preview:ollama:install' >&2
 exit 65
 REMOTE_OLLAMA_PREFLIGHT
+)" || return $?
+	printf '%s\n' "${output}"
+	OLLAMA_PREFLIGHT_PID="$(
+		printf '%s\n' "${output}" |
+			sed -n 's/^ollama_preflight_pid=//p' |
+			tail -n 1
+	)"
+	[ -n "${OLLAMA_PREFLIGHT_PID}" ] || fail "Ollama preflight did not return a PID state"
+}
+
+remote_ollama_postflight() {
+	local expected_pid="$1"
+	[ -n "${expected_pid}" ] || fail "Ollama postflight requires the preflight PID state"
+	require_cmd ssh
+	ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" bash -s -- \
+		"${M4_OLLAMA_LABEL}" \
+		"${M4_OLLAMA_PORT}" \
+		"${expected_pid}" <<'REMOTE_OLLAMA_POSTFLIGHT'
+set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+label="$1"
+port="$2"
+expected_pid="$3"
+uid="$(id -u)"
+job="gui/${uid}/${label}"
+plist="${HOME}/Library/LaunchAgents/${label}.plist"
+
+if [ ! -f "${plist}" ]; then
+	if [ "${expected_pid}" = "not-installed" ]; then
+		echo '[m4-preview] managed Ollama is not installed; skipping postflight verification'
+		exit 0
+	fi
+	echo '[m4-preview] managed Ollama disappeared during deployment' >&2
+	exit 65
+fi
+
+for _ in $(seq 1 15); do
+	if curl --fail --silent --show-error --max-time 2 \
+		"http://127.0.0.1:${port}/api/version" >/dev/null 2>&1; then
+		break
+	fi
+	sleep 1
+done
+curl --fail --silent --show-error --max-time 3 \
+	"http://127.0.0.1:${port}/api/version" >/dev/null
+
+binding="$(
+	lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null |
+		awk 'NR == 2 { print $9 }'
+)"
+case "${binding}" in
+	127.0.0.1:"${port}") ;;
+	*)
+		echo "[m4-preview] invalid Ollama binding after deployment: ${binding:-missing}" >&2
+		exit 65
+		;;
+esac
+
+managed_pid="$(
+	launchctl print "${job}" 2>/dev/null |
+		awk -F ' = ' '/^[[:space:]]*pid = / { print $2; exit }' || true
+)"
+listener_pid="$(
+	lsof -nP -iTCP:"${port}" -sTCP:LISTEN -Fp 2>/dev/null |
+		sed -n 's/^p//p' |
+		head -n 1 || true
+)"
+[ -n "${managed_pid}" ] && [ "${listener_pid}" = "${managed_pid}" ] || {
+	echo '[m4-preview] Ollama listener is not owned by the managed LaunchAgent after deployment' >&2
+	exit 65
+}
+if [ "${expected_pid}" != "missing" ] && [ "${expected_pid}" != "not-installed" ] && \
+	[ "${managed_pid}" != "${expected_pid}" ]; then
+	echo "[m4-preview] managed Ollama PID changed during deployment: before=${expected_pid} after=${managed_pid}" >&2
+	exit 65
+fi
+
+echo "[m4-preview] managed Ollama postflight passed; pid=${managed_pid}; preflight_pid=${expected_pid}; binding=${binding}"
+REMOTE_OLLAMA_POSTFLIGHT
 }
 
 remote_ollama_install() {
@@ -3215,13 +3301,15 @@ main() {
 			upload_and_apply "${command}" candidate none
 			;;
 		deploy)
+			local ollama_preflight_pid=""
 			parse_dry_run "$@"
 			if [ "${DRY_RUN}" = "0" ]; then
 				remote_ollama_preflight
+				ollama_preflight_pid="${OLLAMA_PREFLIGHT_PID}"
 			fi
 			upload_and_apply "${command}" candidate none
 			if [ "${DRY_RUN}" = "0" ]; then
-				remote_ollama_restart 1
+				remote_ollama_postflight "${ollama_preflight_pid}"
 			fi
 			;;
 		promote)
