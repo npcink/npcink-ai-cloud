@@ -45,6 +45,7 @@ The authoritative details are:
 - [ADR-025: Source-Only Authoring and AI Checkpoint Dispatch](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md);
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md);
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md);
+- [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md);
 - [Release CI Open-Source Patterns](release-ci-open-source-patterns-2026-07.md).
 
 ## 2. Evidence States Are Not Interchangeable
@@ -382,6 +383,13 @@ Stable assertions also reduce wasted reruns. Release and integration smoke must
 prefer versioned, machine-readable, language-independent markers over localized
 copy, layout text, or other presentation details unless the presentation itself
 is the declared consumer contract.
+
+The normative rules for artifact-identity reuse, path-aware fail-closed CI,
+release-plan phase selection, compatible timing samples, and optimization stop
+lines are defined in the
+[Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md).
+This operating model defines the evidence states; the efficiency standard
+governs how to shorten the path between them.
 
 ## 8. CI Feedback Is a Governed Closed Loop
 
