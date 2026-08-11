@@ -2449,6 +2449,15 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "bash deploy/small-customer-trial-preflight.sh" in deploy_workflow
     assert "--require-alipay-enabled" in deploy_workflow
     assert "bash deploy/release-smoke.sh --base-url" in deploy_workflow
+    assert "--deploy-log" in deploy_workflow
+    assert "--source-repository" in deploy_workflow
+    assert "--source-sha" in deploy_workflow
+    assert "--workflow-run-id" in deploy_workflow
+    assert "production-deploy-phase-timing.json" in deploy_workflow
+    assert "production-deploy-timing-${{ github.run_id }}-${{ github.sha }}" in (
+        deploy_workflow
+    )
+    assert 'pipeline_status=("${PIPESTATUS[@]}")' in deploy_workflow
     assert "ci-observability:" in ci_workflow
     assert "python3 scripts/report-release-timing.py" in ci_workflow
     assert "artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" in ci_workflow
