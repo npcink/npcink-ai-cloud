@@ -137,6 +137,16 @@ Risk and command choice are related but not identical:
 - an agent MUST NOT choose `deploy` merely as a substitute for understanding
   the changed files.
 
+Within a valid source sync, successful content-bound markers select runtime
+operations independently. Unchanged migration source skips Alembic only after
+the live database revision equals the expected Alembic head. Unchanged worker
+source preserves the runtime, callback, and ops workers, and unchanged live
+proxy configuration skips proxy reload. Missing or stale markers, database
+revision drift, or repaired proxy-file drift use the conservative operation;
+markers advance only after the complete runtime health gate succeeds. These
+skips reuse evidence for the exact content and do not weaken migration, worker,
+proxy, image, Compose, or configuration drift checks.
+
 Use the full M4 gate only when the change is high risk, M4-specific, or GitHub
 CI cannot represent the required runtime evidence. Do not run the
 approximately nine-minute full gate after every small edit, before and after

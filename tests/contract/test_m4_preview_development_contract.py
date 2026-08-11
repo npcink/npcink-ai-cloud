@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -263,6 +264,8 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "deployed_frontend_image_marker" in source
     assert "deployed_orchestration_marker" in source
     assert "deployed_config_marker" in source
+    assert "deployed_worker_source_marker" in source
+    assert "deployed_migration_source_marker" in source
     assert "prepared image inputs are not deployed" in source
     assert 'test ! -L "${remote_dir}"' in source
     assert 'resolved_remote_dir="$(cd "${remote_dir}" && pwd -P)"' in source
@@ -290,7 +293,14 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "frontend_source_fingerprint" in source
     assert 'export NPCINK_CLOUD_FRONTEND_REVISION="${frontend_runtime_revision}"' in source
     assert "frontend source, image, and config are unchanged; recreate skipped" in source
-    assert "service-plan frontend_recreate=" in source
+    assert "frontend_recreate=" in source
+    assert "service-plan migration=" in source
+    assert "worker_restart=" in source
+    assert "migration source is unchanged; Alembic upgrade skipped" in source
+    assert "live database revision matches the expected Alembic head" in source
+    assert "live database revision drifted; Alembic upgrade required" in source
+    assert "worker source is unchanged; worker restart skipped" in source
+    assert "proxy config is unchanged; proxy reload skipped" in source
     assert '"${compose[@]}" up -d --no-build --pull never --force-recreate frontend' in source
     assert "acceptance_state" in source
     assert "promotion_pr" in source
@@ -397,7 +407,9 @@ def test_m4_frontend_recreate_is_selected_only_for_frontend_relevant_change() ->
     assert '"${frontend_volume_refresh_required}" = "1"' in selection
     assert '"${compose[@]}" ps -q frontend' in selection
     assert "frontend_recreate_required=1" in selection
-    assert "service-plan frontend_recreate=" in source
+    assert "service-plan migration=" in source
+    assert "worker_restart=" in source
+    assert "frontend_recreate=" in source
     assert '[[ "${previous_frontend_revision}" =~ ^[0-9a-f]{40}$ ]]' in source
     assert '"${compose[@]}" config --format json' in source
     assert "deployed_frontend_config_marker" in source
@@ -599,6 +611,124 @@ def test_m4_runtime_and_frontend_image_fingerprints_are_independent(
     assert fingerprint("runtime") != initial_runtime
     assert fingerprint("frontend") == initial_frontend
     assert fingerprint("orchestration") == changed_orchestration
+
+
+def test_m4_worker_and_migration_source_fingerprints_are_independent(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    fingerprint_functions = "scoped_source_fingerprint() {" + source.split(
+        "scoped_source_fingerprint() {",
+        1,
+    )[1].split("\nsource_path_allowed() {", 1)[0]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for relative, content in {
+        "README.md": "unrelated\n",
+        "alembic.ini": "[alembic]\n",
+        "app/main.py": "VALUE = 1\n",
+        "migrations/env.py": "VALUE = 1\n",
+        "migrations/versions/0001_test.py": "VALUE = 1\n",
+    }.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    source_stage = tmp_path / "source-stage"
+    shutil.copytree(repo, source_stage)
+    runner = tmp_path / "source-fingerprint.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"{fingerprint_functions}\n"
+        'case "$1" in\n'
+        "  worker) worker_source_fingerprint ;;\n"
+        "  migration) migration_source_fingerprint ;;\n"
+        "  *) exit 64 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    def fingerprint(kind: str) -> str:
+        return subprocess.run(
+            ["bash", str(runner), kind],
+            cwd=repo,
+            env={
+                **os.environ,
+                "ROOT_DIR": str(repo),
+                "SOURCE_STAGE_PATH": str(source_stage),
+            },
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    initial_worker = fingerprint("worker")
+    initial_migration = fingerprint("migration")
+    (source_stage / "README.md").write_text("unrelated change\n", encoding="utf-8")
+    assert fingerprint("worker") == initial_worker
+    assert fingerprint("migration") == initial_migration
+
+    (repo / "app/main.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert fingerprint("worker") == initial_worker
+    (source_stage / "app/main.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert fingerprint("worker") != initial_worker
+    assert fingerprint("migration") == initial_migration
+    (source_stage / "app/main.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    (source_stage / "migrations/versions/0001_test.py").write_text(
+        "VALUE = 2\n",
+        encoding="utf-8",
+    )
+    assert fingerprint("worker") == initial_worker
+    assert fingerprint("migration") != initial_migration
+
+
+def test_m4_unchanged_source_sync_skips_runtime_mutations() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    sync_block = _marked_shell_block(source, "selective M4 source sync")
+
+    migration_guard = sync_block.split(
+        'if [ "${migration_required}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    worker_guard = sync_block.split(
+        'if [ "${worker_restart_required}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    frontend_guard = sync_block.split(
+        'if [ "${frontend_recreate_required}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+    proxy_guard = sync_block.split(
+        'if [ "${nginx_config_changed}" = "1" ]; then',
+        1,
+    )[1].split("\n\tfi", 1)[0]
+
+    assert "alembic upgrade head" in migration_guard
+    assert "stack_touched=1" in migration_guard
+    assert "restart worker callback-worker ops-worker" in worker_guard
+    assert "stack_touched=1" in worker_guard
+    assert "--force-recreate frontend" in frontend_guard
+    assert "stack_touched=1" in frontend_guard
+    assert "nginx -s reload" in proxy_guard
+    assert "restart proxy" in proxy_guard
+    assert "proxy config is unchanged; proxy reload skipped" in sync_block
+
+
+def test_m4_migration_skip_requires_live_database_head_proof() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    proof_start = source.index(
+        'if [ "${mode}" != "prepare" ] && [ "${migration_required}" = "0" ]; then'
+    )
+    proof_end = source.index('\nfi\n\nif [ "${mode}" != "prepare" ]; then', proof_start)
+    proof = source[proof_start:proof_end]
+
+    assert "alembic heads" in proof
+    assert "alembic current" in proof
+    assert "migration_required=1" in proof
+    assert source.index("service-plan migration=", proof_end) > proof_end
 
 
 def test_m4_image_build_and_frontend_volume_plans_are_independent() -> None:
