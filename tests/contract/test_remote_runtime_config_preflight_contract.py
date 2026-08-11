@@ -9,6 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PREFLIGHT = ROOT / "deploy/remote-runtime-config-preflight.sh"
+DOCKERFILE = ROOT / "Dockerfile"
 
 
 def _payload() -> str:
@@ -156,3 +157,12 @@ def test_preflight_shell_binds_real_payload_to_exact_candidate_image_and_redacts
     assert "require_upgradeable_revisions" in _payload()
     assert "PY' >/dev/null 2>&1" in source
     assert "Candidate image could not prove protected runtime config" in source
+
+
+def test_production_api_image_contains_candidate_revision_gate_helper() -> None:
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+
+    assert (
+        "COPY scripts/alembic_revision_gate.py "
+        "./scripts/alembic_revision_gate.py" in dockerfile
+    )

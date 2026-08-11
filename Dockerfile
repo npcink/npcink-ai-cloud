@@ -131,6 +131,7 @@ COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY app ./app
 COPY migrations ./migrations
 COPY deploy/wait-for-install.sh ./deploy/wait-for-install.sh
+COPY scripts/alembic_revision_gate.py ./scripts/alembic_revision_gate.py
 COPY scripts/verify-production-python-lock.py ./scripts/verify-production-python-lock.py
 COPY scripts/live-site-addon-rollback.py ./scripts/live-site-addon-rollback.py
 COPY scripts/live-site-runtime-execute-smoke.py ./scripts/live-site-runtime-execute-smoke.py
