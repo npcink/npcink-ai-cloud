@@ -25,6 +25,7 @@ IMAGE_DEFINITIONS = {
         "app",
         "migrations",
         "deploy/wait-for-install.sh",
+        "scripts/alembic_revision_gate.py",
         "scripts/verify-production-python-lock.py",
         "scripts/live-site-addon-rollback.py",
         "scripts/live-site-runtime-execute-smoke.py",
