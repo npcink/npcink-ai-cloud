@@ -1888,6 +1888,10 @@ def test_m4_ollama_ownership_preflight_is_early_and_fail_closed() -> None:
 
     preflight = source[
         source.index("remote_ollama_preflight() {") :
+        source.index("remote_ollama_postflight() {")
+    ]
+    postflight = source[
+        source.index("remote_ollama_postflight() {") :
         source.index("remote_ollama_install() {")
     ]
     promote = source[
@@ -1908,10 +1912,27 @@ def test_m4_ollama_ownership_preflight_is_early_and_fail_closed() -> None:
     assert promote.index("remote_ollama_preflight") < promote.index(
         "upload_and_apply"
     )
+    assert deploy_case.index("upload_and_apply") < deploy_case.index(
+        "remote_ollama_postflight"
+    )
+    assert promote.index("upload_and_apply") < promote.index(
+        "remote_ollama_postflight"
+    )
+    assert "remote_ollama_restart" not in deploy_case
+    assert "remote_ollama_restart" not in promote
+    assert "launchctl kickstart" not in postflight
+    assert "launchctl bootstrap" not in postflight
+    assert "launchctl enable" not in postflight
+    assert "kill " not in postflight
+    assert "managed Ollama PID changed during deployment" in postflight
+    assert "127.0.0.1:" in postflight
+    assert "/api/version" in postflight
     assert "before source transfer" in runbook
+    assert "does not restart a healthy managed" in runbook
     assert "unknown listener process" in runbook
     assert "MUST be checked before source transfer" in standard
     assert "MUST NOT automatically stop" in standard
+    assert "MUST use a read-only postflight" in standard
 
 
 def test_m4_deploy_stops_before_packaging_when_ollama_preflight_fails(
