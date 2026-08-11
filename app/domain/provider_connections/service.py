@@ -17,7 +17,7 @@ from app.adapters.providers.openai import (
 from app.adapters.providers.registry import build_provider_adapter_from_connection
 from app.core.config import Settings
 from app.core.db import get_session
-from app.core.models import ProviderConnection
+from app.core.models import ProviderConnection, RunRecord
 from app.core.secrets import decrypt_provider_connection_secret, encrypt_provider_connection_secret
 from app.domain.catalog.service import CatalogService
 from app.domain.provider_connections.runtime_settings import (
@@ -219,6 +219,101 @@ class ProviderConnectionAdminService:
             session.delete(row)
             session.commit()
         return {"deleted": True, "connection": serialized}
+
+    def approve_detected_image_output_host(
+        self,
+        connection_id: str,
+        *,
+        evidence_run_id: str,
+    ) -> dict[str, Any]:
+        normalized_id = _normalize_identifier(connection_id, field="connection_id")
+        normalized_run_id = _string(evidence_run_id)
+        if not normalized_run_id or len(normalized_run_id) > 191:
+            raise ProviderConnectionAdminError(
+                "provider_connection.image_host_evidence_invalid",
+                "image host evidence run is invalid",
+            )
+        now = datetime.now(UTC)
+        with get_session(self.database_url) as session:
+            row = session.get(ProviderConnection, normalized_id)
+            if row is None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.not_found",
+                    "provider connection was not found",
+                    status_code=404,
+                )
+            metadata = dict(_dict(row.metadata_json))
+            evidence = _dict(metadata.get("image_delivery_repair"))
+            if (
+                evidence.get("status") != "pending"
+                or _string(evidence.get("reason_code")) != "host_not_allowlisted"
+                or _string(evidence.get("run_id")) != normalized_run_id
+            ):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_stale",
+                    "image host approval evidence is missing or no longer current",
+                    status_code=409,
+                )
+            run = session.get(RunRecord, normalized_run_id)
+            config = dict(_dict(row.config_json))
+            provider_id = _string(config.get("provider_id") or row.connection_id)
+            if (
+                run is None
+                or _string(run.status) != "failed"
+                or _string(run.execution_kind) != "image_generation"
+                or _string(run.error_code) != "image_generation.artifact_materialization_failed"
+                or _string(run.selected_provider_id) != provider_id
+                or _string(evidence.get("provider_id")) != provider_id
+            ):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_mismatch",
+                    "image host approval evidence does not match this provider connection",
+                    status_code=409,
+                )
+            try:
+                approved_host = normalize_provider_image_output_hosts(
+                    [_string(evidence.get("detected_host"))]
+                )[0]
+            except (IndexError, ValueError) as error:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.image_host_evidence_invalid",
+                    "detected image host is invalid",
+                    status_code=409,
+                ) from error
+
+            raw_existing_hosts = config.get("image_output_hosts")
+            existing_hosts_input = (
+                [item for item in raw_existing_hosts if isinstance(item, str)]
+                if isinstance(raw_existing_hosts, list)
+                else []
+            )
+            existing_hosts = list(
+                normalize_provider_image_output_hosts(existing_hosts_input)
+            )
+            if approved_host not in existing_hosts:
+                existing_hosts.append(approved_host)
+            config["image_response_format"] = "url"
+            config["image_output_hosts"] = existing_hosts
+            capability_ids = _effective_capability_ids(config, row.provider_type)
+            config["capability_ids"] = capability_ids
+            row.config_json = config
+            metadata["image_delivery_repair"] = {
+                **evidence,
+                "status": "approved",
+                "approved_at": now.isoformat(),
+            }
+            row.metadata_json = metadata
+            row.last_tested_at = None
+            row.last_error_code = None
+            row.last_error_message = None
+            row.updated_at = now
+            session.commit()
+            session.refresh(row)
+            return {
+                "approved_image_output_host": approved_host,
+                "evidence_run_id": normalized_run_id,
+                "connection": self._serialize(row),
+            }
 
     def test_connection(self, connection_id: str) -> dict[str, Any]:
         normalized_id = _normalize_identifier(connection_id, field="connection_id")
@@ -668,9 +763,12 @@ class ProviderConnectionAdminService:
 
     def _serialize(self, row: ProviderConnection) -> dict[str, Any]:
         config = _dict(row.config_json)
-        capability_ids = _normalize_id_list(config.get("capability_ids"))
+        kind = _string(config.get("kind") or row.provider_type)
+        capability_ids = _effective_capability_ids(config, kind)
         runtime_profile_ids = _normalize_id_list(config.get("runtime_profile_ids"))
-        metadata = _dict(row.metadata_json)
+        metadata = dict(_dict(row.metadata_json))
+        image_delivery_repair = _public_image_delivery_repair(metadata)
+        metadata.pop("image_delivery_repair", None)
         metadata.pop("note", None)
         metadata.pop("operator_note", None)
         metadata.pop("priority", None)
@@ -704,7 +802,7 @@ class ProviderConnectionAdminService:
             "provider_id": provider_id,
             "provider_type": row.provider_type,
             "display_name": row.display_name,
-            "kind": _string(config.get("kind") or row.provider_type),
+            "kind": kind,
             "enabled": bool(row.enabled),
             "configured": configured,
             "status": status,
@@ -725,6 +823,7 @@ class ProviderConnectionAdminService:
             },
             "config": _public_config(config),
             "metadata": metadata,
+            "image_delivery_repair": image_delivery_repair,
             "last_tested_at": _iso(row.last_tested_at),
             "last_sync_at": _iso(row.last_sync_at),
             "last_error_code": row.last_error_code or "",
@@ -922,6 +1021,27 @@ def _normalize_id_list(value: object) -> list[str]:
             continue
         normalized.append(item[:128])
     return normalized
+
+
+def _effective_capability_ids(config: dict[str, Any], kind: str) -> list[str]:
+    capability_ids = _normalize_id_list(config.get("capability_ids"))
+    if _string(kind).lower() == "siliconflow" and "image_generation" not in capability_ids:
+        capability_ids.append("image_generation")
+    return capability_ids
+
+
+def _public_image_delivery_repair(metadata: dict[str, Any]) -> dict[str, Any]:
+    evidence = _dict(metadata.get("image_delivery_repair"))
+    if not evidence:
+        return {}
+    return {
+        "status": _string(evidence.get("status")),
+        "reason_code": _string(evidence.get("reason_code")),
+        "detected_host": _string(evidence.get("detected_host")),
+        "run_id": _string(evidence.get("run_id")),
+        "observed_at": _string(evidence.get("observed_at")),
+        "approved_at": _string(evidence.get("approved_at")),
+    }
 
 
 def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:

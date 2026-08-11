@@ -109,7 +109,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     displayName: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1',
     websiteUrl: 'https://www.siliconflow.com/',
     docsUrl: 'https://docs.siliconflow.com/en/userguide/introduction',
-    capabilityIds: 'text_generation, embedding', runtimeProfileIds: 'text.ai, embed.default', modelIds: '',
+    capabilityIds: 'text_generation, embedding, image_generation', runtimeProfileIds: 'text.ai, embed.default', modelIds: '',
   },
   {
     id: 'minimax', label: 'MiniMax', providerId: 'minimax', kind: 'minimax',

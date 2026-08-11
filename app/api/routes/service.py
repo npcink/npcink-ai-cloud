@@ -394,6 +394,12 @@ class ProviderConnectionPayload(BaseModel):
     secretless: bool = False
 
 
+class ProviderImageHostApprovalPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_run_id: str = Field(min_length=1, max_length=191)
+
+
 class SiteKnowledgeVectorProfilePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -845,6 +851,11 @@ def _provider_connection_result_summary(result: dict[str, Any]) -> dict[str, Any
     if not connection and str(result.get("connection_id") or ""):
         connection = result
     summary: dict[str, Any] = {}
+    if result.get("approved_image_output_host"):
+        summary["approved_image_output_host"] = str(
+            result.get("approved_image_output_host") or ""
+        )
+        summary["evidence_run_id"] = str(result.get("evidence_run_id") or "")
     if connection:
         summary["connection"] = {
             "connection_id": str(connection.get("connection_id") or ""),
@@ -4903,6 +4914,70 @@ async def test_admin_provider_connection(request: Request, connection_id: str) -
                 scope_id=connection_id,
                 outcome="succeeded" if result.get("ok") else "error",
                 effective_summary=str(result.get("message") or "Provider connection was tested."),
+                audit_event=audit_event,
+            ),
+        ),
+        revision="m6",
+    )
+
+
+@router.post("/admin/provider-connections/{connection_id}/approve-image-host")
+async def approve_admin_provider_connection_image_host(
+    request: Request,
+    connection_id: str,
+    payload: ProviderImageHostApprovalPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ProviderConnectionAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).approve_detected_image_output_host(
+            connection_id,
+            evidence_run_id=payload.evidence_run_id,
+        )
+    except ProviderConnectionAdminError as error:
+        _record_provider_connection_audit(
+            request,
+            event_kind="provider_connection.image_host_approve",
+            outcome="error",
+            scope_id=connection_id,
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    audit_event = _record_provider_connection_audit(
+        request,
+        event_kind="provider_connection.image_host_approve",
+        outcome="succeeded",
+        scope_id=connection_id,
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="provider image host approved",
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind="provider_connection.image_host_approve",
+                scope_kind="provider_connection",
+                scope_id=connection_id,
+                outcome="succeeded",
+                effective_summary=(
+                    "Approved exact provider image host "
+                    f"{str(result.get('approved_image_output_host') or '')}."
+                ),
                 audit_event=audit_event,
             ),
         ),
