@@ -152,7 +152,8 @@
       "evidence": ["README.md", "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md"],
       "commands": {
         "check:python-dependency-audit": "Audit locked Python dependencies and supported indexes.",
-        "check:python-cve-upstream": "Inspect the recorded upstream Python CVE checkpoint."
+        "check:python-cve-upstream": "Inspect the recorded upstream Python CVE checkpoint.",
+        "check:authoritative-cve-ranges": "Verify checked-in CPython CVE adjudications against current CNA ranges."
       }
     },
     {
@@ -207,6 +208,8 @@
       "evidence": ["AGENTS.md", "docs/pr-and-dependency-update-policy.md", "scripts/check-release-policy.sh"],
       "commands": {
         "check:release-policy": "Verify production release and repository policy contracts.",
+        "check:dockerfile-copy-contract": "Verify local Dockerfile COPY sources before image builds.",
+        "check:production-pr-base": "Verify production pull-request base, head, and operator approval metadata.",
         "test:pr-body-contract": "Test the protected pull-request body contract.",
         "check:pr-backend": "Classify and run the risk-appropriate PR backend gate."
       }
@@ -617,7 +620,8 @@
         "tests/dev/test_production_release_preflight.py"
       ],
       "commands": {
-        "production:release:preflight": "Verify exact production CI, CodeQL, bundle, active-deploy, and secret-name readiness before manual dispatch."
+        "production:release:preflight": "Verify exact production CI, CodeQL, bundle, active-deploy, and secret-name readiness before manual dispatch.",
+        "production:release:preflight:dry-run": "Validate saved production preflight metadata without GitHub access, waiting, or dispatch."
       }
     },
     {
@@ -628,6 +632,7 @@
       "status": "active",
       "evidence": ["deploy/PRODUCTION_GITHUB_DEPLOY.md", "deploy/RELEASE_CHECKLIST.md"],
       "commands": {
+        "release:readiness": "Summarize existing release evidence without rerunning gates or changing state.",
         "release:timing": "Report release workflow timing evidence.",
         "release:timing:compare": "Compare compatible release timing evidence.",
         "release:junit-timing": "Report pytest JUnit timing evidence."

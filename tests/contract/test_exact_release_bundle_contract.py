@@ -269,6 +269,10 @@ def image_lock() -> dict[str, object]:
         "unfixed_policy": "block",
         "unknown_severity_policy": "block",
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
+        "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
+        "authoritative_not_affected_sha256": (
+            "51a7f097824feba26462e1ff01b10a428dce3e3aa9c9d7b0221606f317be5feb"
+        ),
         "generated_artifacts_must_not_be_committed": True,
         "max_scan_age_hours": 24,
         "max_database_age_hours": 72,
@@ -367,6 +371,9 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
     allowlist_sha256 = hashlib.sha256(
         (bundle / "deploy/image-lock/cve-allowlist.json").read_bytes()
     ).hexdigest()
+    authoritative_sha256 = hashlib.sha256(
+        (bundle / "deploy/image-lock/authoritative-not-affected.json").read_bytes()
+    ).hexdigest()
     database_identity = {
         "schema_version": "6",
         "built": timestamp,
@@ -401,6 +408,8 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
             "lock_sha256": lock_sha256,
             "allowlist_path": "deploy/image-lock/cve-allowlist.json",
             "allowlist_sha256": allowlist_sha256,
+            "authoritative_not_affected_path": "deploy/image-lock/authoritative-not-affected.json",
+            "authoritative_not_affected_sha256": authoritative_sha256,
             "requested_reference": references[key],
             "archive_reference": archive_references[key],
             "archive_sha256": hashlib.sha256(
@@ -428,6 +437,8 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
             "allowlisted_blocking_finding_count": 0,
             "unallowlisted_blocking_finding_count": 0,
             "allowlisted_blocking_findings": [],
+            "authoritatively_not_affected_blocking_finding_count": 0,
+            "authoritatively_not_affected_blocking_findings": [],
             "unallowlisted_blocking_findings": [],
         }
         receipt_path = scan_root / f"{key}.receipt.json"
@@ -448,6 +459,7 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
                 "artifacts": artifacts,
                 "grype_database": receipt["grype_database"],
                 "blocking_finding_count": 0,
+                "authoritatively_not_affected_blocking_finding_count": 0,
                 "unallowlisted_blocking_finding_count": 0,
             }
         )
@@ -482,6 +494,8 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
         "lock_sha256": lock_sha256,
         "allowlist_path": "deploy/image-lock/cve-allowlist.json",
         "allowlist_sha256": allowlist_sha256,
+        "authoritative_not_affected_path": "deploy/image-lock/authoritative-not-affected.json",
+        "authoritative_not_affected_sha256": authoritative_sha256,
         "release_platform": "linux/amd64",
         "grype_database_identity": database_identity,
         "required_image_keys": sorted(references),
@@ -525,11 +539,31 @@ def exact_bundle_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     )
     write(source / "deploy/image-lock/production-images.json", lock_text)
     write(source / "deploy/image-lock/cve-allowlist.json", allowlist_text)
+    write(
+        source / "deploy/image-lock/authoritative-not-affected.json",
+        json.dumps(
+            {
+                "schema_version": "npcink.production-image-authoritative-not-affected.v1",
+                "entries": [],
+            }
+        )
+        + "\n",
+    )
     subprocess.run(["git", "init", "-q"], cwd=source, check=True)
     subprocess.run(["git", "add", "."], cwd=source, check=True)
 
     write(bundle / "deploy/image-lock/production-images.json", lock_text)
     write(bundle / "deploy/image-lock/cve-allowlist.json", allowlist_text)
+    write(
+        bundle / "deploy/image-lock/authoritative-not-affected.json",
+        json.dumps(
+            {
+                "schema_version": "npcink.production-image-authoritative-not-affected.v1",
+                "entries": [],
+            }
+        )
+        + "\n",
+    )
     write(bundle / "deploy/verify-release-bundle.sh", "#!/usr/bin/env bash\n")
     write(bundle / "scripts/verify-release-bundle-manifest.py", "# bundled verifier\n")
     write(bundle / "site/terms/file with spaces.txt", "space-safe payload\n")
@@ -1057,9 +1091,7 @@ def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
             "backend_image_required": False,
         }
     )
-    false_lane_plan.write_text(
-        json.dumps(false_lane, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    false_lane_plan.write_text(json.dumps(false_lane, sort_keys=True) + "\n", encoding="utf-8")
     rejected_lane = run_helper(
         "verify-release-plan",
         "--release-plan",
@@ -2366,13 +2398,13 @@ raise SystemExit(2)
 
     assert completed.returncode == 88
     assert (
-        f"[image-work] api={expected_api} frontend={expected_frontend} "
-        f"image_work={expected_work}"
+        f"[image-work] api={expected_api} frontend={expected_frontend} image_work={expected_work}"
     ) in completed.stdout
-    observed_builds = tuple(
-        line.removeprefix("build:")
-        for line in docker_log.read_text().splitlines()
-    ) if docker_log.exists() else ()
+    observed_builds = (
+        tuple(line.removeprefix("build:") for line in docker_log.read_text().splitlines())
+        if docker_log.exists()
+        else ()
+    )
     assert observed_builds == builds
 
 
@@ -2382,9 +2414,7 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     ssh_deploy = (ROOT / "deploy/deploy-to-ssh-host.sh").read_text(encoding="utf-8")
     smoke = (ROOT / "scripts/cloud-deploy-bundle-smoke-flow.sh").read_text(encoding="utf-8")
     remote_smoke = (ROOT / "deploy/remote-smoke.sh").read_text(encoding="utf-8")
-    bundle_contract = (ROOT / "docs/p5-b5-exact-release-bundle-v1.md").read_text(
-        encoding="utf-8"
-    )
+    bundle_contract = (ROOT / "docs/p5-b5-exact-release-bundle-v1.md").read_text(encoding="utf-8")
 
     assert "status --porcelain=v1 --untracked-files=all" in bundle
     assert "NPCINK_CLOUD_ALLOW_DIRTY" not in bundle
@@ -2490,8 +2520,7 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "@host.docker.internal:%s/npcink_ai_cloud" in smoke
     assert "verify-transfer-archive" in ssh_deploy
     assert (
-        "Remote image inventory was unavailable; uploading the complete exact bundle."
-        in ssh_deploy
+        "Remote image inventory was unavailable; uploading the complete exact bundle." in ssh_deploy
     )
     assert "cleanup_remote_incoming_on_exit" in ssh_deploy
     assert 'rm -rf $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}")' in ssh_deploy
