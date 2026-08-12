@@ -45,3 +45,24 @@ def test_deployment_identity_fails_closed_for_invalid_injected_values() -> None:
         "source_dirty": False,
     }
     assert identity.internal_payload()["created_at"] == "unknown"
+
+
+def test_deployment_identity_reads_public_values_without_runtime_settings() -> None:
+    revision = "b" * 40
+
+    identity = DeploymentIdentity.from_environment(
+        {
+            "NPCINK_CLOUD_ENVIRONMENT": "production",
+            "NPCINK_CLOUD_DEPLOYMENT_RELEASE": "release-20260812-01",
+            "NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION": revision,
+            "NPCINK_CLOUD_DEPLOYMENT_SOURCE_DIRTY": "true",
+            "NPCINK_CLOUD_DEPLOYMENT_CREATED_AT": "2026-08-12T01:02:03Z",
+        }
+    )
+
+    assert identity.public_payload() == {
+        "release": "release-20260812-01",
+        "source_revision": revision[:12],
+        "source_dirty": True,
+    }
+    assert identity.internal_payload()["environment"] == "production"
