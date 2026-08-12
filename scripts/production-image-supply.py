@@ -1492,6 +1492,17 @@ def evaluate_scan(args: argparse.Namespace) -> int:
         for entry in authoritative_entries
         if entry["image"] == image_key
     }
+    overlap = sorted(
+        {
+            (image_key, vulnerability_id, package, package_version)
+            for vulnerability_id, package, package_version in allowed_keys
+            if (image_key, vulnerability_id, package, package_version) in authoritative_keys
+        }
+    )
+    if overlap:
+        raise SupplyError(
+            f"CVE allowlist and authoritative adjudications overlap for {image_key}: {overlap!r}"
+        )
     stale = sorted(allowed_keys - blocker_keys)
     if stale:
         raise SupplyError(f"stale allowlist entries for {image_key}: {stale!r}")

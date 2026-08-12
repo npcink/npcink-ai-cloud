@@ -1364,3 +1364,36 @@ def test_authoritative_findings_are_reincluded_when_binding_receipt_to_report() 
     authoritative = [dict(finding, adjudication="authoritatively_not_affected")]
 
     assert supply._receipt_report_blockers([], [], authoritative) == [finding]
+
+
+def test_evaluator_rejects_allowlist_authoritative_overlap(tmp_path: Path) -> None:
+    supply = _supply_module()
+    lock = _lock()
+    policy = lock["scan_policy"]
+    allowlist_path = tmp_path / "allowlist.json"
+    authoritative_path = ROOT / policy["authoritative_not_affected_file"]
+    authoritative = json.loads(authoritative_path.read_text())
+    entry = authoritative["entries"][0]
+    _write_json(
+        allowlist_path,
+        {
+            "schema_version": "npcink.production-image-cve-allowlist.v1",
+            "entries": [
+                {
+                    "image": entry["image"],
+                    "vulnerability_id": entry["vulnerability_id"],
+                        "package": entry["package"],
+                        "package_version": entry["package_version"],
+                        "owner": "release-security",
+                        "reason": "fixture overlap is intentionally covered",
+                        "expires_on": "2026-08-20",
+                }
+            ],
+        },
+    )
+    args = _evaluate_args(
+        tmp_path, allowlist=json.loads(allowlist_path.read_text()), severity="medium"
+    )
+    args.allowlist = str(allowlist_path)
+    with pytest.raises(supply.SupplyError, match="overlap"):
+        supply.evaluate_scan(args)
