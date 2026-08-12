@@ -1065,6 +1065,7 @@ require_marker "docs/cloud-production-release-policy-v1.md" \
 require_marker "docs/cloud-production-release-policy-v1.md" \
 	"npcink.production-application-image-cache.v1"
 require_marker "package.json" '"production:release:preflight":'
+require_marker "package.json" '"production:release:preflight:dry-run":'
 require_marker "scripts/production-release-preflight.py" \
 	"npcink.production_release_preflight.v1"
 require_marker "scripts/production-release-preflight.py" \
@@ -1073,6 +1074,8 @@ require_marker "scripts/production-release-preflight.py" \
 	"production-release-plan-{sha}"
 require_marker "scripts/production-release-preflight.py" \
 	'if release_action == "runtime"'
+require_marker "scripts/production-release-preflight.py" \
+	'--dry-run requires --snapshot'
 require_marker "scripts/production-release-preflight.py" \
 	'bundle_artifact_text'
 require_marker "scripts/production-release-preflight.py" \
