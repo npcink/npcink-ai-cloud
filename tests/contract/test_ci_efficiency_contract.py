@@ -207,7 +207,12 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
     assert "REQUIRES_FULL_BACKEND" in workflow
     assert '--full-backend "${full_backend}"' in workflow
-    assert "authoritative-cve-precheck:\n    name: Authoritative CVE range precheck\n    needs: [classify]" in workflow
+    cna_job_header = (
+        "authoritative-cve-precheck:\n"
+        "    name: Authoritative CVE range precheck\n"
+        "    needs: [classify]"
+    )
+    assert cna_job_header in workflow
     assert "github.base_ref == 'production'" in workflow
     assert "needs.classify.outputs.authoritative_cve_required == 'true'" in workflow
     assert (
