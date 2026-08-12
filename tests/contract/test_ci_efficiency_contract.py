@@ -218,6 +218,13 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
         "AUTHORITATIVE_CVE_REQUIRED: "
         "${{ needs.classify.outputs.authoritative_cve_required }}" in workflow
     )
+    assert "CLASSIFY_RESULT: ${{ needs.classify.result }}" in workflow
+    classifier_failure_guard = 'if [ "${CLASSIFY_RESULT}" != "success" ]; then'
+    assert classifier_failure_guard in workflow
+    assert "CI change classification did not pass" in workflow
+    assert workflow.index(classifier_failure_guard) < workflow.index(
+        'if [ "${GITHUB_REF}" = "refs/heads/production" ]'
+    )
     assert "authoritative CVE precheck should be skipped for non-release changes" in workflow
 
 

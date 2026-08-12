@@ -887,6 +887,7 @@ jobs:
     steps:
       - name: Verify backend gate result
         env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
           BACKEND_SCOPE_RESULT: ${{ needs['backend-scope'].result }}
           PYTHON_DEPENDENCY_AUDIT_RESULT: ${{ needs['python-dependency-audit'].result }}
           PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT: ${{ needs['production-python-image-smoke'].result }}
@@ -909,6 +910,11 @@ jobs:
           SPECIALIZED_QUALITY_RESULT: ${{ needs['specialized-quality'].result }}
         run: |
           set -euo pipefail
+          if [ "${CLASSIFY_RESULT}" != "success" ]; then
+            echo "CI change classification did not pass" >&2
+            exit 1
+          fi
+
           echo "scope=${BACKEND_SCOPE_RESULT}"
           echo "python_dependency_audit=${PYTHON_DEPENDENCY_AUDIT_RESULT}"
           echo "production_python_image_smoke=${PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT}"
