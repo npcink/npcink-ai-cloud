@@ -73,6 +73,18 @@ def _safe_relative(value: str) -> str:
     return value
 
 
+def matches_image_input(image: str, relative: str) -> bool:
+    """Return whether a repository path belongs to an image's input set."""
+    if image not in IMAGE_DEFINITIONS:
+        raise ImageInputError(f"unknown production application image: {image}")
+    path = PurePosixPath(_safe_relative(relative))
+    return any(
+        path == PurePosixPath(pathspec)
+        or PurePosixPath(pathspec) in path.parents
+        for pathspec in IMAGE_DEFINITIONS[image]
+    )
+
+
 def _tracked_files(root: Path, pathspecs: tuple[str, ...]) -> list[tuple[str, str]]:
     try:
         completed = subprocess.run(
@@ -242,14 +254,29 @@ def validate_inputs(payload: object) -> dict[str, Any]:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, default=Path.cwd())
-    parser.add_argument("--platform", required=True)
+    parser.add_argument("--platform")
     parser.add_argument("--package-extras", default="")
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--matches-image-input", choices=sorted(IMAGE_DEFINITIONS))
+    parser.add_argument("--path")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    if args.matches_image_input is not None:
+        if args.path is None or args.platform is not None or args.output is not None:
+            raise SystemExit(
+                "--matches-image-input requires --path and cannot be combined with "
+                "--platform or --output"
+            )
+        try:
+            matched = matches_image_input(args.matches_image_input, args.path)
+        except ImageInputError as exc:
+            raise SystemExit(f"production application-image input match failed: {exc}") from exc
+        return 0 if matched else 1
+    if args.path is not None or args.platform is None or args.output is None:
+        raise SystemExit("--platform and --output are required when creating image inputs")
     try:
         payload = create_inputs(
             args.source_root,
