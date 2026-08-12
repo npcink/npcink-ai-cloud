@@ -120,6 +120,36 @@ evidence.
 
 ### Bounded release verification
 
+#### Production PR base and readiness prechecks
+
+Production pull requests targeting `production` run the lightweight
+`production-pr-base-precheck` before the aggregate backend check. It fails
+closed unless the base is this repository's `production` branch, the head is
+the same repository's `master` or an explicitly named `release-fix/*` branch,
+and the body contains `Approved for production validation by operator.` This
+prevents an incorrectly based or externally sourced candidate from consuming
+the expensive production evidence path.
+
+`pnpm run release:readiness -- --json <evidence...>` is a read-only local
+summary of already-produced JSON evidence. It does not rerun checks, query
+GitHub, dispatch deployment, or replace any required gate. Unknown, failed, or
+missing evidence remains blocked; the summary is an operator convenience for
+deciding whether to continue before starting a costly release step.
+
+#### Early authoritative CVE conflict precheck
+
+The checked-in `deploy/image-lock/authoritative-not-affected.json` file is a
+narrow adjudication contract for scanner/CNA conflicts. It is not a CVE
+allowlist or risk acceptance: each entry binds one exact image, CVE, package,
+and package version to the CVE Program CNA's exact CPython affected range.
+`pnpm run check:authoritative-cve-ranges` fetches each CNA record with bounded
+size and time limits and fails closed on identity, range, schema, expiry, or
+network errors. CI runs this precheck before any production image build or
+scan, so authority drift is found in seconds. The exact image scan still runs;
+only a matching, currently verified entry is adjudicated as
+`authoritatively_not_affected`. The normal CVE allowlist remains separate and
+must stay empty unless an independently reviewed risk exception exists.
+
 Production safety and operator time are both release constraints. A release
 session must bind every reusable result to the exact revision, source tree,
 bundle digest, platform, scan identity, and target state. Evidence that still

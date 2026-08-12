@@ -15,6 +15,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  authoritative-cve-precheck:
+    name: Authoritative CVE range precheck
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify CNA ranges before image work
+        run: python3 scripts/check-authoritative-cve-ranges.py
+
+  dockerfile-copy-precheck:
+    name: Dockerfile COPY contract precheck
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify local Dockerfile COPY sources before image work
+        run: python3 scripts/check-dockerfile-copy-contract.py
+
+  production-pr-base-precheck:
+    name: Production PR base contract precheck
+    if: github.event_name == 'pull_request' && github.base_ref == 'production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify production PR base, head, and approval contract
+        run: python3 scripts/check-production-pr-base.py --event "${{ github.event_path }}" --repository "${GITHUB_REPOSITORY}"
+
   production-release-plan:
     name: Production release plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
@@ -284,7 +314,7 @@ jobs:
 
   production-deploy-bundle:
     name: Production deploy bundle
-    needs: [production-release-plan, production-promotion-evidence]
+    needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production' && needs.production-release-plan.outputs.release_action == 'runtime'
     runs-on: ubuntu-latest
     steps:
@@ -338,9 +368,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
-          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
           restore-keys: |
-            production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-
+            production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-
 
       - name: Prepare disposable production image scan cache
         run: |
@@ -385,7 +415,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
-          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
 
       - name: Upload exact production deploy bundle
         uses: actions/upload-artifact@v7
@@ -848,7 +878,7 @@ jobs:
 
   backend:
     name: backend
-    needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, backend-static, backend-pytest, backend-postgres-cutover]
+    needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, backend-static, backend-pytest, backend-postgres-cutover, production-pr-base-precheck, authoritative-cve-precheck, dockerfile-copy-precheck]
     if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -858,11 +888,16 @@ jobs:
           PYTHON_DEPENDENCY_AUDIT_RESULT: ${{ needs['python-dependency-audit'].result }}
           PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT: ${{ needs['production-python-image-smoke'].result }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
           BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
           BACKEND_STATIC_RESULT: ${{ needs['backend-static'].result }}
           BACKEND_PYTEST_RESULT: ${{ needs['backend-pytest'].result }}
           BACKEND_POSTGRES_CUTOVER_RESULT: ${{ needs['backend-postgres-cutover'].result }}
+          PRODUCTION_PR_BASE_RESULT: ${{ needs['production-pr-base-precheck'].result }}
+          AUTHORITATIVE_CVE_RESULT: ${{ needs['authoritative-cve-precheck'].result }}
+          DOCKERFILE_COPY_RESULT: ${{ needs['dockerfile-copy-precheck'].result }}
           REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
           DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
           FRONTEND_ONLY: ${{ needs.classify.outputs.frontend_only }}
@@ -878,11 +913,30 @@ jobs:
           echo "static=${BACKEND_STATIC_RESULT}"
           echo "pytest=${BACKEND_PYTEST_RESULT}"
           echo "postgres_cutover=${BACKEND_POSTGRES_CUTOVER_RESULT}"
+          echo "production_pr_base=${PRODUCTION_PR_BASE_RESULT}"
+          echo "authoritative_cve=${AUTHORITATIVE_CVE_RESULT}"
+          echo "dockerfile_copy=${DOCKERFILE_COPY_RESULT}"
           echo "specialized_quality=${SPECIALIZED_QUALITY_RESULT}"
           echo "requires_full_backend=${REQUIRES_FULL_BACKEND}"
 
           if [ "${BACKEND_SCOPE_RESULT}" != "success" ]; then
             echo "backend scope classification did not pass" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF}" = "refs/heads/master" ] || [ "${GITHUB_REF}" = "refs/heads/production" ]; then
+            if [ "${AUTHORITATIVE_CVE_RESULT}" != "success" ]; then
+            echo "authoritative CVE precheck did not pass" >&2
+            exit 1
+            fi
+            if [ "${DOCKERFILE_COPY_RESULT}" != "success" ]; then
+            echo "Dockerfile COPY precheck did not pass" >&2
+            exit 1
+            fi
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${GITHUB_BASE_REF}" = "production" ] && [ "${PRODUCTION_PR_BASE_RESULT}" != "success" ]; then
+            echo "production PR base precheck did not pass" >&2
             exit 1
           fi
 
