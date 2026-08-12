@@ -25,7 +25,7 @@ frontend_e2e_required=false
 
 for changed_file in "$@"; do
 	case "${changed_file}" in
-		.github/workflows/ci.yml|.github/workflows/deploy-production.yml|Dockerfile*|*/Dockerfile*|docker-compose*.yml|deploy/bundle-images.sh|deploy/image-lock/*|scripts/check-authoritative-cve-ranges.py|scripts/check-first-install-cve-gate.py|scripts/production-application-image-inputs.py|scripts/production-image-supply.py|scripts/production-python-extras-smoke.sh|scripts/production-release-preflight.py|scripts/scan-production-images.sh|scripts/verify-production-images.sh|scripts/verify-production-python-lock.py|scripts/verify-release-bundle-manifest.py|tests/contract/test_container_image_supply_contract.py|tests/contract/test_exact_release_bundle_contract.py|tests/contract/test_production_release_preflight_contract.py)
+		.github/workflows/ci.yml|.github/workflows/deploy-production.yml|Dockerfile*|*/Dockerfile*|docker-compose*.yml|deploy/*.sh|deploy/image-lock/*|scripts/check-authoritative-cve-ranges.py|scripts/check-first-install-cve-gate.py|scripts/production-*|scripts/resolve-production-*|scripts/scan-production-*|scripts/verify-production-*|scripts/verify-release-*|tests/contract/test_container_image_supply_contract.py|tests/contract/test_exact_release_bundle_contract.py|tests/contract/test_production_release_preflight_contract.py)
 			authoritative_cve_required=true
 			;;
 	esac

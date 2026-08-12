@@ -284,6 +284,8 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         "scripts/production-application-image-inputs.py",
         "scripts/production-image-supply.py",
         "scripts/production-python-extras-smoke.sh",
+        "scripts/production-release-plan.py",
+        "scripts/resolve-production-release-action.py",
         "scripts/scan-production-images.sh",
         "scripts/verify-production-images.sh",
         "scripts/verify-production-python-lock.py",
