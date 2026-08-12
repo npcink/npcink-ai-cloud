@@ -39,6 +39,7 @@ SCAN_INDEX_PATH = "release/image-scan/scan-index.json"
 PRODUCTION_RELEASE_PLAN_PATH = "release/production-release-plan.json"
 CANONICAL_IMAGE_LOCK_PATH = "deploy/image-lock/production-images.json"
 CANONICAL_ALLOWLIST_PATH = "deploy/image-lock/cve-allowlist.json"
+CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH = "deploy/image-lock/authoritative-not-affected.json"
 MAX_TAR_MEMBERS = 20_000
 MAX_TAR_UNCOMPRESSED_BYTES = 20 * 1024 * 1024 * 1024
 MAX_DOCKER_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
@@ -80,6 +81,8 @@ SCAN_INDEX_TOP_KEYS = {
     "lock_sha256",
     "allowlist_path",
     "allowlist_sha256",
+    "authoritative_not_affected_path",
+    "authoritative_not_affected_sha256",
     "release_platform",
     "grype_database_identity",
     "required_image_keys",
@@ -101,6 +104,7 @@ SCAN_INDEX_IMAGE_KEYS = {
     "artifacts",
     "grype_database",
     "blocking_finding_count",
+    "authoritatively_not_affected_blocking_finding_count",
     "unallowlisted_blocking_finding_count",
 }
 
@@ -460,6 +464,8 @@ def load_image_lock(path: Path) -> dict[str, Any]:
     if (
         not isinstance(policy, dict)
         or policy.get("allowlist_file") != CANONICAL_ALLOWLIST_PATH
+        or policy.get("authoritative_not_affected_file")
+        != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
         or policy.get("max_database_age_hours") != REQUIRED_MAX_DATABASE_AGE_HOURS
         or policy.get("max_exception_days") != REQUIRED_MAX_EXCEPTION_DAYS
     ):
@@ -609,13 +615,17 @@ def validate_scan_evidence(
         fail("production image scan index is not a complete passed release gate")
     canonical_lock = ensure_plain_file(root, CANONICAL_IMAGE_LOCK_PATH)
     canonical_allowlist = ensure_plain_file(root, CANONICAL_ALLOWLIST_PATH)
+    canonical_authoritative = ensure_plain_file(root, CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH)
     lock_sha256 = sha256_file(canonical_lock)
     allowlist_sha256 = sha256_file(canonical_allowlist)
+    authoritative_sha256 = sha256_file(canonical_authoritative)
     if (
         index["lock_path"] != CANONICAL_IMAGE_LOCK_PATH
         or index["lock_sha256"] != lock_sha256
         or index["allowlist_path"] != CANONICAL_ALLOWLIST_PATH
         or index["allowlist_sha256"] != allowlist_sha256
+        or index["authoritative_not_affected_path"] != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
+        or index["authoritative_not_affected_sha256"] != authoritative_sha256
         or index["release_platform"] != expected_platform
     ):
         fail("production image scan index policy/platform binding is invalid")
@@ -758,6 +768,8 @@ def validate_scan_evidence(
             "lock_sha256",
             "allowlist_path",
             "allowlist_sha256",
+            "authoritative_not_affected_path",
+            "authoritative_not_affected_sha256",
             "requested_reference",
             "archive_reference",
             "archive_sha256",
@@ -775,8 +787,10 @@ def validate_scan_evidence(
             "severity_counts",
             "blocking_finding_count",
             "allowlisted_blocking_finding_count",
+            "authoritatively_not_affected_blocking_finding_count",
             "unallowlisted_blocking_finding_count",
             "allowlisted_blocking_findings",
+            "authoritatively_not_affected_blocking_findings",
             "unallowlisted_blocking_findings",
             "artifacts",
         }
@@ -805,6 +819,9 @@ def validate_scan_evidence(
             or receipt.get("lock_sha256") != lock_sha256
             or receipt.get("allowlist_path") != CANONICAL_ALLOWLIST_PATH
             or receipt.get("allowlist_sha256") != allowlist_sha256
+            or receipt.get("authoritative_not_affected_path")
+            != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
+            or receipt.get("authoritative_not_affected_sha256") != authoritative_sha256
             or receipt.get("artifacts") != artifacts
             or receipt.get("grype_database") != record["grype_database"]
             or receipt.get("blocking_finding_count") != record["blocking_finding_count"]
@@ -818,6 +835,9 @@ def validate_scan_evidence(
             or not isinstance(receipt.get("allowlisted_blocking_findings"), list)
             or not isinstance(receipt.get("unallowlisted_blocking_findings"), list)
             or receipt.get("unallowlisted_blocking_findings") != []
+            or not isinstance(receipt.get("authoritatively_not_affected_blocking_findings"), list)
+            or receipt.get("authoritatively_not_affected_blocking_finding_count")
+            != len(receipt.get("authoritatively_not_affected_blocking_findings", []))
             or receipt.get("allowlisted_blocking_finding_count")
             != len(receipt.get("allowlisted_blocking_findings", []))
         ):
@@ -2804,16 +2824,11 @@ def pack_transfer_archive(
         temporary.unlink(missing_ok=True)
     write_outer_checksum(output, output_checksum)
     reused_records = [record for record in plan_archives if record["action"] == "reuse"]
-    transferred_records = [
-        record for record in plan_archives if record["action"] == "transfer"
-    ]
+    transferred_records = [record for record in plan_archives if record["action"] == "transfer"]
     print(f"image_transfer_reused={len(reused_records)}")
     print(f"image_transfer_uploaded={len(transferred_records)}")
     print(f"image_transfer_reused_bytes={sum(record['size'] for record in reused_records)}")
-    print(
-        "image_transfer_uploaded_bytes="
-        f"{sum(record['size'] for record in transferred_records)}"
-    )
+    print(f"image_transfer_uploaded_bytes={sum(record['size'] for record in transferred_records)}")
 
 
 def verify_transfer_archive(
