@@ -17,7 +17,7 @@ concurrency:
 jobs:
   authoritative-cve-precheck:
     name: Authoritative CVE range precheck
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,7 +27,7 @@ jobs:
 
   dockerfile-copy-precheck:
     name: Dockerfile COPY contract precheck
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -888,6 +888,7 @@ jobs:
           PYTHON_DEPENDENCY_AUDIT_RESULT: ${{ needs['python-dependency-audit'].result }}
           PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT: ${{ needs['production-python-image-smoke'].result }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
           BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
@@ -923,13 +924,15 @@ jobs:
             exit 1
           fi
 
-          if [ "${AUTHORITATIVE_CVE_RESULT}" != "success" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF}" = "refs/heads/master" ] || [ "${GITHUB_REF}" = "refs/heads/production" ]; then
+            if [ "${AUTHORITATIVE_CVE_RESULT}" != "success" ]; then
             echo "authoritative CVE precheck did not pass" >&2
             exit 1
-          fi
-          if [ "${DOCKERFILE_COPY_RESULT}" != "success" ]; then
+            fi
+            if [ "${DOCKERFILE_COPY_RESULT}" != "success" ]; then
             echo "Dockerfile COPY precheck did not pass" >&2
             exit 1
+            fi
           fi
 
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${GITHUB_BASE_REF}" = "production" ] && [ "${PRODUCTION_PR_BASE_RESULT}" != "success" ]; then
