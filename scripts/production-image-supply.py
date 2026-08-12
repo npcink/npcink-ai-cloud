@@ -1005,10 +1005,13 @@ def validate_lock(lock_path: Path, *, online: bool) -> dict[str, Any]:
         "max_database_age_hours": 72,
         "max_exception_days": 30,
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
+        "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
+        "authoritative_not_affected_sha256": policy.get("authoritative_not_affected_sha256"),
         "generated_artifacts_must_not_be_committed": True,
     }
     if policy != expected_policy:
         raise SupplyError("scan_policy must match the frozen fail-closed policy")
+    _authoritative_entries(lock, lock_path=lock_path)
 
     expected_froms: dict[str, set[str]] = {}
     syntax_entries: list[dict[str, Any]] = []
@@ -1188,6 +1191,77 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _python_version_key(value: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", value)
+    if match is None:
+        raise SupplyError(f"unsupported Python package version {value!r}")
+    return tuple(int(part) for part in match.groups())
+
+
+def _validate_authoritative_not_affected_shape(
+    payload: dict[str, Any], known_images: set[str], *, today: date | None = None
+) -> list[dict[str, str]]:
+    if set(payload) != {"schema_version", "entries"}:
+        raise SupplyError("authoritative-not-affected file has unknown or missing top-level fields")
+    if payload.get("schema_version") != "npcink.production-image-authoritative-not-affected.v1":
+        raise SupplyError("unsupported authoritative-not-affected schema_version")
+    raw_entries = payload.get("entries")
+    if not isinstance(raw_entries, list):
+        raise SupplyError("authoritative-not-affected entries must be an array")
+    required = {
+        "image", "vulnerability_id", "package", "package_version", "authority",
+        "authority_url", "affected_version", "affected_less_than", "verified_on", "recheck_after",
+    }
+    identities: set[tuple[str, str, str, str]] = set()
+    # Use the wall clock for policy expiry.  The evaluator's injectable clock is
+    # also used by scan-age tests and must not make a checked-in adjudication
+    # appear expired merely because a fixture advances scan time.
+    now = today or date.today()
+    entries: list[dict[str, str]] = []
+    for index, raw in enumerate(raw_entries):
+        if not isinstance(raw, dict) or set(raw) != required:
+            raise SupplyError(f"authoritative entry {index} has unknown or missing fields")
+        entry = {field: _required_text(raw.get(field), f"authoritative.entries[{index}].{field}") for field in required}
+        if entry["image"] not in known_images:
+            raise SupplyError(f"authoritative entry {index} names unknown image {entry['image']!r}")
+        if re.fullmatch(r"CVE-\d{4}-\d{4,}", entry["vulnerability_id"]) is None:
+            raise SupplyError(f"authoritative entry {index} has invalid CVE ID")
+        if not entry["authority_url"].startswith("https://cveawg.mitre.org/api/cve/") or not entry["authority_url"].endswith(entry["vulnerability_id"]):
+            raise SupplyError(f"authoritative entry {index} authority_url must be the exact CNA endpoint")
+        try:
+            verified = date.fromisoformat(entry["verified_on"])
+            recheck = date.fromisoformat(entry["recheck_after"])
+        except ValueError as error:
+            raise SupplyError(f"authoritative entry {index} dates must be YYYY-MM-DD") from error
+        if verified > now or recheck < now or recheck < verified or (recheck - verified).days > 7:
+            raise SupplyError(f"authoritative entry {index} verification window is invalid or expired")
+        if entry["package"] != "python":
+            raise SupplyError(f"authoritative entry {index} package must be python")
+        if _python_version_key(entry["package_version"]) < _python_version_key(entry["affected_less_than"]):
+            raise SupplyError(f"authoritative entry {index} governed version is still affected")
+        identity = (entry["image"], entry["vulnerability_id"], entry["package"], entry["package_version"])
+        if identity in identities:
+            raise SupplyError(f"duplicate authoritative entry {identity!r}")
+        identities.add(identity)
+        entries.append(entry)
+    return entries
+
+
+def _authoritative_entries(lock: dict[str, Any], *, lock_path: Path) -> tuple[list[dict[str, str]], Path, str]:
+    policy = lock.get("scan_policy")
+    if not isinstance(policy, dict):
+        raise SupplyError("scan policy is missing")
+    relative = _required_text(policy.get("authoritative_not_affected_file"), "scan_policy.authoritative_not_affected_file")
+    path = (ROOT / relative).resolve()
+    if not path.is_file():
+        raise SupplyError("authoritative-not-affected file is missing")
+    recorded = _required_text(policy.get("authoritative_not_affected_sha256"), "scan_policy.authoritative_not_affected_sha256")
+    if re.fullmatch(r"[0-9a-f]{64}", recorded) is None or recorded == "PLACEHOLDER" or recorded != _sha256(path):
+        raise SupplyError("authoritative-not-affected file hash does not match image lock")
+    entries = _validate_authoritative_not_affected_shape(_load_json(path), _lock_image_keys(lock))
+    return entries, path, recorded
+
+
 def _blocking_findings(report: dict[str, Any], policy: dict[str, Any]) -> list[dict[str, str]]:
     matches = report.get("matches")
     if not isinstance(matches, list):
@@ -1270,6 +1344,9 @@ def evaluate_scan(args: argparse.Namespace) -> int:
         _load_json(allowlist_path),
         known_images,
         max_exception_days=policy["max_exception_days"],
+    )
+    authoritative_entries, authoritative_path, authoritative_sha256 = _authoritative_entries(
+        lock, lock_path=lock_path
     )
     report_path = Path(args.report).resolve()
     sbom_path = Path(args.sbom).resolve()
@@ -1368,13 +1445,24 @@ def evaluate_scan(args: argparse.Namespace) -> int:
         (entry["vulnerability_id"], entry["package"], entry["package_version"])
         for entry in image_allowlist
     }
+    authoritative_keys = {
+        (entry["image"], entry["vulnerability_id"], entry["package"], entry["package_version"])
+        for entry in authoritative_entries
+        if entry["image"] == image_key
+    }
     stale = sorted(allowed_keys - blocker_keys)
     if stale:
         raise SupplyError(f"stale allowlist entries for {image_key}: {stale!r}")
+    authoritatively_not_affected = [
+        dict(item, adjudication="authoritatively_not_affected")
+        for item in blockers
+        if (image_key, item["vulnerability_id"], item["package"], item["package_version"]) in authoritative_keys
+    ]
     unallowlisted = [
         item
         for item in blockers
         if (item["vulnerability_id"], item["package"], item["package_version"]) not in allowed_keys
+        and (image_key, item["vulnerability_id"], item["package"], item["package_version"]) not in authoritative_keys
     ]
     allowed = [
         item
@@ -1406,6 +1494,8 @@ def evaluate_scan(args: argparse.Namespace) -> int:
             else str(allowlist_path)
         ),
         "allowlist_sha256": _sha256(allowlist_path),
+        "authoritative_not_affected_path": str(authoritative_path.relative_to(ROOT)),
+        "authoritative_not_affected_sha256": authoritative_sha256,
         "requested_reference": args.requested_reference,
         "archive_reference": args.archive_reference,
         "archive_sha256": archive_subject["archive_sha256"],
@@ -1425,6 +1515,8 @@ def evaluate_scan(args: argparse.Namespace) -> int:
         "allowlisted_blocking_finding_count": len(allowed),
         "unallowlisted_blocking_finding_count": len(unallowlisted),
         "allowlisted_blocking_findings": allowed,
+        "authoritatively_not_affected_blocking_finding_count": len(authoritatively_not_affected),
+        "authoritatively_not_affected_blocking_findings": authoritatively_not_affected,
         "unallowlisted_blocking_findings": unallowlisted,
         "artifacts": {
             "image_inspect_sha256": _sha256(inspect_path),
@@ -1532,6 +1624,8 @@ def _validate_index_receipt(
         "lock_sha256",
         "allowlist_path",
         "allowlist_sha256",
+        "authoritative_not_affected_path",
+        "authoritative_not_affected_sha256",
         "requested_reference",
         "archive_reference",
         "archive_sha256",
@@ -1551,6 +1645,8 @@ def _validate_index_receipt(
         "allowlisted_blocking_finding_count",
         "unallowlisted_blocking_finding_count",
         "allowlisted_blocking_findings",
+        "authoritatively_not_affected_blocking_finding_count",
+        "authoritatively_not_affected_blocking_findings",
         "unallowlisted_blocking_findings",
         "artifacts",
     }
@@ -1594,6 +1690,12 @@ def _validate_index_receipt(
         recorded_allowlist_path
     ):
         raise SupplyError("scan receipt allowlist_sha256 does not match its governed allowlist")
+    authoritative_path = Path(_required_text(receipt.get("authoritative_not_affected_path"), "scan_receipt.authoritative_not_affected_path"))
+    if not authoritative_path.is_absolute():
+        authoritative_path = ROOT / authoritative_path
+    entries, expected_authoritative_path, authoritative_sha256 = _authoritative_entries(lock, lock_path=lock_path)
+    if authoritative_path.resolve() != expected_authoritative_path.resolve() or receipt.get("authoritative_not_affected_sha256") != authoritative_sha256:
+        raise SupplyError("scan receipt authoritative-not-affected identity does not match governed file")
     targets = _scan_targets(lock)
     if image_key not in targets:
         raise SupplyError(f"scan receipt names unknown target {image_key!r}")
@@ -1711,18 +1813,31 @@ def _validate_index_receipt(
             for finding in findings
         ):
             raise SupplyError(f"scan receipt {label} findings are invalid")
+    authoritative = receipt.get("authoritatively_not_affected_blocking_findings")
+    if not isinstance(authoritative, list) or any(
+        not isinstance(finding, dict)
+        or set(finding) != finding_fields | {"adjudication"}
+        or finding.get("adjudication") != "authoritatively_not_affected"
+        or any(not isinstance(value, str) or not value for key, value in finding.items() if key != "adjudication")
+        for finding in authoritative
+    ):
+        raise SupplyError("scan receipt authoritative findings are invalid")
+    if receipt.get("authoritatively_not_affected_blocking_finding_count") != len(authoritative):
+        raise SupplyError("scan receipt authoritative finding count is inconsistent")
     counts = (
         receipt.get("blocking_finding_count"),
         receipt.get("allowlisted_blocking_finding_count"),
         receipt.get("unallowlisted_blocking_finding_count"),
+        receipt.get("authoritatively_not_affected_blocking_finding_count"),
     )
     if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts):
         raise SupplyError("scan receipt blocking finding counts are invalid")
-    total_count, allowed_count, unallowed_count = counts
+    total_count, allowed_count, unallowed_count, authoritative_count = counts
     if (
-        total_count != allowed_count + unallowed_count
+        total_count != allowed_count + unallowed_count + authoritative_count
         or allowed_count != len(allowed)
         or unallowed_count != len(unallowed)
+        or authoritative_count != len(authoritative)
         or (status == "passed") != (unallowed_count == 0)
     ):
         raise SupplyError("scan receipt status and blocking findings are inconsistent")
@@ -2000,6 +2115,8 @@ def write_index(args: argparse.Namespace) -> int:
         "lock_sha256": receipts[0]["lock_sha256"],
         "allowlist_path": receipts[0]["allowlist_path"],
         "allowlist_sha256": receipts[0]["allowlist_sha256"],
+        "authoritative_not_affected_path": receipts[0]["authoritative_not_affected_path"],
+        "authoritative_not_affected_sha256": receipts[0]["authoritative_not_affected_sha256"],
         "release_platform": expected_platform,
         "grype_database_identity": database_identities[0],
         "required_image_keys": required_image_keys,
@@ -2020,6 +2137,9 @@ def write_index(args: argparse.Namespace) -> int:
                 "artifacts": receipt.get("artifacts"),
                 "grype_database": receipt.get("grype_database"),
                 "blocking_finding_count": receipt.get("blocking_finding_count"),
+                "authoritatively_not_affected_blocking_finding_count": receipt.get(
+                    "authoritatively_not_affected_blocking_finding_count"
+                ),
                 "unallowlisted_blocking_finding_count": receipt.get(
                     "unallowlisted_blocking_finding_count"
                 ),

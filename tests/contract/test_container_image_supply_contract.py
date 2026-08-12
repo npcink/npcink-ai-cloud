@@ -472,6 +472,10 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
         "max_database_age_hours": 72,
         "max_exception_days": 30,
         "allowlist_file": "deploy/image-lock/cve-allowlist.json",
+        "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
+        "authoritative_not_affected_sha256": hashlib.sha256(
+            (ROOT / "deploy/image-lock/authoritative-not-affected.json").read_bytes()
+        ).hexdigest(),
         "generated_artifacts_must_not_be_committed": True,
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"

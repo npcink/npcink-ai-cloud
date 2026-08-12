@@ -120,6 +120,20 @@ evidence.
 
 ### Bounded release verification
 
+#### Early authoritative CVE conflict precheck
+
+The checked-in `deploy/image-lock/authoritative-not-affected.json` file is a
+narrow adjudication contract for scanner/CNA conflicts. It is not a CVE
+allowlist or risk acceptance: each entry binds one exact image, CVE, package,
+and package version to the CVE Program CNA's exact CPython affected range.
+`pnpm run check:authoritative-cve-ranges` fetches each CNA record with bounded
+size and time limits and fails closed on identity, range, schema, expiry, or
+network errors. CI runs this precheck before any production image build or
+scan, so authority drift is found in seconds. The exact image scan still runs;
+only a matching, currently verified entry is adjudicated as
+`authoritatively_not_affected`. The normal CVE allowlist remains separate and
+must stay empty unless an independently reviewed risk exception exists.
+
 Production safety and operator time are both release constraints. A release
 session must bind every reusable result to the exact revision, source tree,
 bundle digest, platform, scan identity, and target state. Evidence that still

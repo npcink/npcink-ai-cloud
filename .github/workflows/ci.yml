@@ -15,6 +15,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  authoritative-cve-precheck:
+    name: Authoritative CVE range precheck
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify CNA ranges before image work
+        run: pnpm run check:authoritative-cve-ranges
+
   production-release-plan:
     name: Production release plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
@@ -284,7 +294,7 @@ jobs:
 
   production-deploy-bundle:
     name: Production deploy bundle
-    needs: [production-release-plan, production-promotion-evidence]
+    needs: [authoritative-cve-precheck, production-release-plan, production-promotion-evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production' && needs.production-release-plan.outputs.release_action == 'runtime'
     runs-on: ubuntu-latest
     steps:
@@ -338,9 +348,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
-          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
           restore-keys: |
-            production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-
+            production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-
 
       - name: Prepare disposable production image scan cache
         run: |
@@ -385,7 +395,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
-          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json') }}-${{ github.run_id }}
+          key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
 
       - name: Upload exact production deploy bundle
         uses: actions/upload-artifact@v7
