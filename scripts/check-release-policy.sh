@@ -204,6 +204,19 @@ require_file "scripts/check-python-cve-upstream.py"
 require_file "scripts/alembic_revision_gate.py"
 require_file "scripts/pg18-semantic-proof.py"
 require_file "scripts/production-image-supply.py"
+require_file "scripts/check-authoritative-cve-ranges.py"
+require_file "scripts/check-dockerfile-copy-contract.py"
+require_file "deploy/image-lock/authoritative-not-affected.json"
+require_marker "package.json" '"check:authoritative-cve-ranges":'
+require_marker "package.json" '"check:dockerfile-copy-contract":'
+require_marker ".github/workflows/ci.yml" "authoritative-cve-precheck:"
+require_marker ".github/workflows/ci.yml" "Verify CNA ranges before image work"
+require_marker ".github/workflows/ci.yml" "dockerfile-copy-precheck:"
+require_marker ".github/workflows/ci.yml" "Verify local Dockerfile COPY sources before image work"
+require_marker ".github/workflows/ci.yml" "production-pr-base-precheck:"
+require_marker ".github/workflows/ci.yml" "Verify production PR base, head, and approval contract"
+require_marker ".github/workflows/ci.yml" "authoritative-not-affected.json"
+reject_marker "scripts/check-authoritative-cve-ranges.py" "allowlist"
 require_file "scripts/dev-compose.sh"
 require_file "scripts/dev-frontend-recover.sh"
 require_file "package.json"
@@ -996,7 +1009,7 @@ require_marker ".github/workflows/ci.yml" "Production PR CI evidence"
 require_marker ".github/workflows/ci.yml" 'commits/${GITHUB_SHA}/pulls'
 require_marker ".github/workflows/ci.yml" "python3 scripts/production-ci-evidence.py verify"
 require_marker ".github/workflows/ci.yml" "Create production PR CI evidence receipt"
-require_marker ".github/workflows/ci.yml" 'needs: [production-release-plan, production-promotion-evidence]'
+require_marker ".github/workflows/ci.yml" 'needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]'
 require_marker ".github/workflows/ci.yml" 'REQUIRES_FULL_BACKEND:'
 require_marker ".github/workflows/ci.yml" '--full-backend "${full_backend}"'
 require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"
@@ -1041,6 +1054,8 @@ require_file "scripts/production-application-image-inputs.py"
 require_file "scripts/production-release-plan.py"
 require_file "scripts/resolve-production-release-action.py"
 require_file "scripts/production-release-preflight.py"
+require_file "scripts/check-production-pr-base.py"
+require_file "scripts/release-readiness-summary.py"
 require_marker "scripts/production-release-plan.py" \
 	"npcink.production_release_plan.v2"
 require_marker "scripts/production-application-image-inputs.py" \
@@ -1054,6 +1069,17 @@ require_marker "docs/cloud-production-release-policy-v1.md" \
 require_marker "docs/cloud-production-release-policy-v1.md" \
 	"npcink.production-application-image-cache.v1"
 require_marker "package.json" '"production:release:preflight":'
+require_marker "package.json" '"production:release:preflight:dry-run":'
+require_marker "package.json" '"check:production-pr-base":'
+require_marker "package.json" '"release:readiness":'
+require_marker "scripts/check-production-pr-base.py" \
+	'production PR head must be master or release-fix/*'
+require_marker "scripts/release-readiness-summary.py" \
+	'npcink.release_readiness_summary.v1'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	"production-pr-base-precheck"
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	"read-only local"
 require_marker "scripts/production-release-preflight.py" \
 	"npcink.production_release_preflight.v1"
 require_marker "scripts/production-release-preflight.py" \
@@ -1062,6 +1088,8 @@ require_marker "scripts/production-release-preflight.py" \
 	"production-release-plan-{sha}"
 require_marker "scripts/production-release-preflight.py" \
 	'if release_action == "runtime"'
+require_marker "scripts/production-release-preflight.py" \
+	'--dry-run requires --snapshot'
 require_marker "scripts/production-release-preflight.py" \
 	'bundle_artifact_text'
 require_marker "scripts/production-release-preflight.py" \
