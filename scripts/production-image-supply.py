@@ -1327,6 +1327,25 @@ def _blocking_findings(report: dict[str, Any], policy: dict[str, Any]) -> list[d
     return [findings[key] for key in sorted(findings)]
 
 
+def _receipt_report_blockers(
+    allowed: list[dict[str, str]],
+    unallowed: list[dict[str, str]],
+    authoritative: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    normalized_authoritative = [
+        {key: value for key, value in finding.items() if key != "adjudication"}
+        for finding in authoritative
+    ]
+    return sorted(
+        [*allowed, *unallowed, *normalized_authoritative],
+        key=lambda item: (
+            item["vulnerability_id"],
+            item["package"],
+            item["package_version"],
+        ),
+    )
+
+
 def evaluate_scan(args: argparse.Namespace) -> int:
     lock_path = Path(args.lock).resolve()
     if args.scope == "release" and lock_path != DEFAULT_LOCK.resolve():
@@ -1971,10 +1990,7 @@ def _validate_index_receipt(
         if report_db[field] != receipt_db[field]:
             raise SupplyError("scan receipt does not match its Grype database identity")
     report_blockers = _blocking_findings(report, policy)
-    receipt_blockers = sorted(
-        [*allowed, *unallowed],
-        key=lambda item: (item["vulnerability_id"], item["package"], item["package_version"]),
-    )
+    receipt_blockers = _receipt_report_blockers(allowed, unallowed, authoritative)
     if report_blockers != receipt_blockers:
         raise SupplyError("scan receipt findings do not match its Grype report")
     report_severity_counts = Counter(

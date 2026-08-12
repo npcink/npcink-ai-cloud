@@ -169,6 +169,9 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
 
     assert "production-promotion-evidence:" in workflow
     assert "production-pr-base-precheck:" in workflow
+    assert "PRODUCTION_PR_BASE_RESULT" in workflow
+    assert "GITHUB_BASE_REF: ${{ github.base_ref }}" in workflow
+    assert "production PR base precheck did not pass" in workflow
     assert "run: python3 scripts/check-authoritative-cve-ranges.py" in workflow
     assert "run: python3 scripts/check-dockerfile-copy-contract.py" in workflow
     assert "run: pnpm run check:authoritative-cve-ranges" not in workflow

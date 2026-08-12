@@ -888,11 +888,13 @@ jobs:
           PYTHON_DEPENDENCY_AUDIT_RESULT: ${{ needs['python-dependency-audit'].result }}
           PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT: ${{ needs['production-python-image-smoke'].result }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
           BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
           BACKEND_STATIC_RESULT: ${{ needs['backend-static'].result }}
           BACKEND_PYTEST_RESULT: ${{ needs['backend-pytest'].result }}
           BACKEND_POSTGRES_CUTOVER_RESULT: ${{ needs['backend-postgres-cutover'].result }}
+          PRODUCTION_PR_BASE_RESULT: ${{ needs['production-pr-base-precheck'].result }}
           REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
           DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
           FRONTEND_ONLY: ${{ needs.classify.outputs.frontend_only }}
@@ -908,11 +910,17 @@ jobs:
           echo "static=${BACKEND_STATIC_RESULT}"
           echo "pytest=${BACKEND_PYTEST_RESULT}"
           echo "postgres_cutover=${BACKEND_POSTGRES_CUTOVER_RESULT}"
+          echo "production_pr_base=${PRODUCTION_PR_BASE_RESULT}"
           echo "specialized_quality=${SPECIALIZED_QUALITY_RESULT}"
           echo "requires_full_backend=${REQUIRES_FULL_BACKEND}"
 
           if [ "${BACKEND_SCOPE_RESULT}" != "success" ]; then
             echo "backend scope classification did not pass" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${GITHUB_BASE_REF}" = "production" ] && [ "${PRODUCTION_PR_BASE_RESULT}" != "success" ]; then
+            echo "production PR base precheck did not pass" >&2
             exit 1
           fi
 

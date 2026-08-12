@@ -1334,3 +1334,17 @@ def test_formal_bundle_inspects_the_requested_platform_in_multi_platform_stores(
     assert 'docker image inspect "$@"' in source
     assert "docker_image_inspect --format '{{.Id}}' \"$1\"" in source
     assert ("docker_image_inspect --format '{{.Os}}/{{.Architecture}}' \"$1\"") in source
+
+
+def test_authoritative_findings_are_reincluded_when_binding_receipt_to_report() -> None:
+    supply = _supply_module()
+    finding = {
+        "vulnerability_id": "CVE-2026-1234",
+        "package": "python",
+        "package_version": "3.14.1",
+        "severity": "high",
+        "fix_state": "not-fixed",
+    }
+    authoritative = [dict(finding, adjudication="authoritatively_not_affected")]
+
+    assert supply._receipt_report_blockers([], [], authoritative) == [finding]
