@@ -291,6 +291,7 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         "scripts/classify-ci-changes.sh",
         "scripts/check-authoritative-cve-ranges.py",
         "scripts/check-first-install-cve-gate.py",
+        "scripts/check-pr-backend-gate.sh",
         "scripts/check-release-policy.sh",
         "scripts/production-application-image-inputs.py",
         "scripts/production-image-supply.py",
