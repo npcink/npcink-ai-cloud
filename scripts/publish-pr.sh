@@ -103,6 +103,8 @@ if [ "${base_branch}" = 'production' ]; then
 		master|release-fix/*) ;;
 		*) fail 'production PR head must be master or release-fix/*' ;;
 	esac
+	commit_count="$(git rev-list --count "origin/${base_branch}..HEAD")"
+	[ "${commit_count}" -gt 0 ] || fail "branch has no commits beyond origin/${base_branch}"
 	git diff --quiet "origin/${base_branch}" HEAD \
 		&& fail "branch tree is identical to origin/${base_branch}"
 else
