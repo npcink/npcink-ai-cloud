@@ -421,6 +421,8 @@ require_marker ".github/pull_request_template.md" "does not commit production se
 require_marker "package.json" '"pr:publish": "bash scripts/publish-pr.sh"'
 require_marker "package.json" '"test:pr-body-contract": "python3 scripts/test-pr-body-contract.py"'
 require_marker "scripts/publish-pr.sh" 'git status --porcelain'
+require_marker "scripts/publish-pr.sh" "production PR head must be master or release-fix/*"
+require_marker "scripts/publish-pr.sh" 'git diff --quiet "origin/${base_branch}" HEAD'
 require_marker "scripts/publish-pr.sh" 'git merge-base --is-ancestor "origin/${base_branch}" HEAD'
 require_marker "scripts/publish-pr.sh" '--body-file "${body_path}"'
 require_marker "scripts/publish-pr.sh" '--auto --squash --match-head-commit "${head_sha}"'
