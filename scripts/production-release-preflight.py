@@ -171,9 +171,7 @@ def _require_bundle_absent(payload: object, sha: str) -> None:
         and artifact.get("expired") is False
     ]
     if matches:
-        raise PreflightError(
-            f"non-runtime release unexpectedly produced {expected_name}"
-        )
+        raise PreflightError(f"non-runtime release unexpectedly produced {expected_name}")
 
 
 def _resolve_release_action(
@@ -183,9 +181,7 @@ def _resolve_release_action(
     sha: str,
     tree: str,
 ) -> str:
-    module_path = Path(__file__).resolve().with_name(
-        "resolve-production-release-action.py"
-    )
+    module_path = Path(__file__).resolve().with_name("resolve-production-release-action.py")
     spec = importlib.util.spec_from_file_location(
         "npcink_production_release_action",
         module_path,
@@ -270,6 +266,7 @@ def evaluate_snapshot(
     expected_sha: str | None,
     require_formal_smoke: bool,
 ) -> dict[str, Any]:
+    started = time.monotonic()
     sha = _require_sha(snapshot.get("production_sha"), "production SHA")
     if expected_sha is not None and sha != _require_sha(expected_sha, "expected SHA"):
         raise PreflightError("requested SHA does not match the current production branch")
@@ -294,9 +291,7 @@ def evaluate_snapshot(
     plan_artifact_id = _require_plan_artifact(snapshot.get("artifacts"), sha)
     release_action = str(snapshot.get("release_action") or "")
     if release_action == "runtime":
-        bundle_artifact_id: int | None = _require_bundle_artifact(
-            snapshot.get("artifacts"), sha
-        )
+        bundle_artifact_id: int | None = _require_bundle_artifact(snapshot.get("artifacts"), sha)
     elif release_action in {"no_deploy", "static"}:
         _require_bundle_absent(snapshot.get("artifacts"), sha)
         bundle_artifact_id = None
@@ -328,6 +323,8 @@ def evaluate_snapshot(
         "missing_formal_smoke_secret_names": missing_smoke,
         "active_deploy_run_ids": [],
         "release_preflight": "ready",
+        "preflight_elapsed_seconds": round(time.monotonic() - started, 3),
+        "preflight_mode": "snapshot",
     }
 
 
@@ -418,9 +415,7 @@ def render_text(result: dict[str, Any]) -> str:
     missing_smoke = result["missing_formal_smoke_secret_names"]
     smoke_status = "ready" if not missing_smoke else "missing:" + ",".join(missing_smoke)
     bundle_artifact = result["bundle_artifact_id"]
-    bundle_artifact_text = (
-        str(bundle_artifact) if bundle_artifact is not None else "not_applicable"
-    )
+    bundle_artifact_text = str(bundle_artifact) if bundle_artifact is not None else "not_applicable"
     return "\n".join(
         (
             f"production_sha={result['production_sha']}",
@@ -434,6 +429,8 @@ def render_text(result: dict[str, Any]) -> str:
             f"formal_smoke_secrets={smoke_status}",
             "active_deploy=none",
             "release_preflight=ready",
+            f"preflight_mode={result.get('preflight_mode', 'live')}",
+            f"preflight_elapsed_seconds={result.get('preflight_elapsed_seconds', 'not_measured')}",
         )
     )
 
@@ -446,6 +443,11 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=int, default=15)
     parser.add_argument("--require-formal-smoke", action="store_true")
     parser.add_argument("--snapshot", type=Path, help="evaluate saved non-secret metadata")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate a supplied --snapshot only; never query GitHub or wait",
+    )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     argv = sys.argv[1:]
     if argv[:1] == ["--"]:
@@ -453,6 +455,10 @@ def main() -> int:
     args = parser.parse_args(argv)
     if args.wait_seconds < 0 or args.poll_seconds < 1:
         raise SystemExit("wait seconds must be non-negative and poll seconds must be positive")
+    if args.dry_run and args.snapshot is None:
+        raise SystemExit("--dry-run requires --snapshot")
+    if args.dry_run and args.snapshot is not None:
+        args.wait_seconds = 0
     if shutil.which("gh") is None and args.snapshot is None:
         raise SystemExit("gh CLI is required for live production preflight")
 
@@ -466,6 +472,7 @@ def main() -> int:
                 expected_sha=args.sha,
                 require_formal_smoke=args.require_formal_smoke,
             )
+            result["preflight_mode"] = "dry-run" if args.dry_run else "snapshot"
         else:
             repo = _resolve_repo(args.repo)
             deadline = time.monotonic() + args.wait_seconds

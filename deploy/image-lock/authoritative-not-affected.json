@@ -1,0 +1,41 @@
+{
+  "schema_version": "npcink.production-image-authoritative-not-affected.v1",
+  "entries": [
+    {
+      "image": "api",
+      "vulnerability_id": "CVE-2026-11940",
+      "package": "python",
+      "package_version": "3.14.7",
+      "authority": "CVE Program CNA record",
+      "authority_url": "https://cveawg.mitre.org/api/cve/CVE-2026-11940",
+      "affected_version": "3.14.0",
+      "affected_less_than": "3.14.7",
+      "verified_on": "2026-08-12",
+      "recheck_after": "2026-08-19"
+    },
+    {
+      "image": "api",
+      "vulnerability_id": "CVE-2026-11972",
+      "package": "python",
+      "package_version": "3.14.7",
+      "authority": "CVE Program CNA record",
+      "authority_url": "https://cveawg.mitre.org/api/cve/CVE-2026-11972",
+      "affected_version": "3.14.0",
+      "affected_less_than": "3.14.7",
+      "verified_on": "2026-08-12",
+      "recheck_after": "2026-08-19"
+    },
+    {
+      "image": "api",
+      "vulnerability_id": "CVE-2026-15308",
+      "package": "python",
+      "package_version": "3.14.7",
+      "authority": "CVE Program CNA record",
+      "authority_url": "https://cveawg.mitre.org/api/cve/CVE-2026-15308",
+      "affected_version": "3.14.0",
+      "affected_less_than": "3.14.7",
+      "verified_on": "2026-08-12",
+      "recheck_after": "2026-08-19"
+    }
+  ]
+}
