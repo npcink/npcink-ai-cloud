@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -35,6 +36,12 @@ def _normalized_created_at(value: str) -> str:
     return parsed.isoformat().replace("+00:00", "Z")
 
 
+def _normalized_source_dirty(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class DeploymentIdentity:
     release: str
@@ -48,9 +55,28 @@ class DeploymentIdentity:
         return cls(
             release=_normalized_release(settings.deployment_release),
             source_revision=_normalized_source_revision(settings.deployment_source_revision),
-            source_dirty=bool(settings.deployment_source_dirty),
+            source_dirty=_normalized_source_dirty(settings.deployment_source_dirty),
             created_at=_normalized_created_at(settings.deployment_created_at),
             environment=str(settings.environment or "unknown").strip() or "unknown",
+        )
+
+    @classmethod
+    def from_environment(cls, environment: Mapping[str, str]) -> DeploymentIdentity:
+        """Read public deployment identity without loading protected runtime settings."""
+        return cls(
+            release=_normalized_release(environment.get("NPCINK_CLOUD_DEPLOYMENT_RELEASE", "")),
+            source_revision=_normalized_source_revision(
+                environment.get("NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION", "")
+            ),
+            source_dirty=_normalized_source_dirty(
+                environment.get("NPCINK_CLOUD_DEPLOYMENT_SOURCE_DIRTY", "")
+            ),
+            created_at=_normalized_created_at(
+                environment.get("NPCINK_CLOUD_DEPLOYMENT_CREATED_AT", "")
+            ),
+            environment=(
+                str(environment.get("NPCINK_CLOUD_ENVIRONMENT", "unknown")).strip() or "unknown"
+            ),
         )
 
     @property

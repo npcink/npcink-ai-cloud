@@ -357,6 +357,10 @@ def test_complete_liveness_survives_runtime_activation_failure(
         idempotency_key="complete-runtime-health-failure",
     )
     application = main_module.InstallAwareApplication(service)
+    revision = "c" * 40
+    monkeypatch.setenv("NPCINK_CLOUD_DEPLOYMENT_RELEASE", "release-health-test")
+    monkeypatch.setenv("NPCINK_CLOUD_DEPLOYMENT_SOURCE_REVISION", revision)
+    monkeypatch.setenv("NPCINK_CLOUD_DEPLOYMENT_SOURCE_DIRTY", "false")
 
     def unavailable_runtime() -> object:
         raise RuntimeError("simulated runtime database activation failure")
@@ -369,7 +373,16 @@ def test_complete_liveness_survives_runtime_activation_failure(
     assert live.json()["data"] == {
         "service": "Npcink AI Cloud",
         "environment": "production",
+        "deployment": {
+            "release": "release-health-test",
+            "source_revision": revision[:12],
+            "source_dirty": False,
+        },
     }
+    assert live.json()["meta"]["revision"] == revision[:12]
+    assert live.headers["x-npcink-release"] == "release-health-test"
+    assert live.headers["x-npcink-revision"] == revision[:12]
+    assert live.headers["x-npcink-dirty"] == "false"
     assert live.headers["cache-control"] == "no-store"
     disallowed_live = client.post("/health/live")
     assert disallowed_live.status_code == 405
