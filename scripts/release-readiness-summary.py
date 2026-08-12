@@ -30,6 +30,35 @@ def summarize(paths: list[Path]) -> dict[str, Any]:
         schema = payload.get("schema") or payload.get("contract_version")
         if schema not in KNOWN_SCHEMAS:
             raise ValueError(f"{path} has unsupported or missing evidence schema")
+        if schema == "npcink.production-authoritative-cve-precheck.v1":
+            required = ("checked_at_utc", "lock", "authoritative_file", "entries")
+            if (
+                any(key not in payload for key in required)
+                or not isinstance(payload.get("entries"), list)
+                or not payload["entries"]
+            ):
+                raise ValueError(f"{path} has incomplete authoritative evidence")
+            if (
+                not isinstance(payload.get("checked_at_utc"), str)
+                or not isinstance(payload.get("lock"), str)
+                or not isinstance(payload.get("authoritative_file"), str)
+            ):
+                raise ValueError(f"{path} has incomplete authoritative evidence")
+        else:
+            required = (
+                "repository",
+                "cloud_ci_run_id",
+                "codeql_run_id",
+                "release_action",
+                "plan_artifact_id",
+                "deploy_secrets_ready",
+                "formal_smoke_secrets_ready",
+                "preflight_mode",
+            )
+            if any(key not in payload for key in required) or not isinstance(
+                payload.get("preflight_mode"), str
+            ):
+                raise ValueError(f"{path} has incomplete preflight evidence")
         status_key, expected_status, revision_key = KNOWN_SCHEMAS[schema]
         revision = payload.get(revision_key)
         if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
