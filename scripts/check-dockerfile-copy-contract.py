@@ -45,10 +45,17 @@ def _validate_file(path: Path, root: Path) -> list[dict[str, str]]:
             raise CopyContractError(f"{path}:{line}: invalid Dockerfile quoting: {exc}") from exc
         if not tokens or tokens[0].upper() != "COPY":
             continue
-        sources = tokens[1:]
-        if sources and sources[0].startswith("--from="):
+        arguments = tokens[1:]
+        options: list[str] = []
+        while arguments and arguments[0].startswith("--"):
+            options.append(arguments.pop(0))
+        if any(option.startswith("--from=") for option in options):
             continue
-        sources = [token for token in sources if not token.startswith("--")]
+        if any(option == "--from" for option in options):
+            raise CopyContractError(
+                f"{path}:{line}: COPY --from must use --from=<stage> syntax"
+            )
+        sources = arguments
         if len(sources) < 2:
             raise CopyContractError(
                 f"{path}:{line}: COPY requires at least one source and a destination"

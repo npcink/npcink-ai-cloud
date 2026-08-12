@@ -1884,6 +1884,26 @@ def _validate_index_receipt(
         raise SupplyError("scan receipt authoritative findings are invalid")
     if receipt.get("authoritatively_not_affected_blocking_finding_count") != len(authoritative):
         raise SupplyError("scan receipt authoritative finding count is inconsistent")
+    governed_authoritative = {
+        (
+            entry["image"],
+            entry["vulnerability_id"],
+            entry["package"],
+            entry["package_version"],
+        )
+        for entry in entries
+    }
+    for finding in authoritative:
+        identity = (
+            image_key,
+            finding["vulnerability_id"],
+            finding["package"],
+            finding["package_version"],
+        )
+        if identity not in governed_authoritative:
+            raise SupplyError(
+                "scan receipt authoritative finding is absent from the governed adjudications"
+            )
     counts = (
         receipt.get("blocking_finding_count"),
         receipt.get("allowlisted_blocking_finding_count"),
