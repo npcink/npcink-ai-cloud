@@ -67,10 +67,13 @@ def summarize(paths: list[Path]) -> dict[str, Any]:
         status = payload.get(status_key)
         if status != expected_status:
             state = "blocked" if status in {"failed", "blocked", False} else "unknown"
-        elif schema == "npcink.production_release_preflight.v1" and payload.get(
-            "preflight_mode"
-        ) not in {"live", "snapshot", "dry-run"}:
-            state = "unknown"
+        elif schema == "npcink.production_release_preflight.v1":
+            if payload.get("preflight_mode") not in {"live", "snapshot", "dry-run"}:
+                state = "unknown"
+            elif payload.get("deploy_secrets_ready") is not True:
+                state = "blocked"
+            else:
+                state = "passed"
         else:
             state = "passed"
         checks.append(

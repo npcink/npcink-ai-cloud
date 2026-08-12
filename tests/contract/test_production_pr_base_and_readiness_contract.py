@@ -92,6 +92,24 @@ def test_readiness_summary_rejects_unbound_passed_json(tmp_path: Path) -> None:
         module.summarize([evidence])
 
 
+def test_readiness_summary_blocks_when_deploy_secrets_are_not_ready(
+    tmp_path: Path,
+) -> None:
+    module = _load("readiness_summary", ROOT / "scripts/release-readiness-summary.py")
+    evidence = tmp_path / "preflight.json"
+    evidence.write_text(
+        '{"schema":"npcink.production_release_preflight.v1",'
+        '"release_preflight":"ready","production_sha":'
+        '"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","preflight_mode":"live",'
+        '"repository":"npcink/npcink-ai-cloud","cloud_ci_run_id":1,"codeql_run_id":2,'
+        '"release_action":"runtime","plan_artifact_id":3,"deploy_secrets_ready":false,'
+        '"formal_smoke_secrets_ready":false}\n'
+    )
+    result = module.summarize([evidence])
+    assert result["status"] == "blocked"
+    assert result["blockers"] == ["preflight.json"]
+
+
 def test_readiness_summary_rejects_mixed_revisions(tmp_path: Path) -> None:
     module = _load("readiness_summary", ROOT / "scripts/release-readiness-summary.py")
     first = tmp_path / "first.json"
