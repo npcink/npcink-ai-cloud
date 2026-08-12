@@ -29,6 +29,10 @@ for changed_file in "$@"; do
 			authoritative_cve_required=true
 			;;
 	esac
+	if [ "${authoritative_cve_required}" != "true" ] && python3 scripts/production-application-image-inputs.py \
+		--matches-image-input api --path "${changed_file}"; then
+		authoritative_cve_required=true
+	fi
 
 	case "${changed_file}" in
 		app/domain/commercial/mixins/_account_mixin.py|app/domain/commercial/mixins/_admin_mixin.py)

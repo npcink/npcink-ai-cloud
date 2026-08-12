@@ -49,7 +49,6 @@ def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
 
 def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
     assert _classify(
-        "README.md",
         "AGENTS.md",
         "docs/m4-preview-development-v1.md",
         "deploy/OPS_PLAYBOOK.md",
@@ -87,7 +86,7 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
 
     assert _classify("app/main.py") == {
         "deploy_required": "true",
-        "authoritative_cve_required": "false",
+        "authoritative_cve_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
@@ -275,10 +274,15 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         ".github/workflows/ci.yml",
         ".github/workflows/deploy-production.yml",
         "Dockerfile",
+        ".dockerignore",
+        "README.md",
+        "alembic.ini",
+        "app/api/routes/health.py",
         "frontend/Dockerfile",
         "docker-compose.prod.yml",
         "Makefile",
         "deploy/bundle-images.sh",
+        "deploy/wait-for-install.sh",
         "deploy/image-lock/production-images.json",
         "pyproject.toml",
         "uv.lock",
@@ -297,6 +301,7 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         "scripts/production-image-supply.py",
         "scripts/production-python-extras-smoke.sh",
         "scripts/production-release-plan.py",
+        "scripts/live-site-runtime-smoke.py",
         "scripts/release-readiness-summary.py",
         "scripts/resolve-production-release-action.py",
         "scripts/scan-production-images.sh",
@@ -309,9 +314,7 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         assert _classify(path)["authoritative_cve_required"] == "true"
 
     for path in (
-        "README.md",
         "frontend/src/app/page.tsx",
-        "app/api/routes/health.py",
         "tests/api/test_health.py",
     ):
         assert _classify(path)["authoritative_cve_required"] == "false"
