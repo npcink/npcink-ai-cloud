@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -68,6 +69,25 @@ def test_snapshot_result_contains_elapsed_stage_and_mode() -> None:
     assert result["preflight_mode"] == "snapshot"
     assert isinstance(result["preflight_elapsed_seconds"], float)
     assert result["preflight_elapsed_seconds"] >= 0
+
+
+def test_live_cli_marks_result_as_live(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _module()
+    sha = "a" * 40
+    monkeypatch.setattr(module.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(module, "_resolve_repo", lambda _: "npcink/npcink-ai-cloud")
+    monkeypatch.setattr(module, "_live_snapshot", lambda _: _snapshot())
+    monkeypatch.setattr(
+        module.main.__globals__["sys"],
+        "argv",
+        [str(SCRIPT), "--sha", sha, "--format", "json"],
+    )
+
+    assert module.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["preflight_mode"] == "live"
 
 
 def test_dry_run_cli_rejects_missing_snapshot() -> None:
