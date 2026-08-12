@@ -120,6 +120,22 @@ evidence.
 
 ### Bounded release verification
 
+#### Production PR base and readiness prechecks
+
+Production pull requests targeting `production` run the lightweight
+`production-pr-base-precheck` before the aggregate backend check. It fails
+closed unless the base is this repository's `production` branch, the head is
+the same repository's `master` or an explicitly named `release-fix/*` branch,
+and the body contains `Approved for production validation by operator.` This
+prevents an incorrectly based or externally sourced candidate from consuming
+the expensive production evidence path.
+
+`pnpm run release:readiness -- --json <evidence...>` is a read-only local
+summary of already-produced JSON evidence. It does not rerun checks, query
+GitHub, dispatch deployment, or replace any required gate. Unknown, failed, or
+missing evidence remains blocked; the summary is an operator convenience for
+deciding whether to continue before starting a costly release step.
+
 #### Early authoritative CVE conflict precheck
 
 The checked-in `deploy/image-lock/authoritative-not-affected.json` file is a

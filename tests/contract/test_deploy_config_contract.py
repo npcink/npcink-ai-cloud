@@ -211,6 +211,8 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "production-image-supply.py",
         "check-authoritative-cve-ranges.py",
         "check-dockerfile-copy-contract.py",
+        "check-production-pr-base.py",
+        "release-readiness-summary.py",
         "production-ci-evidence.py",
         "production-release-plan.py",
         "resolve-production-release-action.py",

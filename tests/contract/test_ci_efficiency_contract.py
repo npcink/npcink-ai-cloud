@@ -164,6 +164,8 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     )
 
     assert "production-promotion-evidence:" in workflow
+    assert "production-pr-base-precheck:" in workflow
+    assert "Verify production PR base, head, and approval contract" in workflow
     assert "Production PR CI evidence" in workflow
     assert "commits/${GITHUB_SHA}/pulls" in workflow
     assert "production-pr-ci-evidence-${pr_number}-${pr_head_sha}" in workflow
@@ -179,7 +181,7 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "production commit tree does not match the tree tested" in evidence_script
     assert "exactly one merged same-repository production PR" in evidence_script
     assert workflow.count(production_push_guard) >= 8
-    assert "needs: [production-release-plan, production-promotion-evidence]" in workflow
+    assert "needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]" in workflow
     assert "Create production PR CI evidence receipt" in workflow
     assert "Upload production PR CI evidence receipt" in workflow
     assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
