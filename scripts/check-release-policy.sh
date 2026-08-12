@@ -205,10 +205,14 @@ require_file "scripts/alembic_revision_gate.py"
 require_file "scripts/pg18-semantic-proof.py"
 require_file "scripts/production-image-supply.py"
 require_file "scripts/check-authoritative-cve-ranges.py"
+require_file "scripts/check-dockerfile-copy-contract.py"
 require_file "deploy/image-lock/authoritative-not-affected.json"
 require_marker "package.json" '"check:authoritative-cve-ranges":'
+require_marker "package.json" '"check:dockerfile-copy-contract":'
 require_marker ".github/workflows/ci.yml" "authoritative-cve-precheck:"
 require_marker ".github/workflows/ci.yml" "Verify CNA ranges before image work"
+require_marker ".github/workflows/ci.yml" "dockerfile-copy-precheck:"
+require_marker ".github/workflows/ci.yml" "Verify local Dockerfile COPY sources before image work"
 require_marker ".github/workflows/ci.yml" "authoritative-not-affected.json"
 reject_marker "scripts/check-authoritative-cve-ranges.py" "allowlist"
 require_file "scripts/dev-compose.sh"
@@ -1003,7 +1007,7 @@ require_marker ".github/workflows/ci.yml" "Production PR CI evidence"
 require_marker ".github/workflows/ci.yml" 'commits/${GITHUB_SHA}/pulls'
 require_marker ".github/workflows/ci.yml" "python3 scripts/production-ci-evidence.py verify"
 require_marker ".github/workflows/ci.yml" "Create production PR CI evidence receipt"
-require_marker ".github/workflows/ci.yml" 'needs: [authoritative-cve-precheck, production-release-plan, production-promotion-evidence]'
+require_marker ".github/workflows/ci.yml" 'needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]'
 require_marker ".github/workflows/ci.yml" 'REQUIRES_FULL_BACKEND:'
 require_marker ".github/workflows/ci.yml" '--full-backend "${full_backend}"'
 require_marker ".github/workflows/ci.yml" "production-deploy-bundle:"

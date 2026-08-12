@@ -210,6 +210,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "production-application-image-inputs.py",
         "production-image-supply.py",
         "check-authoritative-cve-ranges.py",
+        "check-dockerfile-copy-contract.py",
         "production-ci-evidence.py",
         "production-release-plan.py",
         "resolve-production-release-action.py",
@@ -2416,7 +2417,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-promotion-evidence:" in ci_workflow
     assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
     assert "Create production PR CI evidence receipt" in ci_workflow
-    assert "needs: [authoritative-cve-precheck, production-release-plan, production-promotion-evidence]" in ci_workflow
+    assert "needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]" in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow

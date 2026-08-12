@@ -25,6 +25,16 @@ jobs:
       - name: Verify CNA ranges before image work
         run: pnpm run check:authoritative-cve-ranges
 
+  dockerfile-copy-precheck:
+    name: Dockerfile COPY contract precheck
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify local Dockerfile COPY sources before image work
+        run: pnpm run check:dockerfile-copy-contract
+
   production-release-plan:
     name: Production release plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
@@ -294,7 +304,7 @@ jobs:
 
   production-deploy-bundle:
     name: Production deploy bundle
-    needs: [authoritative-cve-precheck, production-release-plan, production-promotion-evidence]
+    needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production' && needs.production-release-plan.outputs.release_action == 'runtime'
     runs-on: ubuntu-latest
     steps:
