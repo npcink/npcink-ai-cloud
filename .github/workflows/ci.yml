@@ -799,11 +799,11 @@ jobs:
             coverage_include_paths=("app/__init__.py" "${changed_app_files[@]}")
             coverage_include_arg="$(IFS=,; echo "${coverage_include_paths[*]}")"
             COVERAGE_FILE="artifacts/coverage-backend-shard-${{ matrix.shard }}.data" \
-              timeout --signal=TERM --kill-after=30s 1200 .venv/bin/python -m coverage run --branch \
+              timeout --signal=INT --kill-after=30s 1200 .venv/bin/python -m coverage run --branch \
               --include="${coverage_include_arg}" \
               -m pytest "${pytest_args[@]}"
           else
-          timeout --signal=TERM --kill-after=30s 1200 .venv/bin/python -m pytest "${pytest_args[@]}"
+          timeout --signal=INT --kill-after=30s 1200 .venv/bin/python -m pytest "${pytest_args[@]}"
           fi
 
       - name: Summarize pytest timing
