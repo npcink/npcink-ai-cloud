@@ -37,6 +37,7 @@ def _classify(*paths: str) -> dict[str, str]:
 def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
     assert _classify() == {
         "deploy_required": "true",
+        "authoritative_cve_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
@@ -54,6 +55,7 @@ def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
         "deploy/OPS_PLAYBOOK.md",
     ) == {
         "deploy_required": "false",
+        "authoritative_cve_required": "false",
         "static_terms_only": "false",
         "docs_only": "true",
         "frontend_only": "false",
@@ -74,6 +76,7 @@ def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
 def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() -> None:
     assert _classify("site/terms/index.html", "site/terms/styles.css") == {
         "deploy_required": "true",
+        "authoritative_cve_required": "false",
         "static_terms_only": "true",
         "docs_only": "false",
         "frontend_only": "false",
@@ -84,6 +87,7 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
 
     assert _classify("app/main.py") == {
         "deploy_required": "true",
+        "authoritative_cve_required": "false",
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
@@ -93,6 +97,7 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
     }
     assert _classify(".github/workflows/ci.yml") == {
         "deploy_required": "true",
+        "authoritative_cve_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
         "frontend_only": "false",
@@ -202,6 +207,14 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
     assert "REQUIRES_FULL_BACKEND" in workflow
     assert '--full-backend "${full_backend}"' in workflow
+    assert "authoritative-cve-precheck:\n    name: Authoritative CVE range precheck\n    needs: [classify]" in workflow
+    assert "github.base_ref == 'production'" in workflow
+    assert "needs.classify.outputs.authoritative_cve_required == 'true'" in workflow
+    assert (
+        "AUTHORITATIVE_CVE_REQUIRED: "
+        "${{ needs.classify.outputs.authoritative_cve_required }}" in workflow
+    )
+    assert "authoritative CVE precheck should be skipped for non-release changes" in workflow
 
 
 def test_production_push_creates_exact_release_plan_evidence() -> None:
@@ -250,6 +263,28 @@ def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None
     assert _classify("app/api/routes/service.py")["frontend_e2e_required"] == "false"
     assert _classify("tests/api/test_service_routes.py")["frontend_e2e_required"] == "false"
     assert _classify("docs/portal-boundary.md")["frontend_e2e_required"] == "false"
+
+
+def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() -> None:
+    for path in (
+        ".github/workflows/ci.yml",
+        ".github/workflows/deploy-production.yml",
+        "Dockerfile",
+        "frontend/Dockerfile",
+        "docker-compose.prod.yml",
+        "deploy/image-lock/production-images.json",
+        "scripts/check-authoritative-cve-ranges.py",
+        "scripts/production-image-supply.py",
+    ):
+        assert _classify(path)["authoritative_cve_required"] == "true"
+
+    for path in (
+        "README.md",
+        "frontend/src/app/page.tsx",
+        "app/api/routes/health.py",
+        "tests/api/test_health.py",
+    ):
+        assert _classify(path)["authoritative_cve_required"] == "false"
 
 
 def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:

@@ -4,6 +4,7 @@ set -euo pipefail
 if [ "$#" -eq 0 ]; then
 	printf '%s\n' \
 		'deploy_required=true' \
+		'authoritative_cve_required=true' \
 		'static_terms_only=false' \
 		'docs_only=false' \
 		'frontend_only=false' \
@@ -14,6 +15,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 deploy_required=false
+authoritative_cve_required=false
 static_terms_only=true
 docs_only=true
 frontend_only=true
@@ -22,6 +24,12 @@ frontend_backend_contracts_required=false
 frontend_e2e_required=false
 
 for changed_file in "$@"; do
+	case "${changed_file}" in
+		.github/workflows/ci.yml|.github/workflows/deploy-production.yml|Dockerfile*|*/Dockerfile*|docker-compose*.yml|deploy/image-lock/*|scripts/check-authoritative-cve-ranges.py|scripts/production-image-supply.py|scripts/production-release-preflight.py|scripts/verify-release-bundle-manifest.py|tests/contract/test_container_image_supply_contract.py|tests/contract/test_exact_release_bundle_contract.py|tests/contract/test_production_release_preflight_contract.py)
+			authoritative_cve_required=true
+			;;
+	esac
+
 	case "${changed_file}" in
 		app/domain/commercial/mixins/_account_mixin.py|app/domain/commercial/mixins/_admin_mixin.py)
 			frontend_backend_contracts_required=true
@@ -76,6 +84,7 @@ for changed_file in "$@"; do
 done
 
 printf 'deploy_required=%s\n' "${deploy_required}"
+printf 'authoritative_cve_required=%s\n' "${authoritative_cve_required}"
 printf 'static_terms_only=%s\n' "${static_terms_only}"
 printf 'docs_only=%s\n' "${docs_only}"
 printf 'frontend_only=%s\n' "${frontend_only}"

@@ -17,7 +17,8 @@ concurrency:
 jobs:
   authoritative-cve-precheck:
     name: Authoritative CVE range precheck
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/production'))
+    needs: [classify]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/production') || (github.event_name == 'pull_request' && github.base_ref == 'production') || needs.classify.outputs.authoritative_cve_required == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -446,6 +447,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deploy_required: ${{ steps.changed.outputs.deploy_required }}
+      authoritative_cve_required: ${{ steps.changed.outputs.authoritative_cve_required }}
       static_terms_only: ${{ steps.changed.outputs.static_terms_only }}
       docs_only: ${{ steps.changed.outputs.docs_only }}
       frontend_only: ${{ steps.changed.outputs.frontend_only }}
@@ -891,6 +893,7 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
+          AUTHORITATIVE_CVE_REQUIRED: ${{ needs.classify.outputs.authoritative_cve_required }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
           BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
           BACKEND_STATIC_RESULT: ${{ needs['backend-static'].result }}
@@ -925,14 +928,20 @@ jobs:
             exit 1
           fi
 
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF}" = "refs/heads/master" ] || [ "${GITHUB_REF}" = "refs/heads/production" ]; then
+          if [ "${GITHUB_REF}" = "refs/heads/production" ] || { [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${GITHUB_BASE_REF}" = "production" ]; } || [ "${AUTHORITATIVE_CVE_REQUIRED}" = "true" ]; then
             if [ "${AUTHORITATIVE_CVE_RESULT}" != "success" ]; then
-            echo "authoritative CVE precheck did not pass" >&2
-            exit 1
+              echo "authoritative CVE precheck did not pass" >&2
+              exit 1
             fi
-            if [ "${DOCKERFILE_COPY_RESULT}" != "success" ]; then
-            echo "Dockerfile COPY precheck did not pass" >&2
+          elif [ "${AUTHORITATIVE_CVE_RESULT}" != "skipped" ]; then
+            echo "authoritative CVE precheck should be skipped for non-release changes" >&2
             exit 1
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF}" = "refs/heads/master" ] || [ "${GITHUB_REF}" = "refs/heads/production" ]; then
+            if [ "${DOCKERFILE_COPY_RESULT}" != "success" ]; then
+              echo "Dockerfile COPY precheck did not pass" >&2
+              exit 1
             fi
           fi
 
