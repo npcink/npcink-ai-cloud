@@ -25,7 +25,7 @@ frontend_e2e_required=false
 
 for changed_file in "$@"; do
 	case "${changed_file}" in
-		.github/workflows/ci.yml|.github/workflows/deploy-production.yml|Dockerfile*|*/Dockerfile*|docker-compose*.yml|Makefile|deploy/*.sh|deploy/image-lock/*|pyproject.toml|uv.lock|ci/pytest-backend-durations.json|migrations/*|migrations/**/*|app/core/config.py|app/core/db.py|app/core/models.py|app/api/auth.py|scripts/classify-ci-changes.sh|scripts/check-authoritative-cve-ranges.py|scripts/check-first-install-cve-gate.py|scripts/check-release-policy.sh|scripts/production-*|scripts/resolve-production-*|scripts/scan-production-*|scripts/verify-production-*|scripts/verify-release-*|tests/conftest.py|tests/fixtures/*|tests/contract/test_container_image_supply_contract.py|tests/contract/test_exact_release_bundle_contract.py|tests/contract/test_production_release_preflight_contract.py)
+		.github/workflows/ci.yml|.github/workflows/deploy-production.yml|Dockerfile*|*/Dockerfile*|docker-compose*.yml|Makefile|deploy/*.sh|deploy/image-lock/*|pyproject.toml|uv.lock|ci/pytest-backend-durations.json|migrations/*|migrations/**/*|app/core/config.py|app/core/db.py|app/core/models.py|app/api/auth.py|scripts/classify-ci-changes.sh|scripts/check-authoritative-cve-ranges.py|scripts/check-first-install-cve-gate.py|scripts/check-release-policy.sh|scripts/production-*|scripts/release-readiness-summary.py|scripts/resolve-production-*|scripts/scan-production-*|scripts/verify-production-*|scripts/verify-release-*|tests/conftest.py|tests/fixtures/*|tests/contract/test_container_image_supply_contract.py|tests/contract/test_exact_release_bundle_contract.py|tests/contract/test_production_release_preflight_contract.py)
 			authoritative_cve_required=true
 			;;
 	esac
