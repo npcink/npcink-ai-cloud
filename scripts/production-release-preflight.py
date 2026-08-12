@@ -484,6 +484,7 @@ def main() -> int:
                         expected_sha=args.sha,
                         require_formal_smoke=args.require_formal_smoke,
                     )
+                    result["preflight_mode"] = "live"
                     break
                 except PreflightError as exc:
                     message = str(exc)
