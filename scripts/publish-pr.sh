@@ -98,11 +98,19 @@ branch="$(git branch --show-current)"
 git fetch origin "${base_branch}"
 git rev-parse --verify "origin/${base_branch}" >/dev/null 2>&1 \
 	|| fail "origin/${base_branch} is unavailable"
-git merge-base --is-ancestor "origin/${base_branch}" HEAD \
-	|| fail "branch must include the latest origin/${base_branch}"
-
-commit_count="$(git rev-list --count "origin/${base_branch}..HEAD")"
-[ "${commit_count}" -gt 0 ] || fail "branch has no commits beyond origin/${base_branch}"
+if [ "${base_branch}" = 'production' ]; then
+	case "${branch}" in
+		master|release-fix/*) ;;
+		*) fail 'production PR head must be master or release-fix/*' ;;
+	esac
+	git diff --quiet "origin/${base_branch}" HEAD \
+		&& fail "branch tree is identical to origin/${base_branch}"
+else
+	git merge-base --is-ancestor "origin/${base_branch}" HEAD \
+		|| fail "branch must include the latest origin/${base_branch}"
+	commit_count="$(git rev-list --count "origin/${base_branch}..HEAD")"
+	[ "${commit_count}" -gt 0 ] || fail "branch has no commits beyond origin/${base_branch}"
+fi
 
 head_sha="$(git rev-parse HEAD)"
 
