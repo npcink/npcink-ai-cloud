@@ -277,10 +277,17 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         "Dockerfile",
         "frontend/Dockerfile",
         "docker-compose.prod.yml",
+        "Makefile",
         "deploy/bundle-images.sh",
         "deploy/image-lock/production-images.json",
         "pyproject.toml",
         "uv.lock",
+        "ci/pytest-backend-durations.json",
+        "migrations/versions/0069_example.py",
+        "app/core/config.py",
+        "app/core/db.py",
+        "app/core/models.py",
+        "app/api/auth.py",
         "scripts/classify-ci-changes.sh",
         "scripts/check-authoritative-cve-ranges.py",
         "scripts/check-first-install-cve-gate.py",
@@ -294,6 +301,8 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         "scripts/verify-production-images.sh",
         "scripts/verify-production-python-lock.py",
         "scripts/verify-release-bundle-manifest.py",
+        "tests/conftest.py",
+        "tests/fixtures/runtime.py",
     ):
         assert _classify(path)["authoritative_cve_required"] == "true"
 
