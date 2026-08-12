@@ -279,6 +279,8 @@ def test_ci_change_classifier_scopes_online_cna_checks_to_release_image_seams() 
         "docker-compose.prod.yml",
         "deploy/bundle-images.sh",
         "deploy/image-lock/production-images.json",
+        "pyproject.toml",
+        "uv.lock",
         "scripts/classify-ci-changes.sh",
         "scripts/check-authoritative-cve-ranges.py",
         "scripts/check-first-install-cve-gate.py",
