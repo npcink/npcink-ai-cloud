@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-07-19T06:02:29Z",
-  "resolved_from_revision": "8a34e0c4599a590abcb2795f9ecb11a26365fb4d",
+  "resolved_at_utc": "2026-08-12T02:03:13Z",
+  "resolved_from_revision": "994bdc248b9d561effc8cd6d6dfb24240319ad89",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -16,8 +16,8 @@
       "key": "python_runtime",
       "kind": "dockerfile_base",
       "tag": "python:3.14-alpine",
-      "digest": "sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92",
-      "reference": "python:3.14-alpine@sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92",
+      "digest": "sha256:a1321512d6a287428c50dcdf2ab3857761127e03a23b1f648e9c1c0de59288f8",
+      "reference": "python:3.14-alpine@sha256:a1321512d6a287428c50dcdf2ab3857761127e03a23b1f648e9c1c0de59288f8",
       "source_file": "Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
@@ -34,8 +34,8 @@
       "key": "node_frontend",
       "kind": "dockerfile_base",
       "tag": "node:22-alpine",
-      "digest": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
-      "reference": "node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "digest": "sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
+      "reference": "node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
       "source_file": "frontend/Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },

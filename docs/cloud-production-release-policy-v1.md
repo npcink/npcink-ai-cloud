@@ -71,54 +71,14 @@ Git, and run the narrowest relevant local gates plus CI. Before promoting
   human production authorization; the Environment retains secrets and branch
   policy but does not add a second hidden reviewer wait.
 
-One temporary exception applies only to the current empty-host PostgreSQL 18
-first installation while the exact three governed Python 3.14.6 findings
-remain. Because the operator acceptance must bind the final bundle produced
-after its fresh scan, the explicitly authorized operator may run the deploy
-from the trusted workstation instead of the GitHub deploy workflow when all of
-the following are true:
-
-- the exact `production` commit has green Cloud CI and is the checked-out clean
-  source of the Linux/AMD64 bundle;
-- the usual production-promotion PR contains
-  `Approved for production validation by operator.`;
-- the operator verifies the newly reset SSH host fingerprint through the ECS
-  console before pinning it locally;
-- a bundle-external
-  `npcink.controlled_production_cve_risk_acceptance.v1` receipt and independent
-  checksum pass `scripts/check-first-install-cve-gate.py`;
-- deployment uses `deploy/deploy-to-ssh-host.sh`, emits
-  `installation_state=pending`, and does not bypass any other first-install
-  gate;
-- the receipt is unexpired, no fixed supported Python image is available, and
-  the work remains controlled production validation with no real users.
-
-This is not a second ordinary deployment route. It expires no later than
-2026-08-11, cannot be used after installation finalization, and disappears as
-soon as the three allowlist entries are removed. Pushes still never deploy.
-Ordinary deployments continue to require the manually dispatched GitHub
-workflow and its exact operator confirmation.
-
-For the already-finalized installation, one narrower internal-validation
-exception may be used through 2026-08-11 only while the operator confirms that
-there are no external users. It replaces only the bundle-external acceptance
-file and checksum with `--no-user-internal-validation` plus the exact protected
-operator approval environment value. The gate still requires exactly the three
-governed Python 3.14.6 findings plus frontend Node `CVE-2026-58043`, a fresh
-passed Linux/AMD64 scan, zero unallowlisted blocking findings, and an embedded
-source revision/tree matching the clean
-checked-out `production` source. It hard-fails when combined with the external
-acceptance path, after expiry, for GA or external-user use, or when any evidence
-drifts. It does not authorize broader rollout or bypass any other deploy,
-migration, health, rollback, or smoke gate.
-
-The Node exception is bounded to the current frontend command
-`node frontend/server.js`. The affected Node Permission Model is not enabled:
-the image does not start Node with `--permission` and does not set
-`NODE_OPTIONS`. The exception must be removed or the release stopped if that
-reachability fact changes, external users appear, CISA exploitation changes
-from `none`, a fixed supported Node 22 Alpine image becomes available, or the
-2026-08-11 expiry is reached.
+The temporary Python and Node CVE exceptions are retired. Production images
+must use the digest-locked Python 3.14.7 and Node 22.23.2 candidates recorded in
+`deploy/image-lock/production-images.json`, and the canonical CVE allowlist
+must remain empty. A changed base-image digest requires a rebuild, a fresh
+Linux/AMD64 release scan, and exact-bundle replay before deployment. Restoring
+an expired exception, using the historical controlled-validation receipt, or
+using the retired no-user internal-validation switch is not an ordinary
+recovery lane and does not authorize a release.
 
 Recommended repository gate:
 
@@ -528,9 +488,9 @@ to a high-availability edition first.
 The required gates for this contract are the focused Setup/Auth/frontend tests,
 PostgreSQL 18 schema and semantic proof, production Compose and exact-bundle
 contracts, release-policy checks, current CI, real RDS private/TLS smoke, and a
-WordPress text/media round trip. The Python image CVE exception must either be
-closed in a separate release or satisfy the exact, time-bounded controlled
-first-install acceptance above before this database cutover is authorized.
+WordPress text/media round trip. The retired Python and Node CVE exceptions
+cannot authorize this database cutover; the exact release must instead contain
+the digest-locked fixed candidates and pass the fresh image scan.
 
 The canonical procedures are:
 

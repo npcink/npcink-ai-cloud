@@ -20,18 +20,18 @@ def _load_module() -> ModuleType:
     return module
 
 
-def test_waiting_state_does_not_claim_a_fix() -> None:
+def test_adopted_candidate_still_requires_fresh_scan() -> None:
     module = _load_module()
 
     status, action = module.evaluate_status(
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "1" * 64,
-        python_version="3.14.6",
-        today=date(2026, 7, 24),
+        python_version="3.14.7",
+        today=date(2026, 8, 12),
     )
 
-    assert status == "waiting_for_candidate"
-    assert "do not claim" in action
+    assert status == "candidate_adopted"
+    assert "fresh release image scan" in action
 
 
 def test_digest_or_version_change_requires_scan_review() -> None:
@@ -40,30 +40,16 @@ def test_digest_or_version_change_requires_scan_review() -> None:
     digest_status, digest_action = module.evaluate_status(
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "2" * 64,
-        python_version="3.14.6",
-        today=date(2026, 7, 24),
+        python_version="3.14.7",
+        today=date(2026, 8, 12),
     )
     version_status, version_action = module.evaluate_status(
         pinned_digest="sha256:" + "1" * 64,
         registry_digest="sha256:" + "1" * 64,
-        python_version="3.14.7",
-        today=date(2026, 7, 24),
+        python_version="3.14.8",
+        today=date(2026, 8, 12),
     )
 
     assert digest_status == version_status == "candidate_changed"
     assert "fresh image scan" in digest_action
     assert "fresh image scan" in version_action
-
-
-def test_unchanged_candidate_fails_after_exception_expiry() -> None:
-    module = _load_module()
-
-    status, action = module.evaluate_status(
-        pinned_digest="sha256:" + "1" * 64,
-        registry_digest="sha256:" + "1" * 64,
-        python_version="3.14.6",
-        today=date(2026, 8, 12),
-    )
-
-    assert status == "exception_expired"
-    assert "Stop controlled production validation" in action
