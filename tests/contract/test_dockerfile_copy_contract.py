@@ -30,6 +30,18 @@ def test_missing_copy_source_fails_before_build(tmp_path: Path) -> None:
         module.check(tmp_path, ("Dockerfile",))
 
 
+@pytest.mark.parametrize("option", ("--chown=app:app", "--chmod=0755", "--link"))
+def test_copy_options_do_not_bypass_missing_source_check(
+    tmp_path: Path, option: str
+) -> None:
+    module = _module()
+    (tmp_path / "Dockerfile").write_text(
+        f"FROM scratch\nCOPY {option} missing.txt /app/missing.txt\n"
+    )
+    with pytest.raises(module.CopyContractError, match="missing local COPY source"):
+        module.check(tmp_path, ("Dockerfile",))
+
+
 def test_copy_from_stage_is_not_a_local_context_requirement(tmp_path: Path) -> None:
     module = _module()
     (tmp_path / "Dockerfile").write_text(

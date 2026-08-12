@@ -1085,6 +1085,22 @@ def test_release_scan_index_requires_complete_deploy_set_and_real_id_equivalence
     with pytest.raises(supply.SupplyError, match="Grype report"):
         supply.write_index(args)
 
+    forged["blocking_finding_count"] = 1
+    forged["authoritatively_not_affected_blocking_finding_count"] = 1
+    forged["authoritatively_not_affected_blocking_findings"] = [
+        {
+            "vulnerability_id": "CVE-2099-9999",
+            "package": "python",
+            "package_version": "3.14.7",
+            "severity": "high",
+            "fix_state": "not-fixed",
+            "adjudication": "authoritatively_not_affected",
+        }
+    ]
+    _write_json(api_path, forged)
+    with pytest.raises(supply.SupplyError, match="absent from the governed adjudications"):
+        supply.write_index(args)
+
 
 def test_release_index_rejects_mixed_grype_database_identities(tmp_path: Path) -> None:
     supply = _supply_module()
