@@ -457,7 +457,7 @@ def test_application_runtime_identity_is_stable_and_verified_in_built_images() -
     assert '[ "$(id -g)" = "999" ]' in smoke
 
 
-def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bounded() -> None:
+def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
     lock = _lock()
     policy = lock["scan_policy"]
     allowlist = json.loads((ROOT / policy["allowlist_file"]).read_text())
@@ -476,112 +476,7 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
     entries = allowlist["entries"]
-    assert [
-        (
-            entry["image"],
-            entry["vulnerability_id"],
-            entry["package"],
-            entry["package_version"],
-        )
-        for entry in entries
-    ] == [
-        ("api", "CVE-2026-11940", "python", "3.14.6"),
-        ("api", "CVE-2026-11972", "python", "3.14.6"),
-        ("api", "CVE-2026-15308", "python", "3.14.6"),
-        ("frontend", "CVE-2026-58043", "node", "22.23.1"),
-        ("frontend", "CVE-2026-56846", "node", "22.23.1"),
-        ("frontend", "CVE-2026-56848", "node", "22.23.1"),
-    ]
-    assert {entry["owner"] for entry in entries} == {"Muze"}
-    assert {entry["expires_on"] for entry in entries} == {"2026-08-11"}
-    reason_prefix = (
-        "Temporary exception for P5 engineering scan, exact-bundle rehearsal, and "
-        "operator-authorized controlled production validation only; no GA, customer "
-        "rollout, or general production authorization. Controlled production validation "
-        "additionally requires a bundle-external "
-        "`npcink.controlled_production_cve_risk_acceptance.v1` receipt that binds the "
-        "exact commit, tree, bundle, and passed image scan; the production-host deploy gate "
-        "consumes this acceptance and its independent checksum only for exact PostgreSQL "
-        "18 controlled validation, while image-scan and P1-E06 tooling do not consume it. "
-    )
-    reachability_by_cve = {
-        "CVE-2026-11940": (
-            "Active Cloud runtime has no direct tarfile call path, and bundled archive "
-            "tools manually admit regular files without extractall."
-        ),
-        "CVE-2026-11972": (
-            "Active Cloud runtime has no direct tarfile call path, and bundled archive "
-            "tools do not use the affected tarfile streaming read mode (`r|`)."
-        ),
-        "CVE-2026-15308": (
-            "Active Cloud runtime has no direct html.parser.HTMLParser call path, but "
-            "indirect reachability is not asserted absent."
-        ),
-    }
-    upgrade_and_stop = (
-        "Upgrade to the first supported stable 3.14 build that contains the relevant "
-        "backport (3.14.7 is only the scheduled candidate), repin its exact digest, "
-        "rebuild and rescan, then remove this entry; stop the rehearsal and controlled "
-        "production validation if reachability changes."
-    )
-    frontend_http2_reachability = {
-        "CVE-2026-56846": (
-            "CVE-2026-56846 is a Node.js HTTP/2 retained-header "
-            "resource-exhaustion issue (CWE-400, CVSS 7.5 AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H); "
-            "the production frontend starts as `node frontend/server.js` (Next.js standalone, "
-            "output: standalone) behind nginx TLS termination and serves HTTP/1.1 only, with no "
-            "http2.createServer and no ALPN h2 negotiation, so the attack surface is unreachable; "
-            "CISA SSVC exploitation=none."
-        ),
-        "CVE-2026-56848": (
-            "CVE-2026-56848 is a Node.js HTTP/2 reentrant-send "
-            "use-after-free issue (CWE-416, CVSS 7.5 AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H); "
-            "the production frontend starts as `node frontend/server.js` (Next.js standalone, "
-            "output: standalone) behind nginx TLS termination and serves HTTP/1.1 only, with no "
-            "http2.createServer and no ALPN h2 negotiation, so the attack surface is unreachable; "
-            "CISA SSVC exploitation=none."
-        ),
-    }
-    frontend_http2_prefix = (
-        "Temporary exception only for operator-authorized no-external-user "
-        "internal production validation; no GA, customer rollout, or general "
-        "production authorization. "
-    )
-    frontend_http2_upgrade = (
-        " Upgrade to the first supported Node 22 Alpine image that removes this finding "
-        "(v22.23.2), repin its exact digest, rebuild and rescan, then remove this entry; "
-        "stop internal validation immediately if the frontend serves HTTP/2 (ALPN h2), "
-        "external users appear, exploitation changes, or this exception expires."
-    )
-    for entry in entries:
-        if entry["vulnerability_id"] in reachability_by_cve:
-            assert entry["reason"] == (
-                reason_prefix
-                + reachability_by_cve[entry["vulnerability_id"]]
-                + " "
-                + upgrade_and_stop
-            )
-        elif entry["vulnerability_id"] in frontend_http2_reachability:
-            assert entry["reason"] == (
-                frontend_http2_prefix
-                + frontend_http2_reachability[entry["vulnerability_id"]]
-                + frontend_http2_upgrade
-            )
-        else:
-            assert entry["reason"] == (
-                "Temporary exception only for operator-authorized no-external-user "
-                "internal production validation; no GA, customer rollout, or general "
-                "production authorization. CVE-2026-58043 affects Node.js Permission "
-                "Model radix-tree path boundaries only when Node starts with "
-                "`--permission`; the production frontend starts as "
-                "`node frontend/server.js`, does not set `NODE_OPTIONS`, and does not "
-                "enable the Permission Model. NVD records a local, high-complexity, "
-                "low-privilege attack vector and CISA SSVC exploitation=none. Upgrade "
-                "to the first supported Node 22 Alpine image that removes this finding, "
-                "repin its exact digest, rebuild and rescan, then remove this entry; stop "
-                "internal validation immediately if the frontend enables `--permission`, "
-                "external users appear, exploitation changes, or this exception expires."
-            )
+    assert entries == []
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)

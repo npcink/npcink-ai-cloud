@@ -311,12 +311,11 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"receipt_sha256"'
 reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'"acceptance_sha256"'
-require_marker "deploy/image-lock/cve-allowlist.json" \
-	'operator-authorized controlled production validation only'
-require_marker "deploy/image-lock/cve-allowlist.json" \
-	'no GA, customer rollout, or general production authorization'
-require_marker "deploy/image-lock/cve-allowlist.json" \
-	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
+require_marker "deploy/image-lock/production-images.json" \
+	'python:3.14-alpine@sha256:a1321512d6a287428c50dcdf2ab3857761127e03a23b1f648e9c1c0de59288f8'
+require_marker "deploy/image-lock/production-images.json" \
+	'node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
 require_marker "deploy/OPS_PLAYBOOK.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/deploy-to-ssh-host.sh" \
@@ -326,7 +325,7 @@ require_marker "scripts/check-first-install-cve-gate.py" \
 require_marker "scripts/check-first-install-cve-gate.py" \
 	'mode=no_user_internal_validation'
 require_marker "docs/cloud-production-release-policy-v1.md" \
-	'no external users'
+	'The temporary Python and Node CVE exceptions are retired.'
 require_marker "deploy/OPS_PLAYBOOK.md" \
 	'no-external-user internal-validation'
 require_marker "deploy/OPS_PLAYBOOK.md" \
@@ -342,7 +341,7 @@ require_marker ".github/workflows/python-cve-upstream-watch.yml" \
 require_marker "scripts/check-python-cve-upstream.py" \
 	'fixed_image_claimed=False'
 require_marker "scripts/check-python-cve-upstream.py" \
-	'exception_expired'
+	'candidate_adopted'
 require_marker "package.json" \
 	'"check:python-cve-upstream": "python3 scripts/check-python-cve-upstream.py"'
 
@@ -375,8 +374,8 @@ require_marker "docs/cloud-production-release-policy-v1.md" "production Compose 
 require_marker "docs/cloud-production-release-policy-v1.md" "A first install is a distinct release lifecycle."
 require_marker "docs/cloud-production-release-policy-v1.md" "publishes the permanent completion sentinel before idempotent cleanup"
 require_marker "docs/cloud-production-release-policy-v1.md" "candidate-image RDS PostgreSQL 18/TLS/Alembic preflight"
-require_marker "docs/cloud-production-release-policy-v1.md" "The Python image CVE exception must either be"
-require_marker "docs/cloud-production-release-policy-v1.md" "trusted workstation instead of the GitHub deploy workflow"
+require_marker "docs/cloud-production-release-policy-v1.md" "The retired Python and Node CVE exceptions"
+require_marker "docs/cloud-production-release-policy-v1.md" "digest-locked fixed candidates"
 require_marker "docs/cloud-production-release-policy-v1.md" "Historical PG16 and P1-E06 Policy (non-normative)"
 require_marker "docs/cloud-production-release-policy-v1.md" "must not be used to reopen compatibility"
 require_marker "docs/cloud-production-release-policy-v1.md" "cloud-first-install-rds-pg18-runbook.md"

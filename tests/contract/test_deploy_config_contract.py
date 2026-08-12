@@ -1461,8 +1461,8 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
         deploy_guide.index(marker) for marker in documented_release_order
     ]
     assert documented_positions == sorted(documented_positions)
-    assert "The Python image CVE exception must either be" in release_policy
-    assert "trusted workstation instead of the GitHub deploy workflow" in release_policy
+    assert "The retired Python and Node CVE exceptions" in release_policy
+    assert "digest-locked fixed candidates" in release_policy
     for marker in (
         "pg18_empty_initialization.v1",
         "`verify-full`",

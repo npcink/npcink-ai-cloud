@@ -29,6 +29,7 @@ from app.api.routes.service import router as service_router
 from app.api.routes.setup import router as setup_router
 from app.api.routes.stats import router as stats_router
 from app.core.config import Settings, get_settings
+from app.core.deployment_identity import DeploymentIdentity
 from app.core.logging import configure_logging
 from app.core.redaction import safe_exception_type
 from app.core.runtime_config import (
@@ -411,15 +412,28 @@ class InstallAwareApplication:
         }
 
     def _complete_live_response(self) -> JSONResponse:
+        deployment = DeploymentIdentity.from_environment(os.environ)
+        headers = self._response_headers()
+        headers.update(
+            {
+                "X-Npcink-Release": deployment.release,
+                "X-Npcink-Revision": deployment.short_revision,
+                "X-Npcink-Dirty": str(deployment.source_dirty).lower(),
+            }
+        )
         return JSONResponse(
             status_code=200,
             content=build_envelope(
                 status="ok",
                 message="service is live",
-                data={"service": "Npcink AI Cloud", "environment": "production"},
-                revision="first-install-v1",
+                data={
+                    "service": "Npcink AI Cloud",
+                    "environment": "production",
+                    "deployment": deployment.public_payload(),
+                },
+                revision=deployment.short_revision,
             ),
-            headers=self._response_headers(),
+            headers=headers,
         )
 
     def _method_not_allowed_response(self) -> JSONResponse:
