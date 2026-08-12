@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Verify CNA ranges before image work
-        run: pnpm run check:authoritative-cve-ranges
+        run: python3 scripts/check-authoritative-cve-ranges.py
 
   dockerfile-copy-precheck:
     name: Dockerfile COPY contract precheck
@@ -33,7 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Verify local Dockerfile COPY sources before image work
-        run: pnpm run check:dockerfile-copy-contract
+        run: python3 scripts/check-dockerfile-copy-contract.py
 
   production-pr-base-precheck:
     name: Production PR base contract precheck

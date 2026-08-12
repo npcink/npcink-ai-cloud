@@ -165,6 +165,10 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
 
     assert "production-promotion-evidence:" in workflow
     assert "production-pr-base-precheck:" in workflow
+    assert "run: python3 scripts/check-authoritative-cve-ranges.py" in workflow
+    assert "run: python3 scripts/check-dockerfile-copy-contract.py" in workflow
+    assert "run: pnpm run check:authoritative-cve-ranges" not in workflow
+    assert "run: pnpm run check:dockerfile-copy-contract" not in workflow
     assert "Verify production PR base, head, and approval contract" in workflow
     assert "Production PR CI evidence" in workflow
     assert "commits/${GITHUB_SHA}/pulls" in workflow
