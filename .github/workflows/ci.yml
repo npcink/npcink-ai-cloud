@@ -879,7 +879,7 @@ jobs:
   backend:
     name: backend
     needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, backend-static, backend-pytest, backend-postgres-cutover, production-pr-base-precheck, authoritative-cve-precheck, dockerfile-copy-precheck]
-    if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
+    if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/production') && (needs.classify.outputs.static_terms_only != 'true' || (github.event_name == 'pull_request' && github.base_ref == 'production'))
     runs-on: ubuntu-latest
     steps:
       - name: Verify backend gate result
