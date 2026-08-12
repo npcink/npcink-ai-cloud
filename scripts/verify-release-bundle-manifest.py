@@ -464,7 +464,8 @@ def load_image_lock(path: Path) -> dict[str, Any]:
     if (
         not isinstance(policy, dict)
         or policy.get("allowlist_file") != CANONICAL_ALLOWLIST_PATH
-        or policy.get("authoritative_not_affected_file") != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
+        or policy.get("authoritative_not_affected_file")
+        != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
         or policy.get("max_database_age_hours") != REQUIRED_MAX_DATABASE_AGE_HOURS
         or policy.get("max_exception_days") != REQUIRED_MAX_EXCEPTION_DAYS
     ):
@@ -818,7 +819,8 @@ def validate_scan_evidence(
             or receipt.get("lock_sha256") != lock_sha256
             or receipt.get("allowlist_path") != CANONICAL_ALLOWLIST_PATH
             or receipt.get("allowlist_sha256") != allowlist_sha256
-            or receipt.get("authoritative_not_affected_path") != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
+            or receipt.get("authoritative_not_affected_path")
+            != CANONICAL_AUTHORITATIVE_NOT_AFFECTED_PATH
             or receipt.get("authoritative_not_affected_sha256") != authoritative_sha256
             or receipt.get("artifacts") != artifacts
             or receipt.get("grype_database") != record["grype_database"]
@@ -2822,16 +2824,11 @@ def pack_transfer_archive(
         temporary.unlink(missing_ok=True)
     write_outer_checksum(output, output_checksum)
     reused_records = [record for record in plan_archives if record["action"] == "reuse"]
-    transferred_records = [
-        record for record in plan_archives if record["action"] == "transfer"
-    ]
+    transferred_records = [record for record in plan_archives if record["action"] == "transfer"]
     print(f"image_transfer_reused={len(reused_records)}")
     print(f"image_transfer_uploaded={len(transferred_records)}")
     print(f"image_transfer_reused_bytes={sum(record['size'] for record in reused_records)}")
-    print(
-        "image_transfer_uploaded_bytes="
-        f"{sum(record['size'] for record in transferred_records)}"
-    )
+    print(f"image_transfer_uploaded_bytes={sum(record['size'] for record in transferred_records)}")
 
 
 def verify_transfer_archive(

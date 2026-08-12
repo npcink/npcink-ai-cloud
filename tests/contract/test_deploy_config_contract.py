@@ -25,13 +25,10 @@ def _cloud_root() -> Path:
 
 
 def test_small_customer_preflight_accepts_application_or_edge_fail_closed_ready_status() -> None:
-    preflight = (
-        _cloud_root() / "deploy" / "small-customer-trial-preflight.sh"
-    ).read_text()
+    preflight = (_cloud_root() / "deploy" / "small-customer-trial-preflight.sh").read_text()
 
     assert (
-        'assert_status_in "401,403" '
-        '"health/ready should fail closed without internal token"'
+        'assert_status_in "401,403" "health/ready should fail closed without internal token"'
     ) in preflight
     assert 'if [ "${HTTP_STATUS}" = "401" ]; then' in preflight
     assert (
@@ -270,8 +267,7 @@ def _inflate_compose_service_block(
         )
 
     large_safe_tail = "".join(
-        f"    # release-policy-pipefill-{index:05d}-{'x' * 64}\n"
-        for index in range(16_384)
+        f"    # release-policy-pipefill-{index:05d}-{'x' * 64}\n" for index in range(16_384)
     )
     inflated_text = compose_text.replace(
         _compose_service_block(compose_text, service),
@@ -619,10 +615,7 @@ def test_runtime_network_authority_is_documented_as_release_scoped() -> None:
         cloud_root / "docs" / "decisions" / "020-external-tls-single-bundled-nginx.md"
     ).read_text()
     network_adr = (
-        cloud_root
-        / "docs"
-        / "decisions"
-        / "021-release-scoped-runtime-network-authority.md"
+        cloud_root / "docs" / "decisions" / "021-release-scoped-runtime-network-authority.md"
     ).read_text()
 
     active_docs = tuple(
@@ -648,9 +641,7 @@ def test_runtime_network_authority_is_documented_as_release_scoped() -> None:
         "NGINX trusts real-client headers only from gateway `172.28.0.1`",
     )
     assert all(
-        phrase not in document
-        for document in active_docs
-        for phrase in stale_authority_phrases
+        phrase not in document for document in active_docs for phrase in stale_authority_phrases
     )
 
 
@@ -806,9 +797,7 @@ def _runtime_network_contract_environment(
     release = managed_root / state_file.parent.name
     env_file = state_file.parent / "env.deploy"
     environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("NPCINK_CLOUD_")
+        key: value for key, value in os.environ.items() if not key.startswith("NPCINK_CLOUD_")
     }
     environment.update(
         {
@@ -821,9 +810,7 @@ def _runtime_network_contract_environment(
             "NPCINK_CLOUD_BACKEND_ENV_FILE": str(env_file),
             "NPCINK_CLOUD_COMPOSE_FILE": str(release / "docker-compose.runtime.yml"),
             "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
-            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(
-                state_file.parent / "rollback-images.tsv"
-            ),
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(state_file.parent / "rollback-images.tsv"),
             "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "network-contract",
             "NPCINK_CLOUD_DEPLOY_LOCK_OWNER": "a" * 64,
             "NPCINK_CLOUD_RELEASE_TOOL_PYTHON": sys.executable,
@@ -836,15 +823,9 @@ def test_runtime_network_contract_environment_drops_inherited_cloud_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("NPCINK_CLOUD_BASE_URL", "http://unsafe-local.example")
-    monkeypatch.setenv(
-        "NPCINK_CLOUD_DATABASE_URL", "postgresql://inherited-secret.example/db"
-    )
+    monkeypatch.setenv("NPCINK_CLOUD_DATABASE_URL", "postgresql://inherited-secret.example/db")
     state_file = (
-        tmp_path
-        / "managed"
-        / ".release-state"
-        / "release-network-contract"
-        / "runtime-network.env"
+        tmp_path / "managed" / ".release-state" / "release-network-contract" / "runtime-network.env"
     )
 
     environment = _runtime_network_contract_environment(
@@ -995,8 +976,7 @@ def test_runtime_network_revalidation_preserves_the_frozen_proxy_address(
         state_file,
         subnet=subnet,
         gateway=gateway,
-        endpoints=without_proxy
-        + [("e" * 64, "192.168.240.27/20", "worker")],
+        endpoints=without_proxy + [("e" * 64, "192.168.240.27/20", "worker")],
     )
     occupied_environment["NPCINK_CLOUD_ROLLBACK_IMAGE_MAP"] = str(
         state_file.parent / "rollback-images-occupied.tsv"
@@ -1017,8 +997,7 @@ def test_runtime_network_revalidation_preserves_the_frozen_proxy_address(
         state_file,
         subnet=subnet,
         gateway=gateway,
-        endpoints=without_proxy
-        + [("f" * 64, "192.168.240.28/20", "proxy")],
+        endpoints=without_proxy + [("f" * 64, "192.168.240.28/20", "proxy")],
     )
     wrong_proxy_environment["NPCINK_CLOUD_ROLLBACK_IMAGE_MAP"] = str(
         state_file.parent / "rollback-images-wrong-proxy.tsv"
@@ -1342,9 +1321,7 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
     playbook = (cloud_root / "deploy" / "OPS_PLAYBOOK.md").read_text()
     deploy_guide = (cloud_root / "deploy" / "PRODUCTION_GITHUB_DEPLOY.md").read_text()
     release_policy = (cloud_root / "docs" / "cloud-production-release-policy-v1.md").read_text()
-    pg18_runbook = (
-        cloud_root / "docs" / "cloud-first-install-rds-pg18-runbook.md"
-    ).read_text()
+    pg18_runbook = (cloud_root / "docs" / "cloud-first-install-rds-pg18-runbook.md").read_text()
     deploy_to_ssh = (cloud_root / "deploy" / "deploy-to-ssh-host.sh").read_text()
 
     encryption_secret = "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
@@ -1461,9 +1438,7 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
         "9. Runs the external RDS migration",
         "10. Moves `current` atomically",
     )
-    documented_positions = [
-        deploy_guide.index(marker) for marker in documented_release_order
-    ]
+    documented_positions = [deploy_guide.index(marker) for marker in documented_release_order]
     assert documented_positions == sorted(documented_positions)
     assert "The retired Python and Node CVE exceptions" in release_policy
     assert "digest-locked fixed candidates" in release_policy
@@ -1558,8 +1533,7 @@ def test_prod_env_files_use_canonical_admin_names_and_do_not_expose_ai_provider_
     runtime_compose = (cloud_root / "docker-compose.runtime.yml").read_text()
     for service in ("api", "worker", "callback-worker", "ops-worker"):
         assert (
-            "NPCINK_CLOUD_ENVIRONMENT: "
-            "${NPCINK_CLOUD_DEPLOY_SMOKE_BACKEND_ENV:-production}"
+            "NPCINK_CLOUD_ENVIRONMENT: ${NPCINK_CLOUD_DEPLOY_SMOKE_BACKEND_ENV:-production}"
         ) in _compose_service_block(prod_compose, service)
         assert "NPCINK_CLOUD_ENVIRONMENT: production" in _compose_service_block(
             runtime_compose,
@@ -1705,7 +1679,7 @@ def test_admin_key_rotation_publishes_recoverable_dual_digest_transition() -> No
     active_release_check = "Administrator-key rotation must run from the active managed release."
     assert active_release_check in script
     assert script.index(active_release_check) < script.index('mkdir -m 0700 "${LOCK_DIR}"')
-    assert '.admin-key-rotate.lock' not in script
+    assert ".admin-key-rotate.lock" not in script
 
 
 def test_operator_secret_rotation_fails_closed_without_tty() -> None:
@@ -1714,17 +1688,15 @@ def test_operator_secret_rotation_fails_closed_without_tty() -> None:
     prepare_setup = (cloud_root / "deploy" / "prepare-first-install.sh").read_text()
     admin_rotate = (cloud_root / "deploy" / "admin-key-rotate.sh").read_text()
 
-    assert '[ ! -t 1 ]' in setup_rotate
-    assert setup_rotate.index('[ ! -t 1 ]') < setup_rotate.index("prepare-first-install.sh")
+    assert "[ ! -t 1 ]" in setup_rotate
+    assert setup_rotate.index("[ ! -t 1 ]") < setup_rotate.index("prepare-first-install.sh")
     assert 'if [ "${MODE}" = "rotate" ]; then' in prepare_setup
-    assert '[ ! -t 1 ]' in prepare_setup
+    assert "[ ! -t 1 ]" in prepare_setup
     assert '[ "${EUID}" -ne 0 ]' in prepare_setup
-    assert prepare_setup.index('[ ! -t 1 ]') < prepare_setup.index("setup_code = token")
-    assert prepare_setup.index('[ "${EUID}" -ne 0 ]') < prepare_setup.index(
-        "setup_code = token"
-    )
-    assert '[ ! -t 1 ]' in admin_rotate
-    assert admin_rotate.index('[ ! -t 1 ]') < admin_rotate.index(
+    assert prepare_setup.index("[ ! -t 1 ]") < prepare_setup.index("setup_code = token")
+    assert prepare_setup.index('[ "${EUID}" -ne 0 ]') < prepare_setup.index("setup_code = token")
+    assert "[ ! -t 1 ]" in admin_rotate
+    assert admin_rotate.index("[ ! -t 1 ]") < admin_rotate.index(
         'ADMIN_KEY="$("${RELEASE_TOOL_PYTHON}"'
     )
     for script in (setup_rotate, admin_rotate):
@@ -1741,7 +1713,7 @@ def test_host_first_install_helpers_use_controlled_python_311() -> None:
         "remote-runtime-config-preflight.sh",
     ):
         source = (deploy_dir / name).read_text()
-        assert 'NPCINK_CLOUD_RELEASE_TOOL_PYTHON:-/usr/bin/python3.11' in source
+        assert "NPCINK_CLOUD_RELEASE_TOOL_PYTHON:-/usr/bin/python3.11" in source
         assert "npcink_ai_cloud_require_host_release_tool_python" in source
         assert "\npython3 " not in source
         assert "$(python3 " not in source
@@ -1810,9 +1782,12 @@ def test_pending_first_install_preserves_stopped_postgres_for_rollback() -> None
         "stop_retired_postgres_for_first_install_rollback"
     )
     assert 'docker stop --time 30 "${container_id}"' in loader
-    assert 'docker rm -f "${container_id}"' not in loader.split(
-        "stop_retired_postgres_for_first_install_rollback() {", 1
-    )[1].split("\n}", 1)[0]
+    assert (
+        'docker rm -f "${container_id}"'
+        not in loader.split("stop_retired_postgres_for_first_install_rollback() {", 1)[1].split(
+            "\n}", 1
+        )[0]
+    )
     assert 'npcink_ai_cloud_compose "${root}" up -d' in rollback
     assert "First-install rollback is allowed only before installation completes." in rollback
 
@@ -1843,7 +1818,7 @@ def test_production_deploy_branches_post_install_gates_on_explicit_state() -> No
     workflow = (cloud_root / ".github" / "workflows" / "deploy-production.yml").read_text()
 
     assert "expected_sha:" in workflow
-    assert 'EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}' in workflow
+    assert "EXPECTED_PRODUCTION_SHA: ${{ inputs.expected_sha }}" in workflow
     assert '[[ "${EXPECTED_PRODUCTION_SHA}" =~ ^[0-9a-f]{40}$ ]]' in workflow
     assert 'test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"' in workflow
     assert workflow.index('test "${EXPECTED_PRODUCTION_SHA}" = "${GITHUB_SHA}"') < workflow.index(
@@ -2021,14 +1996,8 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert 'NPCINK_CLOUD_HMAC_SECRET="${SECRET}" python3 -c' in remote_smoke_script
     assert 'os.environ.pop("NPCINK_CLOUD_HMAC_SECRET", "")' in remote_smoke_script
     assert "max_retries" not in remote_smoke_script
-    assert (
-        'NPCINK_CLOUD_OBSERVABILITY_CADENCE_WAIT_ATTEMPTS:-8'
-        in remote_smoke_script
-    )
-    assert (
-        'NPCINK_CLOUD_OBSERVABILITY_CADENCE_WAIT_DELAY_SECONDS:-5'
-        in remote_smoke_script
-    )
+    assert "NPCINK_CLOUD_OBSERVABILITY_CADENCE_WAIT_ATTEMPTS:-8" in remote_smoke_script
+    assert "NPCINK_CLOUD_OBSERVABILITY_CADENCE_WAIT_DELAY_SECONDS:-5" in remote_smoke_script
     assert "OBSERVABILITY_CADENCE_CONNECT_TIMEOUT_SECONDS=3" in remote_smoke_script
     assert "OBSERVABILITY_CADENCE_MAX_TIME_SECONDS=10" in remote_smoke_script
     assert "OBSERVABILITY_CADENCE_WAIT_WINDOW_SECONDS" in remote_smoke_script
@@ -2037,9 +2006,9 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "canonical integer between 1 and 20" in remote_smoke_script
     assert "canonical integer between 0 and 10" in remote_smoke_script
     assert "print_cadence_wait_diagnostics" in remote_smoke_script
-    diagnostics_block = remote_smoke_script.split(
-        "print_cadence_wait_diagnostics() {", 1
-    )[1].split("build_traceparent() {", 1)[0]
+    diagnostics_block = remote_smoke_script.split("print_cadence_wait_diagnostics() {", 1)[1].split(
+        "build_traceparent() {", 1
+    )[0]
     for allowed_diagnostic_field in (
         "task_id",
         "freshness",
@@ -2072,41 +2041,33 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "JSON_PAYLOAD" not in remote_smoke_script
     assert 'item.get("payload")' not in diagnostics_block
     assert 'item.get("last_error_message")' not in diagnostics_block
-    plain_http_request_block = remote_smoke_script.split("\nhttp_request() {", 1)[
-        1
-    ].split("\nobservability_summary_request() {", 1)[0]
+    plain_http_request_block = remote_smoke_script.split("\nhttp_request() {", 1)[1].split(
+        "\nobservability_summary_request() {", 1
+    )[0]
     assert '_http_request "" "" "$@"' in plain_http_request_block
     observability_request_block = remote_smoke_script.split(
         "\nobservability_summary_request() {", 1
     )[1].split("\nsigned_request() {", 1)[0]
-    assert "OBSERVABILITY_CADENCE_CONNECT_TIMEOUT_SECONDS" in (
-        observability_request_block
-    )
+    assert "OBSERVABILITY_CADENCE_CONNECT_TIMEOUT_SECONDS" in (observability_request_block)
     assert "OBSERVABILITY_CADENCE_MAX_TIME_SECONDS" in observability_request_block
     final_response_marker = remote_smoke_script.index(
         "# Revalidate every requirement against the same final response"
     )
     assert remote_smoke_script.index(
         'assert_status "${HTTP_STATUS}" "200"', final_response_marker
-    ) < remote_smoke_script.index(
-        'data.workers.totals.missing_total', final_response_marker
-    )
+    ) < remote_smoke_script.index("data.workers.totals.missing_total", final_response_marker)
     assert remote_smoke_script.index(
-        'data.cadence.totals.non_fresh_total', final_response_marker
-    ) < remote_smoke_script.index('data.providers.freshness', final_response_marker)
+        "data.cadence.totals.non_fresh_total", final_response_marker
+    ) < remote_smoke_script.index("data.providers.freshness", final_response_marker)
     assert remote_smoke_script.index(
-        'data.runtime.summary.callback.pressure_state', final_response_marker
-    ) < remote_smoke_script.index(
-        'data.tracing.otlp_configured', final_response_marker
-    )
+        "data.runtime.summary.callback.pressure_state", final_response_marker
+    ) < remote_smoke_script.index("data.tracing.otlp_configured", final_response_marker)
     assert "/internal/service/observability/summary" in secret_rotation_script
     assert not (_cloud_root() / "deploy" / "env-to-ssh-host.sh").exists()
     assert not (_cloud_root() / "deploy" / "remote-env-upsert.sh").exists()
     assert "up -d --pull never --no-build" not in remote_migrate_script
     assert "worker callback-worker ops-worker" not in remote_migrate_script
-    assert "Migration completed without starting application services" in (
-        remote_migrate_script
-    )
+    assert "Migration completed without starting application services" in (remote_migrate_script)
     assert "SSH identity file not found" in deploy_to_ssh_script
     assert "BatchMode=yes" in deploy_to_ssh_script
     assert "ConnectTimeout" in deploy_to_ssh_script
@@ -2141,9 +2102,9 @@ def test_production_operational_readiness_uses_private_loopback() -> None:
     deploy_script = (cloud_root / "deploy" / "deploy-to-ssh-host.sh").read_text()
     nginx_prod = (cloud_root / "deploy" / "nginx.prod.conf").read_text()
 
-    readiness_block = nginx_prod.split(
-        "location = /health/operational-ready {", 1
-    )[1].split("\n    }", 1)[0]
+    readiness_block = nginx_prod.split("location = /health/operational-ready {", 1)[1].split(
+        "\n    }", 1
+    )[0]
     assert "deny all;" in readiness_block
     assert (
         'OPERATIONAL_READY_LOOPBACK_URL="http://127.0.0.1:'
@@ -2217,8 +2178,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "NPCINK_CLOUD_SOURCE_REVISION" not in frontend_dockerfile
     assert "NPCINK_CLOUD_FRONTEND_REVISION" not in frontend_dockerfile
     assert (
-        "NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}"
-        in compose_text
+        "NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}" in compose_text
     )
 
     assert "CLOUD_API_BASE_URL: process.env.CLOUD_API_BASE_URL" not in next_config
@@ -2260,12 +2220,8 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "proxy_set_header X-Forwarded-Host" not in admin_login_block
     assert "proxy_connect_timeout 5s;" in admin_login_block
     assert "proxy_read_timeout 30s;" in admin_login_block
-    setup_page_block = nginx_prod_conf.split("location = /setup {", 1)[1].split(
-        "\n    }", 1
-    )[0]
-    setup_api_block = nginx_prod_conf.split("location /setup/v1/ {", 1)[1].split(
-        "\n    }", 1
-    )[0]
+    setup_page_block = nginx_prod_conf.split("location = /setup {", 1)[1].split("\n    }", 1)[0]
+    setup_api_block = nginx_prod_conf.split("location /setup/v1/ {", 1)[1].split("\n    }", 1)[0]
     assert "proxy_pass http://$npcink_ai_cloud_frontend;" in setup_page_block
     assert "proxy_pass http://npcink_ai_cloud_api;" not in setup_page_block
     assert "proxy_pass http://npcink_ai_cloud_api;" in setup_api_block
@@ -2302,14 +2258,14 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
         "/opengraph-image",
         "/favicon.ico",
     ):
-        public_block = nginx_prod_conf.split(
-            f"location = {public_frontend_path} {{", 1
-        )[1].split("\n    }", 1)[0]
+        public_block = nginx_prod_conf.split(f"location = {public_frontend_path} {{", 1)[1].split(
+            "\n    }", 1
+        )[0]
         assert "proxy_pass http://$npcink_ai_cloud_frontend;" in public_block
     for canonical_public_path in ("/help", "/privacy", "/status", "/terms"):
-        slash_block = nginx_prod_conf.split(
-            f"location = {canonical_public_path}/ {{", 1
-        )[1].split("\n    }", 1)[0]
+        slash_block = nginx_prod_conf.split(f"location = {canonical_public_path}/ {{", 1)[1].split(
+            "\n    }", 1
+        )[0]
         assert f"return 308 {canonical_public_path};" in slash_block
     assert "location /terms/" in nginx_prod_conf
     assert "root /usr/share/nginx/html/npcink-site;" in nginx_prod_conf
@@ -2391,9 +2347,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in deploy_workflow
     assert "deploy_required:" in ci_workflow
     assert "frontend_only:" in ci_workflow
-    ci_classifier = (
-        cloud_root / "scripts" / "classify-ci-changes.sh"
-    ).read_text()
+    ci_classifier = (cloud_root / "scripts" / "classify-ci-changes.sh").read_text()
     assert ".github/workflows/ci.yml|frontend/*" in ci_classifier
     assert ".github/workflows/deploy-production.yml|docker-compose*.yml" in ci_classifier
     assert "docker-compose*.yml|Dockerfile*|*/Dockerfile*|deploy/*.sh" in ci_classifier
@@ -2419,7 +2373,11 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-promotion-evidence:" in ci_workflow
     assert "python3 scripts/production-ci-evidence.py verify" in ci_workflow
     assert "Create production PR CI evidence receipt" in ci_workflow
-    assert "needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]" in ci_workflow
+    production_bundle_needs = (
+        "needs: [authoritative-cve-precheck, dockerfile-copy-precheck, "
+        "production-release-plan, production-promotion-evidence]"
+    )
+    assert production_bundle_needs in ci_workflow
     assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
@@ -2449,10 +2407,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-release-plan-${GITHUB_SHA}" in deploy_workflow
     assert "Resolve exact release execution plan" in deploy_workflow
     assert "if: steps.release_plan.outputs.action == 'runtime'" in deploy_workflow
-    assert (
-        "${RUNNER_TEMP}/production-release-plan/production-release-plan.json"
-        in deploy_workflow
-    )
+    assert "${RUNNER_TEMP}/production-release-plan/production-release-plan.json" in deploy_workflow
     assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in deploy_workflow
     assert "steps.deploy.outputs.health_profile == 'runtime'" in deploy_workflow
     assert "--skip-bundle-build" in deploy_workflow
@@ -2466,9 +2421,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "--source-sha" in deploy_workflow
     assert "--workflow-run-id" in deploy_workflow
     assert "production-deploy-phase-timing.json" in deploy_workflow
-    assert "production-deploy-timing-${{ github.run_id }}-${{ github.sha }}" in (
-        deploy_workflow
-    )
+    assert "production-deploy-timing-${{ github.run_id }}-${{ github.sha }}" in (deploy_workflow)
     assert 'pipeline_status=("${PIPESTATUS[@]}")' in deploy_workflow
     assert "ci-observability:" in ci_workflow
     assert "python3 scripts/report-release-timing.py" in ci_workflow
@@ -2613,7 +2566,7 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert "github.ref == 'refs/heads/production'" in release_smoke_workflow
     assert "environment: production" in release_smoke_workflow
     assert "actions: read" in release_smoke_workflow
-    assert 'EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}' in release_smoke_workflow
+    assert "EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}" in release_smoke_workflow
     assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
     assert 'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"' in release_smoke_workflow
     assert "actions/workflows/deploy-production.yml/runs" in release_smoke_workflow
@@ -2855,9 +2808,7 @@ def test_release_policy_service_marker_checks_are_pipefail_safe(tmp_path: Path) 
     cloud_root = _cloud_root()
     dependabot_text = (cloud_root / ".github" / "dependabot.yml").read_text()
     script_text = (cloud_root / "scripts" / "check-release-policy.sh").read_text()
-    old_pipeline = (
-        'compose_service_block "${path}" "${service}" | grep -Fq -- "${marker}"'
-    )
+    old_pipeline = 'compose_service_block "${path}" "${service}" | grep -Fq -- "${marker}"'
 
     required_case_root = tmp_path / "required-marker-large-service"
     required_fixture = _release_policy_fixture_root(required_case_root, dependabot_text)
@@ -2890,9 +2841,7 @@ def test_release_policy_service_marker_checks_are_pipefail_safe(tmp_path: Path) 
     )
 
     assert old_pipeline not in script_text
-    assert script_text.count(
-        'service_block="$(compose_service_block "${path}" "${service}")"'
-    ) == 2
+    assert script_text.count('service_block="$(compose_service_block "${path}" "${service}")"') == 2
     assert script_text.count('grep -Fq -- "${marker}" <<<"${service_block}"') == 2
 
 
@@ -2916,9 +2865,7 @@ def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound(
     ):
         assert marker in decision
 
-    template_text = decision.split("```json\n", maxsplit=1)[1].split(
-        "\n```", maxsplit=1
-    )[0]
+    template_text = decision.split("```json\n", maxsplit=1)[1].split("\n```", maxsplit=1)[0]
     template = json.loads(template_text)
     assert set(template) == {
         "contract",
@@ -2951,8 +2898,7 @@ def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound(
         "status": "accepted_by_operator",
         "scope": "controlled_production_validation_only",
         "decision_document": (
-            "docs/python-3-14-6-controlled-production-validation-risk-decision-"
-            "2026-07-21.md"
+            "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md"
         ),
         "source_revision": "<40-lowercase-hex>",
         "source_tree": "<40-lowercase-hex>",
@@ -3019,9 +2965,7 @@ def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound(
     assert contract in verifier
     assert "--controlled-cve-risk-acceptance" in deploy
     assert "--controlled-cve-risk-acceptance-checksum" in deploy
-    assert contract not in (
-        cloud_root / "scripts" / "production-image-supply.py"
-    ).read_text()
+    assert contract not in (cloud_root / "scripts" / "production-image-supply.py").read_text()
 
 
 def test_exact_release_docs_freeze_map_trust_and_cutover_batch_order() -> None:

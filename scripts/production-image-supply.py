@@ -52,9 +52,7 @@ UTC_ZONE = timezone(timedelta(0))
 RECEIPT_CONTRACT = "npcink.production-image-scan-receipt.v1"
 APPLICATION_IMAGE_CACHE_CONTRACT = "npcink.production-application-image-cache.v1"
 APPLICATION_IMAGE_KEY_LABEL = "ink.npc.cloud.application-image-key"
-APPLICATION_IMAGE_FINGERPRINT_LABEL = (
-    "ink.npc.cloud.application-input-fingerprint"
-)
+APPLICATION_IMAGE_FINGERPRINT_LABEL = "ink.npc.cloud.application-input-fingerprint"
 GRYPE_BUILTIN_IGNORE_RULES = [
     {
         "vulnerability": "",
@@ -230,9 +228,7 @@ def _docker_archive_subject(path: Path, *, archive_reference: str) -> dict[str, 
         raw_labels = config_section.get("Labels")
         if raw_labels is not None:
             if not isinstance(raw_labels, dict) or any(
-                not isinstance(key, str)
-                or not key
-                or not isinstance(value, str)
+                not isinstance(key, str) or not key or not isinstance(value, str)
                 for key, value in raw_labels.items()
             ):
                 raise SupplyError("Docker archive config labels must be a string map")
@@ -347,9 +343,7 @@ def _validate_application_cache(
         or archive_sha256 != _sha256(archive_path)
     ):
         raise SupplyError("application image cache archive_sha256 mismatch")
-    subject = _docker_archive_subject(
-        archive_path, archive_reference=target["reference"]
-    )
+    subject = _docker_archive_subject(archive_path, archive_reference=target["reference"])
     if subject["platform"] != expected_platform:
         raise SupplyError("application image cache archive platform mismatch")
     if subject["config_image_id"] != manifest.get("config_image_id"):
@@ -372,9 +366,7 @@ def write_application_cache(args: argparse.Namespace) -> int:
     source_archive = Path(args.archive).resolve()
     if not source_archive.is_file() or source_archive.is_symlink():
         raise SupplyError("application cache source archive must be a regular file")
-    subject = _docker_archive_subject(
-        source_archive, archive_reference=target["reference"]
-    )
+    subject = _docker_archive_subject(source_archive, archive_reference=target["reference"])
     if subject["platform"] != args.expected_platform:
         raise SupplyError("application cache source archive platform mismatch")
     for label, expected in {
@@ -450,9 +442,7 @@ def normalize_archive(args: argparse.Namespace) -> int:
             if not isinstance(entry, dict) or frozenset(entry) not in allowed_keys:
                 raise SupplyError("Docker archive manifest entry has unknown or missing fields")
             if "LayerSources" not in entry:
-                subject = _docker_archive_subject(
-                    archive_path, archive_reference=archive_reference
-                )
+                subject = _docker_archive_subject(archive_path, archive_reference=archive_reference)
                 print(json.dumps(subject, indent=2, sort_keys=True))
                 return 0
             if not isinstance(entry["LayerSources"], dict):
@@ -468,9 +458,7 @@ def normalize_archive(args: argparse.Namespace) -> int:
             )
             os.close(descriptor)
             temporary_path = Path(temporary_name)
-            with tarfile.open(
-                temporary_path, mode="w", format=tarfile.PAX_FORMAT
-            ) as target:
+            with tarfile.open(temporary_path, mode="w", format=tarfile.PAX_FORMAT) as target:
                 for member in source.getmembers():
                     target_member = copy.copy(member)
                     if member.name == "manifest.json":
@@ -1209,8 +1197,16 @@ def _validate_authoritative_not_affected_shape(
     if not isinstance(raw_entries, list):
         raise SupplyError("authoritative-not-affected entries must be an array")
     required = {
-        "image", "vulnerability_id", "package", "package_version", "authority",
-        "authority_url", "affected_version", "affected_less_than", "verified_on", "recheck_after",
+        "image",
+        "vulnerability_id",
+        "package",
+        "package_version",
+        "authority",
+        "authority_url",
+        "affected_version",
+        "affected_less_than",
+        "verified_on",
+        "recheck_after",
     }
     identities: set[tuple[str, str, str, str]] = set()
     # Use the wall clock for policy expiry.  The evaluator's injectable clock is
@@ -1221,25 +1217,41 @@ def _validate_authoritative_not_affected_shape(
     for index, raw in enumerate(raw_entries):
         if not isinstance(raw, dict) or set(raw) != required:
             raise SupplyError(f"authoritative entry {index} has unknown or missing fields")
-        entry = {field: _required_text(raw.get(field), f"authoritative.entries[{index}].{field}") for field in required}
+        entry = {
+            field: _required_text(raw.get(field), f"authoritative.entries[{index}].{field}")
+            for field in required
+        }
         if entry["image"] not in known_images:
             raise SupplyError(f"authoritative entry {index} names unknown image {entry['image']!r}")
         if re.fullmatch(r"CVE-\d{4}-\d{4,}", entry["vulnerability_id"]) is None:
             raise SupplyError(f"authoritative entry {index} has invalid CVE ID")
-        if not entry["authority_url"].startswith("https://cveawg.mitre.org/api/cve/") or not entry["authority_url"].endswith(entry["vulnerability_id"]):
-            raise SupplyError(f"authoritative entry {index} authority_url must be the exact CNA endpoint")
+        if not entry["authority_url"].startswith("https://cveawg.mitre.org/api/cve/") or not entry[
+            "authority_url"
+        ].endswith(entry["vulnerability_id"]):
+            raise SupplyError(
+                f"authoritative entry {index} authority_url must be the exact CNA endpoint"
+            )
         try:
             verified = date.fromisoformat(entry["verified_on"])
             recheck = date.fromisoformat(entry["recheck_after"])
         except ValueError as error:
             raise SupplyError(f"authoritative entry {index} dates must be YYYY-MM-DD") from error
         if verified > now or recheck < now or recheck < verified or (recheck - verified).days > 7:
-            raise SupplyError(f"authoritative entry {index} verification window is invalid or expired")
+            raise SupplyError(
+                f"authoritative entry {index} verification window is invalid or expired"
+            )
         if entry["package"] != "python":
             raise SupplyError(f"authoritative entry {index} package must be python")
-        if _python_version_key(entry["package_version"]) < _python_version_key(entry["affected_less_than"]):
+        if _python_version_key(entry["package_version"]) < _python_version_key(
+            entry["affected_less_than"]
+        ):
             raise SupplyError(f"authoritative entry {index} governed version is still affected")
-        identity = (entry["image"], entry["vulnerability_id"], entry["package"], entry["package_version"])
+        identity = (
+            entry["image"],
+            entry["vulnerability_id"],
+            entry["package"],
+            entry["package_version"],
+        )
         if identity in identities:
             raise SupplyError(f"duplicate authoritative entry {identity!r}")
         identities.add(identity)
@@ -1247,16 +1259,27 @@ def _validate_authoritative_not_affected_shape(
     return entries
 
 
-def _authoritative_entries(lock: dict[str, Any], *, lock_path: Path) -> tuple[list[dict[str, str]], Path, str]:
+def _authoritative_entries(
+    lock: dict[str, Any], *, lock_path: Path
+) -> tuple[list[dict[str, str]], Path, str]:
     policy = lock.get("scan_policy")
     if not isinstance(policy, dict):
         raise SupplyError("scan policy is missing")
-    relative = _required_text(policy.get("authoritative_not_affected_file"), "scan_policy.authoritative_not_affected_file")
+    relative = _required_text(
+        policy.get("authoritative_not_affected_file"), "scan_policy.authoritative_not_affected_file"
+    )
     path = (ROOT / relative).resolve()
     if not path.is_file():
         raise SupplyError("authoritative-not-affected file is missing")
-    recorded = _required_text(policy.get("authoritative_not_affected_sha256"), "scan_policy.authoritative_not_affected_sha256")
-    if re.fullmatch(r"[0-9a-f]{64}", recorded) is None or recorded == "PLACEHOLDER" or recorded != _sha256(path):
+    recorded = _required_text(
+        policy.get("authoritative_not_affected_sha256"),
+        "scan_policy.authoritative_not_affected_sha256",
+    )
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", recorded) is None
+        or recorded == "PLACEHOLDER"
+        or recorded != _sha256(path)
+    ):
         raise SupplyError("authoritative-not-affected file hash does not match image lock")
     entries = _validate_authoritative_not_affected_shape(_load_json(path), _lock_image_keys(lock))
     return entries, path, recorded
@@ -1456,13 +1479,15 @@ def evaluate_scan(args: argparse.Namespace) -> int:
     authoritatively_not_affected = [
         dict(item, adjudication="authoritatively_not_affected")
         for item in blockers
-        if (image_key, item["vulnerability_id"], item["package"], item["package_version"]) in authoritative_keys
+        if (image_key, item["vulnerability_id"], item["package"], item["package_version"])
+        in authoritative_keys
     ]
     unallowlisted = [
         item
         for item in blockers
         if (item["vulnerability_id"], item["package"], item["package_version"]) not in allowed_keys
-        and (image_key, item["vulnerability_id"], item["package"], item["package_version"]) not in authoritative_keys
+        and (image_key, item["vulnerability_id"], item["package"], item["package_version"])
+        not in authoritative_keys
     ]
     allowed = [
         item
@@ -1690,12 +1715,24 @@ def _validate_index_receipt(
         recorded_allowlist_path
     ):
         raise SupplyError("scan receipt allowlist_sha256 does not match its governed allowlist")
-    authoritative_path = Path(_required_text(receipt.get("authoritative_not_affected_path"), "scan_receipt.authoritative_not_affected_path"))
+    authoritative_path = Path(
+        _required_text(
+            receipt.get("authoritative_not_affected_path"),
+            "scan_receipt.authoritative_not_affected_path",
+        )
+    )
     if not authoritative_path.is_absolute():
         authoritative_path = ROOT / authoritative_path
-    entries, expected_authoritative_path, authoritative_sha256 = _authoritative_entries(lock, lock_path=lock_path)
-    if authoritative_path.resolve() != expected_authoritative_path.resolve() or receipt.get("authoritative_not_affected_sha256") != authoritative_sha256:
-        raise SupplyError("scan receipt authoritative-not-affected identity does not match governed file")
+    entries, expected_authoritative_path, authoritative_sha256 = _authoritative_entries(
+        lock, lock_path=lock_path
+    )
+    if (
+        authoritative_path.resolve() != expected_authoritative_path.resolve()
+        or receipt.get("authoritative_not_affected_sha256") != authoritative_sha256
+    ):
+        raise SupplyError(
+            "scan receipt authoritative-not-affected identity does not match governed file"
+        )
     targets = _scan_targets(lock)
     if image_key not in targets:
         raise SupplyError(f"scan receipt names unknown target {image_key!r}")
@@ -1818,7 +1855,11 @@ def _validate_index_receipt(
         not isinstance(finding, dict)
         or set(finding) != finding_fields | {"adjudication"}
         or finding.get("adjudication") != "authoritatively_not_affected"
-        or any(not isinstance(value, str) or not value for key, value in finding.items() if key != "adjudication")
+        or any(
+            not isinstance(value, str) or not value
+            for key, value in finding.items()
+            if key != "adjudication"
+        )
         for finding in authoritative
     ):
         raise SupplyError("scan receipt authoritative findings are invalid")

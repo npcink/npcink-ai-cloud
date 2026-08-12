@@ -171,9 +171,7 @@ def _require_bundle_absent(payload: object, sha: str) -> None:
         and artifact.get("expired") is False
     ]
     if matches:
-        raise PreflightError(
-            f"non-runtime release unexpectedly produced {expected_name}"
-        )
+        raise PreflightError(f"non-runtime release unexpectedly produced {expected_name}")
 
 
 def _resolve_release_action(
@@ -183,9 +181,7 @@ def _resolve_release_action(
     sha: str,
     tree: str,
 ) -> str:
-    module_path = Path(__file__).resolve().with_name(
-        "resolve-production-release-action.py"
-    )
+    module_path = Path(__file__).resolve().with_name("resolve-production-release-action.py")
     spec = importlib.util.spec_from_file_location(
         "npcink_production_release_action",
         module_path,
@@ -295,9 +291,7 @@ def evaluate_snapshot(
     plan_artifact_id = _require_plan_artifact(snapshot.get("artifacts"), sha)
     release_action = str(snapshot.get("release_action") or "")
     if release_action == "runtime":
-        bundle_artifact_id: int | None = _require_bundle_artifact(
-            snapshot.get("artifacts"), sha
-        )
+        bundle_artifact_id: int | None = _require_bundle_artifact(snapshot.get("artifacts"), sha)
     elif release_action in {"no_deploy", "static"}:
         _require_bundle_absent(snapshot.get("artifacts"), sha)
         bundle_artifact_id = None
@@ -421,9 +415,7 @@ def render_text(result: dict[str, Any]) -> str:
     missing_smoke = result["missing_formal_smoke_secret_names"]
     smoke_status = "ready" if not missing_smoke else "missing:" + ",".join(missing_smoke)
     bundle_artifact = result["bundle_artifact_id"]
-    bundle_artifact_text = (
-        str(bundle_artifact) if bundle_artifact is not None else "not_applicable"
-    )
+    bundle_artifact_text = str(bundle_artifact) if bundle_artifact is not None else "not_applicable"
     return "\n".join(
         (
             f"production_sha={result['production_sha']}",

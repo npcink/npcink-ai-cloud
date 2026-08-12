@@ -103,18 +103,27 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
 
 
 def test_ci_change_classifier_selects_only_frontend_tree_changes() -> None:
-    assert _classify(
-        "frontend/src/app/admin/ai-resources/page.tsx",
-        "frontend/tests/admin-ai-resources.test.tsx",
-    )["frontend_only"] == "true"
-    assert _classify(
-        "frontend/src/app/admin/ai-resources/page.tsx",
-        "app/main.py",
-    )["frontend_only"] == "false"
-    assert _classify(
-        "frontend/src/app/admin/ai-resources/page.tsx",
-        "pnpm-lock.yaml",
-    )["frontend_only"] == "false"
+    assert (
+        _classify(
+            "frontend/src/app/admin/ai-resources/page.tsx",
+            "frontend/tests/admin-ai-resources.test.tsx",
+        )["frontend_only"]
+        == "true"
+    )
+    assert (
+        _classify(
+            "frontend/src/app/admin/ai-resources/page.tsx",
+            "app/main.py",
+        )["frontend_only"]
+        == "false"
+    )
+    assert (
+        _classify(
+            "frontend/src/app/admin/ai-resources/page.tsx",
+            "pnpm-lock.yaml",
+        )["frontend_only"]
+        == "false"
+    )
     assert _classify(".github/workflows/ci.yml")["frontend_only"] == "false"
 
 
@@ -143,10 +152,7 @@ def test_ci_change_classifier_keeps_cross_layer_frontend_contracts() -> None:
         assert classification["frontend_required"] == "false"
         assert classification["frontend_backend_contracts_required"] == "true"
 
-    assert (
-        _classify("app/domain/sites.py")["frontend_backend_contracts_required"]
-        == "false"
-    )
+    assert _classify("app/domain/sites.py")["frontend_backend_contracts_required"] == "false"
 
 
 def test_codeql_runs_for_master_and_production_pull_requests() -> None:
@@ -159,9 +165,7 @@ def test_codeql_runs_for_master_and_production_pull_requests() -> None:
 def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     evidence_script = PRODUCTION_CI_EVIDENCE.read_text(encoding="utf-8")
-    production_push_guard = (
-        "github.event_name != 'push' || github.ref != 'refs/heads/production'"
-    )
+    production_push_guard = "github.event_name != 'push' || github.ref != 'refs/heads/production'"
 
     assert "production-promotion-evidence:" in workflow
     assert "production-pr-base-precheck:" in workflow
@@ -185,7 +189,11 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "production commit tree does not match the tree tested" in evidence_script
     assert "exactly one merged same-repository production PR" in evidence_script
     assert workflow.count(production_push_guard) >= 8
-    assert "needs: [authoritative-cve-precheck, dockerfile-copy-precheck, production-release-plan, production-promotion-evidence]" in workflow
+    production_bundle_needs = (
+        "needs: [authoritative-cve-precheck, dockerfile-copy-precheck, "
+        "production-release-plan, production-promotion-evidence]"
+    )
+    assert production_bundle_needs in workflow
     assert "Create production PR CI evidence receipt" in workflow
     assert "Upload production PR CI evidence receipt" in workflow
     assert "production-pr-ci-evidence-${{ github.event.pull_request.number }}" in workflow
@@ -207,10 +215,8 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
     assert "${{ runner.temp }}/production-release-plan" in workflow
     assert "release_action: ${{ steps.release_plan.outputs.action }}" in workflow
     assert "python3 scripts/resolve-production-release-action.py" in workflow
-    assert (
-        "needs.production-release-plan.outputs.release_action == 'runtime'" in workflow
-    )
-    assert 'no_deploy|static)' in workflow
+    assert "needs.production-release-plan.outputs.release_action == 'runtime'" in workflow
+    assert "no_deploy|static)" in workflow
     assert "NPCINK_CLOUD_RELEASE_BUNDLE_SCHEMA_VERSION" in workflow
     assert "NPCINK_CLOUD_PRODUCTION_RELEASE_PLAN_FILE" in workflow
     assert "python3 scripts/production-release-plan.py" in workflow
@@ -239,10 +245,7 @@ def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None
         assert _classify(path)["frontend_e2e_required"] == "true"
 
     assert _classify("app/api/routes/service.py")["frontend_e2e_required"] == "false"
-    assert (
-        _classify("tests/api/test_service_routes.py")["frontend_e2e_required"]
-        == "false"
-    )
+    assert _classify("tests/api/test_service_routes.py")["frontend_e2e_required"] == "false"
     assert _classify("docs/portal-boundary.md")["frontend_e2e_required"] == "false"
 
 
@@ -269,10 +272,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "frontend_backend_contracts_required: "
         "${{ steps.changed.outputs.frontend_backend_contracts_required }}" in workflow
     )
-    assert (
-        "frontend_e2e_required: "
-        "${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
-    )
+    assert "frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
     assert (
         "specialized_quality_required: "
         "${{ steps.changed.outputs.specialized_quality_required }}" in workflow
@@ -291,9 +291,9 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "needs.classify.outputs.frontend_required == 'true'"
     )
     assert workflow.count(frontend_gate_condition) == 8
-    assert workflow.count(
-        "needs.classify.outputs.frontend_backend_contracts_required == 'true'"
-    ) == 3
+    assert (
+        workflow.count("needs.classify.outputs.frontend_backend_contracts_required == 'true'") == 3
+    )
     assert "Backend-owned frontend contracts" in workflow
     assert "node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs" in workflow
     assert "node frontend/tests/unit/admin-coverage-workspace-contract.mjs" in workflow
@@ -310,9 +310,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "Select frontend-only backend gate" in workflow
     assert "pnpm --dir frontend exec playwright install --with-deps chromium" in workflow
     assert "node scripts/run-cloud-frontend-playwright.js" in workflow
-    assert workflow.count(
-        "PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers"
-    ) == 2
+    assert workflow.count("PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers") == 2
     assert "tests/e2e/admin-operator-path.spec.ts" in workflow
     assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
     assert (
@@ -320,9 +318,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "Alipay return polls|account projections stay idle|"
         "account-level support stays available"
     ) in workflow
-    assert workflow.count(
-        "if: needs.classify.outputs.frontend_e2e_required == 'true'"
-    ) == 2
+    assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 2
 
 
 @pytest.mark.skipif(
@@ -372,12 +368,12 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "non-ordinary backend path requires all contracts" in contract_selector
     assert "changed application source is missing or deleted" in contract_selector
     assert "ci/pytest-backend-durations.json" in source
-    assert "load_node_duration_weights" in (
-        ROOT / "scripts" / "select-pytest-shard.py"
-    ).read_text(encoding="utf-8")
-    assert "discover_static_test_nodes" in (
-        ROOT / "scripts" / "select-pytest-shard.py"
-    ).read_text(encoding="utf-8")
+    assert "load_node_duration_weights" in (ROOT / "scripts" / "select-pytest-shard.py").read_text(
+        encoding="utf-8"
+    )
+    assert "discover_static_test_nodes" in (ROOT / "scripts" / "select-pytest-shard.py").read_text(
+        encoding="utf-8"
+    )
     assert '"app/api/routes/portal.py"' in selector
     assert '"tests/api/test_portal_routes.py"' in selector
     assert "selecting all tests/api" in selector
@@ -419,12 +415,10 @@ def test_production_promotion_pr_forces_the_complete_backend_gate(
     )
     assert workflow.count(production_scope_condition) == 2
     assert (
-        "if: github.base_ref != 'production' && "
-        "needs.classify.outputs.docs_only == 'true'"
+        "if: github.base_ref != 'production' && needs.classify.outputs.docs_only == 'true'"
     ) in workflow
     assert (
-        "if: github.base_ref != 'production' && "
-        "needs.classify.outputs.frontend_only == 'true'"
+        "if: github.base_ref != 'production' && needs.classify.outputs.frontend_only == 'true'"
     ) in workflow
     assert (
         "needs.classify.outputs.docs_only == 'true' && "
@@ -435,9 +429,9 @@ def test_production_promotion_pr_forces_the_complete_backend_gate(
 def test_pr_wait_command_monitors_checks_and_review_threads_together() -> None:
     waiter = PR_WAITER.read_text(encoding="utf-8")
     package = (ROOT / "package.json").read_text(encoding="utf-8")
-    workflow_standard = (
-        ROOT / "docs" / "single-session-ai-workflow-standard-v1.md"
-    ).read_text(encoding="utf-8")
+    workflow_standard = (ROOT / "docs" / "single-session-ai-workflow-standard-v1.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "reviewThreads(first:100)" in waiter
     assert 'readiness.state == "review_required"' in waiter

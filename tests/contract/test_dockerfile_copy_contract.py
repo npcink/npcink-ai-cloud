@@ -33,8 +33,7 @@ def test_missing_copy_source_fails_before_build(tmp_path: Path) -> None:
 def test_copy_from_stage_is_not_a_local_context_requirement(tmp_path: Path) -> None:
     module = _module()
     (tmp_path / "Dockerfile").write_text(
-        "FROM scratch AS builder\n"
-        "COPY --from=builder /opt/venv /opt/venv\n"
+        "FROM scratch AS builder\nCOPY --from=builder /opt/venv /opt/venv\n"
     )
     result = module.check(tmp_path, ("Dockerfile",))
     assert result["local_copy_sources"] == []

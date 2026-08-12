@@ -50,14 +50,24 @@ def _validate_file(path: Path, root: Path) -> list[dict[str, str]]:
             continue
         sources = [token for token in sources if not token.startswith("--")]
         if len(sources) < 2:
-            raise CopyContractError(f"{path}:{line}: COPY requires at least one source and a destination")
+            raise CopyContractError(
+                f"{path}:{line}: COPY requires at least one source and a destination"
+            )
         for source in sources[:-1]:
             if source.startswith("/") or any(part == ".." for part in Path(source).parts):
-                raise CopyContractError(f"{path}:{line}: COPY source escapes build context: {source!r}")
-            matches = list(root.glob(source)) if any(char in source for char in "*?[") else [root / source]
+                raise CopyContractError(
+                    f"{path}:{line}: COPY source escapes build context: {source!r}"
+                )
+            matches = (
+                list(root.glob(source))
+                if any(char in source for char in "*?[")
+                else [root / source]
+            )
             if not matches or any(not match.exists() for match in matches):
                 raise CopyContractError(f"{path}:{line}: missing local COPY source {source!r}")
-            findings.append({"dockerfile": str(path.relative_to(root)), "line": str(line), "source": source})
+            findings.append(
+                {"dockerfile": str(path.relative_to(root)), "line": str(line), "source": source}
+            )
     return findings
 
 

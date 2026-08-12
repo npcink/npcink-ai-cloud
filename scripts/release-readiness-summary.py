@@ -17,7 +17,11 @@ def summarize(paths: list[Path]) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError(f"{path} must contain a JSON object")
         status = next(
-            (payload[key] for key in ("status", "release_preflight", "preflight") if key in payload),
+            (
+                payload[key]
+                for key in ("status", "release_preflight", "preflight")
+                if key in payload
+            ),
             None,
         )
         if status in {"passed", "ready", True}:
@@ -26,15 +30,21 @@ def summarize(paths: list[Path]) -> dict[str, Any]:
             state = "blocked"
         else:
             state = "unknown"
-        checks.append({
-            "name": path.name,
-            "path": str(path),
-            "state": state,
-            "elapsed_seconds": next(
-                (payload[key] for key in ("preflight_elapsed_seconds", "duration_seconds") if key in payload),
-                None,
-            ),
-        })
+        checks.append(
+            {
+                "name": path.name,
+                "path": str(path),
+                "state": state,
+                "elapsed_seconds": next(
+                    (
+                        payload[key]
+                        for key in ("preflight_elapsed_seconds", "duration_seconds")
+                        if key in payload
+                    ),
+                    None,
+                ),
+            }
+        )
     blockers = [item["name"] for item in checks if item["state"] != "passed"]
     return {
         "schema": "npcink.release_readiness_summary.v1",

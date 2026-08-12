@@ -18,7 +18,13 @@ def _load(name: str, path: Path):
 
 def _event() -> dict[str, object]:
     repo = "npcink/npcink-ai-cloud"
-    return {"pull_request": {"body": "Approved for production validation by operator.", "base": {"ref": "production", "repo": {"full_name": repo}}, "head": {"ref": "master", "repo": {"full_name": repo}}}}
+    return {
+        "pull_request": {
+            "body": "Approved for production validation by operator.",
+            "base": {"ref": "production", "repo": {"full_name": repo}},
+            "head": {"ref": "master", "repo": {"full_name": repo}},
+        }
+    }
 
 
 def test_production_pr_base_contract_accepts_master_same_repo() -> None:
@@ -26,12 +32,24 @@ def test_production_pr_base_contract_accepts_master_same_repo() -> None:
     assert module.validate(_event(), repository="npcink/npcink-ai-cloud")["status"] == "passed"
 
 
-@pytest.mark.parametrize("mutator, message", [
-    (lambda event: event["pull_request"]["base"].update(ref="master"), "target production"),
-    (lambda event: event["pull_request"]["head"].update(ref="feature/foo"), "master or release-fix"),
-    (lambda event: event["pull_request"]["head"]["repo"].update(full_name="attacker/repo"), "head repository"),
-    (lambda event: event["pull_request"].update(body="## Scope\nmissing approval"), "operator approval"),
-])
+@pytest.mark.parametrize(
+    "mutator, message",
+    [
+        (lambda event: event["pull_request"]["base"].update(ref="master"), "target production"),
+        (
+            lambda event: event["pull_request"]["head"].update(ref="feature/foo"),
+            "master or release-fix",
+        ),
+        (
+            lambda event: event["pull_request"]["head"]["repo"].update(full_name="attacker/repo"),
+            "head repository",
+        ),
+        (
+            lambda event: event["pull_request"].update(body="## Scope\nmissing approval"),
+            "operator approval",
+        ),
+    ],
+)
 def test_production_pr_base_contract_fails_closed(mutator, message: str) -> None:
     module = _load("production_pr_base", ROOT / "scripts/check-production-pr-base.py")
     event = _event()

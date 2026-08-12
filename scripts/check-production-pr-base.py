@@ -28,9 +28,13 @@ def validate(event: dict[str, object], *, repository: str) -> dict[str, str]:
     if base.get("ref") != "production":
         raise ProductionPrBaseError("production release PR must target production")
     if base_repo.get("full_name") != repository:
-        raise ProductionPrBaseError("production PR base repository must equal the current repository")
+        raise ProductionPrBaseError(
+            "production PR base repository must equal the current repository"
+        )
     if head_repo.get("full_name") != repository:
-        raise ProductionPrBaseError("production PR head repository must equal the current repository")
+        raise ProductionPrBaseError(
+            "production PR head repository must equal the current repository"
+        )
     head_ref = str(head.get("ref") or "")
     if head_ref != "master" and not head_ref.startswith("release-fix/"):
         raise ProductionPrBaseError("production PR head must be master or release-fix/*")

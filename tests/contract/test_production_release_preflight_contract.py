@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 
@@ -26,13 +25,26 @@ def _snapshot() -> dict[str, object]:
         "repository": "npcink/npcink-ai-cloud",
         "production_sha": sha,
         "release_action": "no_deploy",
-        "ci_runs": {"workflow_runs": [{"head_sha": sha, "id": 11, "status": "completed", "conclusion": "success"}]},
-        "codeql_runs": {"workflow_runs": [{"head_sha": sha, "id": 12, "status": "completed", "conclusion": "success"}]},
+        "ci_runs": {
+            "workflow_runs": [
+                {"head_sha": sha, "id": 11, "status": "completed", "conclusion": "success"}
+            ]
+        },
+        "codeql_runs": {
+            "workflow_runs": [
+                {"head_sha": sha, "id": 12, "status": "completed", "conclusion": "success"}
+            ]
+        },
         "deploy_runs": {"workflow_runs": []},
-        "artifacts": {"artifacts": [{"name": f"production-release-plan-{sha}", "id": 21, "expired": False}]},
+        "artifacts": {
+            "artifacts": [{"name": f"production-release-plan-{sha}", "id": 21, "expired": False}]
+        },
         "repository_secrets": [
             "NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL",
-            "PROD_SSH_HOST", "PROD_SSH_KEY", "PROD_SSH_KNOWN_HOSTS", "PROD_SSH_USER",
+            "PROD_SSH_HOST",
+            "PROD_SSH_KEY",
+            "PROD_SSH_KNOWN_HOSTS",
+            "PROD_SSH_USER",
         ],
         "environment_secrets": [],
     }
@@ -41,11 +53,18 @@ def _snapshot() -> dict[str, object]:
 def test_dry_run_requires_snapshot_and_does_not_need_gh(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _module()
     monkeypatch.setattr(module.shutil, "which", lambda _: None)
-    assert module.evaluate_snapshot(_snapshot(), expected_sha="a" * 40, require_formal_smoke=False)["release_preflight"] == "ready"
+    assert (
+        module.evaluate_snapshot(_snapshot(), expected_sha="a" * 40, require_formal_smoke=False)[
+            "release_preflight"
+        ]
+        == "ready"
+    )
 
 
 def test_snapshot_result_contains_elapsed_stage_and_mode() -> None:
-    result = _module().evaluate_snapshot(_snapshot(), expected_sha="a" * 40, require_formal_smoke=False)
+    result = _module().evaluate_snapshot(
+        _snapshot(), expected_sha="a" * 40, require_formal_smoke=False
+    )
     assert result["preflight_mode"] == "snapshot"
     assert isinstance(result["preflight_elapsed_seconds"], float)
     assert result["preflight_elapsed_seconds"] >= 0

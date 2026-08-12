@@ -682,9 +682,7 @@ def test_normalize_archive_removes_classic_store_layer_sources(tmp_path: Path) -
         archive_path,
         archive_reference=archive_reference,
         layer_sources={
-            "sha256:" + "e" * 64: {
-                "mediaType": "application/vnd.docker.image.rootfs.diff.tar"
-            }
+            "sha256:" + "e" * 64: {"mediaType": "application/vnd.docker.image.rootfs.diff.tar"}
         },
     )
 
@@ -693,9 +691,12 @@ def test_normalize_archive_removes_classic_store_layer_sources(tmp_path: Path) -
     with tarfile.open(archive_path, mode="r:") as archive:
         manifest = json.loads(archive.extractfile("manifest.json").read())
     assert set(manifest[0]) == {"Config", "RepoTags", "Layers"}
-    assert supply._docker_archive_subject(
-        archive_path, archive_reference=archive_reference
-    )["config_image_id"] == SHA256
+    assert (
+        supply._docker_archive_subject(archive_path, archive_reference=archive_reference)[
+            "config_image_id"
+        ]
+        == SHA256
+    )
 
 
 def test_normalize_archive_rejects_invalid_layer_sources(tmp_path: Path) -> None:
@@ -741,9 +742,10 @@ def test_application_image_cache_binds_fingerprint_platform_and_archive(
     manifest = json.loads((cache_dir / "manifest.json").read_text())
     assert manifest["schema"] == supply.APPLICATION_IMAGE_CACHE_CONTRACT
     assert manifest["application_fingerprint"] == fingerprint
-    assert manifest["archive_sha256"] == hashlib.sha256(
-        (cache_dir / "image.tar").read_bytes()
-    ).hexdigest()
+    assert (
+        manifest["archive_sha256"]
+        == hashlib.sha256((cache_dir / "image.tar").read_bytes()).hexdigest()
+    )
 
     verify_args = Namespace(
         lock=str(LOCK_PATH),
@@ -1137,9 +1139,7 @@ def test_scan_reuse_copies_only_fresh_exact_complete_evidence(tmp_path: Path) ->
     _write_release_receipt(supply, reuse_dir, "api", built=_fresh_db_built())
     output_dir = tmp_path / "output"
 
-    assert supply.reuse_scan_evidence(
-        _reuse_args(reuse_dir=reuse_dir, output_dir=output_dir)
-    ) == 0
+    assert supply.reuse_scan_evidence(_reuse_args(reuse_dir=reuse_dir, output_dir=output_dir)) == 0
     expected_names = {
         "api.image.tar",
         "api.image-inspect.json",
@@ -1161,9 +1161,7 @@ def test_scan_reuse_rejects_image_drift_staleness_and_artifact_tampering(
     supply = _supply_module()
     reuse_dir = tmp_path / "reuse"
     reuse_dir.mkdir()
-    receipt_path = Path(
-        _write_release_receipt(supply, reuse_dir, "api", built=_fresh_db_built())
-    )
+    receipt_path = Path(_write_release_receipt(supply, reuse_dir, "api", built=_fresh_db_built()))
 
     with pytest.raises(supply.SupplyError, match="image ID changed"):
         supply.reuse_scan_evidence(
@@ -1173,17 +1171,13 @@ def test_scan_reuse_rejects_image_drift_staleness_and_artifact_tampering(
                 source_daemon_image_id=OTHER_SHA256,
             )
         )
-    assert not (tmp_path / "image-drift").exists() or not any(
-        (tmp_path / "image-drift").iterdir()
-    )
+    assert not (tmp_path / "image-drift").exists() or not any((tmp_path / "image-drift").iterdir())
 
     receipt = json.loads(receipt_path.read_text())
     receipt["generated_at_utc"] = _utc_text(datetime.now(UTC) - timedelta(hours=25))
     _write_json(receipt_path, receipt)
     with pytest.raises(supply.SupplyError, match="evidence is stale"):
-        supply.reuse_scan_evidence(
-            _reuse_args(reuse_dir=reuse_dir, output_dir=tmp_path / "stale")
-        )
+        supply.reuse_scan_evidence(_reuse_args(reuse_dir=reuse_dir, output_dir=tmp_path / "stale"))
 
     receipt["generated_at_utc"] = _utc_text(datetime.now(UTC))
     _write_json(receipt_path, receipt)
@@ -1209,9 +1203,7 @@ def test_cached_scan_materials_can_be_re_evaluated_with_a_new_database(
     target = supply._scan_targets(lock)["api"]
     old_built = _utc_text(datetime.now(UTC) - timedelta(hours=2))
     new_built = _fresh_db_built()
-    receipt_path = Path(
-        _write_release_receipt(supply, tmp_path, "api", built=old_built)
-    )
+    receipt_path = Path(_write_release_receipt(supply, tmp_path, "api", built=old_built))
     stable_paths = [
         tmp_path / "api.image.tar",
         tmp_path / "api.image-inspect.json",
@@ -1223,9 +1215,7 @@ def test_cached_scan_materials_can_be_re_evaluated_with_a_new_database(
     }
 
     report = _scan_report(built=new_built, image_key="api")
-    canonical_allowlist = json.loads(
-        (ROOT / lock["scan_policy"]["allowlist_file"]).read_text()
-    )
+    canonical_allowlist = json.loads((ROOT / lock["scan_policy"]["allowlist_file"]).read_text())
     matches = report["matches"]
     assert isinstance(matches, list)
     for entry in canonical_allowlist["entries"]:
@@ -1279,9 +1269,7 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert "Docker server API ${server_api} uses the single-platform archive fallback" in source
     assert "requires docker image inspect --platform support with Docker server API" in source
     assert "requires docker image save --platform support with Docker server API" in source
-    assert (
-        'image_id="$(docker_image_inspect "${reference}" --format \'{{.Id}}\')"'
-    ) in source
+    assert ('image_id="$(docker_image_inspect "${reference}" --format \'{{.Id}}\')"') in source
     assert 'docker_image_inspect "${reference}" >"${inspect_path}"' in source
     assert '"docker-archive:/input/${key}.image.tar"' in source
     assert "docker image save" in source
@@ -1306,7 +1294,7 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert source.count('--user "$(id -u):$(id -g)"') >= 2
     assert 'GRYPE_TMP="${GRYPE_CACHE}/tmp"' in source
     assert 'mkdir -p "${GRYPE_TMP}"' in source
-    assert source.count('-e TMPDIR=/.cache/grype/tmp') >= 2
+    assert source.count("-e TMPDIR=/.cache/grype/tmp") >= 2
     assert 'production-image-supply.py" normalize-archive' in source
     assert "npcink-ai-cloud-scan-${CUSTOM_KEYS[${custom_index}]}" in source
     assert "APPLICATIONS_ONLY=0" in source
@@ -1323,15 +1311,13 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert "refresh_target_evaluation" in source
     assert 'clear_target_evaluation_artifacts "${key}"' in source
     assert 'evaluate_target "${index}"' in source
-    refresh_function = source.split("refresh_target_evaluation() {", 1)[1].split(
-        "\n}", 1
-    )[0]
+    refresh_function = source.split("refresh_target_evaluation() {", 1)[1].split("\n}", 1)[0]
     assert "prepare_target_materials" not in refresh_function
     assert "docker_image_save" not in refresh_function
     assert "${SYFT_IMAGE}" not in refresh_function
     assert (
         'echo "[scan-summary] reused=${#REUSED_INDICES[@]} '
-        'refreshed=${#REFRESHED_INDICES[@]} scanned=${#SCANNED_INDICES[@]} '
+        "refreshed=${#REFRESHED_INDICES[@]} scanned=${#SCANNED_INDICES[@]} "
         'total=${#TARGET_KEYS[@]}"'
     ) in source
 
@@ -1346,7 +1332,5 @@ def test_formal_bundle_inspects_the_requested_platform_in_multi_platform_stores(
     assert "requires docker image save --platform support with Docker server API" in source
     assert 'docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" "$@"' in source
     assert 'docker image inspect "$@"' in source
-    assert 'docker_image_inspect --format \'{{.Id}}\' "$1"' in source
-    assert (
-        'docker_image_inspect --format \'{{.Os}}/{{.Architecture}}\' "$1"'
-    ) in source
+    assert "docker_image_inspect --format '{{.Id}}' \"$1\"" in source
+    assert ("docker_image_inspect --format '{{.Os}}/{{.Architecture}}' \"$1\"") in source
