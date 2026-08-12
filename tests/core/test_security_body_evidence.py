@@ -11,7 +11,12 @@ from fastapi import Request
 import app.core.security as security_module
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import SITE_API_KEY_STATUS_REVOKED, SiteApiKey
+from app.core.models import (
+    SITE_API_KEY_STATUS_REVOKED,
+    SITE_STATUS_INACTIVE,
+    SITE_STATUS_SUSPENDED,
+    SiteApiKey,
+)
 from app.core.security import (
     PrehashedRequestBody,
     RequestAuthContext,
@@ -312,7 +317,7 @@ async def test_stale_timestamp_is_rejected_before_body_evidence_loader(tmp_path:
 @pytest.mark.parametrize(
     ("site_id", "key_id", "scopes", "expected_error"),
     [
-        ("site_missing", "key_default", ["runtime:execute"], "auth.invalid_site"),
+        ("site_missing", "key_default", ["runtime:execute"], "auth.site_not_found"),
         ("site_alpha", "key_missing", ["runtime:execute"], "auth.invalid_key"),
         ("site_alpha", "key_default", ["runtime:read"], "auth.scope_denied"),
     ],
@@ -352,6 +357,49 @@ async def test_invalid_site_key_or_scope_is_rejected_before_body_evidence_loader
             await _authorize(_build_request(headers), _settings(database_url), loader)
         assert exc_info.value.error_code == expected_error
         assert loader_called is False
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("site_status", "expected_error"),
+    [
+        (SITE_STATUS_INACTIVE, "auth.site_inactive"),
+        (SITE_STATUS_SUSPENDED, "auth.site_suspended"),
+    ],
+)
+async def test_bound_but_unavailable_site_reports_lifecycle_state(
+    tmp_path: Path,
+    site_status: str,
+    expected_error: str,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / f'evidence-site-{site_status}.sqlite3'}"
+    init_schema(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute"],
+        site_status=site_status,
+    )
+    payload = b"payload"
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media/uploads",
+        site_id="site_alpha",
+        body=payload,
+        idempotency_key=f"evidence-site-{site_status}",
+        nonce=f"evidence-site-{site_status}-nonce",
+    )
+
+    async def loader() -> PrehashedRequestBody:
+        raise AssertionError("body evidence must not load for unavailable sites")
+
+    try:
+        with pytest.raises(RequestAuthError) as exc_info:
+            await _authorize(_build_request(headers), _settings(database_url), loader)
+        assert exc_info.value.error_code == expected_error
+        assert exc_info.value.status_code == 403
     finally:
         dispose_engine(database_url)
 

@@ -39,4 +39,17 @@ describe('Portal customer-safe errors', () => {
     );
     expect(formatPortalErrorReference(error)).toBe('service.unmapped_internal_failure');
   });
+
+  it('explains the difference between an unbound and inactive site', () => {
+    expect(formatPortalErrorMessage(
+      apiError('auth.site_not_found', 'site is not found'),
+      translate,
+      'Try again.'
+    )).toContain('not connected');
+    expect(formatPortalErrorMessage(
+      apiError('auth.site_inactive', 'site is bound but Cloud service is inactive'),
+      translate,
+      'Try again.'
+    )).toContain('currently inactive');
+  });
 });
