@@ -151,7 +151,7 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
                 _expand_specs(
                     (
                         "tests/api/test_wordpress_ai_connector_runtime.py",
-                        "tests/domain/test_wordpress_operation_runtime.py",
+                        "tests/domain/test_wordpress_*.py",
                     )
                 )
             )
