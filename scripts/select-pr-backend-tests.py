@@ -146,6 +146,16 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
         if path.startswith("app/domain/runtime/") and path.endswith(".py"):
             selected.update(_expand_specs(("tests/domain/test_runtime_*.py",)))
             continue
+        if path.startswith("app/domain/wordpress_ai_connector/") and path.endswith(".py"):
+            selected.update(
+                _expand_specs(
+                    (
+                        "tests/api/test_wordpress_ai_connector_runtime.py",
+                        "tests/domain/test_wordpress_operation_runtime.py",
+                    )
+                )
+            )
+            continue
         if path.startswith("app/domain/") and path.count("/") == 2 and path.endswith(".py"):
             selected.update(_expand_specs(("tests/domain/test_*.py",)))
 
