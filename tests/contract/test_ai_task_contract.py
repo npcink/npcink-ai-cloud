@@ -68,6 +68,61 @@ def test_stale_plan_fails_closed(monkeypatch) -> None:
         raise AssertionError("stale task plan did not fail closed")
 
 
+def test_task_plan_rejects_non_task_branch(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "git_text",
+        lambda *args, **_kwargs: "master" if args[:2] == ("branch", "--show-current") else "",
+    )
+
+    try:
+        module.validate_task_worktree("origin/master")
+    except SystemExit as exc:
+        assert "dedicated codex/* branch" in str(exc)
+    else:
+        raise AssertionError("non-task branch was accepted")
+
+
+def test_task_plan_rejects_published_topic_branch(monkeypatch) -> None:
+    module = _load_module()
+
+    def fake_git_text(*args, **_kwargs):
+        if args[:2] == ("branch", "--show-current"):
+            return "codex/already-published"
+        if args[:3] == ("rev-parse", "--abbrev-ref", "--symbolic-full-name"):
+            return "origin/codex/already-published"
+        return ""
+
+    monkeypatch.setattr(module, "git_text", fake_git_text)
+
+    try:
+        module.validate_task_worktree("origin/master")
+    except SystemExit as exc:
+        assert "already tracks origin/codex/already-published" in str(exc)
+    else:
+        raise AssertionError("published topic branch was accepted")
+
+
+def test_task_plan_rejects_branch_behind_current_base(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "git_text", lambda *args, **_kwargs: (
+        "codex/stale-task" if args[:2] == ("branch", "--show-current") else ""
+    ))
+
+    class Completed:
+        returncode = 1
+
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: Completed())
+
+    try:
+        module.validate_task_worktree("origin/master")
+    except SystemExit as exc:
+        assert "does not contain current origin/master" in str(exc)
+    else:
+        raise AssertionError("stale task branch was accepted")
+
+
 def test_receipt_requires_current_successful_verification(monkeypatch) -> None:
     module = _load_module()
     state = {"branch": "codex/test", "head": "abc", "status_short": "", "clean": True}
