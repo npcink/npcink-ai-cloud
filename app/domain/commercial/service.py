@@ -208,6 +208,14 @@ class CommercialService(
 
 
 __all__ = [
+    "CANONICAL_TIER_PLAN_IDS",
     "CommercialService",
+    "DEFAULT_FREE_PLAN_ID",
+    "DEFAULT_FREE_PLAN_KIND",
+    "DEFAULT_FREE_PLAN_SOURCE",
+    "DEFAULT_FREE_PLAN_VERSION_ID",
+    "DEFAULT_FREE_SUBSCRIPTION_SOURCE",
+    "DEFAULT_PLAN_TIER_ID",
+    "PLAN_TIER_REGISTRY",
     "ServiceAuditContext",
 ]
