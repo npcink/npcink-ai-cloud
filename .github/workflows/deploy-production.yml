@@ -150,25 +150,6 @@ jobs:
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
 
-      - name: Download exact production deploy bundle
-        if: steps.release_plan.outputs.action == 'runtime'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
-        run: |
-          set -euo pipefail
-          artifact_name="production-deploy-bundle-${GITHUB_SHA}"
-          rm -rf dist
-          mkdir -p dist
-          gh run download "${PRODUCTION_CI_RUN_ID}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --name "${artifact_name}" \
-            --dir dist
-          test -f dist/deploy-bundle.tgz
-          test -f dist/deploy-bundle.tgz.sha256
-          bash deploy/verify-release-bundle.sh --archive \
-            dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
-
       - name: Install SSH key
         if: steps.release_plan.outputs.action != 'no_deploy'
         env:
@@ -194,6 +175,92 @@ jobs:
             known_host_lookup="[${PROD_SSH_HOST}]:${PROD_SSH_PORT}"
           fi
           ssh-keygen -F "${known_host_lookup}" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Preflight certificate readiness receipt
+        if: steps.release_plan.outputs.action == 'runtime'
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+        run: |
+          set -euo pipefail
+          test "${PROD_SSH_USER}" = "root"
+          if [[ ! "${PROD_REMOTE_DIR}" =~ ^/[A-Za-z0-9._/-]+$ ]] || \
+            [[ "/${PROD_REMOTE_DIR#/}/" = */../* ]] || \
+            [[ "/${PROD_REMOTE_DIR#/}/" = */./* ]]; then
+            echo "[certificate-preflight:fail] PROD_REMOTE_DIR must be a safe absolute path without dot traversal." >&2
+            exit 1
+          fi
+          ssh_args=(
+            -p "${PROD_SSH_PORT}"
+            -i /home/runner/.ssh/npcink_prod_deploy_key
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+          )
+          ssh "${ssh_args[@]}" "${PROD_SSH_USER}@${PROD_SSH_HOST}" \
+            bash -s -- "${PROD_REMOTE_DIR}" <<'REMOTE'
+          set -euo pipefail
+          remote_dir="$1"
+          receipt=/var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json
+          current_link="${remote_dir}/current"
+          if [ -L "${current_link}" ]; then
+            current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"
+            test -n "${current_release}"
+            case "${current_release}" in
+              "${remote_dir}"/release-*) ;;
+              *) echo "[certificate-preflight:fail] current release is outside the managed root" >&2; exit 1 ;;
+            esac
+          elif [ -e "${current_link}" ]; then
+            echo "[certificate-preflight:fail] current release path must be a symbolic link" >&2
+            exit 1
+          else
+            echo "[certificate-preflight:info] no current release; validating host readiness for first install"
+          fi
+          test -f "${receipt}"
+          test ! -L "${receipt}"
+          test "$(stat -c '%u:%a' -- "${receipt}")" = "0:600"
+          /usr/bin/python3.11 - "${receipt}" <<'PY'
+          import json
+          import sys
+          import time
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          if payload.get("contract") != "npcink_cloud_certificate_renewal_readiness.v1":
+              raise SystemExit("[certificate-preflight:fail] readiness contract is invalid")
+          if payload.get("status") != "passed" or payload.get("domain") != "cloud.npc.ink":
+              raise SystemExit("[certificate-preflight:fail] readiness receipt is not passed for cloud.npc.ink")
+          generated = payload.get("generated_at_epoch")
+          if not isinstance(generated, int):
+              raise SystemExit("[certificate-preflight:fail] readiness timestamp is invalid")
+          age = int(time.time()) - generated
+          if age < -300 or age > 7 * 24 * 60 * 60:
+              raise SystemExit(f"[certificate-preflight:fail] readiness receipt is stale (age_seconds={age})")
+          print(f"[certificate-preflight:ok] readiness receipt is fresh (age_seconds={age})")
+          PY
+          REMOTE
+
+      - name: Download exact production deploy bundle
+        if: steps.release_plan.outputs.action == 'runtime'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_CI_RUN_ID: ${{ steps.production_ci.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          artifact_name="production-deploy-bundle-${GITHUB_SHA}"
+          rm -rf dist
+          mkdir -p dist
+          gh run download "${PRODUCTION_CI_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${artifact_name}" \
+            --dir dist
+          test -f dist/deploy-bundle.tgz
+          test -f dist/deploy-bundle.tgz.sha256
+          bash deploy/verify-release-bundle.sh --archive \
+            dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
 
       - name: Deploy
         id: deploy

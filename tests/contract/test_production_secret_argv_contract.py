@@ -281,6 +281,30 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert "npcink-cloud-ssh.XXXXXX" in deploy_script
     assert "cleanup_ssh_control" in deploy_script
     assert "group: production-maintenance" not in maintenance
+    assert 'certificate-readiness' in maintenance
+    assert 'readiness is not passed for cloud.npc.ink' in maintenance
+    assert 'current_link="${remote_dir}/current"' in maintenance
+    assert 'if [ -L "${current_link}" ]; then' in maintenance
+    assert (
+        'current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"'
+    ) in maintenance
+    assert 'current release symlink is broken' in maintenance
+    assert 'elif [ -e "${current_link}" ]; then' in maintenance
+    assert (
+        '[certificate-preflight:info] no current release; validating host readiness '
+        'for first install'
+    ) in maintenance
+    assert 'current_release="$(readlink -f -- "${remote_dir}/current")"' not in maintenance
+    assert 'Preflight certificate readiness receipt' in deploy
+    assert 'current_link="${remote_dir}/current"' in deploy
+    assert 'if [ -L "${current_link}" ]; then' in deploy
+    assert 'current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"' in deploy
+    assert 'elif [ -e "${current_link}" ]; then' in deploy
+    assert (
+        '[certificate-preflight:info] no current release; validating host readiness '
+        'for first install'
+    ) in deploy
+    assert 'current_release="$(readlink -f -- "${remote_dir}/current")"' not in deploy
     assert "permissions: {}" in maintenance
     assert "safe_prune_confirmation:" in maintenance
     assert "Prune production images and old releases." in maintenance
