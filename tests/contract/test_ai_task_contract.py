@@ -259,7 +259,7 @@ def test_pnpm_style_separator_is_parsed_before_worktree_guard(tmp_path: Path) ->
     )
 
     assert completed.returncode != 0
-    assert "task branch" in completed.stderr
+    assert "codex/* branch" in completed.stderr
     assert "codex/* branch" in completed.stderr
     assert "unrecognized arguments" not in completed.stderr
     assert not output.exists()
