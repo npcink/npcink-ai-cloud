@@ -12,6 +12,7 @@ import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { createApiClient } from '@/lib/api-client';
+import { ApiError } from '@/lib/errors';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -115,10 +116,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         }
         setAdminSessionReady(true);
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch((error: unknown) => {
+        if (
+          !cancelled
+          && error instanceof ApiError
+          && (error.statusCode === 401 || error.statusCode === 403)
+        ) {
           const returnTo = `${pathname}${window.location.search}`;
           window.location.replace(`/admin/login?redirect=${encodeURIComponent(returnTo)}`);
+          return;
+        }
+        if (!cancelled) {
+          setAdminSessionReady(true);
         }
       });
 

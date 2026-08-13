@@ -139,8 +139,8 @@ function AccountPageContent() {
         )
       );
       setMessage(t('portal.account.qq_unbound', undefined, 'QQ quick login has been unbound. Sign in again.'));
-      await refresh();
       setStatus('idle');
+      window.location.assign('/portal/login?reason=qq_unbound');
     } catch (error) {
       setStatus('error');
       setMessage(
