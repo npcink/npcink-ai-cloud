@@ -358,6 +358,111 @@ def test_runtime_auto_web_search_enriches_provider_input(
     assert search_credits[0].ai_credit_delta == -5.0
 
 
+def test_runtime_auto_web_search_preserves_zhihu_deepsearch_credit_lane(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    provider = RecordingProviderAdapter()
+    init_schema(database_url)
+    CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+    captured_input: dict[str, Any] = {}
+
+    def fake_search(
+        self: WebSearchService,
+        *,
+        site_id: str,
+        ability_name: str,
+        contract_version: str,
+        input_payload: dict[str, Any],
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        captured_input.update(input_payload)
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "external_web_evidence",
+                "status": "ready",
+                "provider": "zhihu",
+                "intent": "zhida_deepsearch",
+                "query_hash": "hash-only",
+                "query_chars": len(input_payload["query"]),
+                "evidence_gate": {
+                    "status": "passed",
+                    "source_count": 1,
+                    "allows_web_grounded_assertion": True,
+                },
+                "results": [],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="zhihu",
+                model_id="zhida-agent",
+                instance_id="cloud-managed",
+                region="cn",
+                latency_ms=20,
+                cost=0.01,
+            ),
+        )
+
+    monkeypatch.setattr(WebSearchService, "execute", fake_search)
+
+    response = RuntimeService(
+        database_url,
+        settings=Settings(environment="test", database_url=database_url),
+        providers={"openai": provider},
+    ).execute(
+        RuntimeRequest(
+            site_id="site_alpha",
+            ability_name="npcink-abilities-toolkit/build-article-block-plan",
+            ability_family="workflow",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            contract_version="v1",
+            input_payload={
+                "topic": "latest WordPress AI search trends",
+                "search_policy": {
+                    "mode": "required",
+                    "intent": "zhida_deepsearch",
+                    "provider": "zhihu",
+                },
+            },
+        )
+    )
+
+    assert response.status == "succeeded"
+    assert captured_input["intent"] == "zhida_deepsearch"
+    with get_session(database_url) as session:
+        search_events = session.execute(
+            select(UsageMeterEvent).where(
+                UsageMeterEvent.run_id == response.run_id,
+                UsageMeterEvent.meter_key == "provider_calls",
+            )
+        ).scalars().all()
+        search_event = next(
+            event
+            for event in search_events
+            if event.payload_json.get("managed_source") == "web_search"
+        )
+        search_credit = session.execute(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.run_id == response.run_id,
+                CreditLedgerEntry.source_type == "zhihu_direct_answer_deepsearch",
+            )
+        ).scalar_one()
+    assert search_event.payload_json["provider"] == "zhihu"
+    assert search_event.payload_json["source_type"] == "zhida_deepsearch"
+    assert search_event.payload_json["intent"] == "zhida_deepsearch"
+    assert search_credit.ai_credit_delta == -10.0
+
+
 def test_runtime_auto_web_search_is_included_in_budget_preflight(
     tmp_path: Path,
     monkeypatch: Any,

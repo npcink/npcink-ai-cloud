@@ -2530,6 +2530,8 @@ class RuntimeService:
                     run,
                     repository=repository,
                     usage=error.usage,
+                    source_type=plan.intent,
+                    intent=plan.intent,
                 )
             report = plan.to_report(
                 status="failed",
@@ -2583,6 +2585,8 @@ class RuntimeService:
             run,
             repository=repository,
             usage=search_result.usage,
+            source_type=plan.intent,
+            intent=plan.intent,
         )
         report = build_automatic_web_search_success_report(
             plan,
@@ -2602,6 +2606,8 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
         usage: Any,
+        source_type: str,
+        intent: str,
     ) -> None:
         self.provider_execution_service.record_provider_call(
             repository=repository,
@@ -2621,7 +2627,8 @@ class RuntimeService:
             ),
             usage_context={
                 "managed_source": "web_search",
-                "source_type": "web_search",
+                "source_type": source_type,
+                "intent": intent,
                 "provider": str(getattr(usage, "provider_id", "") or ""),
             },
         )
@@ -3016,13 +3023,15 @@ class RuntimeService:
                 channel=request.channel or "",
             )
             if plan is not None and not plan.is_dry_run:
+                explicit_provider = plan.provider if plan.provider != "auto" else ""
                 search_component = classify_provider_credit_component(
                     execution_kind="web_search",
                     ability_family="search",
                     payload_json={
                         "managed_source": "web_search",
-                        "source_type": "web_search",
-                        "provider": plan.provider if plan.provider != "auto" else "",
+                        "source_type": plan.intent if explicit_provider else "web_search",
+                        "intent": plan.intent if explicit_provider else "",
+                        "provider": explicit_provider,
                     },
                 )
                 estimate += max(

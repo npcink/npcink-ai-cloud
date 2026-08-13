@@ -192,6 +192,57 @@ def test_automatic_search_preflight_uses_explicit_provider_component(
     )
 
     assert service._estimate_runtime_request_ai_credits(request) == 3.0
+
+
+def test_automatic_search_preflight_preserves_zhihu_deepsearch_component(
+    tmp_path: Path,
+) -> None:
+    service = RuntimeService(_sqlite_url(tmp_path))
+    request = RuntimeRequest(
+        site_id="site_alpha",
+        ability_name="npcink-abilities-toolkit/build-article-block-plan",
+        ability_family="workflow",
+        channel="openapi",
+        execution_kind="text",
+        profile_id="text.balanced",
+        input_payload={
+            "topic": "latest WordPress AI search trends",
+            "search_policy": {
+                "mode": "required",
+                "intent": "zhida_deepsearch",
+                "provider": "zhihu",
+            },
+        },
+    )
+
+    assert service._estimate_runtime_request_ai_credits(request) == 11.0
+
+
+def test_automatic_search_preflight_keeps_auto_provider_on_generic_rate(
+    tmp_path: Path,
+) -> None:
+    service = RuntimeService(_sqlite_url(tmp_path))
+    request = RuntimeRequest(
+        site_id="site_alpha",
+        ability_name="npcink-abilities-toolkit/build-article-block-plan",
+        ability_family="workflow",
+        channel="openapi",
+        execution_kind="text",
+        profile_id="text.balanced",
+        input_payload={
+            "topic": "latest WordPress AI search trends",
+            "search_policy": {
+                "mode": "required",
+                "intent": "zhida_deepsearch",
+                "provider": "auto",
+            },
+        },
+    )
+
+    assert service._estimate_runtime_request_ai_credits(request) == 6.0
+
+
+def test_site_knowledge_credit_estimates() -> None:
     assert estimate_runtime_request_ai_credits(
         ability_name="npcink-cloud/site-knowledge-search",
         ability_family="knowledge",
