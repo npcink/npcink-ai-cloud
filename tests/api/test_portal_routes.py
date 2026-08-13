@@ -2850,6 +2850,26 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert '"cost":' not in history_serialized
     assert '"cache_key":' not in history_serialized
 
+    forced = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": True},
+        headers=build_portal_headers(idempotency_key="portal-ai-force-001"),
+    )
+    assert forced.status_code == 200, forced.text
+    assert len(provider.requests) == 2
+
+    force_limited = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": True},
+        headers=build_portal_headers(idempotency_key="portal-ai-force-002"),
+    )
+    assert force_limited.status_code == 429
+    assert force_limited.json()["error_code"] == (
+        "portal.ai_insight_force_refresh_limited"
+    )
+    assert int(force_limited.headers["retry-after"]) > 0
+    assert len(provider.requests) == 2
+
     dispose_engine(database_url)
 
 
