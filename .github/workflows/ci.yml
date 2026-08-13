@@ -1062,7 +1062,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup pnpm
-        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true'
+        if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.0

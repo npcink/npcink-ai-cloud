@@ -370,7 +370,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     )
     assert workflow.count(frontend_gate_condition) == 8
     assert (
-        workflow.count("needs.classify.outputs.frontend_backend_contracts_required == 'true'") == 3
+        workflow.count("needs.classify.outputs.frontend_backend_contracts_required == 'true'") == 4
     )
     assert "Backend-owned frontend contracts" in workflow
     assert "node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs" in workflow
