@@ -21,6 +21,7 @@ from app.adapters.providers.base import (
 from app.adapters.providers.openai import (
     ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS,
     normalize_provider_image_output_hosts,
+    normalize_provider_output_hosts,
 )
 from app.adapters.providers.registry import build_provider_adapter_from_connection
 from app.core.config import Settings
@@ -1482,6 +1483,32 @@ def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
         normalized["image_output_hosts"] = image_output_hosts
     else:
         normalized.pop("image_output_hosts", None)
+
+    raw_audio_hosts = normalized.get("audio_output_hosts")
+    if raw_audio_hosts is None:
+        audio_hosts_input: list[str] = []
+    elif isinstance(raw_audio_hosts, str):
+        audio_hosts_input = [item.strip() for item in raw_audio_hosts.split(",") if item.strip()]
+    elif isinstance(raw_audio_hosts, list) and all(
+        isinstance(item, str) for item in raw_audio_hosts
+    ):
+        audio_hosts_input = list(raw_audio_hosts)
+    else:
+        raise ProviderConnectionAdminError(
+            "provider_connection.audio_output_hosts_invalid",
+            "audio_output_hosts must be a list of exact host names",
+        )
+    try:
+        audio_output_hosts = list(normalize_provider_output_hosts(audio_hosts_input))
+    except ValueError as error:
+        raise ProviderConnectionAdminError(
+            "provider_connection.audio_output_hosts_invalid",
+            "audio_output_hosts must contain exact host names without schemes, paths, or wildcards",
+        ) from error
+    if audio_output_hosts:
+        normalized["audio_output_hosts"] = audio_output_hosts
+    else:
+        normalized.pop("audio_output_hosts", None)
     return normalized
 
 
