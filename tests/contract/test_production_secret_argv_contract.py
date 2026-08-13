@@ -283,6 +283,18 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert "group: production-maintenance" not in maintenance
     assert 'certificate-readiness' in maintenance
     assert 'readiness is not passed for cloud.npc.ink' in maintenance
+    assert 'current_link="${remote_dir}/current"' in maintenance
+    assert 'if [ -L "${current_link}" ]; then' in maintenance
+    assert (
+        'current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"'
+    ) in maintenance
+    assert 'current release symlink is broken' in maintenance
+    assert 'elif [ -e "${current_link}" ]; then' in maintenance
+    assert (
+        '[certificate-preflight:info] no current release; validating host readiness '
+        'for first install'
+    ) in maintenance
+    assert 'current_release="$(readlink -f -- "${remote_dir}/current")"' not in maintenance
     assert 'Preflight certificate readiness receipt' in deploy
     assert 'current_link="${remote_dir}/current"' in deploy
     assert 'if [ -L "${current_link}" ]; then' in deploy

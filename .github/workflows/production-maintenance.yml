@@ -162,11 +162,24 @@ jobs:
 
           certificate_readiness() {
             local receipt="/var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json"
-            current_release="$(readlink -f -- "${remote_dir}/current")"
-            case "${current_release}" in
-              "${remote_dir}"/release-*) ;;
-              *) echo "[certificate-preflight:fail] current release is outside the managed root" >&2; return 1 ;;
-            esac
+            local current_link="${remote_dir}/current"
+            local current_release=""
+            if [ -L "${current_link}" ]; then
+              current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"
+              [ -n "${current_release}" ] || {
+                echo "[certificate-preflight:fail] current release symlink is broken" >&2
+                return 1
+              }
+              case "${current_release}" in
+                "${remote_dir}"/release-*) ;;
+                *) echo "[certificate-preflight:fail] current release is outside the managed root" >&2; return 1 ;;
+              esac
+            elif [ -e "${current_link}" ]; then
+              echo "[certificate-preflight:fail] current release path must be a symbolic link" >&2
+              return 1
+            else
+              echo "[certificate-preflight:info] no current release; validating host readiness for first install"
+            fi
             [ -f "${receipt}" ] && [ ! -L "${receipt}" ] || {
               echo "[certificate-preflight:fail] readiness receipt is missing or unsafe" >&2
               return 1
