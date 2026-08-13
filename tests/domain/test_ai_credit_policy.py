@@ -22,6 +22,8 @@ from app.domain.commercial.credits import (
     usage_meter_credit_component,
 )
 from app.domain.commercial.service import CommercialService
+from app.domain.runtime.models import RuntimeRequest
+from app.domain.runtime.service import RuntimeService
 
 
 def _sqlite_url(tmp_path: Path) -> str:
@@ -123,6 +125,19 @@ def test_ai_credit_estimates_match_declared_provider_components() -> None:
             payload_json={"managed_source": "web_search", "source_type": "web_search"},
         )
     )["source_type"] == "web_search"
+    assert usage_meter_credit_component(
+        SimpleNamespace(
+            meter_key="provider_calls",
+            quantity=1,
+            execution_kind="text",
+            ability_family="workflow",
+            payload_json={
+                "provider": "zhihu",
+                "managed_source": "web_search",
+                "source_type": "zhida_deepsearch",
+            },
+        )
+    )["source_type"] == "zhihu_direct_answer_deepsearch"
     assert estimate_runtime_request_ai_credits(
         ability_family="vision",
         execution_kind="image_source",
@@ -133,6 +148,50 @@ def test_ai_credit_estimates_match_declared_provider_components() -> None:
         execution_kind="site_knowledge",
         payload_json={"billing_mode": "consume_ai_credits"},
     ) == 0.0
+
+
+def test_specialized_runtime_does_not_preflight_automatic_search_it_cannot_run(
+    tmp_path: Path,
+) -> None:
+    service = RuntimeService(_sqlite_url(tmp_path))
+    request = RuntimeRequest(
+        site_id="site_alpha",
+        ability_name="npcink-cloud/site-knowledge-status",
+        ability_family="knowledge",
+        channel="openapi",
+        execution_kind="knowledge",
+        profile_id="knowledge.default",
+        input_payload={
+            "topic": "latest status",
+            "search_policy": {"mode": "auto", "intent": "news"},
+        },
+    )
+
+    assert service._estimate_runtime_request_ai_credits(request) == 0.0
+
+
+def test_automatic_search_preflight_uses_explicit_provider_component(
+    tmp_path: Path,
+) -> None:
+    service = RuntimeService(_sqlite_url(tmp_path))
+    request = RuntimeRequest(
+        site_id="site_alpha",
+        ability_name="npcink-abilities-toolkit/build-article-block-plan",
+        ability_family="workflow",
+        channel="openapi",
+        execution_kind="text",
+        profile_id="text.balanced",
+        input_payload={
+            "topic": "latest WordPress AI search trends",
+            "search_policy": {
+                "mode": "auto",
+                "intent": "news",
+                "provider": "zhihu",
+            },
+        },
+    )
+
+    assert service._estimate_runtime_request_ai_credits(request) == 3.0
     assert estimate_runtime_request_ai_credits(
         ability_name="npcink-cloud/site-knowledge-search",
         ability_family="knowledge",

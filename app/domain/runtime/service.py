@@ -3008,7 +3008,7 @@ class RuntimeService:
             execution_kind=request.execution_kind,
             payload_json=payload_json if payload_json is not None else request.input_payload,
         )
-        if payload_json is None:
+        if payload_json is None and self._supports_automatic_web_search(request):
             plan = build_automatic_web_search_plan(
                 request.input_payload,
                 ability_name=request.ability_name,
@@ -3022,6 +3022,7 @@ class RuntimeService:
                     payload_json={
                         "managed_source": "web_search",
                         "source_type": "web_search",
+                        "provider": plan.provider if plan.provider != "auto" else "",
                     },
                 )
                 estimate += max(
@@ -3029,6 +3030,20 @@ class RuntimeService:
                     float(self._coerce_float(search_component.get("rate")) or 0.0),
                 )
         return round(max(0.0, estimate), 6)
+
+    def _supports_automatic_web_search(self, request: RuntimeRequest) -> bool:
+        return not any(
+            predicate(request)
+            for predicate in (
+                self._is_cloud_batch_runtime_request,
+                self._is_site_ops_analysis_request,
+                self._is_media_batch_plan_request,
+                self._is_image_context_evidence_request,
+                self._is_image_source_request,
+                self._is_site_knowledge_request,
+                self._is_web_search_request,
+            )
+        )
 
     def _build_web_search_usage_context(
         self,
