@@ -281,6 +281,9 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert "npcink-cloud-ssh.XXXXXX" in deploy_script
     assert "cleanup_ssh_control" in deploy_script
     assert "group: production-maintenance" not in maintenance
+    assert 'certificate-readiness' in maintenance
+    assert 'certificate-renewal-readiness.v1' in maintenance
+    assert 'Preflight certificate readiness receipt' in deploy
     assert "permissions: {}" in maintenance
     assert "safe_prune_confirmation:" in maintenance
     assert "Prune production images and old releases." in maintenance
