@@ -74,9 +74,14 @@ Complete when this PR changes `frontend/src/app/admin/**`,
 
 ## Deployment Impact
 
-- [ ] No production deployment impact.
-- [ ] Requires an explicit `Deploy Production` dispatch with the exact operator
-  confirmation after CI passes on the protected production branch.
+- [ ] Exact release-plan result: `no_deploy` — no production-host update is
+  required.
+- [ ] Exact release-plan result: `static` — only the bounded static publisher
+  is required.
+- [ ] Exact release-plan result: runtime — Requires an explicit `Deploy Production` dispatch
+  with the exact operator confirmation after protected production CI passes.
+- [ ] Not yet classified — the final release-plan result will be reported
+  before the task closes.
 
 ## Production Promotion
 
@@ -84,9 +89,31 @@ Complete only when this PR targets `production`.
 
 - [ ] Source branch is `master` or a release-fix branch that will be backported to `master`.
 - [ ] `master` CI is green, or this is an emergency release fix.
+- [ ] The promotion envelope is frozen: no new workflow, documentation,
+  product, or unrelated repair changes are included.
 - [ ] Rollback path is known.
 - [ ] `deploy/RELEASE_CHECKLIST.md` has no newly relevant unchecked blocker for this release scope.
 - [ ] Approved for production validation by operator.
+
+## Release Observation
+
+Complete for a production promotion. Use `not applicable` or `not measured`
+when exact evidence is unavailable.
+
+- Fix:
+- Local verification:
+- Master PR CI:
+- Master merge:
+- Production PR preparation:
+- Production PR CI:
+- Operator wait:
+- Bundle build:
+- Bundle transfer:
+- Host cutover:
+- Health verification:
+- Repeated broad-CI count:
+- Deployment-attempt count:
+- Final state:
 
 ## Notes
 
