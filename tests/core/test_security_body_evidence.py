@@ -405,6 +405,38 @@ async def test_bound_but_unavailable_site_reports_lifecycle_state(
 
 
 @pytest.mark.asyncio
+async def test_narrow_scope_does_not_disclose_site_lifecycle_state(tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'evidence-site-narrow-scope.sqlite3'}"
+    init_schema(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:read"],
+        site_status=SITE_STATUS_INACTIVE,
+    )
+    payload = b"payload"
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media/uploads",
+        site_id="site_alpha",
+        body=payload,
+        idempotency_key="evidence-site-narrow-scope",
+        nonce="evidence-site-narrow-scope-nonce",
+    )
+
+    async def loader() -> PrehashedRequestBody:
+        raise AssertionError("body evidence must not load for a scope-denied key")
+
+    try:
+        with pytest.raises(RequestAuthError) as exc_info:
+            await _authorize(_build_request(headers), _settings(database_url), loader)
+        assert exc_info.value.error_code == "auth.scope_denied"
+        assert exc_info.value.status_code == 403
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.asyncio
 async def test_key_revoked_during_body_load_is_rejected_by_final_revalidation(
     tmp_path: Path,
 ) -> None:

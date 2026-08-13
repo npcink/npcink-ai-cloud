@@ -343,9 +343,18 @@ def _validate_site_and_key(
     ):
         raise RequestAuthError(401, "auth.invalid_key", "API key is not authorized")
 
-    # Only disclose lifecycle detail after the credential proves site ownership.
-    # This keeps customer recovery actionable without turning error codes into a
-    # public site-ID enumeration surface.
+    scopes = expand_api_key_scopes(list(api_key.scopes_json or []))
+    if required_scope and scopes and required_scope not in scopes:
+        raise RequestAuthError(
+            403,
+            "auth.scope_denied",
+            "API key scope does not permit this request",
+        )
+
+    # Only disclose lifecycle detail after the credential proves site ownership
+    # and is authorized for the requested operation. This keeps customer recovery
+    # actionable without turning error codes into a public site-ID enumeration
+    # surface or leaking state to a narrower credential.
     if site is None or site.status == SITE_STATUS_ARCHIVED:
         raise RequestAuthError(401, "auth.site_not_found", "site is not found")
     if site.status == SITE_STATUS_INACTIVE:
@@ -368,14 +377,6 @@ def _validate_site_and_key(
         )
     if site.status != SITE_STATUS_ACTIVE:
         raise RequestAuthError(403, "auth.site_not_ready", "site Cloud service is not ready")
-
-    scopes = expand_api_key_scopes(list(api_key.scopes_json or []))
-    if required_scope and scopes and required_scope not in scopes:
-        raise RequestAuthError(
-            403,
-            "auth.scope_denied",
-            "API key scope does not permit this request",
-        )
 
     return api_key
 
