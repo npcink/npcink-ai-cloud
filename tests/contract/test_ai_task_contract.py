@@ -19,8 +19,9 @@ def _load_module():
     return module
 
 
-def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path) -> None:
+def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
+    monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
     output = tmp_path / "task.json"
     args = Namespace(
         task_id="validation-router-test",
@@ -205,8 +206,9 @@ def test_tampered_saved_command_is_rejected(monkeypatch) -> None:
         raise AssertionError("tampered command was accepted")
 
 
-def test_negative_resource_budget_is_rejected(tmp_path: Path) -> None:
+def test_negative_resource_budget_is_rejected(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
+    monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
     args = Namespace(
         task_id="invalid-budget",
         module="tooling",
@@ -232,7 +234,7 @@ def test_negative_resource_budget_is_rejected(tmp_path: Path) -> None:
         raise AssertionError("negative budget did not fail closed")
 
 
-def test_pnpm_style_separator_is_accepted(tmp_path: Path) -> None:
+def test_pnpm_style_separator_is_parsed_before_worktree_guard(tmp_path: Path) -> None:
     output = tmp_path / "pnpm-envelope.json"
     completed = subprocess.run(
         [
@@ -256,5 +258,8 @@ def test_pnpm_style_separator_is_accepted(tmp_path: Path) -> None:
         text=True,
     )
 
-    assert completed.returncode == 0, completed.stderr
-    assert output.exists()
+    assert completed.returncode != 0
+    assert "task branch" in completed.stderr
+    assert "codex/* branch" in completed.stderr
+    assert "unrecognized arguments" not in completed.stderr
+    assert not output.exists()
