@@ -462,6 +462,15 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "docs-only backend gate did not pass" in workflow
 
 
+def test_pytest_scheduler_changes_force_the_complete_backend_gate() -> None:
+    source = BACKEND_GATE.read_text(encoding="utf-8")
+
+    assert (
+        ".github/workflows/ci.yml|ci/pytest-backend-durations.json|"
+        "scripts/select-pytest-shard.py|tests/conftest.py" in source
+    )
+
+
 def test_production_promotion_pr_forces_the_complete_backend_gate(
     tmp_path: Path,
 ) -> None:
