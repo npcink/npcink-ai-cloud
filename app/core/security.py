@@ -90,12 +90,14 @@ class RequestAuthError(ValueError):
         message: str,
         *,
         retry_after_seconds: int = 0,
+        data: dict[str, object] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.message = message
         self.retry_after_seconds = max(0, int(retry_after_seconds))
+        self.data = dict(data or {})
 
 
 def build_body_digest(payload: bytes) -> str:
@@ -362,6 +364,12 @@ def _validate_site_and_key(
             403,
             "auth.site_inactive",
             "site is bound but Cloud service is inactive",
+            data={
+                "recovery_contract": "cloud_site_activation_recovery.v1",
+                "site_status": SITE_STATUS_INACTIVE,
+                "activation_required": True,
+                "action": "activate_site",
+            },
         )
     if site.status == SITE_STATUS_SUSPENDED:
         raise RequestAuthError(
