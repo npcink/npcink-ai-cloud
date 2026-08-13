@@ -54,6 +54,32 @@ def test_audio_provider_fetch_pins_public_address_and_streams_with_limit() -> No
     }
 
 
+def test_audio_provider_fetch_tries_each_validated_public_address() -> None:
+    first_address = "2001:4860:4860::8888"
+    attempted_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempted_urls.append(str(request.url))
+        if request.url.host == first_address:
+            raise httpx.ConnectError("IPv6 route unavailable", request=request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "audio/mpeg"},
+            content=b"ID3provider-audio",
+        )
+
+    assert _download_audio_url(
+        "https://audio.provider.test/audio.mp3",
+        config=_config(),
+        resolver=lambda hostname, port: (first_address, _PUBLIC_ADDRESS),
+        transport=httpx.MockTransport(handler),
+    ) == b"ID3provider-audio"
+    assert attempted_urls == [
+        f"https://[{first_address}]/audio.mp3",
+        f"https://{_PUBLIC_ADDRESS}/audio.mp3",
+    ]
+
+
 @pytest.mark.parametrize(
     ("source_url", "addresses", "expected_message"),
     [

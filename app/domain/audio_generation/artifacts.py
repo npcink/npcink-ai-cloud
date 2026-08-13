@@ -198,7 +198,6 @@ def _download_audio_url(
             "provider audio host could not be resolved"
         ) from error
 
-    pinned_url = _pinned_audio_provider_url(parsed, addresses[0])
     byte_limit = max(1, int(config.max_bytes))
     with httpx.Client(
         timeout=config.timeout_seconds,
@@ -206,76 +205,95 @@ def _download_audio_url(
         trust_env=False,
         transport=transport,
     ) as client:
-        try:
-            request = client.build_request(
-                "GET",
-                pinned_url,
-                headers={
-                    "Accept": "audio/*,application/octet-stream",
-                    "Host": hostname,
-                },
-                extensions={"sni_hostname": hostname},
-            )
-            response = client.send(request, stream=True)
+        for address in addresses:
             try:
-                if 300 <= response.status_code < 400:
-                    raise AudioArtifactMaterializationError(
-                        "provider audio URL redirects are forbidden"
-                    )
-                if response.status_code < 200 or response.status_code >= 300:
-                    raise AudioArtifactMaterializationError(
-                        f"provider audio URL returned HTTP {response.status_code}"
-                    )
-
-                content_type = (
-                    response.headers.get("content-type", "")
-                    .split(";", 1)[0]
-                    .strip()
-                    .lower()
+                return _download_audio_from_pinned_address(
+                    client=client,
+                    parsed=parsed,
+                    hostname=hostname,
+                    address=address,
+                    byte_limit=byte_limit,
                 )
-                if content_type and not content_type.startswith(
-                    _ALLOWED_AUDIO_MIME_PREFIXES
-                ):
-                    raise AudioArtifactMaterializationError(
-                        "provider audio URL returned unsupported content type "
-                        f"{content_type}"
-                    )
-                content_length = response.headers.get("content-length")
-                if content_length:
-                    try:
-                        declared_length = int(content_length)
-                    except ValueError as error:
-                        raise AudioArtifactMaterializationError(
-                            "provider audio URL returned invalid content length"
-                        ) from error
-                    if declared_length < 0 or declared_length > byte_limit:
-                        raise AudioArtifactMaterializationError(
-                            "provider audio payload exceeded size limit"
-                        )
+            except httpx.HTTPError:
+                continue
+    raise AudioArtifactMaterializationError(
+        "provider audio URL could not be downloaded"
+    )
 
-                with tempfile.TemporaryFile(mode="w+b") as spool:
-                    total_bytes = 0
-                    for chunk in response.iter_bytes():
-                        if not chunk:
-                            continue
-                        total_bytes += len(chunk)
-                        if total_bytes > byte_limit:
-                            raise AudioArtifactMaterializationError(
-                                "provider audio payload exceeded size limit"
-                            )
-                        spool.write(chunk)
-                    if total_bytes == 0:
-                        raise AudioArtifactMaterializationError(
-                            "provider audio payload was empty"
-                        )
-                    spool.seek(0)
-                    return spool.read()
-            finally:
-                response.close()
-        except httpx.HTTPError as error:
+
+def _download_audio_from_pinned_address(
+    *,
+    client: httpx.Client,
+    parsed: SplitResult,
+    hostname: str,
+    address: str,
+    byte_limit: int,
+) -> bytes:
+    request = client.build_request(
+        "GET",
+        _pinned_audio_provider_url(parsed, address),
+        headers={
+            "Accept": "audio/*,application/octet-stream",
+            "Host": hostname,
+        },
+        extensions={"sni_hostname": hostname},
+    )
+    response = client.send(request, stream=True)
+    try:
+        if 300 <= response.status_code < 400:
             raise AudioArtifactMaterializationError(
-                "provider audio URL could not be downloaded"
-            ) from error
+                "provider audio URL redirects are forbidden"
+            )
+        if response.status_code < 200 or response.status_code >= 300:
+            raise AudioArtifactMaterializationError(
+                f"provider audio URL returned HTTP {response.status_code}"
+            )
+
+        content_type = (
+            response.headers.get("content-type", "")
+            .split(";", 1)[0]
+            .strip()
+            .lower()
+        )
+        if content_type and not content_type.startswith(
+            _ALLOWED_AUDIO_MIME_PREFIXES
+        ):
+            raise AudioArtifactMaterializationError(
+                "provider audio URL returned unsupported content type "
+                f"{content_type}"
+            )
+        content_length = response.headers.get("content-length")
+        if content_length:
+            try:
+                declared_length = int(content_length)
+            except ValueError as error:
+                raise AudioArtifactMaterializationError(
+                    "provider audio URL returned invalid content length"
+                ) from error
+            if declared_length < 0 or declared_length > byte_limit:
+                raise AudioArtifactMaterializationError(
+                    "provider audio payload exceeded size limit"
+                )
+
+        with tempfile.TemporaryFile(mode="w+b") as spool:
+            total_bytes = 0
+            for chunk in response.iter_bytes():
+                if not chunk:
+                    continue
+                total_bytes += len(chunk)
+                if total_bytes > byte_limit:
+                    raise AudioArtifactMaterializationError(
+                        "provider audio payload exceeded size limit"
+                    )
+                spool.write(chunk)
+            if total_bytes == 0:
+                raise AudioArtifactMaterializationError(
+                    "provider audio payload was empty"
+                )
+            spool.seek(0)
+            return spool.read()
+    finally:
+        response.close()
 
 
 def _validate_audio_provider_url(
