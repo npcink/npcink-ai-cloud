@@ -82,7 +82,10 @@ def test_frontend_and_script_change_uses_highest_risk_tier() -> None:
 
 
 def test_frontend_and_repository_policy_change_uses_highest_risk_tier() -> None:
-    plan = _plan("frontend/src/app/portal/page.tsx", "docs/development-validation-operating-model-v1.md")
+    plan = _plan(
+        "frontend/src/app/portal/page.tsx",
+        "docs/development-validation-operating-model-v1.md",
+    )
 
     assert plan["classification"]["frontend"] is True
     assert plan["classification"]["documentation_only"] is False
