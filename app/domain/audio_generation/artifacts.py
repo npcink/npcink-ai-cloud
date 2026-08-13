@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
+import socket
+import tempfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Any
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
 from sqlalchemy.orm import Session
 
+from app.adapters.providers.openai import normalize_provider_output_hosts
 from app.core.models import MediaArtifact, RunRecord
 from app.domain.media_artifacts import ArtifactStore
 from app.domain.media_artifacts.publication import publish_and_track_artifact
@@ -26,6 +32,7 @@ _AUDIO_MIME_BY_FORMAT = {
     "pcm": "audio/L16",
 }
 _ALLOWED_AUDIO_MIME_PREFIXES = ("audio/", "application/octet-stream")
+AudioProviderHostResolver = Callable[[str, int], Iterable[str]]
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,7 @@ class AudioArtifactMaterializationConfig:
     ttl_minutes: int = AUDIO_ARTIFACT_DEFAULT_TTL_MINUTES
     max_bytes: int = AUDIO_ARTIFACT_DEFAULT_MAX_BYTES
     timeout_seconds: float = AUDIO_ARTIFACT_DEFAULT_TIMEOUT_SECONDS
+    allowed_hosts: tuple[str, ...] = ()
 
 
 class AudioArtifactMaterializationError(RuntimeError):
@@ -172,29 +180,172 @@ def _download_audio_url(
     source_url: str,
     *,
     config: AudioArtifactMaterializationConfig,
+    resolver: AudioProviderHostResolver | None = None,
+    transport: httpx.BaseTransport | None = None,
 ) -> bytes:
+    parsed, hostname = _validate_audio_provider_url(
+        source_url,
+        allowed_hosts=config.allowed_hosts,
+    )
     try:
-        with httpx.Client(timeout=config.timeout_seconds, follow_redirects=True) as client:
-            response = client.get(source_url)
-    except httpx.RequestError as error:
+        addresses = _validate_audio_provider_addresses(
+            (resolver or _resolve_audio_provider_host)(hostname, 443)
+        )
+    except AudioArtifactMaterializationError:
+        raise
+    except (OSError, UnicodeError, ValueError) as error:
         raise AudioArtifactMaterializationError(
-            "provider audio URL could not be downloaded"
+            "provider audio host could not be resolved"
         ) from error
 
-    if response.status_code < 200 or response.status_code >= 300:
-        raise AudioArtifactMaterializationError(
-            f"provider audio URL returned HTTP {response.status_code}"
-        )
+    pinned_url = _pinned_audio_provider_url(parsed, addresses[0])
+    byte_limit = max(1, int(config.max_bytes))
+    with httpx.Client(
+        timeout=config.timeout_seconds,
+        follow_redirects=False,
+        trust_env=False,
+        transport=transport,
+    ) as client:
+        try:
+            request = client.build_request(
+                "GET",
+                pinned_url,
+                headers={
+                    "Accept": "audio/*,application/octet-stream",
+                    "Host": hostname,
+                },
+                extensions={"sni_hostname": hostname},
+            )
+            response = client.send(request, stream=True)
+            try:
+                if 300 <= response.status_code < 400:
+                    raise AudioArtifactMaterializationError(
+                        "provider audio URL redirects are forbidden"
+                    )
+                if response.status_code < 200 or response.status_code >= 300:
+                    raise AudioArtifactMaterializationError(
+                        f"provider audio URL returned HTTP {response.status_code}"
+                    )
 
-    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if content_type and not content_type.startswith(_ALLOWED_AUDIO_MIME_PREFIXES):
-        raise AudioArtifactMaterializationError(
-            f"provider audio URL returned unsupported content type {content_type}"
-        )
+                content_type = (
+                    response.headers.get("content-type", "")
+                    .split(";", 1)[0]
+                    .strip()
+                    .lower()
+                )
+                if content_type and not content_type.startswith(
+                    _ALLOWED_AUDIO_MIME_PREFIXES
+                ):
+                    raise AudioArtifactMaterializationError(
+                        "provider audio URL returned unsupported content type "
+                        f"{content_type}"
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        declared_length = int(content_length)
+                    except ValueError as error:
+                        raise AudioArtifactMaterializationError(
+                            "provider audio URL returned invalid content length"
+                        ) from error
+                    if declared_length < 0 or declared_length > byte_limit:
+                        raise AudioArtifactMaterializationError(
+                            "provider audio payload exceeded size limit"
+                        )
 
-    audio_bytes = response.content
-    _enforce_audio_size(audio_bytes, config.max_bytes)
-    return audio_bytes
+                with tempfile.TemporaryFile(mode="w+b") as spool:
+                    total_bytes = 0
+                    for chunk in response.iter_bytes():
+                        if not chunk:
+                            continue
+                        total_bytes += len(chunk)
+                        if total_bytes > byte_limit:
+                            raise AudioArtifactMaterializationError(
+                                "provider audio payload exceeded size limit"
+                            )
+                        spool.write(chunk)
+                    if total_bytes == 0:
+                        raise AudioArtifactMaterializationError(
+                            "provider audio payload was empty"
+                        )
+                    spool.seek(0)
+                    return spool.read()
+            finally:
+                response.close()
+        except httpx.HTTPError as error:
+            raise AudioArtifactMaterializationError(
+                "provider audio URL could not be downloaded"
+            ) from error
+
+
+def _validate_audio_provider_url(
+    source_url: str,
+    *,
+    allowed_hosts: Iterable[str],
+) -> tuple[SplitResult, str]:
+    normalized_url = str(source_url or "").strip()
+    if not normalized_url or len(normalized_url) > 2048:
+        raise AudioArtifactMaterializationError("provider audio URL is invalid")
+    try:
+        parsed = urlsplit(normalized_url)
+        port = parsed.port
+    except ValueError as error:
+        raise AudioArtifactMaterializationError("provider audio URL is invalid") from error
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise AudioArtifactMaterializationError("provider audio URL must use HTTPS")
+    if parsed.username is not None or parsed.password is not None:
+        raise AudioArtifactMaterializationError(
+            "provider audio URL credentials are forbidden"
+        )
+    if port not in (None, 443) or parsed.fragment:
+        raise AudioArtifactMaterializationError("provider audio URL is invalid")
+    try:
+        hostname = parsed.hostname.rstrip(".").lower().encode("idna").decode("ascii")
+        normalized_allowed_hosts = set(normalize_provider_output_hosts(allowed_hosts))
+    except (UnicodeError, ValueError) as error:
+        raise AudioArtifactMaterializationError(
+            "provider audio host allowlist is invalid"
+        ) from error
+    if hostname not in normalized_allowed_hosts:
+        raise AudioArtifactMaterializationError(
+            "provider audio host is not allowlisted"
+        )
+    return parsed, hostname
+
+
+def _resolve_audio_provider_host(hostname: str, port: int) -> Iterable[str]:
+    records = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    return [str(record[4][0]) for record in records]
+
+
+def _validate_audio_provider_addresses(values: Iterable[str]) -> tuple[str, ...]:
+    addresses: list[str] = []
+    for value in values:
+        try:
+            address = ipaddress.ip_address(str(value))
+        except ValueError as error:
+            raise AudioArtifactMaterializationError(
+                "provider audio host resolved unexpectedly"
+            ) from error
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        if not address.is_global:
+            raise AudioArtifactMaterializationError(
+                "provider audio host is not publicly routable"
+            )
+        if address.compressed not in addresses:
+            addresses.append(address.compressed)
+    if not addresses:
+        raise AudioArtifactMaterializationError(
+            "provider audio host did not resolve"
+        )
+    return tuple(addresses)
+
+
+def _pinned_audio_provider_url(parsed: SplitResult, address: str) -> str:
+    ip = ipaddress.ip_address(address)
+    authority = f"[{ip.compressed}]" if isinstance(ip, ipaddress.IPv6Address) else ip.compressed
+    return urlunsplit(("https", authority, parsed.path or "/", parsed.query, ""))
 
 
 def _enforce_audio_size(audio_bytes: bytes, max_bytes: int) -> None:

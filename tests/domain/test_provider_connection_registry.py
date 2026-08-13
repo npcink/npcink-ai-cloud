@@ -14,6 +14,7 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
     ProviderMediaCandidate,
 )
+from app.adapters.providers.minimax import MiniMaxProviderAdapter
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.adapters.providers.registry import (
     build_provider_adapters,
@@ -418,6 +419,55 @@ def test_provider_connection_image_delivery_config_round_trips_and_stays_fail_cl
             connection_id="image_gateway",
         )
     assert wildcard_host.value.error_code == ("provider_connection.image_output_hosts_invalid")
+
+    dispose_engine(database_url)
+
+
+def test_provider_connection_audio_output_hosts_round_trip_into_minimax_adapter(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    payload = {
+        "connection_id": "minimax_audio",
+        "provider_id": "minimax",
+        "provider_type": "minimax_audio",
+        "kind": "minimax_audio",
+        "display_name": "MiniMax audio",
+        "enabled": True,
+        "base_url": "https://api.minimax.test",
+        "capability_ids": ["audio_generation"],
+        "runtime_profile_ids": ["audio.narration.default"],
+        "config": {
+            "audio_output_hosts": [
+                "Audio.Minimax.Test.",
+                "audio.minimax.test",
+            ],
+        },
+        "credential": "minimax-key",
+    }
+
+    saved = service.save_connection(payload)
+    providers = build_provider_adapters(settings, include_enabled_connections=True)
+
+    assert saved["config"]["audio_output_hosts"] == ["audio.minimax.test"]
+    adapter = providers["minimax"]
+    assert isinstance(adapter, MiniMaxProviderAdapter)
+    assert adapter.audio_output_hosts == ("audio.minimax.test",)
+
+    with pytest.raises(ProviderConnectionAdminError) as wildcard_host:
+        service.save_connection(
+            {
+                **payload,
+                "config": {"audio_output_hosts": ["*.minimax.test"]},
+            },
+            connection_id="minimax_audio",
+        )
+    assert wildcard_host.value.error_code == (
+        "provider_connection.audio_output_hosts_invalid"
+    )
 
     dispose_engine(database_url)
 

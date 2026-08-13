@@ -281,6 +281,7 @@ class RuntimeService:
                 ),
                 execution_response_builder=self._build_execution_response,
                 artifact_store=self.artifact_store,
+                provider_lookup=lambda provider_id: self.providers.get(provider_id),
             ),
             run_controller=self.run_lifecycle_service,
             execution_input_loader=self._get_execution_input_payload,
