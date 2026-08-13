@@ -5782,14 +5782,24 @@ async def cleanup_runtime_retention(request: Request) -> Any:
     audit_context = _build_audit_context(request)
     try:
         services = get_cloud_services(request)
-        purged = RuntimeService(services.settings.database_url).cleanup_expired_run_results()
+        runtime_service = RuntimeService(
+            services.settings.database_url,
+            settings=services.settings,
+        )
+        purged = runtime_service.cleanup_expired_run_results()
+        remaining_due_runs = runtime_service.count_expired_run_results()
         _get_commercial_service(request).record_service_audit_event(
             audit_context=audit_context,
             event_kind="runtime.retention_cleanup",
             outcome="succeeded",
             scope_kind="runtime",
             scope_id="retention_cleanup",
-            payload_json={"purged_runs": purged},
+            payload_json={
+                "purged_runs": purged,
+                "retention_batch_limit": services.settings.retention_cleanup_batch_size,
+                "retention_remaining_due_runs": remaining_due_runs,
+                "retention_partial": remaining_due_runs > 0,
+            },
         )
     except Exception as error:
         _get_commercial_service(request).record_service_audit_event(
@@ -5813,6 +5823,11 @@ async def cleanup_runtime_retention(request: Request) -> Any:
     return build_envelope(
         status="ok",
         message="runtime retention cleanup completed",
-        data={"purged_runs": purged},
+        data={
+            "purged_runs": purged,
+            "retention_batch_limit": services.settings.retention_cleanup_batch_size,
+            "retention_remaining_due_runs": remaining_due_runs,
+            "retention_partial": remaining_due_runs > 0,
+        },
         revision="m6",
     )

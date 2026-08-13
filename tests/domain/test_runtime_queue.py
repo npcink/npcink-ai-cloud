@@ -520,6 +520,44 @@ def test_cleanup_expired_run_results_purges_stored_result(tmp_path: Path) -> Non
     dispose_engine(database_url)
 
 
+def test_cleanup_expired_run_results_is_bounded_and_reports_remaining_due_runs(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+    service = _runtime_service(database_url)
+
+    for index in range(3):
+        completed = service.execute(
+            RuntimeRequest(
+                site_id="site_queue",
+                ability_name="workflow/media_nightly_image_optimize",
+                channel="openapi",
+                execution_kind="text",
+                profile_id="text.balanced",
+                retention_ttl=60,
+                idempotency_key=f"queue-domain-expire-bounded-{index}",
+                trace_id=f"trace-queue-domain-expire-bounded-{index}",
+                input_payload={"messages": [{"role": "user", "content": "expire"}]},
+            )
+        )
+        with get_session(database_url) as session:
+            run = session.get(RunRecord, completed.run_id)
+            assert run is not None
+            run.retention_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+            session.commit()
+
+    assert service.cleanup_expired_run_results(limit=2) == 2
+    assert service.count_expired_run_results() == 1
+    assert service.cleanup_expired_run_results(limit=2) == 1
+    assert service.count_expired_run_results() == 0
+
+    dispose_engine(database_url)
+
+
 def test_cancel_run_marks_queued_run_canceled(tmp_path: Path) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)

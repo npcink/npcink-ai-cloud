@@ -47,17 +47,27 @@ class CadenceTaskSpec:
 
 
 def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
-    purged_runs = RuntimeService(
+    runtime_service = RuntimeService(
         settings.database_url,
         settings=settings,
-    ).cleanup_expired_run_results()
+    )
+    purged_runs = runtime_service.cleanup_expired_run_results(
+        limit=settings.retention_cleanup_batch_size,
+    )
+    remaining_due_runs = runtime_service.count_expired_run_results()
     portal_auth = CommercialService(
         settings.database_url,
         settings=settings,
     ).cleanup_expired_portal_auth_evidence(
         retention_days=settings.portal_auth_retention_days,
     )
-    return {"purged_runs": purged_runs, "portal_auth": portal_auth}
+    return {
+        "purged_runs": purged_runs,
+        "retention_batch_limit": settings.retention_cleanup_batch_size,
+        "retention_remaining_due_runs": remaining_due_runs,
+        "retention_partial": remaining_due_runs > 0,
+        "portal_auth": portal_auth,
+    }
 
 
 def _run_plugin_observability_cleanup(settings: Settings) -> dict[str, object]:

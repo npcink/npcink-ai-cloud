@@ -104,6 +104,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         redis_url="redis://localhost:6379/0",
         internal_auth_token="i" * 32,
         retention_cleanup_interval_seconds=60,
+        retention_cleanup_batch_size=2,
         plugin_observability_cleanup_interval_seconds=60,
         usage_rollup_interval_seconds=60,
         router_diagnostics_interval_seconds=60,
@@ -132,6 +133,12 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "payment_order_expiration",
     }
     assert all(item["outcome"] == "succeeded" for item in first_results)
+    retention_cleanup = next(
+        item for item in first_results if item["task_id"] == "retention_cleanup"
+    )
+    assert retention_cleanup["payload"]["retention_batch_limit"] == 2
+    assert retention_cleanup["payload"]["retention_remaining_due_runs"] == 0
+    assert retention_cleanup["payload"]["retention_partial"] is False
     artifact_cleanup = next(
         item for item in first_results if item["task_id"] == "artifact_cleanup"
     )

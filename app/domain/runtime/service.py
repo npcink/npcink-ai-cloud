@@ -5155,8 +5155,19 @@ class RuntimeService:
             input_payload=run.input_payload if hasattr(run, "input_payload") else {},
         )
 
-    def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:
-        return self.run_lifecycle_service.cleanup_expired_run_results(now=now)
+    def cleanup_expired_run_results(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int | None = None,
+    ) -> int:
+        return self.run_lifecycle_service.cleanup_expired_run_results(
+            now=now,
+            limit=limit or self.settings.retention_cleanup_batch_size,
+        )
+
+    def count_expired_run_results(self, *, now: datetime | None = None) -> int:
+        return self.run_lifecycle_service.count_expired_run_results(now=now)
 
     def _serialize_runtime_diagnostic_run(self, run: RunRecord) -> dict[str, object]:
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
