@@ -49,6 +49,11 @@ assert.match(
 );
 assert.match(
   layoutSource,
+  /error instanceof ApiError[\s\S]*error\.statusCode === 401[\s\S]*error\.statusCode === 403[\s\S]*window\.location\.replace/,
+  'Admin layout must redirect only for explicit authentication or authorization failure'
+);
+assert.match(
+  layoutSource,
   /if \(!adminSessionReady\) \{[\s\S]*return <LoadingFallback \/>;/,
   'Admin layout must keep the navigation hidden while session validation is pending'
 );

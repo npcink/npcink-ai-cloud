@@ -126,9 +126,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           window.location.replace(`/admin/login?redirect=${encodeURIComponent(returnTo)}`);
           return;
         }
-        if (!cancelled) {
-          setAdminSessionReady(true);
-        }
       });
 
     return () => {
