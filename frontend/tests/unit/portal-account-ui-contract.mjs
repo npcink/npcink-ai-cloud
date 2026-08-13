@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 
-const clientPath = resolve(process.cwd(), 'src/lib/portal-client.ts');
-const navbarPath = resolve(process.cwd(), 'src/components/portal/PortalNavbar.tsx');
-const accountPagePath = resolve(process.cwd(), 'src/app/portal/account/page.tsx');
+const FRONTEND_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const clientPath = resolve(FRONTEND_ROOT, 'src/lib/portal-client.ts');
+const navbarPath = resolve(FRONTEND_ROOT, 'src/components/portal/PortalNavbar.tsx');
+const accountPagePath = resolve(FRONTEND_ROOT, 'src/app/portal/account/page.tsx');
 
 const clientSource = readFileSync(clientPath, 'utf8');
 const navbarSource = readFileSync(navbarPath, 'utf8');
@@ -124,8 +126,8 @@ assert.match(
 );
 assert.match(
   accountSource,
-  /await refresh\(\);\s*setStatus\('idle'\);\s*\} catch \(error\) \{\s*setStatus\('error'\)/,
-  'QQ unbind must retain its error tone instead of resetting it in a finally block'
+  /unbindQqLogin\(\)[\s\S]*setStatus\('idle'\)[\s\S]*window\.location\.assign\('\/portal\/login\?reason=qq_unbound'\)/,
+  'QQ unbind must treat revoked-session sign-in as the success path'
 );
 
 console.log('portal_account_ui_contract: ok');
