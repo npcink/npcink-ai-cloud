@@ -66,9 +66,20 @@ reviewer wait. The workflow then deploys and runs the small-customer preflight
 plus formal release smoke only when `run_formal_release_smoke` is explicitly
 selected. A selected smoke fails closed if any protected credential is missing
 or stale; a default-off deferred smoke is recorded as not-passed evidence,
-never as a successful skip. Neither a normal `production` push nor a
-static-terms-only push deploys automatically. The only temporary
-exception is the exact
+never as a successful skip.
+
+For runtime releases, the workflow installs the protected SSH key and performs
+the read-only certificate readiness check before downloading or transferring the
+exact deploy bundle. A stale, malformed, or unsafe
+`npcink_cloud_certificate_renewal_readiness.v1` receipt therefore fails early,
+before bundle transfer and before any host mutation. This check never runs
+Certbot or edits the operator-owned Edge. Operators may run the same check from
+the `Production Maintenance` workflow with the `certificate-readiness` action;
+it warns after five days and fails after seven days. Refresh evidence only via
+the governed `certificate-renewal-readiness.sh generate` procedure.
+
+Neither a normal `production` push nor a static-terms-only push deploys
+automatically. The only temporary exception is the exact
 bundle-bound trusted-workstation path for the current empty-host PostgreSQL 18
 first install described below; it is not reusable after finalization.
 
