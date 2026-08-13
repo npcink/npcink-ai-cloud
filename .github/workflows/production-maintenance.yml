@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - "disk-report"
+          - "certificate-readiness"
           - "safe-prune"
       release_retention_count:
         description: "Number of release-* directories to keep when pruning old releases."
@@ -68,7 +69,7 @@ jobs:
           set -euo pipefail
           test "${PROD_SSH_USER}" = "root"
           case "${MAINTENANCE_ACTION}" in
-            disk-report|safe-prune) ;;
+            disk-report|certificate-readiness|safe-prune) ;;
             *)
               echo "[fail] Unknown maintenance action: ${MAINTENANCE_ACTION}" >&2
               exit 1
@@ -159,6 +160,46 @@ jobs:
             fi
           }
 
+          certificate_readiness() {
+            local receipt="/var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json"
+            current_release="$(readlink -f -- "${remote_dir}/current")"
+            case "${current_release}" in
+              "${remote_dir}"/release-*) ;;
+              *) echo "[certificate-preflight:fail] current release is outside the managed root" >&2; return 1 ;;
+            esac
+            [ -f "${receipt}" ] && [ ! -L "${receipt}" ] || {
+              echo "[certificate-preflight:fail] readiness receipt is missing or unsafe" >&2
+              return 1
+            }
+            [ "$(stat -c '%u:%a' -- "${receipt}")" = "0:600" ] || {
+              echo "[certificate-preflight:fail] readiness receipt must be root-owned mode 0600" >&2
+              return 1
+            }
+            "${release_tool_python}" - "${receipt}" <<'PY'
+          import json
+          import sys
+          import time
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          if payload.get("contract") != "npcink_cloud_certificate_renewal_readiness.v1":
+              raise SystemExit("[certificate-preflight:fail] readiness contract is invalid")
+          if payload.get("status") != "passed" or payload.get("domain") != "cloud.npc.ink":
+              raise SystemExit("[certificate-preflight:fail] readiness is not passed for cloud.npc.ink")
+          generated = payload.get("generated_at_epoch")
+          if not isinstance(generated, int):
+              raise SystemExit("[certificate-preflight:fail] readiness timestamp is invalid")
+          age = int(time.time()) - generated
+          max_age = 7 * 24 * 60 * 60
+          warn_age = 5 * 24 * 60 * 60
+          if age < -300 or age > max_age:
+              raise SystemExit(f"[certificate-preflight:fail] readiness receipt is stale (age_seconds={age})")
+          level = "warning" if age >= warn_age else "ok"
+          print(f"[certificate-preflight:{level}] readiness receipt age_seconds={age} expires_after_seconds={max_age}")
+          PY
+          }
+
           prune_old_releases() {
             if [ ! -d "${remote_dir}" ]; then
               echo "[warn] Remote directory missing: ${remote_dir}" >&2
@@ -185,6 +226,9 @@ jobs:
           }
 
           disk_report
+          if [ "${action}" = "certificate-readiness" ]; then
+            certificate_readiness
+          fi
           if [ "${action}" = "safe-prune" ]; then
             [ -d "${remote_dir}" ] || {
               echo "[fail] Remote directory missing: ${remote_dir}" >&2
