@@ -167,6 +167,7 @@ export interface PortalIdentityProviderBinding {
   provider: string;
   status: string;
   has_unionid: boolean;
+  display_name?: string;
   last_login_at: string;
 }
 
