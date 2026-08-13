@@ -23,7 +23,11 @@ complexity without addressing the primary waste.
 ## Decision
 
 1. `Deploy Production` performs a read-only remote certificate-readiness check
-   after SSH authentication and before bundle transfer or host mutation.
+   after SSH authentication and before bundle transfer or host mutation. The
+   check accepts an absent `current` symlink for the supported first-install
+   path, while still rejecting a broken, non-symlink, or out-of-root current
+   path. The deploy helper remains authoritative for first-install state,
+   CVE, setup, and mutation gates.
 2. `Production Maintenance` exposes a `certificate-readiness` action for an
    operator-initiated, read-only check. The check warns at five days and fails
    at seven days; it never generates or edits a receipt.
