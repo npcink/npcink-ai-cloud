@@ -234,16 +234,19 @@ def classify_tier(
     reasons: list[str] = []
     if kinds["documentation_only"]:
         reasons.append("All changed paths are documentation or repository-policy Markdown.")
-    elif kinds["admin"]:
+    elif kinds["frontend"] and all(path.startswith("frontend/") for path in paths):
+        # L1 is valid only for a frontend-only change. A mixed frontend/backend,
+        # script, migration, or runtime-input diff must retain the higher-risk L2
+        # baseline before any path-specific rule is applied.
+        if kinds["admin"]:
+            reasons.append("Admin route or route-local interaction work is at least L1.")
+        else:
+            reasons.append("Frontend-only composition work is at least L1.")
         tier = "L1"
-        reasons.append("Admin route or route-local interaction work is at least L1.")
-    elif kinds["frontend"]:
-        tier = "L1"
-        reasons.append("Frontend composition work is at least L1.")
     else:
         reasons.append(
             "Shared engineering, backend, test, configuration, or runtime-sensitive "
-            "work is L2."
+            "work, including mixed frontend changes, is L2."
         )
 
     if kinds["build_runtime"]:

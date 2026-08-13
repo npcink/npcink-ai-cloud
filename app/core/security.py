@@ -19,6 +19,10 @@ from app.core.logging import get_logger
 from app.core.models import (
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
+    SITE_STATUS_ARCHIVED,
+    SITE_STATUS_INACTIVE,
+    SITE_STATUS_PROVISIONING,
+    SITE_STATUS_SUSPENDED,
     ReplayReceipt,
     RuntimeGuardEvent,
     Site,
@@ -325,9 +329,6 @@ def _validate_site_and_key(
     required_scope: str | None,
     now: datetime,
 ) -> SiteApiKey:
-    if site is None or site.status != SITE_STATUS_ACTIVE:
-        raise RequestAuthError(401, "auth.invalid_site", "site is not authorized")
-
     if api_key is None or api_key.site_id != site_id:
         raise RequestAuthError(401, "auth.invalid_key", "API key is not authorized")
 
@@ -349,6 +350,33 @@ def _validate_site_and_key(
             "auth.scope_denied",
             "API key scope does not permit this request",
         )
+
+    # Only disclose lifecycle detail after the credential proves site ownership
+    # and is authorized for the requested operation. This keeps customer recovery
+    # actionable without turning error codes into a public site-ID enumeration
+    # surface or leaking state to a narrower credential.
+    if site is None or site.status == SITE_STATUS_ARCHIVED:
+        raise RequestAuthError(401, "auth.site_not_found", "site is not found")
+    if site.status == SITE_STATUS_INACTIVE:
+        raise RequestAuthError(
+            403,
+            "auth.site_inactive",
+            "site is bound but Cloud service is inactive",
+        )
+    if site.status == SITE_STATUS_SUSPENDED:
+        raise RequestAuthError(
+            403,
+            "auth.site_suspended",
+            "site Cloud service is suspended",
+        )
+    if site.status == SITE_STATUS_PROVISIONING:
+        raise RequestAuthError(
+            403,
+            "auth.site_not_ready",
+            "site Cloud service is not ready",
+        )
+    if site.status != SITE_STATUS_ACTIVE:
+        raise RequestAuthError(403, "auth.site_not_ready", "site Cloud service is not ready")
 
     return api_key
 

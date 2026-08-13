@@ -108,6 +108,25 @@ prompt/router/preset local truth, or WordPress write owner.
 - A PR targeting `production` must also contain
   `Approved for production validation by operator.`; the publisher rejects a
   production body without it.
+- Treat a normal `master` to `production` promotion as a frozen release
+  envelope. Do not add workflow, documentation, product, or unrelated repair
+  changes after the promotion starts. Record non-blocking discoveries for a
+  separate follow-up. If a discovery blocks this release's safety or
+  correctness, stop the promotion and use a separately reviewed `release-fix`
+  that is backported to `master`.
+- Translate the exact production release plan for the operator. For
+  `no_deploy`, explicitly report that the revision reached `production` and no
+  server update is required. For a runtime action, report the affected runtime
+  scope, expected deployment duration, rollback revision, and the exact human
+  authorization currently required; never leave the task silently waiting on
+  a production decision.
+- Close every production promotion with one compact end-to-end timing receipt.
+  Record fix, local verification, master PR CI, master merge, production PR
+  preparation, production PR CI, operator wait, bundle build, transfer, host
+  cutover, health verification, repeated broad-CI count, deployment attempt
+  count, and final state. Use `not applicable` or `not measured` rather than
+  inventing durations. Natural observation is the default; do not manufacture
+  a deployment only to collect timing data.
 - The cross-repository contract is
   `/Users/muze/gitee/npcink-workflow-toolbox/docs/platform/pr-publishing-standard-v1.md`.
 

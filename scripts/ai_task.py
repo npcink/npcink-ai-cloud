@@ -48,6 +48,35 @@ def repository_state() -> dict[str, Any]:
     }
 
 
+def validate_task_worktree(base_ref: str) -> None:
+    branch = git_text("branch", "--show-current")
+    if not branch.startswith("codex/"):
+        raise SystemExit(
+            "[fail] task planning requires a dedicated codex/* branch; "
+            "create a fresh task worktree from the current base"
+        )
+
+    upstream = git_text(
+        "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}", check=False
+    )
+    if upstream and upstream != base_ref:
+        raise SystemExit(
+            f"[fail] task branch already tracks {upstream}; create a fresh unpublished "
+            f"codex/* branch from {base_ref} instead of reusing a published task branch"
+        )
+
+    if subprocess.run(
+        ["git", "-C", str(ROOT), "merge-base", "--is-ancestor", base_ref, "HEAD"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode != 0:
+        raise SystemExit(
+            f"[fail] task branch does not contain current {base_ref}; refresh the task "
+            "worktree before planning so validation is based on the current integration truth"
+        )
+
+
 def source_fingerprint(paths: list[str]) -> str:
     digest = hashlib.sha256()
     for path in check_changed.normalize_paths(paths):
@@ -99,6 +128,7 @@ def read_envelope(path: Path) -> dict[str, Any]:
 
 def create_envelope(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     task_id = validate_task_id(args.task_id)
+    validate_task_worktree(args.base)
     paths = (
         check_changed.normalize_paths(args.paths)
         if args.paths

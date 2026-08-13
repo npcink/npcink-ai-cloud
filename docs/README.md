@@ -54,6 +54,7 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md)
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
 - [Development and Delivery Efficiency Closeout and Retrospective](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
@@ -99,6 +100,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 ## Admin, Portal, Identity, and Commercial
 
+- [Cloud WordPress Connector State and Diagnostics Standard](cloud-wordpress-connector-state-and-diagnostics-standard-v1.md)
+- [WordPress–Cloud Integration Diagnostics Retrospective — 2026-08-13](wordpress-cloud-integration-diagnostics-retrospective-2026-08-13.md) — dated synthesis of featured-image scene compatibility, Site Knowledge retrieval acceptance, QQ OAuth projection, site lifecycle, Portal proxy, and timeout diagnostics; not current deployment or production evidence
 - [Admin Information Architecture](cloud-admin-information-architecture-v2.md)
 - [Admin UI Standard](cloud-admin-ui-standard-v1.md)
 - [Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)

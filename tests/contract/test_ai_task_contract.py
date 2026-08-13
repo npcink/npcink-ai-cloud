@@ -19,8 +19,9 @@ def _load_module():
     return module
 
 
-def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path) -> None:
+def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
+    monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
     output = tmp_path / "task.json"
     args = Namespace(
         task_id="validation-router-test",
@@ -66,6 +67,61 @@ def test_stale_plan_fails_closed(monkeypatch) -> None:
         assert "task plan is stale" in str(exc)
     else:
         raise AssertionError("stale task plan did not fail closed")
+
+
+def test_task_plan_rejects_non_task_branch(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "git_text",
+        lambda *args, **_kwargs: "master" if args[:2] == ("branch", "--show-current") else "",
+    )
+
+    try:
+        module.validate_task_worktree("origin/master")
+    except SystemExit as exc:
+        assert "dedicated codex/* branch" in str(exc)
+    else:
+        raise AssertionError("non-task branch was accepted")
+
+
+def test_task_plan_rejects_published_topic_branch(monkeypatch) -> None:
+    module = _load_module()
+
+    def fake_git_text(*args, **_kwargs):
+        if args[:2] == ("branch", "--show-current"):
+            return "codex/already-published"
+        if args[:3] == ("rev-parse", "--abbrev-ref", "--symbolic-full-name"):
+            return "origin/codex/already-published"
+        return ""
+
+    monkeypatch.setattr(module, "git_text", fake_git_text)
+
+    try:
+        module.validate_task_worktree("origin/master")
+    except SystemExit as exc:
+        assert "already tracks origin/codex/already-published" in str(exc)
+    else:
+        raise AssertionError("published topic branch was accepted")
+
+
+def test_task_plan_rejects_branch_behind_current_base(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "git_text", lambda *args, **_kwargs: (
+        "codex/stale-task" if args[:2] == ("branch", "--show-current") else ""
+    ))
+
+    class Completed:
+        returncode = 1
+
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: Completed())
+
+    try:
+        module.validate_task_worktree("origin/master")
+    except SystemExit as exc:
+        assert "does not contain current origin/master" in str(exc)
+    else:
+        raise AssertionError("stale task branch was accepted")
 
 
 def test_receipt_requires_current_successful_verification(monkeypatch) -> None:
@@ -150,8 +206,9 @@ def test_tampered_saved_command_is_rejected(monkeypatch) -> None:
         raise AssertionError("tampered command was accepted")
 
 
-def test_negative_resource_budget_is_rejected(tmp_path: Path) -> None:
+def test_negative_resource_budget_is_rejected(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
+    monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
     args = Namespace(
         task_id="invalid-budget",
         module="tooling",
@@ -177,7 +234,7 @@ def test_negative_resource_budget_is_rejected(tmp_path: Path) -> None:
         raise AssertionError("negative budget did not fail closed")
 
 
-def test_pnpm_style_separator_is_accepted(tmp_path: Path) -> None:
+def test_pnpm_style_separator_is_parsed_before_worktree_guard(tmp_path: Path) -> None:
     output = tmp_path / "pnpm-envelope.json"
     completed = subprocess.run(
         [
@@ -201,5 +258,8 @@ def test_pnpm_style_separator_is_accepted(tmp_path: Path) -> None:
         text=True,
     )
 
-    assert completed.returncode == 0, completed.stderr
-    assert output.exists()
+    assert completed.returncode != 0
+    assert "codex/* branch" in completed.stderr
+    assert "codex/* branch" in completed.stderr
+    assert "unrecognized arguments" not in completed.stderr
+    assert not output.exists()

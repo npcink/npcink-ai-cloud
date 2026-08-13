@@ -64,6 +64,34 @@ def test_non_admin_frontend_route_defaults_to_l1() -> None:
     assert plan["tier"] == "L1"
 
 
+def test_mixed_frontend_and_backend_change_uses_highest_risk_tier() -> None:
+    plan = _plan("frontend/src/app/portal/page.tsx", "app/core/security.py")
+
+    assert plan["classification"]["frontend"] is True
+    assert plan["classification"]["python"] is True
+    assert plan["tier"] == "L2"
+    assert any("mixed frontend changes" in item for item in plan["tier_reasons"])
+
+
+def test_frontend_and_script_change_uses_highest_risk_tier() -> None:
+    plan = _plan("frontend/src/app/portal/page.tsx", "scripts/check_changed.py")
+
+    assert plan["classification"]["frontend"] is True
+    assert plan["classification"]["python"] is True
+    assert plan["tier"] == "L2"
+
+
+def test_frontend_and_repository_policy_change_uses_highest_risk_tier() -> None:
+    plan = _plan(
+        "frontend/src/app/portal/page.tsx",
+        "docs/development-validation-operating-model-v1.md",
+    )
+
+    assert plan["classification"]["frontend"] is True
+    assert plan["classification"]["documentation_only"] is False
+    assert plan["tier"] == "L2"
+
+
 def test_agent_feedback_plan_selects_boundary_context_and_quality_gate() -> None:
     plan = _plan("app/domain/agent_feedback/service.py")
 

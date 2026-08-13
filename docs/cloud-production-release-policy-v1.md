@@ -177,6 +177,51 @@ Release verification follows these rules:
   risk-question change invalidates only the evidence that depends on the
   changed value. It is not authority to replay every other gate.
 
+### Single-operator promotion freeze and observation
+
+In the current single-operator AI-development model, an ordinary production
+promotion is a release operation, not another development loop. Once the
+`master` to `production` promotion PR is opened, its release envelope is
+frozen: it may promote the intended reviewed source and supply required release
+metadata, but it must not accumulate new workflow design, documentation
+restructuring, product work, or unrelated repairs.
+
+A non-blocking discovery becomes a separately scoped follow-up and does not
+delay the current release. A discovery that prevents the current release from
+being safe or correct stops the promotion. Its remedy uses a separately
+reviewed `release-fix`, follows the normal verification gates, and is
+backported to `master`; it is not smuggled into the promotion branch as an
+unreviewed convenience change.
+
+The AI release operator must translate the exact release-plan result into an
+operator-facing terminal state:
+
+- `no_deploy`: the revision reached `production`; no production-host mutation,
+  server update, or health probe is required;
+- `static`: name the bounded static publication and its proof;
+- runtime action: name the affected runtime scope, expected deployment
+  duration, rollback revision, and the exact operator authorization required
+  before dispatch;
+- blocked or failed: name the failed phase, preserved evidence, retry budget,
+  and the next authorized recovery decision.
+
+The session must not finish with an unexplained internal lane name or silently
+wait for authorization. After the terminal release state, emit one compact
+end-to-end observation receipt covering the durations of fix, local
+verification, master PR CI, master merge, production PR preparation,
+production PR CI, operator wait, bundle build, bundle transfer, host cutover,
+and health verification, plus repeated broad-CI count, deployment-attempt
+count, and final state. Fields that do not apply or were not measured are
+reported as `not applicable` or `not measured`; exact human effort must not be
+inferred from Git or workflow timestamps.
+
+These receipts are natural operational evidence. Do not create a synthetic
+runtime change, deployment, paid Provider call, or extra full gate solely to
+populate them. Review after the first real runtime deployment and then across
+two to three natural runtime releases. Change the release system again only
+when the same material bottleneck repeats or a release exceeds its declared
+budget for an identified, actionable reason.
+
 ### Production PR CI evidence reuse
 
 The exact `production` push Cloud CI may reuse the complete backend, frontend,

@@ -66,9 +66,8 @@ reviewer wait. The workflow then deploys and runs the small-customer preflight
 plus formal release smoke only when `run_formal_release_smoke` is explicitly
 selected. A selected smoke fails closed if any protected credential is missing
 or stale; a default-off deferred smoke is recorded as not-passed evidence,
-never as a successful skip. Neither a normal `production` push nor a
-static-terms-only push deploys automatically. The only temporary
-exception is the exact
+never as a successful skip.
+
 For runtime releases, the workflow installs the protected SSH key and performs
 the read-only certificate readiness check before downloading or transferring the
 exact deploy bundle. A stale, malformed, or unsafe
