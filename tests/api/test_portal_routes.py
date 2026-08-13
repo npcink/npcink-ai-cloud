@@ -2817,6 +2817,15 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert len(provider.requests) == 1
     assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
 
+    replayed = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": False},
+        headers=build_portal_headers(idempotency_key="portal-ai-analyze-001"),
+    )
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.json() == first.json()
+    assert len(provider.requests) == 1
+
     second = client.post(
         "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
         json={"force_refresh": False},
@@ -6286,6 +6295,7 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
                     "manage_billing",
                     "provision_sites",
                     "remove_sites",
+                    "run_ai_insights",
                     "view_audit",
                     "view_billing",
                     "view_sites",
