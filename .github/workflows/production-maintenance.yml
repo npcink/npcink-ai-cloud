@@ -174,8 +174,9 @@ jobs:
                 "${remote_dir}"/release-*) ;;
                 *) echo "[certificate-preflight:fail] current release is outside the managed root" >&2; return 1 ;;
               esac
-              if [ "$(dirname -- "${current_release}")" != "${remote_dir}" ]; then
-                echo "[certificate-preflight:fail] current release is outside the managed root" >&2
+              if [ "$(dirname -- "${current_release}")" != "${remote_dir}" ] || \
+                [[ ! "$(basename -- "${current_release}")" =~ ^release-[A-Za-z0-9._-]+$ ]]; then
+                echo "[certificate-preflight:fail] current release must be a direct managed release child" >&2
                 return 1
               fi
             elif [ -e "${current_link}" ]; then
