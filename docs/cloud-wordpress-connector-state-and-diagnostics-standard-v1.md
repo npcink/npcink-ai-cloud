@@ -184,4 +184,3 @@ approval, or final-write truth into Cloud. It does not move account-wide Cloud
 lifecycle management into the Addon, or Cloud operator diagnostics into
 ordinary WordPress settings. Cloud remains runtime/detail owner; the Addon is a
 thin connector; WordPress remains the control plane and final-write owner.
-

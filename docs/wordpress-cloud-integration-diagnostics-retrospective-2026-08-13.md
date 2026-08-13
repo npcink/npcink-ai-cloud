@@ -151,4 +151,3 @@ state by deleting sites, bindings, credentials, or audit history directly in
 production. Follow-up evidence should use protected PR checks, M4 candidate,
 clean-master promotion after merge, normal Portal/WordPress smoke, and separately
 authorized production validation.
-
