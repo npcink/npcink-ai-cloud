@@ -333,6 +333,17 @@ def test_runtime_auto_web_search_enriches_provider_input(
     evidence = provider.requests[0].input_payload["cloud_evidence"]["web_search"]
     assert evidence["report"]["status"] == "ready"
     assert evidence["result"]["results"][0]["url"] == "https://example.com/source"
+    with get_session(database_url) as session:
+        usage_events = session.execute(
+            select(UsageMeterEvent).where(UsageMeterEvent.site_id == "site_alpha")
+        ).scalars().all()
+    search_events = [
+        event
+        for event in usage_events
+        if event.meter_key == "provider_calls"
+        and event.payload_json.get("managed_source") == "web_search"
+    ]
+    assert len(search_events) == 1
 
 
 def test_runtime_auto_web_search_dry_run_does_not_call_search(

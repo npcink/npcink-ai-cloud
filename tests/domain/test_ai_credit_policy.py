@@ -114,6 +114,15 @@ def test_ai_credit_estimates_match_declared_provider_components() -> None:
         execution_kind="web_search",
         payload_json={"provider": "zhihu", "source_type": "zhida_deepsearch"},
     ) == 11.0
+    assert usage_meter_credit_component(
+        SimpleNamespace(
+            meter_key="provider_calls",
+            quantity=1,
+            execution_kind="text",
+            ability_family="workflow",
+            payload_json={"managed_source": "web_search", "source_type": "web_search"},
+        )
+    )["source_type"] == "web_search"
     assert estimate_runtime_request_ai_credits(
         ability_family="vision",
         execution_kind="image_source",

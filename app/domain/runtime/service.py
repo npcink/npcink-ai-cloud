@@ -2619,6 +2619,11 @@ class RuntimeService:
                 fallback_used=False,
                 error_code=usage.error_code,
             ),
+            usage_context={
+                "managed_source": "web_search",
+                "source_type": "web_search",
+                "provider": str(getattr(usage, "provider_id", "") or ""),
+            },
         )
 
     def _record_automatic_web_search_report(
@@ -2997,12 +3002,33 @@ class RuntimeService:
         *,
         payload_json: dict[str, object] | None = None,
     ) -> float:
-        return estimate_runtime_request_ai_credits(
+        estimate = estimate_runtime_request_ai_credits(
             ability_name=request.ability_name,
             ability_family=request.ability_family,
             execution_kind=request.execution_kind,
             payload_json=payload_json if payload_json is not None else request.input_payload,
         )
+        if payload_json is None:
+            plan = build_automatic_web_search_plan(
+                request.input_payload,
+                ability_name=request.ability_name,
+                workflow_id=request.workflow_id or "",
+                channel=request.channel or "",
+            )
+            if plan is not None and not plan.is_dry_run:
+                search_component = classify_provider_credit_component(
+                    execution_kind="web_search",
+                    ability_family="search",
+                    payload_json={
+                        "managed_source": "web_search",
+                        "source_type": "web_search",
+                    },
+                )
+                estimate += max(
+                    0.0,
+                    float(self._coerce_float(search_component.get("rate")) or 0.0),
+                )
+        return round(max(0.0, estimate), 6)
 
     def _build_web_search_usage_context(
         self,
