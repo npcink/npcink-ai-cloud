@@ -2094,7 +2094,7 @@ def test_execute_route_rejects_unprovisioned_site(tmp_path: Path) -> None:
     response = client.post("/v1/runtime/execute", content=body, headers=headers)
 
     assert response.status_code == 401
-    assert response.json()["error_code"] == "auth.site_not_found"
+    assert response.json()["error_code"] == "auth.invalid_key"
 
     dispose_engine(database_url)
 

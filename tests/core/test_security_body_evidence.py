@@ -317,7 +317,7 @@ async def test_stale_timestamp_is_rejected_before_body_evidence_loader(tmp_path:
 @pytest.mark.parametrize(
     ("site_id", "key_id", "scopes", "expected_error"),
     [
-        ("site_missing", "key_default", ["runtime:execute"], "auth.site_not_found"),
+        ("site_missing", "key_default", ["runtime:execute"], "auth.invalid_key"),
         ("site_alpha", "key_missing", ["runtime:execute"], "auth.invalid_key"),
         ("site_alpha", "key_default", ["runtime:read"], "auth.scope_denied"),
     ],

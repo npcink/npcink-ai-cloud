@@ -100,6 +100,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 ## Admin, Portal, Identity, and Commercial
 
+- [Cloud WordPress Connector State and Diagnostics Standard](cloud-wordpress-connector-state-and-diagnostics-standard-v1.md)
+- [WordPress–Cloud Integration Diagnostics Retrospective — 2026-08-13](wordpress-cloud-integration-diagnostics-retrospective-2026-08-13.md) — dated synthesis of featured-image scene compatibility, Site Knowledge retrieval acceptance, QQ OAuth projection, site lifecycle, Portal proxy, and timeout diagnostics; not current deployment or production evidence
 - [Admin Information Architecture](cloud-admin-information-architecture-v2.md)
 - [Admin UI Standard](cloud-admin-ui-standard-v1.md)
 - [Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)

@@ -329,6 +329,23 @@ def _validate_site_and_key(
     required_scope: str | None,
     now: datetime,
 ) -> SiteApiKey:
+    if api_key is None or api_key.site_id != site_id:
+        raise RequestAuthError(401, "auth.invalid_key", "API key is not authorized")
+
+    expires_at = api_key.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    if (
+        api_key.status != SITE_API_KEY_STATUS_ACTIVE
+        or api_key.revoked_at is not None
+        or (expires_at is not None and expires_at <= now)
+    ):
+        raise RequestAuthError(401, "auth.invalid_key", "API key is not authorized")
+
+    # Only disclose lifecycle detail after the credential proves site ownership.
+    # This keeps customer recovery actionable without turning error codes into a
+    # public site-ID enumeration surface.
     if site is None or site.status == SITE_STATUS_ARCHIVED:
         raise RequestAuthError(401, "auth.site_not_found", "site is not found")
     if site.status == SITE_STATUS_INACTIVE:
@@ -351,20 +368,6 @@ def _validate_site_and_key(
         )
     if site.status != SITE_STATUS_ACTIVE:
         raise RequestAuthError(403, "auth.site_not_ready", "site Cloud service is not ready")
-
-    if api_key is None or api_key.site_id != site_id:
-        raise RequestAuthError(401, "auth.invalid_key", "API key is not authorized")
-
-    expires_at = api_key.expires_at
-    if expires_at is not None and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
-
-    if (
-        api_key.status != SITE_API_KEY_STATUS_ACTIVE
-        or api_key.revoked_at is not None
-        or (expires_at is not None and expires_at <= now)
-    ):
-        raise RequestAuthError(401, "auth.invalid_key", "API key is not authorized")
 
     scopes = expand_api_key_scopes(list(api_key.scopes_json or []))
     if required_scope and scopes and required_scope not in scopes:
