@@ -17,8 +17,13 @@ assert.match(
 );
 assert.match(
   layoutSource,
-  /if \(!cancelled\) \{\s*setAdminSessionReady\(true\);\s*\}/,
-  'Admin session bootstrap must preserve the current route after a non-auth transport failure'
+  /\.catch\(\(error: unknown\) => \{[\s\S]*window\.location\.replace[\s\S]*\}\);/,
+  'Admin session bootstrap must fail closed and preserve the current route after a non-auth transport failure'
+);
+assert.doesNotMatch(
+  layoutSource,
+  /catch \(\(error: unknown\) => \{[\s\S]*setAdminSessionReady\(true\)/,
+  'Admin session bootstrap must not unlock the protected shell after a non-auth transport failure'
 );
 
 for (const [label, source] of [
