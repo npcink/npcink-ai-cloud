@@ -86,6 +86,20 @@ def test_broken_current_symlink_fails_closed(tmp_path: Path) -> None:
     assert "symlink is broken" in result.stderr
 
 
+@pytest.mark.parametrize("deploy", [False, True], ids=["maintenance", "deploy"])
+def test_current_symlink_to_regular_release_file_fails_before_receipt_or_bundle_work(
+    tmp_path: Path, deploy: bool
+) -> None:
+    result = _run_resolver(
+        tmp_path,
+        "touch release-valid; ln -s release-valid current",
+        deploy=deploy,
+    )
+    assert result.returncode != 0
+    assert "symlink is broken" in result.stderr
+    assert "receipt-check" not in result.stdout
+
+
 def test_out_of_root_current_symlink_fails_closed(tmp_path: Path) -> None:
     result = _run_resolver(
         tmp_path,

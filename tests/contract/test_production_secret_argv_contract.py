@@ -305,6 +305,7 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
         'for first install'
     ) in deploy
     assert 'current_release="$(readlink -f -- "${remote_dir}/current")"' not in deploy
+    assert 'current release symlink is broken or not a directory' in deploy
     assert 'current release must be a direct managed release child' in deploy
     assert 'current release must be a direct managed release child' in maintenance
     assert "permissions: {}" in maintenance
