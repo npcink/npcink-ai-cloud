@@ -242,7 +242,7 @@ jobs:
           if payload.get("status") != "passed" or payload.get("domain") != "cloud.npc.ink":
               raise SystemExit("[certificate-preflight:fail] readiness receipt is not passed for cloud.npc.ink")
           generated = payload.get("generated_at_epoch")
-          if not isinstance(generated, int):
+          if type(generated) is not int:
               raise SystemExit("[certificate-preflight:fail] readiness timestamp is invalid")
           age = int(time.time()) - generated
           if age < -300 or age > 7 * 24 * 60 * 60:

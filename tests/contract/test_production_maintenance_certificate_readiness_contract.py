@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
@@ -31,6 +32,36 @@ def _deploy_resolver_script() -> str:
     end = source.index(end_marker, start)
     resolver = source[start:end].replace("exit 1", "return 1")
     return textwrap.dedent(resolver)
+
+
+def _receipt_validator_script(workflow: Path) -> str:
+    source = workflow.read_text(encoding="utf-8")
+    start = source.index("          import json\n")
+    end = source.index("          PY\n", start)
+    return textwrap.dedent(source[start:end])
+
+
+def _run_receipt_validator(
+    tmp_path: Path, workflow: Path, generated_at_epoch: object
+) -> subprocess.CompletedProcess[str]:
+    receipt = tmp_path / f"{workflow.stem}-receipt.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "contract": "npcink_cloud_certificate_renewal_readiness.v1",
+                "status": "passed",
+                "domain": "cloud.npc.ink",
+                "generated_at_epoch": generated_at_epoch,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["python3", "-c", _receipt_validator_script(workflow), str(receipt)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def _run_resolver(
@@ -144,3 +175,13 @@ def test_invalid_current_release_name_fails_before_receipt_or_bundle_work(
     assert result.returncode != 0
     assert "direct managed release child" in result.stderr
     assert "receipt-check" not in result.stdout
+
+
+@pytest.mark.parametrize("workflow", [WORKFLOW, DEPLOY_WORKFLOW], ids=["maintenance", "deploy"])
+@pytest.mark.parametrize("generated_at_epoch", [True, False], ids=["true", "false"])
+def test_boolean_readiness_timestamp_fails_closed(
+    tmp_path: Path, workflow: Path, generated_at_epoch: bool
+) -> None:
+    result = _run_receipt_validator(tmp_path, workflow, generated_at_epoch)
+    assert result.returncode != 0
+    assert "readiness timestamp is invalid" in result.stderr
