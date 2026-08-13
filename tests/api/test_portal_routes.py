@@ -4260,6 +4260,11 @@ def test_portal_qq_callback_bind_intent_binds_current_session(
             "unionid": "qq-union-callback-bind",
         },
     )
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {},
+    )
 
     client.post(
         "/internal/service/accounts",
