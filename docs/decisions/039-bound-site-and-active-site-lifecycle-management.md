@@ -80,6 +80,14 @@ Suspended sites remain operator-owned and archived sites must reconnect through
 the verified Addon flow. Runtime request acceptance continues to require both
 an active site and an active key.
 
+Runtime error projection follows a credential-first disclosure rule. Cloud
+first proves that the supplied active key belongs to the supplied `site_id`.
+Only then may it return lifecycle-specific recovery such as
+`auth.site_inactive`, `auth.site_suspended`, or `auth.site_not_ready`. A request
+without a matching key returns `auth.invalid_key` without disclosing whether a
+different site record exists. This preserves actionable customer recovery
+without creating a site-ID enumeration surface.
+
 ## Alternatives Considered
 
 ### Reject Addon exchange when active quota is full
@@ -115,6 +123,8 @@ separate bounded ceiling limits abuse without consuming paid active capacity.
 - the Addon stores inactive credentials but keeps hosted runtime features
   unverified until a later successful probe;
 - no schema migration or compatibility path is required before launch.
+- customer-facing lifecycle messages become more specific without weakening
+  runtime authorization or public identifier privacy.
 
 ## Verification
 

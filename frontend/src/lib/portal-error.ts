@@ -103,6 +103,30 @@ export function formatPortalErrorMessage(
           undefined,
           'Your portal session is missing or expired. Sign in again and reload this page.'
         );
+      case 'auth.site_not_found':
+        return t(
+          'error.portal_site_not_found',
+          undefined,
+          'This site is not connected to your Cloud account, or the connection has been released.'
+        );
+      case 'auth.site_inactive':
+        return t(
+          'error.portal_site_inactive',
+          undefined,
+          'This site is connected, but Cloud service is currently inactive. Activate it in the Portal before using Cloud features.'
+        );
+      case 'auth.site_suspended':
+        return t(
+          'error.portal_site_suspended',
+          undefined,
+          'Cloud service for this site is suspended. Contact the platform administrator.'
+        );
+      case 'auth.site_not_ready':
+        return t(
+          'error.portal_site_not_ready',
+          undefined,
+          'Cloud service for this site is not ready yet. Try again shortly.'
+        );
       case 'auth.origin_required':
       case 'auth.origin_forbidden':
         return t(
