@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     runtime_callback_retry_backoff_seconds: int = Field(default=30)
     ops_cadence_poll_seconds: int = Field(default=30)
     retention_cleanup_interval_seconds: int = Field(default=3600)
+    retention_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     plugin_observability_retention_days: int = Field(default=180)
     plugin_observability_cleanup_interval_seconds: int = Field(default=86400)
     usage_rollup_interval_seconds: int = Field(default=3600)
@@ -535,6 +536,8 @@ class Settings(BaseSettings):
             raise ValueError("worker_heartbeat_interval_seconds must be at least 30")
         if self.retention_cleanup_interval_seconds < 60:
             raise ValueError("retention_cleanup_interval_seconds must be at least 60")
+        if self.retention_cleanup_batch_size < 1:
+            raise ValueError("retention_cleanup_batch_size must be at least 1")
         if self.plugin_observability_retention_days < 1:
             raise ValueError("plugin_observability_retention_days must be at least 1")
         if self.plugin_observability_cleanup_interval_seconds < 60:

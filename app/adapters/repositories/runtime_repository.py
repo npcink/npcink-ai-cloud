@@ -363,7 +363,12 @@ class RuntimeRepository:
         )
         return list(self.session.scalars(statement))
 
-    def purge_expired_run_results(self, *, now: datetime | None = None) -> int:
+    def purge_expired_run_results(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int = 100,
+    ) -> int:
         current_time = now or datetime.now(UTC)
         expired_runs = list(
             self.session.scalars(
@@ -372,6 +377,8 @@ class RuntimeRepository:
                     RunRecord.retention_expires_at <= current_time,
                     RunRecord.result_purged_at.is_(None),
                 )
+                .order_by(RunRecord.retention_expires_at.asc(), RunRecord.run_id.asc())
+                .limit(max(1, limit))
             )
         )
         for run in expired_runs:
@@ -382,6 +389,19 @@ class RuntimeRepository:
             run.result_purged_at = current_time
         self.session.flush()
         return len(expired_runs)
+
+    def count_expired_run_results(self, *, now: datetime | None = None) -> int:
+        current_time = now or datetime.now(UTC)
+        return int(
+            self.session.scalar(
+                select(func.count(RunRecord.run_id)).where(
+                    RunRecord.retention_expires_at.is_not(None),
+                    RunRecord.retention_expires_at <= current_time,
+                    RunRecord.result_purged_at.is_(None),
+                )
+            )
+            or 0
+        )
 
     def refresh_run(self, run: RunRecord) -> RunRecord:
         self.session.refresh(run)
