@@ -56,7 +56,9 @@ def test_weighted_shards_balance_slowest_files_first(tmp_path: Path) -> None:
     ]
 
 
-def test_oversized_file_is_split_by_observed_static_test_nodes(tmp_path: Path) -> None:
+def test_material_file_falls_back_when_new_node_lacks_historic_weight(
+    tmp_path: Path,
+) -> None:
     tests_root = tmp_path / "tests" / "contract"
     tests_root.mkdir(parents=True)
     slow = tests_root / "test_slow.py"
@@ -83,12 +85,77 @@ def test_oversized_file_is_split_by_observed_static_test_nodes(tmp_path: Path) -
         ],
     )
 
-    assert weighted == [
-        (4, fast.as_posix()),
-        (9, f"{slow_path}::test_one"),
-        (8, f"{slow_path}::test_two"),
-        (1.0, f"{slow_path}::test_new"),
-    ]
+    assert weighted == [(4, fast.as_posix()), (20, slow_path)]
+
+
+def test_material_files_are_split_before_they_can_bind_one_shard(
+    tmp_path: Path,
+) -> None:
+    tests_root = tmp_path / "tests" / "api"
+    tests_root.mkdir(parents=True)
+    files: list[Path] = []
+    file_weights: dict[str, float] = {}
+    node_weights: dict[str, float] = {}
+    collected_nodes: dict[Path, list[str]] = {}
+    for index in range(3):
+        path = tests_root / f"test_material_{index}.py"
+        path.write_text(
+            "def test_one(): pass\ndef test_two(): pass\n",
+            encoding="utf-8",
+        )
+        files.append(path)
+        file_weights[path.as_posix()] = 100
+        collected_nodes[path] = [
+            f"{path.as_posix()}::test_one",
+            f"{path.as_posix()}::test_two",
+        ]
+        node_weights.update(
+            {
+                f"{path.as_posix()}::test_one": 50,
+                f"{path.as_posix()}::test_two": 50,
+            }
+        )
+
+    weighted = select_pytest_shard.build_weighted_selectors(
+        files,
+        file_weights,
+        node_weights,
+        shard_count=3,
+        collected_node_loader=lambda path: collected_nodes[path],
+    )
+    shards = select_pytest_shard.assign_weighted_selectors(weighted, shard_count=3)
+
+    assert [shard.total_seconds for shard in shards] == [100, 100, 100]
+    assert all(len(shard.selectors) == 2 for shard in shards)
+
+
+def test_material_file_without_complete_node_evidence_skips_collection(
+    tmp_path: Path,
+) -> None:
+    tests_root = tmp_path / "tests" / "api"
+    tests_root.mkdir(parents=True)
+    material = tests_root / "test_material.py"
+    material.write_text(
+        "def test_one(): pass\ndef test_two(): pass\n",
+        encoding="utf-8",
+    )
+    collection_attempted = False
+
+    def collect(_path: Path) -> list[str]:
+        nonlocal collection_attempted
+        collection_attempted = True
+        return []
+
+    weighted = select_pytest_shard.build_weighted_selectors(
+        [material],
+        {material.as_posix(): 100},
+        {},
+        shard_count=3,
+        collected_node_loader=collect,
+    )
+
+    assert weighted == [(100, material.as_posix())]
+    assert collection_attempted is False
 
 
 def test_oversized_file_falls_back_when_historic_nodes_are_not_static(
