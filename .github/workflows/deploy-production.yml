@@ -207,11 +207,19 @@ jobs:
           current_link="${remote_dir}/current"
           if [ -L "${current_link}" ]; then
             current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"
-            test -n "${current_release}"
+            if [ -z "${current_release}" ] || [ ! -d "${current_release}" ]; then
+              echo "[certificate-preflight:fail] current release symlink is broken or not a directory" >&2
+              exit 1
+            fi
             case "${current_release}" in
               "${remote_dir}"/release-*) ;;
               *) echo "[certificate-preflight:fail] current release is outside the managed root" >&2; exit 1 ;;
             esac
+            if [ "$(dirname -- "${current_release}")" != "${remote_dir}" ] || \
+              [[ ! "$(basename -- "${current_release}")" =~ ^release-[A-Za-z0-9._-]+$ ]]; then
+              echo "[certificate-preflight:fail] current release must be a direct managed release child" >&2
+              exit 1
+            fi
           elif [ -e "${current_link}" ]; then
             echo "[certificate-preflight:fail] current release path must be a symbolic link" >&2
             exit 1
