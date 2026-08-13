@@ -288,7 +288,10 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert 'if [ -L "${current_link}" ]; then' in deploy
     assert 'current_release="$(readlink -f -- "${current_link}" 2>/dev/null || true)"' in deploy
     assert 'elif [ -e "${current_link}" ]; then' in deploy
-    assert '[certificate-preflight:info] no current release; validating host readiness for first install' in deploy
+    assert (
+        '[certificate-preflight:info] no current release; validating host readiness '
+        'for first install'
+    ) in deploy
     assert 'current_release="$(readlink -f -- "${remote_dir}/current")"' not in deploy
     assert "permissions: {}" in maintenance
     assert "safe_prune_confirmation:" in maintenance
