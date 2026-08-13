@@ -131,6 +131,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
+- [Production Release Optimization and Formal Smoke Handoff](production-release-optimization-and-formal-smoke-handoff-v1.md)
 - [First-install PostgreSQL 18 Runbook](cloud-first-install-rds-pg18-runbook.md)
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
 - [Issue #406 Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
