@@ -1499,7 +1499,7 @@ def _try_fetch_qq_profile(
 ) -> dict[str, str]:
     try:
         return _fetch_qq_profile(request, access_token=access_token, openid=openid)
-    except (CommercialServiceError, httpx.HTTPError):
+    except (CommercialServiceError, httpx.HTTPError, ValueError):
         return {}
 
 

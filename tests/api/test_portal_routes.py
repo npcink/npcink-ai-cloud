@@ -4500,6 +4500,24 @@ def test_portal_qq_bind_rejects_nonce_mismatch(
     dispose_engine(database_url)
 
 
+def test_portal_qq_optional_profile_parse_failure_falls_back(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: (_ for _ in ()).throw(
+            ValueError("malformed QQ profile")
+        ),
+    )
+
+    assert portal_routes._try_fetch_qq_profile(
+        object(),
+        access_token="token-malformed-profile",
+        openid="qq-openid-malformed-profile",
+    ) == {}
+
+
 def test_portal_qq_unbind_revokes_current_session(
     tmp_path: Path,
     monkeypatch: Any,
