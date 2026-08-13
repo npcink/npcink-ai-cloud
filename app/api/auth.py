@@ -40,6 +40,7 @@ from app.core.security import (
     resolve_client_scope_id,
 )
 from app.core.services import CloudServices
+from app.domain.service_settings import resolve_portal_public_base_url
 
 INTERNAL_TOKEN_HEADER = "X-Npcink-Internal-Token"
 AUTHORIZATION_HEADER = "Authorization"
@@ -150,6 +151,7 @@ def _build_auth_error_response(
     status_code: int,
     error_code: str,
     message: str,
+    data: dict[str, Any] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
@@ -157,6 +159,7 @@ def _build_auth_error_response(
             status="error",
             error_code=error_code,
             message=message,
+            data=data or {},
             trace_id=extract_trace_id(request.headers.get("traceparent", "")),
             revision="m5",
         ),
@@ -696,11 +699,20 @@ async def authorize_public_request(
             ),
         )
     except RequestAuthError as error:
+        error_data = dict(error.data)
+        if error.error_code == "auth.site_inactive":
+            portal_base_url = resolve_portal_public_base_url(
+                services.settings.database_url,
+                services.settings,
+            ).rstrip("/")
+            if portal_base_url:
+                error_data["portal_url"] = f"{portal_base_url}/portal"
         return _build_auth_error_response(
             request,
             status_code=error.status_code,
             error_code=error.error_code,
             message=error.message,
+            data=error_data,
         )
 
 
