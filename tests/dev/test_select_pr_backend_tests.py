@@ -103,6 +103,19 @@ def test_commercial_mixins_keep_domain_and_portal_service_protection() -> None:
     assert "tests/api/test_service_routes.py" in selected_paths
 
 
+def test_nested_wordpress_connector_changes_select_connector_contract_tests() -> None:
+    selected, fallback = selector.select_impacted_tests(
+        ["app/domain/wordpress_ai_connector/contracts.py"]
+    )
+
+    assert fallback == []
+    assert _relative(selected) == [
+        "tests/api/test_wordpress_ai_connector_runtime.py",
+        "tests/domain/test_wordpress_ai_generation_context.py",
+        "tests/domain/test_wordpress_operation_runtime.py",
+    ]
+
+
 def test_every_current_api_module_has_an_explicit_impact_policy() -> None:
     api_modules = {
         path.relative_to(ROOT).as_posix()
