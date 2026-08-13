@@ -16,6 +16,7 @@ from app.adapters.notifications.smtp import build_portal_email_sender
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalBearerTokenError,
+    enforce_portal_ai_insight_request_rate_limit,
     enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
     enforce_portal_oauth_state_request_rate_limit,
@@ -60,6 +61,7 @@ from app.domain.commercial.identity import (
     USER_ALLOWED_ACTION_MANAGE_BILLING,
     USER_ALLOWED_ACTION_PROVISION_SITES,
     USER_ALLOWED_ACTION_REMOVE_SITES,
+    USER_ALLOWED_ACTION_RUN_AI_INSIGHTS,
     USER_ALLOWED_ACTION_VIEW_AUDIT,
     USER_ALLOWED_ACTION_VIEW_BILLING,
     USER_ALLOWED_ACTION_VIEW_USAGE,
@@ -4596,7 +4598,7 @@ async def analyze_portal_site_ai_insight(
         return same_origin
     auth = await resolve_portal_request_context(
         request,
-        require_idempotency=False,
+        require_idempotency=True,
         allow_session_cookies=True,
     )
     if isinstance(auth, JSONResponse):
@@ -4605,9 +4607,30 @@ async def analyze_portal_site_ai_insight(
         request,
         site_id=site_id,
         principal_id=auth.principal_id,
+        required_action=USER_ALLOWED_ACTION_RUN_AI_INSIGHTS,
     )
     if isinstance(access, JSONResponse):
         return access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    try:
+        enforce_portal_ai_insight_request_rate_limit(
+            request,
+            principal_id=auth.principal_id,
+            site_id=site_id,
+            force_refresh=payload.force_refresh,
+        )
+    except PortalBearerTokenError as error:
+        retry_after_seconds = max(1, int(error.retry_after_seconds or 1))
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+            data={"retry_after_seconds": retry_after_seconds},
+            headers={"Retry-After": str(retry_after_seconds)},
+        )
     try:
         summary = _get_portal_advisor_service(request).get_ops_summary(
             scope="operations",

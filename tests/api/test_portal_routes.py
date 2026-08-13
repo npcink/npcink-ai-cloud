@@ -2754,7 +2754,7 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
         },
         headers=build_internal_headers(idempotency_key="portal-ai-site-001"),
     )
-    _grant_account_member_access(
+    grant = _grant_account_member_access(
         client,
         site_id="site_portal_ai",
         email="portal-admin@example.com",
@@ -2817,6 +2817,15 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert len(provider.requests) == 1
     assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
 
+    replayed = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": False},
+        headers=build_portal_headers(idempotency_key="portal-ai-analyze-001"),
+    )
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.json() == first.json()
+    assert len(provider.requests) == 1
+
     second = client.post(
         "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
         json={"force_refresh": False},
@@ -2849,6 +2858,46 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert "tokens_out" not in history_serialized
     assert '"cost":' not in history_serialized
     assert '"cache_key":' not in history_serialized
+
+    forced = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": True},
+        headers=build_portal_headers(idempotency_key="portal-ai-force-001"),
+    )
+    assert forced.status_code == 200, forced.text
+    assert len(provider.requests) == 2
+
+    force_limited = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": True},
+        headers=build_portal_headers(idempotency_key="portal-ai-force-002"),
+    )
+    assert force_limited.status_code == 429
+    assert force_limited.json()["error_code"] == (
+        "portal.ai_insight_force_refresh_limited"
+    )
+    assert int(force_limited.headers["retry-after"]) > 0
+    assert len(provider.requests) == 2
+
+    with get_session(database_url) as session:
+        membership = session.scalar(
+            select(AccountUserMembership).where(
+                AccountUserMembership.principal_id == str(grant["principal_id"]),
+                AccountUserMembership.account_id == "acct_portal_ai",
+            )
+        )
+        assert membership is not None
+        membership.allowed_actions_json = ["view_sites"]
+        session.commit()
+
+    revoked_replay = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": False},
+        headers=build_portal_headers(idempotency_key="portal-ai-analyze-001"),
+    )
+    assert revoked_replay.status_code == 403
+    assert revoked_replay.json()["error_code"] == "service.portal_action_forbidden"
+    assert len(provider.requests) == 2
 
     dispose_engine(database_url)
 
@@ -6266,6 +6315,7 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
                     "manage_billing",
                     "provision_sites",
                     "remove_sites",
+                    "run_ai_insights",
                     "view_audit",
                     "view_billing",
                     "view_sites",

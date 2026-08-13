@@ -55,6 +55,14 @@ PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_PRINCIPAL = "portal_email_change_principal"
 PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_TARGET = "portal_email_change_target"
 PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_PRINCIPAL_WINDOW = 5
 PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_TARGET_WINDOW = 3
+PORTAL_AI_INSIGHT_REQUEST_SCOPE_PRINCIPAL = "portal_ai_insight_principal"
+PORTAL_AI_INSIGHT_REQUEST_SCOPE_SITE = "portal_ai_insight_site"
+PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_PRINCIPAL = (
+    "portal_ai_insight_force_refresh_principal"
+)
+PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_SITE = "portal_ai_insight_force_refresh_site"
+PORTAL_AI_INSIGHT_MAX_REQUESTS_PER_WINDOW = 10
+PORTAL_AI_INSIGHT_FORCE_REFRESH_MAX_REQUESTS_PER_WINDOW = 1
 PORTAL_SITE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,191}$")
 PORTAL_SESSION_ISSUER = "npcink-ai-cloud"
 PORTAL_SESSION_AUDIENCE = "npcink-ai-cloud-portal"
@@ -634,6 +642,51 @@ def enforce_portal_email_change_request_rate_limit(
             ),
         ),
         error_code="portal.email_change_rate_limited",
+    )
+
+
+def enforce_portal_ai_insight_request_rate_limit(
+    request: Request,
+    *,
+    principal_id: str,
+    site_id: str,
+    force_refresh: bool,
+) -> None:
+    scopes = [
+        (
+            PORTAL_AI_INSIGHT_REQUEST_SCOPE_PRINCIPAL,
+            principal_id,
+            PORTAL_AI_INSIGHT_MAX_REQUESTS_PER_WINDOW,
+        ),
+        (
+            PORTAL_AI_INSIGHT_REQUEST_SCOPE_SITE,
+            site_id,
+            PORTAL_AI_INSIGHT_MAX_REQUESTS_PER_WINDOW,
+        ),
+    ]
+    if force_refresh:
+        scopes.extend(
+            (
+                (
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_PRINCIPAL,
+                    principal_id,
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_MAX_REQUESTS_PER_WINDOW,
+                ),
+                (
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_SITE,
+                    site_id,
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_MAX_REQUESTS_PER_WINDOW,
+                ),
+            )
+        )
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=tuple(scopes),
+        error_code=(
+            "portal.ai_insight_force_refresh_limited"
+            if force_refresh
+            else "portal.ai_insight_rate_limited"
+        ),
     )
 
 
