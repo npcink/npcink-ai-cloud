@@ -336,6 +336,11 @@ function AccountPageContent() {
                     ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
                     : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')}
                 </p>
+                {qqProvider?.bound && qqProvider.binding?.display_name ? (
+                  <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
+                    {t('portal.account.qq_bound_as', undefined, '绑定账号')}: {qqProvider.binding.display_name}
+                  </p>
+                ) : null}
                 {!qqProvider?.configured ? (
                   <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
                     {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}

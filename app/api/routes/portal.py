@@ -237,13 +237,17 @@ def _portal_site_response_data(value: object) -> dict[str, object]:
 
 def _portal_identity_binding_response_data(value: object) -> dict[str, object]:
     binding = _dict_value(value)
-    return {
+    data: dict[str, object] = {
         "binding_id": str(binding.get("binding_id") or ""),
         "provider": str(binding.get("provider") or ""),
         "status": str(binding.get("status") or ""),
         "has_unionid": bool(binding.get("has_unionid")),
         "last_login_at": str(binding.get("last_login_at") or ""),
     }
+    display_name = str(binding.get("display_name") or "").strip()
+    if display_name:
+        data["display_name"] = display_name
+    return data
 
 
 def _portal_public_site_data(value: object) -> dict[str, object]:
@@ -1487,6 +1491,18 @@ def _fetch_qq_profile(
     }
 
 
+def _try_fetch_qq_profile(
+    request: Request,
+    *,
+    access_token: str,
+    openid: str,
+) -> dict[str, str]:
+    try:
+        return _fetch_qq_profile(request, access_token=access_token, openid=openid)
+    except (CommercialServiceError, httpx.HTTPError):
+        return {}
+
+
 def _portal_write_guard(request: Request) -> JSONResponse | None:
     return None
 
@@ -1660,7 +1676,14 @@ async def finish_qq_login_callback(
                 provider="qq",
                 external_subject=str(subject.get("openid") or ""),
                 unionid=str(subject.get("unionid") or ""),
-                metadata_json={"source": "portal_qq_callback_bind"},
+                metadata_json={
+                    "source": "portal_qq_callback_bind",
+                    "profile": _try_fetch_qq_profile(
+                        request,
+                        access_token=str(token.get("access_token") or ""),
+                        openid=str(subject.get("openid") or ""),
+                    ),
+                },
             )
             redirect = _portal_oauth_return_response(
                 request,
@@ -1839,12 +1862,17 @@ async def bind_portal_qq_login(
             request,
             access_token=str(token.get("access_token") or ""),
         )
+        profile = _try_fetch_qq_profile(
+            request,
+            access_token=str(token.get("access_token") or ""),
+            openid=str(subject.get("openid") or ""),
+        )
         binding = _get_commercial_service(request).bind_portal_identity_provider(
             principal_id=auth.principal_id,
             provider="qq",
             external_subject=str(subject.get("openid") or ""),
             unionid=str(subject.get("unionid") or ""),
-            metadata_json={"source": "portal_qq_bind"},
+            metadata_json={"source": "portal_qq_bind", "profile": profile},
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

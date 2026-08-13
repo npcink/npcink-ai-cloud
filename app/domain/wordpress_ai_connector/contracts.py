@@ -68,6 +68,7 @@ WP_AI_CONNECTOR_ALLOWED_TASKS = frozenset(
         "content_classification",
         "content_rewrite",
         "content_summary",
+		"image_prompt_generation",
         "excerpt_generation",
         "meta_description",
         "title_generation",

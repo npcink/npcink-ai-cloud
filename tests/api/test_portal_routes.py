@@ -4114,6 +4114,13 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
 
     monkeypatch.setattr(portal_routes, "_exchange_qq_code", fake_exchange_qq_code)
     monkeypatch.setattr(portal_routes, "_fetch_qq_openid", fake_fetch_qq_openid)
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {
+            "display_name": "  Portal   QQ User  ",
+        },
+    )
 
     client.post(
         "/internal/service/accounts",
@@ -4181,11 +4188,13 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         "provider",
         "status",
         "has_unionid",
+        "display_name",
         "last_login_at",
     }
     assert bind_data["binding"]["provider"] == "qq"
     assert bind_data["binding"]["status"] == "active"
     assert bind_data["binding"]["has_unionid"] is True
+    assert bind_data["binding"]["display_name"] == "Portal QQ User"
     bound_provider_response = client.get("/portal/v1/auth/identity-providers")
     assert bound_provider_response.status_code == 200, bound_provider_response.text
     bound_provider_payload = bound_provider_response.json()["data"]
@@ -4194,6 +4203,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
     assert bound_provider_data["bound"] is True
     assert bound_provider_data["binding"]["provider"] == "qq"
     assert bound_provider_data["binding"]["status"] == "active"
+    assert bound_provider_data["binding"]["display_name"] == "Portal QQ User"
 
     with get_session(database_url) as session:
         binding = session.scalar(select(IdentityProviderBinding))
@@ -4202,6 +4212,9 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         assert binding.provider == "qq"
         assert binding.external_subject_hash != "qq-openid-001"
         assert binding.unionid_hash != "qq-union-001"
+        assert binding.metadata_json["profile"]["display_name"] == (
+            "  Portal   QQ User  "
+        )
 
     logout_response = client.post("/portal/v1/logout")
     assert logout_response.status_code == 200

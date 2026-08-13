@@ -41,6 +41,7 @@ from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
+    WP_AI_CONNECTOR_ALLOWED_TASKS,
     WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
@@ -67,6 +68,12 @@ CONNECTOR_SITE_URL = "https://alpha.example.test"
 CONNECTOR_VERSION = "1.0.0-test"
 ALT_TEXT_SOURCE_ARTIFACT_ID = "art_0123456789abcdef0123456789abcdef"
 ALT_TEXT_PROVIDER_ECHO_MARKER = "c2Vuc2l0aXZlLXByb3ZpZGVyLWVjaG8="
+
+
+def test_wordpress_ai_connector_allows_image_prompt_generation_task() -> None:
+    assert "image_prompt_generation" in WP_AI_CONNECTOR_ALLOWED_TASKS
+
+
 LONG_REWRITE_SOURCE_TEXT = (
     "<block-content>"
     + ("原始选中文本需要通过托管运行时完整改写并返回本地审阅。" * 80)
