@@ -134,8 +134,10 @@ local checks, and reports browser or M4 work as follow-up evidence rather than
 mutating shared or external systems. Domain rules remain declarative and
 fail closed when their schema or command shape is invalid. PR CI reuses the
 same selected specialized commands instead of maintaining a second path map.
-`worktree:audit` inventories registered worktrees without unlocking, pruning,
-removing, or changing them.
+`worktree:audit` inventories registered worktrees and reconciles read-only Git
+tracking, patch-equivalence, protected-role, and pull-request evidence. Missing
+evidence fails closed to `retain`; the command never unlocks, prunes, removes,
+or changes a worktree.
 
 The nine legacy remote-Mac-mini preview aliases and their four dedicated
 scripts were removed after repository search and operator review found no

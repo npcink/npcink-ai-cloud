@@ -84,8 +84,17 @@ pnpm run worktree:audit -- --format json
 ```
 
 The audit classifies the current task, primary/locked/dirty/long-lived
-worktrees, and clean unlocked auxiliaries needing manual review. It never
+worktrees, and clean unlocked auxiliaries needing manual review. Its JSON and
+text output also reconcile each readable worktree with its branch upstream,
+ahead/behind counts, patch-equivalent and unique commits against
+`origin/master`, matching GitHub pull request when available, protected-role
+markers, and a conservative `retain` or `manual_review` disposition. It never
 unlocks, removes, prunes, or changes a worktree.
+
+GitHub authentication, missing upstreams, unreadable paths, or unavailable
+`origin/master` evidence are reported as evidence gaps. An evidence gap fails
+closed to `retain`; it must never be interpreted as proof that no open PR or
+unique deliverable exists.
 
 `manual_review` is not deletion authorization. Before exact non-force removal,
 separately prove that the worktree is non-primary, unlocked, unoccupied,

@@ -34,6 +34,17 @@ export async function PUT(
   });
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  const { path } = await params;
+  return proxyPortalPathSegments(request, path || [], {
+    unreachableCode: 'proxy.portal_patch_unreachable',
+    unreachableMessage: 'failed to reach portal endpoint',
+  });
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }

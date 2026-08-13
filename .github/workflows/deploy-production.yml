@@ -149,6 +149,7 @@ jobs:
             --head-tree "$(git rev-parse HEAD^{tree})" \
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
+
       - name: Install SSH key
         if: steps.release_plan.outputs.action != 'no_deploy'
         env:

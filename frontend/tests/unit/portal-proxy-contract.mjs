@@ -73,7 +73,7 @@ assert.match(
   'portal proxy must forward raw request bodies'
 );
 
-for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
   assert.match(
     portalRouteSource,
     new RegExp(`export async function ${method}`),
