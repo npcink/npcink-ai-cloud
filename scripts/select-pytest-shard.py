@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_WEIGHT_SECONDS = 1.0
+NODE_SPLIT_TARGET_SHARE = 0.15
 
 
 @dataclass
@@ -148,7 +149,8 @@ def build_weighted_selectors(
         (file_weights.get(normalize_repo_path(path), DEFAULT_WEIGHT_SECONDS), path)
         for path in files
     ]
-    split_threshold = sum(weight for weight, _path in weighted_files) / shard_count
+    shard_target = sum(weight for weight, _path in weighted_files) / shard_count
+    split_threshold = shard_target * NODE_SPLIT_TARGET_SHARE
     selectors: list[tuple[float, str]] = []
     for file_weight, path in weighted_files:
         repo_path = normalize_repo_path(path)
@@ -156,16 +158,14 @@ def build_weighted_selectors(
             selectors.append((file_weight, repo_path))
             continue
         discovered_nodes = discover_static_test_nodes(path)
-        collected_nodes = collected_node_loader(path)
         historic_nodes = {
             node_id for node_id in node_weights if node_id.startswith(f"{repo_path}::")
         }
-        if (
-            len(discovered_nodes) < 2
-            or not historic_nodes
-            or not historic_nodes.issubset(discovered_nodes)
-            or set(collected_nodes) != set(discovered_nodes)
-        ):
+        if len(discovered_nodes) < 2 or historic_nodes != set(discovered_nodes):
+            selectors.append((file_weight, repo_path))
+            continue
+        collected_nodes = collected_node_loader(path)
+        if set(collected_nodes) != set(discovered_nodes):
             selectors.append((file_weight, repo_path))
             continue
         selectors.extend(
