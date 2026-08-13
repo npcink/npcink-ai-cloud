@@ -4603,9 +4603,6 @@ async def analyze_portal_site_ai_insight(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    replay = portal_idempotency_replay_response(request)
-    if replay is not None:
-        return replay
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
@@ -4614,6 +4611,9 @@ async def analyze_portal_site_ai_insight(
     )
     if isinstance(access, JSONResponse):
         return access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
     try:
         enforce_portal_ai_insight_request_rate_limit(
             request,
