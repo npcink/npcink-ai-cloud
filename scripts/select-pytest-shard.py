@@ -161,9 +161,7 @@ def build_weighted_selectors(
         historic_nodes = {
             node_id for node_id in node_weights if node_id.startswith(f"{repo_path}::")
         }
-        if len(discovered_nodes) < 2 or not historic_nodes or not historic_nodes.issubset(
-            discovered_nodes
-        ):
+        if len(discovered_nodes) < 2 or historic_nodes != set(discovered_nodes):
             selectors.append((file_weight, repo_path))
             continue
         collected_nodes = collected_node_loader(path)

@@ -56,7 +56,9 @@ def test_weighted_shards_balance_slowest_files_first(tmp_path: Path) -> None:
     ]
 
 
-def test_oversized_file_is_split_by_observed_static_test_nodes(tmp_path: Path) -> None:
+def test_material_file_falls_back_when_new_node_lacks_historic_weight(
+    tmp_path: Path,
+) -> None:
     tests_root = tmp_path / "tests" / "contract"
     tests_root.mkdir(parents=True)
     slow = tests_root / "test_slow.py"
@@ -83,12 +85,7 @@ def test_oversized_file_is_split_by_observed_static_test_nodes(tmp_path: Path) -
         ],
     )
 
-    assert weighted == [
-        (4, fast.as_posix()),
-        (9, f"{slow_path}::test_one"),
-        (8, f"{slow_path}::test_two"),
-        (1.0, f"{slow_path}::test_new"),
-    ]
+    assert weighted == [(4, fast.as_posix()), (20, slow_path)]
 
 
 def test_material_files_are_split_before_they_can_bind_one_shard(
