@@ -10,6 +10,7 @@ const serviceSettings = read('src/app/admin/service-settings/page.tsx');
 const modal = read('src/components/ui/Modal.tsx');
 const providerDialog = read('src/components/admin/ProviderConnectionDialog.tsx');
 const workbenchDialog = read('src/components/admin/AdminWorkbenchDialog.tsx');
+const commandDialog = read('src/components/admin/AdminCommandDialog.tsx');
 const dialogHook = read('src/hooks/useDialogKeyboard.ts');
 const runtimeProfiles = read('src/app/admin/runtime-profiles/page.tsx');
 const aiResources = read('src/app/admin/ai-resources/page.tsx');
@@ -35,7 +36,8 @@ assert.match(planManagement, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/,
 assert.doesNotMatch(planManagement, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'package management must not keep route-local modal behavior');
 assert.match(serviceSettings, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'email preview must reuse the shared admin workbench');
 assert.doesNotMatch(serviceSettings, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'email preview must not keep route-local modal behavior');
-assert.match(layout, /commandDialogRef = useDialogKeyboard[\s\S]*ref=\{commandDialogRef\}/, 'quick switcher must use shared keyboard behavior');
+assert.match(layout, /AdminCommandDialog[\s\S]*<AdminCommandDialog/, 'quick switcher must reuse the shared command dialog');
+assert.match(commandDialog, /dialogRef = useDialogKeyboard[\s\S]*ref=\{dialogRef\}/, 'shared command dialog must own the standard keyboard behavior');
 
 assert.doesNotMatch(serviceSettings, /window\.confirm/, 'internal unsaved navigation must not use a browser-native confirmation');
 assert.match(serviceSettings, /pendingNavigationHref[\s\S]*<ConfirmModal[\s\S]*discard_and_leave/, 'internal unsaved navigation must use the shared confirm modal');
