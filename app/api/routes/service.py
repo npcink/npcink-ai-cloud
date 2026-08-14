@@ -2496,20 +2496,34 @@ async def get_admin_overview(
 @router.get("/admin/coverage-work-queue")
 async def get_admin_coverage_work_queue(
     request: Request,
+    q: str | None = Query(default=None, max_length=191),
+    status: Literal["all", "needs_action", "error", "warning", "ok", "inactive"] = Query(
+        default="all"
+    ),
+    reason: str | None = Query(default=None, max_length=191),
+    sort: Literal["priority", "expiry", "customer"] = Query(default="priority"),
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_coverage_work_queue(limit=limit)
+        result = _get_commercial_service(request).get_admin_coverage_work_queue(
+            q=q,
+            status=status,
+            reason=reason,
+            sort=sort,
+            offset=offset,
+            limit=limit,
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return build_envelope(
         status="ok",
         message="admin coverage work queue loaded",
         data=result,
-        revision="m1",
+        revision="m2",
     )
 
 

@@ -70,6 +70,14 @@ type CoverageQueueItem = {
 
 type CoverageWorkQueue = {
   generated_at?: string;
+  filters?: {
+    q?: string;
+    status?: QueueView;
+    reason?: string;
+    sort?: QueueSort;
+    offset?: number;
+    limit?: number;
+  };
   summary?: {
     total?: number;
     visible?: number;
@@ -80,18 +88,22 @@ type CoverageWorkQueue = {
     inactive?: number;
     reason_counts?: Record<string, number>;
   };
+  total?: number;
+  hidden_internal_total?: number;
+  pagination?: {
+    offset?: number;
+    limit?: number;
+    total?: number;
+    has_more?: boolean;
+  };
   items?: CoverageQueueItem[];
 };
 
 const coverageClient = createApiClient({ idempotencyPrefix: 'admin_coverage' });
 
-const INTERNAL_TEST_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty|(^|[_-])smoke([_-]|$)|codex_image_smoke|site_knowledge_smoke/i;
+const DEFAULT_PAGE_SIZE = 50;
 const QUEUE_VIEWS = new Set<QueueView>(['needs_action', 'all', 'error', 'warning', 'ok', 'inactive']);
 const QUEUE_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
-
-function isInternalCoverageRecord(...values: Array<string | undefined>): boolean {
-  return INTERNAL_TEST_TEXT_RE.test(values.filter(Boolean).join(' '));
-}
 
 function normalizeQueueView(value: string | null): QueueView {
   return value && QUEUE_VIEWS.has(value as QueueView) ? (value as QueueView) : 'needs_action';
@@ -99,6 +111,16 @@ function normalizeQueueView(value: string | null): QueueView {
 
 function normalizeQueueSort(value: string | null): QueueSort {
   return value && QUEUE_SORTS.has(value as QueueSort) ? (value as QueueSort) : 'priority';
+}
+
+function normalizeQueueOffset(value: string | null): number {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizeQueueLimit(value: string | null): number {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 500 ? parsed : DEFAULT_PAGE_SIZE;
 }
 
 function queueItemKey(item: CoverageQueueItem): string {
@@ -110,8 +132,8 @@ function customerDisplayName(name: string | undefined, accountId: string, unname
   return normalizedName && normalizedName !== accountId ? normalizedName : unnamedLabel;
 }
 
-async function readJsonData<T>(url: string): Promise<T> {
-  return (await coverageClient.request<T>(url)).data;
+async function readJsonData<T>(url: string, signal?: AbortSignal): Promise<T> {
+  return (await coverageClient.request<T>(url, { signal })).data;
 }
 
 function severityToneClassName(severity: string): string {
@@ -174,31 +196,6 @@ function CoverageStatusBadge({
   );
 }
 
-function buildQueueSummary(items: CoverageQueueItem[]): Required<NonNullable<CoverageWorkQueue['summary']>> {
-  const reasonCounts: Record<string, number> = {};
-  const summary = {
-    total: items.length,
-    visible: items.length,
-    needs_action: 0,
-    error: 0,
-    warning: 0,
-    ok: 0,
-    inactive: 0,
-    reason_counts: reasonCounts,
-  };
-
-  for (const item of items) {
-    if (item.severity === 'error') summary.error += 1;
-    if (item.severity === 'warning') summary.warning += 1;
-    if (item.severity === 'ok') summary.ok += 1;
-    if (item.severity === 'inactive') summary.inactive += 1;
-    if (item.severity === 'error' || item.severity === 'warning') summary.needs_action += 1;
-    reasonCounts[item.reason_code] = (reasonCounts[item.reason_code] || 0) + 1;
-  }
-
-  return summary;
-}
-
 function AdminCoverageContent() {
   const { t } = useLocale();
   const pathname = usePathname();
@@ -210,12 +207,31 @@ function AdminCoverageContent() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [reasonFilter, setReasonFilter] = useState(() => searchParams.get('reason') || '');
   const [sort, setSort] = useState<QueueSort>(() => normalizeQueueSort(searchParams.get('sort')));
+  const [offset, setOffset] = useState(() => normalizeQueueOffset(searchParams.get('offset')));
+  const [limit, setLimit] = useState(() => normalizeQueueLimit(searchParams.get('limit')));
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(() => searchParams.get('q') || '');
   const [focusedCoverageKey, setFocusedCoverageKey] = useState(() => searchParams.get('focus') || '');
+  const [queueRequestKey, setQueueRequestKey] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const mountedRef = useRef(false);
   const queueParamsRef = useRef(new URLSearchParams(searchParamsKey));
   const coverageRequestActiveRef = useRef(false);
   const coverageRequestSequenceRef = useRef(0);
+  const coverageRequestKeyRef = useRef('');
+  const coverageAbortControllerRef = useRef<AbortController | null>(null);
+
+  const coverageRequestKey = useMemo(() => {
+    const params = new URLSearchParams({
+      status: view,
+      sort,
+      offset: String(offset),
+      limit: String(limit),
+    });
+    const normalizedQuery = debouncedSearchQuery.trim();
+    if (normalizedQuery) params.set('q', normalizedQuery);
+    if (reasonFilter) params.set('reason', reasonFilter);
+    return params.toString();
+  }, [debouncedSearchQuery, limit, offset, reasonFilter, sort, view]);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(queueParamsRef.current.toString());
@@ -227,7 +243,9 @@ function AdminCoverageContent() {
     Object.entries(patch).forEach(([key, value]) => {
       const isDefault =
         (key === 'status' && value === 'needs_action') ||
-        (key === 'sort' && value === 'priority');
+        (key === 'sort' && value === 'priority') ||
+        (key === 'offset' && value === '0') ||
+        (key === 'limit' && value === String(DEFAULT_PAGE_SIZE));
       if (!value || isDefault) {
         nextParams.delete(key);
       } else {
@@ -244,22 +262,35 @@ function AdminCoverageContent() {
   }, [pathname, setFocusedCoverageKey]);
 
   const loadCoverage = useCallback(async (force = false) => {
-    if (!force && coverageRequestActiveRef.current) {
+    if (
+      !force &&
+      coverageRequestActiveRef.current &&
+      coverageRequestKeyRef.current === coverageRequestKey
+    ) {
       return;
     }
+    coverageAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    coverageAbortControllerRef.current = abortController;
     const requestSequence = coverageRequestSequenceRef.current + 1;
     coverageRequestSequenceRef.current = requestSequence;
     coverageRequestActiveRef.current = true;
-    if (force) {
-      setIsRefreshing(true);
-    }
+    coverageRequestKeyRef.current = coverageRequestKey;
+    setIsRefreshing(true);
     setError('');
     try {
-      const coveragePayload = await readJsonData<CoverageWorkQueue>('/api/admin/coverage-work-queue');
+      const coveragePayload = await readJsonData<CoverageWorkQueue>(
+        `/api/admin/coverage-work-queue?${coverageRequestKey}`,
+        abortController.signal
+      );
       if (mountedRef.current && coverageRequestSequenceRef.current === requestSequence) {
         setQueue(coveragePayload);
+        setQueueRequestKey(coverageRequestKey);
       }
     } catch (err) {
+      if (abortController.signal.aborted) {
+        return;
+      }
       if (mountedRef.current && coverageRequestSequenceRef.current === requestSequence) {
         setError(resolveUiErrorMessage(err, t('error.failed_load')));
       }
@@ -271,14 +302,29 @@ function AdminCoverageContent() {
         }
       }
     }
-  }, [setError, setIsRefreshing, setQueue, t]);
+  }, [coverageRequestKey, setError, setIsRefreshing, setQueue, setQueueRequestKey, t]);
 
   useEffect(() => {
     mountedRef.current = true;
-    void loadCoverage();
     return () => {
       mountedRef.current = false;
+      coverageAbortControllerRef.current?.abort();
     };
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery === debouncedSearchQuery) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setOffset(0);
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [debouncedSearchQuery, searchQuery]);
+
+  useEffect(() => {
+    void loadCoverage();
   }, [loadCoverage]);
 
   useEffect(() => {
@@ -288,20 +334,40 @@ function AdminCoverageContent() {
     setSearchQuery(params.get('q') || '');
     setReasonFilter(params.get('reason') || '');
     setSort(normalizeQueueSort(params.get('sort')));
+    setOffset(normalizeQueueOffset(params.get('offset')));
+    setLimit(normalizeQueueLimit(params.get('limit')));
+    setDebouncedSearchQuery(params.get('q') || '');
     setFocusedCoverageKey(params.get('focus') || '');
   }, [pathname, searchParamsKey]);
 
-  const visibleQueueItems = useMemo(
-    () =>
-      (queue?.items || []).filter(
-      (item) => !isInternalCoverageRecord(item.account.account_id, item.account.name)
-      ),
-    [queue?.items]
+  const activeQueue = queue;
+  const isQueueTransition = Boolean(
+    queue && (
+      queueRequestKey !== coverageRequestKey ||
+      searchQuery.trim() !== debouncedSearchQuery.trim()
+    )
   );
+  const visibleItems = useMemo(() => activeQueue?.items || [], [activeQueue]);
+  const visibleSummary = {
+    total: Number(activeQueue?.summary?.total || 0),
+    visible: Number(activeQueue?.summary?.visible || visibleItems.length),
+    needs_action: Number(activeQueue?.summary?.needs_action || 0),
+    error: Number(activeQueue?.summary?.error || 0),
+    warning: Number(activeQueue?.summary?.warning || 0),
+    ok: Number(activeQueue?.summary?.ok || 0),
+    inactive: Number(activeQueue?.summary?.inactive || 0),
+    reason_counts: activeQueue?.summary?.reason_counts || {},
+  };
+  const pagination = {
+    offset: Number(activeQueue?.pagination?.offset ?? offset),
+    limit: Number(activeQueue?.pagination?.limit ?? limit),
+    total: Number(activeQueue?.pagination?.total ?? activeQueue?.total ?? visibleItems.length),
+    hasMore: Boolean(activeQueue?.pagination?.has_more),
+  };
   const customerLabelsByKey = useMemo(() => {
     const groups = new Map<string, CoverageQueueItem[]>();
     const labels = new Map<string, string>();
-    for (const item of visibleQueueItems) {
+    for (const item of visibleItems) {
       const label = customerDisplayName(
         item.account.name,
         item.account.account_id,
@@ -331,51 +397,7 @@ function AdminCoverageContent() {
       });
     }
     return labels;
-  }, [t, visibleQueueItems]);
-  const visibleSummary = useMemo(() => buildQueueSummary(visibleQueueItems), [visibleQueueItems]);
-  const visibleItems = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    const filtered = visibleQueueItems.filter((item) => {
-      const matchesView =
-        view === 'all' ||
-        (view === 'needs_action'
-          ? item.severity === 'error' || item.severity === 'warning'
-          : item.severity === view);
-      if (!matchesView || (reasonFilter && item.reason_code !== reasonFilter)) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      return [
-        item.account.account_id,
-        item.account.name,
-        item.primary_identity?.email,
-        item.primary_subscription?.subscription_id,
-        item.package?.display_package_label,
-        item.reason_label,
-        item.reason_code,
-      ].filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery);
-    });
-    const severityRank: Record<QueueSeverity, number> = { error: 0, warning: 1, inactive: 2, ok: 3 };
-    return [...filtered].sort((left, right) => {
-      if (sort === 'customer') {
-        return String(left.account.name || left.account.account_id).localeCompare(
-          String(right.account.name || right.account.account_id)
-        );
-      }
-      if (sort === 'expiry') {
-        const leftDays = left.evidence.days_until_end ?? Number.MAX_SAFE_INTEGER;
-        const rightDays = right.evidence.days_until_end ?? Number.MAX_SAFE_INTEGER;
-        return leftDays - rightDays || severityRank[left.severity] - severityRank[right.severity];
-      }
-      return Number(left.priority ?? severityRank[left.severity] * 100) -
-        Number(right.priority ?? severityRank[right.severity] * 100) ||
-        String(left.account.name || left.account.account_id).localeCompare(
-          String(right.account.name || right.account.account_id)
-        );
-    });
-  }, [reasonFilter, searchQuery, sort, view, visibleQueueItems]);
+  }, [t, visibleItems]);
   const selectedCoverageItem = focusedCoverageKey
     ? visibleItems.find((item) => queueItemKey(item) === focusedCoverageKey) || null
     : null;
@@ -383,7 +405,21 @@ function AdminCoverageContent() {
     ? customerLabelsByKey.get(queueItemKey(selectedCoverageItem)) ||
       t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
     : '';
-  if (error && !queue) {
+
+  useEffect(() => {
+    if (
+      activeQueue &&
+      offset > 0 &&
+      pagination.total <= offset &&
+      visibleItems.length === 0
+    ) {
+      const previousOffset = Math.max(0, Math.floor((pagination.total - 1) / limit) * limit);
+      setOffset(previousOffset);
+      updateQueueUrl({ offset: String(previousOffset) });
+    }
+  }, [activeQueue, limit, offset, pagination.total, updateQueueUrl, visibleItems.length]);
+
+  if (error && !activeQueue) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-md text-center">
@@ -397,7 +433,7 @@ function AdminCoverageContent() {
     );
   }
 
-  if (!queue) {
+  if (!activeQueue) {
     return <LoadingFallback />;
   }
 
@@ -447,7 +483,7 @@ function AdminCoverageContent() {
           { label: t('admin.coverage.filter_needs_action', {}, 'Needs action'), value: formatInteger(visibleSummary.needs_action), toneClassName: visibleSummary.needs_action > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
           { label: translateStatusLabel('error', t), value: formatInteger(visibleSummary.error), toneClassName: visibleSummary.error > 0 ? 'text-rose-600 dark:text-rose-300' : undefined },
           { label: translateStatusLabel('warning', t), value: formatInteger(visibleSummary.warning), toneClassName: visibleSummary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
-          { label: t('common.updated_at', {}, 'Updated'), value: queue.generated_at ? formatDate(queue.generated_at) : t('common.unknown', {}, 'Unknown') },
+          { label: t('common.updated_at', {}, 'Updated'), value: activeQueue.generated_at ? formatDate(activeQueue.generated_at) : t('common.unknown', {}, 'Unknown') },
         ]}
       />
 
@@ -463,17 +499,27 @@ function AdminCoverageContent() {
         </div>
       ) : null}
 
-      <BackofficeSectionPanel className="overflow-hidden p-0">
+      <BackofficeSectionPanel
+        data-ui="coverage-workspace"
+        className="overflow-hidden p-0"
+        aria-busy={isQueueTransition || isRefreshing}
+      >
           <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
             <div className="flex justify-end">
               <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
                 {t(
-                  'admin.coverage.queue_count',
-                  { visible: formatInteger(visibleItems.length), total: formatInteger(visibleQueueItems.length) },
-                  `${formatInteger(visibleItems.length)} of ${formatInteger(visibleQueueItems.length)} customers`
-                )} · {t('common.updated_at', {}, 'Updated')} {queue.generated_at
-                  ? formatDate(queue.generated_at)
-                  : t('common.unknown', {}, 'Unknown')}
+                  'admin.coverage.pagination_range',
+                  {
+                    start: formatInteger(pagination.total > 0 ? pagination.offset + 1 : 0),
+                    end: formatInteger(pagination.offset + visibleItems.length),
+                    total: formatInteger(pagination.total),
+                  },
+                  `${formatInteger(pagination.total > 0 ? pagination.offset + 1 : 0)}–${formatInteger(pagination.offset + visibleItems.length)} of ${formatInteger(pagination.total)} customers`
+                )} · {isQueueTransition
+                  ? t('common.loading', {}, 'Loading...')
+                  : `${t('common.updated_at', {}, 'Updated')} ${activeQueue.generated_at
+                  ? formatDate(activeQueue.generated_at)
+                  : t('common.unknown', {}, 'Unknown')}`}
               </p>
             </div>
 
@@ -498,6 +544,7 @@ function AdminCoverageContent() {
                       q: nextValue.trim() || null,
                       reason: reasonFilter || null,
                       sort,
+                      offset: null,
                     });
                   }}
                 />
@@ -512,11 +559,13 @@ function AdminCoverageContent() {
                   onChange={(event) => {
                     const nextValue = normalizeQueueView(event.target.value);
                     setView(nextValue);
+                    setOffset(0);
                     updateQueueUrl({
                       status: nextValue,
                       q: searchQuery.trim() || null,
                       reason: reasonFilter || null,
                       sort,
+                      offset: null,
                     });
                   }}
                 >
@@ -537,11 +586,13 @@ function AdminCoverageContent() {
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setReasonFilter(nextValue);
+                    setOffset(0);
                     updateQueueUrl({
                       status: view,
                       q: searchQuery.trim() || null,
                       reason: nextValue || null,
                       sort,
+                      offset: null,
                     });
                   }}
                 >
@@ -563,11 +614,13 @@ function AdminCoverageContent() {
                   onChange={(event) => {
                     const nextValue = normalizeQueueSort(event.target.value);
                     setSort(nextValue);
+                    setOffset(0);
                     updateQueueUrl({
                       status: view,
                       q: searchQuery.trim() || null,
                       reason: reasonFilter || null,
                       sort: nextValue,
+                      offset: null,
                     });
                   }}
                 >
@@ -592,7 +645,8 @@ function AdminCoverageContent() {
                       setReasonFilter('');
                       setView('needs_action');
                       setSort('priority');
-                      updateQueueUrl({ q: null, reason: null, status: null, sort: null });
+                      setOffset(0);
+                      updateQueueUrl({ q: null, reason: null, status: null, sort: null, offset: null });
                     }}
                   >
                     <svg
@@ -777,7 +831,7 @@ function AdminCoverageContent() {
                 {},
                 'Clear or adjust the current status, reason, and search filters. The source queue has not been changed.'
               )}
-              action={visibleQueueItems.length === 0 ? (
+              action={visibleSummary.total === 0 ? (
                 <Link href="/admin/accounts" className="btn btn-secondary btn-sm">
                   {t('admin.coverage_open_customer_register_action', {}, 'Open customer register')}
                 </Link>
@@ -790,7 +844,8 @@ function AdminCoverageContent() {
                     setReasonFilter('');
                     setView('needs_action');
                     setSort('priority');
-                    updateQueueUrl({ q: null, reason: null, status: null, sort: null });
+                    setOffset(0);
+                    updateQueueUrl({ q: null, reason: null, status: null, sort: null, offset: null });
                   }}
                 >
                   {t('common.clear_filters', {}, 'Clear filters')}
@@ -798,6 +853,51 @@ function AdminCoverageContent() {
               )}
             />
           )}
+
+          {pagination.total > 0 ? (
+            <div
+              data-ui="coverage-pagination"
+              className="flex flex-col gap-3 border-t border-slate-200/80 px-4 py-3 text-sm dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p className="text-slate-500 dark:text-slate-400" role="status">
+                {t(
+                  'admin.coverage.pagination_range',
+                  {
+                    start: formatInteger(pagination.offset + 1),
+                    end: formatInteger(pagination.offset + visibleItems.length),
+                    total: formatInteger(pagination.total),
+                  },
+                  `${formatInteger(pagination.offset + 1)}–${formatInteger(pagination.offset + visibleItems.length)} of ${formatInteger(pagination.total)} customers`
+                )}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isRefreshing || pagination.offset <= 0}
+                  onClick={() => {
+                    const previousOffset = Math.max(0, pagination.offset - pagination.limit);
+                    setOffset(previousOffset);
+                    updateQueueUrl({ offset: String(previousOffset) });
+                  }}
+                >
+                  {t('common.previous', {}, 'Previous')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isRefreshing || !pagination.hasMore}
+                  onClick={() => {
+                    const nextOffset = pagination.offset + pagination.limit;
+                    setOffset(nextOffset);
+                    updateQueueUrl({ offset: String(nextOffset) });
+                  }}
+                >
+                  {t('common.next', {}, 'Next')}
+                </button>
+              </div>
+            </div>
+          ) : null}
       </BackofficeSectionPanel>
 
       <AdminInspectorDrawer
