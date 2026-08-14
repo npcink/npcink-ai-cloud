@@ -73,6 +73,14 @@ const WINDOW_OPTIONS = [24, 72, 168] as const;
 
 const evidenceLanes: EvidenceLane[] = [
   {
+    id: 'audit',
+    href: '/admin/audit',
+    titleKey: 'admin.audit_workspace.title',
+    titleFallback: 'Audit evidence',
+    descKey: 'admin.audit_workspace.lane_description',
+    descFallback: 'Exact service operation receipts, outcomes, scopes, and bounded request metadata.',
+  },
+  {
     id: 'plugin',
     href: '/admin/plugin-observability',
     titleKey: 'admin.nav_plugin_observability',

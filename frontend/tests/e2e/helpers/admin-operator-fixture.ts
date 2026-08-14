@@ -315,32 +315,62 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/audit-events') {
+      const auditItems = [
+        {
+          event_id: 101,
+          account_id: LONG_ACCOUNT_ID,
+          site_id: 'site_mvp',
+          subscription_id: 'sub_mvp',
+          scope_kind: 'subscription',
+          scope_id: 'sub_mvp',
+          event_kind: 'subscription.bind',
+          outcome: 'succeeded',
+          actor_kind: 'platform_admin',
+          actor_ref: 'operator',
+          method: 'POST',
+          path: '/internal/service/admin/subscriptions/sub_mvp/bind',
+          trace_id: 'trace-audit-101',
+          idempotency_key: 'audit-bind-101',
+          created_at: '2026-04-08T09:45:00Z',
+        },
+        {
+          event_id: 102,
+          account_id: LONG_ACCOUNT_ID,
+          site_id: 'site_mvp',
+          subscription_id: 'sub_mvp',
+          scope_kind: 'subscription',
+          scope_id: 'sub_mvp',
+          event_kind: 'subscription.billing_snapshot.rebuild',
+          outcome: 'error',
+          actor_kind: 'system',
+          actor_ref: '',
+          method: 'POST',
+          path: '/internal/service/admin/subscriptions/sub_mvp/billing-snapshots/rebuild',
+          trace_id: 'trace-audit-102',
+          idempotency_key: 'audit-rebuild-102',
+          created_at: '2026-04-08T07:15:00Z',
+        },
+      ];
+      const eventId = Number(searchParams.get('event_id') || 0);
+      const idempotencyKey = searchParams.get('idempotency_key') || '';
+      const filteredItems = auditItems.filter((item) => (
+        (!eventId || item.event_id === eventId)
+        && (!idempotencyKey || item.idempotency_key === idempotencyKey)
+      ));
+      const limit = Number(searchParams.get('limit') || 50);
+      const offset = Number(searchParams.get('offset') || 0);
+      const items = filteredItems.slice(offset, offset + limit);
+      const nextOffset = offset + items.length;
       await fulfillJson(route, {
-        total: 2,
-        items: [
-          {
-            event_id: 101,
-            event_kind: 'subscription.bind',
-            outcome: 'succeeded',
-            actor_kind: 'platform_admin',
-            actor_ref: 'operator',
-            method: 'POST',
-            path: '/internal/service/admin/subscriptions/sub_mvp/bind',
-            trace_id: 'trace-audit-101',
-            created_at: '2026-04-08T09:45:00Z',
-          },
-          {
-            event_id: 102,
-            event_kind: 'subscription.billing_snapshot.rebuild',
-            outcome: 'error',
-            actor_kind: 'system',
-            actor_ref: '',
-            method: 'POST',
-            path: '/internal/service/admin/subscriptions/sub_mvp/billing-snapshots/rebuild',
-            trace_id: 'trace-audit-102',
-            created_at: '2026-04-08T07:15:00Z',
-          },
-        ],
+        total: filteredItems.length,
+        items,
+        pagination: {
+          limit,
+          offset,
+          total: filteredItems.length,
+          has_more: nextOffset < filteredItems.length,
+          next_offset: nextOffset < filteredItems.length ? nextOffset : null,
+        },
       });
       return;
     }

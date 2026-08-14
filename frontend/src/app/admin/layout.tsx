@@ -294,6 +294,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           fallback: 'Runtime Diagnostics',
           activePrefixes: [
             '/admin/troubleshooting',
+            '/admin/audit',
             '/admin/plugin-observability',
             '/admin/media-observability',
             '/admin/agent-feedback',
@@ -349,6 +350,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       });
       const diagnosticsGroupLabel = t('admin.nav_group_diagnostics', {}, 'Diagnostics');
       const contextualItems: AdminCommandItem[] = [
+        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence' },
         { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability' },
         { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability' },
         { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability' },

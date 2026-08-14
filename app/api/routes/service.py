@@ -1153,6 +1153,9 @@ def _build_audit_filters(
     site_id: str | None = None,
     event_kind: str | None = None,
     outcome: str | None = None,
+    idempotency_key: str | None = None,
+    scope_kind: str | None = None,
+    scope_id: str | None = None,
 ) -> dict[str, str]:
     filters: dict[str, str] = {}
     if account_id:
@@ -1163,6 +1166,12 @@ def _build_audit_filters(
         filters["event_kind"] = str(event_kind)
     if outcome:
         filters["outcome"] = str(outcome)
+    if idempotency_key:
+        filters["idempotency_key"] = str(idempotency_key)
+    if scope_kind:
+        filters["scope_kind"] = str(scope_kind)
+    if scope_id:
+        filters["scope_id"] = str(scope_id)
     return filters
 
 
@@ -1177,9 +1186,13 @@ def _build_operator_receipt(
     audit_state: Literal["persisted", "unavailable", "not_applicable"],
     account_id: str | None = None,
     site_id: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     resolved_account_id = str((audit_event or {}).get("account_id") or account_id or "").strip()
     resolved_site_id = str((audit_event or {}).get("site_id") or site_id or "").strip()
+    resolved_idempotency_key = str(
+        (audit_event or {}).get("idempotency_key") or idempotency_key or ""
+    ).strip()
     receipt: dict[str, Any] = {
         "event_kind": event_kind,
         "scope_kind": scope_kind,
@@ -1192,6 +1205,9 @@ def _build_operator_receipt(
             site_id=resolved_site_id,
             event_kind=event_kind,
             outcome=outcome,
+            idempotency_key=resolved_idempotency_key,
+            scope_kind=scope_kind,
+            scope_id=scope_id,
         ),
     }
     audit_event_id = int((audit_event or {}).get("event_id") or 0)
@@ -1660,6 +1676,7 @@ async def suspend_admin_account(
                 audit_state="persisted",
                 effective_summary=f"Account {account_id} is now suspended.",
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -1707,6 +1724,7 @@ async def restore_admin_account(
                 audit_state="persisted",
                 effective_summary=f"Account {account_id} is now active.",
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2046,6 +2064,7 @@ async def upsert_plan(
                 effective_summary=(
                     f"Plan {payload.plan_id} is now saved on the commercial truth plane."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2105,6 +2124,7 @@ async def publish_plan_version(
                     f"Plan version {payload.plan_version_id} is now published. "
                     "Existing subscriptions on this plan use the latest package values."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2167,6 +2187,7 @@ async def upsert_account_subscription(
                     f"{result.get('subscription_id') or payload.subscription_id or account_id}."
                 ),
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2207,6 +2228,7 @@ async def suspend_account_subscription(request: Request, account_id: str) -> Any
                     f"Current subscription coverage for account {account_id} is now suspended."
                 ),
                 account_id=str(result.get("account_id") or ""),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2270,6 +2292,7 @@ async def apply_subscription_topup(
                         else "."
                     )
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2563,6 +2586,7 @@ async def cancel_account_subscription(request: Request, account_id: str) -> Any:
                     f"Current subscription coverage for account {account_id} is now canceled."
                 ),
                 account_id=str(result.get("account_id") or ""),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3518,6 +3542,7 @@ async def batch_disable_admin_portal_users(
                     f"Batch disable processed {int(totals.get('attempted') or 0)} "
                     f"portal users with {int(totals.get('failed') or 0)} failures."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3569,6 +3594,7 @@ async def disable_admin_portal_user(
                 outcome="succeeded",
                 audit_state="persisted",
                 effective_summary=effective_summary,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3624,6 +3650,7 @@ async def apply_admin_account_credit_adjustment(
                     f"delta {entry.get('ai_credit_delta') or payload.ai_credit_delta}."
                 ),
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3903,6 +3930,7 @@ async def rebuild_admin_subscription_billing_snapshots(
                     "from usage records."
                 ),
                 account_id=str(_dict_value(result.get("subscription")).get("account_id") or ""),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3962,6 +3990,7 @@ async def update_admin_plan_parameters(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    audit_context = _build_audit_context(request)
     try:
         result = _get_commercial_service(request).update_admin_plan_parameters(
             plan_id=plan_id,
@@ -3973,7 +4002,7 @@ async def update_admin_plan_parameters(
             max_active_runs=payload.max_active_runs,
             max_batch_items=payload.max_batch_items,
             grace_period_days=payload.grace_period_days,
-            audit_context=_build_audit_context(request),
+            audit_context=audit_context,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3992,6 +4021,7 @@ async def update_admin_plan_parameters(
                     f"Plan {plan_id} structured parameters are now published. "
                     "Unexposed commercial policy fields were preserved."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -5739,21 +5769,33 @@ async def update_admin_plugin_observability_attention_state(
 @router.get("/audit-events")
 async def list_service_audit_events(
     request: Request,
-    site_id: str | None = Query(default=None),
-    account_id: str | None = Query(default=None),
-    event_kind: str | None = Query(default=None),
-    outcome: str | None = Query(default=None),
+    event_id: int | None = Query(default=None, ge=1),
+    site_id: str | None = Query(default=None, max_length=191),
+    account_id: str | None = Query(default=None, max_length=191),
+    event_kind: str | None = Query(default=None, max_length=64),
+    outcome: str | None = Query(default=None, max_length=32),
+    idempotency_key: str | None = Query(default=None, max_length=191),
+    scope_kind: str | None = Query(default=None, max_length=32),
+    scope_id: str | None = Query(default=None, max_length=191),
     limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=100000),
+    include_payload: bool = Query(default=True),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
     result = _get_commercial_service(request).list_service_audit_events(
+        event_id=event_id,
         site_id=site_id,
         account_id=account_id,
         event_kind=event_kind,
         outcome=outcome,
+        idempotency_key=idempotency_key,
+        scope_kind=scope_kind,
+        scope_id=scope_id,
         limit=limit,
+        offset=offset,
+        include_payload=include_payload,
     )
     return build_envelope(
         status="ok",

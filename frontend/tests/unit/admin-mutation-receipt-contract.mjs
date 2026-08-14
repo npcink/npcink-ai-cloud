@@ -48,14 +48,26 @@ assert.match(
 
 assert.match(
   receiptSource,
-  /buildAdminAuditTrailHref\(receipt\)/,
-  'admin mutation receipt must keep the audit trail follow-up link'
+  /event_id[\s\S]*focus[\s\S]*\/admin\/audit\?/,
+  'admin mutation receipt must prefer exact event navigation into the persistent audit workspace'
 );
 
 assert.match(
   receiptSource,
-  /auditUnavailable[\s\S]*auditTrailAvailable[\s\S]*receipt_audit_unavailable[\s\S]*auditTrailAvailable[\s\S]*buildAdminAuditTrailHref\(receipt\)/,
+  /idempotencyKey[\s\S]*receipt\.event_kind[\s\S]*receipt\.scope_kind[\s\S]*receipt\.scope_id[\s\S]*return null/,
+  'receipt audit navigation must fail closed when exact fallback context is incomplete'
+);
+
+assert.match(
+  receiptSource,
+  /auditUnavailable[\s\S]*auditTrailAvailable[\s\S]*auditTrailHref[\s\S]*receipt_audit_unavailable[\s\S]*auditTrailHref/,
   'an unavailable audit must stay distinct from operation success and must not expose a misleading audit link'
+);
+
+assert.doesNotMatch(
+  receiptSource,
+  /\/api\/admin\/audit-events/,
+  'admin mutation receipt must never navigate an operator to the raw audit JSON API'
 );
 
 assert.match(

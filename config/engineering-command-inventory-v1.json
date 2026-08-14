@@ -552,7 +552,9 @@
       "evidence": ["AGENTS.md", "frontend/DEVELOPMENT.md", "docs/cloud-admin-ui-standard-v1.md"],
       "commands": {
         "check:visual:frontend": "Run the bounded frontend visual test suite.",
+        "precheck:admin-ui": "Run focused Admin audit workspace contracts and lint before the shared Admin UI gate.",
         "check:admin-ui": "Run the required Admin UI governance and static gate.",
+        "precheck:admin-ui:visual": "Run the focused Admin audit workspace browser receipt before the shared visual gate.",
         "check:admin-ui:visual-governance": "Verify risk-tiered Admin visual rules, pilot routes, and structured receipt contracts.",
         "check:admin-ui:visual": "Run the required material Admin UI browser gate."
       }
