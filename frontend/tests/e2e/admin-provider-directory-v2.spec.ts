@@ -113,7 +113,7 @@ const connections = [
 
 async function installProviderDirectoryHarness(
   page: Page,
-  options: { deleteConflict?: boolean } = {}
+  options: { deleteConflict?: boolean; auditUnavailable?: boolean } = {}
 ) {
   await installAdminMocks(page);
   let requestCount = 0;
@@ -259,6 +259,8 @@ async function installProviderDirectoryHarness(
             scope_kind: 'provider_connection',
             scope_id: connectionId,
             outcome: 'succeeded',
+            effective_summary: `Provider connection ${connectionId} was deleted.`,
+            audit_state: options.auditUnavailable ? 'unavailable' : 'persisted',
           },
         })),
       });
@@ -393,6 +395,29 @@ test('stale provider deletion refreshes the row and clears confirmation', async 
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toHaveCount(0);
   await expect(supplierRow).toBeVisible();
   expect(harness.getRequestCount()).toBeGreaterThan(1);
+});
+
+test('successful provider mutation does not claim unavailable audit evidence', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page, { auditUnavailable: true });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /More actions|更多操作/i }).click();
+  await page.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
+  await page.locator('[data-feedback-for="model_ready"]')
+    .getByRole('button', { name: /Confirm delete|确认删除/i })
+    .click();
+
+  await page.getByRole('button', { name: /Latest operation|最近操作/i }).click();
+  const receipt = page.locator('[data-audit-state="unavailable"]');
+  await expect(receipt).toBeVisible();
+  await expect(receipt.getByRole('alert')).toContainText(
+    /operation succeeded.*audit evidence could not be persisted|操作已成功.*审计证据未能持久化/i
+  );
+  await expect(receipt.getByRole('link', { name: /View audit trail|查看审计记录/i })).toHaveCount(0);
+  await expect(receipt.getByRole('button', { name: /Copy receipt|复制回执/i })).toBeVisible();
 });
 
 test('unsaved provider draft reopens before deletion preflight', async ({ page }) => {

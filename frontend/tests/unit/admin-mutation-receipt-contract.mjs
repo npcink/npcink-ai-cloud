@@ -13,6 +13,7 @@ const feedbackContractSource = readFileSync(fromFrontendRoot('../docs/cloud-admi
 const runtimeProfilesSource = readFileSync(fromFrontendRoot('src/app/admin/runtime-profiles/page.tsx'), 'utf8');
 const serviceSettingsSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
 const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
+const backendRouteSource = readFileSync(fromFrontendRoot('../app/api/routes/service.py'), 'utf8');
 const zhStart = i18nSource.indexOf("'zh-CN': {");
 
 assert.ok(zhStart > 0, 'i18n dictionary must contain a Simplified Chinese section');
@@ -27,6 +28,19 @@ assert.match(
 );
 
 assert.match(
+  backendRouteSource,
+  /def _build_operator_receipt\([\s\S]*audit_state: Literal\["persisted", "unavailable", "not_applicable"\][\s\S]*"audit_state": audit_state/,
+  'backend mutation receipts must declare their audit persistence state'
+);
+
+assert.ok(
+  Array.from(
+    backendRouteSource.matchAll(/audit_state="persisted" if audit_event else "unavailable"/g)
+  ).length >= 10,
+  'best-effort Admin audit writers must report unavailable evidence instead of claiming persistence'
+);
+
+assert.match(
   receiptSource,
   /navigator\.clipboard\.writeText\(buildAdminMutationReceiptText\(receipt\)\)/,
   'admin mutation receipt must let operators copy the latest operation receipt'
@@ -36,6 +50,18 @@ assert.match(
   receiptSource,
   /buildAdminAuditTrailHref\(receipt\)/,
   'admin mutation receipt must keep the audit trail follow-up link'
+);
+
+assert.match(
+  receiptSource,
+  /auditUnavailable[\s\S]*auditTrailAvailable[\s\S]*receipt_audit_unavailable[\s\S]*auditTrailAvailable[\s\S]*buildAdminAuditTrailHref\(receipt\)/,
+  'an unavailable audit must stay distinct from operation success and must not expose a misleading audit link'
+);
+
+assert.match(
+  receiptSource,
+  /audit_state: \$\{receipt\.audit_state\}/,
+  'copyable mutation receipts must preserve the backend audit persistence state'
 );
 
 assert.doesNotMatch(
@@ -174,6 +200,8 @@ const requiredKeys = [
   'admin.receipt_copy_failed',
   'admin.receipt_view_audit',
   'admin.receipt_audit_event',
+  'admin.receipt_audit_persisted',
+  'admin.receipt_audit_unavailable',
 ];
 
 for (const key of requiredKeys) {

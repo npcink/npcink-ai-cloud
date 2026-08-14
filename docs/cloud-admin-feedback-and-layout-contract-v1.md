@@ -81,6 +81,14 @@ The receipt is durable follow-up evidence, not a second success banner.
 - Open full receipt data in a dialog, drawer, or dedicated audit view.
 - Preserve copyable receipt text, audit filters, scope, outcome, and audit event
   reference.
+- Preserve the backend `audit_state` separately from the mutation `outcome`.
+  `persisted` means the audit follow-up entry exists; `unavailable` means the
+  governed mutation succeeded but its best-effort audit evidence could not be
+  persisted; `not_applicable` is reserved for operations whose contract does
+  not require audit evidence.
+- When `audit_state=unavailable`, keep the successful operation summary, show
+  an explicit audit warning, hide the audit-trail link, and tell the operator
+  not to repeat the mutation solely to manufacture audit evidence.
 - Do not permanently expand the page title or summary panel with receipt cards.
 
 ## 5. Interaction Rules

@@ -1174,6 +1174,7 @@ def _build_operator_receipt(
     outcome: str,
     effective_summary: str,
     audit_event: dict[str, Any] | None = None,
+    audit_state: Literal["persisted", "unavailable", "not_applicable"],
     account_id: str | None = None,
     site_id: str | None = None,
 ) -> dict[str, Any]:
@@ -1185,6 +1186,7 @@ def _build_operator_receipt(
         "scope_id": scope_id,
         "outcome": outcome,
         "effective_summary": effective_summary,
+        "audit_state": audit_state,
         "audit_filters": _build_audit_filters(
             account_id=resolved_account_id,
             site_id=resolved_site_id,
@@ -1655,6 +1657,7 @@ async def suspend_admin_account(
                 scope_kind="account",
                 scope_id=account_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=f"Account {account_id} is now suspended.",
                 account_id=account_id,
             ),
@@ -1701,6 +1704,7 @@ async def restore_admin_account(
                 scope_kind="account",
                 scope_id=account_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=f"Account {account_id} is now active.",
                 account_id=account_id,
             ),
@@ -2038,6 +2042,7 @@ async def upsert_plan(
                 scope_kind="plan",
                 scope_id=payload.plan_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Plan {payload.plan_id} is now saved on the commercial truth plane."
                 ),
@@ -2095,6 +2100,7 @@ async def publish_plan_version(
                 scope_kind="plan_version",
                 scope_id=payload.plan_version_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Plan version {payload.plan_version_id} is now published. "
                     "Existing subscriptions on this plan use the latest package values."
@@ -2155,6 +2161,7 @@ async def upsert_account_subscription(
                     result.get("subscription_id") or payload.subscription_id or account_id
                 ),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Account {account_id} now resolves to subscription "
                     f"{result.get('subscription_id') or payload.subscription_id or account_id}."
@@ -2195,6 +2202,7 @@ async def suspend_account_subscription(request: Request, account_id: str) -> Any
                 scope_kind="subscription",
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Current subscription coverage for account {account_id} is now suspended."
                 ),
@@ -2251,6 +2259,7 @@ async def apply_subscription_topup(
                 scope_kind="subscription",
                 scope_id=subscription_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Subscription {subscription_id} now has operator-managed "
                     "budget headroom added "
@@ -2549,6 +2558,7 @@ async def cancel_account_subscription(request: Request, account_id: str) -> Any:
                 scope_kind="subscription",
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Current subscription coverage for account {account_id} is now canceled."
                 ),
@@ -3503,6 +3513,7 @@ async def batch_disable_admin_portal_users(
                 scope_kind="portal_user_batch",
                 scope_id=str(audit_context.idempotency_key or ""),
                 outcome="succeeded" if int(totals.get("failed") or 0) == 0 else "partial",
+                audit_state="persisted",
                 effective_summary=(
                     f"Batch disable processed {int(totals.get('attempted') or 0)} "
                     f"portal users with {int(totals.get('failed') or 0)} failures."
@@ -3556,6 +3567,7 @@ async def disable_admin_portal_user(
                 scope_kind="principal",
                 scope_id=principal_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=effective_summary,
             ),
         ),
@@ -3605,6 +3617,7 @@ async def apply_admin_account_credit_adjustment(
                 scope_kind="account",
                 scope_id=account_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Account {account_id} AI credit ledger received "
                     f"{entry.get('event_type') or payload.event_type} "
@@ -3884,6 +3897,7 @@ async def rebuild_admin_subscription_billing_snapshots(
                 scope_kind="subscription",
                 scope_id=subscription_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Billing snapshots for subscription {subscription_id} were rebuilt "
                     "from usage records."
@@ -3973,6 +3987,7 @@ async def update_admin_plan_parameters(
                 scope_kind="plan_version",
                 scope_id=str(result.get("plan_version_id") or ""),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Plan {plan_id} structured parameters are now published. "
                     "Unexposed commercial policy fields were preserved."
@@ -4756,6 +4771,7 @@ async def update_admin_site_knowledge_vector_profile(
                     "Site Knowledge vector profile was saved and verified with 1024 dimensions."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4817,6 +4833,7 @@ async def update_admin_site_knowledge_vector_store(
                     "Zilliz Cloud was verified for the fixed 1024-dimension COSINE profile."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4888,6 +4905,7 @@ async def rebuild_admin_site_knowledge_vector_index(
                     else "Compatible Cloud index chunks were rebuilt in Zilliz Cloud."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4967,6 +4985,7 @@ async def create_admin_provider_connection(
                     f"Provider connection {str(result.get('connection_id') or '')} was saved."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5030,6 +5049,7 @@ async def update_admin_provider_connection(
                     f"{str(result.get('connection_id') or connection_id)} was saved."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5155,6 +5175,7 @@ async def delete_admin_provider_connection(
                 outcome="succeeded",
                 effective_summary=f"Provider connection {connection_id} was deleted.",
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m7",
@@ -5216,6 +5237,7 @@ async def test_admin_provider_connection(request: Request, connection_id: str) -
                 outcome="succeeded" if result.get("ok") else "error",
                 effective_summary=str(result.get("message") or "Provider connection was tested."),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5281,6 +5303,7 @@ async def approve_admin_provider_connection_image_host(
                     f"{str(result.get('approved_image_output_host') or '')}."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5344,6 +5367,7 @@ async def create_admin_provider_connection_image_delivery_probe(
                     result.get("message") or "Provider image delivery probe completed."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5558,6 +5582,7 @@ async def update_admin_hosted_runtime_profiles(
                 outcome="succeeded",
                 effective_summary="Hosted runtime profiles were updated.",
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
