@@ -228,7 +228,7 @@
         "tests/contract/test_ai_task_contract.py"
       ],
       "commands": {
-        "check:changed": "Plan and run the narrowest safe local gates for the current diff.",
+        "check:changed": "Plan gates, diagnose prerequisites, and run the narrowest safe local checks for the current diff.",
         "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
         "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
         "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."

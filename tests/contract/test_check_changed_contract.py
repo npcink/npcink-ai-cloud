@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -161,6 +162,88 @@ def test_planned_commands_are_unique() -> None:
     commands = [tuple(command) for command in plan["commands"]]
 
     assert len(commands) == len(set(commands))
+
+
+def test_doctor_fails_before_python_gate_when_interpreter_is_missing() -> None:
+    environment = os.environ.copy()
+    environment["NPCINK_CLOUD_PYTHON_BIN"] = "/missing/npcink-python"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "--doctor",
+            "--format",
+            "json",
+            "scripts/ai_task.py",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    payload = json.loads(completed.stdout)
+    python_check = next(
+        item for item in payload["environment_checks"] if item["id"] == "python"
+    )
+    assert python_check["status"] == "missing"
+    assert python_check["required"] is True
+    assert payload["plan"]["runtime_lane"] == "github-actions"
+
+
+def test_doctor_reports_ready_exact_python_and_advisory_github_cli() -> None:
+    environment = os.environ.copy()
+    environment["NPCINK_CLOUD_PYTHON_BIN"] = sys.executable
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "--doctor",
+            "--format",
+            "json",
+            "scripts/ai_task.py",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    checks = {item["id"]: item for item in payload["environment_checks"]}
+    assert checks["python"]["status"] == "ready"
+    assert checks["github_cli"]["required"] is False
+
+
+def test_doctor_requires_python_for_inventory_only_plan() -> None:
+    environment = os.environ.copy()
+    environment["PATH"] = "/missing"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "--doctor",
+            "--format",
+            "json",
+            "config/engineering-command-inventory-v1.json",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    payload = json.loads(completed.stdout)
+    python_check = next(
+        item for item in payload["environment_checks"] if item["id"] == "python"
+    )
+    assert python_check["status"] == "missing"
+    assert "python3" in python_check["detail"]
 
 
 def test_frontend_build_runtime_input_promotes_plan_to_l2() -> None:
