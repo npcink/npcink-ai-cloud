@@ -397,15 +397,25 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
 
     specialized_commands = _deduplicate_commands(specialized_commands)
     commands = _deduplicate_commands([*commands, *specialized_commands])
+    domain_ids = [str(rule["id"]) for rule in rules]
+    if kinds["build_runtime"]:
+        runtime_lane = "m4:preview:deploy"
+    elif kinds["cloud_source"] or kinds["migration"]:
+        runtime_lane = "m4:preview:sync"
+    elif "engineering_validation_tooling" in domain_ids:
+        runtime_lane = "github-actions"
+    else:
+        runtime_lane = "none"
     return {
         "paths": paths,
         "classification": kinds,
         "tier": tier,
         "tier_reasons": tier_reasons,
-        "domains": [str(rule["id"]) for rule in rules],
+        "domains": domain_ids,
         "documents": sorted(set(documents)),
         "commands": commands,
         "specialized_commands": specialized_commands,
+        "runtime_lane": runtime_lane,
         "followups": list(dict.fromkeys(followups)),
     }
 
@@ -444,6 +454,7 @@ def main() -> int:
         for path in paths:
             print(f" - {path}")
         print(f"[plan] tier: {plan['tier']}")
+        print(f"[plan] runtime lane: {plan['runtime_lane']}")
         for reason in plan["tier_reasons"]:  # type: ignore[index]
             print(f" - {reason}")
         if plan["domains"]:  # type: ignore[index]

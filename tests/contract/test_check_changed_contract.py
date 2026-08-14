@@ -30,6 +30,7 @@ def test_documentation_plan_stays_local_and_focused() -> None:
     assert ["git", "diff", "--cached", "--check"] in plan["commands"]
     assert ["git", "diff", "--check"] in plan["commands"]
     assert ["bash", "scripts/check-release-policy.sh"] in plan["commands"]
+    assert plan["runtime_lane"] == "none"
     assert not any("m4:preview" in " ".join(command) for command in plan["commands"])
 
 
@@ -71,6 +72,7 @@ def test_mixed_frontend_and_backend_change_uses_highest_risk_tier() -> None:
     assert plan["classification"]["python"] is True
     assert plan["tier"] == "L2"
     assert any("mixed frontend changes" in item for item in plan["tier_reasons"])
+    assert plan["runtime_lane"] == "m4:preview:sync"
 
 
 def test_frontend_and_script_change_uses_highest_risk_tier() -> None:
@@ -145,6 +147,20 @@ def test_build_runtime_plan_never_mutates_m4_automatically() -> None:
     assert plan["classification"]["build_runtime"] is True
     assert any("runtime fingerprint" in item for item in plan["followups"])
     assert not any("m4:preview" in " ".join(command) for command in plan["commands"])
+    assert plan["runtime_lane"] == "m4:preview:deploy"
+
+
+def test_engineering_tooling_uses_github_actions_runtime_lane() -> None:
+    plan = _plan("scripts/ai_task.py")
+
+    assert plan["runtime_lane"] == "github-actions"
+
+
+def test_planned_commands_are_unique() -> None:
+    plan = _plan("tests/contract/test_check_changed_contract.py")
+    commands = [tuple(command) for command in plan["commands"]]
+
+    assert len(commands) == len(set(commands))
 
 
 def test_frontend_build_runtime_input_promotes_plan_to_l2() -> None:
