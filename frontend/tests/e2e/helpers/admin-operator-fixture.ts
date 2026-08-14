@@ -51,7 +51,11 @@ async function fulfillJson(route: Route, data: unknown) {
 
 export async function installAdminMocks(
   page: Page,
-  options: { auditEvents?: number; quotaNeedsAttention?: boolean } = {}
+  options: {
+    auditEvents?: number;
+    auditFailureController?: { enabled: boolean };
+    quotaNeedsAttention?: boolean;
+  } = {}
 ) {
   const auditEvents = options.auditEvents ?? 4;
   const quotaNeedsAttention = options.quotaNeedsAttention ?? false;
@@ -315,6 +319,14 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/audit-events') {
+      if (options.auditFailureController?.enabled) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify(buildAdminApiErrorEnvelope('initial audit evidence failure')),
+        });
+        return;
+      }
       const auditItems = [
         {
           event_id: 101,
@@ -361,15 +373,25 @@ export async function installAdminMocks(
       const offset = Number(searchParams.get('offset') || 0);
       const items = filteredItems.slice(offset, offset + limit);
       const nextOffset = offset + items.length;
+      const lastOffset = filteredItems.length > 0
+        ? Math.floor((filteredItems.length - 1) / limit) * limit
+        : 0;
       await fulfillJson(route, {
         total: filteredItems.length,
         items,
+        generated_at: '2026-04-08T10:00:00Z',
+        diagnostics: {
+          returned_count: items.length,
+          query_duration_ms: 4.25,
+        },
         pagination: {
           limit,
           offset,
           total: filteredItems.length,
           has_more: nextOffset < filteredItems.length,
           next_offset: nextOffset < filteredItems.length ? nextOffset : null,
+          last_offset: lastOffset,
+          is_out_of_range: offset > 0 && offset >= filteredItems.length,
         },
       });
       return;

@@ -19,15 +19,24 @@ export type AdminAuditEvent = {
   created_at?: string;
 };
 
+export type AdminAuditPagination = {
+  limit?: number;
+  offset?: number;
+  total?: number;
+  has_more?: boolean;
+  next_offset?: number | null;
+  last_offset?: number;
+  is_out_of_range?: boolean;
+};
+
 export type AdminAuditListPayload = {
   items?: AdminAuditEvent[];
   total?: number;
-  pagination?: {
-    limit?: number;
-    offset?: number;
-    total?: number;
-    has_more?: boolean;
-    next_offset?: number | null;
+  pagination?: AdminAuditPagination;
+  generated_at?: string;
+  diagnostics?: {
+    returned_count?: number;
+    query_duration_ms?: number;
   };
 };
 

@@ -164,6 +164,10 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         "/internal/service/audit-events?site_id=site_service&limit=2&offset=2",
         headers=build_internal_headers(),
     )
+    out_of_range_audit_response = client.get(
+        "/internal/service/audit-events?site_id=site_service&limit=2&offset=100",
+        headers=build_internal_headers(),
+    )
     assert issue_audit["payload"]["secret"] == "[redacted]"
     assert rotate_audit["payload"]["current"]["secret"] == "[redacted]"
     assert exact_audit_response.status_code == 200
@@ -187,7 +191,12 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         "total": 1,
         "has_more": False,
         "next_offset": None,
+        "last_offset": 0,
+        "is_out_of_range": False,
     }
+    assert exact_audit_data["generated_at"]
+    assert exact_audit_data["diagnostics"]["returned_count"] == 1
+    assert exact_audit_data["diagnostics"]["query_duration_ms"] >= 0
     assert exact_audit_data["sort"] == {"created_at": "desc", "event_id": "desc"}
     assert paged_audit_response.status_code == 200
     paged_audit_data = paged_audit_response.json()["data"]
@@ -196,6 +205,15 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
     assert paged_audit_data["pagination"]["total"] >= 7
     assert paged_audit_data["pagination"]["has_more"] is True
     assert paged_audit_data["pagination"]["next_offset"] == 4
+    assert paged_audit_data["pagination"]["last_offset"] >= 6
+    assert paged_audit_data["pagination"]["is_out_of_range"] is False
+    assert paged_audit_data["diagnostics"]["returned_count"] == 2
+    assert out_of_range_audit_response.status_code == 200
+    out_of_range_audit_data = out_of_range_audit_response.json()["data"]
+    assert out_of_range_audit_data["items"] == []
+    assert out_of_range_audit_data["pagination"]["is_out_of_range"] is True
+    assert out_of_range_audit_data["pagination"]["last_offset"] >= 6
+    assert out_of_range_audit_data["diagnostics"]["returned_count"] == 0
     assert missing_activate_response.status_code == 404
     assert error_audit_response.status_code == 200
     error_items = error_audit_response.json()["data"]["items"]
