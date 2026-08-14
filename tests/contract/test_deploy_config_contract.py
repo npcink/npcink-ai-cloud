@@ -2160,6 +2160,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     remote_smoke_script = (cloud_root / "deploy" / "remote-smoke.sh").read_text()
     nginx_prod_conf = (cloud_root / "deploy" / "nginx.prod.conf").read_text()
     frontend_proxy = (cloud_root / "frontend" / "src" / "proxy.ts").read_text()
+    release_checklist = (cloud_root / "deploy" / "RELEASE_CHECKLIST.md").read_text()
 
     package_manager = json.loads(package_json)["packageManager"]
     assert package_manager == (
@@ -2398,9 +2399,20 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "environment: production" in deploy_workflow
     assert "Approved for production validation by operator." in deploy_workflow
     assert "select(.head_sha == $sha)" in deploy_workflow
-    assert 'test "${conclusion}" = "success"' in deploy_workflow
-    assert "actions/workflows/codeql.yml/runs" in deploy_workflow
-    assert 'test "${codeql_conclusion}" = "success"' in deploy_workflow
+    assert "wait_seconds=900" in deploy_workflow
+    assert "poll_seconds=15" in deploy_workflow
+    assert "Timed out waiting ${wait_seconds}s for exact production checks" in deploy_workflow
+    assert '-f status=completed' not in deploy_workflow
+    assert (
+        'if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]'
+        in deploy_workflow
+    )
+    assert '"repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs"' in deploy_workflow
+    assert "exact_run codeql.yml" in deploy_workflow
+    assert (
+        'if [ "${codeql_status}" = "completed" ] && '
+        '[ "${codeql_conclusion}" != "success" ]' in deploy_workflow
+    )
     assert "codeql_run_id=%s" in deploy_workflow
     assert 'gh run download "${PRODUCTION_CI_RUN_ID}"' in deploy_workflow
     assert "production-deploy-bundle-${GITHUB_SHA}" in deploy_workflow
@@ -2423,6 +2435,16 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "production-deploy-phase-timing.json" in deploy_workflow
     assert "production-deploy-timing-${{ github.run_id }}-${{ github.sha }}" in (deploy_workflow)
     assert 'pipeline_status=("${PIPESTATUS[@]}")' in deploy_workflow
+
+    for marker in (
+        "### CVE allowlist change discipline",
+        "`deploy/image-lock/cve-allowlist.json` is one atomic release-contract change",
+        "`tests/contract/test_container_image_supply_contract.py`",
+        "`scripts/check-first-install-cve-gate.py`",
+        "`.venv/bin/python -m pytest tests/contract/`",
+        "`pnpm run check:release-policy`",
+    ):
+        assert marker in release_checklist
     assert "ci-observability:" in ci_workflow
     assert "python3 scripts/report-release-timing.py" in ci_workflow
     assert "artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" in ci_workflow
@@ -2951,7 +2973,7 @@ def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound(
     assert "acceptance_sha256" not in template
 
     assert contract in ops_playbook
-    assert contract in release_checklist
+    assert "retired controlled-validation receipt, no-user switch" in release_checklist
     assert contract in release_policy
     for marker in (
         "outside Git, the deploy bundle, and every release tree",

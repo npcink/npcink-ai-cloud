@@ -104,6 +104,14 @@ required `expected_sha` workflow input. The workflow rejects the dispatch
 before checkout or host mutation unless that full lowercase SHA still equals
 the exact `production` revision selected by GitHub for the run.
 
+The deploy workflow independently waits within one bounded 15-minute window
+for both exact-SHA push runs. A run that has not started or is still queued or
+in progress remains pending; an explicit non-success conclusion fails
+immediately; absence of two successful results at the deadline fails closed.
+This defensive wait prevents a valid early dispatch from losing a race with
+push CI. It does not replace the read-only preflight, accept another revision,
+rerun CI, or weaken either required check.
+
 `run_formal_release_smoke` is default-off because a Portal login code is
 single-use and expires after the configured short TTL (10 minutes by default),
 while deployment may take longer. Selecting it makes the post-deploy formal
