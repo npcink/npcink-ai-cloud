@@ -278,7 +278,65 @@ export function PortalAuditClient() {
             />
           </div>
         ) : (
-          <div className="divide-y divide-gray-200 dark:divide-gray-800">
+          <>
+            <div className="hidden overflow-x-auto lg:block" data-portal-audit="records-table">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <caption className="sr-only">
+                  {t('portal.audit.recent_desc', {}, 'Only recent customer-readable activity is shown here.')}
+                </caption>
+                <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 font-medium">{t('portal.audit.time_column', {}, 'Time')}</th>
+                    <th scope="col" className="px-4 py-3 font-medium">{t('audit.event_type', {}, 'Activity')}</th>
+                    <th scope="col" className="px-4 py-3 font-medium">{t('audit.outcome', {}, 'Result')}</th>
+                    <th scope="col" className="px-6 py-3 text-right font-medium">{t('common.details', {}, 'Details')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                  {recentEvents.map((event) => (
+                    <tr key={event.event_id} className="align-top">
+                      <td className="whitespace-nowrap px-6 py-4 text-slate-500 dark:text-slate-400">
+                        {formatDate(event.created_at)}
+                      </td>
+                      <th scope="row" className="px-4 py-4 font-medium text-slate-950 dark:text-white">
+                        {translateEventKind(event.event_kind)}
+                        {!isSuccessfulAuditOutcome(event.outcome) ? (
+                          <span className="mt-1 block max-w-md text-xs font-normal leading-5 text-amber-700 dark:text-amber-300">
+                            {t('portal.audit.support_hint', {}, 'Contact support with the site name and activity time.')}
+                          </span>
+                        ) : null}
+                      </th>
+                      <td className="whitespace-nowrap px-4 py-4">
+                        <PortalStatusBadge status={event.outcome} label={translateOutcome(event.outcome)} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <details className="ml-auto max-w-sm text-left text-xs text-slate-500 dark:text-slate-400">
+                          <summary className="cursor-pointer text-right font-medium text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
+                            {t('portal.support_information', {}, 'Support information')}
+                          </summary>
+                          <div className="mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900/60">
+                            <div>
+                              <span className="block font-medium text-slate-700 dark:text-slate-300">Event ID</span>
+                              <PortalIdentifier value={String(event.event_id)} full />
+                            </div>
+                            {getAuditTraceId(event) ? (
+                              <div>
+                                <span className="block font-medium text-slate-700 dark:text-slate-300">
+                                  {t('audit.trace_id', {}, 'Trace ID')}
+                                </span>
+                                <PortalIdentifier value={getAuditTraceId(event)} full />
+                              </div>
+                            ) : null}
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="divide-y divide-gray-200 dark:divide-gray-800 lg:hidden">
             {recentEvents.map((event) => (
               <article key={event.event_id} className="px-6 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -316,7 +374,8 @@ export function PortalAuditClient() {
                 </div>
               </article>
             ))}
-          </div>
+            </div>
+          </>
         )}
         {recentEvents.length > 0
         && recentEvents.length < Number(auditSummary?.totals?.events || 0)

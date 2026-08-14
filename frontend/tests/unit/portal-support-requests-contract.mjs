@@ -80,6 +80,11 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
+  /data-portal-support="tickets-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_request_view_detail/,
+  'Portal support history must use a semantic PC table with one detail action per ticket'
+);
+assert.match(
+  portalSupportPageSource,
   /SUPPORT_TOPICS[\s\S]*billing[\s\S]*payment[\s\S]*site[\s\S]*usage[\s\S]*account[\s\S]*general/,
   'Portal support form must expose bounded customer-support topics'
 );

@@ -427,7 +427,63 @@ function PortalSupportContent() {
         {isListLoading ? (
           <LoadingFallback />
         ) : items.length ? (
-          <div className="space-y-3">
+          <>
+            <div className="hidden overflow-x-auto lg:block" data-portal-support="tickets-table">
+              <table className="w-full min-w-[980px] text-left text-sm">
+                <caption className="sr-only">
+                  {t('portal.support_request_list_desc', {}, 'Open and in-progress tickets stay visible until support resolves them.')}
+                </caption>
+                <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <tr>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_list_title', {}, 'Ticket')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_topic', {}, 'Topic')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_site', {}, 'Related site')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.updated_at', {}, 'Updated')}</th>
+                    <th scope="col" className="px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                  {items.map((item) => (
+                    <tr key={item.request_id} className="align-middle">
+                      <th scope="row" className="max-w-[26rem] px-3 py-4 font-normal">
+                        <p className="truncate font-semibold text-slate-950 dark:text-white">{item.title}</p>
+                        <p className="mt-1 line-clamp-1 text-xs font-normal leading-5 text-slate-500 dark:text-slate-400">
+                          {item.description}
+                        </p>
+                      </th>
+                      <td className="whitespace-nowrap px-3 py-4 text-slate-600 dark:text-slate-300">
+                        {t(`portal.support_topic_${item.topic}`, {}, item.topic)}
+                      </td>
+                      <td className="max-w-[14rem] truncate px-3 py-4 text-slate-600 dark:text-slate-300">
+                        {item.site_id && item.site_id === selectedContextSite?.site_id
+                          ? getPortalSiteDisplayName(selectedContextSite)
+                          : t('portal.support_request_no_site', {}, 'Account-level issue')}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4">
+                        <PortalStatusBadge
+                          status={statusTone(item.status)}
+                          label={t(`portal.support_status_${item.status}`, {}, item.status)}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-slate-500 dark:text-slate-400">
+                        {item.updated_at ? formatDate(item.updated_at) : '—'}
+                      </td>
+                      <td className="px-3 py-4 text-right">
+                        <Link
+                          className="btn btn-secondary btn-sm"
+                          href={`/portal/support/${encodeURIComponent(item.request_id)}`}
+                        >
+                          {t('portal.support_request_view_detail', {}, 'View detail')}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 lg:hidden">
             {items.map((item) => (
               <PortalCard key={item.request_id} variant="portal" className="bg-white/70 dark:bg-slate-950/35">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -456,7 +512,8 @@ function PortalSupportContent() {
                 </div>
               </PortalCard>
             ))}
-          </div>
+            </div>
+          </>
         ) : (
           <PortalEmptyState
             title={t('portal.support_request_empty_title', {}, 'No tickets yet')}

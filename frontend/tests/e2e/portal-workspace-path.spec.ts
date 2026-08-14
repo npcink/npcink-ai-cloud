@@ -1685,6 +1685,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(packageDialog.getByText(/¥208\.80/)).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.getByText(/^Payment orders$|^支付订单$/i)).toBeVisible();
+  await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
   await expect(page.getByRole('tab', { name: /Pending|待支付/i })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('link', { name: /Continue payment|继续支付/i })).toBeVisible();
   await expect(page.getByText(/Complete payment before|前完成支付/i).first()).toBeVisible();
@@ -1706,7 +1707,9 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(page.locator('[data-payment-order-id="pay_pending_visible"]')).toHaveCount(0);
   await page.getByRole('tab', { name: /Closed|已关闭/i }).click();
   await expect(page.locator('[data-payment-order-id="pay_pending_visible"]')).toContainText(/Canceled|已取消/i);
-  await expect(page.getByText(/Medium AI credit pack|中 AI 积分包/i)).toBeVisible();
+  await expect(
+    page.locator('[data-portal-billing="payment-orders-table"]').getByText(/Medium AI credit pack|中 AI 积分包/i)
+  ).toBeVisible();
 });
 
 test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
@@ -1803,11 +1806,13 @@ test('portal audit stays a bounded support deep link', async ({ page }) => {
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-support-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
-  await expect(page.getByRole('article')).toHaveCount(10);
+  const auditTable = page.locator('[data-portal-audit="records-table"]');
+  await expect(auditTable).toBeVisible();
+  await expect(auditTable.locator('tbody tr')).toHaveCount(10);
   await page.getByRole('button', { name: /Load more activity|加载更多活动|載入更多活動/i }).click();
-  await expect(page.getByRole('article')).toHaveCount(12);
-  await page.getByText(/Support information|支持信息|支援資訊/i).first().click();
-  await expect(page.getByText('trace_portal_e2e')).toBeVisible();
+  await expect(auditTable.locator('tbody tr')).toHaveCount(12);
+  await auditTable.getByText(/Support information|支持信息|支援資訊/i).first().click();
+  await expect(auditTable.getByText('trace_portal_e2e')).toBeVisible();
 });
 
 test('portal site record focuses on address, status, and support actions', async ({ page }) => {
@@ -1838,11 +1843,13 @@ test('portal support owns customer feedback and status expectations', async ({ p
 
   await page.goto('/portal/support');
   await expect(page.getByRole('heading', { level: 1, name: /Tickets|工单|工單/i })).toBeVisible();
+  const ticketsTable = page.locator('[data-portal-support="tickets-table"]');
+  await expect(ticketsTable).toBeVisible();
   await expect(page.locator('[data-portal-support="status-rules"]')).toHaveCount(1);
   await page.locator('[data-portal-support="status-rules"] summary').click();
   await expect(page.getByText(/Open tickets are waiting|待处理工单/i)).toBeVisible();
   await expect(page.getByText(/Close evaluation|关闭评价|關閉評價/i).first()).toBeVisible();
-  await expect(page.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
+  await expect(ticketsTable.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
   await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -1859,6 +1866,13 @@ test('portal AI credit trend shows an explicit empty state instead of a blank ch
 
 test('account projections stay idle until a site context is selected', async ({ page }) => {
   const calls = await installPortalMocks(page, { withoutSelectedContext: true });
+
+  await page.goto('/portal');
+  const overview = page.locator('[data-portal-home="operation-overview"]');
+  await expect(overview.getByText(/Select a site context|请选择站点上下文/i).first()).toBeVisible();
+  await expect(overview.getByText(/^Loading\.\.\.$|^加载中\.\.\.$/i)).toHaveCount(0);
+  await expect(overview.getByText(/^Uncovered$|^未覆盖$/i)).toHaveCount(0);
+  await expect(overview.getByText(/^Available$|^可用$/i)).toHaveCount(0);
 
   for (const path of [
     '/portal/billing',
@@ -1879,7 +1893,9 @@ test('account-level support stays available without a selected site context', as
 
   await page.goto('/portal/support');
   await expect(page.getByRole('combobox', { name: /Current site|站点记录|站點記錄/i })).toHaveValue('');
-  await expect(page.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
+  await expect(
+    page.locator('[data-portal-support="tickets-table"]').getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)
+  ).toBeVisible();
 
   await page.goto('/portal/support/ticket_portal_e2e_open');
   await expect(page.getByRole('heading', { level: 1, name: /Payment order status looks wrong/i })).toBeVisible();
@@ -1921,6 +1937,63 @@ test('portal home exposes a safe retry when entitlements fail', async ({ page })
   await expect(page.getByText(/internal backend detail/i)).toHaveCount(0);
   await retryButton.click();
   await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+});
+
+test('portal PC tables stay readable across supported desktop widths, themes, and locales', async ({ page }) => {
+  await installPortalMocks(page);
+
+  const variants = [
+    { width: 1280, locale: 'en-US', theme: 'light' },
+    { width: 1280, locale: 'zh-CN', theme: 'dark' },
+    { width: 1440, locale: 'en-US', theme: 'dark' },
+    { width: 1440, locale: 'zh-CN', theme: 'light' },
+    { width: 1920, locale: 'en-US', theme: 'light' },
+    { width: 1920, locale: 'zh-CN', theme: 'dark' },
+  ] as const;
+
+  const expectNoPageOverflow = async () => {
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  };
+
+  for (const variant of variants) {
+    await page.setViewportSize({ width: variant.width, height: 1200 });
+    await page.goto('/portal');
+    await page.evaluate(({ locale, theme }) => {
+      window.localStorage.setItem('locale', locale);
+      window.localStorage.setItem('theme', theme);
+    }, variant);
+    await page.reload();
+
+    await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务/i })).toBeVisible();
+    await expect(page.locator('[data-portal-sites="desktop-table"]')).toBeVisible();
+    expect(await page.locator('html').evaluate((element) => element.classList.contains('dark'))).toBe(
+      variant.theme === 'dark'
+    );
+    await expectNoPageOverflow();
+
+    await page.goto('/portal/usage');
+    await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+    await expect(page.locator('[data-portal-usage="records-table"]')).toBeVisible();
+    await expectNoPageOverflow();
+
+    await page.goto('/portal/audit');
+    await expect(page.locator('[data-portal-audit="records-table"]')).toBeVisible();
+    await expectNoPageOverflow();
+
+    await page.goto('/portal/support');
+    await expect(page.locator('[data-portal-support="tickets-table"]')).toBeVisible();
+    await expectNoPageOverflow();
+
+    await page.goto('/portal/billing');
+    await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
+    await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
+    await expect(page.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
+    await expectNoPageOverflow();
+    await page.keyboard.press('Escape');
+  }
 });
 
 test('portal purchase and support tasks stay usable on a 390px viewport', async ({ page }) => {

@@ -333,7 +333,7 @@ export function PortalPackageChangePanel({
           </label>
         </div>
         {comparisonTiers.length > 0 ? (
-          <div className="mt-3 overflow-x-auto rounded-[18px] border border-slate-200 dark:border-slate-800">
+          <div className="mt-3 overflow-x-auto rounded-[18px] border border-slate-200 dark:border-slate-800" data-portal-billing="package-comparison-table">
             <table className="min-w-[42rem] w-full border-collapse text-sm">
               <thead className="bg-[#f5f5f7] dark:bg-slate-900/70">
                 <tr>
