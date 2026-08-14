@@ -4,6 +4,8 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const pagePath = fromFrontendRoot('src/app/admin/service-settings/page.tsx');
 const source = readFileSync(pagePath, 'utf8');
+const modelPath = fromFrontendRoot('src/features/admin/service-settings/service-settings-model.ts');
+const modelSource = readFileSync(modelPath, 'utf8');
 
 assert.match(
   source,
@@ -139,9 +141,9 @@ assert.match(
 );
 
 assert.match(
-  source,
+  modelSource,
   /smtp_username_same_as_from_email: boolean;/,
-  'service settings email form must track whether SMTP username follows from_email'
+  'service settings projection must track whether SMTP username follows from_email'
 );
 
 assert.match(
@@ -151,9 +153,15 @@ assert.match(
 );
 
 assert.match(
+  modelSource,
+  /emailConfigExpanded: email\.status === 'missing_config' \|\| email\.status === 'error'/,
+  'service settings projection should auto-expand SMTP config only when missing or errored'
+);
+
+assert.match(
   source,
-  /setEmailConfigExpanded\(email\.status === 'missing_config' \|\| email\.status === 'error'\);/,
-  'SMTP config should auto-expand only when missing or errored'
+  /const projection = projectServiceSettingsForms\(nextData\);[\s\S]*setData\(projection\.data\);[\s\S]*setSavedForms\(nextSavedForms\);/,
+  'the route must delegate response hydration to the service settings feature model'
 );
 
 assert.match(
