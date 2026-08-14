@@ -48,6 +48,24 @@ assert.match(
 );
 
 assert.match(
+  pageSource,
+  /requestProviderConnectionDelete[\s\S]*delete-preflight[\s\S]*expected_updated_at[\s\S]*provider_connection\.delete_conflict/,
+  'Provider deletion must inspect current impact, submit the preflight version, and handle stale conflicts'
+);
+
+assert.match(
+  pageSource,
+  /hasProviderWorkbenchDraftChanges[\s\S]*error_delete_connection_unsaved_draft[\s\S]*reopen_draft/,
+  'Provider deletion must preserve and reopen a dirty same-connection draft before preflight'
+);
+
+assert.match(
+  directorySource,
+  /provider-delete-preflight-loading[\s\S]*delete_preflight_impact[\s\S]*uncovered_runtime_profile_ids[\s\S]*!matchingDeletePreflight/,
+  'Inline deletion confirmation must show backend-owned impact and stay disabled without matching preflight evidence'
+);
+
+assert.match(
   actionMenuSource,
   /FloatingPortal[\s\S]*placement: 'bottom-end'[\s\S]*strategy: 'fixed'[\s\S]*flip\(\{ padding: 8 \}\)[\s\S]*shift\(\{ padding: 8 \}\)/,
   'Admin action menus must portal outside table overflow and use collision-aware viewport placement'

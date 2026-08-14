@@ -1938,9 +1938,35 @@ def test_admin_provider_connections_can_be_deleted(
     )
     assert create_response.status_code == 200, create_response.text
 
-    delete_response = client.delete(
+    preflight_response = client.get(
+        "/internal/service/admin/provider-connections/delete_me_provider/delete-preflight",
+        headers=build_internal_headers(),
+    )
+    assert preflight_response.status_code == 200, preflight_response.text
+    preflight = preflight_response.json()["data"]
+    assert preflight["surface"] == "admin_provider_connection_delete_preflight"
+    assert preflight["expected_updated_at"]
+    assert preflight["impact"]["risk_level"] == "high"
+    assert preflight["impact"]["runtime_profile_ids"] == ["web-search.managed"]
+    assert preflight["impact"]["uncovered_runtime_profile_ids"] == [
+        "web-search.managed"
+    ]
+    assert preflight["impact"]["model_count"] == 0
+    assert preflight["requires_confirmation"] is True
+    assert "delete-me-secret" not in preflight_response.text
+
+    missing_version_response = client.request(
+        "DELETE",
+        "/internal/service/admin/provider-connections/delete_me_provider",
+        headers=build_internal_headers(idempotency_key="provider-connection-delete-missing"),
+    )
+    assert missing_version_response.status_code == 422, missing_version_response.text
+
+    delete_response = client.request(
+        "DELETE",
         "/internal/service/admin/provider-connections/delete_me_provider",
         headers=build_internal_headers(idempotency_key="provider-connection-delete"),
+        json={"expected_updated_at": preflight["expected_updated_at"]},
     )
     assert delete_response.status_code == 200, delete_response.text
     delete_data = delete_response.json()["data"]
@@ -1965,3 +1991,67 @@ def test_admin_provider_connections_can_be_deleted(
     )
     assert list_response.status_code == 200, list_response.text
     assert list_response.json()["data"]["connections"] == []
+
+
+def test_admin_provider_connection_delete_rejects_stale_preflight(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(tmp_path)
+    create_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="provider-delete-conflict-create"),
+        json={
+            "connection_id": "delete_conflict_provider",
+            "provider_id": "delete_conflict",
+            "provider_type": "openai_compatible",
+            "display_name": "Delete conflict",
+            "enabled": True,
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+            "credential": "delete-conflict-secret",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    preflight_response = client.get(
+        "/internal/service/admin/provider-connections/delete_conflict_provider/delete-preflight",
+        headers=build_internal_headers(),
+    )
+    assert preflight_response.status_code == 200, preflight_response.text
+    expected_updated_at = preflight_response.json()["data"]["expected_updated_at"]
+
+    update_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="provider-delete-conflict-update"),
+        json={
+            "connection_id": "delete_conflict_provider",
+            "provider_id": "delete_conflict",
+            "provider_type": "openai_compatible",
+            "display_name": "Delete conflict updated",
+            "enabled": True,
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["data"]["updated_at"] != expected_updated_at
+
+    stale_delete_response = client.request(
+        "DELETE",
+        "/internal/service/admin/provider-connections/delete_conflict_provider",
+        headers=build_internal_headers(idempotency_key="provider-delete-conflict-stale"),
+        json={"expected_updated_at": expected_updated_at},
+    )
+    assert stale_delete_response.status_code == 409, stale_delete_response.text
+    assert stale_delete_response.json()["error_code"] == (
+        "provider_connection.delete_conflict"
+    )
+
+    list_response = client.get(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(),
+    )
+    assert list_response.status_code == 200, list_response.text
+    assert [
+        connection["display_name"]
+        for connection in list_response.json()["data"]["connections"]
+    ] == ["Delete conflict updated"]
