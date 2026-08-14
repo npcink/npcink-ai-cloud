@@ -120,6 +120,243 @@ def _build_admin_operational_readiness_projection(
     }
 
 
+def _build_admin_overview_operator_projection(
+    overview: dict[str, object],
+) -> dict[str, object]:
+    readiness = _dict_value(overview.get("operational_readiness"))
+    runtime = _dict_value(overview.get("runtime_diagnostics"))
+    callback = _dict_value(runtime.get("callback"))
+    guard = _dict_value(runtime.get("guard"))
+    telemetry = _dict_value(overview.get("runtime_telemetry"))
+    telemetry_summary = _dict_value(telemetry.get("alert_summary"))
+    counts = _dict_value(overview.get("counts"))
+    expiring = _dict_value(overview.get("expiring_subscriptions"))
+    attention_subscriptions = _dict_list(overview.get("attention_subscriptions"))
+
+    readiness_status = str(readiness.get("status") or "").strip().lower()
+    if readiness_status == "error":
+        resolved_readiness_status = "blocked"
+    elif readiness_status == "ok":
+        resolved_readiness_status = "ready"
+    else:
+        resolved_readiness_status = "unknown"
+
+    checks_failed = max(0, _coerce_int(readiness.get("checks_failed"), default=0))
+    raw_failure_scopes = readiness.get("failure_scopes")
+    failure_scopes = (
+        [str(scope) for scope in raw_failure_scopes]
+        if isinstance(raw_failure_scopes, list)
+        else []
+    )
+    readiness_href = str(readiness.get("href") or "/admin/troubleshooting")
+    callback_failed = max(0, _coerce_int(callback.get("failed"), default=0))
+    callback_pending = max(0, _coerce_int(callback.get("pending"), default=0))
+    guard_events = max(0, _coerce_int(guard.get("recent_events"), default=0))
+    expiring_in_7_days = max(0, _coerce_int(expiring.get("within_7_days"), default=0))
+    sites_active = max(0, _coerce_int(counts.get("sites_active"), default=0))
+    telemetry_status = str(telemetry_summary.get("status") or "inactive").strip().lower()
+    telemetry_alerts = _dict_list(telemetry_summary.get("alerts"))
+    first_telemetry_alert = telemetry_alerts[0] if telemetry_alerts else {}
+    telemetry_alert_count = max(
+        0,
+        _coerce_int(telemetry_summary.get("alert_count"), default=len(telemetry_alerts)),
+    )
+
+    watch_items: list[tuple[int, dict[str, object]]] = []
+    if resolved_readiness_status == "blocked":
+        watch_items.append(
+            (
+                0,
+                {
+                    "code": "operational_readiness_blocked",
+                    "scope": "runtime.operational_readiness",
+                    "severity": "action_needed",
+                    "value": checks_failed,
+                    "detail_code": "operational_readiness_blocked",
+                    "detail_args": {"failure_scopes": failure_scopes},
+                },
+            )
+        )
+    elif resolved_readiness_status == "unknown":
+        watch_items.append(
+            (
+                0,
+                {
+                    "code": "operational_readiness_unknown",
+                    "scope": "runtime.operational_readiness",
+                    "severity": "warn",
+                    "value": None,
+                    "detail_code": "operational_readiness_unknown",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    if callback_failed > 0:
+        watch_items.append(
+            (
+                10,
+                {
+                    "code": "runtime_callback_failed",
+                    "scope": "runtime.callback",
+                    "severity": "action_needed",
+                    "value": callback_failed,
+                    "detail_code": "runtime_callback_failed",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    if telemetry_status in {"error", "warning"}:
+        telemetry_severity = "action_needed" if telemetry_status == "error" else "warn"
+        watch_items.append(
+            (
+                15 if telemetry_status == "error" else 35,
+                {
+                    "code": "runtime_telemetry",
+                    "scope": "runtime.telemetry_coverage",
+                    "severity": telemetry_severity,
+                    "value": max(telemetry_alert_count, 1),
+                    "detail_code": "runtime_telemetry",
+                    "detail_args": {
+                        "alert_code": str(first_telemetry_alert.get("code") or ""),
+                    },
+                },
+            )
+        )
+
+    if guard_events > 0:
+        is_hot = guard_events >= 25
+        watch_items.append(
+            (
+                20 if is_hot else 40,
+                {
+                    "code": "request_guard_events",
+                    "scope": "request.guard",
+                    "severity": "action_needed" if is_hot else "warn",
+                    "value": guard_events,
+                    "detail_code": "request_guard_hot" if is_hot else "request_guard_events",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    if attention_subscriptions:
+        first_attention = attention_subscriptions[0]
+        watch_items.append(
+            (
+                30,
+                {
+                    "code": "commercial_subscription_attention",
+                    "scope": "commercial.subscription",
+                    "severity": "action_needed",
+                    "value": len(attention_subscriptions),
+                    "detail_code": "commercial_subscription_attention",
+                    "detail_args": {
+                        "reason": str(
+                            first_attention.get("reason")
+                            or first_attention.get("message")
+                            or ""
+                        )
+                    },
+                },
+            )
+        )
+
+    if expiring_in_7_days > 0:
+        watch_items.append(
+            (
+                50,
+                {
+                    "code": "commercial_subscription_expiring",
+                    "scope": "commercial.subscription",
+                    "severity": "warn",
+                    "value": expiring_in_7_days,
+                    "detail_code": "commercial_subscription_expiring",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    ordered_watch_items = [item for _, item in sorted(watch_items, key=lambda entry: entry[0])]
+    if resolved_readiness_status == "blocked":
+        status = "error"
+        conclusion_code = "operational_readiness_blocked"
+    elif resolved_readiness_status == "unknown":
+        status = "warning"
+        conclusion_code = "operational_readiness_unknown"
+    elif callback_failed > 0 or telemetry_status == "error":
+        status = "error"
+        conclusion_code = "runtime_error"
+    elif (
+        attention_subscriptions
+        or telemetry_status == "warning"
+        or expiring_in_7_days > 0
+        or guard_events > 0
+        or callback_pending > 0
+    ):
+        status = "warning"
+        conclusion_code = "warning"
+    elif sites_active == 0:
+        status = "inactive"
+        conclusion_code = "inactive"
+    else:
+        status = "ok"
+        conclusion_code = "ok"
+
+    first_watch_item = ordered_watch_items[0] if ordered_watch_items else {}
+    first_watch_scope = str(first_watch_item.get("scope") or "")
+    first_watch_code = str(first_watch_item.get("code") or "")
+    if resolved_readiness_status in {"blocked", "unknown"}:
+        primary_action = {
+            "kind": "readiness",
+            "href": readiness_href,
+        }
+    elif first_watch_code == "runtime_telemetry":
+        primary_action = {
+            "kind": "runtime_telemetry",
+            "href": "/admin/troubleshooting",
+        }
+    elif first_watch_scope.startswith(("runtime.", "request.")):
+        primary_action = {
+            "kind": "accounts",
+            "href": "/admin/accounts",
+        }
+    elif status == "error" or attention_subscriptions or expiring_in_7_days > 0:
+        primary_action = {
+            "kind": "coverage",
+            "href": "/admin/coverage",
+        }
+    else:
+        primary_action = {
+            "kind": "accounts",
+            "href": "/admin/accounts",
+        }
+
+    has_runtime_watch_item = any(
+        str(item.get("scope") or "").startswith(("runtime.", "queue.", "request."))
+        for item in ordered_watch_items
+    )
+    return {
+        "revision": "admin-overview-operator-projection-v1",
+        "status": status,
+        "conclusion_code": conclusion_code,
+        "conclusion_args": {
+            "checks_failed": checks_failed,
+            "failure_scopes": failure_scopes,
+        },
+        "readiness": {
+            "status": resolved_readiness_status,
+            "checks_failed": checks_failed,
+            "failure_scopes": failure_scopes,
+            "href": readiness_href,
+        },
+        "primary_action": primary_action,
+        "follow_up_focus": "runtime" if has_runtime_watch_item else "commercial",
+        "watch_items": ordered_watch_items,
+    }
+
+
 def _coerce_int(value: object, *, default: int) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -2485,11 +2722,12 @@ async def get_admin_overview(
         account_id=first_attention_account_id,
         subscription_id=first_attention_subscription_id,
     )
+    result["operator_projection"] = _build_admin_overview_operator_projection(result)
     return build_envelope(
         status="ok",
         message="admin overview loaded",
         data=result,
-        revision="m6",
+        revision="m7",
     )
 
 

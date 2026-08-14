@@ -396,6 +396,44 @@ export async function installAdminMocks(
           failure_scopes: ['workers', 'cadence'],
           href: '/admin/troubleshooting',
         },
+        operator_projection: {
+          revision: 'admin-overview-operator-projection-v1',
+          status: 'error',
+          conclusion_code: 'operational_readiness_blocked',
+          conclusion_args: {
+            checks_failed: 2,
+            failure_scopes: ['workers', 'cadence'],
+          },
+          readiness: {
+            status: 'blocked',
+            checks_failed: 2,
+            failure_scopes: ['workers', 'cadence'],
+            href: '/admin/troubleshooting',
+          },
+          primary_action: {
+            kind: 'readiness',
+            href: '/admin/troubleshooting',
+          },
+          follow_up_focus: 'runtime',
+          watch_items: [
+            {
+              code: 'operational_readiness_blocked',
+              scope: 'runtime.operational_readiness',
+              severity: 'action_needed',
+              value: 2,
+              detail_code: 'operational_readiness_blocked',
+              detail_args: { failure_scopes: ['workers', 'cadence'] },
+            },
+            {
+              code: 'runtime_telemetry',
+              scope: 'runtime.telemetry_coverage',
+              severity: 'warn',
+              value: 1,
+              detail_code: 'runtime_telemetry',
+              detail_args: { alert_code: 'hosted_model.provider_call_gap' },
+            },
+          ],
+        },
         runtime_operator_explanations: [
           {
             state: 'policy_gated',

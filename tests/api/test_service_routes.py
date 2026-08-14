@@ -864,6 +864,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     unauthorized_response = client.get("/internal/service/admin/overview")
 
     assert overview_response.status_code == 200
+    assert overview_response.json()["meta"]["revision"] == "m7"
     overview = overview_response.json()["data"]
     assert overview["counts"]["accounts_total"] == 1
     assert overview["counts"]["principals_active"] == 1
@@ -878,6 +879,20 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert "providers" in overview["operational_readiness"]["failure_scopes"]
     assert overview["operational_readiness"]["href"] == "/admin/troubleshooting"
     assert "summary" not in overview["operational_readiness"]
+    assert overview["operator_projection"]["revision"] == (
+        "admin-overview-operator-projection-v1"
+    )
+    assert overview["operator_projection"]["status"] == "error"
+    assert overview["operator_projection"]["conclusion_code"] == (
+        "operational_readiness_blocked"
+    )
+    assert overview["operator_projection"]["primary_action"] == {
+        "kind": "readiness",
+        "href": "/admin/troubleshooting",
+    }
+    assert overview["operator_projection"]["watch_items"][0]["code"] == (
+        "operational_readiness_blocked"
+    )
     assert overview["runtime_telemetry"]["filters"]["recent_minutes"] == 1440
     assert overview["runtime_telemetry"]["alert_summary"]["status"] in {
         "ok",
