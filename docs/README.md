@@ -70,6 +70,8 @@ deleting the old decision history.
 - [Engineering Command Inventory M4 Source Bundle Closeout and Retrospective](engineering-command-inventory-m4-source-bundle-closeout-and-retrospective-2026-08-04.md)
 - [Structural Remediation Delivery Standard](structural-remediation-delivery-standard-v1.md)
 - [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
+- [Systematic Remediation Delivery Standard](systematic-remediation-delivery-standard-v1.md)
+- [Systematic Remediation Closeout and Retrospective — 2026-08-14](systematic-remediation-closeout-and-retrospective-2026-08-14.md) — dated evidence for the staged remediation sequence, validation chain, runtime observations, and development lessons
 - [Repository Hygiene Cleanup Closeout and Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
 - [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
