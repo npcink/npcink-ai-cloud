@@ -503,10 +503,19 @@ def environment_checks(
             "frontend_node_modules",
             "ready" if tsc.exists() else "missing",
             True,
-            str(tsc) if tsc.exists() else f"{tsc} is unavailable; run the repository bootstrap first",
+            (
+                str(tsc)
+                if tsc.exists()
+                else f"{tsc} is unavailable; run the repository bootstrap first"
+            ),
         )
     else:
-        add("frontend", "not_required", False, "No changed frontend path requires frontend tooling.")
+        add(
+            "frontend",
+            "not_required",
+            False,
+            "No changed frontend path requires frontend tooling.",
+        )
 
     if any(command and command[0] == "node" for command in planned_commands):
         node = executable_path("node")
@@ -532,7 +541,11 @@ def environment_checks(
             "m4_environment",
             "ready" if env_file.is_file() else "operator_required",
             False,
-            str(env_file) if env_file.is_file() else "M4/runtime environment must be supplied by the operator",
+            (
+                str(env_file)
+                if env_file.is_file()
+                else "M4/runtime environment must be supplied by the operator"
+            ),
         )
     else:
         add("m4", "not_required", False, f"Runtime lane is {runtime_lane}.")
@@ -546,7 +559,12 @@ def environment_checks(
             gh or "gh is unavailable; GitHub Actions remains the remote runtime",
         )
     else:
-        add("github_cli", "not_required", False, "No GitHub PR operation is part of the local plan.")
+        add(
+            "github_cli",
+            "not_required",
+            False,
+            "No GitHub PR operation is part of the local plan.",
+        )
 
     return checks
 
