@@ -35,6 +35,7 @@ import {
 import {
   buildProviderConnectionForm,
   EMPTY_PROVIDER_CONNECTION_FORM,
+  hasProviderWorkbenchDraftChanges,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
   type ModelReferenceFeatureFilter,
@@ -59,11 +60,13 @@ import {
   referenceProviderLabel,
   type ProviderExternalLinkItem,
 } from '@/features/admin/ai-resources/provider-presets';
-import type {
-  ConnectionStatusFilter,
-  ProviderConnectionTestResult,
-  ProviderImageDeliveryProbeResult,
-  SupplierConnection as Connection,
+import {
+  isProviderConnectionDeletePreflight,
+  type ConnectionStatusFilter,
+  type ProviderConnectionDeletePreflight,
+  type ProviderConnectionTestResult,
+  type ProviderImageDeliveryProbeResult,
+  type SupplierConnection as Connection,
 } from '@/features/admin/ai-resources/types';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
@@ -436,8 +439,10 @@ function AiResourcesContent() {
   const [probingImageDeliveryConnectionId, setProbingImageDeliveryConnectionId] = useState('');
   const [imageDeliveryProbeResult, setImageDeliveryProbeResult] = useState<ProviderImageDeliveryProbeResult | null>(null);
   const [approvingImageHostConnectionId, setApprovingImageHostConnectionId] = useState('');
+  const [preflightingDeleteConnectionId, setPreflightingDeleteConnectionId] = useState('');
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
+  const [deletePreflight, setDeletePreflight] = useState<ProviderConnectionDeletePreflight | null>(null);
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState(false);
   const [loadingModelReferences, setLoadingModelReferences] = useState(false);
   const [syncingModelReferences, setSyncingModelReferences] = useState(false);
@@ -469,12 +474,14 @@ function AiResourcesContent() {
     confirmingModelBatch,
     customModelInput,
   } = providerWorkbench;
+  const providerDraftDirty = hasProviderWorkbenchDraftChanges(providerWorkbench);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models'>('connection');
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
+  const deletePreflightRequestRevision = useRef(0);
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -653,8 +660,85 @@ function AiResourcesContent() {
     }
   }
 
+  async function requestProviderConnectionDelete(connection: Connection) {
+    if (connection.managed_by !== 'cloud_provider_connections') return;
+    const requestRevision = deletePreflightRequestRevision.current + 1;
+    deletePreflightRequestRevision.current = requestRevision;
+    setConfirmingDeleteConnectionId('');
+    setDeletePreflight(null);
+    if (
+      providerConnectionForm.connectionId === connection.connection_id &&
+      providerDraftDirty
+    ) {
+      const draftMessage = aiText(
+        'error_delete_connection_unsaved_draft',
+        'Save or discard the unsaved provider draft before deleting this connection.'
+      );
+      setProviderWorkbenchSection('connection');
+      dispatchProviderWorkbench({ type: 'reopen_draft' });
+      setError(draftMessage);
+      toast.error(draftMessage, t('common.error'));
+      return;
+    }
+
+    setPreflightingDeleteConnectionId(connection.connection_id);
+    setError('');
+    try {
+      const response = await aiResourcesClient.request<ProviderConnectionDeletePreflight>(
+        `/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}/delete-preflight`
+      );
+      if (!isProviderConnectionDeletePreflight(response.data)) {
+        throw new Error('provider deletion preflight is incomplete');
+      }
+      if (deletePreflightRequestRevision.current !== requestRevision) return;
+      if (response.data.connection.connection_id !== connection.connection_id) {
+        throw new Error('provider deletion preflight does not match the requested connection');
+      }
+      setDeletePreflight(response.data);
+      setConfirmingDeleteConnectionId(connection.connection_id);
+    } catch (preflightError) {
+      if (deletePreflightRequestRevision.current !== requestRevision) return;
+      const preflightMessage = resolveUiErrorMessage(
+        preflightError,
+        aiText(
+          'error_delete_connection_preflight',
+          'Could not inspect the current provider deletion impact.'
+        )
+      );
+      setError(preflightMessage);
+      toast.error(preflightMessage, t('common.error'));
+    } finally {
+      if (deletePreflightRequestRevision.current === requestRevision) {
+        setPreflightingDeleteConnectionId('');
+      }
+    }
+  }
+
   async function deleteProviderConnection(connection: Connection) {
     if (connection.managed_by !== 'cloud_provider_connections') return;
+    if (
+      !deletePreflight ||
+      deletePreflight.connection.connection_id !== connection.connection_id
+    ) {
+      await requestProviderConnectionDelete(connection);
+      return;
+    }
+    if (
+      providerConnectionForm.connectionId === connection.connection_id &&
+      providerDraftDirty
+    ) {
+      setConfirmingDeleteConnectionId('');
+      setDeletePreflight(null);
+      setProviderWorkbenchSection('connection');
+      dispatchProviderWorkbench({ type: 'reopen_draft' });
+      const draftMessage = aiText(
+        'error_delete_connection_unsaved_draft',
+        'Save or discard the unsaved provider draft before deleting this connection.'
+      );
+      setError(draftMessage);
+      toast.error(draftMessage, t('common.error'));
+      return;
+    }
     setDeletingConnectionId(connection.connection_id);
     setError('');
     setMessage('');
@@ -663,6 +747,9 @@ function AiResourcesContent() {
         `/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}`,
         {
           method: 'DELETE',
+          body: {
+            expected_updated_at: deletePreflight.expected_updated_at,
+          },
         }
       );
       setLastReceipt(response.data.receipt || null);
@@ -673,9 +760,25 @@ function AiResourcesContent() {
         dispatchProviderWorkbench({ type: 'reset_after_save' });
       }
       setConfirmingDeleteConnectionId('');
+      setDeletePreflight(null);
       await loadResources();
     } catch (deleteError) {
-      const deleteMessage = resolveUiErrorMessage(deleteError, aiText('error_delete_connection', 'Failed to delete provider connection.'));
+      const isConflict = deleteError instanceof ApiError &&
+        deleteError.errorCode === 'provider_connection.delete_conflict';
+      if (isConflict) {
+        setConfirmingDeleteConnectionId('');
+        setDeletePreflight(null);
+        await loadResources();
+      }
+      const deleteMessage = isConflict
+        ? aiText(
+            'error_delete_connection_conflict',
+            'This provider connection changed after the deletion check. Review the refreshed row and try again.'
+          )
+        : resolveUiErrorMessage(
+            deleteError,
+            aiText('error_delete_connection', 'Failed to delete provider connection.')
+          );
       setError(deleteMessage);
       toast.error(deleteMessage, t('common.error'));
     } finally {
@@ -2542,7 +2645,9 @@ function AiResourcesContent() {
           testingConnectionId={testingConnectionId}
           approvingImageHostConnectionId={approvingImageHostConnectionId}
           deletingConnectionId={deletingConnectionId}
+          preflightingDeleteConnectionId={preflightingDeleteConnectionId}
           confirmingDeleteConnectionId={confirmingDeleteConnectionId}
+          deletePreflight={deletePreflight}
           providerKindLabel={providerKindLabel}
           providerTestStageLabel={providerTestStageLabel}
           providerTestMessage={providerTestMessage}
@@ -2551,8 +2656,11 @@ function AiResourcesContent() {
           onTest={(connectionId) => void runProviderConnectionTest(connectionId)}
           onApproveImageHost={(connection) => void approveDetectedImageHost(connection)}
           onDelete={(connection) => void deleteProviderConnection(connection)}
-          onRequestDelete={setConfirmingDeleteConnectionId}
-          onCancelDelete={() => setConfirmingDeleteConnectionId('')}
+          onRequestDelete={(connection) => void requestProviderConnectionDelete(connection)}
+          onCancelDelete={() => {
+            setConfirmingDeleteConnectionId('');
+            setDeletePreflight(null);
+          }}
           translate={aiText}
         />
 

@@ -632,6 +632,12 @@ class ProviderConnectionPayload(BaseModel):
     secretless: bool = False
 
 
+class ProviderConnectionDeletePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_updated_at: datetime
+
+
 class ProviderImageHostApprovalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -5062,8 +5068,44 @@ async def preview_admin_provider_connection_catalog(
     )
 
 
+@router.get("/admin/provider-connections/{connection_id}/delete-preflight")
+async def preflight_admin_provider_connection_delete(
+    request: Request,
+    connection_id: str,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ProviderConnectionAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).get_delete_preflight(connection_id)
+    except ProviderConnectionAdminError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m7",
+            ),
+        )
+    return build_envelope(
+        status="ok",
+        message="provider connection deletion preflight loaded",
+        data=result,
+        revision="m7",
+    )
+
+
 @router.delete("/admin/provider-connections/{connection_id}")
-async def delete_admin_provider_connection(request: Request, connection_id: str) -> Any:
+async def delete_admin_provider_connection(
+    request: Request,
+    connection_id: str,
+    payload: ProviderConnectionDeletePayload,
+) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
@@ -5072,7 +5114,10 @@ async def delete_admin_provider_connection(request: Request, connection_id: str)
         result = ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).delete_connection(connection_id)
+        ).delete_connection(
+            connection_id,
+            expected_updated_at=payload.expected_updated_at,
+        )
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5088,7 +5133,7 @@ async def delete_admin_provider_connection(request: Request, connection_id: str)
                 status="error",
                 error_code=error.error_code,
                 message=error.message,
-                revision="m6",
+                revision="m7",
             ),
         )
     audit_event = _record_provider_connection_audit(
@@ -5112,7 +5157,7 @@ async def delete_admin_provider_connection(request: Request, connection_id: str)
                 audit_event=audit_event,
             ),
         ),
-        revision="m6",
+        revision="m7",
     )
 
 

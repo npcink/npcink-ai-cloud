@@ -111,9 +111,14 @@ const connections = [
   },
 ];
 
-async function installProviderDirectoryHarness(page: Page) {
+async function installProviderDirectoryHarness(
+  page: Page,
+  options: { deleteConflict?: boolean } = {}
+) {
   await installAdminMocks(page);
   let requestCount = 0;
+  let deletePreflightCount = 0;
+  let deletePayload: unknown = null;
   await page.route('**/api/admin/ai-resources', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
@@ -192,7 +197,80 @@ async function installProviderDirectoryHarness(page: Page) {
       ),
     });
   });
-  return { getRequestCount: () => requestCount };
+  await page.route('**/api/admin/provider-connections/**', async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    const pathParts = pathname.split('/');
+    if (request.method() === 'GET' && pathname.endsWith('/delete-preflight')) {
+      const connectionId = decodeURIComponent(pathParts.at(-2) || '');
+      const connection = connections.find((item) => item.connection_id === connectionId);
+      deletePreflightCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildAdminApiEnvelope({
+          surface: 'admin_provider_connection_delete_preflight',
+          connection: {
+            connection_id: connectionId,
+            provider_id: connection?.provider_id || 'unknown',
+            display_name: connection?.display_name || connectionId,
+            enabled: connection?.enabled ?? false,
+            configuration_status: connection?.configuration_status || connection?.status || 'unknown',
+          },
+          expected_updated_at: '2026-07-12T00:25:00Z',
+          impact: {
+            risk_level: 'high',
+            runtime_profile_ids: connection?.runtime_profile_ids || [],
+            uncovered_runtime_profile_ids: connection?.runtime_profile_ids || [],
+            capability_ids: connection?.capability_ids || [],
+            model_count: connection?.model_ids?.length || 0,
+            alternative_connections: [],
+          },
+          requires_confirmation: true,
+          boundary: {
+            direct_wordpress_write: false,
+            final_writes: 'excluded',
+          },
+        })),
+      });
+      return;
+    }
+    if (request.method() === 'DELETE') {
+      const connectionId = decodeURIComponent(pathParts.at(-1) || '');
+      deletePayload = request.postDataJSON();
+      if (options.deleteConflict) {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify(buildAdminApiErrorEnvelope(
+            'provider connection changed after delete preflight',
+            'provider_connection.delete_conflict'
+          )),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildAdminApiEnvelope({
+          connection_id: connectionId,
+          receipt: {
+            event_kind: 'provider_connection.delete',
+            scope_kind: 'provider_connection',
+            scope_id: connectionId,
+            outcome: 'succeeded',
+          },
+        })),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+  return {
+    getRequestCount: () => requestCount,
+    getDeletePreflightCount: () => deletePreflightCount,
+    getDeletePayload: () => deletePayload,
+  };
 }
 
 test('model supplier table keeps PC operations and filters in one workspace', async ({ page }, testInfo) => {
@@ -261,7 +339,7 @@ test('model supplier workspace does not expose capability-service controls', asy
 test('supplier row keeps test feedback nearby and deletion under more actions', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await installProviderDirectoryHarness(page);
+  const harness = await installProviderDirectoryHarness(page);
   await page.goto('/admin/ai-resources?focus=model_ready');
 
   const supplierRow = page.locator('[data-connection-id="model_ready"]');
@@ -290,10 +368,53 @@ test('supplier row keeps test feedback nearby and deletion under more actions', 
   await moreButton.click();
   await expect(page.getByRole('menuitem')).toHaveCount(4);
   await page.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
-  await expect(feedbackRow.getByRole('alert').filter({ hasText: /removes this runtime connection|移除这条运行时连接/i })).toBeVisible();
+  await expect(feedbackRow.getByRole('alert')).toContainText(/2 models|2 个模型/i);
+  await expect(feedbackRow.getByRole('alert')).toContainText(/text\.ai/);
+  expect(harness.getDeletePreflightCount()).toBe(1);
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toBeVisible();
-  await feedbackRow.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
+  await feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i }).click();
+  await expect.poll(() => harness.getDeletePayload()).toEqual({
+    expected_updated_at: '2026-07-12T00:25:00Z',
+  });
+});
+
+test('stale provider deletion refreshes the row and clears confirmation', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const harness = await installProviderDirectoryHarness(page, { deleteConflict: true });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /More actions|更多操作/i }).click();
+  await page.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
+  const feedbackRow = page.locator('[data-feedback-for="model_ready"]');
+  await feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i }).click();
+
+  await expect(page.getByText(/changed after the deletion check|删除检查后.*发生变化/i).first()).toBeVisible();
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toHaveCount(0);
+  await expect(supplierRow).toBeVisible();
+  expect(harness.getRequestCount()).toBeGreaterThan(1);
+});
+
+test('unsaved provider draft reopens before deletion preflight', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const harness = await installProviderDirectoryHarness(page);
+  await page.goto('/admin/ai-resources?focus=model_ready');
+
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  const dialog = page.getByRole('dialog');
+  const displayName = dialog.getByLabel(/Display name|显示名称/i);
+  await displayName.fill('MQZJ unsaved');
+  await dialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await supplierRow.getByRole('button', { name: /More actions|更多操作/i }).click();
+  await page.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(displayName).toHaveValue('MQZJ unsaved');
+  await expect(page.getByText(/Save or discard the unsaved provider draft|保存或放弃.*未保存/i).first()).toBeVisible();
+  expect(harness.getDeletePreflightCount()).toBe(0);
 });
 
 test('detected provider image host stays contextual and requires evidence-bound approval', async ({ page }, testInfo) => {

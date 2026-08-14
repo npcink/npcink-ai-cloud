@@ -130,6 +130,7 @@ export type ProviderWorkbenchState = {
   providerFormMode: 'create' | 'edit';
   credentialEditOpen: boolean;
   providerConnectionForm: ProviderConnectionForm;
+  initialProviderConnectionForm: ProviderConnectionForm;
   providerCatalogPreview: ProviderCatalogPreview | null;
   modelReferenceProviderId: string;
   modelReferenceSearch: string;
@@ -148,6 +149,7 @@ export const INITIAL_PROVIDER_WORKBENCH_STATE: ProviderWorkbenchState = {
   providerFormMode: 'create',
   credentialEditOpen: true,
   providerConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
+  initialProviderConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
   providerCatalogPreview: null,
   modelReferenceProviderId: 'openai',
   modelReferenceSearch: '',
@@ -170,6 +172,7 @@ export type ProviderWorkbenchAction =
       referenceProviderId: string;
     }
   | { type: 'close' }
+  | { type: 'reopen_draft' }
   | { type: 'reset_after_save' }
   | {
       type: 'patch_form';
@@ -223,6 +226,7 @@ export function providerWorkbenchReducer(
         providerFormMode: 'edit',
         credentialEditOpen: false,
         providerConnectionForm: action.form,
+        initialProviderConnectionForm: action.form,
         providerCatalogPreview: action.catalogPreview,
         modelReferenceProviderId: action.referenceProviderId,
         modelReferenceShowDeprecated: true,
@@ -236,6 +240,13 @@ export function providerWorkbenchReducer(
         confirmingClearModels: false,
         confirmingModelBatch: '',
       };
+    case 'reopen_draft':
+      return {
+        ...state,
+        providerFormOpen: true,
+        confirmingClearModels: false,
+        confirmingModelBatch: '',
+      };
     case 'reset_after_save':
       return {
         ...state,
@@ -243,6 +254,7 @@ export function providerWorkbenchReducer(
         providerFormMode: 'create',
         credentialEditOpen: true,
         providerConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
+        initialProviderConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
         providerCatalogPreview: null,
         modelReferencePage: 1,
         confirmingClearModels: false,
@@ -325,6 +337,12 @@ export function providerWorkbenchReducer(
         },
       };
   }
+}
+
+export function hasProviderWorkbenchDraftChanges(state: ProviderWorkbenchState): boolean {
+  return JSON.stringify(state.providerConnectionForm) !== JSON.stringify(
+    state.initialProviderConnectionForm
+  );
 }
 
 export function buildProviderConnectionForm(
