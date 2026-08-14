@@ -800,6 +800,18 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
         "/internal/service/admin/coverage-work-queue",
         headers=build_internal_headers(),
     )
+    filtered_coverage_work_queue_response = client.get(
+        "/internal/service/admin/coverage-work-queue",
+        params={
+            "q": "admin@example.com",
+            "status": "warning",
+            "reason": "subscription_expiring_soon",
+            "sort": "expiry",
+            "offset": 0,
+            "limit": 1,
+        },
+        headers=build_internal_headers(),
+    )
     accounts_response = client.get(
         "/internal/service/admin/accounts",
         headers=build_internal_headers(),
@@ -902,6 +914,24 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert coverage_item["evidence"]["site_count"] == 1
     assert coverage_item["evidence"]["active_key_site_count"] == 1
     assert coverage_item["evidence"]["billing_snapshot_status"]["status"] == "fresh"
+    assert filtered_coverage_work_queue_response.status_code == 200
+    filtered_coverage_queue = filtered_coverage_work_queue_response.json()["data"]
+    assert filtered_coverage_queue["filters"] == {
+        "q": "admin@example.com",
+        "status": "warning",
+        "reason": "subscription_expiring_soon",
+        "sort": "expiry",
+        "offset": 0,
+        "limit": 1,
+    }
+    assert filtered_coverage_queue["pagination"] == {
+        "offset": 0,
+        "limit": 1,
+        "total": 1,
+        "has_more": False,
+    }
+    assert filtered_coverage_queue["summary"]["total"] == 1
+    assert filtered_coverage_queue["items"][0]["account"]["account_id"] == "acct_admin"
 
     assert accounts_response.status_code == 200
     accounts_data = accounts_response.json()["data"]

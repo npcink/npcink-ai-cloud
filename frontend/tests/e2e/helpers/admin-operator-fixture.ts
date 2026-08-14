@@ -782,11 +782,51 @@ export async function installAdminMocks(
           },
         };
       });
+      const status = url.searchParams.get('status') || 'all';
+      const reason = url.searchParams.get('reason') || '';
+      const queryTerms = (url.searchParams.get('q') || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const sort = url.searchParams.get('sort') || 'priority';
+      const offset = Math.max(0, Number.parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      const limit = Math.min(
+        500,
+        Math.max(1, Number.parseInt(url.searchParams.get('limit') || '100', 10) || 100)
+      );
+      const filteredItems = items.filter((item) => {
+        if (status === 'needs_action' && item.severity !== 'error' && item.severity !== 'warning') return false;
+        if (!['all', 'needs_action'].includes(status) && item.severity !== status) return false;
+        if (reason && item.reason_code !== reason) return false;
+        const searchable = [
+          item.account.account_id,
+          item.account.name,
+          item.primary_subscription?.subscription_id,
+          item.primary_subscription?.status,
+          item.package.display_package_label,
+          item.package.package_kind,
+          item.reason_code,
+          item.reason_label,
+        ].join(' ').toLowerCase();
+        return queryTerms.every((term) => searchable.includes(term));
+      });
+      filteredItems.sort((left, right) => {
+        if (sort === 'customer') {
+          return left.account.name.localeCompare(right.account.name) ||
+            left.account.account_id.localeCompare(right.account.account_id);
+        }
+        if (sort === 'expiry') {
+          const leftDays = left.evidence.days_until_end ?? Number.MAX_SAFE_INTEGER;
+          const rightDays = right.evidence.days_until_end ?? Number.MAX_SAFE_INTEGER;
+          return leftDays - rightDays || left.priority - right.priority ||
+            left.account.name.localeCompare(right.account.name);
+        }
+        return left.priority - right.priority || left.account.name.localeCompare(right.account.name);
+      });
+      const visibleItems = filteredItems.slice(offset, offset + limit);
       await fulfillJson(route, {
         generated_at: '2026-04-06T10:00:00Z',
+        filters: { q: queryTerms.join(' '), status, reason, sort, offset, limit },
         summary: {
           total: items.length,
-          visible: items.length,
+          visible: visibleItems.length,
           needs_action: items.filter((item) => item.severity === 'error' || item.severity === 'warning').length,
           error: items.filter((item) => item.severity === 'error').length,
           warning: items.filter((item) => item.severity === 'warning').length,
@@ -797,7 +837,15 @@ export async function installAdminMocks(
             return counts;
           }, {}),
         },
-        items,
+        total: filteredItems.length,
+        hidden_internal_total: 0,
+        pagination: {
+          offset,
+          limit,
+          total: filteredItems.length,
+          has_more: offset + visibleItems.length < filteredItems.length,
+        },
+        items: visibleItems,
       });
       return;
     }

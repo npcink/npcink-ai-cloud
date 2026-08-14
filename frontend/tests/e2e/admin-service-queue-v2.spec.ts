@@ -4,6 +4,10 @@ import {
   installAdminMocks,
   LONG_ACCOUNT_ID,
 } from './helpers/admin-operator-fixture';
+import {
+  observeAdminBrowserEvidence,
+  writeAdminVisualReceipt,
+} from './helpers/admin-visual-receipt';
 
 test('service status table keeps filters and direct customer actions on PC', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -88,7 +92,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await expect(page.getByRole('combobox', { name: /Sort|排序/i })).toHaveValue('customer');
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
 
-  await page.route('**/api/admin/coverage-work-queue', async (route) => {
+  await page.route('**/api/admin/coverage-work-queue?*', async (route) => {
     await route.fulfill({
       status: 503,
       contentType: 'application/json',
@@ -105,6 +109,105 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await page.getByRole('link', { name: 'Uncovered Account' }).click();
   await expect(page).toHaveURL('/admin/accounts/acct_uncovered');
   await expect(page.getByRole('heading', { name: /^Uncovered$/i })).toBeVisible();
+});
+
+test('service status pagination is server-backed and preserved in the URL', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installAdminMocks(page);
+
+  await page.goto('/admin/coverage?limit=1');
+  const rows = page.locator('[data-ui="coverage-queue-item"]');
+  const pagination = page.locator('[data-ui="coverage-pagination"]');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('MVP Account');
+  await expect(pagination).toContainText(/1.*1.*2/);
+
+  await pagination.getByRole('button', { name: /Next|下一步/i }).click();
+  await expect(page).toHaveURL(/offset=1/);
+  await expect(page).toHaveURL(/limit=1/);
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Uncovered Account');
+  await expect(pagination).toContainText(/2.*2.*2/);
+
+  await page.reload();
+  await expect(page).toHaveURL(/offset=1/);
+  await expect(rows.first()).toContainText('Uncovered Account');
+  await pagination.getByRole('button', { name: /Previous|上一页/i }).click();
+  await expect(page).not.toHaveURL(/offset=/);
+  await expect(rows.first()).toContainText('MVP Account');
+});
+
+test('service status pilot emits the risk-tiered Admin visual receipt', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  await page.goto('/admin/coverage?limit=1');
+
+  const workspace = page.locator('[data-ui="coverage-workspace"]');
+  const pagination = page.locator('[data-ui="coverage-pagination"]');
+  await expect(workspace).toBeVisible();
+  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
+  await pagination.getByRole('button', { name: /Next|下一步/i }).click();
+  await expect(page).toHaveURL(/offset=1/);
+  await expect(page.getByRole('link', { name: 'Uncovered Account' })).toBeVisible();
+
+  await page.getByLabel(/^Search$|^搜索$/i).fill('Uncovered');
+  await expect(page).not.toHaveURL(/offset=/);
+  await expect(page).toHaveURL(/q=Uncovered/);
+  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Uncovered Account' })).toBeVisible();
+  await expect(workspace).toHaveAttribute('aria-busy', 'false');
+  await expect(pagination).toContainText(/1.*1.*1/);
+
+  const evidenceTrigger = page.getByRole('button', { name: /Inspect evidence|查看证据/i });
+  await evidenceTrigger.click();
+  await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toHaveCount(0);
+  await expect(evidenceTrigger).toBeFocused();
+
+  await page.route('**/api/admin/coverage-work-queue?*', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('temporary queue refresh failure')),
+    });
+  });
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: /temporary queue refresh failure/i })
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Uncovered Account' })).toBeVisible();
+  await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Uncovered');
+
+  await writeAdminVisualReceipt({
+    page,
+    testInfo,
+    route: '/admin/coverage',
+    pageModel: 'queue',
+    testedStates: ['ready', 'filtered', 'paginated', 'selected', 'refresh_error'],
+    humanAcceptance: 'not_required',
+    pageTitle: page.locator('main h1').filter({ hasText: /^Service status$|^服务状态$/i }),
+    workingSurface: workspace,
+    browserEvidence,
+    expectedConsoleErrors: [
+      /^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/,
+    ],
+    routeRuleResults: [
+      { id: 'single-primary-action', status: 'pass', evidence: 'the workspace exposes secondary refresh and row-scoped remediation links without a competing primary action' },
+      { id: 'textual-status', status: 'pass', evidence: 'queue rows and summary metrics expose explicit status text' },
+      { id: 'action-object-proximity', status: 'pass', evidence: 'remediation and evidence actions remain inside the affected customer row' },
+      { id: 'distinct-interaction-states', status: 'pass', evidence: 'pagination disabled state, drawer focus, and URL-backed filter state were each verified' },
+      { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closed the evidence inspector and restored focus to its trigger' },
+      { id: 'context-stability', status: 'pass', evidence: 'a failed refresh preserved the filtered customer row and search value' },
+    ],
+    interactionResults: [
+      { id: 'server-pagination', status: 'pass', evidence: 'Next loaded the second server page and persisted offset in the URL' },
+      { id: 'filter-and-inspect', status: 'pass', evidence: 'search reset pagination and the row inspector restored trigger focus' },
+      { id: 'refresh-error-context', status: 'pass', evidence: 'the failed refresh kept the current filtered queue visible' },
+    ],
+  });
 });
 
 for (const viewport of [

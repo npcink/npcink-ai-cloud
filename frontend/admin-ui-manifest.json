@@ -60,6 +60,12 @@
         "workingSurface": "[data-ui=\"model-supplier-directory\"]",
         "requiredStates": ["ready", "selected", "filtered", "operation_error", "dialog"]
       },
+      "/admin/coverage": {
+        "pageModel": "queue",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"coverage-workspace\"]",
+        "requiredStates": ["ready", "filtered", "paginated", "selected", "refresh_error"]
+      },
       "/admin/service-settings": {
         "pageModel": "configuration",
         "riskTier": "material",
