@@ -56,6 +56,7 @@ deleting the old decision history.
 
 - [Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md)
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
+- [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
 - [Development Efficiency Phase 3 Observation Plan](development-efficiency-phase3-observation-plan-v1.md) — current plan for collecting comparable delivery samples before further CI/shard/cache optimization
 - [Development Efficiency Phases 1–3 Closeout and Retrospective](development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
@@ -141,6 +142,10 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Production Release Optimization and Formal Smoke Handoff](production-release-optimization-and-formal-smoke-handoff-v1.md)
+- [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
+  — dated evidence for the 2026-08-08 handoff ledger, bounded production
+  promotion, Addon release, consumer paths, and review corrections; not future
+  production authorization
 - [First-install PostgreSQL 18 Runbook](cloud-first-install-rds-pg18-runbook.md)
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
 - [Issue #406 Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
