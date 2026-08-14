@@ -29,9 +29,15 @@ assert.match(overview, /setTimeout\(\(\) => controller\.abort\(\), 12000\)/, 'ov
 assert.match(overview, /createApiClient\(\{ idempotencyPrefix: 'admin_overview' \}\)/, 'overview must use the shared strict ApiClient');
 assert.doesNotMatch(overview, /\bfetch\s*\(/, 'overview must not bypass the shared strict ApiClient');
 assert.doesNotMatch(overview, /platformCreditSummary|platform_credit_summary/, 'overview must not load deep platform credit detail');
-assert.match(overview, /overviewRuntimeAlertTitle\(overview\.runtimeTelemetry\.alerts\[0\], t\)/, 'overview watch items must localize known runtime alerts');
+assert.match(overview, /overviewRuntimeAlertTitle\(alert, t\)/, 'overview watch items must localize known runtime alerts');
 assert.match(overview, /overviewRuntimeAlertSummary\(alert, t\)/, 'overview evidence must localize known runtime summaries');
-assert.match(overview, /operationalReadiness\.status === 'error'/, 'overview conclusion must fail closed on formal readiness');
+assert.match(overview, /raw\?\.operator_projection/, 'overview must consume the backend-owned operator projection');
+assert.match(overview, /admin-overview-operator-projection-v1/, 'overview must fail closed on an unknown projection revision');
+assert.match(overview, /overview\.operatorProjection\.conclusionCode/, 'overview conclusion must be selected by the backend projection');
+assert.match(overview, /overview\.operatorProjection\.primaryAction\.kind/, 'overview primary action must be selected by the backend projection');
+assert.match(overview, /operatorPrimaryActionCandidate\.startsWith\('\/admin\/'\)/, 'overview must constrain projected actions to Admin routes');
+assert.doesNotMatch(overview, /runtimeSummary\.guardEvents >= 25/, 'overview must not recreate backend operator thresholds');
+assert.doesNotMatch(overview, /firstOperatorWatchScope/, 'overview must not infer action ownership from rendered watch-item order');
 assert.match(overview, /admin\.home_readiness_unknown_desc/, 'overview must distinguish unavailable readiness from a ready platform');
 assert.match(overview, /admin\.home_primary_action_readiness/, 'blocked readiness must lead to the diagnostic surface');
 assert.match(i18n, /'admin\.home_readiness_blocked': '未达到运营就绪'/, 'formal readiness status must be localized');
