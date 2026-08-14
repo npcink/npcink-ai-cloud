@@ -8,6 +8,7 @@ const workspace = readFileSync(
 );
 const api = readFileSync(fromFrontendRoot('src/features/admin/audit/api.ts'), 'utf8');
 const queries = readFileSync(fromFrontendRoot('src/features/admin/audit/queries.ts'), 'utf8');
+const pagination = readFileSync(fromFrontendRoot('src/features/admin/audit/pagination.ts'), 'utf8');
 const receipt = readFileSync(fromFrontendRoot('src/components/admin/AdminMutationReceipt.tsx'), 'utf8');
 const troubleshooting = readFileSync(fromFrontendRoot('src/app/admin/troubleshooting/page.tsx'), 'utf8');
 
@@ -15,6 +16,8 @@ assert.match(workspace, /useSearchParams[\s\S]*FILTER_KEYS[\s\S]*offset/, 'audit
 assert.match(queries, /useQuery[\s\S]*keepPreviousData[\s\S]*retry: false/, 'audit remote state must use the existing bounded Admin query layer');
 assert.match(api, /\/api\/admin\/audit-events\?\$\{requestKey\}/, 'the workspace must consume the governed Admin audit proxy');
 assert.match(workspace, /include_payload[\s\S]*false/, 'the browser workspace must request the metadata-only audit projection');
+assert.match(workspace, /generated_at[\s\S]*query_duration_ms/, 'the workspace must expose bounded server-owned freshness and query evidence');
+assert.match(pagination, /is_out_of_range[\s\S]*last_offset/, 'deep-page recovery must use the server-owned pagination boundary');
 assert.match(workspace, /AdminDataTableFrame[\s\S]*AdminInspectorDrawer/, 'audit evidence must use a semantic directory and shared inspector');
 assert.match(workspace, /payload values are intentionally excluded/, 'audit payload values must stay outside the Admin workspace');
 assert.doesNotMatch(workspace, /item\.payload|JSON\.stringify\([^)]*payload/, 'the audit workspace must not render audit payload values');

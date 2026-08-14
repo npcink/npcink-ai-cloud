@@ -30,8 +30,12 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
   await page.goto('/admin/audit?event_id=101&focus=101');
   await expect(page.getByRole('heading', { name: /^Audit evidence$|^审计证据$/i })).toBeVisible();
   const directory = page.locator('[data-ui="admin-audit-directory"]');
+  const queryEvidence = page.locator('[data-ui="admin-audit-query-evidence"]');
   await expect(directory).toBeVisible();
   await expect(directory.locator('tbody tr')).toHaveCount(1);
+  await expect(queryEvidence).toContainText(/Evidence generated|证据生成时间/i);
+  await expect(queryEvidence).toContainText(/1 records returned|返回 1 条记录/i);
+  await expect(queryEvidence).toContainText(/Query duration:\s+4\.3 ms|查询耗时:\s+4\.3 ms/i);
   await expect(directory).toContainText(/Subscription Bind|Subscription bind|订阅/i);
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toBeVisible();
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toContainText('audit-bind-101');
@@ -87,4 +91,33 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
       { id: 'payload-boundary', status: 'pass', evidence: 'the directory and inspector expose metadata without audit payload values' },
     ],
   });
+});
+
+test('audit workspace recovers deep pages and distinguishes filtered empty', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+
+  await page.goto('/admin/audit?offset=75');
+  await expect(page.getByText(/Audit page no longer available|当前审计页已不可用/i)).toBeVisible();
+  await page.locator('[data-ui="admin-audit-pagination-recovery"]').click();
+  await expect(page).not.toHaveURL(/offset=/);
+  await expect(page.locator('[data-ui="admin-audit-directory"] tbody tr')).toHaveCount(2);
+
+  await page.getByLabel(/Idempotency key|幂等键/i).fill('missing-audit-event');
+  await page.getByRole('button', { name: /Apply filters|应用筛选/i }).click();
+  await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/i)).toBeVisible();
+});
+
+test('audit workspace exposes an initial failure and retry path', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const auditFailureController = { enabled: true };
+  await installAdminMocks(page, { auditFailureController });
+  await page.goto('/admin/audit');
+  await expect(page.locator('[role="alert"]').filter({ hasText: 'initial audit evidence failure' })).toBeVisible();
+  await expect(page.locator('[data-ui="admin-audit-directory"] tbody tr')).toHaveCount(0);
+  auditFailureController.enabled = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(page.locator('[data-ui="admin-audit-directory"] tbody tr')).toHaveCount(2);
 });

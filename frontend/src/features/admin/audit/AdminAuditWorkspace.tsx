@@ -16,6 +16,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
+import { resolveAuditPaginationRecovery } from './pagination';
 import { useAdminAuditWorkspace } from './queries';
 import type { AdminAuditEvent } from './types';
 
@@ -82,6 +83,18 @@ export function AdminAuditWorkspace() {
   const selectedEventId = focusedEventId === dismissedFocus ? 0 : focusedEventId;
   const selectedEvent = items.find((item) => Number(item.event_id || 0) === selectedEventId);
   const filterCount = FILTER_KEYS.filter((key) => searchParams.get(key)?.trim()).length;
+  const generatedAt = String(query.data?.generated_at || '');
+  const returnedCountValue = Number(query.data?.diagnostics?.returned_count);
+  const returnedCount = Number.isInteger(returnedCountValue) && returnedCountValue >= 0
+    ? returnedCountValue
+    : items.length;
+  const queryDurationValue = Number(query.data?.diagnostics?.query_duration_ms);
+  const queryDurationMs = Number.isFinite(queryDurationValue) && queryDurationValue >= 0
+    ? queryDurationValue
+    : null;
+  const recoveryOffset = query.data?.requestKey === requestKey && !query.isPlaceholderData
+    ? resolveAuditPaginationRecovery(query.data.pagination, offset)
+    : null;
 
   function updateUrl(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -262,6 +275,29 @@ export function AdminAuditWorkspace() {
         />
       ) : null}
 
+      {query.data ? (
+        <div
+          className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400"
+          data-ui="admin-audit-query-evidence"
+        >
+          <span>
+            {t('admin.audit_workspace.generated_at', {}, 'Evidence generated')}: {' '}
+            {formatDate(generatedAt) || notAvailable}
+          </span>
+          <span>
+            {t(
+              'admin.audit_workspace.returned_count',
+              { count: formatNumber(returnedCount) },
+              '{{count}} records returned'
+            )}
+          </span>
+          <span>
+            {t('admin.audit_workspace.query_duration', {}, 'Query duration')}: {' '}
+            {queryDurationMs === null ? notAvailable : `${queryDurationMs.toFixed(1)} ms`}
+          </span>
+        </div>
+      ) : null}
+
       <AdminDataTableFrame
         dataUi="admin-audit-directory"
         density="compact"
@@ -340,6 +376,37 @@ export function AdminAuditWorkspace() {
               })}
             </tbody>
           </table>
+        ) : recoveryOffset !== null ? (
+          <BackofficeEmptyState
+            className="m-5 md:m-6"
+            title={t('admin.audit_workspace.page_unavailable_title', {}, 'Audit page no longer available')}
+            description={t(
+              'admin.audit_workspace.page_unavailable_description',
+              {
+                requested: formatNumber(offset / PAGE_SIZE + 1),
+                available: formatNumber(recoveryOffset / PAGE_SIZE + 1),
+              },
+              'Requested page {{requested}} is beyond the current result set. Open page {{available}} to continue.'
+            )}
+            action={(
+              <form action={pathname} method="get">
+                {FILTER_KEYS.map((key) => {
+                  const value = searchParams.get(key)?.trim();
+                  return value ? <input key={key} type="hidden" name={key} value={value} /> : null;
+                })}
+                {recoveryOffset > 0 ? (
+                  <input type="hidden" name="offset" value={String(recoveryOffset)} />
+                ) : null}
+                <button
+                  type="submit"
+                  className="btn btn-secondary"
+                  data-ui="admin-audit-pagination-recovery"
+                >
+                  {t('admin.audit_workspace.show_available_page', {}, 'Show last available page')}
+                </button>
+              </form>
+            )}
+          />
         ) : (
           <BackofficeEmptyState
             className="m-5 md:m-6"

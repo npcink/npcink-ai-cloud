@@ -10,6 +10,7 @@ from app.adapters.repositories.commercial_service_audit_repository import (
     CommercialServiceAuditRepository,
 )
 from app.core.db import dispose_engine, get_session, init_schema
+from app.core.models import ServiceAuditEvent
 
 
 def _record(
@@ -98,5 +99,48 @@ def test_service_audit_repository_preserves_write_filters_principal_and_summary(
             ("blocked", 1),
         }
         assert all(str(item["first_seen_at"]).endswith("Z") for item in summary)
+
+    dispose_engine(database_url)
+
+
+def test_service_audit_repository_bounds_high_cardinality_deep_page(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'audit-high-cardinality.sqlite3'}"
+    init_schema(database_url)
+    base_time = datetime(2026, 8, 15, 0, 0, tzinfo=UTC)
+    with get_session(database_url) as session:
+        session.add_all(
+            ServiceAuditEvent(
+                account_id="account-large",
+                site_id=f"site-{index % 7}",
+                scope_kind="subscription",
+                scope_id=f"subscription-{index}",
+                event_kind="audit.high_cardinality",
+                outcome="succeeded" if index % 2 == 0 else "error",
+                actor_kind="platform_admin",
+                actor_ref="operator",
+                created_at=base_time + timedelta(seconds=index),
+            )
+            for index in range(525)
+        )
+        session.flush()
+        repository = CommercialServiceAuditRepository(session)
+
+        events = repository.list_service_audit_events(
+            account_id="account-large",
+            event_kind="audit.high_cardinality",
+            limit=25,
+            offset=500,
+        )
+
+        assert len(events) == 25
+        assert [event.scope_id for event in events] == [
+            f"subscription-{index}" for index in range(24, -1, -1)
+        ]
+        assert repository.count_service_audit_events(
+            account_id="account-large",
+            event_kind="audit.high_cardinality",
+        ) == 525
 
     dispose_engine(database_url)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 
 from app.adapters.repositories.commercial_decision_repository import (
     CommercialDecisionRepository,
@@ -573,6 +574,7 @@ class CommercialServiceAuditMixin:
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialServiceAuditRepository(session)
+            query_started_at = perf_counter()
             total = repository.count_service_audit_events(
                 event_id=event_id,
                 site_id=site_id,
@@ -597,7 +599,11 @@ class CommercialServiceAuditMixin:
                 limit=limit,
                 offset=offset,
             )
+            query_duration_ms = max(0.0, (perf_counter() - query_started_at) * 1000)
             next_offset = offset + len(events)
+            pagination_limit = max(1, limit)
+            last_offset = ((total - 1) // pagination_limit) * pagination_limit if total > 0 else 0
+            is_out_of_range = offset > 0 and offset >= total
             return {
                 "items": [
                     self._serialize_service_audit_event(
@@ -624,6 +630,13 @@ class CommercialServiceAuditMixin:
                     "total": total,
                     "has_more": next_offset < total,
                     "next_offset": next_offset if next_offset < total else None,
+                    "last_offset": last_offset,
+                    "is_out_of_range": is_out_of_range,
+                },
+                "generated_at": self._serialize_datetime(self.now_factory()),
+                "diagnostics": {
+                    "returned_count": len(events),
+                    "query_duration_ms": round(query_duration_ms, 3),
                 },
                 "sort": {"created_at": "desc", "event_id": "desc"},
             }
