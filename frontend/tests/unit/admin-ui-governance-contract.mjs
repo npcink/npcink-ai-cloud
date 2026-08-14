@@ -68,7 +68,7 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 8, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 9, 'admin UI manifest version must be explicit');
 assert.match(
   tailwindConfigSource,
   /\.\/src\/features\/\*\*\/\*\.\{js,ts,jsx,tsx,mdx\}/,
@@ -192,6 +192,7 @@ assert.doesNotMatch(
 
 for (const primitive of [
   'AdminActionMenu',
+  'AdminCommandDialog',
   'AdminConfigurationTable',
   'AdminDataTableFrame',
   'AdminEmptyState',

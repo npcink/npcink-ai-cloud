@@ -71,7 +71,7 @@ const pilotRoutes = {
   },
 };
 
-assert.equal(manifest.version, 8, 'visual governance must use the reviewed v8 manifest');
+assert.equal(manifest.version, 9, 'visual governance must use the reviewed v9 manifest');
 assert.equal(manifest.visualGovernance.version, 1);
 assert.equal(manifest.visualGovernance.receiptSchema, 'admin-visual-receipt.schema.json');
 assert.deepEqual(manifest.visualGovernance.resultStates, expectedStatuses);

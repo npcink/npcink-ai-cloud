@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 9,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
@@ -138,8 +138,6 @@
     "/admin/service-settings": "configuration",
     "/admin/site-compliance": "configuration"
   },
-  "legacyRouteLocalDialogs": [
-    "src/app/admin/layout.tsx"
-  ],
+  "legacyRouteLocalDialogs": [],
   "legacyRouteLocalCredentials": []
 }

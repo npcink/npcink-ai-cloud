@@ -94,7 +94,7 @@ important structural evidence is:
 - most `.mjs` frontend contracts inspect source text. They are useful for
   architecture and forbidden-pattern rules, but do not prove runtime behavior;
 - the repository already owns `AdminDataTableFrame`,
-  `AdminConfigurationTable`, `AdminWorkbenchDialog`,
+  `AdminCommandDialog`, `AdminConfigurationTable`, `AdminWorkbenchDialog`,
   `AdminCredentialField`, `AdminSettingsWorkbench`,
   `AdminSettingsDisclosure`, Backoffice primitives, global Toast, and
   `--admin-*` geometry tokens.
