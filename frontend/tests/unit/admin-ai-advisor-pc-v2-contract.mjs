@@ -45,10 +45,15 @@ for (const { routeName, source } of advisorRouteSources) {
 const reviewRouteSource = advisorRouteSources.find(
   ({ routeName }) => routeName === 'ops-summary-review'
 )?.source || '';
+assert.doesNotMatch(
+  reviewRouteSource,
+  /actor_ref\s*:/,
+  'Advisor review BFF must not send a client-controlled reviewer identity'
+);
 assert.match(
   reviewRouteSource,
-  /actor_ref: sessionResult\.session\.principal_id/,
-  'Advisor review evidence must use canonical principal_id as actor_ref'
+  /delete reviewBody\.actor_ref/,
+  'Advisor review BFF must strip a forged reviewer identity from browser JSON'
 );
 assert.doesNotMatch(
   reviewRouteSource,

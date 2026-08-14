@@ -43,6 +43,7 @@ from app.core.services import CloudServices
 from app.domain.service_settings import resolve_portal_public_base_url
 
 INTERNAL_TOKEN_HEADER = "X-Npcink-Internal-Token"
+ADMIN_SESSION_COOKIE = "npcink_admin_session_token"
 AUTHORIZATION_HEADER = "Authorization"
 PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL = "portal_login_code_email"
 PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT = "portal_login_code_client"
@@ -847,6 +848,24 @@ async def _authorize_static_token_request(
             )
         )
 
+    request.state.internal_actor_kind = "internal_token"
+    request.state.internal_actor_ref = "internal"
+    if request.cookies.get(ADMIN_SESSION_COOKIE):
+        try:
+            from app.api.routes.auth import resolve_current_admin_session
+
+            admin_session = resolve_current_admin_session(request)
+        except PortalBearerTokenError as error:
+            return _token_error_response(
+                RequestAuthError(
+                    error.status_code,
+                    error.error_code,
+                    error.message,
+                )
+            )
+        request.state.internal_actor_kind = "platform_admin"
+        request.state.internal_actor_ref = str(admin_session["principal_id"])
+
     idempotency_key = request.headers.get("Idempotency-Key", "").strip()
 
     try:
@@ -854,7 +873,9 @@ async def _authorize_static_token_request(
     except RequestAuthError as error:
         return _token_error_response(error)
 
-    if request.method.upper() in {"POST", "PUT"} and idempotency_key:
+    # Keep the historical replay scope names for storage compatibility, but
+    # reserve receipts for every state-changing internal HTTP method.
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and idempotency_key:
         now = datetime.now(UTC)
         replay_ttl_seconds = _resolve_replay_receipt_ttl_seconds(
             services.settings.auth_timestamp_tolerance_seconds

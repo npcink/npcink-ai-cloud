@@ -521,7 +521,12 @@ class HostedRuntimeProfileSettingsPayload(BaseModel):
 class OpsSummaryDisclosureReviewPayload(BaseModel):
     cache_key: str = Field(min_length=16, max_length=128)
     review_status: str = Field(max_length=32)
-    actor_ref: str = Field(default="internal", max_length=191)
+    actor_ref: str = Field(
+        default="internal",
+        max_length=191,
+        deprecated=True,
+        description="Deprecated and ignored; reviewer identity comes from trusted auth context.",
+    )
     note: str = Field(default="", max_length=512)
 
 
@@ -600,8 +605,8 @@ def _build_audit_context(request: Request) -> ServiceAuditContext:
         idempotency_key=request.headers.get("Idempotency-Key", "").strip(),
         method=request.method,
         path=request.url.path,
-        actor_kind="internal_token",
-        actor_ref="internal",
+        actor_kind=str(getattr(request.state, "internal_actor_kind", "internal_token")),
+        actor_ref=str(getattr(request.state, "internal_actor_ref", "internal")),
     )
 
 
@@ -2741,14 +2746,15 @@ async def review_ops_summary_disclosure(
     request: Request,
     payload: OpsSummaryDisclosureReviewPayload,
 ) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
+    auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
     try:
+        actor_context = _build_audit_context(request)
         result = _get_advisor_service(request).review_ops_summary_disclosure(
             cache_key=payload.cache_key,
             review_status=payload.review_status,
-            actor_ref=payload.actor_ref,
+            actor_ref=actor_context.actor_ref,
             note=payload.note,
         )
     except ValueError:
