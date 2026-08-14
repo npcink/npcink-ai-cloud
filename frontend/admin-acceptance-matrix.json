@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "manifest": "admin-ui-manifest.json",
+  "viewport": {
+    "width": 1440,
+    "height": 1050
+  },
+  "evidenceTiers": [
+    "route_smoke",
+    "focused_behavior",
+    "pilot_visual"
+  ],
+  "routes": [
+    {
+      "routePattern": "/admin",
+      "smokePath": "/admin",
+      "pageModel": "overview",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-overview-navigation-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/login",
+      "smokePath": "/admin/login?redirect=/admin",
+      "expectedLandingPath": "/admin",
+      "pageModel": "authentication",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-operator-path.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/accounts",
+      "smokePath": "/admin/accounts",
+      "pageModel": "queue",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-accounts-queue-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/accounts/[accountId]",
+      "smokePath": "/admin/accounts/acct_mvp_enterprise_primary",
+      "pageModel": "detail",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-customer-detail-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/sites/[siteId]",
+      "smokePath": "/admin/sites/site_mvp",
+      "pageModel": "detail",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-site-detail-pc-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/coverage",
+      "smokePath": "/admin/coverage",
+      "pageModel": "queue",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-service-queue-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/subscriptions",
+      "smokePath": "/admin/subscriptions",
+      "pageModel": "queue",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-subscriptions-queue-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/subscriptions/[subscriptionId]",
+      "smokePath": "/admin/subscriptions/sub_mvp",
+      "pageModel": "detail",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-subscription-detail-pc-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/support-requests",
+      "smokePath": "/admin/support-requests",
+      "pageModel": "queue",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-support-requests-queue-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/support-requests/[requestId]",
+      "smokePath": "/admin/support-requests/sr_overdue_payment",
+      "pageModel": "detail",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-support-request-operator-closure.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/plans",
+      "smokePath": "/admin/plans",
+      "pageModel": "queue",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-plans-directory-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/credit-packs",
+      "smokePath": "/admin/credit-packs",
+      "pageModel": "configuration",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-credit-packs-directory-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/ai-resources",
+      "smokePath": "/admin/ai-resources",
+      "pageModel": "queue",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-provider-directory-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/external-services",
+      "smokePath": "/admin/external-services",
+      "pageModel": "configuration",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-external-services.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/vector-settings",
+      "smokePath": "/admin/vector-settings",
+      "pageModel": "configuration",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-vector-settings.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/runtime-profiles",
+      "smokePath": "/admin/runtime-profiles",
+      "pageModel": "configuration",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-runtime-profiles-workspace.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/troubleshooting",
+      "smokePath": "/admin/troubleshooting",
+      "pageModel": "diagnostic",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-runtime-diagnostics-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/audit",
+      "smokePath": "/admin/audit",
+      "pageModel": "diagnostic",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-audit-workspace.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/plugin-observability",
+      "smokePath": "/admin/plugin-observability",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-plugin-observability-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/media-observability",
+      "smokePath": "/admin/media-observability",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-media-observability-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/vector-observability",
+      "smokePath": "/admin/vector-observability",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-vector-observability-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/agent-feedback",
+      "smokePath": "/admin/agent-feedback",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-agent-feedback-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/ai-advisor",
+      "smokePath": "/admin/ai-advisor",
+      "pageModel": "diagnostic",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-ai-advisor-pc-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/service-settings",
+      "smokePath": "/admin/service-settings",
+      "pageModel": "configuration",
+      "evidenceTier": "pilot_visual",
+      "focusedSpecs": ["tests/e2e/admin-service-settings-v2.spec.ts"]
+    },
+    {
+      "routePattern": "/admin/site-compliance",
+      "smokePath": "/admin/site-compliance",
+      "pageModel": "configuration",
+      "evidenceTier": "focused_behavior",
+      "focusedSpecs": ["tests/e2e/admin-site-compliance-workspace.spec.ts"]
+    }
+  ]
+}
