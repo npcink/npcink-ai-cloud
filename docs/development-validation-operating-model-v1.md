@@ -294,8 +294,16 @@ Use the local changed-file router when the correct first gate is not obvious:
 
 ```bash
 pnpm run check:changed -- --plan
+pnpm run check:changed -- --doctor
 pnpm run check:changed
 ```
+
+Run `--doctor` before a material gate when the worktree is new or its local
+tooling state is uncertain. It reports required local prerequisites as
+`ready` or `missing` and external/operator-owned prerequisites as advisory
+`operator_required` entries. The doctor is read-only: it does not bootstrap a
+virtual environment, install frontend dependencies, start Docker, read secret
+values, or mutate M4/GitHub state.
 
 For a task that needs a durable local plan and closeout receipt, create an
 ignored structured envelope instead of leaving a temporary root task contract:

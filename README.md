@@ -157,6 +157,7 @@ Common commands:
 
 ```bash
 pnpm run check:changed -- --plan
+pnpm run check:changed -- --doctor
 pnpm run check:changed
 pnpm run worktree:audit
 pnpm run test:contract

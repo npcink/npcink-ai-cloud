@@ -7,6 +7,7 @@ import argparse
 import fnmatch
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -420,6 +421,136 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
     }
 
 
+def environment_checks(
+    plan: dict[str, object],
+    python_bin: str,
+    *,
+    executable_lookup: Callable[[str], str | None] = shutil.which,
+) -> list[dict[str, object]]:
+    """Report local prerequisites without installing or mutating anything."""
+    classification = plan["classification"]
+    planned_commands = plan["commands"]
+    checks: list[dict[str, object]] = []
+
+    def add(
+        check_id: str,
+        status: str,
+        required: bool,
+        detail: str,
+    ) -> None:
+        checks.append(
+            {
+                "id": check_id,
+                "status": status,
+                "required": required,
+                "detail": detail,
+            }
+        )
+
+    def executable_path(command: str) -> str | None:
+        candidate = Path(command)
+        if candidate.is_absolute() or "/" in command:
+            return (
+                str(candidate)
+                if candidate.is_file() and os.access(candidate, os.X_OK)
+                else None
+            )
+        return executable_lookup(command)
+
+    python_commands = sorted(
+        {
+            str(command[0])
+            for command in planned_commands
+            if command and Path(str(command[0])).name.startswith("python")
+        }
+    )
+    if classification["python"] or classification["python_tests"]:
+        python_commands = sorted({*python_commands, python_bin})
+    if python_commands:
+        resolved_python = {
+            command: executable_path(command) for command in python_commands
+        }
+        missing_python = [
+            command for command, resolved in resolved_python.items() if not resolved
+        ]
+        if missing_python:
+            add(
+                "python",
+                "missing",
+                True,
+                "unavailable planned interpreter(s): " + ", ".join(missing_python),
+            )
+        else:
+            add(
+                "python",
+                "ready",
+                True,
+                ", ".join(str(value) for value in resolved_python.values()),
+            )
+    else:
+        add("python", "not_required", False, "No changed Python path requires a local Python gate.")
+
+    if classification["frontend"]:
+        pnpm = executable_path("pnpm")
+        add(
+            "pnpm",
+            "ready" if pnpm else "missing",
+            True,
+            pnpm or "pnpm is unavailable on PATH",
+        )
+        tsc = ROOT / "frontend" / "node_modules" / ".bin" / "tsc"
+        add(
+            "frontend_node_modules",
+            "ready" if tsc.exists() else "missing",
+            True,
+            str(tsc) if tsc.exists() else f"{tsc} is unavailable; run the repository bootstrap first",
+        )
+    else:
+        add("frontend", "not_required", False, "No changed frontend path requires frontend tooling.")
+
+    if any(command and command[0] == "node" for command in planned_commands):
+        node = executable_path("node")
+        add(
+            "node",
+            "ready" if node else "missing",
+            True,
+            node or "node is unavailable on PATH",
+        )
+    else:
+        add("node", "not_required", False, "No changed Node script requires node syntax checks.")
+
+    runtime_lane = str(plan["runtime_lane"])
+    if runtime_lane.startswith("m4:preview:"):
+        add(
+            "local_docker",
+            "not_required",
+            False,
+            "M4 owns routine Docker build and runtime validation; do not substitute local Docker.",
+        )
+        env_file = ROOT / ".env"
+        add(
+            "m4_environment",
+            "ready" if env_file.is_file() else "operator_required",
+            False,
+            str(env_file) if env_file.is_file() else "M4/runtime environment must be supplied by the operator",
+        )
+    else:
+        add("m4", "not_required", False, f"Runtime lane is {runtime_lane}.")
+
+    if runtime_lane == "github-actions":
+        gh = executable_lookup("gh")
+        add(
+            "github_cli",
+            "ready" if gh else "operator_required",
+            False,
+            gh or "gh is unavailable; GitHub Actions remains the remote runtime",
+        )
+    else:
+        add("github_cli", "not_required", False, "No GitHub PR operation is part of the local plan.")
+
+    return checks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -429,6 +560,11 @@ def main() -> int:
         "--specialized-only",
         action="store_true",
         help="run only specialized domain gates selected by the current diff",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="report local prerequisites for the selected plan without running gates",
     )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--base", default="origin/master")
@@ -447,6 +583,30 @@ def main() -> int:
         "NPCINK_CLOUD_PYTHON_BIN", str(ROOT / ".venv" / "bin" / "python")
     )
     plan = build_plan(paths, python_bin, args.base)
+    if args.doctor:
+        checks = environment_checks(plan, python_bin)
+        if args.format == "json":
+            print(
+                json.dumps(
+                    {"plan": plan, "environment_checks": checks},
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(f"[doctor] runtime lane: {plan['runtime_lane']}")
+            for check in checks:
+                required = "required" if check["required"] else "advisory"
+                print(
+                    f"[doctor] {check['status']} ({required}) "
+                    f"{check['id']}: {check['detail']}"
+                )
+        missing_required = any(
+            item["required"] and item["status"] == "missing" for item in checks
+        )
+        return 1 if missing_required else 0
+
     if args.format == "json":
         print(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True))
     else:
