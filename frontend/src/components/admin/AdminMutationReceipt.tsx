@@ -19,20 +19,31 @@ export type AdminMutationReceiptPayload = {
 
 export function buildAdminAuditTrailHref(
   receipt: AdminMutationReceiptPayload | null | undefined
-): string {
-  if (!receipt?.audit_filters) {
-    return '/api/admin/audit-events?limit=20';
+): string | null {
+  if (!receipt) {
+    return null;
   }
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(receipt.audit_filters)) {
-    if (value) {
-      params.set(key, value);
-    }
+  const eventId = Number(receipt.audit_event_id || 0);
+  if (Number.isInteger(eventId) && eventId > 0) {
+    params.set('event_id', String(eventId));
+    params.set('focus', String(eventId));
+    return `/admin/audit?${params.toString()}`;
   }
-  if (!params.has('limit')) {
-    params.set('limit', '20');
+
+  const idempotencyKey = receipt.audit_filters?.idempotency_key?.trim();
+  if (!idempotencyKey || !receipt.event_kind || !receipt.scope_kind || !receipt.scope_id) {
+    return null;
   }
-  return `/api/admin/audit-events?${params.toString()}`;
+  params.set('idempotency_key', idempotencyKey);
+  params.set('event_kind', receipt.event_kind);
+  params.set('scope_kind', receipt.scope_kind);
+  params.set('scope_id', receipt.scope_id);
+  const outcome = receipt.audit_filters?.outcome?.trim();
+  if (outcome) {
+    params.set('outcome', outcome);
+  }
+  return `/admin/audit?${params.toString()}`;
 }
 
 export function buildAdminMutationReceiptText(receipt: AdminMutationReceiptPayload): string {
@@ -68,6 +79,7 @@ export function AdminMutationReceipt({
   const auditUnavailable = receipt.audit_state === 'unavailable';
   const auditTrailAvailable = receipt.audit_state !== 'unavailable'
     && receipt.audit_state !== 'not_applicable';
+  const auditTrailHref = auditTrailAvailable ? buildAdminAuditTrailHref(receipt) : null;
 
   async function copyReceipt() {
     if (!receipt) {
@@ -132,12 +144,10 @@ export function AdminMutationReceipt({
               ? t('admin.receipt_copy_failed', {}, 'Copy failed')
               : t('admin.receipt_copy', {}, 'Copy receipt')}
         </button>
-        {auditTrailAvailable ? (
+        {auditTrailHref ? (
           <Link
-            href={buildAdminAuditTrailHref(receipt)}
+            href={auditTrailHref}
             className="font-medium text-blue-600 hover:underline dark:text-blue-300"
-            target="_blank"
-            rel="noreferrer"
           >
             {t('admin.receipt_view_audit', {}, 'View audit trail')}
           </Link>

@@ -81,6 +81,15 @@ The receipt is durable follow-up evidence, not a second success banner.
 - Open full receipt data in a dialog, drawer, or dedicated audit view.
 - Preserve copyable receipt text, audit filters, scope, outcome, and audit event
   reference.
+- `Receipt` names the mutation result returned to the operator. `Audit evidence`
+  names the persisted service-plane event. `Operation result` names the business
+  outcome. `Audit unavailable` means only the audit write failed; it must not be
+  rewritten as an operation failure.
+- Navigate to the persistent Admin audit workspace, never directly to the raw
+  audit JSON API. Prefer an exact `audit_event_id`. When an event ID is not
+  available, require a bounded exact filter set that includes the idempotency
+  key, event kind, scope kind, and scope ID. Hide the link when that context is
+  incomplete or unsupported.
 - Preserve the backend `audit_state` separately from the mutation `outcome`.
   `persisted` means the audit follow-up entry exists; `unavailable` means the
   governed mutation succeeded but its best-effort audit evidence could not be

@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
@@ -78,6 +78,12 @@
         "workingSurface": "[data-ui=\"runtime-diagnostic-table-frame\"]",
         "requiredStates": ["ready", "selected", "partial_error", "disclosure"]
       },
+      "/admin/audit": {
+        "pageModel": "diagnostic",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"admin-audit-directory\"]",
+        "requiredStates": ["ready", "filtered", "selected", "refresh_error"]
+      },
       "/admin/support-requests": {
         "pageModel": "queue",
         "riskTier": "material",
@@ -123,6 +129,7 @@
     "/admin/vector-settings": "configuration",
     "/admin/runtime-profiles": "configuration",
     "/admin/troubleshooting": "diagnostic",
+    "/admin/audit": "diagnostic",
     "/admin/plugin-observability": "diagnostic",
     "/admin/media-observability": "diagnostic",
     "/admin/vector-observability": "diagnostic",

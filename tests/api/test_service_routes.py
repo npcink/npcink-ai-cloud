@@ -149,8 +149,53 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
     }
     issue_audit = next(item for item in audit_items if item["event_kind"] == "site_key.issue")
     rotate_audit = next(item for item in audit_items if item["event_kind"] == "site_key.rotate")
+    exact_audit_response = client.get(
+        "/internal/service/audit-events",
+        params={
+            "event_id": issue_audit["event_id"],
+            "idempotency_key": issue_audit["idempotency_key"],
+            "scope_kind": issue_audit["scope_kind"],
+            "scope_id": issue_audit["scope_id"],
+            "include_payload": False,
+        },
+        headers=build_internal_headers(),
+    )
+    paged_audit_response = client.get(
+        "/internal/service/audit-events?site_id=site_service&limit=2&offset=2",
+        headers=build_internal_headers(),
+    )
     assert issue_audit["payload"]["secret"] == "[redacted]"
     assert rotate_audit["payload"]["current"]["secret"] == "[redacted]"
+    assert exact_audit_response.status_code == 200
+    exact_audit_data = exact_audit_response.json()["data"]
+    assert [item["event_id"] for item in exact_audit_data["items"]] == [
+        issue_audit["event_id"]
+    ]
+    assert "payload" not in exact_audit_data["items"][0]
+    expected_exact_filters = {
+        "event_id": issue_audit["event_id"],
+        "idempotency_key": issue_audit["idempotency_key"],
+        "scope_kind": issue_audit["scope_kind"],
+        "scope_id": issue_audit["scope_id"],
+    }
+    assert {
+        key: exact_audit_data["filters"][key] for key in expected_exact_filters
+    } == expected_exact_filters
+    assert exact_audit_data["pagination"] == {
+        "limit": 50,
+        "offset": 0,
+        "total": 1,
+        "has_more": False,
+        "next_offset": None,
+    }
+    assert exact_audit_data["sort"] == {"created_at": "desc", "event_id": "desc"}
+    assert paged_audit_response.status_code == 200
+    paged_audit_data = paged_audit_response.json()["data"]
+    assert paged_audit_data["pagination"]["offset"] == 2
+    assert paged_audit_data["pagination"]["limit"] == 2
+    assert paged_audit_data["pagination"]["total"] >= 7
+    assert paged_audit_data["pagination"]["has_more"] is True
+    assert paged_audit_data["pagination"]["next_offset"] == 4
     assert missing_activate_response.status_code == 404
     assert error_audit_response.status_code == 200
     error_items = error_audit_response.json()["data"]["items"]
@@ -409,6 +454,13 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert plan_response.json()["data"]["receipt"]["event_kind"] == "plan.upsert"
     assert plan_response.json()["data"]["receipt"]["audit_filters"]["event_kind"] == "plan.upsert"
     assert plan_response.json()["data"]["receipt"]["audit_filters"]["outcome"] == "succeeded"
+    assert plan_response.json()["data"]["receipt"]["audit_filters"]["idempotency_key"] == (
+        "svc-plan-101"
+    )
+    assert plan_response.json()["data"]["receipt"]["audit_filters"]["scope_kind"] == "plan"
+    assert plan_response.json()["data"]["receipt"]["audit_filters"]["scope_id"] == (
+        "plan_pro_topup"
+    )
     assert version_response.status_code == 200
     assert version_response.json()["data"]["receipt"]["event_kind"] == "plan_version.publish"
     assert (

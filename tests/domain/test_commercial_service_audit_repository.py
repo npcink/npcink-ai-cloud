@@ -18,8 +18,8 @@ def _record(
     site_id: str,
     scope_id: str,
     outcome: str,
-) -> None:
-    repository.record_service_audit_event(
+) -> int:
+    event = repository.record_service_audit_event(
         account_id="account-a",
         site_id=site_id,
         key_id=None,
@@ -38,6 +38,7 @@ def _record(
         actor_ref=scope_id,
         payload_json={"outcome": outcome},
     )
+    return int(event.id or 0)
 
 
 @pytest.mark.parametrize(
@@ -52,7 +53,12 @@ def test_service_audit_repository_preserves_write_filters_principal_and_summary(
     init_schema(database_url)
     with get_session(database_url) as session:
         repository = repository_type(session)
-        _record(repository, site_id="site-a", scope_id="principal-a", outcome="success")
+        first_event_id = _record(
+            repository,
+            site_id="site-a",
+            scope_id="principal-a",
+            outcome="success",
+        )
         _record(repository, site_id="site-b", scope_id="prefix:principal-a", outcome="blocked")
 
         assert [event.site_id for event in repository.list_service_audit_events(limit=1)] == [
@@ -60,6 +66,19 @@ def test_service_audit_repository_preserves_write_filters_principal_and_summary(
         ]
         assert repository.list_service_audit_events(site_ids=[], account_id=None) == []
         assert len(repository.list_service_audit_events(site_ids=[], account_id="account-a")) == 2
+        assert [
+            event.id
+            for event in repository.list_service_audit_events(
+                event_id=first_event_id,
+                scope_kind="principal",
+                scope_id="principal-a",
+                limit=20,
+            )
+        ] == [first_event_id]
+        assert [
+            event.site_id
+            for event in repository.list_service_audit_events(limit=1, offset=1)
+        ] == ["site-a"]
         principal_events = repository.list_service_audit_events_for_principal(
             principal_id=" principal-a "
         )
