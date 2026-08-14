@@ -177,7 +177,11 @@ test.describe('current-master Admin route acceptance matrix', () => {
   for (const route of acceptanceMatrix.routes) {
     test(`${route.routePattern} is reachable with one page title and no desktop overflow`, async ({ page }) => {
       const browserFailures = installBrowserFailureCapture(page);
-      await installAdminMocks(page);
+      const unhandledAdminRequests: string[] = [];
+      const allowedEmptyAdminRequests = 'allowedEmptyAdminRequests' in route
+        ? route.allowedEmptyAdminRequests
+        : [];
+      await installAdminMocks(page, { allowedEmptyAdminRequests, unhandledAdminRequests });
       await installRouteAcceptanceMocks(page, route.routePattern);
 
       await page.goto(route.smokePath, { waitUntil: 'domcontentloaded' });
@@ -185,6 +189,7 @@ test.describe('current-master Admin route acceptance matrix', () => {
       await expectDesktopRouteBaseline(page, route);
 
       expect(browserFailures, `${route.routePattern} emitted unexplained browser failures`).toEqual([]);
+      expect(unhandledAdminRequests, `${route.routePattern} made unhandled Admin API requests`).toEqual([]);
     });
   }
 });

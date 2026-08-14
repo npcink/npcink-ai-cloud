@@ -104,7 +104,7 @@
     "report:ai-quality-regression": "python3 scripts/report_ai_quality_regression_samples.py",
     "check:runtime-stability-plan": "node scripts/check-runtime-stability-evidence-plan.js",
     "check:visual:frontend": "pnpm --dir frontend run test:visual",
-    "precheck:admin-acceptance": "node frontend/tests/unit/admin-acceptance-matrix-contract.mjs && pnpm --dir frontend exec eslint tests/e2e/admin-acceptance-matrix.spec.ts tests/unit/admin-acceptance-matrix-contract.mjs --max-warnings=0",
+    "precheck:admin-acceptance": "node frontend/tests/unit/admin-acceptance-matrix-contract.mjs && pnpm --dir frontend exec eslint tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/helpers/admin-operator-fixture.ts tests/unit/admin-acceptance-matrix-contract.mjs --max-warnings=0",
     "check:admin-acceptance": "pnpm run precheck:admin-acceptance && pnpm --dir frontend run test:e2e:admin-acceptance",
     "precheck:admin-ui": "node frontend/tests/unit/admin-audit-workspace-contract.mjs && node frontend/tests/unit/admin-mutation-receipt-contract.mjs && pnpm --dir frontend exec eslint src/app/admin/audit/page.tsx src/features/admin/audit/*.ts src/features/admin/audit/*.tsx src/components/admin/AdminMutationReceipt.tsx src/app/admin/troubleshooting/page.tsx tests/e2e/admin-audit-workspace.spec.ts tests/unit/admin-audit-workspace-contract.mjs tests/unit/admin-mutation-receipt-contract.mjs --max-warnings=0",
     "precheck:admin-ui:visual": "pnpm --dir frontend exec eslint tests/e2e/admin-audit-workspace.spec.ts --max-warnings=0 && pnpm --dir frontend run test:e2e -- tests/e2e/admin-audit-workspace.spec.ts",

@@ -47,6 +47,14 @@ for (const route of matrix.routes) {
     assert.match(spec, /^tests\/e2e\/admin-.+\.spec\.ts$/, `${route.routePattern} focused evidence must be an Admin Playwright spec`);
     assert.ok(existsSync(resolve(fromFrontendRoot('.'), spec)), `${route.routePattern} focused evidence is missing: ${spec}`);
   }
+
+  for (const request of route.allowedEmptyAdminRequests || []) {
+    assert.match(
+      request,
+      /^GET \/api\/admin\/[A-Za-z0-9_?&=./%-]+$/,
+      `${route.routePattern} empty-response request must be an exact Admin GET request`
+    );
+  }
 }
 
 for (const pilotRoute of Object.keys(manifest.visualGovernance.pilotRoutes)) {

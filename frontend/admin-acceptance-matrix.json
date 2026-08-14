@@ -73,6 +73,7 @@
       "smokePath": "/admin/support-requests",
       "pageModel": "queue",
       "evidenceTier": "pilot_visual",
+      "allowedEmptyAdminRequests": ["GET /api/admin/support-requests?limit=20&sort=risk"],
       "focusedSpecs": ["tests/e2e/admin-support-requests-queue-v2.spec.ts"]
     },
     {
@@ -80,6 +81,7 @@
       "smokePath": "/admin/support-requests/sr_overdue_payment",
       "pageModel": "detail",
       "evidenceTier": "pilot_visual",
+      "allowedEmptyAdminRequests": ["GET /api/admin/support-requests/sr_overdue_payment"],
       "focusedSpecs": ["tests/e2e/admin-support-request-operator-closure.spec.ts"]
     },
     {
@@ -94,6 +96,7 @@
       "smokePath": "/admin/credit-packs",
       "pageModel": "configuration",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/credit-packs"],
       "focusedSpecs": ["tests/e2e/admin-credit-packs-directory-v2.spec.ts"]
     },
     {
@@ -101,6 +104,7 @@
       "smokePath": "/admin/ai-resources",
       "pageModel": "queue",
       "evidenceTier": "pilot_visual",
+      "allowedEmptyAdminRequests": ["GET /api/admin/ai-resources"],
       "focusedSpecs": ["tests/e2e/admin-provider-directory-v2.spec.ts"]
     },
     {
@@ -108,6 +112,7 @@
       "smokePath": "/admin/external-services",
       "pageModel": "configuration",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/provider-connections"],
       "focusedSpecs": ["tests/e2e/admin-external-services.spec.ts"]
     },
     {
@@ -122,6 +127,7 @@
       "smokePath": "/admin/runtime-profiles",
       "pageModel": "configuration",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/runtime-profiles"],
       "focusedSpecs": ["tests/e2e/admin-runtime-profiles-workspace.spec.ts"]
     },
     {
@@ -143,6 +149,7 @@
       "smokePath": "/admin/plugin-observability",
       "pageModel": "diagnostic",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/plugin-observability?window_hours=24"],
       "focusedSpecs": ["tests/e2e/admin-plugin-observability-v2.spec.ts"]
     },
     {
@@ -150,6 +157,7 @@
       "smokePath": "/admin/media-observability",
       "pageModel": "diagnostic",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/media-observability?window_hours=24"],
       "focusedSpecs": ["tests/e2e/admin-media-observability-v2.spec.ts"]
     },
     {
@@ -157,6 +165,7 @@
       "smokePath": "/admin/vector-observability",
       "pageModel": "diagnostic",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/vector-observability?window_hours=24"],
       "focusedSpecs": ["tests/e2e/admin-vector-observability-v2.spec.ts"]
     },
     {
@@ -164,6 +173,7 @@
       "smokePath": "/admin/agent-feedback",
       "pageModel": "diagnostic",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/agent-feedback?window_hours=24"],
       "focusedSpecs": ["tests/e2e/admin-agent-feedback-v2.spec.ts"]
     },
     {
@@ -171,6 +181,7 @@
       "smokePath": "/admin/ai-advisor",
       "pageModel": "diagnostic",
       "evidenceTier": "focused_behavior",
+      "allowedEmptyAdminRequests": ["GET /api/admin/advisor/ops-summary-preview?scope=operations"],
       "focusedSpecs": ["tests/e2e/admin-ai-advisor-pc-v2.spec.ts"]
     },
     {
@@ -178,6 +189,7 @@
       "smokePath": "/admin/service-settings",
       "pageModel": "configuration",
       "evidenceTier": "pilot_visual",
+      "allowedEmptyAdminRequests": ["GET /api/admin/service-settings"],
       "focusedSpecs": ["tests/e2e/admin-service-settings-v2.spec.ts"]
     },
     {
