@@ -317,7 +317,15 @@ required context, resource budgets, exact gate results, source state, and
 rollback. Verification rebuilds the plan from the current trusted rules and
 fails closed when the base revision, changed-file set, or selected command
 definition differs from the saved envelope. Content fingerprints preserve valid
-evidence across a commit that does not change the verified files. The receipt
+evidence across a commit that does not change the verified files. The plan also
+exposes a machine-readable `runtime_lane`: `none`, `github-actions`,
+`m4:preview:sync`, or `m4:preview:deploy`.
+
+Verification normally runs the selected gates. When the latest successful run
+has the same base revision, source fingerprint, and exact command plan, the
+operator may explicitly pass `--reuse-current-evidence` after confirming that
+the environment and risk question are unchanged. That reuse is recorded in the
+ignored envelope; a matching commit alone never authorizes reuse. The receipt
 may report `local verified`; it does not
 promote local evidence into PR, merged, M4, production, or human acceptance.
 
