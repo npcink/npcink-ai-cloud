@@ -55,6 +55,8 @@ export async function installAdminMocks(
     auditEvents?: number;
     auditFailureController?: { enabled: boolean };
     quotaNeedsAttention?: boolean;
+    allowedEmptyAdminRequests?: readonly string[];
+    unhandledAdminRequests?: string[];
   } = {}
 ) {
   const auditEvents = options.auditEvents ?? 4;
@@ -2033,6 +2035,17 @@ export async function installAdminMocks(
       return;
     }
 
-    await fulfillJson(route, {});
+    const requestKey = `${route.request().method()} ${pathname}${url.search}`;
+    if (!options.unhandledAdminRequests || options.allowedEmptyAdminRequests?.includes(requestKey)) {
+      await fulfillJson(route, {});
+      return;
+    }
+
+    options.unhandledAdminRequests.push(requestKey);
+    await route.fulfill({
+      status: 501,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('Unhandled Admin acceptance request', 'admin.e2e_unhandled_request')),
+    });
   });
 }
