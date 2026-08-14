@@ -344,9 +344,7 @@ require_marker "deploy/OPS_PLAYBOOK.md" \
 require_marker "deploy/OPS_PLAYBOOK.md" \
 	'NPCINK_CLOUD_NO_USER_INTERNAL_VALIDATION_APPROVAL'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
-	'no-external-user internal-validation mode'
-require_marker "deploy/RELEASE_CHECKLIST.md" \
-	'npcink.controlled_production_cve_risk_acceptance.v1'
+	'retired controlled-validation receipt, no-user switch, or historical CVE ID'
 require_marker ".github/workflows/python-cve-upstream-watch.yml" \
 	'python3 scripts/check-python-cve-upstream.py'
 require_marker ".github/workflows/python-cve-upstream-watch.yml" \
@@ -1127,9 +1125,15 @@ require_marker ".github/workflows/deploy-production.yml" "environment: productio
 require_marker ".github/workflows/deploy-production.yml" "group: production-host-mutation"
 require_marker ".github/workflows/deploy-production.yml" "actions: read"
 require_marker ".github/workflows/deploy-production.yml" 'select(.head_sha == $sha)'
-require_marker ".github/workflows/deploy-production.yml" 'test "${conclusion}" = "success"'
+require_marker ".github/workflows/deploy-production.yml" "wait_seconds=900"
+require_marker ".github/workflows/deploy-production.yml" "poll_seconds=15"
 require_marker ".github/workflows/deploy-production.yml" \
-	"actions/workflows/codeql.yml/runs"
+	"Timed out waiting \${wait_seconds}s for exact production checks"
+require_marker ".github/workflows/deploy-production.yml" \
+	'if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]'
+require_marker ".github/workflows/deploy-production.yml" \
+	'"repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs"'
+require_marker ".github/workflows/deploy-production.yml" "exact_run codeql.yml"
 require_marker ".github/workflows/deploy-production.yml" \
 	"Resolve exact release execution plan"
 require_marker ".github/workflows/deploy-production.yml" 'production-release-plan-${GITHUB_SHA}'
@@ -1154,10 +1158,20 @@ require_marker "docs/cloud-production-release-policy-v1.md" \
 require_marker "docs/cloud-production-release-policy-v1.md" \
 	'An exact `static` plan uses the'
 require_marker ".github/workflows/deploy-production.yml" \
-	'test "${codeql_conclusion}" = "success"'
+	'if [ "${codeql_status}" = "completed" ] && [ "${codeql_conclusion}" != "success" ]'
+reject_marker ".github/workflows/deploy-production.yml" "-f status=completed"
 require_marker ".github/workflows/deploy-production.yml" 'gh run download "${PRODUCTION_CI_RUN_ID}"'
 require_marker ".github/workflows/deploy-production.yml" 'production-deploy-bundle-${GITHUB_SHA}'
 require_marker ".github/workflows/deploy-production.yml" "--skip-bundle-build"
+require_marker "deploy/RELEASE_CHECKLIST.md" "### CVE allowlist change discipline"
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'`deploy/image-lock/cve-allowlist.json` is one atomic release-contract change'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'`tests/contract/test_container_image_supply_contract.py`'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'`scripts/check-first-install-cve-gate.py`'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'`.venv/bin/python -m pytest tests/contract/`'
 require_marker ".github/workflows/release-smoke.yml" "expected_deployed_sha:"
 require_marker ".github/workflows/release-smoke.yml" \
 	'EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'

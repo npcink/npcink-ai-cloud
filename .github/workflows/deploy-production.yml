@@ -81,40 +81,64 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Require successful CI and CodeQL for this production commit
+      - name: Wait for successful CI and CodeQL for this production commit
         id: production_ci
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ci_run="$(
+          wait_seconds=900
+          poll_seconds=15
+          started_epoch="$(date -u +%s)"
+          deadline_epoch="$((started_epoch + wait_seconds))"
+
+          exact_run() {
+            local workflow="$1"
             gh api --method GET \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
               -f branch=production \
               -f event=push \
-              -f status=completed \
-              -f per_page=20 |
+              -f per_page=30 |
               jq -c --arg sha "${GITHUB_SHA}" \
                 '[.workflow_runs[] | select(.head_sha == $sha)][0] // {}'
-          )"
-          conclusion="$(jq -r '.conclusion // ""' <<<"${ci_run}")"
-          ci_run_id="$(jq -r '.id // ""' <<<"${ci_run}")"
-          test "${conclusion}" = "success"
-          [[ "${ci_run_id}" =~ ^[0-9]+$ ]]
-          codeql_run="$(
-            gh api --method GET \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/codeql.yml/runs" \
-              -f branch=production \
-              -f event=push \
-              -f status=completed \
-              -f per_page=20 |
-              jq -c --arg sha "${GITHUB_SHA}" \
-                '[.workflow_runs[] | select(.head_sha == $sha)][0] // {}'
-          )"
-          codeql_conclusion="$(jq -r '.conclusion // ""' <<<"${codeql_run}")"
-          codeql_run_id="$(jq -r '.id // ""' <<<"${codeql_run}")"
-          test "${codeql_conclusion}" = "success"
-          [[ "${codeql_run_id}" =~ ^[0-9]+$ ]]
+          }
+
+          while true; do
+            ci_run="$(exact_run ci.yml)"
+            codeql_run="$(exact_run codeql.yml)"
+            ci_status="$(jq -r '.status // "not_started"' <<<"${ci_run}")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"${ci_run}")"
+            ci_run_id="$(jq -r '.id // ""' <<<"${ci_run}")"
+            codeql_status="$(jq -r '.status // "not_started"' <<<"${codeql_run}")"
+            codeql_conclusion="$(jq -r '.conclusion // ""' <<<"${codeql_run}")"
+            codeql_run_id="$(jq -r '.id // ""' <<<"${codeql_run}")"
+
+            if [ "${ci_status}" = "completed" ] && [ "${conclusion}" != "success" ]; then
+              echo "[error] Exact production Cloud CI run ${ci_run_id:-unknown} concluded ${conclusion:-without-a-result}." >&2
+              exit 1
+            fi
+            if [ "${codeql_status}" = "completed" ] && [ "${codeql_conclusion}" != "success" ]; then
+              echo "[error] Exact production CodeQL run ${codeql_run_id:-unknown} concluded ${codeql_conclusion:-without-a-result}." >&2
+              exit 1
+            fi
+            if [ "${ci_status}" = "completed" ] && [ "${conclusion}" = "success" ] && \
+               [ "${codeql_status}" = "completed" ] && [ "${codeql_conclusion}" = "success" ]; then
+              [[ "${ci_run_id}" =~ ^[0-9]+$ ]]
+              [[ "${codeql_run_id}" =~ ^[0-9]+$ ]]
+              break
+            fi
+
+            now_epoch="$(date -u +%s)"
+            if [ "${now_epoch}" -ge "${deadline_epoch}" ]; then
+              echo "[error] Timed out waiting ${wait_seconds}s for exact production checks: Cloud CI=${ci_status}/${conclusion:-pending}; CodeQL=${codeql_status}/${codeql_conclusion:-pending}." >&2
+              exit 1
+            fi
+            echo "[wait] Exact production checks are not ready: Cloud CI=${ci_status}/${conclusion:-pending}; CodeQL=${codeql_status}/${codeql_conclusion:-pending}."
+            sleep "${poll_seconds}"
+          done
+
+          completed_epoch="$(date -u +%s)"
+          checks_wait_seconds="$((completed_epoch - started_epoch))"
           printf 'run_id=%s\n' "${ci_run_id}" >> "${GITHUB_OUTPUT}"
           printf 'codeql_run_id=%s\n' "${codeql_run_id}" >> "${GITHUB_OUTPUT}"
           {
@@ -123,6 +147,7 @@ jobs:
             echo "- cloud_ci_run=${ci_run_id}"
             echo "- codeql_run=${codeql_run_id}"
             echo "- production_sha=${GITHUB_SHA}"
+            echo "- bounded_wait_seconds=${checks_wait_seconds}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Download exact production release plan

@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-08-04
+> Updated: 2026-08-14
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -33,6 +33,29 @@ for the release. Paste its `dispatch_expected_sha` value into the required
 `expected_sha` input when dispatching `Deploy Production`; the workflow must
 reject any value that is not a full lowercase SHA or no longer equals the
 revision selected for that run.
+
+The deploy workflow also waits within one bounded 15-minute window for the
+exact production SHA's push-event Cloud CI and CodeQL runs. It fails
+immediately on an explicit failed conclusion and fails closed on timeout; this
+is protection against dispatch timing, not permission to skip the preflight.
+
+### CVE allowlist change discipline
+
+Every addition, update, or removal in
+`deploy/image-lock/cve-allowlist.json` is one atomic release-contract change:
+
+- [ ] update the canonical allowlist entry set and complete reason templates,
+  including owner, exact package/version, expiry, reachability, stop
+  conditions, and fixed-image removal path when an exception exists
+- [ ] update the exact active allowlist expectations in
+  `tests/contract/test_container_image_supply_contract.py`
+- [ ] update or deliberately preserve the governed and retired CVE sets in
+  `scripts/check-first-install-cve-gate.py`, recording why historical IDs must
+  remain fail-closed after an active exception is removed
+- [ ] run `.venv/bin/python -m pytest tests/contract/` and
+  `pnpm run check:release-policy`, then inspect that the allowlist, contract
+  expectations, executable gate, and release-policy markers describe the same
+  active exception state
 
 Set `run_formal_release_smoke=true` only when every protected smoke credential
 is ready and the one-time Portal code will remain valid until the post-deploy
@@ -275,20 +298,14 @@ plus its fail-closed bootstrap correction in
   approved rotation plan covers persisted grants, sessions, audit actors,
   rollback, and operator recovery
 
-- [ ] the exact release canonical allowlist either no longer contains the three
-  governed Python `3.14.6` entries, the temporary bundle-external
-  `npcink.controlled_production_cve_risk_acceptance.v1` receipt pair is valid,
-  or the finalized-installation no-external-user internal-validation mode is
-  explicitly approved before 2026-08-11; every path still binds the clean
-  production source to a fresh passed Linux/AMD64 scan with zero unallowlisted
-  blocking findings
-- [ ] while any governed entry remains, the machine-executable production-host
-  deployment gate consumes and validates either both external evidence files
-  or the exact no-user internal-validation approval before
-  remote mkdir,
-  upload, deployment lock, image, container, or database mutation; absence,
-  partial matches, changed threat intelligence, changed scan evidence, unsafe
-  protection, or any binding mismatch fails closed and there is no skip flag
+- [ ] the exact release canonical CVE allowlist matches the reviewed active
+  exception state and the four-part allowlist change discipline above is
+  complete; the current fixed Python 3.14.7 and Node 22.23.2 production-image
+  contract requires an empty active allowlist
+- [ ] the exact release binds the clean production source to a fresh passed
+  Linux/AMD64 scan with zero unallowlisted blocking findings; an expired or
+  retired controlled-validation receipt, no-user switch, or historical CVE ID
+  cannot authorize deployment and there is no skip flag
 - [ ] the production SSH user is explicit, the exact production commit has a
   completed successful `Cloud CI` run, and either the manually dispatched
   `Deploy Production` workflow received its confirmation and Environment
