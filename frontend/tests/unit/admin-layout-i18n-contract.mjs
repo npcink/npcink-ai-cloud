@@ -75,6 +75,16 @@ assert.match(
   /admin\.command_open[\s\S]*admin\.command_title[\s\S]*filteredCommandItems/,
   'Admin layout must expose a bounded quick switcher for existing admin routes'
 );
+assert.match(
+  layoutSource,
+  /<AdminCommandDialog[\s\S]*open=\{commandOpen\}[\s\S]*filteredCommandItems[\s\S]*<\/AdminCommandDialog>/,
+  'Admin layout must render quick switching through the shared command dialog'
+);
+assert.doesNotMatch(
+  layoutSource,
+  /role="dialog"|aria-modal="true"|fixed inset-0/,
+  'Admin layout must not reclaim route-local dialog markup'
+);
 
 assert.match(
   layoutSource,

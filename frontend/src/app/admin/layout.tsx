@@ -9,8 +9,8 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
+import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
 
@@ -84,10 +84,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [commandQuery, setCommandQuery] = useState('');
   const [adminSessionReady, setAdminSessionReady] = useState(isLoginPage);
   const [deploymentIdentity, setDeploymentIdentity] = useState<AdminDeploymentIdentity | null>(null);
-  const commandDialogRef = useDialogKeyboard<HTMLDivElement>({
-    open: commandOpen,
-    onClose: () => setCommandOpen(false),
-  });
 
   useEffect(() => {
     if (isLoginPage) {
@@ -663,21 +659,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </div>
         </header>
 
-        {commandOpen ? (
-          <div
-            ref={commandDialogRef}
-            className="fixed inset-0 z-[70] bg-slate-950/24 px-3 py-16 backdrop-blur-sm dark:bg-slate-950/55"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('admin.command_title', {}, 'Quick switcher')}
-            tabIndex={-1}
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) {
-                setCommandOpen(false);
-              }
-            }}
-          >
-            <div className="mx-auto flex max-h-[min(32rem,calc(100svh-8rem))] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+        <AdminCommandDialog
+          open={commandOpen}
+          title={t('admin.command_title', {}, 'Quick switcher')}
+          onClose={() => setCommandOpen(false)}
+        >
               <div className="border-b border-slate-200 p-3 dark:border-slate-800">
                 <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
                   <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -729,9 +715,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        ) : null}
+        </AdminCommandDialog>
 
         {/* Main Content */}
         <main className="flex-1 bg-transparent">
