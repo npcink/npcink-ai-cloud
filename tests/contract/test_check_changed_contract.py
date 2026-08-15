@@ -257,6 +257,34 @@ def test_doctor_requires_python_for_inventory_only_plan() -> None:
     assert "python3" in python_check["detail"]
 
 
+def test_doctor_requires_node_for_frontend_workspace_contract() -> None:
+    environment = os.environ.copy()
+    environment["PATH"] = "/missing"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "--doctor",
+            "--format",
+            "json",
+            "frontend/tests/unit/portal-package-contract.mjs",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    payload = json.loads(completed.stdout)
+    node_check = next(
+        item for item in payload["environment_checks"] if item["id"] == "node"
+    )
+    assert node_check["status"] == "missing"
+    assert node_check["required"] is True
+
+
 def test_frontend_build_runtime_input_promotes_plan_to_l2() -> None:
     plan = _plan("frontend/package.json")
 

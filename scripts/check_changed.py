@@ -522,7 +522,19 @@ def environment_checks(
             "No changed frontend path requires frontend tooling.",
         )
 
-    if any(command and command[0] == "node" for command in planned_commands):
+    node_required = any(
+        command
+        and (
+            Path(str(command[0])).name == "node"
+            or any(
+                str(command[index]) == "exec"
+                and Path(str(command[index + 1])).name == "node"
+                for index in range(len(command) - 1)
+            )
+        )
+        for command in planned_commands
+    )
+    if node_required:
         node = executable_path("node")
         add(
             "node",
