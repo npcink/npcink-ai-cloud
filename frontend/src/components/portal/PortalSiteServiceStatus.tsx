@@ -11,7 +11,8 @@ import type {
 } from '@/lib/portal-client';
 import {
   getPortalCustomerIssueTitle,
-  getPortalMonitoringIssueCategory,
+  getPortalServiceOperationStatus,
+  hasPortalQuotaPressure,
 } from '@/lib/portal-monitoring-display';
 import { formatDate, formatNumber } from '@/lib/utils';
 
@@ -46,22 +47,13 @@ export function PortalSiteServiceStatus({
 }: PortalSiteServiceStatusProps) {
   const issueCount = overview?.action_required.length || 0;
   const healthStatus = overview?.health.status || 'inactive';
-  const hasQuotaPressure = Boolean(overview && overview.quota.top_pressure !== 'none');
+  const hasQuotaPressure = Boolean(overview && hasPortalQuotaPressure(overview));
   const currentStatusLabel = statusLabel(healthStatus, issueCount, hasQuotaPressure, t);
   const latestActivityAt = overview?.activity.last_seen_at || overview?.generated_at || '';
 
-  const serviceActions = overview?.action_required.filter(
-    (item) => getPortalMonitoringIssueCategory(item) !== 'quota'
-  ) || [];
-  const serviceComponentsNeedAttention = overview?.components.some(
-    (component) => component.component !== 'quota'
-      && (component.status === 'warning' || component.status === 'error')
-  ) || false;
-  const serviceOperationNeedsAttention = serviceActions.length > 0 || serviceComponentsNeedAttention;
-  const serviceOperationHasError = serviceActions.some((item) => item.severity === 'error')
-    || Boolean(overview?.components.some(
-      (component) => component.component !== 'quota' && component.status === 'error'
-    ));
+  const serviceOperationStatus = overview
+    ? getPortalServiceOperationStatus(overview)
+    : 'inactive';
   const errorCount = Number(overview?.activity.plugin_errors_total || 0);
 
   return (
@@ -118,8 +110,12 @@ export function PortalSiteServiceStatus({
                 </th>
                 <td className="px-4 py-3">
                   <PortalStatusBadge
-                    status={serviceOperationNeedsAttention ? (serviceOperationHasError ? 'error' : 'warning') : 'active'}
-                    label={serviceOperationNeedsAttention ? t('portal.home.filter_attention_only', {}, 'Needs attention') : t('portal.home.risk_level_normal', {}, 'Normal')}
+                    status={serviceOperationStatus}
+                    label={serviceOperationStatus === 'inactive'
+                      ? t('status.inactive', {}, 'Inactive')
+                      : serviceOperationStatus === 'active'
+                        ? t('portal.home.risk_level_normal', {}, 'Normal')
+                        : t('portal.home.filter_attention_only', {}, 'Needs attention')}
                   />
                 </td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-300">

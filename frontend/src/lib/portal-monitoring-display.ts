@@ -1,8 +1,12 @@
-import type { PortalMonitoringOverviewAction } from '@/lib/portal-client';
+import type {
+  PortalMonitoringOverviewAction,
+  PortalMonitoringOverviewSummary,
+} from '@/lib/portal-client';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
 export type PortalMonitoringIssueCategory = 'connection' | 'quota' | 'service';
+export type PortalServiceOperationStatus = 'active' | 'warning' | 'error' | 'inactive';
 
 export function getPortalMonitoringIssueCategory(
   item: PortalMonitoringOverviewAction
@@ -34,4 +38,35 @@ export function getPortalCustomerIssueTitle(
     return t('portal.monitoring.customer_issue_service_success', {}, 'Service success rate needs attention');
   }
   return t('portal.monitoring.customer_issue_general', {}, 'Service item needs attention');
+}
+
+export function hasPortalQuotaPressure(
+  overview: PortalMonitoringOverviewSummary
+): boolean {
+  const pressureKey = overview.quota.top_pressure;
+  if (pressureKey === 'none') return false;
+  const metric = overview.quota[pressureKey];
+  return metric.over_limit || metric.usage_ratio >= 0.9;
+}
+
+export function getPortalServiceOperationStatus(
+  overview: PortalMonitoringOverviewSummary
+): PortalServiceOperationStatus {
+  if (overview.health.status === 'inactive') return 'inactive';
+
+  const serviceActions = overview.action_required.filter(
+    (item) => getPortalMonitoringIssueCategory(item) !== 'quota'
+  );
+  const serviceComponents = overview.components.filter(
+    (component) => component.component !== 'quota'
+  );
+  if (
+    serviceActions.some((item) => item.severity === 'error')
+    || serviceComponents.some((component) => component.status === 'error')
+  ) return 'error';
+  if (
+    serviceActions.length > 0
+    || serviceComponents.some((component) => component.status === 'warning')
+  ) return 'warning';
+  return 'active';
 }
