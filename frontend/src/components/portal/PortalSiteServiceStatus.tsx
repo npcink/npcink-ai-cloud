@@ -3,21 +3,23 @@
 import Link from 'next/link';
 import {
   PortalCard,
-  PortalMetricStrip,
   PortalSection,
 } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type {
-  PortalMonitoringOverviewAction,
   PortalMonitoringOverviewSummary,
 } from '@/lib/portal-client';
+import {
+  getPortalCustomerIssueTitle,
+  getPortalServiceOperationStatus,
+  hasPortalQuotaPressure,
+} from '@/lib/portal-monitoring-display';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
 type PortalSiteServiceStatusProps = {
   t: TranslateFn;
-  siteId: string;
   overview: PortalMonitoringOverviewSummary | null;
   isLoading: boolean;
   error: string;
@@ -36,23 +38,8 @@ function statusTone(status: string, issueCount: number, hasQuotaPressure: boolea
   return 'warning';
 }
 
-function customerIssueTitle(item: PortalMonitoringOverviewAction, t: TranslateFn): string {
-  const raw = `${item.title || ''} ${item.code || ''}`.toLowerCase();
-  if (raw.includes('runtime') || raw.includes('success')) {
-    return t('portal.monitoring.customer_issue_service_success', {}, 'Service success rate needs attention');
-  }
-  if (raw.includes('plugin') || raw.includes('connection')) {
-    return t('portal.monitoring.customer_issue_connection_activity', {}, 'Site connection needs attention');
-  }
-  if (raw.includes('quota') || raw.includes('usage')) {
-    return t('portal.monitoring.quota_pressure', {}, 'Usage pressure');
-  }
-  return t('portal.monitoring.customer_issue_general', {}, 'Service item needs attention');
-}
-
 export function PortalSiteServiceStatus({
   t,
-  siteId,
   overview,
   isLoading,
   error,
@@ -60,22 +47,27 @@ export function PortalSiteServiceStatus({
 }: PortalSiteServiceStatusProps) {
   const issueCount = overview?.action_required.length || 0;
   const healthStatus = overview?.health.status || 'inactive';
-  const hasQuotaPressure = Boolean(overview && overview.quota.top_pressure !== 'none');
+  const hasQuotaPressure = Boolean(overview && hasPortalQuotaPressure(overview));
   const currentStatusLabel = statusLabel(healthStatus, issueCount, hasQuotaPressure, t);
   const latestActivityAt = overview?.activity.last_seen_at || overview?.generated_at || '';
 
+  const serviceOperationStatus = overview
+    ? getPortalServiceOperationStatus(overview)
+    : 'inactive';
+  const errorCount = Number(overview?.activity.plugin_errors_total || 0);
+
   return (
-    <PortalSection id="service-status" className="scroll-mt-24 space-y-5" data-portal-site="service-status">
+    <PortalSection id="service-status" className="scroll-mt-24 space-y-4" data-portal-site="service-status">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {t('portal.monitoring.overview_title', {}, 'Service overview')}
+            {t('portal.monitoring.overview_title', {}, 'Service status')}
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
             {t(
               'portal.monitoring.overview_desc',
               {},
-              'Only the items that need attention are shown here. Contact support if an item stays visible.'
+              'Review connection, recorded errors, and usage pressure in one place.'
             )}
           </p>
         </div>
@@ -100,69 +92,95 @@ export function PortalSiteServiceStatus({
         </PortalCard>
       ) : null}
 
-      {overview ? (
-        <PortalMetricStrip
-          columnsClassName="md:grid-cols-3"
-          items={[
-            {
-              label: t('portal.monitoring.last_activity', {}, 'Last activity'),
-              value: latestActivityAt ? formatDate(latestActivityAt) : t('portal.home.package_pending_label', {}, 'To confirm'),
-              detail: t('portal.monitoring.last_activity_detail', {}, 'Updated'),
-              size: 'compact',
-            },
-            {
-              label: t('portal.monitoring.recorded_errors', {}, 'Recorded error events'),
-              value: formatNumber(Number(overview.activity.plugin_errors_total || 0)),
-              detail: t('portal.monitoring.recorded_errors_detail', {}, 'Separate from the action items below.'),
-              size: 'compact',
-            },
-            {
-              label: t('portal.monitoring.quota_pressure', {}, 'Usage pressure'),
-              value: overview.quota.top_pressure === 'none'
-                ? t('portal.home.risk_level_normal', {}, 'Normal')
-                : t('portal.home.filter_attention_only', {}, 'Needs attention'),
-              detail: t('portal.monitoring.status_plain_detail', {}, 'Review the package page if usage needs attention.'),
-              size: 'compact',
-            },
-          ]}
-        />
-      ) : null}
-
-      {!isLoading && !error && overview && issueCount > 0 ? (
-        <div className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-          {overview.action_required.slice(0, 3).map((item) => (
-            <div key={`${item.code}-${item.source}`} className="p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                    {customerIssueTitle(item, t)}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {t('portal.monitoring.customer_issue_detail', {}, 'If this keeps showing, contact support and include the site name.')}
-                  </p>
-                </div>
-                <PortalStatusBadge
-                  status={item.severity === 'error' ? 'error' : 'warning'}
-                  label={t('portal.home.filter_attention_only', {}, 'Needs attention')}
-                />
-              </div>
-            </div>
-          ))}
-          <div className="p-4">
-            <Link
-              href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`}
-              className="btn btn-secondary btn-sm"
-            >
-              {t('portal.support_request_new_action', {}, 'Submit ticket')}
-            </Link>
-          </div>
+      {!isLoading && !error && overview ? (
+        <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead className="border-b border-slate-200/80 bg-slate-50/70 text-xs font-medium uppercase tracking-[0.1em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/45 dark:text-slate-400">
+              <tr>
+                <th scope="col" className="px-4 py-3 font-medium">{t('portal.monitoring.check_item', {}, 'Check')}</th>
+                <th scope="col" className="px-4 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
+                <th scope="col" className="px-4 py-3 font-medium">{t('portal.monitoring.recent_evidence', {}, 'Recent evidence')}</th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">{t('portal.sites.table_actions', {}, 'Actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+              <tr>
+                <th scope="row" className="px-4 py-3 font-semibold text-slate-950 dark:text-white">
+                  {t('portal.monitoring.service_operation', {}, 'Service operation')}
+                </th>
+                <td className="px-4 py-3">
+                  <PortalStatusBadge
+                    status={serviceOperationStatus}
+                    label={serviceOperationStatus === 'inactive'
+                      ? t('status.inactive', {}, 'Inactive')
+                      : serviceOperationStatus === 'active'
+                        ? t('portal.home.risk_level_normal', {}, 'Normal')
+                        : t('portal.home.filter_attention_only', {}, 'Needs attention')}
+                  />
+                </td>
+                <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                  {latestActivityAt ? formatDate(latestActivityAt) : t('portal.home.package_pending_label', {}, 'To confirm')}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <span className="text-slate-400">—</span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row" className="px-4 py-3 font-semibold text-slate-950 dark:text-white">
+                  {t('portal.monitoring.recorded_errors', {}, 'Recorded error events')}
+                </th>
+                <td className="px-4 py-3">
+                  <PortalStatusBadge
+                    status={errorCount > 0 ? 'warning' : 'active'}
+                    label={formatNumber(errorCount)}
+                  />
+                </td>
+                <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                  {errorCount > 0
+                    ? t('portal.monitoring.recorded_errors_present', {}, 'Recorded during the current monitoring window.')
+                    : t('portal.monitoring.recorded_errors_none', {}, 'No explicit errors were recorded.')}
+                </td>
+                <td className="px-4 py-3 text-right text-slate-400">—</td>
+              </tr>
+              <tr>
+                <th scope="row" className="px-4 py-3 font-semibold text-slate-950 dark:text-white">
+                  {t('portal.monitoring.quota_pressure', {}, 'Usage pressure')}
+                </th>
+                <td className="px-4 py-3">
+                  <PortalStatusBadge
+                    status={hasQuotaPressure ? 'warning' : 'active'}
+                    label={hasQuotaPressure ? t('portal.home.filter_attention_only', {}, 'Needs attention') : t('portal.home.risk_level_normal', {}, 'Normal')}
+                  />
+                </td>
+                <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                  {hasQuotaPressure
+                    ? t('portal.monitoring.quota_evidence_attention', {}, 'Usage is near or over the current package limit.')
+                    : t('portal.monitoring.quota_evidence_normal', {}, 'Usage is below the current package reminder threshold.')}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {hasQuotaPressure ? (
+                    <Link href="/portal/billing" className="btn btn-secondary btn-sm">
+                      {t('portal.nav_billing', {}, 'View package')}
+                    </Link>
+                  ) : <span className="text-slate-400">—</span>}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       ) : null}
 
-      {!isLoading && !error && overview && issueCount === 0 && !hasQuotaPressure ? (
-        <PortalCard className="text-sm text-slate-600 dark:text-slate-300">
-          {t('portal.monitoring.no_diagnostic_items', {}, 'No suggestions for this site.')}
-        </PortalCard>
+      {!isLoading && !error && overview && issueCount > 1 ? (
+        <details className="rounded-xl border border-slate-200/80 px-4 py-3 text-sm dark:border-slate-800">
+          <summary className="cursor-pointer font-medium text-slate-800 dark:text-slate-200">
+            {t('portal.monitoring.additional_items', { count: String(issueCount) }, '{{count}} service items need attention')}
+          </summary>
+          <ul className="mt-3 space-y-2 text-slate-600 dark:text-slate-300">
+            {overview.action_required.slice(0, 3).map((item) => (
+              <li key={`${item.code}-${item.source}`}>{getPortalCustomerIssueTitle(item, t)}</li>
+            ))}
+          </ul>
+        </details>
       ) : null}
     </PortalSection>
   );

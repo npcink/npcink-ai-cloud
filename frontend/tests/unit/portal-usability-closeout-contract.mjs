@@ -15,6 +15,9 @@ const packagePanel = read('src/components/portal/PortalPackageChangePanel.tsx');
 const creditPackDialog = read('src/components/portal/PortalCreditPackDialog.tsx');
 const paymentOrderHistory = read('src/components/portal/PortalPaymentOrderHistory.tsx');
 const scaffold = read('src/components/backoffice/BackofficeScaffold.tsx');
+const portalScaffold = read('src/components/portal/PortalScaffold.tsx');
+const workspaceHeader = read('src/components/portal/PortalWorkspaceHeader.tsx');
+const home = read('src/app/portal/page.tsx');
 const siteRecord = read('src/app/portal/sites/[siteId]/page.tsx');
 const support = read('src/app/portal/support/page.tsx');
 const usage = read('src/app/portal/usage/page.tsx');
@@ -29,10 +32,12 @@ assert.match(audit, /portal\.audit\.records_title/);
 assert.equal(existsSync(monitoringRedirectPath), false);
 assert.equal(existsSync(sitesRedirectPath), false);
 assert.match(siteServiceStatus, /portal\.monitoring\.recorded_errors/);
-assert.match(siteServiceStatus, /portal\.monitoring\.recorded_errors_detail/);
+assert.match(siteServiceStatus, /portal\.monitoring\.recorded_errors_present/);
+assert.match(siteServiceStatus, /portal\.monitoring\.recorded_errors_none/);
 
-assert.match(siteRecord, /href="\/portal\/account"/);
-assert.match(siteRecord, /lg:grid-cols-2/);
+assert.match(siteRecord, /titleAccessory=[\s\S]*metadata=[\s\S]*contextPanel=/);
+assert.doesNotMatch(siteRecord, /href="\/portal\/account"|site_record_current_title|lg:grid-cols-2/);
+assert.match(siteRecord, /portal\.site_other_actions/);
 assert.doesNotMatch(siteRecord, /contactStatusLabel/);
 
 assert.match(globals, /@media \(max-width: 639px\)[\s\S]*\.portal-shell \.input[\s\S]*font-size: 1rem/);
@@ -42,6 +47,30 @@ assert.match(globals, /\.portal-shell \.portal-commercial-dialog[\s\S]*border-ra
 assert.match(layout, /bg-\[#f5f5f7\][\s\S]*max-w-\[1440px\]/);
 assert.doesNotMatch(layout, /radial-gradient/);
 assert.match(scaffold, /variant === 'portal'[\s\S]*rounded-\[18px\][\s\S]*bg-white[\s\S]*shadow-none/);
+assert.match(
+  workspaceHeader,
+  /contextPanel[\s\S]*lg:grid-cols-\[minmax\(0,1fr\)_minmax\(22rem,0\.75fr\)\][\s\S]*variant="header"/,
+  'Portal page headers must support one compact contextual panel beside the title and above the summary rail'
+);
+assert.match(
+  portalScaffold,
+  /variant\?: 'default' \| 'portal' \| 'header'[\s\S]*divide-y[\s\S]*md:divide-x/,
+  'Portal header metrics must render as one compact summary rail instead of separate tall cards'
+);
+assert.match(
+  portalScaffold,
+  /columnsClassName \|\| 'md:grid-cols-2 xl:grid-cols-4'/,
+  'Portal metric strips must preserve an explicit PC column count on wider screens'
+);
+for (const [name, source] of [
+  ['home', home],
+  ['account', account],
+  ['billing', billing],
+  ['usage', usage],
+  ['support', support],
+]) {
+  assert.match(source, /<PortalWorkspaceHeader/, `${name} must use the shared Portal workspace header`);
+}
 assert.match(paymentOrderHistory, /role="tab"[\s\S]*min-h-11/);
 assert.match(billing, /resolvePackageStatusDetail/);
 assert.ok(

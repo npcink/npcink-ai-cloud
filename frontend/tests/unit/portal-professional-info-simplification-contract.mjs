@@ -107,11 +107,28 @@ assert.doesNotMatch(
   /usage\.tokens_month|usage\.requests_month|site_record_runtime_label|site_record_runtime_title|resolveCustomerPackageDisplay|common\.package|packageLabel/,
   'Portal site record must not default to runtime, token, request, or package terminology'
 );
+assert.match(siteRecordSource, /titleAccessory=[\s\S]*metadata=[\s\S]*contextPanel=/);
 assert.match(
   siteRecordSource,
-  /site_address_label[\s\S]*site_record_current_label[\s\S]*site_record_current_title/,
-  'Portal site record should focus on the site address and site record status'
+  /siteConnectionStatusLabel = site\.status === 'active'[\s\S]*portal\.sites\.table_ready[\s\S]*status=\{site\.status === 'active' \? 'active' : 'warning'\}/,
+  'Portal site header must keep connection lifecycle separate from service-health attention'
 );
+assert.doesNotMatch(
+  siteRecordSource,
+  /selectedSiteName=|showSiteContextSummary|metrics=\{|site_record_current_title|href="\/portal\/account"/,
+  'Portal site record must keep site identity and service attention in one compact header without a duplicate account section'
+);
+assert.match(
+  siteRecordSource,
+  /<PortalSiteServiceStatus[\s\S]*<PortalSiteKnowledgePanel[\s\S]*<details>[\s\S]*portal\.site_other_actions/,
+  'Portal site record should keep service and knowledge summaries visible while placing destructive actions in low-frequency disclosure'
+);
+assert.match(
+  siteServiceStatusSource,
+  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
+  'Portal service status should use a compact semantic table'
+);
+assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
   siteRecordSource,
   /primaryAction=|secondaryActions=|href=\{`\/portal\/billing\?site=\$\{siteId\}`\}|href=\{`\/portal\/usage\?site=\$\{siteId\}`\}|portal\.site_record_service_title/,
@@ -123,6 +140,8 @@ assert.doesNotMatch(
   /site\.site_id\.toLowerCase\(\)\.includes\(query\)|account_id[^;]+includes\(query\)/,
   'Portal site search must not encourage internal site or account ID lookup'
 );
+assert.match(sitesSource, /portal\.sites\.table_status[\s\S]*portal\.sites\.table_ready/);
+assert.match(i18nSource, /'portal\.sites\.table_status': '接入状态'[\s\S]*'portal\.sites\.table_ready': '已接入'/);
 assert.doesNotMatch(
   sitesSource,
   /sites_management_actions_title|handleExportFilteredSites|export_filtered_sites|select_visible_sites|remove_selected_sites|pendingBatchAction|activateSite|deactivateSite/,

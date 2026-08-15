@@ -4,7 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { PortalPageStack, PortalSection, PortalCard } from '@/components/portal/PortalScaffold';
+import { PortalPageStack, PortalSection } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { PortalSiteKnowledgePanel } from '@/components/portal/PortalSiteKnowledgePanel';
 import { PortalSiteServiceStatus } from '@/components/portal/PortalSiteServiceStatus';
@@ -22,6 +22,10 @@ import {
   type Site,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import {
+  getPortalCustomerIssueTitle,
+  getPortalMonitoringIssueCategory,
+} from '@/lib/portal-monitoring-display';
 import { formatDate } from '@/lib/utils';
 import {
   getPortalSiteDisplayName,
@@ -142,9 +146,50 @@ function PortalSiteRecordContent() {
     || !siteUrl
     || Boolean(summary.customer_status?.needs_attention)
     || monitoringNeedsAttention;
-  const siteStatusLabel = siteNeedsAttention
-    ? t('portal.home.filter_attention_only', {}, 'Needs attention')
-    : t('portal.home.risk_level_normal', {}, 'Normal');
+  const siteConnectionStatusLabel = site.status === 'active'
+    ? t('portal.sites.table_ready', {}, 'Connected')
+    : site.status === 'inactive'
+      ? t('portal.site_status_inactive', {}, 'Inactive')
+      : site.status === 'provisioning'
+        ? t('portal.site_status_provisioning', {}, 'Provisioning')
+        : t('portal.site_status_suspended', {}, 'Suspended');
+  const primaryMonitoringAction = siteMonitoring.overview?.action_required[0] || null;
+  const primaryIssueCategory = primaryMonitoringAction
+    ? getPortalMonitoringIssueCategory(primaryMonitoringAction)
+    : null;
+  const latestActivityAt = siteMonitoring.overview?.activity.last_seen_at
+    || siteMonitoring.overview?.generated_at
+    || '';
+  const attentionTitle = primaryMonitoringAction
+    ? getPortalCustomerIssueTitle(primaryMonitoringAction, t)
+    : !siteUrl
+      ? t('portal.site_url_missing_short', {}, 'Site URL not configured')
+      : site.status !== 'active'
+        ? t('portal.site_connection_status_attention', {}, 'Site connection needs confirmation')
+        : t('portal.site_service_status_attention', {}, 'Site service status needs confirmation');
+  const attentionDetail = primaryMonitoringAction
+    ? primaryIssueCategory === 'quota'
+      ? t(
+          'portal.monitoring.quota_evidence_attention',
+          {},
+          'Usage is near or over the current package limit.'
+        )
+      : t(
+          'portal.monitoring.customer_issue_detail',
+          {},
+          'If this keeps showing, contact support and include the site name.'
+        )
+    : !siteUrl
+      ? t(
+          'portal.site_record_address_missing_detail',
+          {},
+          'Add a site address so support can identify this site faster.'
+        )
+      : t(
+          'portal.site_service_status_attention_detail',
+          {},
+          'The latest service evidence is incomplete or needs review. Refresh the service status before contacting support.'
+        );
   const canRemoveThisSite = Boolean(
     session.selected_context?.site.site_id === siteId
     && session.selected_context.allowed_actions.includes('remove_sites')
@@ -200,122 +245,51 @@ function PortalSiteRecordContent() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.site_record_label', {}, 'Site summary')}
         title={getPortalSiteDisplayName(site)}
         currentPage="record"
         selectedSiteId={siteId}
-        selectedSiteName={getPortalSiteDisplayName(site)}
         sites={session.sites}
-        showSiteContextSummary
-        metrics={[
-          {
-            label: t('common.status', {}, 'Status'),
-            value: siteStatusLabel,
-            detail: siteNeedsAttention
-              ? t('portal.site_record_attention_action', {}, 'The site status or address needs confirmation.')
-              : t('portal.site_record_ready_action', {}, 'No action is needed for this site right now.'),
-          },
-          {
-            label: t('portal.site_address_label', {}, 'Site address'),
-            value: siteUrl ? t('portal.site_address_configured', {}, 'Configured') : t('portal.site_url_missing_short', {}, 'Site URL not configured'),
-            detail: siteUrl || t('portal.site_record_address_missing_detail', {}, 'Add a site address so support can identify this site faster.'),
-          },
-        ]}
+        titleAccessory={(
+          <PortalStatusBadge
+            status={site.status === 'active' ? 'active' : 'warning'}
+            label={siteConnectionStatusLabel}
+          />
+        )}
+        metadata={(
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600 dark:text-slate-300">
+            <span className="break-all">
+              {siteUrl || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
+            </span>
+            <span>
+              {t('portal.monitoring.last_activity', {}, 'Last activity')}: {' '}
+              {latestActivityAt
+                ? formatDate(latestActivityAt)
+                : t('portal.home.package_pending_label', {}, 'To confirm')}
+            </span>
+          </div>
+        )}
+        contextPanel={siteNeedsAttention ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">{attentionTitle}</p>
+              <p className="mt-1 text-sm leading-5 text-amber-800 dark:text-amber-200">{attentionDetail}</p>
+            </div>
+            <Link
+              href={primaryIssueCategory === 'quota'
+                ? '/portal/billing'
+                : `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`}
+              className="btn btn-secondary btn-sm mt-3"
+            >
+              {primaryIssueCategory === 'quota'
+                ? t('portal.nav_billing', {}, 'View package')
+                : t('portal.support_request_new_action', {}, 'Submit ticket')}
+            </Link>
+          </div>
+        ) : undefined}
       />
-
-      <PortalSection className="space-y-4" variant="portal">
-        <div className="max-w-2xl">
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-            {t('portal.site_record_current_label', {}, 'Site record')}
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-            {t('portal.site_record_current_title', {}, 'What needs attention?')}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {siteNeedsAttention
-              ? t(
-                'portal.site_record_attention_desc',
-                {},
-                'This site still has information to confirm. Contact support if it looks wrong.'
-              )
-              : t(
-                'portal.site_record_ready_desc',
-                {},
-                'This site address and service status look normal.'
-              )}
-          </p>
-        </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <PortalCard variant="portal">
-            <div className="flex h-full flex-col items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                  {t('portal.nav_account', {}, 'Contact')}
-                </p>
-                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {t(
-                    'portal.site_record_contact_desc',
-                    {},
-                    'Use the Account page to confirm the email and service contact details for this account.'
-                  )}
-                </p>
-              </div>
-              <Link href="/portal/account" className="btn btn-secondary btn-sm">
-                {t('portal.site_record_contact_action', {}, 'Open account')}
-              </Link>
-            </div>
-          </PortalCard>
-          <PortalCard variant="portal">
-            <div className="flex h-full items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                  {t('portal.site_record_attention_title', {}, 'Need to handle?')}
-                </p>
-                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {siteNeedsAttention
-                    ? t(
-                      'portal.site_record_attention_action',
-                      {},
-                      'The site status or address needs confirmation.'
-                    )
-                    : t(
-                      'portal.site_record_ready_action',
-                      {},
-                      'No action is needed for this site right now.'
-                    )}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Link href={`/portal/sites/${encodeURIComponent(siteId)}#service-status`} className="btn btn-secondary btn-sm">
-                    {t('portal.site_record_service_status_action', {}, 'View service status')}
-                  </Link>
-                  {siteNeedsAttention ? (
-                    <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm">
-                      {t('portal.support_request_new_action', {}, 'Submit ticket')}
-                    </Link>
-                  ) : null}
-                </div>
-                {canRemoveThisSite ? (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm mt-3 text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                    onClick={() => setShowRemoveModal(true)}
-                  >
-                    {t('portal.remove_site_action', {}, 'Remove site')}
-                  </button>
-                ) : null}
-              </div>
-              <PortalStatusBadge
-                status={siteNeedsAttention ? 'warning' : 'active'}
-                label={siteStatusLabel}
-              />
-            </div>
-          </PortalCard>
-        </div>
-      </PortalSection>
 
       <PortalSiteServiceStatus
         t={t}
-        siteId={siteId}
         overview={siteMonitoring.overview}
         isLoading={siteMonitoring.isLoading}
         error={siteMonitoring.error}
@@ -328,6 +302,25 @@ function PortalSiteRecordContent() {
         error={siteKnowledge.error}
         onRetry={siteKnowledge.refresh}
       />
+
+      {canRemoveThisSite ? (
+        <PortalSection className="py-3 md:py-3" variant="portal">
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t('portal.site_other_actions', {}, 'Other actions')}
+            </summary>
+            <div className="mt-3 border-t border-slate-200/80 pt-3 dark:border-slate-800">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
+                onClick={() => setShowRemoveModal(true)}
+              >
+                {t('portal.remove_site_action', {}, 'Remove site')}
+              </button>
+            </div>
+          </details>
+        </PortalSection>
+      ) : null}
 
       <Modal
         isOpen={showRemoveModal}
