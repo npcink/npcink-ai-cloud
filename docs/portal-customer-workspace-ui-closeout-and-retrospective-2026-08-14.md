@@ -192,7 +192,10 @@ and real-user acceptance require separate evidence.
 
 The work remained inside the Portal customer workspace:
 
-- no Portal API shape changed;
+- Portal API changes remained bounded to direct account authorization and
+  optional site filters for account evidence;
+- account authorization remains permission checked and fails closed when an
+  account cannot be resolved uniquely;
 - no provider or model detail was exposed;
 - no prompt, preset, ability, workflow, approval, or final-write truth moved to
   Cloud;
