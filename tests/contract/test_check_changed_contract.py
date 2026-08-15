@@ -43,7 +43,18 @@ def test_admin_plan_selects_static_gates_and_reports_browser_followup() -> None:
 
     assert plan["classification"]["admin"] is True
     assert ["pnpm", "--dir", "frontend", "run", "type-check"] in plan["commands"]
-    assert ["node", "frontend/tests/unit/admin-account-detail-v2-contract.mjs"] in plan["commands"]
+    assert [
+        "pnpm",
+        "--dir",
+        "frontend",
+        "exec",
+        "node",
+        "tests/unit/admin-account-detail-v2-contract.mjs",
+    ] in plan["commands"]
+    assert [
+        "node",
+        "frontend/tests/unit/admin-account-detail-v2-contract.mjs",
+    ] not in plan["commands"]
     assert plan["tier"] == "L1"
     assert "admin_ui" in plan["domains"]
     assert ["pnpm", "run", "check:admin-ui"] in plan["specialized_commands"]
@@ -244,6 +255,34 @@ def test_doctor_requires_python_for_inventory_only_plan() -> None:
     )
     assert python_check["status"] == "missing"
     assert "python3" in python_check["detail"]
+
+
+def test_doctor_requires_node_for_frontend_workspace_contract() -> None:
+    environment = os.environ.copy()
+    environment["PATH"] = "/missing"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "--doctor",
+            "--format",
+            "json",
+            "frontend/tests/unit/portal-package-contract.mjs",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    payload = json.loads(completed.stdout)
+    node_check = next(
+        item for item in payload["environment_checks"] if item["id"] == "node"
+    )
+    assert node_check["status"] == "missing"
+    assert node_check["required"] is True
 
 
 def test_frontend_build_runtime_input_promotes_plan_to_l2() -> None:
