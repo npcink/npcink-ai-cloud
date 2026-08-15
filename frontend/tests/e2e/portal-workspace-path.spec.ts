@@ -1596,6 +1596,9 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务|服務/i })).toBeVisible();
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
   await expect(page.getByText(/2,419|2419/i).first()).toBeVisible();
+  const operationOverview = page.locator('[data-portal-home="operation-overview"]');
+  await expect(operationOverview.getByText(/Bound sites exceeds the package limit|绑定站点已超出套餐上限/i)).toBeVisible();
+  await expect(operationOverview.getByRole('link', { name: /Review package|查看套餐/i }).first()).toBeVisible();
   await expect(
     page
       .locator('[data-portal-home="operation-overview"]')
@@ -1603,9 +1606,11 @@ test('portal workspace interaction path: account overview to site detail and ser
   ).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
-  await expect(sitesWorkspace.getByText(/^Active 2\/5$|^活动站点 2\/5$/i)).toBeVisible();
-  await expect(sitesWorkspace.getByText(/^Bound 2\/15$|^已绑定 2\/15$/i)).toBeVisible();
-  await expect(sitesWorkspace.getByText(/^Active$|^已激活$/i)).toHaveCount(2);
+  await expect(sitesWorkspace.getByText(/^Shared active capacity 2\/5$|^共享活动容量 2\/5$/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/^Shared bound capacity 2\/15$|^共享绑定容量 2\/15$/i)).toBeVisible();
+  await expect(
+    sitesWorkspace.locator('[data-portal-sites="desktop-table"]').getByText(/^Connected$|^已接入$/i)
+  ).toHaveCount(2);
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',

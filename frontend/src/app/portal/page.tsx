@@ -16,11 +16,11 @@ import {
   type Entitlements,
 } from '@/lib/portal-client';
 import {
-  PortalMetricStrip,
   PortalPageStack,
   PortalSection,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
+import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { PortalTag } from '@/components/portal/PortalTag';
 import { PortalSitesWorkspace } from '@/components/portal/PortalSitesWorkspace';
@@ -29,6 +29,8 @@ type RestrictionItem = {
   tone: 'warn' | 'info';
   label: string;
   detail: string;
+  href?: string;
+  action?: string;
 };
 
 type AccountEntitlementsState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -142,6 +144,8 @@ export default function PortalPage() {
 
   const visibleSites = getVisiblePortalSites(session.sites);
   const selectedSite = session.selected_context?.site || null;
+  const hasVisibleSites = visibleSites.length > 0;
+  const hasSelectedSite = Boolean(selectedSite);
   const currentSubscription = session.selected_context?.current_subscription || null;
   const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
@@ -157,6 +161,8 @@ export default function PortalPage() {
         siteStatus: selectedSite.status,
         subscriptionStatus: currentSubscription?.status || '',
       })
+    : hasVisibleSites
+      ? []
     : [
         {
           tone: 'warn' as const,
@@ -169,7 +175,8 @@ export default function PortalPage() {
         },
       ];
   const restrictedCount = visibleSites.filter((site) => portalSiteNeedsAttention(site)).length;
-  const hasPackageLabel = Boolean(currentPackageDisplay.display_package_label);
+  const hasPackageLabel = currentPackageDisplay.coverage_state === 'covered'
+    && Boolean(currentPackageDisplay.display_package_label);
   const selectedSiteRecordHref = selectedSite
     ? `/portal/sites/${encodeURIComponent(selectedSite.site_id)}#service-status`
     : '/portal#sites';
@@ -181,8 +188,16 @@ export default function PortalPage() {
     {
       key: 'site',
       done: isSelectedSiteConnected,
-      title: t('portal.home.onboarding_site_title', {}, 'Confirm site connection'),
-      detail: isSelectedSiteConnected
+      title: !selectedSite && hasVisibleSites
+        ? t('portal.site_selection_required_title', {}, 'Select a site context')
+        : t('portal.home.onboarding_site_title', {}, 'Confirm site connection'),
+      detail: !selectedSite && hasVisibleSites
+        ? t(
+            'portal.site_selection_required_desc',
+            {},
+            'Choose a current site before viewing account-level service details.'
+          )
+        : isSelectedSiteConnected
         ? t('portal.home.onboarding_site_ready', {}, 'The WordPress site is connected and can use the service.')
         : t('portal.home.onboarding_site_needed', {}, 'Open the WordPress plugin to reconnect the site if the address or service connection is not ready.'),
       href: selectedSiteRecordHref,
@@ -203,46 +218,73 @@ export default function PortalPage() {
       : []),
   ];
   const requiredAttentionItems = setupChecklistItems.filter((item) => !item.done);
-  const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0;
-  const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
+  const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0
+    && (hasSelectedSite || !hasVisibleSites);
+  const currentSubscriptionStatusLabel = !hasSelectedSite
+    ? t('portal.select_site_action', {}, 'Select site')
+    : currentSubscription?.status === 'active' || hasPackageLabel
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
   const remainingCredits = Number(accountEntitlements?.quota_summary?.ai_credits?.remaining ?? 0);
   const accountEntitlementsUnavailable = accountEntitlementsState === 'error';
-  const accountEntitlementsPending =
-    accountEntitlementsState === 'idle' || accountEntitlementsState === 'loading';
+  const accountEntitlementsPending = hasSelectedSite && (
+    accountEntitlementsState === 'idle' || accountEntitlementsState === 'loading'
+  );
   const creditUnavailable =
     String(accountEntitlements?.quota_summary?.ai_credits?.status || '') === 'limited';
-  const resourceOverLimit = Boolean(
-    accountEntitlements?.quota_summary?.resource_limits?.some((resource) => (
+  const overLimitResource = accountEntitlements?.quota_summary?.resource_limits?.find((resource) => (
       !resource.unlimited
       && Number(resource.limit || 0) > 0
       && Number(resource.used || 0) > Number(resource.limit || 0)
-    ))
-  );
-  const currentServiceStatusToken =
-    !selectedSite ||
-    restrictedCount > 0 ||
-    creditUnavailable ||
-    resourceOverLimit ||
-    accountEntitlementsState !== 'loaded' ||
-    (currentSubscription?.status && currentSubscription.status !== 'active')
-      ? 'warning'
-      : 'active';
+    ));
+  const resourceOverLimit = Boolean(overLimitResource);
+  const overLimitResourceLabel = overLimitResource?.key === 'vector_documents'
+    ? t('portal.usage.resource_vector_documents', {}, 'Knowledge articles')
+    : overLimitResource?.key === 'active_sites'
+      ? t('portal.home.active_site_capacity_label', {}, 'Active site capacity')
+    : overLimitResource?.key === 'bound_sites'
+      ? t('portal.usage.resource_bound_sites', {}, 'Bound sites')
+      : t('portal.home.package_capacity_label', {}, 'Package capacity');
+  const overLimitResourceAmount = overLimitResource
+    ? Math.max(0, Number(overLimitResource.used || 0) - Number(overLimitResource.limit || 0))
+    : 0;
+  const currentServiceStatusToken = !selectedSite
+    ? 'inactive'
+    : restrictedCount > 0 ||
+      creditUnavailable ||
+      resourceOverLimit ||
+      accountEntitlementsState !== 'loaded' ||
+      (currentSubscription?.status && currentSubscription.status !== 'active')
+        ? 'warning'
+        : 'active';
   const currentServiceStatusLabel =
-    currentServiceStatusToken === 'active'
+    !selectedSite && hasVisibleSites
+      ? t('portal.home.no_site_selected_label', {}, 'No site selected')
+      : currentServiceStatusToken === 'active'
       ? t('portal.home.service_status_live', {}, 'Ready')
+      : creditUnavailable
+        ? t('portal.home.credit_attention_label', {}, 'AI credits unavailable')
+        : resourceOverLimit
+          ? overLimitResource?.key === 'vector_documents'
+            ? t('portal.home.knowledge_attention_label', {}, 'Knowledge limit exceeded')
+            : overLimitResource?.key === 'active_sites' || overLimitResource?.key === 'bound_sites'
+              ? t('portal.home.site_capacity_attention_label', {}, 'Site capacity exceeded')
+              : t('portal.home.capacity_attention_label', {}, 'Package limit exceeded')
       : t('portal.home.service_status_attention', {}, 'Needs attention');
   const operationSummaryItems = [
     {
       label: t('portal.home.package_card_label', {}, 'Current package'),
-      value: currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm'),
+      value: hasSelectedSite
+        ? currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')
+        : t('portal.select_site_action', {}, 'Select site'),
       detail: currentSubscriptionStatusLabel,
       size: 'compact' as const,
     },
     {
       label: t('portal.usage.remaining_ai_credits', {}, 'Remaining'),
-      value: accountEntitlementsUnavailable ? (
+      value: !hasSelectedSite ? (
+        '—'
+      ) : accountEntitlementsUnavailable ? (
         <button
           type="button"
           className="text-left text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
@@ -255,7 +297,13 @@ export default function PortalPage() {
       ) : (
         formatNumber(remainingCredits)
       ),
-      detail: accountEntitlementsUnavailable
+      detail: !hasSelectedSite
+        ? t(
+            'portal.site_selection_required_desc',
+            {},
+            'Choose a current site before viewing account-level service details.'
+          )
+        : accountEntitlementsUnavailable
         ? t(
             'portal.home.entitlements_failed_desc',
             {},
@@ -275,6 +323,41 @@ export default function PortalPage() {
   ];
   const operationFocusItems = [
     ...restrictionItems,
+    ...(creditUnavailable
+      ? [{
+          tone: 'warn' as const,
+          label: t('portal.home.credit_attention_title', {}, 'AI credits need attention'),
+          detail: t(
+            'portal.home.credit_attention_desc',
+            {},
+            'The current package has no AI credits available. Buy AI credits or change the package before continuing.'
+          ),
+          href: '/portal/billing#package-options',
+          action: t('portal.home.billing_action', {}, 'Review package'),
+        }]
+      : []),
+    ...(overLimitResource
+      ? [{
+          tone: 'warn' as const,
+          label: t(
+            'portal.home.capacity_attention_title',
+            { resource: overLimitResourceLabel },
+            `${overLimitResourceLabel} exceeds the package limit`
+          ),
+          detail: t(
+            'portal.home.capacity_attention_desc',
+            {
+              resource: overLimitResourceLabel,
+              used: formatNumber(Number(overLimitResource.used || 0)),
+              limit: formatNumber(Number(overLimitResource.limit || 0)),
+              exceeded: formatNumber(overLimitResourceAmount),
+            },
+            `${overLimitResourceLabel} usage is ${formatNumber(Number(overLimitResource.used || 0))} of ${formatNumber(Number(overLimitResource.limit || 0))}, exceeding the package by ${formatNumber(overLimitResourceAmount)}.`
+          ),
+          href: '/portal/billing#package-options',
+          action: t('portal.home.billing_action', {}, 'Review package'),
+        }]
+      : []),
     ...(accountEntitlementsUnavailable
       ? [{
           tone: 'warn' as const,
@@ -287,42 +370,84 @@ export default function PortalPage() {
         }]
       : []),
   ];
+  const showAccountSummary = hasSelectedSite || !hasVisibleSites;
+  const primaryOperationFocusItem = operationFocusItems[0] || null;
+  const remainingOperationFocusItems = operationFocusItems.slice(1);
   const shouldShowFollowUpSection =
-    operationFocusItems.length > 0 || shouldShowOnboardingChecklist;
+    remainingOperationFocusItems.length > 0 || shouldShowOnboardingChecklist;
+  const showBothFollowUpPanels =
+    remainingOperationFocusItems.length > 0 && shouldShowOnboardingChecklist;
 
   return (
     <PortalPageStack>
       <section className="space-y-5" data-portal-home="operation-overview">
-        <PortalSection className="space-y-5" variant="portal">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('portal.workspace_label', {}, 'Overview')}
+        <PortalWorkspaceHeader
+          title={t('portal.home.title', {}, 'My service')}
+          description={!selectedSite && hasVisibleSites
+            ? t(
+                'portal.site_selection_required_desc',
+                {},
+                'Choose a current site before viewing account-level service details.'
+              )
+            : currentServiceStatusToken === 'active'
+              ? t('portal.home.account_status_ok_desc', {}, 'This account can use the hosted service normally.')
+              : t('portal.home.account_status_issue_desc', {}, 'This account has setup, package, site, or support items that need attention.')}
+          currentPage="home"
+          titleAccessory={!primaryOperationFocusItem ? (
+            <PortalStatusBadge
+              status={currentServiceStatusToken}
+              label={currentServiceStatusLabel}
+              className="shrink-0 text-[0.68rem]"
+            />
+          ) : null}
+          contextPanel={primaryOperationFocusItem ? (
+            <div
+              className={cn(
+                'rounded-xl border px-4 py-3.5',
+                primaryOperationFocusItem.tone === 'warn'
+                  ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
+                  : 'border-slate-200/80 bg-white/75 dark:border-slate-800 dark:bg-slate-950/55'
+              )}
+              data-portal-home="current-focus"
+            >
+              <p className="text-sm font-semibold text-gray-950 dark:text-white">
+                {primaryOperationFocusItem.label}
               </p>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-semibold text-gray-950 dark:text-white">
-                  {t('portal.home.title', {}, 'My service')}
-                </h1>
-                <PortalStatusBadge
-                  status={currentServiceStatusToken}
-                  label={currentServiceStatusLabel}
-                  className="shrink-0 text-[0.68rem]"
-                />
-              </div>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {currentServiceStatusToken === 'active'
-                  ? t('portal.home.account_status_ok_desc', {}, 'This account can use the hosted service normally.')
-                  : t('portal.home.account_status_issue_desc', {}, 'This account has setup, package, site, or support items that need attention.')}
+              <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                {primaryOperationFocusItem.detail}
               </p>
+              {primaryOperationFocusItem.href && primaryOperationFocusItem.action ? (
+                <Link
+                  href={primaryOperationFocusItem.href}
+                  className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                >
+                  {primaryOperationFocusItem.action}
+                </Link>
+              ) : null}
             </div>
-          </div>
+          ) : null}
+          actions={!hasSelectedSite && hasVisibleSites ? (
+            <Link href="#sites" className="btn btn-secondary btn-sm">
+              {t('portal.select_site_action', {}, 'Select site')}
+            </Link>
+          ) : null}
+          metrics={showAccountSummary ? operationSummaryItems : []}
+          metricsColumnsClassName="md:grid-cols-3"
+        />
 
-          <PortalMetricStrip items={operationSummaryItems} columnsClassName="md:grid-cols-3" variant="portal" />
-
-          {shouldShowFollowUpSection ? (
-            <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              {operationFocusItems.length > 0 ? (
-                <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="current-focus">
+        {shouldShowFollowUpSection ? (
+          <PortalSection
+            variant="portal"
+            className={cn(!showBothFollowUpPanels && 'xl:max-w-3xl')}
+          >
+            <div
+              className={cn(
+                'grid items-start gap-4',
+                showBothFollowUpPanels && 'xl:grid-cols-[1.1fr_0.9fr]'
+              )}
+            >
+              {remainingOperationFocusItems.length > 0 ? (
+                <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="additional-focus">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -337,7 +462,7 @@ export default function PortalPage() {
                     </PortalTag>
                   </div>
                   <div className="mt-4 space-y-3">
-                    {operationFocusItems.slice(0, 3).map((item) => (
+                    {remainingOperationFocusItems.slice(0, 3).map((item) => (
                       <div
                         key={item.label}
                         className={cn(
@@ -349,6 +474,14 @@ export default function PortalPage() {
                       >
                         <p className="text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
                         <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">{item.detail}</p>
+                        {item.href && item.action ? (
+                          <Link
+                            href={item.href}
+                            className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                          >
+                            {item.action}
+                          </Link>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -397,8 +530,8 @@ export default function PortalPage() {
                 </PortalCard>
               ) : null}
             </div>
-          ) : null}
-        </PortalSection>
+          </PortalSection>
+        ) : null}
       </section>
 
       <PortalSitesWorkspace />
