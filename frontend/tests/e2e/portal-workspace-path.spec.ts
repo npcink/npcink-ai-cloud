@@ -1582,7 +1582,7 @@ test('portal workspace interaction path: account overview to site detail and ser
 
   const portalPrimaryNav = page.locator('[data-ui="portal-primary-nav"]');
   await expect(portalPrimaryNav.locator('> a')).toHaveCount(5);
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Service$|^服务$|^服務$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Account service$|^账号服务$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Tickets$|^工单$|^工單$/i })).toBeVisible();
@@ -1637,8 +1637,8 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(usageViewTabs.getByRole('tab')).toHaveCount(2);
   await expect(usageViewTabs.getByRole('tab', { name: /Usage details|用量明细/i })).toHaveCount(0);
   await expect(page.getByText(/^Generated At$|^生成时间$/i)).toHaveCount(0);
-  await expect(page.getByText(/Apr 1[^\n]*Apr 12|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)12日?/i).first()).toBeVisible();
-  await expect(page.getByText(/Ends .*2026.*Apr 12|截止 .*2026.*4(?:月|\/)12日?/i).first()).toBeVisible();
+  await expect(page.getByText(/Apr 1[^\n]*Apr 30|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)30日?/i).first()).toBeVisible();
+  await expect(page.getByText(/Ends .*2026.*Apr 30|截止 .*2026.*4(?:月|\/)30日?/i).first()).toBeVisible();
   await expect(page.getByText(/Updated .*Apr 7|更新于 .*4(?:月|\/)7日?/i).first()).toBeVisible();
   await expect(usageViewTabs.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
   const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
@@ -1660,7 +1660,8 @@ test('portal workspace interaction path: account overview to site detail and ser
   await usageViewTabs.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
-  await expect(page.locator('main').getByRole('combobox')).toHaveCount(3);
+  await expect(page.locator('main').getByRole('combobox')).toHaveCount(4);
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('');
   await expect(page.getByRole('combobox', { name: /Summary interval|汇总粒度/i })).toHaveValue('30m');
   const creditBucketRow = page.getByRole('button', { name: /18.*Content writing|18.*内容生成/i }).first();
   await expect(creditBucketRow).toBeVisible();
@@ -1890,32 +1891,27 @@ test('portal AI credit trend shows an explicit empty state instead of a blank ch
   await expect(trendPanel.getByRole('img')).toHaveCount(0);
 });
 
-test('account projections stay idle until a site context is selected', async ({ page }) => {
+test('account projections remain available without a selected site context', async ({ page }) => {
   const calls = await installPortalMocks(page, { withoutSelectedContext: true });
 
   await page.goto('/portal');
   const overview = page.locator('[data-portal-home="operation-overview"]');
-  await expect(overview.getByText(/Choose a current site before|请先选择当前站点/i).first()).toBeVisible();
-  await expect(overview.getByText(/No site selected|未选择站点/i)).toBeVisible();
-  await expect(overview.getByRole('link', { name: /Select site|选择站点/i })).toBeVisible();
-  await expect(overview.getByText(/Current package|当前套餐/i)).toHaveCount(0);
-  await expect(overview.getByText(/^Remaining$|^剩余$/i)).toHaveCount(0);
+  await expect(overview.getByText(/Current package|当前套餐/i).first()).toBeVisible();
+  await expect(overview.getByText(/^Remaining$|^剩余$/i).first()).toBeVisible();
+  await expect(overview.getByText(/Choose a current site before|请先选择当前站点/i)).toHaveCount(0);
+  await expect(overview.getByText(/No site selected|未选择站点/i)).toHaveCount(0);
   await expect(overview.getByText(/^Loading\.\.\.$|^加载中\.\.\.$/i)).toHaveCount(0);
   await expect(overview.getByText(/^Uncovered$|^未覆盖$/i)).toHaveCount(0);
   await expect(overview.getByText(/^Available$|^可用$/i)).toHaveCount(0);
 
-  for (const path of [
-    '/portal/billing',
-    '/portal/usage',
-    '/portal/audit',
-  ]) {
-    await page.goto(path);
-    await expect(
-      page.getByText(/Select a site context|请选择站点上下文/i).first()
-    ).toBeVisible();
-  }
+  await page.goto('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /Package and rights|套餐与权益/i })).toBeVisible();
+  await page.goto('/portal/usage');
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await page.goto('/portal/audit');
+  await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
 
-  expect(calls.accountProjectionRequestCount()).toBe(0);
+  expect(calls.accountProjectionRequestCount()).toBeGreaterThan(0);
 });
 
 test('account-level support stays available without a selected site context', async ({ page }) => {
