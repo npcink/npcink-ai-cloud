@@ -137,6 +137,10 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
 - [Real Editor Cohort Operations](real-editor-cohort-operations-v1.md)
+- [Real Editor Technical Monitoring Closeout and Development Retrospective — 2026-08-15](real-editor-technical-monitoring-closeout-and-development-retrospective-2026-08-15.md)
+  — dated two-site Provider, AI-credit, metadata-only quality, Addon PR `#97`,
+  correction, and remaining-observation evidence; not production or human-value
+  acceptance authority
 - [Editor Assist Quality JSON Export Production Closeout — 2026-08-07](editor-assist-quality-json-export-production-closeout-2026-08-07.md)
   — dated evidence for the restrained metadata-only export, focused validation,
   production release, time costs, and explicit non-commercial conclusions
