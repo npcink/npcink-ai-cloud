@@ -123,6 +123,11 @@ assert.match(
 );
 assert.match(
   source,
+  /data-portal-usage="records-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*common\.view_details/,
+  'PC usage records must use a semantic table with an explicit detail action'
+);
+assert.match(
+  source,
   /getAccountCreditEventBuckets\([\s\S]*offset: nextOffset[\s\S]*<ListPagination[\s\S]*total=\{creditEventCount\}/,
   'customer point summaries must expose filtered history through pagination'
 );

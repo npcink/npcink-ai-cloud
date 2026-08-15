@@ -734,14 +734,65 @@ function PortalUsageContent() {
               {[0, 1, 2, 3].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}
             </div>
           ) : creditBucketItems.length > 0 ? (
-            <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
-              <div className="hidden grid-cols-[1.2fr_0.55fr_0.55fr_0.8fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
-                <span>{t('portal.usage.credit_buckets_time_column', {}, 'Time period')}</span>
-                <span className="text-right">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</span>
-                <span className="text-right">{t('portal.usage.credit_buckets_events_column', {}, 'Services')}</span>
-                <span className="text-right">{t('portal.usage.credit_buckets_top_service_column', {}, 'Main service')}</span>
+            <>
+              <div className="hidden overflow-x-auto lg:block" data-portal-usage="records-table">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <caption className="sr-only">
+                    {t('portal.usage.credit_events_title', {}, 'AI credit records')}
+                  </caption>
+                  <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    <tr>
+                      <th scope="col" className="px-3 py-3 font-medium">{t('portal.usage.credit_buckets_time_column', {}, 'Time period')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_buckets_events_column', {}, 'Services')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_buckets_top_service_column', {}, 'Main service')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {creditBucketItems.map((bucket) => {
+                      const bucketRange = formatCreditBucketRange(bucket.start_at, bucket.end_at, locale);
+                      const bucketCredits = formatCreditPoints(bucket.consumed_ai_credits);
+                      const bucketServiceCount = t(
+                        'portal.usage.credit_buckets_event_count',
+                        { count: formatQuotaValue(bucket.event_count) },
+                        '{{count}} services'
+                      );
+                      const bucketTopService = bucket.top_feature_key
+                        ? t(`portal.usage.credit_ledger_feature_${bucket.top_feature_key}_title`)
+                        : '-';
+                      return (
+                        <tr key={bucket.bucket_id} className="align-middle">
+                          <th scope="row" className="px-3 py-4 font-medium text-slate-950 dark:text-white">
+                            {bucketRange}
+                          </th>
+                          <td className="whitespace-nowrap px-3 py-4 text-right font-semibold text-slate-950 dark:text-white">
+                            {bucketCredits}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-right text-slate-600 dark:text-slate-300">
+                            {bucketServiceCount}
+                          </td>
+                          <td className="max-w-[16rem] truncate px-3 py-4 text-right text-slate-500 dark:text-slate-400">
+                            {bucketTopService}
+                          </td>
+                          <td className="px-3 py-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => void openCreditBucket(bucket)}
+                              className="btn btn-secondary btn-sm"
+                              aria-label={`${bucketCredits} · ${bucketTopService} · ${t('common.view_details', {}, 'View details')}`}
+                            >
+                              {t('common.view_details', {}, 'View details')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+
+              <div className="divide-y divide-slate-200 border-y border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800 lg:hidden">
                 {creditBucketItems.map((bucket) => (
                   <button
                     type="button"
@@ -758,7 +809,7 @@ function PortalUsageContent() {
                   </button>
                 ))}
               </div>
-            </div>
+            </>
           ) : (
             <div className="rounded-[1rem] border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
               {t(

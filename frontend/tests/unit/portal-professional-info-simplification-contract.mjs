@@ -216,6 +216,11 @@ assert.match(
 );
 assert.match(
   auditSource,
+  /data-portal-audit="records-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_information/,
+  'Portal recent activity must use a semantic PC table with low-frequency support detail'
+);
+assert.match(
+  auditSource,
   /title=\{t\('portal\.audit\.nav_label'[\s\S]*portal\.audit\.recent_desc/,
   'Portal recent activity should show plain recent activity copy without a filter console'
 );

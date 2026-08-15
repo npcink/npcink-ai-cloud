@@ -276,6 +276,11 @@ assert.match(
   'Portal package page must separate payment orders with compact status tabs'
 );
 assert.match(
+  paymentOrderHistorySource,
+  /data-portal-billing="payment-orders-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*renderOrderActions/,
+  'Portal payment order history must use a semantic PC table while preserving server-owned actions'
+);
+assert.match(
   billingPageSource,
   /preparePaymentWindow[\s\S]*window\.open\('about:blank', '_blank'\)[\s\S]*paymentWindow\.location\.replace/,
   'Portal package purchases must pre-open a separate payment tab before the async order request completes'
