@@ -18,6 +18,7 @@ type TranslateFn = (key: string, params?: Record<string, string>, fallback?: str
 
 type PortalSiteServiceStatusProps = {
   t: TranslateFn;
+  siteId: string;
   overview: PortalMonitoringOverviewSummary | null;
   isLoading: boolean;
   error: string;
@@ -38,6 +39,7 @@ function statusTone(status: string, issueCount: number, hasQuotaPressure: boolea
 
 export function PortalSiteServiceStatus({
   t,
+  siteId,
   overview,
   isLoading,
   error,
@@ -177,10 +179,16 @@ export function PortalSiteServiceStatus({
             {getPortalCustomerIssueTitle(overview.action_required[0], t)}
           </p>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {overview.action_required[0].suggested_action || t('portal.monitoring.attention_action', {}, 'If this continues, contact support and include the site name.')}
+            {getPortalMonitoringIssueCategory(overview.action_required[0]) === 'quota'
+              ? t('portal.monitoring.quota_evidence_attention', {}, 'Usage is near or over the current package limit.')
+              : t('portal.monitoring.attention_action', {}, 'If this continues, contact support and include the site name.')}
           </p>
-          <Link href="/portal/support?new=1&topic=site" className="btn btn-secondary btn-sm w-fit">
-            {t('portal.support_request_new_action', {}, 'Submit ticket')}
+          <Link href={getPortalMonitoringIssueCategory(overview.action_required[0]) === 'quota'
+            ? '/portal/billing'
+            : `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm w-fit">
+            {getPortalMonitoringIssueCategory(overview.action_required[0]) === 'quota'
+              ? t('portal.nav_billing', {}, 'View package')
+              : t('portal.support_request_new_action', {}, 'Submit ticket')}
           </Link>
         </PortalCard>
       ) : null}

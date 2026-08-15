@@ -290,6 +290,7 @@ function PortalSiteRecordContent() {
 
       <PortalSiteServiceStatus
         t={t}
+        siteId={siteId}
         overview={siteMonitoring.overview}
         isLoading={siteMonitoring.isLoading}
         error={siteMonitoring.error}
