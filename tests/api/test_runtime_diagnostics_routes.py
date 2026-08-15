@@ -864,7 +864,7 @@ def test_service_routes_runtime_callback_dispatch_recovery_is_operator_visible(
     assert callback_requests[0]["run_id"] == run_id
 
     audit_response = client.get(
-        "/internal/service/audit-events?event_kind=runtime.callback_dispatch_recovered&site_id=site_recovery&limit=5",
+        "/internal/service/audit-events?event_kind=runtime.callback_dispatch_recovered&site_id=site_recovery&limit=5&include_payload=true",
         headers=build_internal_headers(),
     )
     assert audit_response.status_code == 200

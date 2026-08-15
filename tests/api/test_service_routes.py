@@ -96,12 +96,16 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         "/internal/service/audit-events?site_id=site_service&limit=20",
         headers=build_internal_headers(),
     )
+    audit_payload_response = client.get(
+        "/internal/service/audit-events?site_id=site_service&limit=20&include_payload=true",
+        headers=build_internal_headers(),
+    )
     missing_activate_response = client.post(
         "/internal/service/sites/site_missing/activate",
         headers=build_internal_headers(idempotency_key="svc-site-activate-missing-001"),
     )
     error_audit_response = client.get(
-        "/internal/service/audit-events?event_kind=site.activate&outcome=error&limit=5",
+        "/internal/service/audit-events?event_kind=site.activate&outcome=error&limit=5&include_payload=true",
         headers=build_internal_headers(),
     )
 
@@ -138,6 +142,8 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
     assert suspend_response.json()["data"]["suspension_reason"] == "manual hold"
     assert audit_response.status_code == 200
     audit_items = audit_response.json()["data"]["items"]
+    assert audit_items
+    assert all("payload" not in item for item in audit_items)
     assert {item["event_kind"] for item in audit_items} >= {
         "site.provision",
         "site.activate",
@@ -147,8 +153,14 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         "site_key.revoke",
         "site.suspend",
     }
-    issue_audit = next(item for item in audit_items if item["event_kind"] == "site_key.issue")
-    rotate_audit = next(item for item in audit_items if item["event_kind"] == "site_key.rotate")
+    assert audit_payload_response.status_code == 200
+    audit_payload_items = audit_payload_response.json()["data"]["items"]
+    issue_audit = next(
+        item for item in audit_payload_items if item["event_kind"] == "site_key.issue"
+    )
+    rotate_audit = next(
+        item for item in audit_payload_items if item["event_kind"] == "site_key.rotate"
+    )
     exact_audit_response = client.get(
         "/internal/service/audit-events",
         params={
@@ -208,6 +220,7 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
     assert paged_audit_data["pagination"]["last_offset"] >= 6
     assert paged_audit_data["pagination"]["is_out_of_range"] is False
     assert paged_audit_data["diagnostics"]["returned_count"] == 2
+    assert all("payload" not in item for item in paged_audit_data["items"])
     assert out_of_range_audit_response.status_code == 200
     out_of_range_audit_data = out_of_range_audit_response.json()["data"]
     assert out_of_range_audit_data["items"] == []

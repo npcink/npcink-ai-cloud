@@ -182,7 +182,10 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     assert (artifact_root / ".artifact-store-generation").exists() is False
 
     service = CommercialService(database_url, settings=settings)
-    first_events = service.list_service_audit_events(limit=20)["items"]
+    first_events = service.list_service_audit_events(
+        limit=20,
+        include_payload=True,
+    )["items"]
     assert len(first_events) == 11
     cleanup_event = next(
         item for item in first_events if item["event_kind"] == "runtime.artifact_cleanup.cadence"

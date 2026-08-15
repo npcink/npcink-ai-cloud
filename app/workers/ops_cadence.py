@@ -332,11 +332,13 @@ def _latest_event(
     *,
     event_kind: str,
     outcome: str | None = None,
+    include_payload: bool = False,
 ) -> dict[str, object] | None:
     result = commercial_service.list_service_audit_events(
         event_kind=event_kind,
         outcome=outcome,
         limit=1,
+        include_payload=include_payload,
     )
     items = result.get("items")
     if not isinstance(items, list) or not items:
@@ -366,6 +368,7 @@ def build_cadence_summary(
             commercial_service,
             event_kind=spec.event_kind,
             outcome="error",
+            include_payload=True,
         )
         last_run_at = _parse_timestamp((last_event or {}).get("created_at"))
         age_seconds = (

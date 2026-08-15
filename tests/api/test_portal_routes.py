@@ -1521,7 +1521,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         )
 
     audit_response = client.get(
-        "/internal/service/audit-events?site_id=site_primary-example-com&limit=20",
+        "/internal/service/audit-events?site_id=site_primary-example-com&limit=20&include_payload=true",
         headers=build_internal_headers(),
     )
     assert audit_response.status_code == 200
