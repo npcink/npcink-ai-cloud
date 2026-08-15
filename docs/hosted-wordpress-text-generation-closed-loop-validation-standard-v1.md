@@ -202,9 +202,21 @@ set aggregate/per-item limits and failure stop conditions, and claim exactly
 one call immediately before dispatch. Reconcile Provider records and close the
 ledger afterward.
 
+For an automated WordPress AI browser checkpoint, pass one strict ledger plan
+to the Addon smoke. The plan must bind the experiment to unique item and
+dispatch identifiers for title, summary, and rewrite. Its preflight must verify
+the open ledger and item capacity without creating a draft or claiming budget;
+the full run must claim each call immediately before the corresponding UI
+dispatch and require `provider_dispatch_allowed=true`.
+
 Do not automatically retry merely to obtain a green result. A deterministic
 fake may validate consumer recovery, but must be labeled local and must never
 be presented as real Cloud/Provider evidence.
+
+An idempotent ledger replay authorizes the same planned dispatch without
+consuming a second ledger slot; it does not imply that an unrelated new
+Provider request is free. Runtime idempotency, ledger idempotency, and Provider
+billing evidence are separate contracts.
 
 ## 9. Verification ladder
 
@@ -235,6 +247,13 @@ control is used, review is visible, Insert changes only dirty editor state,
 revision/persisted value are correct, non-target content is unchanged, and the
 temporary post/session are removed.
 
+The quality assertion must correlate the current local post and task through
+the existing site-keyed `object_scope_hash`; it must not assume that a real
+Cloud run ID contains a local fixture token. Local event completeness and Cloud
+batch ingestion are separate assertions: validate session/event/outcome and
+prohibited-field counts locally, then validate accepted/stored/duplicate and
+remaining-buffer counts at the transport boundary.
+
 The recovery smoke must prove a safe error is visible, no premature write
 occurs, Retry/Regenerate restores usability, the user can edit before Insert,
 Save remains the final write, and all overrides/fixtures are removed.
@@ -242,6 +261,12 @@ Save remains the final write, and all overrides/fixtures are removed.
 A deterministic transport-preempted fake proves editor recovery only. A real
 Provider-failure experiment requires a separate bounded budget and must not
 corrupt shared credentials or routing.
+
+When a paid Provider path and the WordPress save boundary have already passed
+but a later harness-only assertion fails, preserve the exact run, credit,
+event, and cleanup evidence. Correct and replay only the verification seam when
+that answers the risk question; do not issue new paid calls solely to turn the
+combined command green.
 
 ## 11. Post-merge M4 acceptance
 
