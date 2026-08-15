@@ -6,9 +6,7 @@ import {
   PortalSection,
 } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
-import type {
-  PortalMonitoringOverviewSummary,
-} from '@/lib/portal-client';
+import type { PortalMonitoringOverviewSummary } from '@/lib/portal-client';
 import {
   getPortalCustomerIssueTitle,
   getPortalServiceOperationStatus,
@@ -168,6 +166,23 @@ export function PortalSiteServiceStatus({
             </tbody>
           </table>
         </div>
+      ) : null}
+
+      {!isLoading && !error && overview && overview.action_required.length > 0 ? (
+        <PortalCard className="space-y-2" data-portal-site="next-safe-action">
+          <h3 className="text-base font-semibold text-slate-950 dark:text-white">
+            {t('portal.monitoring.next_safe_action', {}, 'Next safe action')}
+          </h3>
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+            {getPortalCustomerIssueTitle(overview.action_required[0], t)}
+          </p>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {overview.action_required[0].suggested_action || t('portal.monitoring.attention_action', {}, 'If this continues, contact support and include the site name.')}
+          </p>
+          <Link href="/portal/support?new=1&topic=site" className="btn btn-secondary btn-sm w-fit">
+            {t('portal.support_request_new_action', {}, 'Submit ticket')}
+          </Link>
+        </PortalCard>
       ) : null}
 
       {!isLoading && !error && overview && issueCount > 1 ? (
