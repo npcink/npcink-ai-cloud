@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalSection,
@@ -53,10 +54,12 @@ function getAuditTraceId(event: PortalAuditEvent): string {
 export function PortalAuditClient() {
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const { t } = useLocale();
-  const contextSiteId = session?.selected_context?.site.site_id || '';
-  const selectedSiteName = session?.selected_context?.site
-    ? getPortalSiteDisplayName(session.selected_context.site)
-    : '';
+  const searchParams = useSearchParams();
+  const siteFilterId = searchParams.get('site') || '';
+  const selectedSite = session?.sites.find((site) => site.site_id === siteFilterId);
+  const selectedSiteName = selectedSite
+    ? getPortalSiteDisplayName(selectedSite)
+    : t('portal.all_sites_option', {}, 'All sites');
   const [auditEvents, setAuditEvents] = useState<PortalAuditEvent[]>([]);
   const [auditSummary, setAuditSummary] = useState<PortalAuditSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,7 +68,7 @@ export function PortalAuditClient() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const [visibleLimit, setVisibleLimit] = useState(10);
-  const contextSiteIdRef = useRef(contextSiteId);
+  const siteFilterIdRef = useRef(siteFilterId);
   const requestVersionRef = useRef(0);
   const recentEvents = useMemo(() => auditEvents, [auditEvents]);
   const attentionEventCount = useMemo(() => {
@@ -73,8 +76,8 @@ export function PortalAuditClient() {
   }, [recentEvents]);
 
   const loadActivity = useCallback(async (limit: number, loadingMore = false) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++requestVersionRef.current;
     if (loadingMore) {
       setIsLoadingMore(true);
@@ -87,17 +90,17 @@ export function PortalAuditClient() {
       setError(null);
     }
     try {
-      const bundle = await portalClient.getAuditBundle({ limit });
+      const bundle = await portalClient.getAuditBundle({ limit, siteId: requestSiteFilterId || undefined });
       if (
         requestVersion !== requestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setAuditSummary(bundle.summary);
       setAuditEvents(bundle.events);
     } catch (err) {
       if (
         requestVersion !== requestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       const message = formatPortalErrorMessage(
         err,
@@ -112,7 +115,7 @@ export function PortalAuditClient() {
     } finally {
       if (
         requestVersion !== requestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       if (loadingMore) {
         setIsLoadingMore(false);
@@ -123,7 +126,7 @@ export function PortalAuditClient() {
   }, [isAuthenticated, t]);
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = contextSiteId;
+    siteFilterIdRef.current = siteFilterId;
     requestVersionRef.current += 1;
     setAuditEvents([]);
     setAuditSummary(null);
@@ -131,16 +134,16 @@ export function PortalAuditClient() {
     setError(null);
     setLoadMoreError(null);
     setIsLoadingMore(false);
-    setIsLoading(Boolean(isAuthenticated && contextSiteId));
-  }, [contextSiteId, isAuthenticated]);
+    setIsLoading(Boolean(isAuthenticated));
+  }, [siteFilterId, isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) return;
+    if (!isAuthenticated) return;
     void loadActivity(10);
     return () => {
       requestVersionRef.current += 1;
     };
-  }, [contextSiteId, isAuthenticated, loadActivity]);
+  }, [isAuthenticated, loadActivity, siteFilterId]);
 
   const translateOutcome = (outcome: string) => {
     if (isSuccessfulAuditOutcome(outcome)) {
@@ -192,28 +195,6 @@ export function PortalAuditClient() {
     );
   }
 
-  if (!contextSiteId) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          eyebrow={t('portal.audit.records_title', {}, 'Activity records')}
-          title={t('portal.audit.nav_label', {}, 'Recent activity')}
-          currentPage="audit"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing account activity.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
-    );
-  }
-
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
@@ -240,6 +221,16 @@ export function PortalAuditClient() {
           `Review recent sign-in and service activity for ${selectedSiteName}.`
         )}
         currentPage="audit"
+        selectedSiteId={siteFilterId}
+        sites={session.sites}
+        siteSelectorMode="filter"
+        onSiteChange={(nextSiteId) => {
+          const nextParams = new URLSearchParams(searchParams.toString());
+          if (nextSiteId) nextParams.set('site', nextSiteId);
+          else nextParams.delete('site');
+          const query = nextParams.toString();
+          window.history.replaceState(window.history.state, '', `/portal/audit${query ? `?${query}` : ''}`);
+        }}
         metrics={[
           { label: t('portal.audit.records_total', {}, 'Total records'), value: auditSummary?.totals?.events || 0 },
           { label: t('portal.audit.visible_records', {}, 'Visible records'), value: recentEvents.length },

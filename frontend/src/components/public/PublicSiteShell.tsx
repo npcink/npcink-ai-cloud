@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { useLocale } from '@/contexts/LocaleContext';
+import { portalClient } from '@/lib/portal-client';
 import {
   PUBLIC_FOOTER_NAV_ITEMS,
   PUBLIC_HEADER_NAV_ITEMS,
@@ -15,6 +16,31 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
   const { locale } = useLocale();
   const zh = locale === 'zh-CN';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [portalAuthenticated, setPortalAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    void portalClient.getSession().then(
+      () => {
+        if (mounted) setPortalAuthenticated(true);
+      },
+      () => {
+        // A public visitor is expected to receive a session error. Keep the
+        // signed-out entry visible for auth failures and temporary API errors.
+        if (mounted) setPortalAuthenticated(false);
+      }
+    );
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const portalHref = portalAuthenticated ? '/portal' : '/portal/login';
+  const portalLabel = portalAuthenticated
+    ? (zh ? '进入服务中心' : 'Open Portal')
+    : (zh ? '登录服务中心' : 'Sign in');
 
   return (
     <div className="min-h-screen bg-[#f6f7f9] text-[#101828] dark:bg-[#09101c] dark:text-slate-50">
@@ -55,10 +81,10 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
               <ThemeToggle />
             </div>
             <Link
-              href="/portal/login"
+              href={portalHref}
               className="hidden h-10 items-center whitespace-nowrap bg-[#101828] px-5 text-sm font-bold text-white transition-colors hover:bg-[#2357ff] dark:bg-white dark:text-[#101828] dark:hover:bg-[#9eb3ff] sm:inline-flex"
             >
-              {zh ? '登录服务中心' : 'Sign in'}
+              {portalLabel}
             </Link>
             <button
               type="button"
@@ -97,11 +123,11 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
               </Link>
             ))}
             <Link
-              href="/portal/login"
+              href={portalHref}
               className="mt-2 bg-[#101828] px-3 py-3 text-center text-white dark:bg-white dark:text-[#101828] sm:hidden"
               onClick={() => setMobileNavOpen(false)}
             >
-              {zh ? '登录服务中心' : 'Sign in'}
+              {portalLabel}
             </Link>
             <div className="mt-3 flex items-center gap-2 border-t border-slate-200 px-3 pt-4 dark:border-white/10 sm:hidden">
               <LocaleSwitcher />

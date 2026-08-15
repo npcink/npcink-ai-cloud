@@ -1,6 +1,6 @@
-# Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14
+# Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15
 
-Status: dated merged and M4-accepted implementation evidence.
+Status: dated merged-baseline and follow-up candidate evidence.
 
 This record summarizes the Portal PC interface improvement started on 2026-08-14
 and delivered through four protected pull requests on 2026-08-15. It is evidence
@@ -222,7 +222,34 @@ surface. No credentials were submitted and no M4 human visual acceptance is
 claimed. The local real-Chromium runs are the PC/browser evidence for this
 closeout; external customer acceptance remains outstanding.
 
-## 8. Remaining Work
+## 8. Follow-up Account and Site Ownership Correction
+
+The follow-up branch corrected an ownership leak that remained after the
+visual closeout: selected-site session context had been reused to resolve
+account package, payment, quota, usage, and activity routes. That shortcut made
+account service appear site-owned and caused package pages to stop working when
+no site was selected.
+
+The durable rules are:
+
+- package, subscription, billing, AI credits, and account quotas belong to the
+  authenticated account;
+- site lifecycle, credentials, runtime health, Site Knowledge, and diagnostics
+  belong to a site;
+- usage, credit records, and customer-visible activity default to all sites and
+  accept an optional authorized site filter;
+- filtering evidence does not move ownership or mutate selected-site context;
+- multiple eligible accounts fail closed until an explicit account-selection
+  experience exists;
+- frontend Node contracts must run from their declared frontend workspace,
+  rather than depending on the operator's current directory.
+
+The follow-up validation included the changed-file L2 gate, 380 Python tests,
+TypeScript, ESLint, Portal contracts, Vitest, and focused M4 API execution. Its
+direct M4 sync remained candidate evidence until protected merge and clean-
+`master` promotion.
+
+## 9. Remaining Work
 
 - Mobile information architecture remains deferred as a separate product
   phase.
@@ -235,7 +262,7 @@ closeout; external customer acceptance remains outstanding.
 - Structural debt and further Portal expansion should be prioritized only from
   production, operator, and editor evidence rather than from visual preference.
 
-## 9. Rollback
+## 10. Rollback
 
 Rollback is a focused Git revert of the relevant Portal PR or this documentation
 record. Do not patch M4 directly, restore raw internal diagnostics to the

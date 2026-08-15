@@ -5358,12 +5358,12 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         state="portal-pro-trial-addon-state",
         idempotency_key="portal-pro-trial-addon-001",
     )
-    site_id = str(addon_exchange["site_id"])
+    assert str(addon_exchange["site_id"])
     assert addon_exchange["free_entitlement_activated"] is True
 
     offers_response = client.get(
         "/portal/v1/account/plan-offers",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert offers_response.status_code == 200, offers_response.text
     _assert_no_portal_commercial_internal_fields(offers_response.json()["data"])
@@ -5398,7 +5398,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         json={"tier_id": "pro"},
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-trial-start-001",
         ),
     )
@@ -5413,12 +5413,11 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     )
     trial_session = trial_data["session"]
     _assert_strict_portal_session(trial_session)
-    assert trial_session["selected_context"]["site"]["site_id"] == site_id
-    assert trial_session["selected_context"]["current_subscription"]["plan_id"] == "pro"
+    assert trial_session["selected_context"] is None
 
     active_offers_response = client.get(
         "/portal/v1/account/plan-offers",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert active_offers_response.status_code == 200, active_offers_response.text
     active_trial = active_offers_response.json()["data"]["trial"]
@@ -5432,7 +5431,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         json={"offer_id": "pro_monthly_v1", "provider": "alipay"},
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-monthly-order-001",
         ),
     )
@@ -5449,7 +5448,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
 
     payment_orders_response = client.get(
         "/portal/v1/account/payment-orders?limit=10",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert payment_orders_response.status_code == 200, payment_orders_response.text
     payment_orders_data = payment_orders_response.json()["data"]
@@ -5472,14 +5471,14 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert listed_order["amount"] == 29.0
     assert listed_order["currency"] == "CNY"
     assert listed_order["purchase_kind"] == "subscription_plan"
-    assert listed_order["site_id"] == site_id
+    assert listed_order["site_id"] == ""
     assert listed_order["status"] == "pending"
     assert listed_order["target_tier_id"] == "pro"
     assert listed_order["expires_at"]
 
     order_detail_response = client.get(
         f"/portal/v1/account/payment-orders/{order['order_id']}",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert order_detail_response.status_code == 200, order_detail_response.text
     order_detail = order_detail_response.json()["data"]
@@ -5493,7 +5492,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         f"{order_payload['subscription_order']['subscription_order_id']}",
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-monthly-order-cancel-001",
         ),
     )
@@ -5505,7 +5504,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
 
     closed_orders_response = client.get(
         "/portal/v1/account/payment-orders?status_group=closed&limit=10",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert closed_orders_response.status_code == 200, closed_orders_response.text
     closed_orders_data = closed_orders_response.json()["data"]
@@ -5523,7 +5522,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         "/portal/v1/account/free-downgrade",
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-free-downgrade-001",
         ),
     )
@@ -7019,10 +7018,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert rebuild_response.status_code == 200
 
-    def portal_reads_headers(*, idempotency_key: str = "") -> dict[str, str]:
+    def portal_reads_headers(
+        *, idempotency_key: str = "", site_id: str = "site_portal_reads"
+    ) -> dict[str, str]:
         return build_portal_headers(
             principal_id="principal:portal-reads@example.com",
-            site_id="site_portal_reads",
+            site_id=site_id,
             idempotency_key=idempotency_key,
         )
 
@@ -7085,6 +7086,21 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     _assert_no_portal_identity_wrapper(account_usage_data)
     assert account_usage_data["site_ids"] == ["site_portal_reads"]
     assert account_usage_data["totals"]["sites_total"] == 1
+
+    filtered_account_usage_response = client.get(
+        "/portal/v1/account/usage-summary?site_id=site_portal_reads",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert filtered_account_usage_response.status_code == 200
+    assert filtered_account_usage_response.json()["data"]["site_ids"] == [
+        "site_portal_reads"
+    ]
+
+    account_usage_without_site_response = client.get(
+        "/portal/v1/account/usage-summary",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert account_usage_without_site_response.status_code == 200
 
     monitoring_response = client.get(
         "/portal/v1/sites/site_portal_reads/monitoring-overview?window_hours=24",
@@ -7192,6 +7208,16 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         ]
         == 5.0
     )
+    assert account_entitlements_data["current_subscription"]["status"] == "active"
+
+    account_entitlements_without_site_response = client.get(
+        "/portal/v1/account/entitlements",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert account_entitlements_without_site_response.status_code == 200
+    assert account_entitlements_without_site_response.json()["data"]["quota_summary"][
+        "ai_credits"
+    ]["limit"] == 2000.0
 
     credit_ledger_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-ledger?limit=10",
@@ -7252,9 +7278,22 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_credit_ledger_response.status_code == 200
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(account_credit_ledger_data)
-    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 4.0
-    assert account_credit_ledger_data["pagination"]["total"] == 3
+    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 5.0
+    assert account_credit_ledger_data["pagination"]["total"] == 4
     assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
+        "site_portal_reads",
+        "site_other_portal_reads",
+    }
+
+    filtered_account_credit_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger?limit=10&site_id=site_portal_reads",
+        headers=portal_reads_headers(),
+    )
+    assert filtered_account_credit_ledger_response.status_code == 200
+    filtered_account_credit_ledger_data = filtered_account_credit_ledger_response.json()["data"]
+    assert filtered_account_credit_ledger_data["summary"]["total_ai_credits"] == 4.0
+    assert filtered_account_credit_ledger_data["pagination"]["total"] == 3
+    assert {item["site_id"] for item in filtered_account_credit_ledger_data["items"]} == {
         "site_portal_reads"
     }
 
@@ -7280,10 +7319,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         session.commit()
 
     expected_trends = {
-        "1h": {"points": 12, "ai_credits": 4.0, "entries": 3},
-        "24h": {"points": 24, "ai_credits": 4.0, "entries": 3},
-        "7d": {"points": 7, "ai_credits": 4.0, "entries": 3},
-        "30d": {"points": 30, "ai_credits": 4.0, "entries": 3},
+        "1h": {"points": 12, "ai_credits": 5.0, "entries": 4},
+        "24h": {"points": 24, "ai_credits": 5.0, "entries": 4},
+        "7d": {"points": 7, "ai_credits": 7.0, "entries": 5},
+        "30d": {"points": 30, "ai_credits": 7.0, "entries": 5},
     }
     for trend_window, expectation in expected_trends.items():
         trend_response = client.get(
@@ -7362,7 +7401,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_events_data = credit_events_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(credit_events_data)
     assert credit_events_data["contract_version"] == "portal-credit-events-v1"
-    assert credit_events_data["pagination"]["total"] == 3
+    assert credit_events_data["pagination"]["total"] == 4
     assert all(item["direction"] == "consumed" for item in credit_events_data["items"])
     grouped_event = next(
         item
@@ -7374,6 +7413,17 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert {item["key"] for item in grouped_event["components"]} == {
         "model_processing",
         "request",
+    }
+
+    filtered_credit_events_response = client.get(
+        "/portal/v1/account/credit-events?window=period&limit=20&site_id=site_portal_reads",
+        headers=portal_reads_headers(),
+    )
+    assert filtered_credit_events_response.status_code == 200
+    filtered_credit_events_data = filtered_credit_events_response.json()["data"]
+    assert filtered_credit_events_data["pagination"]["total"] == 3
+    assert {item["site_id"] for item in filtered_credit_events_data["items"]} == {
+        "site_portal_reads"
     }
 
     topic_events_response = client.get(
@@ -7422,10 +7472,18 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert recent_bucket_response.status_code == 200
     recent_bucket_data = recent_bucket_response.json()["data"]
-    assert recent_bucket_data["summary"]["consumed_ai_credits"] == bucket_data["summary"][
-        "consumed_ai_credits"
-    ]
+    assert bucket_data["summary"]["consumed_ai_credits"] == 8.0
+    assert recent_bucket_data["summary"]["consumed_ai_credits"] == 10.0
     assert all(item["start_at"] < item["end_at"] for item in recent_bucket_data["items"])
+
+    filtered_bucket_response = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={"bucket": "30m", "window": "7d", "site_id": "site_portal_reads"},
+        headers=portal_reads_headers(),
+    )
+    assert filtered_bucket_response.status_code == 200
+    filtered_bucket_data = filtered_bucket_response.json()["data"]
+    assert filtered_bucket_data["summary"]["consumed_ai_credits"] == 7.0
 
     # Keep the remainder of this long scenario focused on the payment grant it creates below.
     with get_session(database_url) as session:
@@ -7456,7 +7514,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     account_credit_packs_response = client.get(
         "/portal/v1/account/credit-packs",
-        headers=portal_reads_headers(),
+        headers=portal_reads_headers(site_id=""),
     )
     assert account_credit_packs_response.status_code == 200
     account_credit_packs_data = account_credit_packs_response.json()["data"]
@@ -7556,6 +7614,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         json={"pack_id": "pack_medium"},
         headers=portal_reads_headers(
             idempotency_key="portal-account-credit-pack-order-001",
+            site_id="",
         ),
     )
     assert account_credit_pack_order_response.status_code == 200
@@ -7574,6 +7633,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         json={},
         headers=portal_reads_headers(
             idempotency_key="portal-account-credit-pack-order-cancel-001",
+            site_id="",
         ),
     )
     assert cancel_account_credit_pack_order_response.status_code == 200
@@ -7609,6 +7669,19 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_audit_data["totals"]["events"] >= 1
     _assert_no_bounded_portal_internal_fields(account_audit_data)
 
+    account_audit_without_site_response = client.get(
+        "/portal/v1/account/audit-summary",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert account_audit_without_site_response.status_code == 200
+
+    filtered_account_audit_response = client.get(
+        "/portal/v1/account/audit-summary?site_id=site_portal_reads",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert filtered_account_audit_response.status_code == 200
+    assert filtered_account_audit_response.json()["data"]["totals"]["events"] >= 1
+
     audit_events_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-events?event_kind=site_key.issue&limit=10",
         headers=portal_reads_headers(),
@@ -7636,6 +7709,16 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_audit_events_data["filters"]["event_kind"] == "site_key.issue"
     assert len(account_audit_events_data["items"]) >= 1
     _assert_no_bounded_portal_internal_fields(account_audit_events_data)
+
+    filtered_account_audit_events_response = client.get(
+        (
+            "/portal/v1/account/audit-events?event_kind=site_key.issue&limit=10"
+            "&site_id=site_portal_reads"
+        ),
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert filtered_account_audit_events_response.status_code == 200
+    assert len(filtered_account_audit_events_response.json()["data"]["items"]) >= 1
 
     billing_response = client.get(
         "/portal/v1/sites/site_portal_reads/billing-snapshots",

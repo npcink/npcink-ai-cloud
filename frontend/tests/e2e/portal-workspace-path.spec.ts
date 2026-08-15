@@ -1593,7 +1593,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(portalPrimaryNav.getByRole('link', { name: /^Keys$|^密钥$|^金鑰$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Audit$|^审计$|^稽核$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Settings$|^设置$|^設定$/i })).toHaveCount(0);
-  await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务|服務/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /account service|账号服务|my service|我的服务|服務/i })).toBeVisible();
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
   await expect(page.getByText(/2,419|2419/i).first()).toBeVisible();
   const operationOverview = page.locator('[data-portal-home="operation-overview"]');
@@ -1997,7 +1997,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     }, variant);
     await page.reload();
 
-    await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /account service|账号服务|my service|我的服务/i })).toBeVisible();
     await expect(page.locator('[data-portal-sites="desktop-table"]')).toBeVisible();
     expect(await page.locator('html').evaluate((element) => element.classList.contains('dark'))).toBe(
       variant.theme === 'dark'
@@ -2031,7 +2031,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto('/portal');
-  await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务|服務/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /account service|账号服务|my service|我的服务|服務/i })).toBeVisible();
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
 
   await page.goto('/portal/usage');

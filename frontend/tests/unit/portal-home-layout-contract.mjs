@@ -79,8 +79,18 @@ assert.match(
 );
 assert.match(
   source,
-  /showAccountSummary = hasSelectedSite \|\| !hasVisibleSites[\s\S]*metrics=\{showAccountSummary \? operationSummaryItems : \[\]\}/,
-  'Portal home must not repeat account metrics before a visible site context is selected'
+  /showAccountSummary = true[\s\S]*metrics=\{showAccountSummary \? operationSummaryItems : \[\]\}/,
+  'Portal home must show account metrics without requiring a selected site context'
+);
+assert.doesNotMatch(
+  source,
+  /const currentServiceStatusToken = !selectedSite|description=\{!selectedSite && hasVisibleSites/,
+  'Portal account service status and description must not depend on selecting a site'
+);
+assert.match(
+  source,
+  /portal\.home\.site_connection_status_label[\s\S]*site_connection_ready_value[\s\S]*site_connection_none_value/,
+  'Portal home must present site connection as a separate account summary metric'
 );
 assert.match(source, /data-portal-home="operation-overview"/);
 assert.match(source, /shouldShowFollowUpSection/);

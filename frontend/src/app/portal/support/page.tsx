@@ -485,7 +485,11 @@ function PortalSupportContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
-                  {items.map((item) => (
+                  {items.map((item) => {
+                    const relatedSite = item.site_id
+                      ? accountSites.find((site) => site.site_id === item.site_id)
+                      : null;
+                    return (
                     <tr key={item.request_id} className="align-middle">
                       <th scope="row" className="max-w-[26rem] px-3 py-4 font-normal">
                         <p className="truncate font-semibold text-slate-950 dark:text-white">{item.title}</p>
@@ -517,7 +521,8 @@ function PortalSupportContent() {
                         </Link>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

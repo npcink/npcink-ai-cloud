@@ -44,19 +44,19 @@ assert.doesNotMatch(homeSource, /role="button"[\s\S]{0,900}href=\{`\/portal\/sit
 
 assert.match(
   usageSource,
-  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''/,
-  'account usage must require an explicit selected site context before loading'
+  /const siteFilterId = searchParams\.get\('site'\) \|\| ''/,
+  'account usage must default to all sites and derive an optional site filter from the URL'
 );
 assert.match(usageSource, /creditEventWindow[\s\S]*creditEventFeature/);
-assert.doesNotMatch(
+assert.match(
   usageSource,
-  /creditLedgerSiteId|portal\.usage\.site_filter_label|siteId:\s*credit/,
-  'account usage must not restore the retired per-site credit filter'
+  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
+  'account usage must expose the shared all-sites or single-site filter'
 );
 assert.match(
   usageSource,
   /useLayoutEffect\([\s\S]*setUsage\(null\)[\s\S]*setEntitlements\(null\)[\s\S]*setCreditEventBuckets\(null\)[\s\S]*setCreditTrend\(null\)/,
-  'usage must clear account projections immediately when selected context changes'
+  'usage must clear account projections immediately when the site filter changes'
 );
 assert.match(billingSource, /id="package-options"[\s\S]*setActiveCommercialDialog\('package'\)/);
 assert.doesNotMatch(billingSource, /href="#package-options"/);
