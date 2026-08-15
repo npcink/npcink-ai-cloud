@@ -1,10 +1,12 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
+import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
   PortalEmptyState,
   PortalErrorState,
@@ -444,7 +446,6 @@ function PortalUsageContent() {
     return (
       <PortalPageStack>
         <PortalWorkspaceHeader
-          eyebrow={t('portal.usage.summary_label', {}, 'Usage')}
           title={t('portal.nav_usage', {}, 'Usage')}
           currentPage="usage"
         />
@@ -537,37 +538,12 @@ function PortalUsageContent() {
     : quotaStatusTone(creditStatus) === 'warning'
       ? t('portal.usage.headroom_watch', {}, 'Close to limit')
       : t('portal.home.risk_level_normal', {}, 'Normal');
+  const usageNeedsAttention = quotaStatusTone(creditStatus) !== 'ok' || overBudget;
   const usageHeaderDescription = t(
     'portal.usage.summary_desc',
     {},
     "Review this period's account AI credit usage, records, and trends."
   );
-  const usageHeaderInfo = updatedAt
-    ? `${usageHeaderDescription} · ${t(
-        'portal.usage.updated_at_inline',
-        { time: updatedAt },
-        'Updated {{time}}'
-      )}`
-    : usageHeaderDescription;
-  const usageHeaderMetrics = [
-    {
-      label: t('common.status'),
-      value: usageStatusLabel,
-      detail: t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more AI credits.'),
-    },
-    {
-      label: t('portal.usage.period_label', {}, 'Period'),
-      value: currentPeriodRange || t('common.not_found'),
-      detail: currentPeriodEndDetail
-        ? t(
-            'portal.usage.period_end_detail',
-            { time: currentPeriodEndDetail },
-            'Ends {{time}}'
-          )
-        : t('portal.usage.header_period_detail', {}, 'Current package period.'),
-      size: 'compact' as const,
-    },
-  ];
   const usageOverviewMetrics = [
     {
       label: t('portal.usage.total_remaining_label', {}, 'Total available'),
@@ -597,12 +573,48 @@ function PortalUsageContent() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.usage.summary_label', {}, 'Usage')}
         title={t('portal.nav_usage', {}, 'Usage')}
-        eyebrowInfo={usageHeaderInfo}
+        description={usageHeaderDescription}
         currentPage="usage"
-        metrics={usageHeaderMetrics}
-        metricsColumnsClassName="lg:grid-cols-2"
+        titleAccessory={!usageNeedsAttention ? (
+          <PortalStatusBadge status="active" label={usageStatusLabel} className="text-[0.68rem]" />
+        ) : null}
+        metadata={(
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            <span>
+              <span className="font-medium text-slate-700 dark:text-slate-200">
+                {t('portal.usage.period_label', {}, 'Period')}:
+              </span>{' '}
+              {currentPeriodRange || t('common.not_found')}
+            </span>
+            <span>
+              {currentPeriodEndDetail
+                ? t(
+                    'portal.usage.period_end_detail',
+                    { time: currentPeriodEndDetail },
+                    'Ends {{time}}'
+                  )
+                : t('portal.usage.header_period_detail', {}, 'Current package period.')}
+            </span>
+            {updatedAt ? (
+              <span>{t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}</span>
+            ) : null}
+          </div>
+        )}
+        contextPanel={usageNeedsAttention ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
+            <p className="text-sm font-semibold text-gray-950 dark:text-white">{usageStatusLabel}</p>
+            <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+              {t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more AI credits.')}
+            </p>
+            <Link
+              href="/portal/billing#package-options"
+              className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+            >
+              {t('portal.home.billing_action', {}, 'Review package')}
+            </Link>
+          </div>
+        ) : null}
       />
 
       {entitlements ? (

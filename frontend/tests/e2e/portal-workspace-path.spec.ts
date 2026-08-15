@@ -1810,7 +1810,8 @@ test('portal account page hides internal identifiers and duplicate summary metri
   await expect(page.getByRole('heading', { level: 1, name: /Account|账号|帳號/i })).toBeVisible();
   await expect(page.locator('[data-portal-account="contact-info"]')).toHaveCount(1);
   await expect(page.locator('[data-portal-account="support-details"]')).toHaveCount(0);
-  await expect(page.getByText(/portal-demo@example\.com/i).first()).toBeVisible();
+  await expect(page.getByText(/portal-demo@example\.com/i)).toHaveCount(1);
+  await expect(page.getByText(/Other sign-in methods|其他登录方式/i)).toBeVisible();
   await expect(page.getByText(/Primary login method|主要登录方式/i)).toHaveCount(0);
   await page.getByRole('button', { name: /Need to change contact|需要修改联系方式/i }).click();
   await expect(page.locator('[data-portal-account="email-change-dialog"]')).toBeVisible();
@@ -1825,6 +1826,7 @@ test('portal audit stays a bounded support deep link', async ({ page }) => {
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-support-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
+  await expect(page.getByText(/activity for Attention Site|Attention Site 最近的登录和服务活动/i)).toBeVisible();
   const auditTable = page.locator('[data-portal-audit="records-table"]');
   await expect(auditTable).toBeVisible();
   await expect(auditTable.locator('tbody tr')).toHaveCount(10);
@@ -1880,12 +1882,23 @@ test('portal AI credit trend shows an explicit empty state instead of a blank ch
 
   await page.goto('/portal/usage');
   const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
-  await expect(trendPanel.getByText(/No AI credit usage in this range|该时间范围内暂无AI 积分使用/i)).toBeVisible();
+  await expect(trendPanel.getByText(/No AI credit usage in this range|该时间范围内暂无 AI 积分使用/i)).toBeVisible();
   await expect(trendPanel.getByRole('img')).toHaveCount(0);
 });
 
 test('account projections stay idle until a site context is selected', async ({ page }) => {
   const calls = await installPortalMocks(page, { withoutSelectedContext: true });
+
+  await page.goto('/portal');
+  const overview = page.locator('[data-portal-home="operation-overview"]');
+  await expect(overview.getByText(/Choose a current site before|请先选择当前站点/i).first()).toBeVisible();
+  await expect(overview.getByText(/No site selected|未选择站点/i)).toBeVisible();
+  await expect(overview.getByRole('link', { name: /Select site|选择站点/i })).toBeVisible();
+  await expect(overview.getByText(/Current package|当前套餐/i)).toHaveCount(0);
+  await expect(overview.getByText(/^Remaining$|^剩余$/i)).toHaveCount(0);
+  await expect(overview.getByText(/^Loading\.\.\.$|^加载中\.\.\.$/i)).toHaveCount(0);
+  await expect(overview.getByText(/^Uncovered$|^未覆盖$/i)).toHaveCount(0);
+  await expect(overview.getByText(/^Available$|^可用$/i)).toHaveCount(0);
 
   for (const path of [
     '/portal/billing',
@@ -1905,7 +1918,7 @@ test('account-level support stays available without a selected site context', as
   const calls = await installPortalMocks(page, { withoutSelectedContext: true });
 
   await page.goto('/portal/support');
-  await expect(page.getByRole('combobox', { name: /Current site|站点记录|站點記錄/i })).toHaveValue('');
+  await expect(page.getByRole('combobox', { name: /Current site|当前站点|目前站點/i })).toHaveValue('');
   await expect(
     page.locator('[data-portal-support="tickets-table"]').getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)
   ).toBeVisible();
@@ -1973,16 +1986,21 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
 
   for (const variant of variants) {
     await page.setViewportSize({ width: variant.width, height: 1200 });
-    await page.goto('/portal/usage');
+    await page.goto('/portal');
     await page.evaluate(({ locale, theme }) => {
       window.localStorage.setItem('locale', locale);
       window.localStorage.setItem('theme', theme);
     }, variant);
     await page.reload();
 
+    await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务/i })).toBeVisible();
+    await expect(page.locator('[data-portal-sites="desktop-table"]')).toBeVisible();
     expect(await page.locator('html').evaluate((element) => element.classList.contains('dark'))).toBe(
       variant.theme === 'dark'
     );
+    await expectNoPageOverflow();
+
+    await page.goto('/portal/usage');
     await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
     await expect(page.locator('[data-portal-usage="records-table"]')).toBeVisible();
     await expectNoPageOverflow();

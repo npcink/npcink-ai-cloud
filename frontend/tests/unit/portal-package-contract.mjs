@@ -58,10 +58,10 @@ assert.match(
   /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
   'Portal credit purchases must expose terms, privacy, and billing support before payment'
 );
-const billingMetricStart = billingPageSource.indexOf('<PortalMetricStrip');
-const billingMetricStrip = billingPageSource.slice(
-  billingMetricStart,
-  billingPageSource.indexOf('<PortalCard', billingMetricStart)
+const billingHeaderStart = billingPageSource.lastIndexOf('<PortalWorkspaceHeader');
+const billingHeader = billingPageSource.slice(
+  billingHeaderStart,
+  billingPageSource.indexOf('\n      />', billingHeaderStart)
 );
 assert.doesNotMatch(
   billingPageSource,
@@ -87,6 +87,21 @@ assert.match(
   billingPageSource,
   /portal\.billing\.upgrade_action/,
   'Portal package page must own package upgrade entry points'
+);
+assert.match(
+  billingPageSource,
+  /resolvePackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
+  'Portal package status must name the customer-visible limit instead of showing a generic attention label'
+);
+assert.match(
+  billingPageSource,
+  /active_sites[\s\S]*package_status_active_site_limited[\s\S]*package_status_site_label/,
+  'Portal package status must classify active-site capacity as a site limit and explain its usage'
+);
+assert.match(
+  billingPageSource,
+  /creditNeedsAttention[\s\S]*creditNeedsAttention \? 'btn-secondary' : 'btn-primary'[\s\S]*creditNeedsAttention \? 'btn-primary' : 'btn-secondary'/,
+  'Portal package actions must prioritize credit purchase only when AI credits are the active issue'
 );
 assert.match(
   creditPackDialogSource,
@@ -236,9 +251,19 @@ assert.doesNotMatch(
   'Portal package page must not treat browser payment return as payment truth'
 );
 assert.doesNotMatch(
-  billingMetricStrip,
+  billingHeader,
   /package_credit_allowance_label|site_allowance_label/,
   'Portal package header must not repeat package rights that are already shown in the rights card'
+);
+assert.match(
+  billingHeader,
+  /metadata=[\s\S]*currentPeriodLabel[\s\S]*contextPanel=\{packageStatus === 'warning'/,
+  'Portal package header must keep passive package metadata inline and place only actionable warnings in the right panel'
+);
+assert.doesNotMatch(
+  billingHeader,
+  /eyebrow=|metrics=/,
+  'Portal package header must not repeat its title or render a second summary rail'
 );
 assert.match(
   billingPageSource,
