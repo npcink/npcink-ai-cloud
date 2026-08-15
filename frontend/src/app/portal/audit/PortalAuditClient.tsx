@@ -23,6 +23,7 @@ import {
   type PortalAuditSummary,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { getPortalSiteDisplayName } from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
 const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
@@ -53,6 +54,9 @@ export function PortalAuditClient() {
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const { t } = useLocale();
   const contextSiteId = session?.selected_context?.site.site_id || '';
+  const selectedSiteName = session?.selected_context?.site
+    ? getPortalSiteDisplayName(session.selected_context.site)
+    : '';
   const [auditEvents, setAuditEvents] = useState<PortalAuditEvent[]>([]);
   const [auditSummary, setAuditSummary] = useState<PortalAuditSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -230,7 +234,11 @@ export function PortalAuditClient() {
       <PortalWorkspaceHeader
         eyebrow={t('portal.audit.records_title', {}, 'Activity records')}
         title={t('portal.audit.nav_label', {}, 'Recent activity')}
-        eyebrowInfo={t('portal.audit.customer_desc', {}, 'Review recent sign-in and service activity visible to this account.')}
+        eyebrowInfo={t(
+          'portal.audit.customer_desc_with_site',
+          { site: selectedSiteName },
+          `Review recent sign-in and service activity for ${selectedSiteName}.`
+        )}
         currentPage="audit"
         metrics={[
           { label: t('portal.audit.records_total', {}, 'Total records'), value: auditSummary?.totals?.events || 0 },
@@ -293,7 +301,10 @@ export function PortalAuditClient() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
-                  {recentEvents.map((event) => (
+                  {recentEvents.map((event) => {
+                    const traceId = getAuditTraceId(event);
+                    const showSupportInformation = !isSuccessfulAuditOutcome(event.outcome) || Boolean(traceId);
+                    return (
                     <tr key={event.event_id} className="align-top">
                       <td className="whitespace-nowrap px-6 py-4 text-slate-500 dark:text-slate-400">
                         {formatDate(event.created_at)}
@@ -310,7 +321,8 @@ export function PortalAuditClient() {
                         <PortalStatusBadge status={event.outcome} label={translateOutcome(event.outcome)} />
                       </td>
                       <td className="px-6 py-4">
-                        <details className="ml-auto max-w-sm text-left text-xs text-slate-500 dark:text-slate-400">
+                        {showSupportInformation ? (
+                          <details className="ml-auto max-w-sm text-left text-xs text-slate-500 dark:text-slate-400">
                           <summary className="cursor-pointer text-right font-medium text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
                             {t('portal.support_information', {}, 'Support information')}
                           </summary>
@@ -319,25 +331,32 @@ export function PortalAuditClient() {
                               <span className="block font-medium text-slate-700 dark:text-slate-300">Event ID</span>
                               <PortalIdentifier value={String(event.event_id)} full />
                             </div>
-                            {getAuditTraceId(event) ? (
+                            {traceId ? (
                               <div>
                                 <span className="block font-medium text-slate-700 dark:text-slate-300">
                                   {t('audit.trace_id', {}, 'Trace ID')}
                                 </span>
-                                <PortalIdentifier value={getAuditTraceId(event)} full />
+                                <PortalIdentifier value={traceId} full />
                               </div>
                             ) : null}
                           </div>
-                        </details>
+                          </details>
+                        ) : (
+                          <span className="block text-right text-slate-400 dark:text-slate-600">—</span>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             <div className="divide-y divide-gray-200 dark:divide-gray-800 lg:hidden">
-            {recentEvents.map((event) => (
+            {recentEvents.map((event) => {
+              const traceId = getAuditTraceId(event);
+              const showSupportInformation = !isSuccessfulAuditOutcome(event.outcome) || Boolean(traceId);
+              return (
               <article key={event.event_id} className="px-6 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
@@ -346,7 +365,8 @@ export function PortalAuditClient() {
                       <PortalStatusBadge status={event.outcome} label={translateOutcome(event.outcome)} />
                     </div>
                     <p className="text-sm text-gray-500">{formatDate(event.created_at)}</p>
-                    <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-gray-500 dark:bg-slate-900/60 dark:text-gray-400">
+                    {showSupportInformation ? (
+                      <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-gray-500 dark:bg-slate-900/60 dark:text-gray-400">
                       <summary className="cursor-pointer font-medium text-gray-600 dark:text-gray-300">
                         {t('portal.support_information', {}, 'Support information')}
                       </summary>
@@ -355,16 +375,17 @@ export function PortalAuditClient() {
                           <span className="block font-medium text-gray-600 dark:text-gray-300">Event ID</span>
                           <PortalIdentifier value={String(event.event_id)} full />
                         </div>
-                        {getAuditTraceId(event) ? (
+                        {traceId ? (
                           <div>
                             <span className="block font-medium text-gray-600 dark:text-gray-300">
                               {t('audit.trace_id', {}, 'Trace ID')}
                             </span>
-                            <PortalIdentifier value={getAuditTraceId(event)} full />
+                            <PortalIdentifier value={traceId} full />
                           </div>
                         ) : null}
                       </div>
-                    </details>
+                      </details>
+                    ) : null}
                   </div>
                   {!isSuccessfulAuditOutcome(event.outcome) ? (
                     <PortalCard className="max-w-md border-amber-200 bg-amber-50/70 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
@@ -373,7 +394,8 @@ export function PortalAuditClient() {
                   ) : null}
                 </div>
               </article>
-            ))}
+              );
+            })}
             </div>
           </>
         )}

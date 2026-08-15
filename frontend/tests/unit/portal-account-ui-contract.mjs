@@ -77,6 +77,21 @@ assert.match(
   /data-portal-account="contact-info"/,
   'account center must make contact information the primary customer-facing account surface'
 );
+assert.match(
+  accountSource,
+  /<PortalWorkspaceHeader[\s\S]*currentPage="account"[\s\S]*href="\/portal\/audit"/,
+  'account center must use the shared compact header and keep recent activity as its header action'
+);
+assert.doesNotMatch(
+  accountSource,
+  /<PortalPrimaryPanel/,
+  'account center must not restore the oversized standalone primary panel'
+);
+assert.match(
+  accountSource,
+  /portal\.account\.email_login_desc[\s\S]*!qqProvider\?\.configured && !qqProvider\?\.bound[\s\S]*<details[\s\S]*other_login_methods_title/,
+  'account center must avoid repeating the contact email and disclose unavailable optional login methods at low frequency'
+);
 
 assert.match(
   accountSource,

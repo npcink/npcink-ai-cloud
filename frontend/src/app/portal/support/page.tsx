@@ -34,6 +34,7 @@ import {
 import {
   getPortalSiteDisplayName,
   getPortalSiteSecondaryLabel,
+  getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
@@ -152,12 +153,14 @@ function PortalSupportContent() {
   }, [contextSiteId, isAuthenticated, loadRequests]);
 
   const visibleSites = selectedContextSite ? [selectedContextSite] : [];
+  const accountSites = getVisiblePortalSites(session?.sites || []);
   const supportRequestSiteLabel = (item: PortalSupportRequest) => {
     if (!item.site_id) {
       return t('portal.support_request_no_site', {}, 'Account-level issue');
     }
-    if (item.site_id === selectedContextSite?.site_id) {
-      return getPortalSiteDisplayName(selectedContextSite);
+    const relatedSite = accountSites.find((site) => site.site_id === item.site_id);
+    if (relatedSite) {
+      return getPortalSiteDisplayName(relatedSite);
     }
     return t('portal.support_request_other_site', {}, 'Another site');
   };
@@ -261,9 +264,6 @@ function PortalSupportContent() {
           'Send billing, site, usage, or account issues to the support queue.'
         )}
         currentPage="support"
-        selectedSiteId={contextSiteId}
-        sites={session.sites}
-        onSiteChange={(nextSiteId) => void handleSiteChange(nextSiteId)}
         actions={
           <button
             type="button"
@@ -416,21 +416,53 @@ function PortalSupportContent() {
             {t('portal.support_request_list_desc', {}, 'Open and in-progress tickets stay visible until support resolves them.')}
           </p>
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {SUPPORT_STATUSES.map((status) => (
-            <button
-              key={status || 'all'}
-              type="button"
-              className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-              aria-pressed={statusFilter === status}
-              onClick={() => {
-                setOffset(0);
-                setStatusFilter(status);
-              }}
-            >
-              {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-            </button>
-          ))}
+        <div className="mb-4 flex flex-col gap-3 border-y border-slate-200/75 py-3 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
+          <div className="w-full max-w-sm">
+            <label htmlFor="portal-support-site-selector" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              {t('portal.current_site', {}, 'Current site')}
+            </label>
+            {accountSites.length > 1 ? (
+              <select
+                id="portal-support-site-selector"
+                className="input h-10 py-2 text-sm"
+                value={contextSiteId}
+                onChange={(event) => void handleSiteChange(event.target.value)}
+              >
+                {!contextSiteId ? (
+                  <option value="" disabled>
+                    {t('portal.select_site_placeholder', {}, 'Select a site')}
+                  </option>
+                ) : null}
+                {accountSites.map((site) => (
+                  <option key={site.site_id} value={site.site_id}>
+                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
+                {selectedContextSite
+                  ? getPortalSiteDisplayName(selectedContextSite)
+                  : t('portal.select_site_placeholder', {}, 'Select a site')}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2" aria-label={t('portal.support_status_rules_title', {}, 'Ticket status')}>
+            {SUPPORT_STATUSES.map((status) => (
+              <button
+                key={status || 'all'}
+                type="button"
+                className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                aria-pressed={statusFilter === status}
+                onClick={() => {
+                  setOffset(0);
+                  setStatusFilter(status);
+                }}
+              >
+                {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
+              </button>
+            ))}
+          </div>
         </div>
 
         {isListLoading ? (
@@ -444,7 +476,7 @@ function PortalSupportContent() {
                 </caption>
                 <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
                   <tr>
-                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_list_title', {}, 'Ticket')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_column', {}, 'Ticket')}</th>
                     <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_topic', {}, 'Topic')}</th>
                     <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_site', {}, 'Related site')}</th>
                     <th scope="col" className="px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>

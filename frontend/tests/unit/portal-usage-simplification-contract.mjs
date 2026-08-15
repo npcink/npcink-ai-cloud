@@ -12,9 +12,8 @@ const headerBeforeSummary = source.slice(
   source.indexOf('<PortalWorkspaceHeader'),
   source.indexOf('data-portal-usage="usage-records"')
 );
-const headerMetricStart = source.indexOf('const usageHeaderMetrics');
-const headerMetricEnd = source.indexOf('\n\n  return (', headerMetricStart);
-const headerMetricDefinition = source.slice(headerMetricStart, headerMetricEnd);
+const headerStart = source.lastIndexOf('<PortalWorkspaceHeader');
+const headerDefinition = source.slice(headerStart, source.indexOf('\n      />', headerStart));
 
 assert.match(
   source,
@@ -33,21 +32,31 @@ assert.doesNotMatch(
   'portal usage page must not repeat the package rights summary owned by the package page'
 );
 assert.doesNotMatch(
-  headerMetricDefinition,
+  headerDefinition,
   /ai_credits_label|resource_bound_sites|remaining_requests_test_label/,
   'portal usage header must not repeat the detailed usage numbers shown in the current usage card'
 );
 assert.match(
-  headerMetricDefinition,
+  headerDefinition,
   /period_end_detail/,
   'portal usage header must show the exact period end as secondary context'
 );
 assert.doesNotMatch(
-  headerMetricDefinition,
+  headerDefinition,
   /context_generated|header_updated_detail/,
   'portal usage header must not render a standalone generated-time metric'
 );
 assert.match(source, /updated_at_inline/, 'latest update time must remain as subtle inline context');
+assert.match(
+  headerDefinition,
+  /titleAccessory=\{!usageNeedsAttention[\s\S]*metadata=[\s\S]*contextPanel=\{usageNeedsAttention/,
+  'portal usage header must keep normal status and period compact while reserving the right panel for attention states'
+);
+assert.doesNotMatch(
+  headerDefinition,
+  /eyebrow=|metrics=/,
+  'portal usage header must not repeat its title or render a second status rail'
+);
 
 assert.match(
   source,

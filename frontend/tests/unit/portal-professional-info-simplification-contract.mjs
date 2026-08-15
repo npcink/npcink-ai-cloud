@@ -216,6 +216,11 @@ assert.match(
 );
 assert.match(
   auditSource,
+  /selectedSiteName[\s\S]*customer_desc_with_site[\s\S]*showSupportInformation = !isSuccessfulAuditOutcome\(event\.outcome\) \|\| Boolean\(traceId\)/,
+  'Portal recent activity must name the selected site once and suppress empty support affordances on successful rows'
+);
+assert.match(
+  auditSource,
   /data-portal-audit="records-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_information/,
   'Portal recent activity must use a semantic PC table with low-frequency support detail'
 );
