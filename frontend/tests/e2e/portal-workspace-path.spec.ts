@@ -1611,6 +1611,10 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(
     sitesWorkspace.locator('[data-portal-sites="desktop-table"]').getByText(/^Connected$|^已接入$/i)
   ).toHaveCount(2);
+  const selectedSiteRow = sitesWorkspace.getByRole('row', { name: /Attention Site/i });
+  await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
+  await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',

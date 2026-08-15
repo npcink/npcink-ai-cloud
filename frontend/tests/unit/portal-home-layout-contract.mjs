@@ -118,6 +118,11 @@ assert.match(
   /portal\.sites\.active_capacity[\s\S]*portal\.sites\.bound_capacity[\s\S]*site\.status === 'active'/,
   'Portal site list must show separate account capacity and each site lifecycle status'
 );
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="desktop-table"[\s\S]*data-portal-sites="desktop-actions"[\s\S]*openLifecycleModal[\s\S]*setPendingRemoveSite/,
+  'Portal desktop site rows must retain authorized lifecycle and removal controls behind a low-frequency disclosure'
+);
 
 const siteRegisterIndex = sitesWorkspaceSource.indexOf('portal.site_register');
 assert.ok(siteRegisterIndex >= 0, 'merged site workspace must render a connected-site register');

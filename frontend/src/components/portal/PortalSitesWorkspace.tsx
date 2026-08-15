@@ -538,6 +538,47 @@ function PortalSitesWorkspaceContent() {
                         <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-primary btn-sm">
                           {t('portal.site_record', {}, 'Open site')}
                         </Link>
+                        {(site.allowed_actions?.includes('provision_sites')
+                          && site.status !== 'suspended'
+                          && site.status !== 'archived')
+                          || (canRemoveSites
+                            && site.site_id === selectedSiteId
+                            && site.status !== 'suspended') ? (
+                          <details className="w-full text-right" data-portal-sites="desktop-actions">
+                            <summary className="btn btn-secondary btn-sm ml-auto list-none cursor-pointer">
+                              {t('portal.site_other_actions', {}, 'Other actions')}
+                            </summary>
+                            <div className="mt-2 flex flex-wrap justify-end gap-2">
+                              {site.allowed_actions?.includes('provision_sites')
+                                && site.status !== 'suspended'
+                                && site.status !== 'archived' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                                  className="btn btn-secondary btn-sm"
+                                >
+                                  {site.status === 'active'
+                                    ? t('portal.deactivate_site_action', {}, 'Deactivate')
+                                    : t('portal.activate_site_action', {}, 'Activate')}
+                                </button>
+                              ) : null}
+                              {canRemoveSites
+                                && site.site_id === selectedSiteId
+                                && site.status !== 'suspended' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRemoveError('');
+                                    setPendingRemoveSite(site);
+                                  }}
+                                  className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
+                                >
+                                  {t('portal.remove_site_action', {}, 'Remove site')}
+                                </button>
+                              ) : null}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
