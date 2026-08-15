@@ -9,6 +9,7 @@ import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type { PortalMonitoringOverviewSummary } from '@/lib/portal-client';
 import {
   getPortalCustomerIssueTitle,
+  getPortalMonitoringIssueCategory,
   getPortalServiceOperationStatus,
   hasPortalQuotaPressure,
 } from '@/lib/portal-monitoring-display';
