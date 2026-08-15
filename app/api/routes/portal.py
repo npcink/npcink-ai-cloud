@@ -3248,7 +3248,11 @@ async def get_portal_account_entitlements(request: Request) -> Any:
             "usage_totals": {},
             "subscription_grace": {},
             "budget_state": {},
-            "current_subscription": project_portal_subscription(current_subscription),
+            "current_subscription": (
+                project_portal_subscription(current_subscription)
+                if current_subscription
+                else None
+            ),
             "quota_summary": _portal_public_quota_summary_data(quota_summary),
             "generated_at": quota_summary.get("generated_at") or "",
         },
