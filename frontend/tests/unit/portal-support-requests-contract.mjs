@@ -85,8 +85,8 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
-  /supportRequestSiteLabel[\s\S]*!item\.site_id[\s\S]*support_request_no_site[\s\S]*item\.site_id === selectedContextSite\?\.site_id[\s\S]*support_request_other_site/,
-  'Portal support history must distinguish account-level tickets from tickets belonging to another site'
+  /supportRequestSiteLabel[\s\S]*!item\.site_id[\s\S]*support_request_no_site[\s\S]*item\.site_id === selectedContextSite\?\.site_id[\s\S]*support_request_other_site[\s\S]*lg:hidden[\s\S]*supportRequestSiteLabel\(item\)/,
+  'Portal support history must distinguish account-level tickets from tickets belonging to another site in both desktop and mobile layouts'
 );
 assert.match(
   portalSupportPageSource,

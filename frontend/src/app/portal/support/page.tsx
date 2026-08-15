@@ -490,7 +490,7 @@ function PortalSupportContent() {
               </table>
             </div>
 
-            <div className="space-y-3 lg:hidden">
+            <div className="space-y-3 lg:hidden" data-portal-support="ticket-cards">
             {items.map((item) => (
               <PortalCard key={item.request_id} variant="portal" className="bg-white/70 dark:bg-slate-950/35">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -514,6 +514,7 @@ function PortalSupportContent() {
                   </div>
                   <div className="shrink-0 text-sm text-slate-500 dark:text-slate-400 lg:text-right">
                     <p>{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
+                    <p className="mt-1">{supportRequestSiteLabel(item)}</p>
                     <p className="mt-1">{item.updated_at ? formatDate(item.updated_at) : item.request_id}</p>
                   </div>
                 </div>

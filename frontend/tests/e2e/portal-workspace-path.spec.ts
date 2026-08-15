@@ -2018,6 +2018,9 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await page.keyboard.press('Escape');
 
   await page.goto('/portal/support');
+  await expect(
+    page.locator('[data-portal-support="ticket-cards"]').getByText(/^Another site$|^其他站点$/i)
+  ).toBeVisible();
   await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeInViewport();
 
