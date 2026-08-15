@@ -85,6 +85,11 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
+  /supportRequestSiteLabel[\s\S]*!item\.site_id[\s\S]*support_request_no_site[\s\S]*item\.site_id === selectedContextSite\?\.site_id[\s\S]*support_request_other_site/,
+  'Portal support history must distinguish account-level tickets from tickets belonging to another site'
+);
+assert.match(
+  portalSupportPageSource,
   /SUPPORT_TOPICS[\s\S]*billing[\s\S]*payment[\s\S]*site[\s\S]*usage[\s\S]*account[\s\S]*general/,
   'Portal support form must expose bounded customer-support topics'
 );

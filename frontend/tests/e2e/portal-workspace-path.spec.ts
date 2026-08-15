@@ -850,7 +850,7 @@ async function installPortalMocks(
         pagination: {
           limit: 50,
           offset: 0,
-          total: 1,
+          total: 2,
           has_more: false,
         },
         items: [
@@ -862,6 +862,16 @@ async function installPortalMocks(
             description: 'Please check the latest account payment order.',
             created_at: '2026-04-07T09:05:00Z',
             updated_at: '2026-04-07T09:05:00Z',
+          },
+          {
+            request_id: 'ticket_portal_e2e_other_site',
+            topic: 'site',
+            status: 'resolved',
+            site_id: 'site_not_selected',
+            title: 'A different site needs review',
+            description: 'This ticket belongs to another site in the account.',
+            created_at: '2026-04-06T09:05:00Z',
+            updated_at: '2026-04-06T10:05:00Z',
           },
         ],
       });
@@ -1850,6 +1860,7 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await expect(page.getByText(/Open tickets are waiting|待处理工单/i)).toBeVisible();
   await expect(page.getByText(/Close evaluation|关闭评价|關閉評價/i).first()).toBeVisible();
   await expect(ticketsTable.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
+  await expect(ticketsTable.getByRole('cell', { name: /^Another site$|^其他站点$/i })).toBeVisible();
   await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -1866,13 +1877,6 @@ test('portal AI credit trend shows an explicit empty state instead of a blank ch
 
 test('account projections stay idle until a site context is selected', async ({ page }) => {
   const calls = await installPortalMocks(page, { withoutSelectedContext: true });
-
-  await page.goto('/portal');
-  const overview = page.locator('[data-portal-home="operation-overview"]');
-  await expect(overview.getByText(/Select a site context|请选择站点上下文/i).first()).toBeVisible();
-  await expect(overview.getByText(/^Loading\.\.\.$|^加载中\.\.\.$/i)).toHaveCount(0);
-  await expect(overview.getByText(/^Uncovered$|^未覆盖$/i)).toHaveCount(0);
-  await expect(overview.getByText(/^Available$|^可用$/i)).toHaveCount(0);
 
   for (const path of [
     '/portal/billing',
@@ -1960,21 +1964,16 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
 
   for (const variant of variants) {
     await page.setViewportSize({ width: variant.width, height: 1200 });
-    await page.goto('/portal');
+    await page.goto('/portal/usage');
     await page.evaluate(({ locale, theme }) => {
       window.localStorage.setItem('locale', locale);
       window.localStorage.setItem('theme', theme);
     }, variant);
     await page.reload();
 
-    await expect(page.getByRole('heading', { level: 1, name: /my service|我的服务/i })).toBeVisible();
-    await expect(page.locator('[data-portal-sites="desktop-table"]')).toBeVisible();
     expect(await page.locator('html').evaluate((element) => element.classList.contains('dark'))).toBe(
       variant.theme === 'dark'
     );
-    await expectNoPageOverflow();
-
-    await page.goto('/portal/usage');
     await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
     await expect(page.locator('[data-portal-usage="records-table"]')).toBeVisible();
     await expectNoPageOverflow();

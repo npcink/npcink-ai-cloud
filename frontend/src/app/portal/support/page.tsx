@@ -152,6 +152,15 @@ function PortalSupportContent() {
   }, [contextSiteId, isAuthenticated, loadRequests]);
 
   const visibleSites = selectedContextSite ? [selectedContextSite] : [];
+  const supportRequestSiteLabel = (item: PortalSupportRequest) => {
+    if (!item.site_id) {
+      return t('portal.support_request_no_site', {}, 'Account-level issue');
+    }
+    if (item.site_id === selectedContextSite?.site_id) {
+      return getPortalSiteDisplayName(selectedContextSite);
+    }
+    return t('portal.support_request_other_site', {}, 'Another site');
+  };
   const supportStatusRules = [
     {
       key: 'open',
@@ -456,9 +465,7 @@ function PortalSupportContent() {
                         {t(`portal.support_topic_${item.topic}`, {}, item.topic)}
                       </td>
                       <td className="max-w-[14rem] truncate px-3 py-4 text-slate-600 dark:text-slate-300">
-                        {item.site_id && item.site_id === selectedContextSite?.site_id
-                          ? getPortalSiteDisplayName(selectedContextSite)
-                          : t('portal.support_request_no_site', {}, 'Account-level issue')}
+                        {supportRequestSiteLabel(item)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4">
                         <PortalStatusBadge
