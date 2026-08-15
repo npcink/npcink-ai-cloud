@@ -6,7 +6,6 @@ import { useLocale } from '@/contexts/LocaleContext';
 import {
   getPortalSiteDisplayName,
   getPortalSiteSecondaryLabel,
-  getPortalSiteUrl,
   getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import { cn } from '@/lib/utils';
@@ -46,8 +45,6 @@ type PortalWorkspaceHeaderProps = {
   eyebrowInfo?: string;
   currentPage: PortalWorkspacePage;
   selectedSiteId?: string;
-  selectedSiteName?: string | null;
-  showSiteContextSummary?: boolean;
   sites?: PortalWorkspaceSite[];
   onSiteChange?: (siteId: string) => void;
   metrics?: PortalWorkspaceMetric[];
@@ -68,8 +65,6 @@ export function PortalWorkspaceHeader({
   eyebrowInfo,
   currentPage,
   selectedSiteId = '',
-  selectedSiteName,
-  showSiteContextSummary = false,
   sites = [],
   onSiteChange,
   metrics = [],
@@ -93,8 +88,6 @@ export function PortalWorkspaceHeader({
   const shouldShowEyebrow = Boolean(eyebrow.trim())
     && eyebrow.trim().toLowerCase() !== title.trim().toLowerCase();
   const hasHeaderAside = Boolean(contextPanel || resolvedActions);
-  const selectedSite = sites.find((site) => site.site_id === selectedSiteId) || null;
-  const selectedSiteUrl = getPortalSiteUrl(selectedSite);
   const summary = (
     <div
       className={cn(
@@ -120,13 +113,6 @@ export function PortalWorkspaceHeader({
         </div>
         {eyebrowInfo ? <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{eyebrowInfo}</p> : null}
         {description ? <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{description}</p> : null}
-        {showSiteContextSummary && !metadata ? (
-          <p className="mt-2 max-w-md truncate text-sm text-gray-600 dark:text-gray-400">
-            {selectedSiteName || selectedSiteUrl || t('portal.current_site', {}, 'Site record')}
-            {' · '}
-            {selectedSiteUrl || t('portal.site_url_missing', {}, 'WordPress URL not configured')}
-          </p>
-        ) : null}
         {metadata ? <div className="mt-3">{metadata}</div> : null}
       </div>
       {hasHeaderAside ? (

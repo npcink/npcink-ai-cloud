@@ -1840,15 +1840,19 @@ test('portal site record focuses on address, status, and support actions', async
   await installPortalMocks(page);
 
   await page.goto('/portal/sites/site_attention');
-  await expect(page.getByText(/Site record|站点记录|站點記錄/i).first()).toBeVisible();
-  await expect(page.getByText(/Site address|站点地址|站點地址/i).first()).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Attention Site/i })).toBeVisible();
+  await expect(page.getByText(/^Connected$|^已接入$/i).first()).toBeVisible();
+  await expect(page.getByText(/Site URL not configured|未配置站点地址/i).first()).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /Service status|服务状态/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Submit ticket|提交工单/i })).toHaveCount(1);
   await expect(page.getByText(/Current package|当前套餐|目前方案/i)).toHaveCount(0);
   await expect(page.getByText(/^Pro$/)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Preferences|个人偏好|偏好設定/i })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Audit|审计|稽核/i })).toHaveCount(0);
 
   await page.goto('/portal/sites/site_clear');
-  await expect(page.getByText(/Site address|站点地址|站點地址/i).first()).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Clear Site/i })).toBeVisible();
+  await expect(page.getByText('https://clear.example.test').first()).toBeVisible();
   await expect(page.getByText(/^Growth$/)).toHaveCount(0);
   await expect(page.getByText(/^plan_growth$/)).toHaveCount(0);
   const siteKnowledgePanel = page.locator('[data-portal-site="site-knowledge"]');
