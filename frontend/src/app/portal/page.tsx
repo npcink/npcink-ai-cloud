@@ -77,16 +77,13 @@ export default function PortalPage() {
   const [accountEntitlementsState, setAccountEntitlementsState] =
     useState<AccountEntitlementsState>('idle');
   const [accountEntitlementsRetryVersion, setAccountEntitlementsRetryVersion] = useState(0);
-  const contextSiteId = session?.selected_context?.site.site_id || '';
-  const contextSiteIdRef = useRef(contextSiteId);
   const accountEntitlementsRequestVersionRef = useRef(0);
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = contextSiteId;
     const requestVersion = ++accountEntitlementsRequestVersionRef.current;
     setAccountEntitlements(null);
     setAccountEntitlementsState('idle');
-    if (!isAuthenticated || !contextSiteId) return;
+    if (!isAuthenticated) return;
     setAccountEntitlementsState('loading');
 
     void portalClient
@@ -94,7 +91,6 @@ export default function PortalPage() {
       .then((response) => {
         if (
           requestVersion === accountEntitlementsRequestVersionRef.current
-          && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(response.data);
           setAccountEntitlementsState('loaded');
@@ -103,7 +99,6 @@ export default function PortalPage() {
       .catch(() => {
         if (
           requestVersion === accountEntitlementsRequestVersionRef.current
-          && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(null);
           setAccountEntitlementsState('error');
@@ -115,7 +110,7 @@ export default function PortalPage() {
         accountEntitlementsRequestVersionRef.current += 1;
       }
     };
-  }, [accountEntitlementsRetryVersion, contextSiteId, isAuthenticated]);
+  }, [accountEntitlementsRetryVersion, isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -146,7 +141,9 @@ export default function PortalPage() {
   const selectedSite = session.selected_context?.site || null;
   const hasVisibleSites = visibleSites.length > 0;
   const hasSelectedSite = Boolean(selectedSite);
-  const currentSubscription = session.selected_context?.current_subscription || null;
+  const currentSubscription = accountEntitlements?.current_subscription
+    || session.selected_context?.current_subscription
+    || null;
   const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
@@ -189,13 +186,13 @@ export default function PortalPage() {
       key: 'site',
       done: isSelectedSiteConnected,
       title: !selectedSite && hasVisibleSites
-        ? t('portal.site_selection_required_title', {}, 'Select a site context')
+        ? t('portal.home.choose_site_record_title', {}, 'Choose a site record')
         : t('portal.home.onboarding_site_title', {}, 'Confirm site connection'),
       detail: !selectedSite && hasVisibleSites
         ? t(
-            'portal.site_selection_required_desc',
+            'portal.home.choose_site_record_desc',
             {},
-            'Choose a current site before viewing account-level service details.'
+            'Choose a site only when you want to inspect its connection status. Account service details remain available without a site selection.'
           )
         : isSelectedSiteConnected
         ? t('portal.home.onboarding_site_ready', {}, 'The WordPress site is connected and can use the service.')
@@ -220,14 +217,12 @@ export default function PortalPage() {
   const requiredAttentionItems = setupChecklistItems.filter((item) => !item.done);
   const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0
     && (hasSelectedSite || !hasVisibleSites);
-  const currentSubscriptionStatusLabel = !hasSelectedSite
-    ? t('portal.select_site_action', {}, 'Select site')
-    : currentSubscription?.status === 'active' || hasPackageLabel
+  const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
   const remainingCredits = Number(accountEntitlements?.quota_summary?.ai_credits?.remaining ?? 0);
   const accountEntitlementsUnavailable = accountEntitlementsState === 'error';
-  const accountEntitlementsPending = hasSelectedSite && (
+  const accountEntitlementsPending = (
     accountEntitlementsState === 'idle' || accountEntitlementsState === 'loading'
   );
   const creditUnavailable =
@@ -248,19 +243,15 @@ export default function PortalPage() {
   const overLimitResourceAmount = overLimitResource
     ? Math.max(0, Number(overLimitResource.used || 0) - Number(overLimitResource.limit || 0))
     : 0;
-  const currentServiceStatusToken = !selectedSite
-    ? 'inactive'
-    : restrictedCount > 0 ||
-      creditUnavailable ||
-      resourceOverLimit ||
-      accountEntitlementsState !== 'loaded' ||
-      (currentSubscription?.status && currentSubscription.status !== 'active')
-        ? 'warning'
-        : 'active';
+  const currentServiceStatusToken = restrictedCount > 0 ||
+    creditUnavailable ||
+    resourceOverLimit ||
+    accountEntitlementsState !== 'loaded' ||
+    (currentSubscription?.status && currentSubscription.status !== 'active')
+      ? 'warning'
+      : 'active';
   const currentServiceStatusLabel =
-    !selectedSite && hasVisibleSites
-      ? t('portal.home.no_site_selected_label', {}, 'No site selected')
-      : currentServiceStatusToken === 'active'
+    currentServiceStatusToken === 'active'
       ? t('portal.home.service_status_live', {}, 'Ready')
       : creditUnavailable
         ? t('portal.home.credit_attention_label', {}, 'AI credits unavailable')
@@ -274,17 +265,15 @@ export default function PortalPage() {
   const operationSummaryItems = [
     {
       label: t('portal.home.package_card_label', {}, 'Current package'),
-      value: hasSelectedSite
+      value: currentSubscription
         ? currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')
-        : t('portal.select_site_action', {}, 'Select site'),
+        : t('portal.home.package_pending_label', {}, 'To confirm'),
       detail: currentSubscriptionStatusLabel,
       size: 'compact' as const,
     },
     {
       label: t('portal.usage.remaining_ai_credits', {}, 'Remaining'),
-      value: !hasSelectedSite ? (
-        '—'
-      ) : accountEntitlementsUnavailable ? (
+      value: accountEntitlementsUnavailable ? (
         <button
           type="button"
           className="text-left text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
@@ -297,13 +286,7 @@ export default function PortalPage() {
       ) : (
         formatNumber(remainingCredits)
       ),
-      detail: !hasSelectedSite
-        ? t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing account-level service details.'
-          )
-        : accountEntitlementsUnavailable
+      detail: accountEntitlementsUnavailable
         ? t(
             'portal.home.entitlements_failed_desc',
             {},
@@ -313,10 +296,16 @@ export default function PortalPage() {
       size: 'compact' as const,
     },
     {
-      label: t('portal.home.needs_attention_sites_label', {}, 'Needs attention'),
-      value: restrictedCount,
+      label: t('portal.home.site_connection_status_label', {}, 'Site connection status'),
+      value: visibleSites.length
+        ? restrictedCount > 0
+          ? t('portal.home.site_connection_attention_value', { count: String(restrictedCount) }, `${restrictedCount} need attention`)
+          : t('portal.home.site_connection_ready_value', { count: String(visibleSites.length) }, `${visibleSites.length} connected`)
+        : t('portal.home.site_connection_none_value', {}, 'Not connected'),
       detail: visibleSites.length
-        ? t('portal.home.site_status_attention_detail', { count: String(restrictedCount) }, `${restrictedCount} sites need attention.`)
+        ? restrictedCount > 0
+          ? t('portal.home.site_status_attention_detail', { count: String(restrictedCount) }, `${restrictedCount} sites need attention.`)
+          : t('portal.home.site_status_ready_detail', {}, 'All connected sites look ready.')
         : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.'),
       size: 'compact' as const,
     },
@@ -370,7 +359,7 @@ export default function PortalPage() {
         }]
       : []),
   ];
-  const showAccountSummary = hasSelectedSite || !hasVisibleSites;
+  const showAccountSummary = true;
   const primaryOperationFocusItem = operationFocusItems[0] || null;
   const remainingOperationFocusItems = operationFocusItems.slice(1);
   const shouldShowFollowUpSection =
@@ -383,15 +372,9 @@ export default function PortalPage() {
       <section className="space-y-5" data-portal-home="operation-overview">
         <PortalWorkspaceHeader
           title={t('portal.home.title', {}, 'My service')}
-          description={!selectedSite && hasVisibleSites
-            ? t(
-                'portal.site_selection_required_desc',
-                {},
-                'Choose a current site before viewing account-level service details.'
-              )
-            : currentServiceStatusToken === 'active'
-              ? t('portal.home.account_status_ok_desc', {}, 'This account can use the hosted service normally.')
-              : t('portal.home.account_status_issue_desc', {}, 'This account has setup, package, site, or support items that need attention.')}
+          description={currentServiceStatusToken === 'active'
+            ? t('portal.home.account_status_ok_desc', {}, 'This account can use the hosted service normally.')
+            : t('portal.home.account_status_issue_desc', {}, 'This account has setup, package, site, or support items that need attention.')}
           currentPage="home"
           titleAccessory={!primaryOperationFocusItem ? (
             <PortalStatusBadge
@@ -425,11 +408,6 @@ export default function PortalPage() {
                 </Link>
               ) : null}
             </div>
-          ) : null}
-          actions={!hasSelectedSite && hasVisibleSites ? (
-            <Link href="#sites" className="btn btn-secondary btn-sm">
-              {t('portal.select_site_action', {}, 'Select site')}
-            </Link>
           ) : null}
           metrics={showAccountSummary ? operationSummaryItems : []}
           metricsColumnsClassName="md:grid-cols-3"

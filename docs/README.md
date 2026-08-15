@@ -108,10 +108,10 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Admin, Portal, Identity, and Commercial
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
-- [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14](portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
-  — dated PC-first Portal information-architecture, status-semantics, browser
-  validation, and M4 candidate evidence; not merge, production, or customer
-  acceptance authority
+- [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
+  — dated PC-first Portal information architecture, account/site ownership,
+  all-sites filtering, browser validation, and M4 candidate evidence; not
+  merge, production, or customer acceptance authority
 - [Cloud WordPress Connector State and Diagnostics Standard](cloud-wordpress-connector-state-and-diagnostics-standard-v1.md)
 - [Cloud Connector Recovery Contract](cloud-connector-recovery-contract-v1.md)
 - [Site-Inactive Recovery Closeout — 2026-08-13](site-inactive-recovery-closeout-2026-08-13.md) — dated cross-repository implementation, validation, and development-learning record

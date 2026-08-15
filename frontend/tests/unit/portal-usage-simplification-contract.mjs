@@ -71,30 +71,25 @@ assert.match(
   'usage tabs and retired view links must keep the URL canonical'
 );
 
-assert.doesNotMatch(
+assert.match(
   source,
-  /portal-usage-site-select|portal-usage-site|creditLedgerSiteId|siteId:\s*[^\n,}]+|usePortalSiteSelection|getUsageBundle\(selectedSiteId/,
-  'portal usage page must not render or depend on a site selector because usage is account-level'
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getUsageBundle\(\{ siteId: requestSiteFilterId \|\| undefined \}\)/,
+  'portal usage must default to the account bundle and optionally pass an explicit site filter'
 );
 assert.match(
   source,
-  /portalClient\.getUsageBundle\(\)/,
-  'portal usage page must load the account-level usage bundle'
-);
-assert.match(
-  source,
-  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*if \(!isAuthenticated \|\| !requestContextSiteId\) return/,
-  'account-level usage requests must fail closed until selected context exists'
+  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
+  'portal usage must expose the shared all-sites or single-site filter'
 );
 assert.match(
   source,
   /useLayoutEffect\([\s\S]*setUsage\(null\)[\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditEventBuckets\(null\)[\s\S]*setCreditTrend\(null\)/,
-  'usage must clear account projections and subresources when selected context changes'
+  'usage must clear account projections and subresources when the site filter changes'
 );
 assert.match(
   source,
-  /selectedContext\.current_subscription[\s\S]*currentSubscription\?\.current_period_start_at[\s\S]*currentSubscription\?\.current_period_end_at/,
-  'usage period context must come from the selected-context subscription contract'
+  /entitlements\?\.current_subscription[\s\S]*currentSubscription\?\.current_period_start_at[\s\S]*currentSubscription\?\.current_period_end_at/,
+  'usage period context must come from the account entitlement contract'
 );
 
 const summaryIndex = source.indexOf('data-portal-usage="current-summary"');
@@ -145,8 +140,8 @@ assert.match(source, /startAt: bucket\.start_at[\s\S]*endAt: bucket\.end_at/);
 assert.match(source, /component_count[\s\S]*support_reference/);
 assert.match(
   source,
-  /getAccountCreditTrend\(\{[\s\S]*window: creditTrendWindow,[\s\S]*\}\)/,
-  'point trend must use the account credit ledger projection without a retired site filter'
+  /getAccountCreditTrend\(\{[\s\S]*window: creditTrendWindow,[\s\S]*siteId: requestSiteFilterId \|\| undefined/,
+  'point trend must use the account credit ledger projection with an optional site filter'
 );
 assert.match(
   creditTrendSource,

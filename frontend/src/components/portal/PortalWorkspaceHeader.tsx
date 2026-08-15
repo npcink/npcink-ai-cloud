@@ -47,6 +47,7 @@ type PortalWorkspaceHeaderProps = {
   selectedSiteId?: string;
   sites?: PortalWorkspaceSite[];
   onSiteChange?: (siteId: string) => void;
+  siteSelectorMode?: 'context' | 'filter';
   metrics?: PortalWorkspaceMetric[];
   metricsColumnsClassName?: string;
   titleAccessory?: React.ReactNode;
@@ -67,6 +68,7 @@ export function PortalWorkspaceHeader({
   selectedSiteId = '',
   sites = [],
   onSiteChange,
+  siteSelectorMode = 'context',
   metrics = [],
   metricsColumnsClassName = 'lg:grid-cols-4',
   titleAccessory,
@@ -133,7 +135,9 @@ export function PortalWorkspaceHeader({
       {onSiteChange && getVisiblePortalSites(sites).length > 1 ? (
         <div className="max-w-md">
           <label htmlFor={`portal-${currentPage}-site-selector`} className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-            {t('portal.current_site', {}, 'Current site')}
+            {siteSelectorMode === 'filter'
+              ? t('portal.site_filter_label', {}, 'Site filter')
+              : t('portal.current_site', {}, 'Current site')}
           </label>
           <select
             id={`portal-${currentPage}-site-selector`}
@@ -141,7 +145,11 @@ export function PortalWorkspaceHeader({
             value={selectedSiteId}
             onChange={(event) => onSiteChange(event.target.value)}
           >
-            {!selectedSiteId ? (
+            {siteSelectorMode === 'filter' ? (
+              <option value="">
+                {t('portal.all_sites_option', {}, 'All sites')}
+              </option>
+            ) : !selectedSiteId ? (
               <option value="" disabled>
                 {t('portal.select_site_placeholder', {}, 'Select a site')}
               </option>

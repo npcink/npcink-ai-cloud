@@ -223,8 +223,18 @@ const usageBundleSource = portalClientSource.match(
 )?.[0] || '';
 assert.match(
   usageBundleSource,
-  /getAccountUsageSummary\(\)[\s\S]*getAccountEntitlements\(\)/,
+  /getAccountUsageSummary\(options\?\.siteId\)[\s\S]*getAccountEntitlements\(\)/,
   'Portal usage bundle must load only the usage and entitlement data consumed by the usage page'
+);
+assert.doesNotMatch(
+  billingPageSource,
+  /contextSiteId|siteSelectionRequired|site_selection_required_desc/,
+  'Portal package data and account actions must not require a selected site context'
+);
+assert.doesNotMatch(
+  paymentReturnNoticeSource,
+  /contextSiteId|normalizedContextSiteId/,
+  'Portal payment return polling must remain account-scoped'
 );
 assert.doesNotMatch(
   usageBundleSource,

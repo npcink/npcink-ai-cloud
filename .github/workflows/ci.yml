@@ -1117,7 +1117,7 @@ jobs:
           tests/e2e/admin-operator-path.spec.ts
           tests/e2e/portal-workspace-path.spec.ts
           --grep
-          'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections stay idle|account-level support stays available'
+          'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
 
       - name: Unchanged frontend acknowledgement
         if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'

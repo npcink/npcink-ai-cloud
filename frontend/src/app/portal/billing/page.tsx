@@ -20,7 +20,6 @@ import {
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import { PortalTrialEligibilityPanel } from '@/components/portal/PortalTrialEligibilityPanel';
 import {
-  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -147,17 +146,14 @@ function PortalBillingContent() {
   const searchParams = useSearchParams();
   const { locale, t } = useLocale();
   const { session, isLoading: sessionLoading, isAuthenticated, refresh } = useSession();
-  const contextSiteId = session?.selected_context?.site.site_id || '';
   const {
     entitlements,
     creditPacks,
     planOffers,
     isLoading,
     error,
-    errorCode,
     load: loadBilling,
   } = usePortalCommercialCatalog({
-    contextSiteId,
     isAuthenticated,
     t,
   });
@@ -167,7 +163,6 @@ function PortalBillingContent() {
     offset: paymentOrderOffset,
     isLoading: paymentOrdersLoading,
     error: paymentOrderError,
-    errorCode: paymentOrderErrorCode,
     cancelPendingOrderId,
     cancelConfirmOrderId,
     load: loadPaymentOrders,
@@ -176,7 +171,6 @@ function PortalBillingContent() {
     setOffset: setPaymentOrderOffset,
     setCancelConfirmOrderId,
   } = usePortalPaymentOrders({
-    contextSiteId,
     isAuthenticated,
     t,
   });
@@ -326,47 +320,7 @@ function PortalBillingContent() {
     );
   }
 
-  const requestedPlan = searchParams.get('plan');
-  const requestedUpgradePlan = (
-    searchParams.get('action') === 'upgrade'
-    && (requestedPlan === 'plus' || requestedPlan === 'pro')
-  ) ? requestedPlan : '';
-  const siteSelectionRequired = !contextSiteId
-    || errorCode === 'portal.site_selection_required'
-    || paymentOrderErrorCode === 'portal.site_selection_required';
-  if (siteSelectionRequired) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          title={t('portal.billing.customer_title', {}, 'Package')}
-          description={t('portal.billing.subtitle', {}, 'Confirm the current package, included rights, and upgrade options.')}
-          currentPage="billing"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={requestedUpgradePlan
-            ? t(
-                'portal.billing.connect_before_upgrade_desc',
-                { plan: requestedUpgradePlan.toUpperCase() },
-                `Connect the WordPress addon first. Then return here to continue with ${requestedUpgradePlan.toUpperCase()}.`
-              )
-            : t(
-                'portal.site_selection_required_desc',
-                {},
-                'Connect or select a current WordPress site before viewing package, AI credits, or payment details.'
-              )}
-          actionLabel={requestedUpgradePlan
-            ? t('portal.billing.check_connection_action', {}, 'Check connection and continue')
-            : t('portal.select_site_action', {}, 'View sites')}
-          actionHref={requestedUpgradePlan
-            ? `/portal/billing?plan=${requestedUpgradePlan}&action=upgrade`
-            : '/portal#sites'}
-        />
-      </PortalPageStack>
-    );
-  }
-
-  const currentSubscription = session.selected_context?.current_subscription || null;
+  const currentSubscription = entitlements?.current_subscription || null;
   const currentPlanId = String(currentSubscription?.plan_id || '').toLowerCase();
   const currentStatus = String(currentSubscription?.status || '').toLowerCase();
   const offersByTier = new Map(
@@ -586,7 +540,7 @@ function PortalBillingContent() {
     <PortalPageStack>
       <PortalWorkspaceHeader
         title={t('portal.billing.customer_title', {}, 'Package')}
-        description={t('portal.billing.subtitle', {}, 'Confirm the current package, included rights, and upgrade options.')}
+        description={t('portal.billing.subtitle', {}, 'Review the account package, AI credits, and available account actions.')}
         currentPage="billing"
         titleAccessory={packageStatus !== 'warning' ? (
           <PortalStatusBadge status="active" label={packageStatusLabel} className="text-[0.68rem]" />
@@ -644,7 +598,6 @@ function PortalBillingContent() {
         provider={paymentReturnProvider}
         orderId={paymentReturnOrderId}
         isAuthenticated={isAuthenticated}
-        contextSiteId={contextSiteId}
         entitlements={entitlements}
         refreshSession={refresh}
         refreshBilling={loadBilling}

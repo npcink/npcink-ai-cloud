@@ -8,7 +8,6 @@ import { ListPagination } from '@/components/ui/ListPagination';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
-  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -151,7 +150,7 @@ function PortalUsageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
-  const contextSiteId = session?.selected_context?.site.site_id || '';
+  const siteFilterId = searchParams.get('site') || '';
   const [usage, setUsage] = useState<PortalUsageSummaryPayload | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [bundleLoading, setBundleLoading] = useState(false);
@@ -170,7 +169,7 @@ function PortalUsageContent() {
   const [creditTrend, setCreditTrend] = useState<PortalCreditTrendPayload | null>(null);
   const [creditTrendLoading, setCreditTrendLoading] = useState(true);
   const [creditTrendError, setCreditTrendError] = useState('');
-  const contextSiteIdRef = useRef(contextSiteId);
+  const siteFilterIdRef = useRef(siteFilterId);
   const bundleRequestVersionRef = useRef(0);
   const creditEventRequestVersionRef = useRef(0);
   const creditTrendRequestVersionRef = useRef(0);
@@ -180,23 +179,23 @@ function PortalUsageContent() {
   const creditEventPageSize = 20;
 
   const loadBundle = useCallback(async () => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++bundleRequestVersionRef.current;
     setBundleLoading(true);
     setBundleError('');
     try {
-      const bundle = await portalClient.getUsageBundle();
+      const bundle = await portalClient.getUsageBundle({ siteId: requestSiteFilterId || undefined });
       if (
         requestVersion !== bundleRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setUsage(bundle.usage);
       setEntitlements(bundle.entitlements);
     } catch (err) {
       if (
         requestVersion !== bundleRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setUsage(null);
       setEntitlements(null);
@@ -204,14 +203,14 @@ function PortalUsageContent() {
     } finally {
       if (
         requestVersion === bundleRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setBundleLoading(false);
     }
   }, [isAuthenticated, t]);
 
   const loadCreditEventBucketPage = useCallback(async (nextOffset: number) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++creditEventRequestVersionRef.current;
     setCreditEventLoading(true);
     setCreditEventError('');
@@ -220,32 +219,33 @@ function PortalUsageContent() {
         bucket: creditEventBucketSize,
         window: creditEventWindow,
         feature: creditEventFeature,
+        siteId: requestSiteFilterId || undefined,
         limit: creditEventPageSize,
         offset: nextOffset,
       });
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEventBuckets(response.data);
       setCreditEventOffset(nextOffset);
     } catch (err) {
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEventError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       if (
         requestVersion === creditEventRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setCreditEventLoading(false);
     }
   }, [creditEventBucketSize, creditEventFeature, creditEventWindow, isAuthenticated, t]);
 
   const openCreditBucket = useCallback(async (bucket: PortalCreditEventBucket) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++creditEventRequestVersionRef.current;
     setSelectedCreditBucket(bucket);
     setCreditEvents(null);
@@ -255,6 +255,7 @@ function PortalUsageContent() {
       const response = await portalClient.getAccountCreditEvents({
         window: creditEventWindow,
         feature: creditEventFeature,
+        siteId: requestSiteFilterId || undefined,
         startAt: bucket.start_at,
         endAt: bucket.end_at,
         limit: 50,
@@ -262,54 +263,55 @@ function PortalUsageContent() {
       });
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEvents(response.data);
     } catch (err) {
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEventError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       if (
         requestVersion === creditEventRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setCreditEventLoading(false);
     }
   }, [creditEventFeature, creditEventWindow, isAuthenticated, t]);
 
   const loadCreditTrend = useCallback(async () => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++creditTrendRequestVersionRef.current;
     setCreditTrendLoading(true);
     setCreditTrendError('');
     try {
       const response = await portalClient.getAccountCreditTrend({
         window: creditTrendWindow,
+        siteId: requestSiteFilterId || undefined,
       });
       if (
         requestVersion !== creditTrendRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditTrend(response.data);
     } catch (err) {
       if (
         requestVersion !== creditTrendRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditTrendError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       if (
         requestVersion === creditTrendRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setCreditTrendLoading(false);
     }
   }, [creditTrendWindow, isAuthenticated, t]);
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = contextSiteId;
+    siteFilterIdRef.current = siteFilterId;
     bundleRequestVersionRef.current += 1;
     creditEventRequestVersionRef.current += 1;
     creditTrendRequestVersionRef.current += 1;
@@ -326,16 +328,15 @@ function PortalUsageContent() {
     setCreditTrendLoading(false);
     setCreditTrendError('');
     setBundleError('');
-    setBundleLoading(Boolean(isAuthenticated && contextSiteId));
-  }, [contextSiteId, isAuthenticated]);
+    setBundleLoading(Boolean(isAuthenticated));
+  }, [siteFilterId, isAuthenticated]);
 
   useEffect(() => {
     const requestedView = searchParams.get('view');
     setActiveUsageView(resolvePortalUsageView(requestedView));
-    if ((requestedView && requestedView !== 'records') || searchParams.has('site')) {
+    if (requestedView && requestedView !== 'records') {
       const nextParams = new URLSearchParams(searchParams.toString());
       if (requestedView !== 'records') nextParams.delete('view');
-      nextParams.delete('site');
       const query = nextParams.toString();
       window.history.replaceState(
         window.history.state,
@@ -353,17 +354,17 @@ function PortalUsageContent() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) {
+    if (!isAuthenticated) {
       return;
     }
     void loadBundle();
     return () => {
       bundleRequestVersionRef.current += 1;
     };
-  }, [contextSiteId, isAuthenticated, loadBundle]);
+  }, [isAuthenticated, loadBundle, siteFilterId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) {
+    if (!isAuthenticated) {
       return;
     }
     if (activeUsageView !== 'records') return;
@@ -371,16 +372,16 @@ function PortalUsageContent() {
     return () => {
       creditEventRequestVersionRef.current += 1;
     };
-  }, [activeUsageView, contextSiteId, creditEventBucketSize, creditEventFeature, creditEventWindow, isAuthenticated, loadCreditEventBucketPage]);
+  }, [activeUsageView, creditEventBucketSize, creditEventFeature, creditEventWindow, isAuthenticated, loadCreditEventBucketPage, siteFilterId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) return;
+    if (!isAuthenticated) return;
     if (activeUsageView !== 'trend') return;
     void loadCreditTrend();
     return () => {
       creditTrendRequestVersionRef.current += 1;
     };
-  }, [activeUsageView, contextSiteId, isAuthenticated, loadCreditTrend]);
+  }, [activeUsageView, isAuthenticated, loadCreditTrend, siteFilterId]);
 
   const closeCreditBucket = useCallback(() => setSelectedCreditBucket(null), []);
   const closeCreditEvent = useCallback(() => setSelectedCreditEvent(null), []);
@@ -396,7 +397,6 @@ function PortalUsageContent() {
   const handleUsageViewChange = (nextView: PortalUsageView) => {
     setActiveUsageView(nextView);
     const nextParams = new URLSearchParams(searchParams.toString());
-    nextParams.delete('site');
     if (nextView === 'trend') nextParams.delete('view');
     else nextParams.set('view', nextView);
     const query = nextParams.toString();
@@ -442,27 +442,6 @@ function PortalUsageContent() {
     );
   }
 
-  if (!contextSiteId || !session.selected_context) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          title={t('portal.nav_usage', {}, 'Usage')}
-          currentPage="usage"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing package, AI credits, or payment details.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
-    );
-  }
-
   if (bundleLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
@@ -483,9 +462,7 @@ function PortalUsageContent() {
   const quotaSummary = entitlements?.quota_summary || null;
   const creditEventItems = creditEvents?.items || [];
   const creditBucketItems = creditEventBuckets?.items || [];
-  const selectedContext = session.selected_context;
-  const contextSite = selectedContext.site;
-  const currentSubscription = selectedContext.current_subscription;
+  const currentSubscription = entitlements?.current_subscription;
   const availableCredits = Number(quotaSummary?.ai_credits?.total_remaining ?? 0);
   const creditEventCount = Number(creditEventBuckets?.pagination?.total ?? 0);
   const filteredConsumedCredits = Number(creditEventBuckets?.summary?.consumed_ai_credits ?? 0);
@@ -527,9 +504,8 @@ function PortalUsageContent() {
       field === 'title' ? entry.feature_label : entry.feature_detail
     );
   const eventSiteLabel = (entry: PortalCreditEvent) => {
-    return entry.site_id === contextSite.site_id
-      ? getPortalSiteDisplayName(contextSite)
-      : t('common.not_available', {}, 'Not available');
+    const site = session.sites.find((item) => item.site_id === entry.site_id);
+    return site ? getPortalSiteDisplayName(site) : t('common.not_available', {}, 'Not available');
   };
 
   const creditStatus = quotaSummary?.ai_credits?.status;
@@ -569,6 +545,13 @@ function PortalUsageContent() {
       size: 'compact' as const,
     },
   ];
+  const handleSiteFilterChange = (nextSiteId: string) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextSiteId) nextParams.set('site', nextSiteId);
+    else nextParams.delete('site');
+    const query = nextParams.toString();
+    window.history.replaceState(window.history.state, '', `/portal/usage${query ? `?${query}` : ''}`);
+  };
 
   return (
     <PortalPageStack>
@@ -576,6 +559,10 @@ function PortalUsageContent() {
         title={t('portal.nav_usage', {}, 'Usage')}
         description={usageHeaderDescription}
         currentPage="usage"
+        selectedSiteId={siteFilterId}
+        sites={session.sites}
+        onSiteChange={handleSiteFilterChange}
+        siteSelectorMode="filter"
         titleAccessory={!usageNeedsAttention ? (
           <PortalStatusBadge status="active" label={usageStatusLabel} className="text-[0.68rem]" />
         ) : null}

@@ -7,9 +7,9 @@ action hierarchy, and verification rules for the Npcink AI Cloud Portal
 customer workspace. The Portal is PC-first in the current stage and remains a
 bounded customer-facing projection of Cloud service evidence.
 
-This standard does not authorize a second WordPress control plane, new Portal
-APIs, mobile-first redesign, production deployment, or exposure of internal
-operator diagnostics.
+This standard does not authorize a second WordPress control plane, unrelated
+Portal APIs, mobile-first redesign, production deployment, or exposure of
+internal operator diagnostics.
 
 ## 1. Product Boundary
 
@@ -33,6 +33,35 @@ Portal must not expose or own:
 
 The Portal explains Cloud evidence. It does not invent a second source of
 truth.
+
+### 1.1 Account scope and site scope
+
+The customer workspace must keep commercial ownership separate from site
+runtime ownership.
+
+Account-owned facts and actions include:
+
+- current subscription and package;
+- package period, account AI credits, paid-credit grants, and account resource
+  limits;
+- plan offers, trial eligibility, package changes, payment orders, and support
+  records;
+- aggregate usage and customer-visible account activity.
+
+Site-owned facts and actions include:
+
+- connection lifecycle, site URL, platform kind, and removal/relink state;
+- site credentials and site-scoped authorization;
+- site runtime health, Site Knowledge detail, and site diagnostics.
+
+Usage, AI-credit records, and customer-visible activity are account evidence
+that may be filtered by site. A site filter narrows the evidence set; it does
+not change package ownership, create site-level entitlement, or select a new
+commercial account.
+
+Do not expose `site-level entitlement` copy unless the product actually ships
+a site-specific purchase, quota, or coverage contract. The current package,
+AI credits, billing, and account resource limits remain account-level.
 
 ## 2. Page Model
 
@@ -84,7 +113,8 @@ Rules:
    and one best next action.
 4. Do not use the header as a second dashboard. Detailed entitlement, usage,
    or record data belongs in the owning section.
-5. Do not show account metrics before the required site/account context exists.
+5. Account metrics require authenticated account access, not a selected site.
+   Site metrics still require the relevant site identity.
 
 ## 4. Status Semantics
 
@@ -174,11 +204,17 @@ Every async section must provide:
 
 When no site context is selected:
 
-- identify the missing context once;
-- provide one path to select a site;
-- suppress package/usage metrics that could be mistaken for current-site data;
-- keep account-level actions available only when their backend contract truly
-  supports an account-level request.
+- continue showing account package, account AI credits, account usage, payment,
+  support, and account activity when the account contract authorizes them;
+- default filterable evidence to `全部站点 / All sites`;
+- ask for a site only on site-owned surfaces such as credentials, diagnostics,
+  connection detail, or removal;
+- never report an account service as inactive merely because no site is
+  selected.
+
+When an authenticated principal can access more than one active account, the
+backend must fail closed with an explicit account-selection requirement. The
+frontend must not infer an account from the first site or first account item.
 
 ## 8. Customer Copy and Localization
 
@@ -210,6 +246,10 @@ Prefer existing route/session projections and shared display helpers.
 Rules:
 
 - do not add per-site API fan-out to make a site list look more informative;
+- keep an optional URL `site` filter separate from the session's selected site
+  context;
+- invalidate in-flight usage, payment, or audit reads when their filter changes
+  so stale responses cannot repaint the new scope;
 - distinguish list lifecycle state from detail health state instead of joining
   them with extra requests;
 - keep account-level capacity outside repeated site rows;
@@ -250,6 +290,8 @@ card mapping, and touch-target acceptance before implementation.
 Before editing:
 
 - identify the route's customer job and authoritative state owner;
+- classify every displayed fact as account-owned, site-owned, or account
+  evidence with an optional site filter;
 - list repeated information and competing actions;
 - classify the change as L0, L1, or L2;
 - state whether the work is PC-only or changes mobile behavior;
@@ -261,6 +303,8 @@ During implementation:
   state primitives;
 - centralize shared customer display mappings;
 - update English and Chinese copy together;
+- make `全部站点` a real selectable option for account evidence instead of a
+  disabled missing-context placeholder;
 - update the relevant Portal contract and E2E assertions;
 - preserve permissions, destructive confirmations, and error paths.
 

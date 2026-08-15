@@ -224,6 +224,7 @@ export interface AddonConnectionResult {
 }
 
 export interface PortalAccountEntitlements {
+  current_subscription?: PortalCurrentSubscription | null;
   period_start_at: string;
   period_end_at: string;
   usage_totals: {
@@ -2024,11 +2025,12 @@ export class PortalClient {
   }
 
   async getAccountCreditLedger(
-    options?: { limit?: number; offset?: number }
+    options?: { limit?: number; offset?: number; siteId?: string }
   ): Promise<PortalEnvelope<PortalCreditLedgerPayload>> {
     const params = new URLSearchParams();
     if (options?.limit) params.set('limit', String(options.limit));
     if (options?.offset) params.set('offset', String(options.offset));
+    if (options?.siteId) params.set('site_id', options.siteId);
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/account/credit-ledger${query}`, undefined);
@@ -2251,8 +2253,9 @@ export class PortalClient {
     return this.request('GET', `/sites/${siteId}/audit-summary`, undefined);
   }
 
-  async getAccountAuditSummary(): Promise<PortalEnvelope<PortalAuditSummary>> {
-    return this.request('GET', '/account/audit-summary', undefined);
+  async getAccountAuditSummary(siteId?: string): Promise<PortalEnvelope<PortalAuditSummary>> {
+    const query = siteId ? `?site_id=${encodeURIComponent(siteId)}` : '';
+    return this.request('GET', `/account/audit-summary${query}`, undefined);
   }
 
   /**
@@ -2281,12 +2284,14 @@ export class PortalClient {
       eventKind?: string;
       outcome?: string;
       limit?: number;
+      siteId?: string;
     }
   ): Promise<PortalEnvelope<PortalAuditEventList>> {
     const params = new URLSearchParams();
     if (options?.eventKind) params.set('event_kind', options.eventKind);
     if (options?.outcome) params.set('outcome', options.outcome);
     if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.siteId) params.set('site_id', options.siteId);
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/account/audit-events${query}`, undefined);
@@ -2311,13 +2316,14 @@ export class PortalClient {
     return this.request('GET', `/sites/${siteId}/billing-snapshots/reconciliation`, undefined);
   }
 
-  async getAccountUsageSummary(): Promise<PortalEnvelope<PortalUsageSummaryPayload>> {
-    return this.request('GET', '/account/usage-summary', undefined);
+  async getAccountUsageSummary(siteId?: string): Promise<PortalEnvelope<PortalUsageSummaryPayload>> {
+    const query = siteId ? `?site_id=${encodeURIComponent(siteId)}` : '';
+    return this.request('GET', `/account/usage-summary${query}`, undefined);
   }
 
-  async getUsageBundle(): Promise<PortalUsageBundle> {
+  async getUsageBundle(options?: { siteId?: string }): Promise<PortalUsageBundle> {
     const [usageResponse, entitlementsResponse] = await Promise.all([
-      this.getAccountUsageSummary(),
+      this.getAccountUsageSummary(options?.siteId),
       this.getAccountEntitlements(),
     ]);
     return {
@@ -2344,10 +2350,11 @@ export class PortalClient {
       eventKind?: string;
       outcome?: string;
       limit?: number;
+      siteId?: string;
     }
   ): Promise<PortalAuditBundle> {
     const [summaryResponse, eventsResponse] = await Promise.all([
-      this.getAccountAuditSummary(),
+      this.getAccountAuditSummary(options?.siteId),
       this.listAccountAuditEvents(options),
     ]);
     return {
