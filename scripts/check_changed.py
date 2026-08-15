@@ -342,11 +342,16 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
                 ]
             )
         changed_node_contracts = [
-            path
+            path.removeprefix("frontend/")
             for path in paths
             if path.startswith("frontend/tests/unit/") and path.endswith(".mjs")
         ]
-        commands.extend([["node", path] for path in changed_node_contracts])
+        commands.extend(
+            [
+                ["pnpm", "--dir", "frontend", "exec", "node", path]
+                for path in changed_node_contracts
+            ]
+        )
         changed_vitest_tests = [
             path.removeprefix("frontend/")
             for path in paths

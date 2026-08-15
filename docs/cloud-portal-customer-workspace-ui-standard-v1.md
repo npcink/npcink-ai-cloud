@@ -267,7 +267,8 @@ During implementation:
 Before publication:
 
 - run targeted ESLint and TypeScript checks;
-- run the affected Portal unit contracts;
+- run the affected Portal unit contracts from the frontend workspace; test
+  commands must not depend on the operator's current directory;
 - run the focused Portal browser/E2E path;
 - verify the target PC routes in light and dark mode;
 - inspect console errors and untranslated backend copy;
