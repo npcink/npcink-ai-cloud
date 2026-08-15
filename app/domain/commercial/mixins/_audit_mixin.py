@@ -570,7 +570,7 @@ class CommercialServiceAuditMixin:
         scope_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
-        include_payload: bool = True,
+        include_payload: bool = False,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialServiceAuditRepository(session)

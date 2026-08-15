@@ -5779,7 +5779,7 @@ async def list_service_audit_events(
     scope_id: str | None = Query(default=None, max_length=191),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0, le=100000),
-    include_payload: bool = Query(default=True),
+    include_payload: bool = Query(default=False),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
