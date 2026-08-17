@@ -15,9 +15,22 @@ The signed endpoints are:
 - `POST /v1/customer-journey/events`
 - `GET /v1/customer-journey/summary`
 
+The authenticated Portal producer endpoint is:
+
+- `POST /portal/v1/sites/{site_id}/customer-journey/events`
+
 Both require the existing site HMAC contract and `stats:read`. Writes also
 require `Idempotency-Key`. The authenticated site is authoritative; no client
 site identifier is accepted.
+
+The Portal endpoint uses the existing Portal session/bearer authentication,
+same-origin and write guards, idempotency replay, and site-membership
+authorization. It accepts only `surface=portal` and the Portal-owned `login`,
+`site_connect`, and `support` journeys; the path site is authoritative.
+The initial browser producer records one site-scoped authenticated
+`login/succeeded` event per browser session and `site_connect/succeeded` after
+the addon connection is issued. Delivery is best-effort and cannot block the
+Portal action or redirect.
 
 ## Event contract
 

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
 import { portalClient, type PortalAddonConnectionAccount } from '@/lib/portal-client';
+import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
 import {
   formatPortalErrorMessage,
   formatPortalErrorReference,
@@ -84,6 +85,12 @@ export function PortalSiteConnectPanel({
         return_url: addonReturnUrl,
         state: addonState,
       });
+      await recordPortalJourneyBestEffort(
+        response.data.site_id,
+        'site_connect',
+        'succeeded',
+        { deadlineMs: 300 }
+      );
       window.location.assign(response.data.redirect_url);
     } catch (error) {
       setErrorReference(formatPortalErrorReference(error));

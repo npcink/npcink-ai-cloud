@@ -65,6 +65,29 @@ export interface Site {
   relink_cooldown_until?: string;
 }
 
+export interface PortalCustomerJourneyEvent {
+  event_id: string;
+  anonymous_session_id: string;
+  surface: 'portal';
+  journey: 'login' | 'site_connect' | 'support';
+  step: 'started' | 'succeeded' | 'failed' | 'abandoned' | 'retried' | 'closed';
+  occurred_at: string;
+  browser_family?: 'chromium' | 'firefox' | 'safari' | 'other';
+  viewport_class?: 'desktop' | 'mobile';
+  duration_ms?: number;
+  error_category?: 'auth' | 'network' | 'validation' | 'storage' | 'security' | 'unknown';
+  error_code?: string;
+}
+
+export interface PortalCustomerJourneyIngestResult {
+  contract_version: 'customer_journey_event.v1';
+  accepted_count: number;
+  stored_count: number;
+  duplicate_count: number;
+  content_storage: 'omitted_metadata_only';
+  received_at: string;
+}
+
 export interface PortalSiteCapacity {
   active_count: number;
   active_limit: number;
@@ -1848,6 +1871,16 @@ export class PortalClient {
 
   async createAddonConnection(payload: CreateAddonConnectionRequest): Promise<PortalEnvelope<AddonConnectionResult>> {
     return this.request('POST', '/addon-connections', payload);
+  }
+
+  async recordCustomerJourney(
+    siteId: string,
+    events: PortalCustomerJourneyEvent[]
+  ): Promise<PortalEnvelope<PortalCustomerJourneyIngestResult>> {
+    return this.request('POST', `/sites/${siteId}/customer-journey/events`, {
+      contract_version: 'customer_journey_event.v1',
+      events,
+    });
   }
 
   async removeSite(siteId: string): Promise<PortalEnvelope<PortalSiteRemovalResult>> {

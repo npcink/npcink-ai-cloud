@@ -10,6 +10,7 @@ import httpx
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 
 from app.adapters.notifications.base import PortalEmailDeliveryError
 from app.adapters.notifications.smtp import build_portal_email_sender
@@ -66,6 +67,9 @@ from app.domain.commercial.identity import (
     USER_ALLOWED_ACTION_VIEW_BILLING,
     USER_ALLOWED_ACTION_VIEW_USAGE,
 )
+from app.domain.customer_journey.api_contracts import CustomerJourneyBatchPayload
+from app.domain.customer_journey.contracts import CustomerJourneyContractViolation
+from app.domain.customer_journey.service import CustomerJourneyService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
@@ -4260,6 +4264,69 @@ async def get_portal_site_summary(request: Request, site_id: str) -> Any:
     return _portal_route_envelope(
         message="portal site summary loaded",
         data=_portal_site_summary_response_data(result),
+    )
+
+
+@router.post("/sites/{site_id}/customer-journey/events")
+async def ingest_portal_customer_journey_events(
+    request: Request,
+    site_id: str,
+    payload: CustomerJourneyBatchPayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    access = _authorize_portal_site_access(
+        request,
+        site_id=site_id,
+        principal_id=auth.principal_id,
+    )
+    if isinstance(access, JSONResponse):
+        return access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    if any(event.surface != "portal" for event in payload.events):
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="customer_journey.portal_surface_required",
+            message="Portal customer journey events require surface=portal",
+        )
+    if any(event.journey not in {"login", "site_connect", "support"} for event in payload.events):
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code="customer_journey.portal_journey_required",
+            message="Portal customer journey events require a Portal-owned journey",
+        )
+    try:
+        result = await run_in_threadpool(
+            CustomerJourneyService(get_cloud_services(request).settings.database_url).ingest_events,
+            site_id=site_id,
+            key_id="portal",
+            events=[event.model_dump(mode="json", exclude_none=True) for event in payload.events],
+        )
+    except CustomerJourneyContractViolation as exc:
+        return portal_json_error(
+            request,
+            status_code=400,
+            error_code=exc.error_code,
+            message=exc.message,
+        )
+    return _portal_route_envelope(
+        message="portal customer journey metadata ingested",
+        data=result,
     )
 
 

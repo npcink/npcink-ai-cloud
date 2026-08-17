@@ -12,11 +12,23 @@ from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import CustomerJourneyEvent, RunRecord
 from app.core.services import CloudServices
+from app.domain.commercial.service import CommercialService
 from app.domain.customer_journey.service import CustomerJourneyService
-from tests.conftest import build_auth_headers, merge_json_headers, seed_site_auth
+from tests.conftest import (
+    TEST_ADMIN_SESSION_SECRET,
+    TEST_INTERNAL_AUTH_TOKEN,
+    TEST_PORTAL_JWT_SECRET,
+    build_auth_headers,
+    build_portal_headers,
+    merge_json_headers,
+    seed_site_auth,
+)
+
+_PORTAL_GRANT: dict[str, object] = {}
 
 
 def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
+    _PORTAL_GRANT.clear()
     database_url = f"sqlite+pysqlite:///{tmp_path / 'customer-journey.sqlite3'}"
     init_schema(database_url)
     seed_site_auth(database_url, site_id="site_journey", scopes=["stats:read"])
@@ -27,11 +39,22 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
         secret="other-site-test-secret",
         scopes=["stats:read"],
     )
+    _PORTAL_GRANT.update(
+        CommercialService(database_url).upsert_account_member_access(
+            account_id="acct_site_journey",
+            email="journey-portal@example.com",
+            site_id="site_journey",
+            metadata_json={"source": "test"},
+        )
+    )
     settings = Settings(
         project_name="Npcink AI Cloud Test",
         environment="test",
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
+        internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
+        admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+        portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
     )
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
@@ -84,6 +107,101 @@ def _post_events(
             )
         ),
     )
+
+
+def _post_portal_events(
+    client: TestClient,
+    events: list[dict[str, object]],
+    *,
+    site_id: str = "site_journey",
+    idempotency_key: str = "portal-journey-batch-1",
+):
+    return client.post(
+        f"/portal/v1/sites/{site_id}/customer-journey/events",
+        json={"contract_version": "customer_journey_event.v1", "events": events},
+        headers=build_portal_headers(
+            principal_id=str(_PORTAL_GRANT["principal_id"]),
+            session_version=int(_PORTAL_GRANT.get("session_version") or 1),
+            idempotency_key=idempotency_key,
+        ),
+    )
+
+
+def test_portal_customer_journey_is_authenticated_site_scoped_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    event = _event(
+        event_id="portal-login-succeeded-0001",
+        surface="portal",
+        journey="login",
+        step="succeeded",
+    )
+
+    unauthenticated = client.post(
+        "/portal/v1/sites/site_journey/customer-journey/events",
+        json={"contract_version": "customer_journey_event.v1", "events": [event]},
+        headers={
+            "Idempotency-Key": "portal-journey-unauthenticated",
+            "Origin": "http://testserver",
+            "Referer": "http://testserver/portal",
+        },
+    )
+    first = _post_portal_events(client, [event])
+    replay = _post_portal_events(client, [event])
+
+    assert unauthenticated.status_code == 401
+    assert first.status_code == 200
+    assert first.json()["data"]["stored_count"] == 1
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    with get_session(database_url) as session:
+        stored = list(session.scalars(select(CustomerJourneyEvent)))
+    assert len(stored) == 1
+    assert stored[0].site_id == "site_journey"
+    assert stored[0].key_id == "portal"
+    assert stored[0].surface == "portal"
+
+
+def test_portal_customer_journey_rejects_foreign_site_surface_and_content(
+    tmp_path: Path,
+) -> None:
+    _database_url, client = _build_client(tmp_path)
+    portal_event = _event(
+        event_id="portal-site-connect-0001",
+        surface="portal",
+        journey="site_connect",
+        step="succeeded",
+    )
+
+    foreign = _post_portal_events(
+        client,
+        [portal_event],
+        site_id="site_other",
+        idempotency_key="portal-journey-foreign",
+    )
+    wrong_surface = _post_portal_events(
+        client,
+        [{**portal_event, "event_id": "portal-wrong-surface-0001", "surface": "wordpress_editor"}],
+        idempotency_key="portal-journey-wrong-surface",
+    )
+    content = _post_portal_events(
+        client,
+        [{**portal_event, "event_id": "portal-content-0001", "prompt": "private"}],
+        idempotency_key="portal-journey-content",
+    )
+    wrong_journey = _post_portal_events(
+        client,
+        [{**portal_event, "event_id": "portal-wrong-journey-0001", "journey": "rewrite"}],
+        idempotency_key="portal-journey-wrong-journey",
+    )
+
+    assert foreign.status_code == 403
+    assert wrong_surface.status_code == 400
+    assert wrong_surface.json()["error_code"] == "customer_journey.portal_surface_required"
+    assert content.status_code == 422
+    assert wrong_journey.status_code == 400
+    assert wrong_journey.json()["error_code"] == "customer_journey.portal_journey_required"
 
 
 def test_customer_journey_ingestion_hashes_session_and_dedupes(tmp_path: Path) -> None:
