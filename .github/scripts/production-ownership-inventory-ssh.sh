@@ -2,13 +2,13 @@
 set -euo pipefail
 set +x
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 SSH_HOST="${NPCINK_CLOUD_DEPLOY_SSH_HOST:-}"
 SSH_USER="${NPCINK_CLOUD_DEPLOY_SSH_USER:-}"
 SSH_PORT="${NPCINK_CLOUD_DEPLOY_SSH_PORT:-22}"
 SSH_IDENTITY_FILE="${NPCINK_CLOUD_DEPLOY_IDENTITY_FILE:-}"
 REMOTE_DIR="${NPCINK_CLOUD_DEPLOY_REMOTE_DIR:-/opt/npcink-ai-cloud}"
-INVENTORY_SCRIPT="${ROOT_DIR}/scripts/production_ownership_inventory.py"
+INVENTORY_SCRIPT="${ROOT_DIR}/.github/scripts/production-ownership-inventory.py"
 
 fail() {
 	printf '[ownership-inventory:fail] %s\n' "$*" >&2
