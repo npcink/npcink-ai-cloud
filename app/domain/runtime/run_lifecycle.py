@@ -447,12 +447,21 @@ class RuntimeRunLifecycleService:
 
         return self.get_run(run_id, site_id=site_id)
 
-    def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:
+    def cleanup_expired_run_results(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int = 100,
+    ) -> int:
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
-            purged = repository.purge_expired_run_results(now=now)
+            purged = repository.purge_expired_run_results(now=now, limit=limit)
             session.commit()
             return purged
+
+    def count_expired_run_results(self, *, now: datetime | None = None) -> int:
+        with get_session(self.database_url) as session:
+            return RuntimeRepository(session).count_expired_run_results(now=now)
 
     def _process_single_queued_run(
         self,

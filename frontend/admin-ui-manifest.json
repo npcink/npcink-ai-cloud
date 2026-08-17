@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 9,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
@@ -60,6 +60,12 @@
         "workingSurface": "[data-ui=\"model-supplier-directory\"]",
         "requiredStates": ["ready", "selected", "filtered", "operation_error", "dialog"]
       },
+      "/admin/coverage": {
+        "pageModel": "queue",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"coverage-workspace\"]",
+        "requiredStates": ["ready", "filtered", "paginated", "selected", "refresh_error"]
+      },
       "/admin/service-settings": {
         "pageModel": "configuration",
         "riskTier": "material",
@@ -71,6 +77,12 @@
         "riskTier": "material",
         "workingSurface": "[data-ui=\"runtime-diagnostic-table-frame\"]",
         "requiredStates": ["ready", "selected", "partial_error", "disclosure"]
+      },
+      "/admin/audit": {
+        "pageModel": "diagnostic",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"admin-audit-directory\"]",
+        "requiredStates": ["ready", "filtered", "selected", "refresh_error"]
       },
       "/admin/support-requests": {
         "pageModel": "queue",
@@ -117,6 +129,7 @@
     "/admin/vector-settings": "configuration",
     "/admin/runtime-profiles": "configuration",
     "/admin/troubleshooting": "diagnostic",
+    "/admin/audit": "diagnostic",
     "/admin/plugin-observability": "diagnostic",
     "/admin/media-observability": "diagnostic",
     "/admin/vector-observability": "diagnostic",
@@ -125,8 +138,6 @@
     "/admin/service-settings": "configuration",
     "/admin/site-compliance": "configuration"
   },
-  "legacyRouteLocalDialogs": [
-    "src/app/admin/layout.tsx"
-  ],
+  "legacyRouteLocalDialogs": [],
   "legacyRouteLocalCredentials": []
 }

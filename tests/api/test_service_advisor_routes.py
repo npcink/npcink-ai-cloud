@@ -4,7 +4,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import jwt
 import pytest
+from fastapi import Request
 from sqlalchemy import select
 
 from app.api.routes import service as service_routes
@@ -21,6 +23,7 @@ from tests.api.service_routes_test_support import (
     _build_client,
 )
 from tests.conftest import (
+    TEST_ADMIN_SESSION_SECRET,
     build_internal_headers,
     seed_site_auth,
 )
@@ -33,6 +36,168 @@ MALICIOUS_EXCEPTION_DETAIL = (
 
 def _raise_malicious_value_error(*_args: object, **_kwargs: object) -> None:
     raise ValueError(MALICIOUS_EXCEPTION_DETAIL)
+
+
+def _admin_session_token(*, principal_id: str) -> str:
+    now = datetime.now(UTC)
+    return jwt.encode(
+        {
+            "iss": "npcink-ai-cloud",
+            "aud": "npcink-ai-cloud-admin",
+            "sub": principal_id,
+            "purpose": "admin_session",
+            "auth_mode": "admin_key",
+            "grant_id": "",
+            "is_persisted": False,
+            "session_version": 1,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(hours=1)).timestamp()),
+        },
+        TEST_ADMIN_SESSION_SECRET,
+        algorithm="HS256",
+    )
+
+
+def test_ops_summary_review_uses_verified_admin_actor_and_blocks_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    principal_id = "platform:trusted-reviewer"
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"admin_principal_id": principal_id},
+    )
+    calls: list[dict[str, object]] = []
+    actor_kinds: list[str] = []
+
+    class AdvisorStub:
+        def review_ops_summary_disclosure(self, **kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            return {
+                "review_status": kwargs["review_status"],
+                "reviewed_by": kwargs["actor_ref"],
+            }
+
+    def _advisor_stub(request: Request) -> AdvisorStub:
+        actor_kinds.append(str(request.state.internal_actor_kind))
+        return AdvisorStub()
+
+    monkeypatch.setattr(service_routes, "_get_advisor_service", _advisor_stub)
+    client.cookies.set(
+        "npcink_admin_session_token",
+        _admin_session_token(principal_id=principal_id),
+    )
+    headers = build_internal_headers(idempotency_key="ops-summary-review-trusted-actor-001")
+    payload = {
+        "cache_key": "ops-summary-cache-key-trusted-actor-001",
+        "review_status": "human_confirmed",
+        "actor_ref": "platform:forged-browser-actor",
+        "note": "verified review",
+    }
+    try:
+        first = client.post(
+            "/internal/service/advisor/ops-summary-review",
+            headers=headers,
+            json=payload,
+        )
+        replay = client.post(
+            "/internal/service/advisor/ops-summary-review",
+            headers=headers,
+            json=payload,
+        )
+
+        assert first.status_code == 200
+        assert first.json()["data"]["reviewed_by"] == principal_id
+        assert replay.status_code == 409
+        assert replay.json()["error_code"] == "auth.replay_blocked"
+        assert len(calls) == 1
+        assert calls[0]["actor_ref"] == principal_id
+        assert actor_kinds == ["platform_admin"]
+    finally:
+        client.close()
+        dispose_engine(database_url)
+
+
+def test_ops_summary_review_without_admin_session_keeps_internal_actor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    calls: list[dict[str, object]] = []
+    actor_kinds: list[str] = []
+
+    class AdvisorStub:
+        def review_ops_summary_disclosure(self, **kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            return {"reviewed_by": kwargs["actor_ref"]}
+
+    def _advisor_stub(request: Request) -> AdvisorStub:
+        actor_kinds.append(str(request.state.internal_actor_kind))
+        return AdvisorStub()
+
+    monkeypatch.setattr(service_routes, "_get_advisor_service", _advisor_stub)
+    try:
+        response = client.post(
+            "/internal/service/advisor/ops-summary-review",
+            headers=build_internal_headers(
+                idempotency_key="ops-summary-review-internal-actor-001"
+            ),
+            json={
+                "cache_key": "ops-summary-cache-key-internal-actor-001",
+                "review_status": "human_confirmed",
+                "actor_ref": "platform:forged-internal-actor",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["reviewed_by"] == "internal"
+        assert calls[0]["actor_ref"] == "internal"
+        assert actor_kinds == ["internal_token"]
+    finally:
+        client.close()
+        dispose_engine(database_url)
+
+
+def test_ops_summary_review_rejects_invalid_admin_cookie_before_replay_reservation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    calls = 0
+
+    class AdvisorStub:
+        def review_ops_summary_disclosure(self, **_kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            return {}
+
+    monkeypatch.setattr(service_routes, "_get_advisor_service", lambda _request: AdvisorStub())
+    client.cookies.set("npcink_admin_session_token", "invalid-admin-session")
+    headers = build_internal_headers(idempotency_key="ops-summary-review-invalid-session-001")
+    payload = {
+        "cache_key": "ops-summary-cache-key-invalid-session-001",
+        "review_status": "human_confirmed",
+    }
+    try:
+        invalid = client.post(
+            "/internal/service/advisor/ops-summary-review",
+            headers=headers,
+            json=payload,
+        )
+        client.cookies.delete("npcink_admin_session_token")
+        internal_retry = client.post(
+            "/internal/service/advisor/ops-summary-review",
+            headers=headers,
+            json=payload,
+        )
+
+        assert invalid.status_code == 401
+        assert invalid.json()["error_code"] == "auth.admin_session_invalid"
+        assert internal_retry.status_code == 200
+        assert calls == 1
+    finally:
+        client.close()
+        dispose_engine(database_url)
 
 
 def test_admin_agent_workflow_metadata_projection_is_read_only(tmp_path: Path) -> None:
@@ -355,7 +520,9 @@ def test_service_validation_errors_do_not_expose_exception_details(
 
     review_response = client.post(
         "/internal/service/advisor/ops-summary-review",
-        headers=build_internal_headers(),
+        headers=build_internal_headers(
+            idempotency_key="ops-summary-review-redaction-001"
+        ),
         json={
             "cache_key": "ops-summary-cache-key-001",
             "review_status": "human_confirmed",

@@ -104,6 +104,9 @@ def _serialize_identity_provider_binding(
     *,
     principal_id: str,
 ) -> dict[str, object]:
+    metadata = getattr(binding, "metadata_json", None)
+    profile = metadata.get("profile") if isinstance(metadata, dict) else None
+    profile = profile if isinstance(profile, dict) else {}
     return {
         "binding_id": str(getattr(binding, "binding_id", "") or ""),
         "provider": str(getattr(binding, "provider", "") or ""),
@@ -112,6 +115,7 @@ def _serialize_identity_provider_binding(
         "role": USER_ROLE_OWNER,
         "status": str(getattr(binding, "status", "") or ""),
         "has_unionid": bool(getattr(binding, "unionid_hash", None)),
+        "display_name": " ".join(str(profile.get("display_name") or "").split())[:80],
         "last_login_at": (
             binding.last_login_at.isoformat().replace("+00:00", "Z")
             if getattr(binding, "last_login_at", None)

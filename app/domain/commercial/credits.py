@@ -405,6 +405,11 @@ def classify_provider_credit_component(
     zhihu_component = classify_zhihu_provider_credit_component(payload_json)
     if zhihu_component is not None:
         return zhihu_component
+    payload = payload_json if isinstance(payload_json, dict) else {}
+    managed_source = str(payload.get("managed_source") or "").strip().lower()
+    source_type = str(payload.get("source_type") or "").strip().lower()
+    if managed_source == "web_search" or source_type == "web_search":
+        return dict(AI_CREDIT_COMPONENT_POLICY_REGISTRY["web_search"])
     if "search" in normalized_execution_kind:
         return dict(AI_CREDIT_COMPONENT_POLICY_REGISTRY["web_search"])
     if "audio" in normalized_execution_kind or normalized_ability_family == "audio":

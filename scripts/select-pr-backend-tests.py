@@ -40,6 +40,9 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
         "tests/api/test_web_routes.py",
     ),
     "app/api/routes/catalog.py": ("tests/api/test_catalog_routes.py",),
+    "app/api/routes/customer_journey.py": (
+        "tests/api/test_customer_journey_routes.py",
+    ),
     "app/api/routes/entitlements.py": ("tests/api/test_entitlement_routes.py",),
     "app/api/routes/health.py": ("tests/api/test_health.py",),
     "app/api/routes/internal.py": (
@@ -145,6 +148,16 @@ def select_impacted_tests(changed_paths: Iterable[str]) -> tuple[list[Path], lis
             continue
         if path.startswith("app/domain/runtime/") and path.endswith(".py"):
             selected.update(_expand_specs(("tests/domain/test_runtime_*.py",)))
+            continue
+        if path.startswith("app/domain/wordpress_ai_connector/") and path.endswith(".py"):
+            selected.update(
+                _expand_specs(
+                    (
+                        "tests/api/test_wordpress_ai_connector_runtime.py",
+                        "tests/domain/test_wordpress_*.py",
+                    )
+                )
+            )
             continue
         if path.startswith("app/domain/") and path.count("/") == 2 and path.endswith(".py"):
             selected.update(_expand_specs(("tests/domain/test_*.py",)))

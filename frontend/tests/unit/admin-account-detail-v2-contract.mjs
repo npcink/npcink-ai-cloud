@@ -13,6 +13,12 @@ const creditEvidenceSource = readFileSync(
   ),
   'utf8'
 );
+const creditPresentationSource = readFileSync(
+  fromFrontendRoot(
+    'src/features/admin/accounts/account-credit-presentation.ts'
+  ),
+  'utf8'
+);
 const operatorProfileSource = [
   readFileSync(
     fromFrontendRoot(
@@ -146,6 +152,16 @@ assert.match(
   source,
   /data-ui="account-credit-usage-summary"[\s\S]*runBudgetSummary\.used[\s\S]*runBudgetSummary\.remaining[\s\S]*formatUsageRatio/,
   'default credit view must keep one compact used, remaining, and ratio summary'
+);
+assert.doesNotMatch(
+  source,
+  /function (?:summarizeBudget|formatUsageRatio|quotaToneClass|quotaMetricLabel|creditBreakdownLabel|formatSignedCreditDelta)/,
+  'the route must not own credit and quota presentation policy'
+);
+assert.match(
+  creditPresentationSource,
+  /export function summarizeBudget[\s\S]*export function formatUsageRatio[\s\S]*export function quotaToneClass[\s\S]*export function quotaMetricLabel[\s\S]*export function creditBreakdownLabel[\s\S]*export function formatSignedCreditDelta/,
+  'the account credit presentation model must own quota aggregation, labels, severity, and ledger formatting'
 );
 assert.match(
   source,

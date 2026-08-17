@@ -26,8 +26,13 @@ export type OperatorWatchItem = {
   value: string;
 };
 
-type OperatorWatchItemDraft = OperatorWatchItem & {
-  priority: number;
+export type OperatorWatchItemProjection = {
+  code: string;
+  scope: string;
+  severity: 'watch' | 'warn' | 'action_needed';
+  value: number | string | null;
+  detailCode: string;
+  detailArgs: Record<string, unknown>;
 };
 
 type BuildRuntimeSignalLabels = {
@@ -53,38 +58,17 @@ type BuildRuntimeSignalCopy = {
 };
 
 type BuildWatchItemInputs = {
-  runtimeSummary: RuntimeSummarySignalInput;
-  expiringSubscriptionsIn7Days: number;
-  attentionSubscriptionsCount: number;
-  firstAttentionReason: string;
-  runtimeTelemetry: {
-    status: string;
-    alertCount: number;
-    firstAlertTitle: string;
-    firstAlertSummary: string;
-    summary: string;
-  };
+  items: OperatorWatchItemProjection[];
   formatValue: (value: number) => string;
-  copy: {
-    callbackTitle: string;
-    callbackReason: string;
-    guardTitle: string;
-    guardReason: string;
-    expiryTitle: string;
-    expiryReason: string;
-    attentionTitle: string;
-    attentionFallbackReason: string;
-    runtimeTelemetryTitle: string;
-    runtimeTelemetryReason: string;
-  };
+  localize: (item: OperatorWatchItemProjection) => { title: string; reason: string };
 };
 
 /**
- * Frontend-only operator framing.
+ * Frontend-only runtime metric presentation.
  *
- * These thresholds, severity bands, and reason strings are intentionally kept
- * on the frontend side so admin pages can present a stable operator console
- * without implying backend/runtime contract truth.
+ * These route-local thresholds describe the four evidence tiles only. They do
+ * not select the Admin overview conclusion, watch-item order, or next action;
+ * those decisions come from the backend operator projection.
  */
 export function buildAdminRuntimeSignals(
   runtimeSummary: RuntimeSummarySignalInput,
@@ -184,78 +168,21 @@ export function buildAdminRuntimeSignals(
 export function buildAdminOperatorWatchItems(
   inputs: BuildWatchItemInputs
 ): OperatorWatchItem[] {
-  const items: OperatorWatchItemDraft[] = [];
-
-  if (inputs.runtimeSummary.callbackFailed > 0) {
-    items.push({
-      title: inputs.copy.callbackTitle,
-      scope: 'runtime.callback',
-      severity: 'action-needed',
-      reason: inputs.copy.callbackReason,
-      value: inputs.formatValue(inputs.runtimeSummary.callbackFailed),
-      priority: 10,
-    });
-  }
-
-  if (inputs.runtimeSummary.guardEvents > 0) {
-    items.push({
-      title: inputs.copy.guardTitle,
-      scope: 'request.guard',
-      severity: inputs.runtimeSummary.guardEvents >= 25 ? 'action-needed' : 'warn',
-      reason: inputs.copy.guardReason,
-      value: inputs.formatValue(inputs.runtimeSummary.guardEvents),
-      priority: inputs.runtimeSummary.guardEvents >= 25 ? 20 : 40,
-    });
-  }
-
-  if (inputs.expiringSubscriptionsIn7Days > 0) {
-    items.push({
-      title: inputs.copy.expiryTitle,
-      scope: 'commercial.subscription',
-      severity: 'warn',
-      reason: inputs.copy.expiryReason,
-      value: inputs.formatValue(inputs.expiringSubscriptionsIn7Days),
-      priority: 50,
-    });
-  }
-
-  if (inputs.attentionSubscriptionsCount > 0) {
-    items.push({
-      title: inputs.copy.attentionTitle,
-      scope: 'commercial.subscription',
-      severity: 'action-needed',
-      reason:
-        inputs.firstAttentionReason ||
-        inputs.copy.attentionFallbackReason,
-      value: inputs.formatValue(inputs.attentionSubscriptionsCount),
-      priority: 30,
-    });
-  }
-
-  if (inputs.runtimeTelemetry.status === 'error' || inputs.runtimeTelemetry.status === 'warning') {
-    const severity = inputs.runtimeTelemetry.status === 'error' ? 'action-needed' : 'warn';
-    items.push({
-      title: inputs.runtimeTelemetry.firstAlertTitle || inputs.copy.runtimeTelemetryTitle,
-      scope: 'runtime.telemetry_coverage',
-      severity,
-      reason:
-        inputs.runtimeTelemetry.firstAlertSummary ||
-        inputs.runtimeTelemetry.summary ||
-        inputs.copy.runtimeTelemetryReason,
-      value: inputs.formatValue(Math.max(inputs.runtimeTelemetry.alertCount, 1)),
-      priority: severity === 'action-needed' ? 15 : 35,
-    });
-  }
-
-  return items
-    .sort((left, right) => left.priority - right.priority)
-    .map((item) => ({
-      title: item.title,
+  return inputs.items.map((item) => {
+    const localized = inputs.localize(item);
+    return {
+      title: localized.title,
       scope: item.scope,
-      severity: item.severity,
-      reason: item.reason,
-      value: item.value,
-    }));
+      severity: item.severity === 'action_needed' ? 'action-needed' : item.severity,
+      reason: localized.reason,
+      value:
+        typeof item.value === 'number'
+          ? inputs.formatValue(item.value)
+          : item.value === null
+            ? '?'
+            : String(item.value),
+    };
+  });
 }
 
 export function operatorSeverityClasses(severity: OperatorSeverity): string {

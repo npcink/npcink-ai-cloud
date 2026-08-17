@@ -72,6 +72,17 @@ must fail closed when workflow structure, executed job sets, lane, action, or
 other governed identity differs. Never weaken compatibility checks to obtain a
 more attractive result.
 
+Before adding a new efficiency tool, inventory the repository's existing
+router, task envelope, receipt, PR waiter, M4 fingerprint, release plan, and
+timing commands. Extend the existing owner when it already covers the seam;
+parallel convenience tools create drift and additional maintenance cost.
+
+Local evidence reuse must be explicit. A successful run may be reused only
+when the base revision, source fingerprint, exact command plan, environment,
+and risk question still match. Record the reuse event. A matching commit alone
+is insufficient, and the normal verification path continues to execute gates
+unless the operator deliberately selects the governed reuse option.
+
 ## 4. Make CI Path-Aware and Fail Closed
 
 Pull-request CI may skip work that cannot be affected by the changed paths,
@@ -185,6 +196,13 @@ stop automatic retries. Preserve evidence and use a documented resumable or
 cache-recovery lane, or report the blocker. Do not hide time cost through
 unbounded retries.
 
+Run environment diagnosis before a material gate in a new or uncertain
+worktree. Diagnosis must derive required tools from the actual planned
+commands, not only file extensions: an inventory-only change can still require
+`python3`. Report local requirements separately from advisory operator-owned
+M4 or GitHub prerequisites. The doctor remains read-only and must not install,
+start, connect, or expose secret values.
+
 ## 10. Optimization Decision and Stop Lines
 
 Keep an optimization when natural comparable evidence shows a material
@@ -206,6 +224,13 @@ Stop broad optimization when the remaining cost is dominated by required
 authority, external variance, or infrequent work. Continue only for a measured
 bottleneck with an owner, hypothesis, bounded experiment, rollback, and natural
 validation opportunity.
+
+Use an observation phase before changing CI shards, caches, or merge/runtime
+topology. Collect at least ten compatible natural task samples and prefer
+twenty before making a structural decision. Repeated environmental failures
+may justify an earlier bounded fix after three comparable occurrences; one
+slow run or one runner/cache incident does not justify another system-wide
+mechanism.
 
 ## 11. Closeout Requirements
 

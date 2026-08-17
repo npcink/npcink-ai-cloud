@@ -1774,6 +1774,34 @@ class PluginObservabilityEvent(Base):
     )
 
 
+class CustomerJourneyEvent(Base):
+    __tablename__ = "customer_journey_events"
+    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_customer_journey_events_dedupe"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dedupe_key: Mapped[str] = mapped_column(String(64))
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    key_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    event_id: Mapped[str] = mapped_column(String(96), index=True)
+    cohort_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    session_hash: Mapped[str] = mapped_column(String(64), index=True)
+    surface: Mapped[str] = mapped_column(String(32), index=True)
+    journey: Mapped[str] = mapped_column(String(64), index=True)
+    step: Mapped[str] = mapped_column(String(32), index=True)
+    error_category: Mapped[str | None] = mapped_column(String(32), index=True)
+    error_code: Mapped[str | None] = mapped_column(String(96), index=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    run_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    browser_family: Mapped[str | None] = mapped_column(String(32), index=True)
+    viewport_class: Mapped[str | None] = mapped_column(String(16), index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
+    )
+
+
 class PluginObservabilityAttentionState(Base):
     __tablename__ = "plugin_observability_attention_states"
     __table_args__ = (
