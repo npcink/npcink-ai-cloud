@@ -279,6 +279,13 @@ and the normative ownership contract in
 plus its fail-closed bootstrap correction in
 [ADR-034](../docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md).
 
+Run the operator-initiated `Production Maintenance` workflow from the exact
+`production` revision with `action=ownership-inventory`. The action is
+database-read-only, emits the
+`npcink.production_ownership_inventory.v1` contract, and exits nonzero when
+`status=blocked`. Preserve the workflow run URL and JSON receipt; do not copy
+private runtime configuration or expand the receipt with customer fields.
+
 - [ ] a read-only inventory recorded aggregate counts and opaque principal,
   account, and site IDs only; it did not print or persist email addresses,
   tokens, credentials, provider subjects, or secret values
