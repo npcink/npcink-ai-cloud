@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.main import create_app
 from app.core.config import Settings
@@ -13,6 +17,7 @@ from app.core.db import get_session, init_schema
 from app.core.models import CustomerJourneyEvent, RunRecord
 from app.core.services import CloudServices
 from app.domain.commercial.service import CommercialService
+from app.domain.customer_journey import service as customer_journey_service_module
 from app.domain.customer_journey.service import CustomerJourneyService
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -274,6 +279,65 @@ def test_customer_journey_dedupes_stable_event_across_api_key_rotation(
         stored = list(session.scalars(select(CustomerJourneyEvent)))
     assert len(stored) == 1
     assert stored[0].key_id == "key_before_rotation"
+
+
+def test_customer_journey_reconciles_only_confirmed_concurrent_duplicate_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = _event(event_id="journey-concurrent-duplicate-0001")
+    normalized = CustomerJourneyService("unused")._normalize_event(
+        site_id="site_journey",
+        event=event,
+        current_time=datetime.now(UTC),
+    )
+    dedupe_key = str(normalized["dedupe_key"])
+
+    class ConcurrentDuplicateSession:
+        def __init__(self, *, duplicate_exists: bool) -> None:
+            self.duplicate_exists = duplicate_exists
+
+        def scalars(self, _statement: object) -> list[str]:
+            return []
+
+        def scalar(self, _statement: object) -> str | None:
+            return dedupe_key if self.duplicate_exists else None
+
+        def begin_nested(self) -> Any:
+            return nullcontext()
+
+        def add(self, _event_model: CustomerJourneyEvent) -> None:
+            return None
+
+        def flush(self) -> None:
+            raise IntegrityError("concurrent duplicate", {}, Exception("unique conflict"))
+
+        def commit(self) -> None:
+            return None
+
+    session = ConcurrentDuplicateSession(duplicate_exists=True)
+
+    @contextmanager
+    def fake_get_session(_database_url: str) -> Any:
+        yield session
+
+    monkeypatch.setattr(customer_journey_service_module, "get_session", fake_get_session)
+
+    result = CustomerJourneyService("unused").ingest_events(
+        site_id="site_journey",
+        key_id="key_concurrent",
+        events=[event],
+    )
+
+    assert result["stored_count"] == 0
+    assert result["duplicate_count"] == 1
+
+    session = ConcurrentDuplicateSession(duplicate_exists=False)
+    with pytest.raises(IntegrityError, match="concurrent duplicate"):
+        CustomerJourneyService("unused").ingest_events(
+            site_id="site_journey",
+            key_id="key_concurrent",
+            events=[event],
+        )
 
 
 def test_customer_journey_rejects_content_and_arbitrary_error_message(tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.db import get_session
 from app.core.models import CustomerJourneyEvent, RunRecord
@@ -73,27 +74,40 @@ class CustomerJourneyService:
                 dedupe_key = str(item["dedupe_key"])
                 if dedupe_key in existing:
                     continue
-                session.add(
-                    CustomerJourneyEvent(
-                        dedupe_key=dedupe_key,
-                        site_id=site_id,
-                        key_id=key_id or None,
-                        event_id=str(item["event_id"]),
-                        cohort_id=str(item.get("cohort_id") or "") or None,
-                        session_hash=str(item["session_hash"]),
-                        surface=str(item["surface"]),
-                        journey=str(item["journey"]),
-                        step=str(item["step"]),
-                        error_category=str(item.get("error_category") or "") or None,
-                        error_code=str(item.get("error_code") or "") or None,
-                        duration_ms=self._optional_int(item.get("duration_ms")),
-                        run_id=str(item.get("run_id") or "") or None,
-                        browser_family=str(item.get("browser_family") or "") or None,
-                        viewport_class=str(item.get("viewport_class") or "") or None,
-                        occurred_at=self._parse_datetime(item["occurred_at"]),
-                        received_at=current_time,
+                try:
+                    with session.begin_nested():
+                        session.add(
+                            CustomerJourneyEvent(
+                                dedupe_key=dedupe_key,
+                                site_id=site_id,
+                                key_id=key_id or None,
+                                event_id=str(item["event_id"]),
+                                cohort_id=str(item.get("cohort_id") or "") or None,
+                                session_hash=str(item["session_hash"]),
+                                surface=str(item["surface"]),
+                                journey=str(item["journey"]),
+                                step=str(item["step"]),
+                                error_category=str(item.get("error_category") or "") or None,
+                                error_code=str(item.get("error_code") or "") or None,
+                                duration_ms=self._optional_int(item.get("duration_ms")),
+                                run_id=str(item.get("run_id") or "") or None,
+                                browser_family=str(item.get("browser_family") or "") or None,
+                                viewport_class=str(item.get("viewport_class") or "") or None,
+                                occurred_at=self._parse_datetime(item["occurred_at"]),
+                                received_at=current_time,
+                            )
+                        )
+                        session.flush()
+                except IntegrityError:
+                    concurrent_duplicate = session.scalar(
+                        select(CustomerJourneyEvent.dedupe_key).where(
+                            CustomerJourneyEvent.dedupe_key == dedupe_key
+                        )
                     )
-                )
+                    if concurrent_duplicate is None:
+                        raise
+                    existing.add(dedupe_key)
+                    continue
                 existing.add(dedupe_key)
                 stored_count += 1
             session.commit()
