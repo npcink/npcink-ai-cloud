@@ -33,7 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/production'
     environment: production
-    permissions: {}
+    permissions:
+      contents: read
     steps:
       - name: Install SSH key
         env:
