@@ -142,6 +142,9 @@ jobs:
           pr_head_sha=""
           pr_head_ref=""
           source_ci_run_id=""
+          repository_owner="${GITHUB_REPOSITORY%%/*}"
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          graphql_query='query($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{associatedPullRequests(first:100){totalCount nodes{number mergedAt mergeCommit{oid} baseRefName headRefName headRefOid headRepository{nameWithOwner}}}}}}}'
           last_retry_reason="production PR association is not visible"
           last_external_failure_signature=""
           consecutive_external_failures=0
@@ -166,12 +169,58 @@ jobs:
                 ' "${evidence_dir}/associated-pulls.json"
               )"
               matching_pr_count="$(jq 'length' <<<"${matching_prs}")"
+              if [ "${matching_pr_count}" -eq 0 ]; then
+                if ! gh api graphql \
+                  -f query="${graphql_query}" \
+                  -F owner="${repository_owner}" \
+                  -F name="${repository_name}" \
+                  -F oid="${GITHUB_SHA}" \
+                  > "${evidence_dir}/associated-pulls-graphql.json"; then
+                  last_retry_reason="production PR GraphQL association API is unavailable"
+                  external_failure_signature="associated-pulls-graphql-api"
+                elif ! jq -e \
+                  '((.errors // []) | length == 0) and
+                   (.data.repository.object.associatedPullRequests != null) and
+                   (.data.repository.object.associatedPullRequests.totalCount <= 100)' \
+                  "${evidence_dir}/associated-pulls-graphql.json" >/dev/null; then
+                  last_retry_reason="production PR GraphQL association response is invalid"
+                  external_failure_signature="associated-pulls-graphql-shape"
+                else
+                  jq '[.data.repository.object.associatedPullRequests.nodes[] |
+                    {
+                      number,
+                      base: {ref: .baseRefName},
+                      head: {
+                        sha: .headRefOid,
+                        ref: .headRefName,
+                        repo: {full_name: .headRepository.nameWithOwner}
+                      },
+                      merged_at: .mergedAt,
+                      merge_commit_sha: .mergeCommit.oid
+                    }]' \
+                    "${evidence_dir}/associated-pulls-graphql.json" \
+                    > "${evidence_dir}/associated-pulls.json"
+                  matching_prs="$(
+                    jq -c --arg repository "${GITHUB_REPOSITORY}" --arg sha "${GITHUB_SHA}" '
+                      [ .[]
+                        | select(.base.ref == "production")
+                        | select(.merged_at != null)
+                        | select(.merge_commit_sha == $sha)
+                        | select(.head.repo.full_name == $repository)
+                      ]
+                    ' "${evidence_dir}/associated-pulls.json"
+                  )"
+                  matching_pr_count="$(jq 'length' <<<"${matching_prs}")"
+                fi
+              fi
               if [ "${matching_pr_count}" -gt 1 ]; then
                 echo "[fail] Production commit matched more than one merged same-repository production PR." >&2
                 exit 1
               fi
               if [ "${matching_pr_count}" -eq 0 ]; then
-                last_retry_reason="production PR association is not visible"
+                if [ -z "${external_failure_signature}" ]; then
+                  last_retry_reason="production PR association is not visible"
+                fi
               else
                 pr_number="$(jq -r '.[0].number' <<<"${matching_prs}")"
                 pr_head_sha="$(jq -r '.[0].head.sha' <<<"${matching_prs}")"
