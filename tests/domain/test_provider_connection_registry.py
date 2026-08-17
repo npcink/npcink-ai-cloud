@@ -472,6 +472,38 @@ def test_provider_connection_audio_output_hosts_round_trip_into_minimax_adapter(
     dispose_engine(database_url)
 
 
+def test_legacy_minimax_connection_derives_audio_output_host_from_base_url(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    service.save_connection(
+        {
+            "connection_id": "minimax_audio",
+            "provider_id": "minimax",
+            "provider_type": "minimax_audio",
+            "kind": "minimax_audio",
+            "display_name": "MiniMax audio",
+            "enabled": True,
+            "base_url": "https://Api.Minimax.Test./v1",
+            "capability_ids": ["audio_generation"],
+            "runtime_profile_ids": ["audio.narration.default"],
+            "config": {},
+            "credential": "minimax-key",
+        }
+    )
+
+    providers = build_provider_adapters(settings, include_enabled_connections=True)
+
+    adapter = providers["minimax"]
+    assert isinstance(adapter, MiniMaxProviderAdapter)
+    assert adapter.audio_output_hosts == ("api.minimax.test",)
+
+    dispose_engine(database_url)
+
+
 def test_image_delivery_probe_detects_and_approves_server_observed_exact_host(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

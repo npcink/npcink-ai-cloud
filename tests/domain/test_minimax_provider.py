@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
 from app.adapters.providers.base import ProviderExecutionRequest
 from app.adapters.providers.minimax import (
@@ -371,6 +372,28 @@ def test_minimax_adapter_executes_t2a_over_http() -> None:
     assert result.output["audios"][0]["duration_seconds"] == 2.4
     assert result.tokens_in == 9
     assert result.tokens_out == 0
+
+
+def test_minimax_adapter_derives_audio_output_host_for_legacy_connections() -> None:
+    adapter = MiniMaxProviderAdapter(base_url="https://Api.Minimax.Test./v1")
+
+    assert adapter.audio_output_hosts == ("api.minimax.test",)
+
+
+def test_minimax_adapter_keeps_explicit_audio_output_hosts_authoritative() -> None:
+    adapter = MiniMaxProviderAdapter(
+        base_url="https://api.minimax.test",
+        audio_output_hosts=("Audio.Cdn.Minimax.Test.",),
+    )
+
+    assert adapter.audio_output_hosts == ("audio.cdn.minimax.test",)
+
+
+@pytest.mark.parametrize("base_url", ["ftp://api.minimax.test", "https://[invalid"])
+def test_minimax_adapter_does_not_derive_unsafe_audio_output_hosts(base_url: str) -> None:
+    adapter = MiniMaxProviderAdapter(base_url=base_url)
+
+    assert adapter.audio_output_hosts == ()
 
 
 def test_minimax_adapter_preserves_optional_group_id_for_legacy_accounts() -> None:
