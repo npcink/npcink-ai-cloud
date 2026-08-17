@@ -54,6 +54,9 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Early Product Validation and Minimal Telemetry Standard](early-product-validation-and-minimal-telemetry-standard-v1.md)
+  — active stop rules, minimum non-author trial loop, privacy-safe journey
+  evidence, defect priority, and commercial-proof reopening triggers
 - [Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md)
 - [Single-Operator Pre-User Development Closeout and Next-Stage Guide — 2026-08-18](single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md) — dated synthesis of the solo-AI pre-user phase, user-experience remediation, privacy-safe observation, delivery-time lessons, workflow lanes, and the next ordinary-development stop point; not production or human-value authority
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
