@@ -77,6 +77,11 @@ assert.match(
   'portal login must use the shared verification-code resend cooldown'
 );
 assert.match(
+  loginSource,
+  /searchParams\.get\('reason'\)[\s\S]*qq_unbound[\s\S]*portal\.account\.qq_unbound/,
+  'portal login must preserve the QQ-unbound confirmation message'
+);
+assert.match(
   registerSource,
   /useVerificationCodeCooldown/,
   'portal registration must use the shared verification-code resend cooldown'

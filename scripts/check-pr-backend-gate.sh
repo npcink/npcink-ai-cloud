@@ -141,7 +141,7 @@ while IFS= read -r path; do
 		scripts/production-application-image-inputs.py|scripts/production-image-supply.py|scripts/scan-production-images.sh|scripts/verify-production-images.sh)
 			requires_full_backend=1
 			;;
-		.github/workflows/ci.yml|ci/pytest-backend-durations.json|tests/conftest.py|tests/fixtures/*|migrations/*|migrations/**/*)
+		.github/workflows/ci.yml|ci/pytest-backend-durations.json|scripts/select-pytest-shard.py|tests/conftest.py|tests/fixtures/*|migrations/*|migrations/**/*)
 			requires_full_backend=1
 			;;
 		app/core/config.py|app/core/db.py|app/core/models.py|app/api/auth.py)

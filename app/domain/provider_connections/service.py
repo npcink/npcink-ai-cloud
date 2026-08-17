@@ -3,14 +3,15 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 
 from app.adapters.providers.base import (
     ProviderCatalogSnapshot,
@@ -21,6 +22,7 @@ from app.adapters.providers.base import (
 from app.adapters.providers.openai import (
     ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS,
     normalize_provider_image_output_hosts,
+    normalize_provider_output_hosts,
 )
 from app.adapters.providers.registry import build_provider_adapter_from_connection
 from app.core.config import Settings
@@ -165,6 +167,8 @@ class ProviderConnectionAdminService:
                     last_sync_at=None,
                     last_error_code=None,
                     last_error_message=None,
+                    created_at=now,
+                    updated_at=now,
                 )
                 session.add(row)
             else:
@@ -231,7 +235,7 @@ class ProviderConnectionAdminService:
             session.refresh(row)
             return self._serialize(row)
 
-    def delete_connection(self, connection_id: str) -> dict[str, Any]:
+    def get_delete_preflight(self, connection_id: str) -> dict[str, Any]:
         normalized_id = _normalize_identifier(connection_id, field="connection_id")
         with get_session(self.database_url) as session:
             row = session.get(ProviderConnection, normalized_id)
@@ -241,8 +245,111 @@ class ProviderConnectionAdminService:
                     "provider connection was not found",
                     status_code=404,
                 )
+            connection = self._serialize(row)
+            target_profiles = set(_normalize_id_list(connection.get("runtime_profile_ids")))
+            alternative_connections: list[dict[str, Any]] = []
+            covered_profiles: set[str] = set()
+            for candidate_row in session.scalars(
+                select(ProviderConnection).where(
+                    ProviderConnection.connection_id != normalized_id
+                )
+            ):
+                candidate = self._serialize(candidate_row)
+                candidate_profiles = set(
+                    _normalize_id_list(candidate.get("runtime_profile_ids"))
+                )
+                shared_profiles = sorted(target_profiles & candidate_profiles)
+                if (
+                    not shared_profiles
+                    or not bool(candidate.get("enabled"))
+                    or str(candidate.get("configuration_status") or "") != "ready"
+                ):
+                    continue
+                covered_profiles.update(shared_profiles)
+                alternative_connections.append(
+                    {
+                        "connection_id": str(candidate.get("connection_id") or ""),
+                        "display_name": str(candidate.get("display_name") or ""),
+                        "shared_runtime_profile_ids": shared_profiles,
+                    }
+                )
+
+        uncovered_profiles = sorted(target_profiles - covered_profiles)
+        model_ids = _normalize_id_list(connection.get("model_ids"))
+        capability_ids = _normalize_id_list(connection.get("capability_ids"))
+        enabled = bool(connection.get("enabled"))
+        if enabled and uncovered_profiles:
+            risk_level = "high"
+        elif enabled or target_profiles or model_ids:
+            risk_level = "warning"
+        else:
+            risk_level = "low"
+        return {
+            "surface": "admin_provider_connection_delete_preflight",
+            "connection": {
+                "connection_id": str(connection.get("connection_id") or ""),
+                "provider_id": str(connection.get("provider_id") or ""),
+                "display_name": str(connection.get("display_name") or ""),
+                "enabled": enabled,
+                "configuration_status": str(
+                    connection.get("configuration_status") or ""
+                ),
+            },
+            "expected_updated_at": str(connection.get("updated_at") or ""),
+            "impact": {
+                "risk_level": risk_level,
+                "runtime_profile_ids": sorted(target_profiles),
+                "uncovered_runtime_profile_ids": uncovered_profiles,
+                "capability_ids": capability_ids,
+                "model_count": len(model_ids),
+                "alternative_connections": alternative_connections,
+            },
+            "requires_confirmation": True,
+            "boundary": _boundary(),
+        }
+
+    def delete_connection(
+        self,
+        connection_id: str,
+        *,
+        expected_updated_at: datetime,
+    ) -> dict[str, Any]:
+        normalized_id = _normalize_identifier(connection_id, field="connection_id")
+        with get_session(self.database_url) as session:
+            row = session.get(ProviderConnection, normalized_id)
+            if row is None:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.not_found",
+                    "provider connection was not found",
+                    status_code=404,
+                )
+            if _iso(row.updated_at) != _iso(expected_updated_at):
+                raise ProviderConnectionAdminError(
+                    "provider_connection.delete_conflict",
+                    "provider connection changed after deletion preflight",
+                    status_code=409,
+                )
             serialized = self._serialize(row)
-            session.delete(row)
+            timestamp_lower_bound = row.updated_at - timedelta(microseconds=1)
+            timestamp_upper_bound = row.updated_at + timedelta(microseconds=1)
+            deleted = cast(
+                CursorResult[Any],
+                session.execute(
+                    delete(ProviderConnection)
+                    .where(
+                        ProviderConnection.connection_id == normalized_id,
+                        ProviderConnection.updated_at >= timestamp_lower_bound,
+                        ProviderConnection.updated_at <= timestamp_upper_bound,
+                    )
+                    .execution_options(synchronize_session=False)
+                ),
+            )
+            if deleted.rowcount != 1:
+                raise ProviderConnectionAdminError(
+                    "provider_connection.delete_conflict",
+                    "provider connection changed after deletion preflight",
+                    status_code=409,
+                )
             session.commit()
         return {"deleted": True, "connection": serialized}
 
@@ -1029,6 +1136,7 @@ class ProviderConnectionAdminService:
             "last_sync_at": _iso(row.last_sync_at),
             "last_error_code": row.last_error_code or "",
             "last_error_message": row.last_error_message or "",
+            "updated_at": _iso(row.updated_at),
             "detail_href": "/admin/ai-resources",
             "managed_by": "cloud_provider_connections",
             "boundary": _boundary(),
@@ -1482,6 +1590,32 @@ def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
         normalized["image_output_hosts"] = image_output_hosts
     else:
         normalized.pop("image_output_hosts", None)
+
+    raw_audio_hosts = normalized.get("audio_output_hosts")
+    if raw_audio_hosts is None:
+        audio_hosts_input: list[str] = []
+    elif isinstance(raw_audio_hosts, str):
+        audio_hosts_input = [item.strip() for item in raw_audio_hosts.split(",") if item.strip()]
+    elif isinstance(raw_audio_hosts, list) and all(
+        isinstance(item, str) for item in raw_audio_hosts
+    ):
+        audio_hosts_input = list(raw_audio_hosts)
+    else:
+        raise ProviderConnectionAdminError(
+            "provider_connection.audio_output_hosts_invalid",
+            "audio_output_hosts must be a list of exact host names",
+        )
+    try:
+        audio_output_hosts = list(normalize_provider_output_hosts(audio_hosts_input))
+    except ValueError as error:
+        raise ProviderConnectionAdminError(
+            "provider_connection.audio_output_hosts_invalid",
+            "audio_output_hosts must contain exact host names without schemes, paths, or wildcards",
+        ) from error
+    if audio_output_hosts:
+        normalized["audio_output_hosts"] = audio_output_hosts
+    else:
+        normalized.pop("audio_output_hosts", None)
     return normalized
 
 

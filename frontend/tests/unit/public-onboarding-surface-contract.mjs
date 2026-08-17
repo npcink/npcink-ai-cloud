@@ -118,6 +118,9 @@ assert.match(help, /<summary[\s\S]*item\.question/, 'each FAQ question must be t
 assert.doesNotMatch(help, /<details[^>]* open/, 'help FAQs must be collapsed by default');
 assert.match(publicShell, /PUBLIC_HEADER_NAV_ITEMS/, 'desktop and mobile navigation must use the shared header config');
 assert.match(publicShell, /PUBLIC_FOOTER_NAV_ITEMS/, 'footer navigation must use the shared footer config');
+assert.match(publicShell, /portalClient\.getSession\(\)/, 'public shell must discover an existing Portal session');
+assert.match(publicShell, /portalAuthenticated \? ['"]\/portal['"] : ['"]\/portal\/login['"]/, 'public shell must route authenticated visitors to the Portal');
+assert.match(publicShell, /进入服务中心/, 'public shell must label the authenticated Portal entry in Chinese');
 assert.match(
   publicShell,
   /data-public-desktop-nav[\s\S]*lg:flex/,

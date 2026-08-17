@@ -1632,8 +1632,22 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
     def get_admin_coverage_work_queue(
         self,
         *,
+        q: str | None = None,
+        status: str = "all",
+        reason: str | None = None,
+        sort: str = "priority",
+        offset: int = 0,
         limit: int = 100,
     ) -> dict[str, object]:
+        normalized_query = " ".join(str(q or "").strip().lower().split())
+        normalized_status = (
+            status
+            if status in {"all", "needs_action", "error", "warning", "ok", "inactive"}
+            else "all"
+        )
+        normalized_reason = str(reason or "").strip()
+        normalized_sort = sort if sort in {"priority", "expiry", "customer"} else "priority"
+        normalized_offset = max(0, int(offset or 0))
         with get_session(self.database_url) as session:
             account_site_repository = CommercialAccountSiteRepository(session)
             subscription_repository = CommercialSubscriptionRepository(session)
@@ -1901,30 +1915,111 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 }
             )
 
-        def work_queue_sort_key(item: dict[str, object]) -> tuple[int, str, str]:
-            priority_source = item.get("priority")
-            priority = self._coerce_int(
-                priority_source if priority_source is not None else 100
-            )
+        def account_sort_key(item: dict[str, object]) -> tuple[str, str]:
             account = item.get("account")
             account_payload: dict[str, object] = (
                 cast(dict[str, object], account) if isinstance(account, dict) else {}
             )
             return (
-                priority,
-                str(account_payload.get("name") or ""),
+                str(account_payload.get("name") or account_payload.get("account_id") or "").lower(),
                 str(account_payload.get("account_id") or ""),
             )
 
-        items.sort(key=work_queue_sort_key)
-        visible_items = items[:limit] if limit > 0 else items
+        def work_queue_sort_key(item: dict[str, object]) -> tuple[int, str, str]:
+            priority_source = item.get("priority")
+            priority = self._coerce_int(
+                priority_source if priority_source is not None else 100
+            )
+            account_name, account_id = account_sort_key(item)
+            return (priority, account_name, account_id)
+
+        def expiry_sort_key(item: dict[str, object]) -> tuple[int, int, str, str]:
+            evidence = item.get("evidence")
+            evidence_payload = evidence if isinstance(evidence, dict) else {}
+            raw_days = evidence_payload.get("days_until_end")
+            days_until_end = (
+                self._coerce_int(raw_days)
+                if raw_days is not None
+                else 2**31 - 1
+            )
+            priority, account_name, account_id = work_queue_sort_key(item)
+            return (days_until_end, priority, account_name, account_id)
+
+        hidden_internal_total = sum(
+            1 for item in items if self._is_internal_or_malformed_admin_account(item)
+        )
+        items = [
+            item
+            for item in items
+            if not self._is_internal_or_malformed_admin_account(item)
+        ]
         reason_counts = Counter(str(item.get("reason_code") or "") for item in items)
         severity_counts = Counter(str(item.get("severity") or "") for item in items)
+        summary_total = len(items)
+
+        filtered_items: list[dict[str, object]] = []
+        for item in items:
+            severity = str(item.get("severity") or "")
+            if normalized_status == "needs_action" and severity not in {"error", "warning"}:
+                continue
+            if normalized_status not in {"all", "needs_action"} and severity != normalized_status:
+                continue
+            if normalized_reason and str(item.get("reason_code") or "") != normalized_reason:
+                continue
+            if normalized_query:
+                account_value = item.get("account")
+                account_payload = account_value if isinstance(account_value, dict) else {}
+                identity_value = item.get("primary_identity")
+                identity_payload = identity_value if isinstance(identity_value, dict) else {}
+                subscription_value = item.get("primary_subscription")
+                subscription_payload = (
+                    subscription_value if isinstance(subscription_value, dict) else {}
+                )
+                package_value = item.get("package")
+                package_payload = package_value if isinstance(package_value, dict) else {}
+                searchable = " ".join(
+                    str(value or "")
+                    for value in (
+                        account_payload.get("account_id"),
+                        account_payload.get("name"),
+                        identity_payload.get("email"),
+                        identity_payload.get("principal_id"),
+                        subscription_payload.get("subscription_id"),
+                        subscription_payload.get("status"),
+                        package_payload.get("display_package_label"),
+                        package_payload.get("package_kind"),
+                        package_payload.get("coverage_state"),
+                        item.get("reason_code"),
+                        item.get("reason_label"),
+                    )
+                ).lower()
+                if not all(term in searchable for term in normalized_query.split(" ")):
+                    continue
+            filtered_items.append(item)
+
+        if normalized_sort == "customer":
+            filtered_items.sort(key=account_sort_key)
+        elif normalized_sort == "expiry":
+            filtered_items.sort(key=expiry_sort_key)
+        else:
+            filtered_items.sort(key=work_queue_sort_key)
+
+        total = len(filtered_items)
+        visible_items = filtered_items[normalized_offset:]
+        if limit > 0:
+            visible_items = visible_items[:limit]
         return {
             "generated_at": self._serialize_datetime(now),
-            "filters": {"limit": limit},
+            "filters": {
+                "q": normalized_query,
+                "status": normalized_status,
+                "reason": normalized_reason,
+                "sort": normalized_sort,
+                "offset": normalized_offset,
+                "limit": limit,
+            },
             "summary": {
-                "total": len(items),
+                "total": summary_total,
                 "visible": len(visible_items),
                 "needs_action": sum(
                     1 for item in items if str(item.get("severity") or "") in {"error", "warning"}
@@ -1934,6 +2029,14 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "ok": severity_counts.get("ok", 0),
                 "inactive": severity_counts.get("inactive", 0),
                 "reason_counts": dict(reason_counts),
+            },
+            "total": total,
+            "hidden_internal_total": hidden_internal_total,
+            "pagination": {
+                "offset": normalized_offset,
+                "limit": limit,
+                "total": total,
+                "has_more": normalized_offset + len(visible_items) < total,
             },
             "items": visible_items,
         }

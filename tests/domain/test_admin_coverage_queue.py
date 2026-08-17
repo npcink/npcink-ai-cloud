@@ -55,3 +55,63 @@ def test_coverage_queue_routes_missing_customer_identity_to_customer_access(
     assert result["summary"]["needs_action"] == 1
 
     dispose_engine(database_url)
+
+
+def test_coverage_queue_filters_and_orders_before_pagination(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = CommercialService(database_url)
+    service.upsert_account(
+        account_id="acct_zulu_missing",
+        name="Zulu Missing",
+        status="active",
+    )
+    service.upsert_account(
+        account_id="acct_alpha_missing",
+        name="Alpha Missing",
+        status="active",
+    )
+    service.upsert_account(
+        account_id="acct_healthy",
+        name="Healthy Customer",
+        primary_email="healthy-owner@example.com",
+        status="active",
+    )
+    service.upsert_account(
+        account_id="acct_smoke_internal",
+        name="Smoke Internal",
+        status="active",
+    )
+
+    result = service.get_admin_coverage_work_queue(
+        status="needs_action",
+        reason="customer_identity_missing",
+        sort="customer",
+        offset=1,
+        limit=1,
+    )
+
+    assert result["summary"]["total"] == 3
+    assert result["summary"]["needs_action"] == 2
+    assert result["summary"]["visible"] == 1
+    assert result["hidden_internal_total"] == 1
+    assert result["total"] == 2
+    assert result["pagination"] == {
+        "offset": 1,
+        "limit": 1,
+        "total": 2,
+        "has_more": False,
+    }
+    assert result["items"][0]["account"]["account_id"] == "acct_zulu_missing"
+
+    search_result = service.get_admin_coverage_work_queue(
+        q="healthy-owner@example.com",
+        status="all",
+        sort="priority",
+        limit=10,
+    )
+    assert search_result["total"] == 1
+    assert search_result["items"][0]["account"]["account_id"] == "acct_healthy"
+    assert search_result["summary"]["total"] == 3
+
+    dispose_engine(database_url)

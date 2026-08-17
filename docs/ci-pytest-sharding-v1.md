@@ -7,9 +7,12 @@ Status: active engineering standard.
 The default branch keeps the complete backend pytest gate, but distributes
 `tests/api`, `tests/contract`, and `tests/domain` across three deterministic
 weighted shards. Files remain the normal scheduling unit. A file whose rolling
-weight alone exceeds the per-shard target may be divided by statically
+weight exceeds 15 percent of the per-shard target may be divided by statically
 discoverable pytest node ID when the same rolling evidence contains complete
-node weights; otherwise selection fails safe to the whole file.
+node weights; otherwise selection fails safe to the whole file. The bounded
+threshold prevents several material files from becoming an indivisible bundle
+on one shard, including when pull-request-only instrumentation changes their
+relative cost.
 Before emitting node selectors, the scheduler compares current pytest
 collection with static source discovery. Any imported, generated, hidden, or
 otherwise unmatched test makes that file fall back to whole-file selection.
@@ -170,12 +173,13 @@ database, external coverage service, or another test execution.
    `max/min <= 1.30`, with the slowest shard normally below 10 minutes.
 4. If imbalance remains, first split consistently slow test files by coherent
    test scenario or remove repeated expensive fixture setup. When one stable
-   hotspot is larger than an entire shard target and a source split would only
-   duplicate a large test harness, generated node weights may divide that file
-   without a hand-maintained node manifest. Static discovery must include new
-   test functions, current pytest collection must match static discovery, and
-   incomplete/dynamic discovery must fall back to the whole file. Keep all
-   assertions and recovery semantics.
+   hotspot is a material share of an entire shard target and a source split
+   would only duplicate a large test harness, generated node weights may divide
+   that file without a hand-maintained node manifest. The scheduler's
+   material-share threshold is 15 percent of the predicted shard target.
+   Static discovery must include new test functions, current pytest collection
+   must match static discovery, and incomplete/dynamic discovery must fall back
+   to the whole file. Keep all assertions and recovery semantics.
 5. Add a fourth shard only when three shards are balanced but the critical path
    still misses the agreed feedback target. Changing from three to four jobs
    increases runner concurrency by 33 percent.
@@ -200,9 +204,10 @@ bash -n scripts/check-pr-backend-gate.sh scripts/refresh-pytest-duration-weights
 ```
 
 When `.github/workflows/ci.yml` or `ci/pytest-backend-durations.json` changes,
-the pull request intentionally enters the complete backend lane. That exact
-GitHub Actions run is the orchestration and integration authority; do not
-duplicate it with local Docker or M4.
+or when `scripts/select-pytest-shard.py` changes the scheduler itself, the pull
+request intentionally enters the complete backend lane. That exact GitHub
+Actions run is the orchestration and integration authority; do not duplicate
+it with local Docker or M4.
 
 Before committing generated weights, inspect `source_run_ids`, verify that each
 run is a successful `master` push with three timing artifacts, and replay the

@@ -203,14 +203,18 @@ for (const [name, source] of [
   ['usage', usageSource],
   ['audit', auditSource],
 ]) {
-  assert.match(source, /contextSiteId/, `${name} must derive an explicit context site id`);
+  assert.match(source, /siteFilterId/, `${name} must derive an optional site filter id`);
   assert.match(
     source,
-    /if \(!isAuthenticated \|\| !(?:contextSiteId|requestContextSiteId)/,
-    `${name} must fail closed before account requests when context is absent`
+    /if \(!isAuthenticated\) return/,
+    `${name} must load account data without requiring a selected site`
   );
   assert.match(source, /useLayoutEffect/, `${name} must clear stale state before context paint`);
-  assert.match(source, /PortalEmptyState/, `${name} must render a stable missing-context state`);
+  assert.doesNotMatch(
+    source,
+    /site_selection_required_title|Choose a current site before viewing/,
+    `${name} must not dead-end a signed-in account when no site filter is selected`
+  );
 }
 
 assert.match(
@@ -236,28 +240,18 @@ assert.doesNotMatch(
 
 assert.match(
   homeSource,
-  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*useLayoutEffect\([\s\S]*accountEntitlementsRequestVersionRef[\s\S]*setAccountEntitlements\(null\)[\s\S]*if \(!isAuthenticated \|\| !contextSiteId\) return/,
-  'Portal home account projection must synchronously clear, invalidate stale responses, and fail closed without selected context'
+  /useLayoutEffect\([\s\S]*accountEntitlementsRequestVersionRef[\s\S]*setAccountEntitlements\(null\)[\s\S]*if \(!isAuthenticated\) return/,
+  'Portal home account projection must synchronously clear, invalidate stale responses, and load without selected context'
 );
-assert.match(
+assert.doesNotMatch(
   billingSource,
-  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*contextSiteId,[\s\S]*siteSelectionRequired = !contextSiteId/,
-  'billing must pass selected context to its account hooks and expose a missing-context state'
-);
-assert.match(
-  billingSource,
-  /errorCode === 'portal\.site_selection_required'[\s\S]*paymentOrderErrorCode === 'portal\.site_selection_required'/,
-  'billing recovery must branch on structured error codes instead of rendered copy'
+  /contextSiteId|siteSelectionRequired|portal\.site_selection_required/,
+  'billing must load account package data and actions without selected site context'
 );
 assert.doesNotMatch(
   billingSource,
   /String\(message \|\| ''\)\.includes\('portal\.site_selection_required'\)/,
   'billing must not parse a localized error message to recover site context'
-);
-assert.match(
-  billingSource,
-  /connect_before_upgrade_desc[\s\S]*\/portal\/billing\?plan=\$\{requestedUpgradePlan\}&action=upgrade/,
-  'a no-site paid-plan journey must preserve its upgrade intent while the addon is connected'
 );
 for (const [name, source] of [
   ['commercial catalog', commercialCatalogSource],
@@ -265,20 +259,20 @@ for (const [name, source] of [
 ]) {
   assert.match(
     source,
-    /if \(!isAuthenticated \|\| !requestContextSiteId\)/,
-    `${name} requests must fail closed without selected context`
+    /if \(!isAuthenticated\)/,
+    `${name} requests must require authentication but not selected site context`
   );
   assert.match(
     source,
     /useLayoutEffect\([\s\S]*(?:requestVersionRef|loadRequestVersionRef)\.current \+= 1/,
-    `${name} must invalidate in-flight responses when context changes`
+    `${name} must invalidate in-flight responses when authentication changes`
   );
 }
 
-assert.doesNotMatch(
+assert.match(
   usageSource,
-  /creditLedgerSiteId|portal-usage-site|siteId:\s*[^\n,}]+/,
-  'account usage must not restore a per-site filter or site query parameter'
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*siteId: requestSiteFilterId \|\| undefined/,
+  'account usage must default to all sites and pass a site query only when explicitly filtered'
 );
 
 assert.match(

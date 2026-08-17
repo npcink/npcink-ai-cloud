@@ -16,6 +16,10 @@ const directoryQuerySource = readFileSync(
   resolve(root, 'src/features/admin/ai-resources/directory.ts'),
   'utf8'
 );
+const modelReferenceSource = readFileSync(
+  resolve(root, 'src/features/admin/ai-resources/model-reference-model.ts'),
+  'utf8'
+);
 
 assert.match(
   pageSource,
@@ -45,6 +49,24 @@ assert.match(
   directorySource,
   /action_delete_connection[\s\S]*<AdminActionMenu[\s\S]*dataUi="supplier-more-actions"/,
   'Supplier overflow must use the shared collision-aware action menu and retain the bounded destructive action'
+);
+
+assert.match(
+  pageSource,
+  /requestProviderConnectionDelete[\s\S]*delete-preflight[\s\S]*expected_updated_at[\s\S]*provider_connection\.delete_conflict/,
+  'Provider deletion must inspect current impact, submit the preflight version, and handle stale conflicts'
+);
+
+assert.match(
+  pageSource,
+  /hasProviderWorkbenchDraftChanges[\s\S]*error_delete_connection_unsaved_draft[\s\S]*reopen_draft/,
+  'Provider deletion must preserve and reopen a dirty same-connection draft before preflight'
+);
+
+assert.match(
+  directorySource,
+  /provider-delete-preflight-loading[\s\S]*delete_preflight_impact[\s\S]*uncovered_runtime_profile_ids[\s\S]*!matchingDeletePreflight/,
+  'Inline deletion confirmation must show backend-owned impact and stay disabled without matching preflight evidence'
 );
 
 assert.match(
@@ -172,9 +194,19 @@ assert.match(
 );
 
 assert.match(
-  pageSource,
+  `${modelReferenceSource}\n${pageSource}`,
   /MODEL_VISIBILITY_PAGE_SIZE = 25[\s\S]*modelVisibilityPageRows[\s\S]*data-ui="model-visibility-pagination"[\s\S]*set_reference_page/,
   'Large model directories must render one bounded page and keep pagination inside the model workbench'
+);
+assert.doesNotMatch(
+  pageSource,
+  /function (?:normalizeProviderCatalogPreview|modelReferenceSearchText|selectedModelIdFor|formatReferencePrice)/,
+  'The route must not own model-reference normalization, identity matching, filtering, or formatting policy'
+);
+assert.match(
+  modelReferenceSource,
+  /export function normalizeProviderCatalogPreview[\s\S]*export function buildModelVisibilityRows/,
+  'The model-reference feature model must own catalog normalization and visible-row projection'
 );
 
 assert.match(

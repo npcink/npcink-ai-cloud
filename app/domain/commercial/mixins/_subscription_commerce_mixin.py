@@ -554,6 +554,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         account_id: str,
         subscription_order_id: str,
         site_id: str | None = None,
+        include_unscoped: bool = False,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -581,7 +582,17 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 if subscription_order.payment_order_id
                 else None
             )
-            if site_id and (payment_order is None or payment_order.site_id != site_id):
+            site_scope_mismatch = bool(
+                site_id
+                and (
+                    payment_order is None
+                    or (
+                        payment_order.site_id != site_id
+                        and not (include_unscoped and payment_order.site_id is None)
+                    )
+                )
+            )
+            if site_scope_mismatch:
                 raise CommercialNotFoundError(
                     "service.subscription_order_not_found",
                     f"subscription order '{subscription_order_id}' was not found",

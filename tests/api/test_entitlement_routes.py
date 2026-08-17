@@ -9,7 +9,14 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import AccountSubscription, PlanVersion, UsageMeterEvent
+from app.core.models import (
+    SITE_STATUS_INACTIVE,
+    AccountSubscription,
+    PlanVersion,
+    ServiceSetting,
+    Site,
+    UsageMeterEvent,
+)
 from app.core.services import CloudServices
 from app.domain.commercial.service import CommercialService
 from tests.conftest import (
@@ -305,6 +312,49 @@ def test_current_entitlement_requires_entitlement_scope(tmp_path: Path) -> None:
 
     assert response.status_code == 403
     assert response.json()["error_code"] == "auth.scope_denied"
+
+    dispose_engine(database_url)
+
+
+def test_current_entitlement_inactive_site_returns_activation_recovery(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        site = session.get(Site, "site_alpha")
+        assert site is not None
+        site.status = SITE_STATUS_INACTIVE
+        session.add(
+            ServiceSetting(
+                setting_id="portal_public",
+                setting_kind="portal",
+                enabled=True,
+                config_json={"public_base_url": "https://cloud.example.test"},
+                status="ready",
+            )
+        )
+        session.commit()
+
+    query = "object_type=site&object_id=site_alpha"
+    response = client.get(
+        f"/v1/entitlements/current?{query}",
+        headers=build_auth_headers(
+            "GET",
+            "/v1/entitlements/current",
+            site_id="site_alpha",
+            query=query,
+        ),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "auth.site_inactive"
+    assert response.json()["data"] == {
+        "recovery_contract": "cloud_site_activation_recovery.v1",
+        "site_status": "inactive",
+        "activation_required": True,
+        "action": "activate_site",
+        "portal_url": "https://cloud.example.test/portal",
+    }
 
     dispose_engine(database_url)
 

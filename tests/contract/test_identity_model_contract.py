@@ -39,6 +39,7 @@ def test_portal_user_actions_keep_addon_provision_without_key_management() -> No
         "view_billing",
         "manage_billing",
         "view_audit",
+        "run_ai_insights",
         "provision_sites",
         "remove_sites",
     }

@@ -21,7 +21,7 @@ type PortalMetricItem = {
 type PortalMetricStripProps = {
   items: PortalMetricItem[];
   columnsClassName?: string;
-  variant?: 'default' | 'portal';
+  variant?: 'default' | 'portal' | 'header';
 };
 
 type PortalPrimaryPanelProps = {
@@ -72,9 +72,16 @@ export function PortalCard({ children, className, variant: _variant, ...props }:
   );
 }
 
-export function PortalMetricStrip({ items, columnsClassName }: PortalMetricStripProps) {
+export function PortalMetricStrip({ items, columnsClassName, variant = 'default' }: PortalMetricStripProps) {
+  const headerVariant = variant === 'header';
   return (
-    <div className={cn('grid gap-3 md:grid-cols-2 xl:grid-cols-4', columnsClassName)}>
+    <div className={cn(
+      'grid',
+      columnsClassName || 'md:grid-cols-2 xl:grid-cols-4',
+      headerVariant
+        ? 'overflow-hidden rounded-xl border border-slate-200/75 bg-white/75 divide-y divide-slate-200/75 dark:border-slate-800 dark:bg-slate-950/55 dark:divide-slate-800 md:divide-x md:divide-y-0'
+        : 'gap-3'
+    )}>
       {items.map((item) => {
         const primitiveValue = typeof item.value === 'string' || typeof item.value === 'number'
           ? String(item.value)
@@ -82,18 +89,32 @@ export function PortalMetricStrip({ items, columnsClassName }: PortalMetricStrip
         const compact = item.size === 'compact'
           || Boolean(primitiveValue && (primitiveValue.length > 10 || /[-/：:]/.test(primitiveValue)));
         return (
-          <div key={item.label} className="rounded-xl border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950">
+          <div
+            key={item.label}
+            className={cn(
+              headerVariant
+                ? 'min-w-0 px-4 py-3'
+                : 'rounded-xl border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950'
+            )}
+          >
             <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
               <span>{item.label}</span>
               {item.detail && item.detailDisplay === 'hint' ? (
                 <span className="cursor-help" title={item.detail} aria-label={`${item.label}: ${item.detail}`}>ⓘ</span>
               ) : null}
             </p>
-            <p className={cn('mt-2 font-semibold text-gray-950 dark:text-white', compact ? 'text-base leading-6' : 'text-[1.45rem] leading-8', item.toneClassName)}>
+            <p className={cn(
+              'font-semibold text-gray-950 dark:text-white',
+              headerVariant ? 'mt-1.5' : 'mt-2',
+              compact || headerVariant ? 'text-base leading-6' : 'text-[1.45rem] leading-8',
+              item.toneClassName
+            )}>
               {item.value}
             </p>
             {item.detail && item.detailDisplay !== 'hint' ? (
-              <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.detail}</p>
+              <p className={cn('text-xs leading-5 text-gray-500 dark:text-gray-400', headerVariant ? 'mt-1.5' : 'mt-2')}>
+                {item.detail}
+              </p>
             ) : null}
           </div>
         );

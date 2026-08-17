@@ -228,7 +228,7 @@
         "tests/contract/test_ai_task_contract.py"
       ],
       "commands": {
-        "check:changed": "Plan and run the narrowest safe local gates for the current diff.",
+        "check:changed": "Plan gates, diagnose prerequisites, and run the narrowest safe local checks for the current diff.",
         "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
         "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
         "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."
@@ -552,7 +552,11 @@
       "evidence": ["AGENTS.md", "frontend/DEVELOPMENT.md", "docs/cloud-admin-ui-standard-v1.md"],
       "commands": {
         "check:visual:frontend": "Run the bounded frontend visual test suite.",
+        "precheck:admin-acceptance": "Verify the Admin acceptance matrix contract and focused test lint.",
+        "check:admin-acceptance": "Run the current-master desktop acceptance baseline for every classified Admin route.",
+        "precheck:admin-ui": "Run focused Admin audit workspace contracts and lint before the shared Admin UI gate.",
         "check:admin-ui": "Run the required Admin UI governance and static gate.",
+        "precheck:admin-ui:visual": "Run the focused Admin audit workspace browser receipt before the shared visual gate.",
         "check:admin-ui:visual-governance": "Verify risk-tiered Admin visual rules, pilot routes, and structured receipt contracts.",
         "check:admin-ui:visual": "Run the required material Admin UI browser gate."
       }
@@ -750,6 +754,7 @@
       "evidence": [".github/workflows/ci.yml", "docs/development-validation-operating-model-v1.md", "frontend/playwright.config.ts"],
       "commands": {
         "test:e2e": "Run the full frontend Playwright suite.",
+        "test:e2e:admin-acceptance": "Run the current-master desktop acceptance baseline for every classified Admin route.",
         "test:e2e:admin-operator-path": "Run the critical Admin operator Playwright path.",
         "test:e2e:admin-operator-path:ci": "Run the CI-configured Admin operator Playwright path.",
         "test:e2e:portal-workspace-path": "Run the critical Portal workspace Playwright path.",

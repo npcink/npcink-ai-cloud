@@ -51,7 +51,13 @@ async function fulfillJson(route: Route, data: unknown) {
 
 export async function installAdminMocks(
   page: Page,
-  options: { auditEvents?: number; quotaNeedsAttention?: boolean } = {}
+  options: {
+    auditEvents?: number;
+    auditFailureController?: { enabled: boolean };
+    quotaNeedsAttention?: boolean;
+    allowedEmptyAdminRequests?: readonly string[];
+    unhandledAdminRequests?: string[];
+  } = {}
 ) {
   const auditEvents = options.auditEvents ?? 4;
   const quotaNeedsAttention = options.quotaNeedsAttention ?? false;
@@ -315,32 +321,80 @@ export async function installAdminMocks(
     }
 
     if (pathname === '/api/admin/audit-events') {
+      if (options.auditFailureController?.enabled) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify(buildAdminApiErrorEnvelope('initial audit evidence failure')),
+        });
+        return;
+      }
+      const auditItems = [
+        {
+          event_id: 101,
+          account_id: LONG_ACCOUNT_ID,
+          site_id: 'site_mvp',
+          subscription_id: 'sub_mvp',
+          scope_kind: 'subscription',
+          scope_id: 'sub_mvp',
+          event_kind: 'subscription.bind',
+          outcome: 'succeeded',
+          actor_kind: 'platform_admin',
+          actor_ref: 'operator',
+          method: 'POST',
+          path: '/internal/service/admin/subscriptions/sub_mvp/bind',
+          trace_id: 'trace-audit-101',
+          idempotency_key: 'audit-bind-101',
+          created_at: '2026-04-08T09:45:00Z',
+        },
+        {
+          event_id: 102,
+          account_id: LONG_ACCOUNT_ID,
+          site_id: 'site_mvp',
+          subscription_id: 'sub_mvp',
+          scope_kind: 'subscription',
+          scope_id: 'sub_mvp',
+          event_kind: 'subscription.billing_snapshot.rebuild',
+          outcome: 'error',
+          actor_kind: 'system',
+          actor_ref: '',
+          method: 'POST',
+          path: '/internal/service/admin/subscriptions/sub_mvp/billing-snapshots/rebuild',
+          trace_id: 'trace-audit-102',
+          idempotency_key: 'audit-rebuild-102',
+          created_at: '2026-04-08T07:15:00Z',
+        },
+      ];
+      const eventId = Number(searchParams.get('event_id') || 0);
+      const idempotencyKey = searchParams.get('idempotency_key') || '';
+      const filteredItems = auditItems.filter((item) => (
+        (!eventId || item.event_id === eventId)
+        && (!idempotencyKey || item.idempotency_key === idempotencyKey)
+      ));
+      const limit = Number(searchParams.get('limit') || 50);
+      const offset = Number(searchParams.get('offset') || 0);
+      const items = filteredItems.slice(offset, offset + limit);
+      const nextOffset = offset + items.length;
+      const lastOffset = filteredItems.length > 0
+        ? Math.floor((filteredItems.length - 1) / limit) * limit
+        : 0;
       await fulfillJson(route, {
-        total: 2,
-        items: [
-          {
-            event_id: 101,
-            event_kind: 'subscription.bind',
-            outcome: 'succeeded',
-            actor_kind: 'platform_admin',
-            actor_ref: 'operator',
-            method: 'POST',
-            path: '/internal/service/admin/subscriptions/sub_mvp/bind',
-            trace_id: 'trace-audit-101',
-            created_at: '2026-04-08T09:45:00Z',
-          },
-          {
-            event_id: 102,
-            event_kind: 'subscription.billing_snapshot.rebuild',
-            outcome: 'error',
-            actor_kind: 'system',
-            actor_ref: '',
-            method: 'POST',
-            path: '/internal/service/admin/subscriptions/sub_mvp/billing-snapshots/rebuild',
-            trace_id: 'trace-audit-102',
-            created_at: '2026-04-08T07:15:00Z',
-          },
-        ],
+        total: filteredItems.length,
+        items,
+        generated_at: '2026-04-08T10:00:00Z',
+        diagnostics: {
+          returned_count: items.length,
+          query_duration_ms: 4.25,
+        },
+        pagination: {
+          limit,
+          offset,
+          total: filteredItems.length,
+          has_more: nextOffset < filteredItems.length,
+          next_offset: nextOffset < filteredItems.length ? nextOffset : null,
+          last_offset: lastOffset,
+          is_out_of_range: offset > 0 && offset >= filteredItems.length,
+        },
       });
       return;
     }
@@ -395,6 +449,44 @@ export async function installAdminMocks(
           failed_checks: ['worker.runtime_queue.fresh', 'cadence.provider_health_scan.fresh'],
           failure_scopes: ['workers', 'cadence'],
           href: '/admin/troubleshooting',
+        },
+        operator_projection: {
+          revision: 'admin-overview-operator-projection-v1',
+          status: 'error',
+          conclusion_code: 'operational_readiness_blocked',
+          conclusion_args: {
+            checks_failed: 2,
+            failure_scopes: ['workers', 'cadence'],
+          },
+          readiness: {
+            status: 'blocked',
+            checks_failed: 2,
+            failure_scopes: ['workers', 'cadence'],
+            href: '/admin/troubleshooting',
+          },
+          primary_action: {
+            kind: 'readiness',
+            href: '/admin/troubleshooting',
+          },
+          follow_up_focus: 'runtime',
+          watch_items: [
+            {
+              code: 'operational_readiness_blocked',
+              scope: 'runtime.operational_readiness',
+              severity: 'action_needed',
+              value: 2,
+              detail_code: 'operational_readiness_blocked',
+              detail_args: { failure_scopes: ['workers', 'cadence'] },
+            },
+            {
+              code: 'runtime_telemetry',
+              scope: 'runtime.telemetry_coverage',
+              severity: 'warn',
+              value: 1,
+              detail_code: 'runtime_telemetry',
+              detail_args: { alert_code: 'hosted_model.provider_call_gap' },
+            },
+          ],
         },
         runtime_operator_explanations: [
           {
@@ -782,11 +874,51 @@ export async function installAdminMocks(
           },
         };
       });
+      const status = url.searchParams.get('status') || 'all';
+      const reason = url.searchParams.get('reason') || '';
+      const queryTerms = (url.searchParams.get('q') || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const sort = url.searchParams.get('sort') || 'priority';
+      const offset = Math.max(0, Number.parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      const limit = Math.min(
+        500,
+        Math.max(1, Number.parseInt(url.searchParams.get('limit') || '100', 10) || 100)
+      );
+      const filteredItems = items.filter((item) => {
+        if (status === 'needs_action' && item.severity !== 'error' && item.severity !== 'warning') return false;
+        if (!['all', 'needs_action'].includes(status) && item.severity !== status) return false;
+        if (reason && item.reason_code !== reason) return false;
+        const searchable = [
+          item.account.account_id,
+          item.account.name,
+          item.primary_subscription?.subscription_id,
+          item.primary_subscription?.status,
+          item.package.display_package_label,
+          item.package.package_kind,
+          item.reason_code,
+          item.reason_label,
+        ].join(' ').toLowerCase();
+        return queryTerms.every((term) => searchable.includes(term));
+      });
+      filteredItems.sort((left, right) => {
+        if (sort === 'customer') {
+          return left.account.name.localeCompare(right.account.name) ||
+            left.account.account_id.localeCompare(right.account.account_id);
+        }
+        if (sort === 'expiry') {
+          const leftDays = left.evidence.days_until_end ?? Number.MAX_SAFE_INTEGER;
+          const rightDays = right.evidence.days_until_end ?? Number.MAX_SAFE_INTEGER;
+          return leftDays - rightDays || left.priority - right.priority ||
+            left.account.name.localeCompare(right.account.name);
+        }
+        return left.priority - right.priority || left.account.name.localeCompare(right.account.name);
+      });
+      const visibleItems = filteredItems.slice(offset, offset + limit);
       await fulfillJson(route, {
         generated_at: '2026-04-06T10:00:00Z',
+        filters: { q: queryTerms.join(' '), status, reason, sort, offset, limit },
         summary: {
           total: items.length,
-          visible: items.length,
+          visible: visibleItems.length,
           needs_action: items.filter((item) => item.severity === 'error' || item.severity === 'warning').length,
           error: items.filter((item) => item.severity === 'error').length,
           warning: items.filter((item) => item.severity === 'warning').length,
@@ -797,7 +929,15 @@ export async function installAdminMocks(
             return counts;
           }, {}),
         },
-        items,
+        total: filteredItems.length,
+        hidden_internal_total: 0,
+        pagination: {
+          offset,
+          limit,
+          total: filteredItems.length,
+          has_more: offset + visibleItems.length < filteredItems.length,
+        },
+        items: visibleItems,
       });
       return;
     }
@@ -1895,6 +2035,17 @@ export async function installAdminMocks(
       return;
     }
 
-    await fulfillJson(route, {});
+    const requestKey = `${route.request().method()} ${pathname}${url.search}`;
+    if (!options.unhandledAdminRequests || options.allowedEmptyAdminRequests?.includes(requestKey)) {
+      await fulfillJson(route, {});
+      return;
+    }
+
+    options.unhandledAdminRequests.push(requestKey);
+    await route.fulfill({
+      status: 501,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('Unhandled Admin acceptance request', 'admin.e2e_unhandled_request')),
+    });
   });
 }

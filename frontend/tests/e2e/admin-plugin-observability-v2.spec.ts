@@ -134,3 +134,45 @@ test('zero event volume does not hide an existing watch item', async ({ page }) 
   await expect(page.locator('#plugin-attention-inspector')).toContainText(/provider_timeout/);
   await expect(page.getByRole('heading', { name: /Events and errors|事件与错误/i })).toHaveCount(0);
 });
+
+test('plugin observability replaces an obsolete filtered request', async ({ page }) => {
+  await installAdminMocks(page);
+  const completedWindows: number[] = [];
+  await page.route('**/api/admin/plugin-observability?*', async (route) => {
+    const windowHours = Number(new URL(route.request().url()).searchParams.get('window_hours') || 24);
+    if (windowHours === 72) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    completedWindows.push(windowHours);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        ...pluginObservabilityData,
+        totals: {
+          ...pluginObservabilityData.totals,
+          events_total: windowHours,
+        },
+        digest: {
+          ...pluginObservabilityData.digest,
+          window_hours: windowHours,
+        },
+        window: {
+          ...pluginObservabilityData.window,
+          hours: windowHours,
+        },
+      })),
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/admin/plugin-observability');
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('24');
+
+  await page.getByRole('button', { name: '72h' }).click();
+  await page.getByRole('button', { name: '168h' }).click();
+
+  await expect(page).toHaveURL(/window=168/);
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('168');
+  await expect.poll(() => completedWindows.includes(168)).toBe(true);
+});

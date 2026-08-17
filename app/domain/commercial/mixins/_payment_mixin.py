@@ -313,6 +313,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         account_id: str,
         *,
         site_id: str | None = None,
+        include_unscoped: bool = False,
         status_group: str = "all",
         limit: int = 20,
         offset: int = 0,
@@ -339,6 +340,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 repository,
                 account_id=account_id,
                 site_id=normalized_site_id,
+                include_unscoped=include_unscoped,
                 now=current_time,
             ):
                 session.commit()
@@ -347,6 +349,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             status_counts = repository.count_payment_orders_by_status(
                 account_id=account_id,
                 site_id=normalized_site_id,
+                include_unscoped=include_unscoped,
                 canceled_visible_after=canceled_visible_after,
             )
             counts = {
@@ -360,6 +363,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             orders = repository.list_payment_orders(
                 account_id=account_id,
                 site_id=normalized_site_id,
+                include_unscoped=include_unscoped,
                 statuses=statuses,
                 canceled_visible_after=canceled_visible_after,
                 limit=normalized_limit,
@@ -403,6 +407,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         account_id: str,
         order_id: str,
         site_id: str | None = None,
+        include_unscoped: bool = False,
     ) -> dict[str, object]:
         with get_session(cast(Any, self).database_url) as session:
             repository = CommercialRepository(session)
@@ -412,9 +417,12 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "service.payment_order_not_found",
                     f"payment order '{order_id}' was not found",
                 )
-            if order.account_id != account_id or (
-                site_id and order.site_id != site_id
-            ):
+            site_scope_mismatch = bool(
+                site_id
+                and order.site_id != site_id
+                and not (include_unscoped and order.site_id is None)
+            )
+            if order.account_id != account_id or site_scope_mismatch:
                 raise CommercialNotFoundError(
                     "service.payment_order_not_found",
                     f"payment order '{order_id}' was not found",
@@ -432,6 +440,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         account_id: str,
         order_id: str,
         site_id: str | None = None,
+        include_unscoped: bool = False,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -447,7 +456,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             if (
                 order is None
                 or order.account_id != account_id
-                or (site_id and order.site_id != site_id)
+                or (
+                    site_id
+                    and order.site_id != site_id
+                    and not (include_unscoped and order.site_id is None)
+                )
             ):
                 raise CommercialNotFoundError(
                     "service.payment_order_not_found",
@@ -1852,6 +1865,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         *,
         account_id: str | None,
         site_id: str | None,
+        include_unscoped: bool = False,
         now: datetime,
     ) -> int:
         current_time = self._normalize_payment_order_datetime(now) or datetime.now(UTC)
@@ -1860,6 +1874,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             cutoff=cutoff,
             account_id=account_id,
             site_id=site_id,
+            include_unscoped=include_unscoped,
         )
         expired_count = 0
         for order in expired_orders:

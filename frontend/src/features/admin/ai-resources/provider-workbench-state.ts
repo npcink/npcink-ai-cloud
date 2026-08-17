@@ -1,4 +1,5 @@
 import type { SupplierConnection } from './types';
+import { modelIdentityKeys } from './model-reference-identity';
 
 export type ProviderCatalogPreviewModel = {
   model_id: string;
@@ -37,26 +38,6 @@ export type ModelReferenceIdentity = {
   model_id: string;
   provider_id?: string;
 };
-
-function modelIdentityKeys(modelId: string, providerId: string): Set<string> {
-  const normalizedModelId = modelId.trim().toLowerCase();
-  const normalizedProviderId = providerId.trim().toLowerCase();
-  const keys = new Set<string>();
-  if (!normalizedModelId) return keys;
-
-  keys.add(normalizedModelId);
-  const slashIndex = normalizedModelId.indexOf('/');
-  if (slashIndex > 0 && slashIndex < normalizedModelId.length - 1) {
-    keys.add(normalizedModelId.slice(slashIndex + 1));
-  }
-  if (normalizedProviderId && normalizedModelId.startsWith(`${normalizedProviderId}/`)) {
-    keys.add(normalizedModelId.slice(normalizedProviderId.length + 1));
-  }
-  if (normalizedProviderId && !normalizedModelId.includes('/')) {
-    keys.add(`${normalizedProviderId}/${normalizedModelId}`);
-  }
-  return keys;
-}
 
 function identitySetsOverlap(left: Set<string>, right: Set<string>): boolean {
   return Array.from(left).some((key) => right.has(key));
@@ -130,6 +111,7 @@ export type ProviderWorkbenchState = {
   providerFormMode: 'create' | 'edit';
   credentialEditOpen: boolean;
   providerConnectionForm: ProviderConnectionForm;
+  initialProviderConnectionForm: ProviderConnectionForm;
   providerCatalogPreview: ProviderCatalogPreview | null;
   modelReferenceProviderId: string;
   modelReferenceSearch: string;
@@ -148,6 +130,7 @@ export const INITIAL_PROVIDER_WORKBENCH_STATE: ProviderWorkbenchState = {
   providerFormMode: 'create',
   credentialEditOpen: true,
   providerConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
+  initialProviderConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
   providerCatalogPreview: null,
   modelReferenceProviderId: 'openai',
   modelReferenceSearch: '',
@@ -170,6 +153,7 @@ export type ProviderWorkbenchAction =
       referenceProviderId: string;
     }
   | { type: 'close' }
+  | { type: 'reopen_draft' }
   | { type: 'reset_after_save' }
   | {
       type: 'patch_form';
@@ -223,6 +207,7 @@ export function providerWorkbenchReducer(
         providerFormMode: 'edit',
         credentialEditOpen: false,
         providerConnectionForm: action.form,
+        initialProviderConnectionForm: action.form,
         providerCatalogPreview: action.catalogPreview,
         modelReferenceProviderId: action.referenceProviderId,
         modelReferenceShowDeprecated: true,
@@ -236,6 +221,13 @@ export function providerWorkbenchReducer(
         confirmingClearModels: false,
         confirmingModelBatch: '',
       };
+    case 'reopen_draft':
+      return {
+        ...state,
+        providerFormOpen: true,
+        confirmingClearModels: false,
+        confirmingModelBatch: '',
+      };
     case 'reset_after_save':
       return {
         ...state,
@@ -243,6 +235,7 @@ export function providerWorkbenchReducer(
         providerFormMode: 'create',
         credentialEditOpen: true,
         providerConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
+        initialProviderConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
         providerCatalogPreview: null,
         modelReferencePage: 1,
         confirmingClearModels: false,
@@ -325,6 +318,12 @@ export function providerWorkbenchReducer(
         },
       };
   }
+}
+
+export function hasProviderWorkbenchDraftChanges(state: ProviderWorkbenchState): boolean {
+  return JSON.stringify(state.providerConnectionForm) !== JSON.stringify(
+    state.initialProviderConnectionForm
+  );
 }
 
 export function buildProviderConnectionForm(

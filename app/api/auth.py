@@ -40,8 +40,10 @@ from app.core.security import (
     resolve_client_scope_id,
 )
 from app.core.services import CloudServices
+from app.domain.service_settings import resolve_portal_public_base_url
 
 INTERNAL_TOKEN_HEADER = "X-Npcink-Internal-Token"
+ADMIN_SESSION_COOKIE = "npcink_admin_session_token"
 AUTHORIZATION_HEADER = "Authorization"
 PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL = "portal_login_code_email"
 PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT = "portal_login_code_client"
@@ -54,6 +56,14 @@ PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_PRINCIPAL = "portal_email_change_principal"
 PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_TARGET = "portal_email_change_target"
 PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_PRINCIPAL_WINDOW = 5
 PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_TARGET_WINDOW = 3
+PORTAL_AI_INSIGHT_REQUEST_SCOPE_PRINCIPAL = "portal_ai_insight_principal"
+PORTAL_AI_INSIGHT_REQUEST_SCOPE_SITE = "portal_ai_insight_site"
+PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_PRINCIPAL = (
+    "portal_ai_insight_force_refresh_principal"
+)
+PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_SITE = "portal_ai_insight_force_refresh_site"
+PORTAL_AI_INSIGHT_MAX_REQUESTS_PER_WINDOW = 10
+PORTAL_AI_INSIGHT_FORCE_REFRESH_MAX_REQUESTS_PER_WINDOW = 1
 PORTAL_SITE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,191}$")
 PORTAL_SESSION_ISSUER = "npcink-ai-cloud"
 PORTAL_SESSION_AUDIENCE = "npcink-ai-cloud-portal"
@@ -150,6 +160,7 @@ def _build_auth_error_response(
     status_code: int,
     error_code: str,
     message: str,
+    data: dict[str, Any] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
@@ -157,6 +168,7 @@ def _build_auth_error_response(
             status="error",
             error_code=error_code,
             message=message,
+            data=data or {},
             trace_id=extract_trace_id(request.headers.get("traceparent", "")),
             revision="m5",
         ),
@@ -634,6 +646,51 @@ def enforce_portal_email_change_request_rate_limit(
     )
 
 
+def enforce_portal_ai_insight_request_rate_limit(
+    request: Request,
+    *,
+    principal_id: str,
+    site_id: str,
+    force_refresh: bool,
+) -> None:
+    scopes = [
+        (
+            PORTAL_AI_INSIGHT_REQUEST_SCOPE_PRINCIPAL,
+            principal_id,
+            PORTAL_AI_INSIGHT_MAX_REQUESTS_PER_WINDOW,
+        ),
+        (
+            PORTAL_AI_INSIGHT_REQUEST_SCOPE_SITE,
+            site_id,
+            PORTAL_AI_INSIGHT_MAX_REQUESTS_PER_WINDOW,
+        ),
+    ]
+    if force_refresh:
+        scopes.extend(
+            (
+                (
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_PRINCIPAL,
+                    principal_id,
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_MAX_REQUESTS_PER_WINDOW,
+                ),
+                (
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_SCOPE_SITE,
+                    site_id,
+                    PORTAL_AI_INSIGHT_FORCE_REFRESH_MAX_REQUESTS_PER_WINDOW,
+                ),
+            )
+        )
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=tuple(scopes),
+        error_code=(
+            "portal.ai_insight_force_refresh_limited"
+            if force_refresh
+            else "portal.ai_insight_rate_limited"
+        ),
+    )
+
+
 async def authorize_public_request(
     request: Request,
     *,
@@ -696,11 +753,20 @@ async def authorize_public_request(
             ),
         )
     except RequestAuthError as error:
+        error_data = dict(error.data)
+        if error.error_code == "auth.site_inactive":
+            portal_base_url = resolve_portal_public_base_url(
+                services.settings.database_url,
+                services.settings,
+            ).rstrip("/")
+            if portal_base_url:
+                error_data["portal_url"] = f"{portal_base_url}/portal"
         return _build_auth_error_response(
             request,
             status_code=error.status_code,
             error_code=error.error_code,
             message=error.message,
+            data=error_data,
         )
 
 
@@ -782,6 +848,24 @@ async def _authorize_static_token_request(
             )
         )
 
+    request.state.internal_actor_kind = "internal_token"
+    request.state.internal_actor_ref = "internal"
+    if request.cookies.get(ADMIN_SESSION_COOKIE):
+        try:
+            from app.api.routes.auth import resolve_current_admin_session
+
+            admin_session = resolve_current_admin_session(request)
+        except PortalBearerTokenError as error:
+            return _token_error_response(
+                RequestAuthError(
+                    error.status_code,
+                    error.error_code,
+                    error.message,
+                )
+            )
+        request.state.internal_actor_kind = "platform_admin"
+        request.state.internal_actor_ref = str(admin_session["principal_id"])
+
     idempotency_key = request.headers.get("Idempotency-Key", "").strip()
 
     try:
@@ -789,7 +873,9 @@ async def _authorize_static_token_request(
     except RequestAuthError as error:
         return _token_error_response(error)
 
-    if request.method.upper() in {"POST", "PUT"} and idempotency_key:
+    # Keep the historical replay scope names for storage compatibility, but
+    # reserve receipts for every state-changing internal HTTP method.
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and idempotency_key:
         now = datetime.now(UTC)
         replay_ttl_seconds = _resolve_replay_receipt_ttl_seconds(
             services.settings.auth_timestamp_tolerance_seconds

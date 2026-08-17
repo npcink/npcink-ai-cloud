@@ -864,6 +864,8 @@ contract.
   for worker health checks.
 - `NPCINK_CLOUD_OPS_CADENCE_POLL_SECONDS`: ops cadence loop frequency.
 - `NPCINK_CLOUD_RETENTION_CLEANUP_INTERVAL_SECONDS`: retention cleanup cadence.
+- `NPCINK_CLOUD_RETENTION_CLEANUP_BATCH_SIZE`: maximum runtime results purged
+  in one retention pass; remaining due rows are reported for the next pass.
 - `NPCINK_CLOUD_USAGE_ROLLUP_INTERVAL_SECONDS`: usage rollup cadence.
 - `NPCINK_CLOUD_ROUTER_DIAGNOSTICS_INTERVAL_SECONDS`: router diagnostics cadence.
 - `NPCINK_CLOUD_LATENCY_PROBE_INTERVAL_SECONDS`: latency probe cadence.

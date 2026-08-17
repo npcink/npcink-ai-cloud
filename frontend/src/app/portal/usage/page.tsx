@@ -1,12 +1,13 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
+import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
-  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -149,7 +150,7 @@ function PortalUsageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
-  const contextSiteId = session?.selected_context?.site.site_id || '';
+  const siteFilterId = searchParams.get('site') || '';
   const [usage, setUsage] = useState<PortalUsageSummaryPayload | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [bundleLoading, setBundleLoading] = useState(false);
@@ -168,7 +169,7 @@ function PortalUsageContent() {
   const [creditTrend, setCreditTrend] = useState<PortalCreditTrendPayload | null>(null);
   const [creditTrendLoading, setCreditTrendLoading] = useState(true);
   const [creditTrendError, setCreditTrendError] = useState('');
-  const contextSiteIdRef = useRef(contextSiteId);
+  const siteFilterIdRef = useRef(siteFilterId);
   const bundleRequestVersionRef = useRef(0);
   const creditEventRequestVersionRef = useRef(0);
   const creditTrendRequestVersionRef = useRef(0);
@@ -178,23 +179,23 @@ function PortalUsageContent() {
   const creditEventPageSize = 20;
 
   const loadBundle = useCallback(async () => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++bundleRequestVersionRef.current;
     setBundleLoading(true);
     setBundleError('');
     try {
-      const bundle = await portalClient.getUsageBundle();
+      const bundle = await portalClient.getUsageBundle({ siteId: requestSiteFilterId || undefined });
       if (
         requestVersion !== bundleRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setUsage(bundle.usage);
       setEntitlements(bundle.entitlements);
     } catch (err) {
       if (
         requestVersion !== bundleRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setUsage(null);
       setEntitlements(null);
@@ -202,14 +203,14 @@ function PortalUsageContent() {
     } finally {
       if (
         requestVersion === bundleRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setBundleLoading(false);
     }
   }, [isAuthenticated, t]);
 
   const loadCreditEventBucketPage = useCallback(async (nextOffset: number) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++creditEventRequestVersionRef.current;
     setCreditEventLoading(true);
     setCreditEventError('');
@@ -218,32 +219,33 @@ function PortalUsageContent() {
         bucket: creditEventBucketSize,
         window: creditEventWindow,
         feature: creditEventFeature,
+        siteId: requestSiteFilterId || undefined,
         limit: creditEventPageSize,
         offset: nextOffset,
       });
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEventBuckets(response.data);
       setCreditEventOffset(nextOffset);
     } catch (err) {
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEventError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       if (
         requestVersion === creditEventRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setCreditEventLoading(false);
     }
   }, [creditEventBucketSize, creditEventFeature, creditEventWindow, isAuthenticated, t]);
 
   const openCreditBucket = useCallback(async (bucket: PortalCreditEventBucket) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++creditEventRequestVersionRef.current;
     setSelectedCreditBucket(bucket);
     setCreditEvents(null);
@@ -253,6 +255,7 @@ function PortalUsageContent() {
       const response = await portalClient.getAccountCreditEvents({
         window: creditEventWindow,
         feature: creditEventFeature,
+        siteId: requestSiteFilterId || undefined,
         startAt: bucket.start_at,
         endAt: bucket.end_at,
         limit: 50,
@@ -260,54 +263,55 @@ function PortalUsageContent() {
       });
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEvents(response.data);
     } catch (err) {
       if (
         requestVersion !== creditEventRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditEventError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       if (
         requestVersion === creditEventRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setCreditEventLoading(false);
     }
   }, [creditEventFeature, creditEventWindow, isAuthenticated, t]);
 
   const loadCreditTrend = useCallback(async () => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated) return;
     const requestVersion = ++creditTrendRequestVersionRef.current;
     setCreditTrendLoading(true);
     setCreditTrendError('');
     try {
       const response = await portalClient.getAccountCreditTrend({
         window: creditTrendWindow,
+        siteId: requestSiteFilterId || undefined,
       });
       if (
         requestVersion !== creditTrendRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditTrend(response.data);
     } catch (err) {
       if (
         requestVersion !== creditTrendRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
       ) return;
       setCreditTrendError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       if (
         requestVersion === creditTrendRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
       ) setCreditTrendLoading(false);
     }
   }, [creditTrendWindow, isAuthenticated, t]);
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = contextSiteId;
+    siteFilterIdRef.current = siteFilterId;
     bundleRequestVersionRef.current += 1;
     creditEventRequestVersionRef.current += 1;
     creditTrendRequestVersionRef.current += 1;
@@ -324,16 +328,15 @@ function PortalUsageContent() {
     setCreditTrendLoading(false);
     setCreditTrendError('');
     setBundleError('');
-    setBundleLoading(Boolean(isAuthenticated && contextSiteId));
-  }, [contextSiteId, isAuthenticated]);
+    setBundleLoading(Boolean(isAuthenticated));
+  }, [siteFilterId, isAuthenticated]);
 
   useEffect(() => {
     const requestedView = searchParams.get('view');
     setActiveUsageView(resolvePortalUsageView(requestedView));
-    if ((requestedView && requestedView !== 'records') || searchParams.has('site')) {
+    if (requestedView && requestedView !== 'records') {
       const nextParams = new URLSearchParams(searchParams.toString());
       if (requestedView !== 'records') nextParams.delete('view');
-      nextParams.delete('site');
       const query = nextParams.toString();
       window.history.replaceState(
         window.history.state,
@@ -351,17 +354,17 @@ function PortalUsageContent() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) {
+    if (!isAuthenticated) {
       return;
     }
     void loadBundle();
     return () => {
       bundleRequestVersionRef.current += 1;
     };
-  }, [contextSiteId, isAuthenticated, loadBundle]);
+  }, [isAuthenticated, loadBundle, siteFilterId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) {
+    if (!isAuthenticated) {
       return;
     }
     if (activeUsageView !== 'records') return;
@@ -369,16 +372,16 @@ function PortalUsageContent() {
     return () => {
       creditEventRequestVersionRef.current += 1;
     };
-  }, [activeUsageView, contextSiteId, creditEventBucketSize, creditEventFeature, creditEventWindow, isAuthenticated, loadCreditEventBucketPage]);
+  }, [activeUsageView, creditEventBucketSize, creditEventFeature, creditEventWindow, isAuthenticated, loadCreditEventBucketPage, siteFilterId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) return;
+    if (!isAuthenticated) return;
     if (activeUsageView !== 'trend') return;
     void loadCreditTrend();
     return () => {
       creditTrendRequestVersionRef.current += 1;
     };
-  }, [activeUsageView, contextSiteId, isAuthenticated, loadCreditTrend]);
+  }, [activeUsageView, isAuthenticated, loadCreditTrend, siteFilterId]);
 
   const closeCreditBucket = useCallback(() => setSelectedCreditBucket(null), []);
   const closeCreditEvent = useCallback(() => setSelectedCreditEvent(null), []);
@@ -394,7 +397,6 @@ function PortalUsageContent() {
   const handleUsageViewChange = (nextView: PortalUsageView) => {
     setActiveUsageView(nextView);
     const nextParams = new URLSearchParams(searchParams.toString());
-    nextParams.delete('site');
     if (nextView === 'trend') nextParams.delete('view');
     else nextParams.set('view', nextView);
     const query = nextParams.toString();
@@ -440,28 +442,6 @@ function PortalUsageContent() {
     );
   }
 
-  if (!contextSiteId || !session.selected_context) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          eyebrow={t('portal.usage.summary_label', {}, 'Usage')}
-          title={t('portal.nav_usage', {}, 'Usage')}
-          currentPage="usage"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing package, AI credits, or payment details.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
-    );
-  }
-
   if (bundleLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
@@ -482,9 +462,7 @@ function PortalUsageContent() {
   const quotaSummary = entitlements?.quota_summary || null;
   const creditEventItems = creditEvents?.items || [];
   const creditBucketItems = creditEventBuckets?.items || [];
-  const selectedContext = session.selected_context;
-  const contextSite = selectedContext.site;
-  const currentSubscription = selectedContext.current_subscription;
+  const currentSubscription = entitlements?.current_subscription;
   const availableCredits = Number(quotaSummary?.ai_credits?.total_remaining ?? 0);
   const creditEventCount = Number(creditEventBuckets?.pagination?.total ?? 0);
   const filteredConsumedCredits = Number(creditEventBuckets?.summary?.consumed_ai_credits ?? 0);
@@ -526,9 +504,8 @@ function PortalUsageContent() {
       field === 'title' ? entry.feature_label : entry.feature_detail
     );
   const eventSiteLabel = (entry: PortalCreditEvent) => {
-    return entry.site_id === contextSite.site_id
-      ? getPortalSiteDisplayName(contextSite)
-      : t('common.not_available', {}, 'Not available');
+    const site = session.sites.find((item) => item.site_id === entry.site_id);
+    return site ? getPortalSiteDisplayName(site) : t('common.not_available', {}, 'Not available');
   };
 
   const creditStatus = quotaSummary?.ai_credits?.status;
@@ -537,37 +514,12 @@ function PortalUsageContent() {
     : quotaStatusTone(creditStatus) === 'warning'
       ? t('portal.usage.headroom_watch', {}, 'Close to limit')
       : t('portal.home.risk_level_normal', {}, 'Normal');
+  const usageNeedsAttention = quotaStatusTone(creditStatus) !== 'ok' || overBudget;
   const usageHeaderDescription = t(
     'portal.usage.summary_desc',
     {},
     "Review this period's account AI credit usage, records, and trends."
   );
-  const usageHeaderInfo = updatedAt
-    ? `${usageHeaderDescription} · ${t(
-        'portal.usage.updated_at_inline',
-        { time: updatedAt },
-        'Updated {{time}}'
-      )}`
-    : usageHeaderDescription;
-  const usageHeaderMetrics = [
-    {
-      label: t('common.status'),
-      value: usageStatusLabel,
-      detail: t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more AI credits.'),
-    },
-    {
-      label: t('portal.usage.period_label', {}, 'Period'),
-      value: currentPeriodRange || t('common.not_found'),
-      detail: currentPeriodEndDetail
-        ? t(
-            'portal.usage.period_end_detail',
-            { time: currentPeriodEndDetail },
-            'Ends {{time}}'
-          )
-        : t('portal.usage.header_period_detail', {}, 'Current package period.'),
-      size: 'compact' as const,
-    },
-  ];
   const usageOverviewMetrics = [
     {
       label: t('portal.usage.total_remaining_label', {}, 'Total available'),
@@ -593,16 +545,63 @@ function PortalUsageContent() {
       size: 'compact' as const,
     },
   ];
+  const handleSiteFilterChange = (nextSiteId: string) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextSiteId) nextParams.set('site', nextSiteId);
+    else nextParams.delete('site');
+    const query = nextParams.toString();
+    window.history.replaceState(window.history.state, '', `/portal/usage${query ? `?${query}` : ''}`);
+  };
 
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.usage.summary_label', {}, 'Usage')}
         title={t('portal.nav_usage', {}, 'Usage')}
-        eyebrowInfo={usageHeaderInfo}
+        description={usageHeaderDescription}
         currentPage="usage"
-        metrics={usageHeaderMetrics}
-        metricsColumnsClassName="lg:grid-cols-2"
+        selectedSiteId={siteFilterId}
+        sites={session.sites}
+        onSiteChange={handleSiteFilterChange}
+        siteSelectorMode="filter"
+        titleAccessory={!usageNeedsAttention ? (
+          <PortalStatusBadge status="active" label={usageStatusLabel} className="text-[0.68rem]" />
+        ) : null}
+        metadata={(
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            <span>
+              <span className="font-medium text-slate-700 dark:text-slate-200">
+                {t('portal.usage.period_label', {}, 'Period')}:
+              </span>{' '}
+              {currentPeriodRange || t('common.not_found')}
+            </span>
+            <span>
+              {currentPeriodEndDetail
+                ? t(
+                    'portal.usage.period_end_detail',
+                    { time: currentPeriodEndDetail },
+                    'Ends {{time}}'
+                  )
+                : t('portal.usage.header_period_detail', {}, 'Current package period.')}
+            </span>
+            {updatedAt ? (
+              <span>{t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}</span>
+            ) : null}
+          </div>
+        )}
+        contextPanel={usageNeedsAttention ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
+            <p className="text-sm font-semibold text-gray-950 dark:text-white">{usageStatusLabel}</p>
+            <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+              {t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more AI credits.')}
+            </p>
+            <Link
+              href="/portal/billing#package-options"
+              className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+            >
+              {t('portal.home.billing_action', {}, 'Review package')}
+            </Link>
+          </div>
+        ) : null}
       />
 
       {entitlements ? (
@@ -734,14 +733,65 @@ function PortalUsageContent() {
               {[0, 1, 2, 3].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}
             </div>
           ) : creditBucketItems.length > 0 ? (
-            <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
-              <div className="hidden grid-cols-[1.2fr_0.55fr_0.55fr_0.8fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
-                <span>{t('portal.usage.credit_buckets_time_column', {}, 'Time period')}</span>
-                <span className="text-right">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</span>
-                <span className="text-right">{t('portal.usage.credit_buckets_events_column', {}, 'Services')}</span>
-                <span className="text-right">{t('portal.usage.credit_buckets_top_service_column', {}, 'Main service')}</span>
+            <>
+              <div className="hidden overflow-x-auto lg:block" data-portal-usage="records-table">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <caption className="sr-only">
+                    {t('portal.usage.credit_events_title', {}, 'AI credit records')}
+                  </caption>
+                  <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    <tr>
+                      <th scope="col" className="px-3 py-3 font-medium">{t('portal.usage.credit_buckets_time_column', {}, 'Time period')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_buckets_events_column', {}, 'Services')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_buckets_top_service_column', {}, 'Main service')}</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {creditBucketItems.map((bucket) => {
+                      const bucketRange = formatCreditBucketRange(bucket.start_at, bucket.end_at, locale);
+                      const bucketCredits = formatCreditPoints(bucket.consumed_ai_credits);
+                      const bucketServiceCount = t(
+                        'portal.usage.credit_buckets_event_count',
+                        { count: formatQuotaValue(bucket.event_count) },
+                        '{{count}} services'
+                      );
+                      const bucketTopService = bucket.top_feature_key
+                        ? t(`portal.usage.credit_ledger_feature_${bucket.top_feature_key}_title`)
+                        : '-';
+                      return (
+                        <tr key={bucket.bucket_id} className="align-middle">
+                          <th scope="row" className="px-3 py-4 font-medium text-slate-950 dark:text-white">
+                            {bucketRange}
+                          </th>
+                          <td className="whitespace-nowrap px-3 py-4 text-right font-semibold text-slate-950 dark:text-white">
+                            {bucketCredits}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-right text-slate-600 dark:text-slate-300">
+                            {bucketServiceCount}
+                          </td>
+                          <td className="max-w-[16rem] truncate px-3 py-4 text-right text-slate-500 dark:text-slate-400">
+                            {bucketTopService}
+                          </td>
+                          <td className="px-3 py-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => void openCreditBucket(bucket)}
+                              className="btn btn-secondary btn-sm"
+                              aria-label={`${bucketCredits} · ${bucketTopService} · ${t('common.view_details', {}, 'View details')}`}
+                            >
+                              {t('common.view_details', {}, 'View details')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+
+              <div className="divide-y divide-slate-200 border-y border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800 lg:hidden">
                 {creditBucketItems.map((bucket) => (
                   <button
                     type="button"
@@ -758,7 +808,7 @@ function PortalUsageContent() {
                   </button>
                 ))}
               </div>
-            </div>
+            </>
           ) : (
             <div className="rounded-[1rem] border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
               {t(
