@@ -2118,9 +2118,17 @@ def _resolve_portal_account_access_without_site(
     request: Request,
     *,
     principal_id: str,
+    selected_site_id: str,
     required_action: str | None,
 ) -> dict[str, object] | JSONResponse:
-    """Resolve one active account without requiring a selected site context."""
+    """Resolve the selected account or one unambiguous active account."""
+    if str(selected_site_id or "").strip():
+        return _resolve_selected_portal_account_access(
+            request,
+            principal_id=principal_id,
+            site_id=selected_site_id,
+            required_action=required_action,
+        )
     try:
         result = _get_commercial_service(request).list_portal_accounts(
             principal_id=principal_id,
@@ -3026,6 +3034,7 @@ async def list_portal_account_plan_offers(request: Request) -> Any:
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3062,6 +3071,7 @@ async def start_portal_account_plan_trial(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3112,6 +3122,7 @@ async def create_portal_account_subscription_order(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3157,6 +3168,7 @@ async def cancel_portal_account_subscription_order(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3198,6 +3210,7 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3231,6 +3244,7 @@ async def get_portal_account_entitlements(request: Request) -> Any:
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3278,6 +3292,7 @@ async def get_portal_account_usage_summary(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_USAGE,
     )
     if isinstance(account_access, JSONResponse):
@@ -3327,6 +3342,7 @@ async def get_portal_account_credit_ledger(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3372,6 +3388,7 @@ async def get_portal_account_credit_trend(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3421,6 +3438,7 @@ async def get_portal_account_credit_events(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3474,6 +3492,7 @@ async def get_portal_account_credit_event_buckets(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3518,6 +3537,7 @@ async def list_portal_account_credit_packs(request: Request) -> Any:
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3550,6 +3570,7 @@ async def create_portal_account_credit_pack_order(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3593,6 +3614,7 @@ async def list_portal_account_payment_orders(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3626,6 +3648,7 @@ async def get_portal_account_payment_order(request: Request, order_id: str) -> A
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -3666,6 +3689,7 @@ async def cancel_portal_account_payment_order(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
@@ -4907,6 +4931,7 @@ async def get_portal_account_audit_summary(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
     )
     if isinstance(account_access, JSONResponse):
@@ -4961,6 +4986,7 @@ async def list_portal_account_audit_events(
     account_access = _resolve_portal_account_access_without_site(
         request,
         principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
         required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
     )
     if isinstance(account_access, JSONResponse):
