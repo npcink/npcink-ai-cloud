@@ -77,9 +77,12 @@ export default function PortalPage() {
   const [accountEntitlementsState, setAccountEntitlementsState] =
     useState<AccountEntitlementsState>('idle');
   const [accountEntitlementsRetryVersion, setAccountEntitlementsRetryVersion] = useState(0);
+  const contextSiteId = session?.selected_context?.site.site_id || '';
+  const contextSiteIdRef = useRef(contextSiteId);
   const accountEntitlementsRequestVersionRef = useRef(0);
 
   useLayoutEffect(() => {
+    contextSiteIdRef.current = contextSiteId;
     const requestVersion = ++accountEntitlementsRequestVersionRef.current;
     setAccountEntitlements(null);
     setAccountEntitlementsState('idle');
@@ -91,6 +94,7 @@ export default function PortalPage() {
       .then((response) => {
         if (
           requestVersion === accountEntitlementsRequestVersionRef.current
+          && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(response.data);
           setAccountEntitlementsState('loaded');
@@ -99,6 +103,7 @@ export default function PortalPage() {
       .catch(() => {
         if (
           requestVersion === accountEntitlementsRequestVersionRef.current
+          && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(null);
           setAccountEntitlementsState('error');
@@ -110,7 +115,7 @@ export default function PortalPage() {
         accountEntitlementsRequestVersionRef.current += 1;
       }
     };
-  }, [accountEntitlementsRetryVersion, isAuthenticated]);
+  }, [accountEntitlementsRetryVersion, contextSiteId, isAuthenticated]);
 
   if (isLoading) {
     return (
