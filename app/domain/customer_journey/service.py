@@ -36,7 +36,6 @@ class CustomerJourneyService:
         normalized = [
             self._normalize_event(
                 site_id=site_id,
-                key_id=key_id,
                 event=event,
                 current_time=current_time,
             )
@@ -295,7 +294,6 @@ class CustomerJourneyService:
         self,
         *,
         site_id: str,
-        key_id: str,
         event: dict[str, Any],
         current_time: datetime,
     ) -> dict[str, Any]:
@@ -311,12 +309,11 @@ class CustomerJourneyService:
             )
         session_hash = hashlib.sha256(f"{site_id}|{session_id}".encode()).hexdigest()
         event_id = hashlib.sha256(f"{site_id}|{raw_event_id}".encode()).hexdigest()
-        dedupe_key = hashlib.sha256(f"{site_id}|{key_id}|{raw_event_id}".encode()).hexdigest()
         return {
             **event,
             "event_id": event_id,
             "session_hash": session_hash,
-            "dedupe_key": dedupe_key,
+            "dedupe_key": event_id,
             "occurred_at": occurred_at,
         }
 

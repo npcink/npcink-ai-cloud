@@ -249,6 +249,33 @@ def test_customer_journey_ingestion_hashes_session_and_dedupes(tmp_path: Path) -
     assert any(item.error_code == "provider.timeout" for item in stored)
 
 
+def test_customer_journey_dedupes_stable_event_across_api_key_rotation(
+    tmp_path: Path,
+) -> None:
+    database_url, _client = _build_client(tmp_path)
+    service = CustomerJourneyService(database_url)
+    event = _event(event_id="journey-key-rotation-0001")
+
+    first = service.ingest_events(
+        site_id="site_journey",
+        key_id="key_before_rotation",
+        events=[event],
+    )
+    rotated_replay = service.ingest_events(
+        site_id="site_journey",
+        key_id="key_after_rotation",
+        events=[event],
+    )
+
+    assert first["stored_count"] == 1
+    assert rotated_replay["stored_count"] == 0
+    assert rotated_replay["duplicate_count"] == 1
+    with get_session(database_url) as session:
+        stored = list(session.scalars(select(CustomerJourneyEvent)))
+    assert len(stored) == 1
+    assert stored[0].key_id == "key_before_rotation"
+
+
 def test_customer_journey_rejects_content_and_arbitrary_error_message(tmp_path: Path) -> None:
     _database_url, client = _build_client(tmp_path)
     event = _event(event_id="journey-event-secret", prompt="private prompt")
