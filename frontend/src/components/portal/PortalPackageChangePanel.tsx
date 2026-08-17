@@ -157,7 +157,7 @@ export function PortalPackageChangePanel({
     || t('portal.home.package_pending_label', {}, 'To confirm');
   const comparisonRows = [
     { key: 'monthly_points', label: t('portal.billing.compare_monthly_points', {}, 'Monthly package AI credits') },
-    { key: 'site_limit', label: t('portal.billing.compare_site_limit', {}, 'Connected sites') },
+    { key: 'site_limit', label: t('portal.billing.compare_site_limit', {}, 'Active sites') },
     { key: 'knowledge_article_limit', label: t('portal.billing.compare_knowledge_limit', {}, 'Knowledge articles') },
     { key: 'concurrency_limit', label: t('portal.billing.compare_concurrency_limit', {}, 'Active runs') },
     { key: 'batch_item_limit', label: t('portal.billing.compare_batch_limit', {}, 'Batch size') },

@@ -160,26 +160,34 @@ function PortalSiteRecordContent() {
   const latestActivityAt = siteMonitoring.overview?.activity.last_seen_at
     || siteMonitoring.overview?.generated_at
     || '';
-  const attentionTitle = primaryMonitoringAction
-    ? getPortalCustomerIssueTitle(primaryMonitoringAction, t)
-    : !siteUrl
+  const attentionTitle = site.status === 'inactive'
+    ? t('portal.site_connection_status_attention', {}, 'Site connection needs confirmation')
+    : primaryMonitoringAction
+      ? getPortalCustomerIssueTitle(primaryMonitoringAction, t)
+      : !siteUrl
       ? t('portal.site_url_missing_short', {}, 'Site URL not configured')
       : site.status !== 'active'
         ? t('portal.site_connection_status_attention', {}, 'Site connection needs confirmation')
         : t('portal.site_service_status_attention', {}, 'Site service status needs confirmation');
-  const attentionDetail = primaryMonitoringAction
-    ? primaryIssueCategory === 'quota'
+  const attentionDetail = site.status === 'inactive'
+    ? t(
+        'portal.site_inactive_recovery_detail',
+        {},
+        'Reconnect this site from the WordPress plugin first. If it still remains inactive, submit a ticket and include the site name.'
+      )
+    : primaryMonitoringAction
+      ? primaryIssueCategory === 'quota'
       ? t(
           'portal.monitoring.quota_evidence_attention',
           {},
           'Usage is near or over the current package limit.'
         )
-      : t(
+        : t(
           'portal.monitoring.customer_issue_detail',
           {},
           'If this keeps showing, contact support and include the site name.'
         )
-    : !siteUrl
+      : !siteUrl
       ? t(
           'portal.site_record_address_missing_detail',
           {},

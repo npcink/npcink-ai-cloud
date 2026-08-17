@@ -58,6 +58,8 @@ function PortalSupportContent() {
   const contextSiteId = selectedContextSite?.site_id || '';
   const initialTopic = String(searchParams?.get('topic') || 'general').toLowerCase();
   const initialSiteId = searchParams?.get('site') || '';
+  const initialSiteIsVisible = getVisiblePortalSites(session?.sites || [])
+    .some((site) => site.site_id === initialSiteId);
   const shouldOpenForm = searchParams?.get('new') === '1';
   const [items, setItems] = useState<PortalSupportRequest[]>([]);
   const [total, setTotal] = useState(0);
@@ -141,8 +143,8 @@ function PortalSupportContent() {
     );
     setTitle('');
     setDescription('');
-    setSiteId(initialSiteId === contextSiteId ? contextSiteId : '');
-  }, [contextSiteId, initialSiteId, initialTopic, isAuthenticated, shouldOpenForm]);
+    setSiteId(initialSiteIsVisible ? initialSiteId : '');
+  }, [contextSiteId, initialSiteId, initialSiteIsVisible, initialTopic, isAuthenticated, shouldOpenForm]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -152,8 +154,8 @@ function PortalSupportContent() {
     };
   }, [contextSiteId, isAuthenticated, loadRequests]);
 
-  const visibleSites = selectedContextSite ? [selectedContextSite] : [];
   const accountSites = getVisiblePortalSites(session?.sites || []);
+  const visibleSites = accountSites;
   const supportRequestSiteLabel = (item: PortalSupportRequest) => {
     if (!item.site_id) {
       return t('portal.support_request_no_site', {}, 'Account-level issue');
@@ -208,7 +210,7 @@ function PortalSupportContent() {
         topic,
         title,
         description,
-        site_id: siteId === requestContextSiteId ? requestContextSiteId : '',
+        site_id: siteId,
         source_path: '/portal/support',
         context: {
           source: 'portal_support_tab',

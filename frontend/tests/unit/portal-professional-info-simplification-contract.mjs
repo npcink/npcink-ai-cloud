@@ -130,6 +130,11 @@ assert.match(
   'Portal site record should keep service and knowledge summaries visible while placing destructive actions in low-frequency disclosure'
 );
 assert.match(
+  siteRecordSource,
+  /site\.status === 'inactive'[\s\S]*portal\.site_inactive_recovery_detail[\s\S]*WordPress plugin/,
+  'An inactive site must direct customers to reconnect from WordPress before escalating to support'
+);
+assert.match(
   siteServiceStatusSource,
   /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
   'Portal service status should use a compact semantic table'

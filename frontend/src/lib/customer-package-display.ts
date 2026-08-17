@@ -20,6 +20,24 @@ export type CustomerPackageInput = {
   coverageState?: string;
 };
 
+export type CustomerPackageQuotaResource = {
+  status?: string;
+  unlimited?: boolean;
+  limit?: number | null;
+  used?: number | null;
+};
+
+export function selectCustomerPackagePressureResource<
+  T extends CustomerPackageQuotaResource,
+>(resources: readonly T[] | null | undefined): T | undefined {
+  const candidates = resources || [];
+  return candidates.find((resource) => (
+    !resource.unlimited
+    && Number(resource.limit || 0) > 0
+    && Number(resource.used || 0) > Number(resource.limit || 0)
+  )) || candidates.find((resource) => resource.status === 'limited');
+}
+
 export function inferPlanIdFromPlanVersionId(planVersionId: string | null | undefined): string {
   const normalized = String(planVersionId || '').trim();
   if (!normalized) {
