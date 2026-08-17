@@ -99,6 +99,7 @@ deleting the old decision history.
 - [Text Hosted Routing Profile](text-ai-hosted-routing-profile-v1.md)
 - [Source Extraction Preview](source-extraction-preview-v1.md)
 - [Site Knowledge Runtime Contract](site-knowledge-runtime-contract-v1.md)
+- [Site Knowledge Search Architecture Standard](site-knowledge-search-architecture-standard-v1.md) — lexical, vector, and hybrid retrieval selection, Meilisearch admission gate, evaluation, and Cloud ownership rules
 - [Site Operations Cloud Analysis Runtime](site-ops-cloud-analysis-runtime-v1.md)
 - [Commercial Repository Decomposition Plan](commercial-repository-decomposition-plan-v1.md)
 - [Commercial Repository Decomposition Closeout and Retrospective](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)
