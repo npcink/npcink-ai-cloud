@@ -42,13 +42,22 @@ function LoginFormContent() {
   const { isAuthenticated, isLoading, requestLoginCode, verifyLoginCode } = useSession();
   const verificationCooldown = useVerificationCodeCooldown();
   const redirectTo = resolvePortalLoginRedirect(searchParams.get('redirect'));
+  const loginReason = searchParams.get('reason');
+  const initialMessage =
+    loginReason === 'qq_unbound'
+      ? t(
+          'portal.account.qq_unbound',
+          undefined,
+          'QQ quick login was unbound. Sign in again.'
+        )
+      : '';
   const [form, setForm] = useState<FormState>({
     email: '',
     code: '',
     rememberMe: false,
     step: 'request',
     status: 'idle',
-    message: '',
+    message: initialMessage,
   });
 
   useEffect(() => {

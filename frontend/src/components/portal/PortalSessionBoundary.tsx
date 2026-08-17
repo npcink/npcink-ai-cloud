@@ -6,6 +6,7 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useSession } from '@/hooks/useSession';
 import { formatPortalErrorReference } from '@/lib/portal-error';
 import { useLocale } from '@/contexts/LocaleContext';
+import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
 
 const PUBLIC_PORTAL_PATHS = new Set([
   '/portal/login',
@@ -16,9 +17,17 @@ const PUBLIC_PORTAL_PATHS = new Set([
 export function PortalSessionBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { t } = useLocale();
-  const { isAuthenticated, isLoading, sessionInvalid, error, logout, refresh } = useSession();
+  const { session, isAuthenticated, isLoading, sessionInvalid, error, logout, refresh } = useSession();
   const redirectStartedRef = useRef(false);
   const isPublicPath = PUBLIC_PORTAL_PATHS.has(pathname);
+  const selectedSiteId = session?.selected_context?.site.site_id || '';
+
+  useEffect(() => {
+    if (!isAuthenticated || !selectedSiteId) return;
+    void recordPortalJourneyBestEffort(selectedSiteId, 'login', 'succeeded', {
+      oncePerSession: true,
+    });
+  }, [isAuthenticated, selectedSiteId]);
 
   useEffect(() => {
     if (isPublicPath) {

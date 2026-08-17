@@ -7,7 +7,11 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { formatAdminCurrency } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
-import { buildAdminOperatorWatchItems, operatorSeverityClasses } from '@/lib/admin-operator-signals';
+import {
+  buildAdminOperatorWatchItems,
+  operatorSeverityClasses,
+  type OperatorWatchItemProjection,
+} from '@/lib/admin-operator-signals';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import {
@@ -83,13 +87,7 @@ interface AdminOverview {
     nextStepRef: string;
   }>;
   operationalReadiness: {
-    status: 'ok' | 'error' | 'unknown';
     generatedAt: string;
-    checksTotal: number;
-    checksFailed: number;
-    failedChecks: string[];
-    failureScopes: string[];
-    href: string;
   };
   runtimeTelemetry: {
     status: string;
@@ -114,6 +112,21 @@ interface AdminOverview {
       capabilities: string[];
     }>;
   };
+  operatorProjection: {
+    status: 'error' | 'warning' | 'inactive' | 'ok';
+    conclusionCode: string;
+    readiness: {
+      status: 'blocked' | 'unknown' | 'ready';
+      checksFailed: number;
+      failureScopes: string[];
+    };
+    primaryAction: {
+      kind: 'readiness' | 'runtime_telemetry' | 'coverage' | 'accounts';
+      href: string;
+    };
+    followUpFocus: 'runtime' | 'commercial';
+    watchItems: OperatorWatchItemProjection[];
+  };
 }
 
 function normalizeOverview(raw: any): AdminOverview {
@@ -127,6 +140,30 @@ function normalizeOverview(raw: any): AdminOverview {
   const totals = recentUsage?.totals ?? {};
   const runtimeTelemetry = raw?.runtime_telemetry ?? {};
   const operationalReadiness = raw?.operational_readiness ?? {};
+  const rawOperatorProjection = raw?.operator_projection ?? {};
+  const operatorProjection =
+    rawOperatorProjection?.revision === 'admin-overview-operator-projection-v1'
+      ? rawOperatorProjection
+      : {};
+  const operatorReadiness = operatorProjection?.readiness ?? {};
+  const operatorPrimaryAction = operatorProjection?.primary_action ?? {};
+  const operatorPrimaryActionKind: AdminOverview['operatorProjection']['primaryAction']['kind'] =
+    operatorPrimaryAction.kind === 'readiness' ||
+    operatorPrimaryAction.kind === 'runtime_telemetry' ||
+    operatorPrimaryAction.kind === 'coverage' ||
+    operatorPrimaryAction.kind === 'accounts'
+      ? operatorPrimaryAction.kind
+      : 'readiness';
+  const operatorPrimaryActionFallbacks = {
+    readiness: '/admin/troubleshooting',
+    runtime_telemetry: '/admin/troubleshooting',
+    coverage: '/admin/coverage',
+    accounts: '/admin/accounts',
+  } as const;
+  const operatorPrimaryActionCandidate = String(operatorPrimaryAction.href ?? '');
+  const operatorPrimaryActionHref = operatorPrimaryActionCandidate.startsWith('/admin/')
+    ? operatorPrimaryActionCandidate
+    : operatorPrimaryActionFallbacks[operatorPrimaryActionKind];
   const runtimeTelemetryAlertSummary = runtimeTelemetry?.alert_summary ?? {};
   const runtimeTelemetryDailyDigest = runtimeTelemetryAlertSummary?.daily_digest ?? {};
 
@@ -202,20 +239,7 @@ function normalizeOverview(raw: any): AdminOverview {
         }))
       : [],
     operationalReadiness: {
-      status:
-        operationalReadiness.status === 'ok' || operationalReadiness.status === 'error'
-          ? operationalReadiness.status
-          : 'unknown',
       generatedAt: String(operationalReadiness.generated_at ?? ''),
-      checksTotal: Number(operationalReadiness.checks_total ?? 0),
-      checksFailed: Number(operationalReadiness.checks_failed ?? 0),
-      failedChecks: Array.isArray(operationalReadiness.failed_checks)
-        ? operationalReadiness.failed_checks.map(String)
-        : [],
-      failureScopes: Array.isArray(operationalReadiness.failure_scopes)
-        ? operationalReadiness.failure_scopes.map(String)
-        : [],
-      href: String(operationalReadiness.href ?? '/admin/troubleshooting') || '/admin/troubleshooting',
     },
     runtimeTelemetry: {
       status: String(runtimeTelemetryAlertSummary.status ?? 'inactive'),
@@ -241,6 +265,63 @@ function normalizeOverview(raw: any): AdminOverview {
             capabilities: Array.isArray(item?.capabilities) ? item.capabilities.map(String) : [],
           }))
         : [],
+    },
+    operatorProjection: {
+      status:
+        operatorProjection.status === 'error' ||
+        operatorProjection.status === 'warning' ||
+        operatorProjection.status === 'inactive' ||
+        operatorProjection.status === 'ok'
+          ? operatorProjection.status
+          : 'warning',
+      conclusionCode: String(operatorProjection.conclusion_code ?? 'operational_readiness_unknown'),
+      readiness: {
+        status:
+          operatorReadiness.status === 'blocked' ||
+          operatorReadiness.status === 'unknown' ||
+          operatorReadiness.status === 'ready'
+            ? operatorReadiness.status
+            : 'unknown',
+        checksFailed: Number(operatorReadiness.checks_failed ?? 0),
+        failureScopes: Array.isArray(operatorReadiness.failure_scopes)
+          ? operatorReadiness.failure_scopes.map(String)
+          : [],
+      },
+      primaryAction: {
+        kind: operatorPrimaryActionKind,
+        href: operatorPrimaryActionHref,
+      },
+      followUpFocus: operatorProjection.follow_up_focus === 'commercial' ? 'commercial' : 'runtime',
+      watchItems: Array.isArray(operatorProjection.watch_items)
+        ? operatorProjection.watch_items.map((item: any) => ({
+            code: String(item?.code ?? ''),
+            scope: String(item?.scope ?? ''),
+            severity:
+              item?.severity === 'action_needed' || item?.severity === 'warn' || item?.severity === 'watch'
+                ? item.severity
+                : 'watch',
+            value:
+              typeof item?.value === 'number' || typeof item?.value === 'string'
+                ? item.value
+                : null,
+            detailCode: String(item?.detail_code ?? ''),
+            detailArgs:
+              item?.detail_args &&
+              typeof item.detail_args === 'object' &&
+              !Array.isArray(item.detail_args)
+                ? item.detail_args
+                : {},
+          }))
+        : [
+            {
+              code: 'operational_readiness_unknown',
+              scope: 'runtime.operational_readiness',
+              severity: 'warn',
+              value: null,
+              detailCode: 'operational_readiness_unknown',
+              detailArgs: {},
+            },
+          ],
     },
   };
 }
@@ -370,58 +451,83 @@ function AdminOverviewContent() {
     return null;
   }
 
-  const operatorWatchItems = buildAdminOperatorWatchItems({
-    runtimeSummary: overview.runtimeSummary,
-    expiringSubscriptionsIn7Days: overview.expiringSubscriptions.in7Days,
-    attentionSubscriptionsCount: overview.attentionSubscriptions.length,
-    firstAttentionReason: overview.attentionSubscriptions[0]?.reason || '',
-    runtimeTelemetry: {
-      status: overview.runtimeTelemetry.status,
-      alertCount: overview.runtimeTelemetry.alertCount,
-      firstAlertTitle: overviewRuntimeAlertTitle(overview.runtimeTelemetry.alerts[0], t),
-      firstAlertSummary: overviewRuntimeAlertSummary(overview.runtimeTelemetry.alerts[0], t),
-      summary: overview.runtimeTelemetry.summary,
-    },
-    formatValue: formatInteger,
-    copy: {
-      callbackTitle: t('admin.watch_callback_title'),
-      callbackReason: t('admin.watch_callback_reason'),
-      guardTitle: t('admin.watch_guard_title'),
-      guardReason: t('admin.watch_guard_reason'),
-      expiryTitle: t('admin.watch_expiry_title'),
-      expiryReason: t('admin.watch_expiry_reason'),
-      attentionTitle: t('admin.watch_attention_title'),
-      attentionFallbackReason: t('admin.watch_attention_reason'),
-      runtimeTelemetryTitle: t('admin.watch_runtime_telemetry_title', {}, 'Runtime telemetry needs review'),
-      runtimeTelemetryReason: t(
-        'admin.watch_runtime_telemetry_reason',
-        {},
-        'Runtime telemetry coverage needs review before traffic expands.'
-      ),
-    },
-  });
-
-  const readinessBlocked = overview.operationalReadiness.status === 'error';
-  const readinessUnknown = overview.operationalReadiness.status === 'unknown';
-  const readinessScopeLabels = overview.operationalReadiness.failureScopes.map((scope) =>
+  const readinessStatus = overview.operatorProjection.readiness.status;
+  const readinessScopeLabels = overview.operatorProjection.readiness.failureScopes.map((scope) =>
     t(`admin.home_readiness_scope_${scope}`, {}, scope)
   );
   const readinessScopeText = readinessScopeLabels.join(', ') || t('common.unknown');
-  let statusTone: 'error' | 'warning' | 'inactive' | 'ok' = 'ok';
-  if (readinessBlocked || overview.runtimeSummary.callbackFailed > 0 || overview.runtimeTelemetry.status === 'error') {
-    statusTone = 'error';
-  } else if (
-    readinessUnknown ||
-    overview.attentionSubscriptions.length > 0 ||
-    overview.runtimeTelemetry.status === 'warning' ||
-    overview.expiringSubscriptions.in7Days > 0 ||
-    overview.runtimeSummary.guardEvents > 0 ||
-    overview.runtimeSummary.callbackPending > 0
-  ) {
-    statusTone = 'warning';
-  } else if (overview.totals.sitesActive === 0) {
-    statusTone = 'inactive';
-  }
+  const operatorWatchItems = buildAdminOperatorWatchItems({
+    items: overview.operatorProjection.watchItems,
+    formatValue: formatInteger,
+    localize: (item) => {
+      switch (item.code) {
+        case 'operational_readiness_blocked':
+          return {
+            title: t('admin.home_readiness_blocked', {}, 'Not operationally ready'),
+            reason: t(
+              'admin.home_readiness_watch_reason',
+              { scopes: readinessScopeText },
+              `Formal readiness is blocked in: ${readinessScopeText}.`
+            ),
+          };
+        case 'operational_readiness_unknown':
+          return {
+            title: t('admin.home_readiness_unknown', {}, 'Readiness unknown'),
+            reason: t(
+              'admin.home_readiness_unknown_watch_reason',
+              {},
+              'The overview response did not include a current formal readiness result.'
+            ),
+          };
+        case 'runtime_callback_failed':
+          return {
+            title: t('admin.watch_callback_title'),
+            reason: t('admin.watch_callback_reason'),
+          };
+        case 'request_guard_events':
+          return {
+            title: t('admin.watch_guard_title'),
+            reason: t('admin.watch_guard_reason'),
+          };
+        case 'commercial_subscription_expiring':
+          return {
+            title: t('admin.watch_expiry_title'),
+            reason: t('admin.watch_expiry_reason'),
+          };
+        case 'commercial_subscription_attention':
+          return {
+            title: t('admin.watch_attention_title'),
+            reason:
+              String(item.detailArgs.reason ?? '') || t('admin.watch_attention_reason'),
+          };
+        case 'runtime_telemetry': {
+          const alertCode = String(item.detailArgs.alert_code ?? '');
+          const alert = overview.runtimeTelemetry.alerts.find((candidate) => candidate.code === alertCode)
+            ?? overview.runtimeTelemetry.alerts[0];
+          return {
+            title:
+              overviewRuntimeAlertTitle(alert, t) ||
+              t('admin.watch_runtime_telemetry_title', {}, 'Runtime telemetry needs review'),
+            reason:
+              overviewRuntimeAlertSummary(alert, t) ||
+              overview.runtimeTelemetry.summary ||
+              t(
+                'admin.watch_runtime_telemetry_reason',
+                {},
+                'Runtime telemetry coverage needs review before traffic expands.'
+              ),
+          };
+        }
+        default:
+          return {
+            title: item.code || t('common.unknown'),
+            reason: item.detailCode || t('common.unknown'),
+          };
+      }
+    },
+  });
+
+  const statusTone = overview.operatorProjection.status;
   const statusLabel = t(`status.${statusTone}`, {}, statusTone);
   const statusClasses =
     statusTone === 'error'
@@ -431,55 +537,59 @@ function AdminOverviewContent() {
         : statusTone === 'inactive'
           ? 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
           : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200';
-  const readinessLabel = readinessBlocked
+  const readinessLabel = readinessStatus === 'blocked'
     ? t('admin.home_readiness_blocked', {}, 'Not operationally ready')
-    : readinessUnknown
+    : readinessStatus === 'unknown'
       ? t('admin.home_readiness_unknown', {}, 'Readiness unknown')
       : t('admin.home_readiness_ready', {}, 'Operationally ready');
-  const readinessClasses = readinessBlocked
+  const readinessClasses = readinessStatus === 'blocked'
     ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200'
-    : readinessUnknown
+    : readinessStatus === 'unknown'
       ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200'
       : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200';
-  let platformConclusion = t(
-    'admin.home_status_ok',
-    {},
-    'Platform is nominal. Use this surface to review posture and clear the next operational queue.'
-  );
-  if (readinessBlocked) {
-    platformConclusion = t(
-      'admin.home_readiness_blocked_desc',
-      {
-        count: formatInteger(overview.operationalReadiness.checksFailed),
-        scopes: readinessScopeText,
-      },
-      `${formatInteger(overview.operationalReadiness.checksFailed)} formal readiness checks failed across ${readinessScopeText}. Inspect the failing runtime evidence before continuing operations.`
-    );
-  } else if (readinessUnknown) {
-    platformConclusion = t(
-      'admin.home_readiness_unknown_desc',
-      {},
-      'Formal operational readiness evidence is unavailable. Do not treat recent traffic as proof that the platform is ready.'
-    );
-  } else if (statusTone === 'error') {
-    platformConclusion = t(
-      'admin.home_status_error',
-      {},
-      'Platform callbacks are failing and need operator intervention now.'
-    );
-  } else if (statusTone === 'warning') {
-    platformConclusion = t(
-      'admin.home_status_warning',
-      {},
-      'Platform is serving traffic, but subscriptions or runtime signals need review before they widen.'
-    );
-  } else if (statusTone === 'inactive') {
-    platformConclusion = t(
-      'admin.home_status_inactive',
-      {},
-      'No active sites are currently provisioned. Confirm whether this is intentional before further operator work.'
-    );
-  }
+  const platformConclusion = (() => {
+    switch (overview.operatorProjection.conclusionCode) {
+      case 'operational_readiness_blocked':
+        return t(
+          'admin.home_readiness_blocked_desc',
+          {
+            count: formatInteger(overview.operatorProjection.readiness.checksFailed),
+            scopes: readinessScopeText,
+          },
+          `${formatInteger(overview.operatorProjection.readiness.checksFailed)} formal readiness checks failed across ${readinessScopeText}. Inspect the failing runtime evidence before continuing operations.`
+        );
+      case 'operational_readiness_unknown':
+        return t(
+          'admin.home_readiness_unknown_desc',
+          {},
+          'Formal operational readiness evidence is unavailable. Do not treat recent traffic as proof that the platform is ready.'
+        );
+      case 'runtime_error':
+        return t(
+          'admin.home_status_error',
+          {},
+          'Platform callbacks are failing and need operator intervention now.'
+        );
+      case 'warning':
+        return t(
+          'admin.home_status_warning',
+          {},
+          'Platform is serving traffic, but subscriptions or runtime signals need review before they widen.'
+        );
+      case 'inactive':
+        return t(
+          'admin.home_status_inactive',
+          {},
+          'No active sites are currently provisioned. Confirm whether this is intentional before further operator work.'
+        );
+      default:
+        return t(
+          'admin.home_status_ok',
+          {},
+          'Platform is nominal. Use this surface to review posture and clear the next operational queue.'
+        );
+    }
+  })();
   const primaryMetrics = [
     {
       label: t('admin.active_sites'),
@@ -526,50 +636,14 @@ function AdminOverviewContent() {
         ? `/admin/sites/${item.siteId}`
         : '/admin/subscriptions',
   }));
-  const runtimeRiskItems = operatorWatchItems.filter((item) =>
-    item.scope.startsWith('runtime.') || item.scope.startsWith('queue.') || item.scope.startsWith('request.')
-  );
-  const firstOperatorWatchItem = operatorWatchItems[0];
-  const firstOperatorWatchScope = firstOperatorWatchItem?.scope || '';
-  const readinessWatchItem = readinessBlocked || readinessUnknown
-    ? {
-        title: readinessLabel,
-        scope: 'runtime.operational_readiness',
-        severity: readinessBlocked ? 'action-needed' as const : 'warn' as const,
-        reason: readinessBlocked
-          ? t(
-              'admin.home_readiness_watch_reason',
-              { scopes: readinessScopeText },
-              `Formal readiness is blocked in: ${readinessScopeText}.`
-            )
-          : t(
-              'admin.home_readiness_unknown_watch_reason',
-              {},
-              'The overview response did not include a current formal readiness result.'
-            ),
-        value: readinessBlocked ? formatInteger(overview.operationalReadiness.checksFailed) : '?',
-      }
-    : null;
-  const attentionNotes = [
-    ...(readinessWatchItem ? [readinessWatchItem] : []),
-    ...operatorWatchItems,
-  ].slice(0, 2);
-  const primaryActionHref =
-    readinessBlocked || readinessUnknown
-      ? overview.operationalReadiness.href
-    : firstOperatorWatchScope.startsWith('runtime.telemetry')
-      ? '/admin/troubleshooting'
-      : firstOperatorWatchScope.startsWith('runtime.') || firstOperatorWatchScope.startsWith('request.')
-        ? '/admin/accounts'
-        : statusTone === 'error' || commercialItems.length > 0 || overview.expiringSubscriptions.in7Days > 0
-          ? '/admin/coverage'
-          : '/admin/accounts';
+  const attentionNotes = operatorWatchItems.slice(0, 2);
+  const primaryActionHref = overview.operatorProjection.primaryAction.href;
   const primaryActionLabel =
-    readinessBlocked || readinessUnknown
+    overview.operatorProjection.primaryAction.kind === 'readiness'
       ? t('admin.home_primary_action_readiness', {}, 'Inspect readiness failures')
-    : primaryActionHref === '/admin/troubleshooting'
+    : overview.operatorProjection.primaryAction.kind === 'runtime_telemetry'
       ? t('admin.home_primary_action_runtime_telemetry', {}, 'Inspect runtime telemetry')
-      : primaryActionHref === '/admin/coverage'
+      : overview.operatorProjection.primaryAction.kind === 'coverage'
       ? t('admin.home_primary_action_coverage', {}, 'Review service status')
       : t('admin.home_primary_action_accounts', {}, 'Review customers');
   const supportLookupAccountHref = buildAdminLookupHref('/admin/accounts', supportQuery);
@@ -896,7 +970,7 @@ function AdminOverviewContent() {
                 {t('admin.home_section_platform_followup', {}, 'Follow-up focus')}
               </p>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                {runtimeRiskItems.length > 0
+                {overview.operatorProjection.followUpFocus === 'runtime'
                   ? t(
                     'admin.home_section_platform_runtime_focus',
                     {},

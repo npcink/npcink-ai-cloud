@@ -14,13 +14,11 @@ import { ApiError } from '@/lib/errors';
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
 type UsePortalPaymentOrdersOptions = {
-  contextSiteId?: string;
   isAuthenticated: boolean;
   t: TranslateFn;
 };
 
 export function usePortalPaymentOrders({
-  contextSiteId,
   isAuthenticated,
   t,
 }: UsePortalPaymentOrdersOptions) {
@@ -33,15 +31,12 @@ export function usePortalPaymentOrders({
   const [cancelPendingOrderId, setCancelPendingOrderId] = useState<string | null>(null);
   const [cancelConfirmOrderId, setCancelConfirmOrderId] = useState<string | null>(null);
   const tabInitialized = useRef(false);
-  const normalizedContextSiteId = String(contextSiteId || '').trim();
-  const contextSiteIdRef = useRef(normalizedContextSiteId);
   const loadRequestVersionRef = useRef(0);
   const cancelRequestVersionRef = useRef(0);
 
   const load = useCallback(
     async (nextStatusGroup: PortalPaymentOrderStatusGroup, nextOffset: number) => {
-      const requestContextSiteId = contextSiteIdRef.current;
-      if (!isAuthenticated || !requestContextSiteId) {
+      if (!isAuthenticated) {
         loadRequestVersionRef.current += 1;
         setIsLoading(false);
         return false;
@@ -56,10 +51,7 @@ export function usePortalPaymentOrders({
           limit: PORTAL_PAYMENT_ORDER_PAGE_SIZE,
           offset: nextOffset,
         });
-        if (
-          requestVersion !== loadRequestVersionRef.current
-          || requestContextSiteId !== contextSiteIdRef.current
-        ) return false;
+        if (requestVersion !== loadRequestVersionRef.current) return false;
         setPayload(response.data);
         if (!tabInitialized.current) {
           tabInitialized.current = true;
@@ -71,45 +63,38 @@ export function usePortalPaymentOrders({
         }
         return true;
       } catch (loadError) {
-        if (
-          requestVersion !== loadRequestVersionRef.current
-          || requestContextSiteId !== contextSiteIdRef.current
-        ) return false;
+        if (requestVersion !== loadRequestVersionRef.current) return false;
         setError(formatPortalErrorMessage(loadError, t, t('error.failed_load')));
         setErrorCode(loadError instanceof ApiError ? loadError.errorCode : '');
         return false;
       } finally {
-        if (
-          requestVersion === loadRequestVersionRef.current
-          && requestContextSiteId === contextSiteIdRef.current
-        ) setIsLoading(false);
+        if (requestVersion === loadRequestVersionRef.current) setIsLoading(false);
       }
     },
     [isAuthenticated, t]
   );
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = normalizedContextSiteId;
     loadRequestVersionRef.current += 1;
     cancelRequestVersionRef.current += 1;
     tabInitialized.current = false;
     setPayload(null);
     setStatusGroup('all');
     setOffset(0);
-    setIsLoading(Boolean(isAuthenticated && normalizedContextSiteId));
+    setIsLoading(Boolean(isAuthenticated));
     setError(null);
     setErrorCode('');
     setCancelPendingOrderId(null);
     setCancelConfirmOrderId(null);
-  }, [isAuthenticated, normalizedContextSiteId]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || !normalizedContextSiteId) return;
+    if (!isAuthenticated) return;
     void load(statusGroup, offset);
-  }, [isAuthenticated, load, normalizedContextSiteId, offset, statusGroup]);
+  }, [isAuthenticated, load, offset, statusGroup]);
 
   useEffect(() => {
-    if (!isAuthenticated || !normalizedContextSiteId) return;
+    if (!isAuthenticated) return;
     const refresh = () => void load(statusGroup, offset);
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') refresh();
@@ -120,11 +105,10 @@ export function usePortalPaymentOrders({
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isAuthenticated, load, normalizedContextSiteId, offset, statusGroup]);
+  }, [isAuthenticated, load, offset, statusGroup]);
 
   const cancel = useCallback(async (order: PortalPaymentOrder) => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    if (!isAuthenticated) return;
     const requestVersion = ++cancelRequestVersionRef.current;
     setCancelPendingOrderId(order.order_id);
     setCancelConfirmOrderId(null);
@@ -132,23 +116,14 @@ export function usePortalPaymentOrders({
     setErrorCode('');
     try {
       await portalClient.cancelAccountPaymentOrder(order.order_id);
-      if (
-        requestVersion !== cancelRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-      ) return;
+      if (requestVersion !== cancelRequestVersionRef.current) return;
       await load(statusGroup, offset);
     } catch (cancelError) {
-      if (
-        requestVersion !== cancelRequestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-      ) return;
+      if (requestVersion !== cancelRequestVersionRef.current) return;
       setError(formatPortalErrorMessage(cancelError, t, t('error.failed_save')));
       setErrorCode(cancelError instanceof ApiError ? cancelError.errorCode : '');
     } finally {
-      if (
-        requestVersion === cancelRequestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
-      ) setCancelPendingOrderId(null);
+      if (requestVersion === cancelRequestVersionRef.current) setCancelPendingOrderId(null);
     }
   }, [isAuthenticated, load, offset, statusGroup, t]);
 

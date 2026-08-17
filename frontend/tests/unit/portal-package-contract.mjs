@@ -58,10 +58,10 @@ assert.match(
   /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
   'Portal credit purchases must expose terms, privacy, and billing support before payment'
 );
-const billingMetricStart = billingPageSource.indexOf('<PortalMetricStrip');
-const billingMetricStrip = billingPageSource.slice(
-  billingMetricStart,
-  billingPageSource.indexOf('<PortalCard', billingMetricStart)
+const billingHeaderStart = billingPageSource.lastIndexOf('<PortalWorkspaceHeader');
+const billingHeader = billingPageSource.slice(
+  billingHeaderStart,
+  billingPageSource.indexOf('\n      />', billingHeaderStart)
 );
 assert.doesNotMatch(
   billingPageSource,
@@ -87,6 +87,21 @@ assert.match(
   billingPageSource,
   /portal\.billing\.upgrade_action/,
   'Portal package page must own package upgrade entry points'
+);
+assert.match(
+  billingPageSource,
+  /resolvePackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
+  'Portal package status must name the customer-visible limit instead of showing a generic attention label'
+);
+assert.match(
+  billingPageSource,
+  /active_sites[\s\S]*package_status_active_site_limited[\s\S]*package_status_site_label/,
+  'Portal package status must classify active-site capacity as a site limit and explain its usage'
+);
+assert.match(
+  billingPageSource,
+  /creditNeedsAttention[\s\S]*creditNeedsAttention \? 'btn-secondary' : 'btn-primary'[\s\S]*creditNeedsAttention \? 'btn-primary' : 'btn-secondary'/,
+  'Portal package actions must prioritize credit purchase only when AI credits are the active issue'
 );
 assert.match(
   creditPackDialogSource,
@@ -208,8 +223,18 @@ const usageBundleSource = portalClientSource.match(
 )?.[0] || '';
 assert.match(
   usageBundleSource,
-  /getAccountUsageSummary\(\)[\s\S]*getAccountEntitlements\(\)/,
+  /getAccountUsageSummary\(options\?\.siteId\)[\s\S]*getAccountEntitlements\(\)/,
   'Portal usage bundle must load only the usage and entitlement data consumed by the usage page'
+);
+assert.doesNotMatch(
+  billingPageSource,
+  /contextSiteId|siteSelectionRequired|site_selection_required_desc/,
+  'Portal package data and account actions must not require a selected site context'
+);
+assert.doesNotMatch(
+  paymentReturnNoticeSource,
+  /contextSiteId|normalizedContextSiteId/,
+  'Portal payment return polling must remain account-scoped'
 );
 assert.doesNotMatch(
   usageBundleSource,
@@ -236,9 +261,19 @@ assert.doesNotMatch(
   'Portal package page must not treat browser payment return as payment truth'
 );
 assert.doesNotMatch(
-  billingMetricStrip,
+  billingHeader,
   /package_credit_allowance_label|site_allowance_label/,
   'Portal package header must not repeat package rights that are already shown in the rights card'
+);
+assert.match(
+  billingHeader,
+  /metadata=[\s\S]*currentPeriodLabel[\s\S]*contextPanel=\{packageStatus === 'warning'/,
+  'Portal package header must keep passive package metadata inline and place only actionable warnings in the right panel'
+);
+assert.doesNotMatch(
+  billingHeader,
+  /eyebrow=|metrics=/,
+  'Portal package header must not repeat its title or render a second summary rail'
 );
 assert.match(
   billingPageSource,
@@ -249,6 +284,16 @@ assert.match(
   entitlementComponentSource,
   /package_credit_allowance_label[\s\S]*site_allowance_label/,
   'Shared entitlement summary must keep package points and site allowance visible together'
+);
+assert.match(
+  entitlementComponentSource,
+  /visibleResourceKeys = new Set\(\['active_sites', 'vector_documents'\]\)/,
+  'Shared entitlement summary must show the active-site package right'
+);
+assert.doesNotMatch(
+  entitlementComponentSource,
+  /visibleResourceKeys = new Set\(\[[^\]]*'bound_sites'/,
+  'Shared entitlement summary must not present bound-site capacity as the purchased site right'
 );
 assert.match(
   entitlementComponentSource,
@@ -274,6 +319,11 @@ assert.match(
   paymentOrderHistorySource,
   /const tabs[\s\S]*payment_orders_tab_all[\s\S]*payment_orders_tab_pending[\s\S]*payment_orders_tab_paid[\s\S]*payment_orders_tab_closed/,
   'Portal package page must separate payment orders with compact status tabs'
+);
+assert.match(
+  paymentOrderHistorySource,
+  /data-portal-billing="payment-orders-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*renderOrderActions/,
+  'Portal payment order history must use a semantic PC table while preserving server-owned actions'
 );
 assert.match(
   billingPageSource,

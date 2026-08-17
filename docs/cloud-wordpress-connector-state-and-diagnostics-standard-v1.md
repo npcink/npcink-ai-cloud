@@ -82,6 +82,10 @@ trace identifier MAY appear as secondary support references.
 | `auth.site_suspended` | The site service was suspended by the platform |
 | `auth.site_not_ready` | Provisioning or another non-active step is incomplete |
 
+The versioned Cloud-to-Addon fields, disclosure order, localized projection,
+and recovery actions for `auth.site_inactive` are defined by the
+[Cloud Connector Recovery Contract](cloud-connector-recovery-contract-v1.md).
+
 OAuth provider identifiers follow the same rule. A provider `openid` is an
 internal binding identifier, not necessarily a user-facing account number.
 Portal MAY show a verified nickname or masked provider identity when available.

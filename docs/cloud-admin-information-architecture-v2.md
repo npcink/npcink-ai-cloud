@@ -111,6 +111,11 @@ Plugin, media, vector, Agent feedback, and Operations Advisor routes are
 diagnostic views under Runtime diagnostics. They are not independent top-level
 products.
 
+Audit evidence (`/admin/audit`) is the persistent read-only service-operation
+workspace under Runtime diagnostics. It is a contextual destination for exact
+mutation receipts and bounded support filters, not another governance or final
+audit control plane.
+
 ### 4.4 System
 
 - Service settings (`/admin/service-settings`)
@@ -244,6 +249,7 @@ consolidation.
 | `/admin/vector-settings` | Runtime Operations | `configuration` | Providers | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
 | `/admin/runtime-profiles` | Runtime Operations | `configuration` | Runtime profiles | Keep only platform-tagged Cloud hosted candidate-chain configuration; candidate selection renders only inside edit flow |
 | `/admin/troubleshooting` | Runtime Operations | `diagnostic` | Runtime diagnostics | Canonical diagnostic index |
+| `/admin/audit` | Runtime Operations | `diagnostic` | Runtime diagnostics | Persistent exact service-operation evidence; no raw payload or mutation authority |
 | `/admin/plugin-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
 | `/admin/media-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
 | `/admin/vector-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |

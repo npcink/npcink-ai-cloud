@@ -370,7 +370,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     )
     assert workflow.count(frontend_gate_condition) == 8
     assert (
-        workflow.count("needs.classify.outputs.frontend_backend_contracts_required == 'true'") == 3
+        workflow.count("needs.classify.outputs.frontend_backend_contracts_required == 'true'") == 4
     )
     assert "Backend-owned frontend contracts" in workflow
     assert "node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs" in workflow
@@ -393,7 +393,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
     assert (
         "admin operator path smoke|portal workspace interaction path|"
-        "Alipay return polls|account projections stay idle|"
+        "Alipay return polls|account projections remain available|"
         "account-level support stays available"
     ) in workflow
     assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 2
@@ -454,12 +454,23 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     )
     assert '"app/api/routes/portal.py"' in selector
     assert '"tests/api/test_portal_routes.py"' in selector
+    assert '"app/api/routes/customer_journey.py"' in selector
+    assert '"tests/api/test_customer_journey_routes.py"' in selector
     assert "selecting all tests/api" in selector
     for lane in ("static", "contract-1", "contract-2", "contract-3", "impacted"):
         assert f"lane: {lane}" in workflow
     assert "matrix.needs_node" in workflow
     assert "backend-docs:" in workflow
     assert "docs-only backend gate did not pass" in workflow
+
+
+def test_pytest_scheduler_changes_force_the_complete_backend_gate() -> None:
+    source = BACKEND_GATE.read_text(encoding="utf-8")
+
+    assert (
+        ".github/workflows/ci.yml|ci/pytest-backend-durations.json|"
+        "scripts/select-pytest-shard.py|tests/conftest.py" in source
+    )
 
 
 def test_production_promotion_pr_forces_the_complete_backend_gate(

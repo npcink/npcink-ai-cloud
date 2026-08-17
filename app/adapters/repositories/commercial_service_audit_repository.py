@@ -64,26 +64,35 @@ class CommercialServiceAuditRepository:
     def list_service_audit_events(
         self,
         *,
+        event_id: int | None = None,
         site_id: str | None = None,
         site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
+        idempotency_key: str | None = None,
+        scope_kind: str | None = None,
+        scope_id: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[ServiceAuditEvent]:
         statement = select(ServiceAuditEvent).where(
             *self._service_audit_filters(
+                event_id=event_id,
                 site_id=site_id,
                 site_ids=site_ids,
                 account_id=account_id,
                 event_kind=event_kind,
                 outcome=outcome,
+                idempotency_key=idempotency_key,
+                scope_kind=scope_kind,
+                scope_id=scope_id,
             )
         )
         statement = statement.order_by(
             ServiceAuditEvent.created_at.desc(),
             ServiceAuditEvent.id.desc(),
-        ).limit(limit)
+        ).offset(max(0, offset)).limit(limit)
         return list(self.session.scalars(statement))
 
     def list_service_audit_events_for_principal(
@@ -111,11 +120,15 @@ class CommercialServiceAuditRepository:
     def count_service_audit_events(
         self,
         *,
+        event_id: int | None = None,
         site_id: str | None = None,
         site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
+        idempotency_key: str | None = None,
+        scope_kind: str | None = None,
+        scope_id: str | None = None,
         since: datetime | None = None,
     ) -> int:
         return int(
@@ -126,11 +139,15 @@ class CommercialServiceAuditRepository:
                     .select_from(ServiceAuditEvent)
                     .where(
                         *self._service_audit_filters(
+                            event_id=event_id,
                             site_id=site_id,
                             site_ids=site_ids,
                             account_id=account_id,
                             event_kind=event_kind,
                             outcome=outcome,
+                            idempotency_key=idempotency_key,
+                            scope_kind=scope_kind,
+                            scope_id=scope_id,
                             since=since,
                         )
                     ),
@@ -189,11 +206,15 @@ class CommercialServiceAuditRepository:
     def _service_audit_filters(
         self,
         *,
+        event_id: int | None = None,
         site_id: str | None = None,
         site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
+        idempotency_key: str | None = None,
+        scope_kind: str | None = None,
+        scope_id: str | None = None,
         since: datetime | None = None,
     ) -> list[SQLAFilter]:
         filters: list[SQLAFilter] = []
@@ -202,6 +223,8 @@ class CommercialServiceAuditRepository:
             if site_ids is not None
             else None
         )
+        if event_id is not None:
+            filters.append(ServiceAuditEvent.id == event_id)
         if site_id:
             filters.append(ServiceAuditEvent.site_id == site_id)
         elif account_id and normalized_site_ids is not None:
@@ -225,6 +248,12 @@ class CommercialServiceAuditRepository:
             filters.append(ServiceAuditEvent.event_kind == event_kind)
         if outcome:
             filters.append(ServiceAuditEvent.outcome == outcome)
+        if idempotency_key:
+            filters.append(ServiceAuditEvent.idempotency_key == idempotency_key)
+        if scope_kind:
+            filters.append(ServiceAuditEvent.scope_kind == scope_kind)
+        if scope_id:
+            filters.append(ServiceAuditEvent.scope_id == scope_id)
         if since is not None:
             filters.append(ServiceAuditEvent.created_at >= since)
         return filters

@@ -134,6 +134,9 @@ local checks, and reports browser or M4 work as follow-up evidence rather than
 mutating shared or external systems. Domain rules remain declarative and
 fail closed when their schema or command shape is invalid. PR CI reuses the
 same selected specialized commands instead of maintaining a second path map.
+Frontend Node contracts run through the frontend workspace with
+frontend-relative paths; their result must not depend on the operator's current
+directory.
 `worktree:audit` inventories registered worktrees and reconciles read-only Git
 tracking, patch-equivalence, protected-role, and pull-request evidence. Missing
 evidence fails closed to `retain`; the command never unlocks, prunes, removes,
