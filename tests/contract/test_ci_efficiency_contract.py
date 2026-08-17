@@ -454,6 +454,8 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     )
     assert '"app/api/routes/portal.py"' in selector
     assert '"tests/api/test_portal_routes.py"' in selector
+    assert '"app/api/routes/customer_journey.py"' in selector
+    assert '"tests/api/test_customer_journey_routes.py"' in selector
     assert "selecting all tests/api" in selector
     for lane in ("static", "contract-1", "contract-2", "contract-3", "impacted"):
         assert f"lane: {lane}" in workflow

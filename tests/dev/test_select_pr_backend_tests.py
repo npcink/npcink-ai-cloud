@@ -37,6 +37,15 @@ def test_portal_api_changes_select_only_portal_api_tests() -> None:
     ]
 
 
+def test_customer_journey_route_selects_its_bounded_api_tests() -> None:
+    selected, fallback = selector.select_impacted_tests(
+        ["app/api/routes/customer_journey.py"]
+    )
+
+    assert fallback == []
+    assert _relative(selected) == ["tests/api/test_customer_journey_routes.py"]
+
+
 def test_service_route_changes_select_the_bounded_service_family() -> None:
     selected, fallback = selector.select_impacted_tests(["app/api/routes/service.py"])
     selected_paths = _relative(selected)
