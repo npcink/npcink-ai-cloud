@@ -123,6 +123,16 @@ assert.doesNotMatch(
   /const initialSiteId = searchParams\?\.get\('site'\) \|\| selectedSiteId|if \(!siteId && selectedSiteId\)/,
   'Portal support form must default to account-level issues unless a site is explicitly passed'
 );
+assert.match(
+  portalSupportPageSource,
+  /initialSiteIsVisible[\s\S]*setSiteId\(initialSiteIsVisible \? initialSiteId : ''\)/,
+  'Portal support must preserve an explicitly linked visible account site, including an inactive site'
+);
+assert.match(
+  portalSupportPageSource,
+  /const visibleSites = accountSites;[\s\S]*site_id: siteId,/,
+  'Portal support must let the customer associate any visible account site and rely on server-side access validation'
+);
 assert.doesNotMatch(
   portalBillingPageSource,
   /portal\.billing\.help_title|portal\.billing\.help_desc/,

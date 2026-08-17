@@ -287,6 +287,16 @@ assert.match(
 );
 assert.match(
   entitlementComponentSource,
+  /visibleResourceKeys = new Set\(\['active_sites', 'vector_documents'\]\)/,
+  'Shared entitlement summary must show the active-site package right'
+);
+assert.doesNotMatch(
+  entitlementComponentSource,
+  /visibleResourceKeys = new Set\(\[[^\]]*'bound_sites'/,
+  'Shared entitlement summary must not present bound-site capacity as the purchased site right'
+);
+assert.match(
+  entitlementComponentSource,
   /package_remaining_label[\s\S]*paid_remaining_label[\s\S]*total_remaining_label/,
   'Shared entitlement summary must distinguish package, paid, and total available credits'
 );

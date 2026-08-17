@@ -50,7 +50,7 @@ function humanizeKey(key: string): string {
 function resourceLabel(key: string, t: TranslateFn): string {
   const labels: Record<string, string> = {
     ai_credits: t('portal.usage.package_credit_allowance_label', {}, 'Package AI credits'),
-    bound_sites: t('portal.usage.site_allowance_label', {}, 'Sites'),
+    active_sites: t('portal.usage.site_allowance_label', {}, 'Active sites'),
     vector_documents: t('portal.usage.resource_vector_documents', {}, 'Knowledge articles'),
   };
   return labels[key] || humanizeKey(key);
@@ -58,7 +58,7 @@ function resourceLabel(key: string, t: TranslateFn): string {
 
 function normalizeMetrics(quotaSummary?: QuotaSummary | null): EntitlementMetric[] {
   if (!quotaSummary) return [];
-  const visibleResourceKeys = new Set(['bound_sites', 'vector_documents']);
+  const visibleResourceKeys = new Set(['active_sites', 'vector_documents']);
   const metrics: EntitlementMetric[] = [];
   if (quotaSummary.ai_credits) {
     metrics.push({

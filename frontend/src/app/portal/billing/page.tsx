@@ -36,7 +36,10 @@ import {
   type Entitlements,
   type PortalPlanOffer,
 } from '@/lib/portal-client';
-import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
+import {
+  resolveCustomerPackageDisplay,
+  selectCustomerPackagePressureResource,
+} from '@/lib/customer-package-display';
 import {
   formatPortalErrorMessage,
   formatPortalWriteErrorMessage,
@@ -83,10 +86,7 @@ function formatBillingPeriodRange(startValue: string, endValue: string, locale: 
 }
 
 function findLimitedResource(quotaSummary: QuotaSummary | null): QuotaResource | undefined {
-  return quotaSummary?.resource_limits?.find((resource) => (
-    resource.status === 'limited'
-    || (!resource.unlimited && Number(resource.limit || 0) > 0 && Number(resource.used || 0) > Number(resource.limit || 0))
-  ));
+  return selectCustomerPackagePressureResource(quotaSummary?.resource_limits);
 }
 
 function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLabel: string, t: TranslateFn): string {

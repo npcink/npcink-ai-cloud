@@ -138,6 +138,7 @@ async function installPortalMocks(
     failPaymentReturnEntitlements?: boolean;
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
+    emptySites?: boolean;
     delayInitialEntitlements?: boolean;
     zeroEntitlements?: boolean;
     failInitialEntitlements?: boolean;
@@ -188,7 +189,9 @@ async function installPortalMocks(
         await sessionRefreshGate;
       }
       const portalSession = buildPortalSession(selectedSiteId);
-      await fulfillJson(route, options.withoutSelectedContext
+      await fulfillJson(route, options.emptySites
+        ? { ...portalSession, sites: [], selected_context: null }
+        : options.withoutSelectedContext
         ? { ...portalSession, selected_context: null }
         : portalSession);
       return;
@@ -383,11 +386,18 @@ async function installPortalMocks(
           },
           resource_limits: [
             {
-              key: 'bound_sites',
-              used: 2,
+              key: 'active_sites',
+              used: options.emptySites ? 0 : 1,
               limit: 1,
-              remaining: 0,
-              status: 'limited',
+              remaining: options.emptySites ? 1 : 0,
+              status: 'ok',
+            },
+            {
+              key: 'bound_sites',
+              used: options.emptySites ? 0 : 2,
+              limit: options.emptySites ? 3 : 1,
+              remaining: options.emptySites ? 3 : 0,
+              status: options.emptySites ? 'ok' : 'limited',
             },
             {
               key: 'vector_documents',
@@ -1928,6 +1938,23 @@ test('account-level support stays available without a selected site context', as
   await expect(page.getByText(/Please check the latest account payment order\./i).first()).toBeVisible();
 
   expect(calls.accountProjectionRequestCount()).toBe(0);
+});
+
+test('a new account without sites gets a WordPress connection path instead of a dead end', async ({ page }) => {
+  await installPortalMocks(page, { emptySites: true });
+
+  await page.goto('/portal');
+  await expect(page.getByText(/Not connected|尚未接入/i).first()).toBeVisible();
+  await expect(
+    page.getByText(/Open npcink-cloud-addon in WordPress|在 WordPress 中打开 npcink-cloud-addon/i).first()
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
+  await expect(page.getByText(/exceeds the package limit|已超出套餐上限/i)).toHaveCount(0);
+
+  await page.goto('/portal/support?new=1&topic=account');
+  const dialog = page.getByRole('dialog', { name: /Submit ticket|提交工单/i });
+  await expect(dialog.getByRole('combobox', { name: /Related site|关联站点/i })).toHaveValue('');
+  await expect(dialog.getByRole('combobox', { name: /Related site|关联站点/i }).locator('option')).toHaveCount(1);
 });
 
 test('late account entitlements cannot overwrite a newly selected site context', async ({ page }) => {
