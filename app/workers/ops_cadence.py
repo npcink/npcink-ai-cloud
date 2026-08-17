@@ -12,6 +12,7 @@ from app.core.db import require_database_connection
 from app.core.logging import configure_logging, get_logger
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
+from app.domain.customer_journey.service import CustomerJourneyService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.runtime.service import RuntimeService
@@ -61,12 +62,16 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
     ).cleanup_expired_portal_auth_evidence(
         retention_days=settings.portal_auth_retention_days,
     )
+    customer_journey = CustomerJourneyService(
+        settings.database_url
+    ).cleanup_expired_events(retention_days=settings.customer_journey_retention_days)
     return {
         "purged_runs": purged_runs,
         "retention_batch_limit": settings.retention_cleanup_batch_size,
         "retention_remaining_due_runs": remaining_due_runs,
         "retention_partial": remaining_due_runs > 0,
         "portal_auth": portal_auth,
+        "customer_journey": customer_journey,
     }
 
 

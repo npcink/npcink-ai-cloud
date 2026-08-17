@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     retention_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     plugin_observability_retention_days: int = Field(default=180)
     plugin_observability_cleanup_interval_seconds: int = Field(default=86400)
+    customer_journey_retention_days: int = Field(default=30, ge=1, le=90)
     usage_rollup_interval_seconds: int = Field(default=3600)
     router_diagnostics_interval_seconds: int = Field(default=900)
     latency_probe_interval_seconds: int = Field(default=900)

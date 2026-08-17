@@ -16,6 +16,7 @@ from app.api.portal_idempotency_middleware import PortalIdempotencyMiddleware
 from app.api.routes.agent_feedback import router as agent_feedback_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.catalog import router as catalog_router
+from app.api.routes.customer_journey import router as customer_journey_router
 from app.api.routes.entitlements import router as entitlements_router
 from app.api.routes.health import router as health_router
 from app.api.routes.internal import router as internal_router
@@ -182,6 +183,7 @@ def create_app(
     app.include_router(portal_router)
     app.include_router(service_router)
     app.include_router(observability_router)
+    app.include_router(customer_journey_router)
     app.include_router(runtime_router)
     app.include_router(agent_feedback_router)
     app.include_router(media_derivatives_router)
