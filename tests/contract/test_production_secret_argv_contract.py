@@ -310,7 +310,7 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert 'current release must be a direct managed release child' in maintenance
     assert deploy.count('if type(generated) is not int:') == 1
     assert maintenance.count('if type(generated) is not int:') == 1
-    assert "permissions:\n      contents: read" in maintenance
+    assert "permissions: {}" in maintenance
     assert "safe_prune_confirmation:" in maintenance
     assert "Prune production images and old releases." in maintenance
     assert 'MAINTENANCE_ACTION}" = "safe-prune"' in maintenance

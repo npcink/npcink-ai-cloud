@@ -1205,7 +1205,7 @@ reject_marker ".github/workflows/production-maintenance.yml" "ssh-keyscan"
 require_marker ".github/workflows/production-maintenance.yml" 'PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}'
 require_marker ".github/workflows/production-maintenance.yml" 'StrictHostKeyChecking=yes'
 require_marker ".github/workflows/production-maintenance.yml" "group: production-host-mutation"
-require_marker ".github/workflows/production-maintenance.yml" $'permissions:\n      contents: read'
+require_marker ".github/workflows/production-maintenance.yml" "permissions: {}"
 require_marker ".github/workflows/production-maintenance.yml" "safe_prune_confirmation:"
 require_marker ".github/workflows/production-maintenance.yml" "Prune production images and old releases."
 require_marker ".github/workflows/production-maintenance.yml" '[[ ! "${PROD_REMOTE_DIR}" =~ ^/[A-Za-z0-9._/-]+$ ]]'
