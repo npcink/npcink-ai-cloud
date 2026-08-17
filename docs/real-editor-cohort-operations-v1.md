@@ -118,6 +118,14 @@ The automatic path collects only the existing bounded fields, including:
 - generation latency and aggregate quality rates;
 - the explicit WordPress-local monitoring-state boolean projection.
 
+For the separately versioned customer-journey contract, the same opt-in path
+may also send bounded `wordpress_editor` lifecycle events such as started,
+succeeded, failed, retried, accepted, saved, and abandoned. Portal may send
+site-scoped login, site-connect, and support success/failure events through its
+authenticated producer. Exact journey and step values remain controlled by
+[Customer Journey Metadata v1](customer-journey-metadata-v1.md); this runbook
+does not authorize arbitrary event names or fields.
+
 The path must keep `content_storage=omitted_metadata_only`. It must not collect
 prompts, generated output, article content, raw request/response bodies,
 WordPress post/user IDs, media bytes, credentials, cookies, nonces,
@@ -131,6 +139,20 @@ An operator-local scheduled summary may read the ledger, observation receipt,
 Local WordPress state, and Cloud seven-day aggregates. It is a convenience
 reader, not repository truth, a second scheduler, or permission to mutate
 monitoring, sites, WordPress content, M4, or production.
+
+During the first non-author cohort, use the existing customer-journey summary
+as the observation surface. Review at least:
+
+- first-use progression from start to success or bounded failure;
+- retry-to-success and other failure-recovery rates;
+- accepted-to-explicit-save outcomes;
+- settled abandonment after the contract's waiting window;
+- Portal login, connection, and support failures that prevent editor use.
+
+Do not build a new dashboard for this stage. Record a defect candidate only
+when the summary and named anomalous sessions provide reproducible evidence.
+One isolated event may justify investigation, but not an automatic product
+change or a commercial-value conclusion.
 
 ## 4. Local-First Verification Matrix
 
@@ -243,6 +265,9 @@ Both sites must satisfy all conditions:
   `human_value_cohort`;
 - the operator has identified `2-3` consenting editors only when
   `human_value_cohort` is selected.
+- Cloud production, the installed Addon package, and the public privacy notice
+  all describe the same active customer-journey contract before a formal
+  non-author production cohort begins.
 
 Do not create a permanent tunnel daemon. For M4-backed Local WordPress use,
 keep the governed foreground tunnel open only for the observation window.
@@ -355,6 +380,9 @@ At the end of the declared observation window:
    step;
 7. unlock/remove an auxiliary worktree only after it is clean, merged, no
    longer mounted, and no longer needed for rollback.
+8. reconcile the customer-journey summary with the declared site aliases and
+   observation window, and classify each actionable pattern as fix, improve,
+   observe, or invalid evidence.
 
 Content equality with merged `master` is useful evidence but does not turn a
 topic branch or locked auxiliary worktree into the stable operations checkout.
