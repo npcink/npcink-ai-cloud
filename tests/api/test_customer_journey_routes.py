@@ -149,6 +149,28 @@ def test_customer_journey_rejects_content_and_arbitrary_error_message(tmp_path: 
     assert error_response.status_code == 422
 
 
+def test_customer_journey_requires_explicit_contract_version(tmp_path: Path) -> None:
+    _database_url, client = _build_client(tmp_path)
+    payload = {"events": [_event(event_id="journey-version-required")]}
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    response = client.post(
+        "/v1/customer-journey/events",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/customer-journey/events",
+                site_id="site_journey",
+                body=body,
+                idempotency_key="journey-version-required",
+                nonce="nonce-journey-version-required",
+                trace_id="tracejourneyversionrequired00001",
+            )
+        ),
+    )
+    assert response.status_code == 422
+
+
 def test_customer_journey_summary_builds_bounded_candidates(tmp_path: Path) -> None:
     _database_url, client = _build_client(tmp_path)
     now = datetime.now(UTC) - timedelta(hours=1)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -17,7 +17,6 @@ from app.domain.customer_journey.contracts import (
     ALLOWED_STEPS,
     ALLOWED_SURFACES,
     ALLOWED_VIEWPORT_CLASSES,
-    CUSTOMER_JOURNEY_CONTRACT_VERSION,
     CustomerJourneyContractViolation,
 )
 from app.domain.customer_journey.service import CustomerJourneyService
@@ -92,10 +91,7 @@ class CustomerJourneyEventPayload(BaseModel):
 class CustomerJourneyBatchPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    contract_version: Literal["customer_journey_event.v1"] = cast(
-        Literal["customer_journey_event.v1"],
-        CUSTOMER_JOURNEY_CONTRACT_VERSION,
-    )
+    contract_version: Literal["customer_journey_event.v1"]
     events: list[CustomerJourneyEventPayload] = Field(min_length=1, max_length=100)
 
 
