@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const page = readFileSync(resolve(process.cwd(), 'src/app/admin/ai-advisor/page.tsx'), 'utf8');
+const model = readFileSync(
+  resolve(process.cwd(), 'src/features/admin/ai-advisor/advisor-model.ts'),
+  'utf8'
+);
 const i18n = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
 const advisorRouteSources = [
   'ops-summary-history',
@@ -22,6 +26,21 @@ assert.match(page, /advisorSummaryText\(advisor\.summary \|\| branch\.operator_s
 assert.match(page, /advisorEvidenceLabel\(item\.kind, item\.label, t\)/, 'default evidence labels must use operator-facing copy');
 assert.match(page, /BackofficeDiagnosticNotice/, 'initial Advisor failure must preserve a scoped retry shell');
 assert.doesNotMatch(page, /flex min-h-\[60vh\] items-center justify-center/, 'Advisor must not replace the route with a generic centered error');
+assert.match(
+  page,
+  /from '@\/features\/admin\/ai-advisor\/advisor-model'/,
+  'Advisor route must delegate raw response projection to its feature model'
+);
+assert.doesNotMatch(
+  page,
+  /function normalizePreview\(/,
+  'Advisor route must not reclaim raw preview normalization'
+);
+assert.match(
+  model,
+  /export function normalizeBranch[\s\S]*export function normalizePreview[\s\S]*export function normalizeHistoryItem[\s\S]*export function normalizeValueMetrics/,
+  'Advisor feature model must own branch, preview, history, and value-metrics normalization'
+);
 
 for (const { routeName, source } of advisorRouteSources) {
   const capabilityCheck = source.indexOf("requireAdminCapability(\n    sessionResult.session,\n    'can_review_diagnostics'");
@@ -45,10 +64,15 @@ for (const { routeName, source } of advisorRouteSources) {
 const reviewRouteSource = advisorRouteSources.find(
   ({ routeName }) => routeName === 'ops-summary-review'
 )?.source || '';
+assert.doesNotMatch(
+  reviewRouteSource,
+  /actor_ref\s*:/,
+  'Advisor review BFF must not send a client-controlled reviewer identity'
+);
 assert.match(
   reviewRouteSource,
-  /actor_ref: sessionResult\.session\.principal_id/,
-  'Advisor review evidence must use canonical principal_id as actor_ref'
+  /delete reviewBody\.actor_ref/,
+  'Advisor review BFF must strip a forged reviewer identity from browser JSON'
 );
 assert.doesNotMatch(
   reviewRouteSource,

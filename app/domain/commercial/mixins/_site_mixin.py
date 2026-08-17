@@ -74,7 +74,7 @@ from app.domain.commercial.identity import (
     normalize_user_role,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
-from app.domain.commercial.service import (
+from app.domain.commercial.plan_catalog import (
     DEFAULT_PLAN_TIER_ID,
     PLAN_TIER_REGISTRY,
 )

@@ -11,6 +11,7 @@ RETROSPECTIVE = (
 )
 DOCS_INDEX = ROOT / "docs" / "README.md"
 OPERATING_MODEL = ROOT / "docs" / "development-validation-operating-model-v1.md"
+CHANGED_GATE = ROOT / "scripts" / "check_changed.py"
 
 
 def test_efficiency_standard_is_active_and_discoverable() -> None:
@@ -56,3 +57,10 @@ def test_retrospective_keeps_pending_samples_explicit() -> None:
     assert "job sets do not match" in retrospective
     assert "one natural ordinary backend PR" in retrospective
     assert "one separately authorized compatible production `full/runtime` release" in retrospective
+
+
+def test_changed_gate_runs_frontend_node_contracts_from_frontend_workspace() -> None:
+    changed_gate = CHANGED_GATE.read_text(encoding="utf-8")
+
+    assert 'path.removeprefix("frontend/")' in changed_gate
+    assert '["pnpm", "--dir", "frontend", "exec", "node", path]' in changed_gate

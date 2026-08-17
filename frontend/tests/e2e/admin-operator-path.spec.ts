@@ -42,6 +42,33 @@ test('an invalid admin cookie does not expose navigation or trap the login page'
   await expect(page.locator('[data-ui="admin-primary-nav"]')).toHaveCount(0);
 });
 
+test('admin session bootstrap preserves context on transport failure and redirects on auth failure', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/admin/session', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('temporary session transport failure')),
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/admin/troubleshooting?window=72');
+  await expect(page).toHaveURL(/\/admin\/troubleshooting\?window=72$/);
+  await expect(page.getByRole('heading', { name: /Runtime diagnostics|运行诊断|運行診斷/i })).toBeVisible();
+
+  await page.unroute('**/admin/session');
+  await page.route('**/admin/session', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('admin session expired', 'auth.admin_session_invalid')),
+    });
+  });
+  await page.goto('/admin/plugin-observability?window=72');
+  await expect(page).toHaveURL(/\/admin\/login\?redirect=%2Fadmin%2Fplugin-observability%3Fwindow%3D72$/);
+});
+
 async function setScopedInputValue(scope: Locator, index: number, value: string) {
   await scope.locator('input.input').nth(index).evaluate((element, nextValue) => {
     const input = element as HTMLInputElement;

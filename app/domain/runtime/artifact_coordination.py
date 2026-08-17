@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, BinaryIO, Protocol
@@ -240,6 +240,7 @@ class RuntimeArtifactCoordinationDependencies:
     execution_input_encryptor: RuntimeExecutionInputEncryptor
     execution_response_builder: RuntimeExecutionResponseBuilder
     artifact_store: ArtifactStore
+    provider_lookup: Callable[[str], object | None]
 
 
 class RuntimeArtifactCoordinationService:
@@ -977,6 +978,13 @@ class RuntimeArtifactCoordinationService:
         repository: RuntimeRepository,
         provider_output: dict[str, Any],
     ) -> dict[str, Any]:
+        allowed_hosts = tuple(
+            getattr(
+                self.dependencies.provider_lookup(str(run.selected_provider_id or "")),
+                "audio_output_hosts",
+                (),
+            )
+        )
         return self.audio_candidate_materializer(
             session=repository.session,
             run=run,
@@ -988,6 +996,7 @@ class RuntimeArtifactCoordinationService:
                     0.001,
                     float(self.config.audio_artifact_download_timeout_seconds),
                 ),
+                allowed_hosts=allowed_hosts,
             ),
             artifact_store=self.dependencies.artifact_store,
         )

@@ -3,13 +3,17 @@ import {
   buildProviderConnectionForm,
   computeModelReferenceCoverage,
   EMPTY_PROVIDER_CONNECTION_FORM,
+  hasProviderWorkbenchDraftChanges,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
   type ProviderCatalogPreview,
   type ProviderConnectionForm,
   type ProviderWorkbenchState,
 } from '@/features/admin/ai-resources/provider-workbench-state';
-import type { SupplierConnection } from '@/features/admin/ai-resources/types';
+import {
+  isProviderConnectionDeletePreflight,
+  type SupplierConnection,
+} from '@/features/admin/ai-resources/types';
 import {
   inferProviderPreset,
   providerReferenceLinksForConnection,
@@ -67,6 +71,32 @@ const staleWorkbench: ProviderWorkbenchState = {
 };
 
 describe('AI resources provider workbench state', () => {
+  it('rejects incomplete provider deletion preflight responses', () => {
+    const valid = {
+      surface: 'admin_provider_connection_delete_preflight',
+      connection: {
+        connection_id: 'anthropic_primary',
+        provider_id: 'anthropic',
+        display_name: 'Anthropic',
+        enabled: true,
+        configuration_status: 'ready',
+      },
+      expected_updated_at: '2026-08-15T00:00:00Z',
+      impact: {
+        risk_level: 'high',
+        runtime_profile_ids: ['text.ai'],
+        uncovered_runtime_profile_ids: ['text.ai'],
+        capability_ids: ['text_generation'],
+        model_count: 1,
+        alternative_connections: [],
+      },
+      requires_confirmation: true,
+    };
+    expect(isProviderConnectionDeletePreflight(valid)).toBe(true);
+    expect(isProviderConnectionDeletePreflight({ ...valid, impact: {} })).toBe(false);
+    expect(isProviderConnectionDeletePreflight({ ...valid, expected_updated_at: '' })).toBe(false);
+  });
+
   it('counts reference coverage by matching model identity instead of aggregate size', () => {
     expect(computeModelReferenceCoverage({
       providerId: 'openai',
@@ -121,6 +151,7 @@ describe('AI resources provider workbench state', () => {
       providerFormMode: 'edit',
       credentialEditOpen: false,
       providerConnectionForm: editedForm,
+      initialProviderConnectionForm: editedForm,
       providerCatalogPreview: catalogPreview,
       modelReferenceProviderId: 'anthropic',
       modelReferenceShowDeprecated: true,
@@ -145,6 +176,30 @@ describe('AI resources provider workbench state', () => {
     });
     expect(state.modelReferenceProviderId).toBe('openai');
     expect(state.providerCatalogPreview).toBeNull();
+    expect(hasProviderWorkbenchDraftChanges(state)).toBe(true);
+  });
+
+  it('distinguishes an unchanged edit snapshot from an unsaved provider draft', () => {
+    const opened = providerWorkbenchReducer(INITIAL_PROVIDER_WORKBENCH_STATE, {
+      type: 'open_edit',
+      form: editedForm,
+      catalogPreview,
+      referenceProviderId: 'anthropic',
+    });
+    expect(hasProviderWorkbenchDraftChanges(opened)).toBe(false);
+
+    const edited = providerWorkbenchReducer(opened, {
+      type: 'patch_form',
+      patch: { displayName: 'Anthropic Draft' },
+    });
+    expect(hasProviderWorkbenchDraftChanges(edited)).toBe(true);
+
+    const closed = providerWorkbenchReducer(edited, { type: 'close' });
+    expect(hasProviderWorkbenchDraftChanges(closed)).toBe(true);
+    const reopened = providerWorkbenchReducer(closed, { type: 'reopen_draft' });
+    expect(reopened.providerFormOpen).toBe(true);
+    expect(reopened.providerConnectionForm.displayName).toBe('Anthropic Draft');
+    expect(hasProviderWorkbenchDraftChanges(reopened)).toBe(true);
   });
 
   it('keeps the saved credential masked when replacement is cancelled', () => {
@@ -255,6 +310,7 @@ describe('AI resources provider workbench state', () => {
     expect(reset.providerFormOpen).toBe(false);
     expect(reset.providerFormMode).toBe('create');
     expect(reset.providerConnectionForm).toBe(EMPTY_PROVIDER_CONNECTION_FORM);
+    expect(reset.initialProviderConnectionForm).toBe(EMPTY_PROVIDER_CONNECTION_FORM);
     expect(reset.providerCatalogPreview).toBeNull();
   });
 });

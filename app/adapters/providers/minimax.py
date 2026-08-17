@@ -4,6 +4,7 @@ import base64
 import time
 from dataclasses import dataclass, replace
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -15,7 +16,7 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
-from app.adapters.providers.openai import OpenAIProviderAdapter
+from app.adapters.providers.openai import OpenAIProviderAdapter, normalize_provider_output_hosts
 from app.domain.audio_generation.contracts import (
     AUDIO_GENERATION_RESULT_CONTRACT,
     resolve_audio_generation_text,
@@ -136,6 +137,19 @@ MINIMAX_VERIFIED_AUDIO_MODELS: dict[str, dict[str, object]] = {
 }
 
 
+def _derive_audio_output_hosts(base_url: str) -> tuple[str, ...]:
+    try:
+        parsed = urlsplit(base_url)
+    except ValueError:
+        return ()
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return ()
+    try:
+        return normalize_provider_output_hosts((parsed.hostname,))
+    except ValueError:
+        return ()
+
+
 class MiniMaxProviderAdapter:
     provider_id = "minimax"
     display_name = "MiniMax"
@@ -151,6 +165,7 @@ class MiniMaxProviderAdapter:
         default_voice_id: str = "male-qn-qingse",
         allow_sample_catalog: bool = False,
         allow_sample_execution: bool = False,
+        audio_output_hosts: tuple[str, ...] = (),
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -160,6 +175,10 @@ class MiniMaxProviderAdapter:
         self.default_voice_id = str(default_voice_id or "male-qn-qingse").strip()
         self.allow_sample_catalog = allow_sample_catalog
         self.allow_sample_execution = allow_sample_execution
+        configured_audio_output_hosts = normalize_provider_output_hosts(audio_output_hosts)
+        self.audio_output_hosts = configured_audio_output_hosts or _derive_audio_output_hosts(
+            self.base_url
+        )
         self.transport = transport
 
     def fetch_catalog(self) -> ProviderCatalogSnapshot:

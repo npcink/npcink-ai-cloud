@@ -294,8 +294,16 @@ Use the local changed-file router when the correct first gate is not obvious:
 
 ```bash
 pnpm run check:changed -- --plan
+pnpm run check:changed -- --doctor
 pnpm run check:changed
 ```
+
+Run `--doctor` before a material gate when the worktree is new or its local
+tooling state is uncertain. It reports required local prerequisites as
+`ready` or `missing` and external/operator-owned prerequisites as advisory
+`operator_required` entries. The doctor is read-only: it does not bootstrap a
+virtual environment, install frontend dependencies, start Docker, read secret
+values, or mutate M4/GitHub state.
 
 For a task that needs a durable local plan and closeout receipt, create an
 ignored structured envelope instead of leaving a temporary root task contract:
@@ -317,7 +325,15 @@ required context, resource budgets, exact gate results, source state, and
 rollback. Verification rebuilds the plan from the current trusted rules and
 fails closed when the base revision, changed-file set, or selected command
 definition differs from the saved envelope. Content fingerprints preserve valid
-evidence across a commit that does not change the verified files. The receipt
+evidence across a commit that does not change the verified files. The plan also
+exposes a machine-readable `runtime_lane`: `none`, `github-actions`,
+`m4:preview:sync`, or `m4:preview:deploy`.
+
+Verification normally runs the selected gates. When the latest successful run
+has the same base revision, source fingerprint, and exact command plan, the
+operator may explicitly pass `--reuse-current-evidence` after confirming that
+the environment and risk question are unchanged. That reuse is recorded in the
+ignored envelope; a matching commit alone never authorizes reuse. The receipt
 may report `local verified`; it does not
 promote local evidence into PR, merged, M4, production, or human acceptance.
 

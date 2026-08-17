@@ -12,6 +12,7 @@ from app.core.db import require_database_connection
 from app.core.logging import configure_logging, get_logger
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
+from app.domain.customer_journey.service import CustomerJourneyService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.runtime.service import RuntimeService
@@ -47,17 +48,31 @@ class CadenceTaskSpec:
 
 
 def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
-    purged_runs = RuntimeService(
+    runtime_service = RuntimeService(
         settings.database_url,
         settings=settings,
-    ).cleanup_expired_run_results()
+    )
+    purged_runs = runtime_service.cleanup_expired_run_results(
+        limit=settings.retention_cleanup_batch_size,
+    )
+    remaining_due_runs = runtime_service.count_expired_run_results()
     portal_auth = CommercialService(
         settings.database_url,
         settings=settings,
     ).cleanup_expired_portal_auth_evidence(
         retention_days=settings.portal_auth_retention_days,
     )
-    return {"purged_runs": purged_runs, "portal_auth": portal_auth}
+    customer_journey = CustomerJourneyService(
+        settings.database_url
+    ).cleanup_expired_events(retention_days=settings.customer_journey_retention_days)
+    return {
+        "purged_runs": purged_runs,
+        "retention_batch_limit": settings.retention_cleanup_batch_size,
+        "retention_remaining_due_runs": remaining_due_runs,
+        "retention_partial": remaining_due_runs > 0,
+        "portal_auth": portal_auth,
+        "customer_journey": customer_journey,
+    }
 
 
 def _run_plugin_observability_cleanup(settings: Settings) -> dict[str, object]:
@@ -322,11 +337,13 @@ def _latest_event(
     *,
     event_kind: str,
     outcome: str | None = None,
+    include_payload: bool = False,
 ) -> dict[str, object] | None:
     result = commercial_service.list_service_audit_events(
         event_kind=event_kind,
         outcome=outcome,
         limit=1,
+        include_payload=include_payload,
     )
     items = result.get("items")
     if not isinstance(items, list) or not items:
@@ -356,6 +373,7 @@ def build_cadence_summary(
             commercial_service,
             event_kind=spec.event_kind,
             outcome="error",
+            include_payload=True,
         )
         last_run_at = _parse_timestamp((last_event or {}).get("created_at"))
         age_seconds = (

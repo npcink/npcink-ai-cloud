@@ -262,6 +262,7 @@ class RecordingCoordinationDependencies:
             artifact_store=LocalVolumeArtifactStore(
                 Path(self.database_url.removeprefix("sqlite+pysqlite:///")).parent / "artifacts"
             ),
+            provider_lookup=lambda provider_id: None,
         )
 
 
@@ -1011,6 +1012,7 @@ def test_audio_and_image_generation_wrappers_delegate_with_frozen_config(
             ttl_minutes=9,
             max_bytes=1234,
             timeout_seconds=2.5,
+            allowed_hosts=(),
         )
         assert captured["image_session"] is session
         assert captured["image_store"] is captured["artifact_store"]

@@ -6,7 +6,6 @@ import { useLocale } from '@/contexts/LocaleContext';
 import {
   getPortalSiteDisplayName,
   getPortalSiteSecondaryLabel,
-  getPortalSiteUrl,
   getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import { cn } from '@/lib/utils';
@@ -19,7 +18,9 @@ export type PortalWorkspacePage =
   | 'monitoring'
   | 'record'
   | 'sites'
-  | 'support';
+  | 'support'
+  | 'account'
+  | 'home';
 
 export type PortalWorkspaceMetric = {
   label: string;
@@ -38,18 +39,20 @@ type PortalWorkspaceSite = {
 };
 
 type PortalWorkspaceHeaderProps = {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description?: string;
   eyebrowInfo?: string;
   currentPage: PortalWorkspacePage;
   selectedSiteId?: string;
-  selectedSiteName?: string | null;
-  showSiteContextSummary?: boolean;
   sites?: PortalWorkspaceSite[];
   onSiteChange?: (siteId: string) => void;
+  siteSelectorMode?: 'context' | 'filter';
   metrics?: PortalWorkspaceMetric[];
   metricsColumnsClassName?: string;
+  titleAccessory?: React.ReactNode;
+  metadata?: React.ReactNode;
+  contextPanel?: React.ReactNode;
   primaryAction?: React.ReactNode;
   secondaryActions?: React.ReactNode;
   actions?: React.ReactNode;
@@ -57,18 +60,20 @@ type PortalWorkspaceHeaderProps = {
 };
 
 export function PortalWorkspaceHeader({
-  eyebrow,
+  eyebrow = '',
   title,
   description,
   eyebrowInfo,
   currentPage,
   selectedSiteId = '',
-  selectedSiteName,
-  showSiteContextSummary = false,
   sites = [],
   onSiteChange,
+  siteSelectorMode = 'context',
   metrics = [],
   metricsColumnsClassName = 'lg:grid-cols-4',
+  titleAccessory,
+  metadata,
+  contextPanel,
   primaryAction,
   secondaryActions,
   actions,
@@ -82,48 +87,57 @@ export function PortalWorkspaceHeader({
         {secondaryActions}
       </>
     ) : null);
-  const selectedSite = sites.find((site) => site.site_id === selectedSiteId) || null;
-  const selectedSiteUrl = getPortalSiteUrl(selectedSite);
-  const shouldShowEyebrow = eyebrow.trim().toLowerCase() !== title.trim().toLowerCase();
+  const shouldShowEyebrow = Boolean(eyebrow.trim())
+    && eyebrow.trim().toLowerCase() !== title.trim().toLowerCase();
+  const hasHeaderAside = Boolean(contextPanel || resolvedActions);
   const summary = (
-    <div className="grid gap-4 xl:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.9fr)_auto] xl:items-center">
+    <div
+      className={cn(
+        'grid gap-4 lg:items-start',
+        contextPanel
+          ? 'lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.75fr)]'
+          : hasHeaderAside
+            ? 'lg:grid-cols-[minmax(0,1fr)_auto]'
+            : ''
+      )}
+    >
       <div className="min-w-0">
         {shouldShowEyebrow ? (
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className={cn(
-          'text-2xl font-semibold leading-tight text-gray-950 dark:text-white md:text-[1.75rem]',
-          shouldShowEyebrow ? 'mt-1.5' : ''
-        )}>
-          {title}
-        </h1>
+        <div className={cn('flex flex-wrap items-center gap-2.5', shouldShowEyebrow ? 'mt-1.5' : '')}>
+          <h1 className="text-2xl font-semibold leading-tight text-gray-950 dark:text-white md:text-[1.75rem]">
+            {title}
+          </h1>
+          {titleAccessory}
+        </div>
         {eyebrowInfo ? <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{eyebrowInfo}</p> : null}
-        {showSiteContextSummary ? (
-          <p className="mt-2 max-w-md truncate text-sm text-gray-600 dark:text-gray-400">
-            {selectedSiteName || selectedSiteUrl || t('portal.current_site', {}, 'Site record')}
-            {' · '}
-            {selectedSiteUrl ||
-              t('portal.site_url_missing', {}, 'WordPress URL not configured')}
-          </p>
-        ) : null}
         {description ? <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{description}</p> : null}
+        {metadata ? <div className="mt-3">{metadata}</div> : null}
       </div>
-      {metrics.length ? (
-        <PortalMetricStrip items={metrics} columnsClassName={metricsColumnsClassName} variant="portal" />
+      {hasHeaderAside ? (
+        <div className="flex min-w-0 flex-col gap-3">
+          {contextPanel}
+          {resolvedActions ? <div className="flex flex-wrap gap-2 lg:justify-end">{resolvedActions}</div> : null}
+        </div>
       ) : null}
-      {resolvedActions ? <div className="flex flex-wrap gap-2 xl:justify-end">{resolvedActions}</div> : null}
     </div>
   );
 
   return (
-    <section className="space-y-4 border-b border-slate-200/75 pb-5 dark:border-slate-800">
+    <section className="space-y-4 border-b border-slate-200/75 pb-4 dark:border-slate-800" data-portal-workspace-header={currentPage}>
       {summary}
+      {metrics.length ? (
+        <PortalMetricStrip items={metrics} columnsClassName={metricsColumnsClassName} variant="header" />
+      ) : null}
       {onSiteChange && getVisiblePortalSites(sites).length > 1 ? (
         <div className="max-w-md">
           <label htmlFor={`portal-${currentPage}-site-selector`} className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
-            {t('portal.current_site', {}, 'Current site')}
+            {siteSelectorMode === 'filter'
+              ? t('portal.site_filter_label', {}, 'Site filter')
+              : t('portal.current_site', {}, 'Current site')}
           </label>
           <select
             id={`portal-${currentPage}-site-selector`}
@@ -131,7 +145,11 @@ export function PortalWorkspaceHeader({
             value={selectedSiteId}
             onChange={(event) => onSiteChange(event.target.value)}
           >
-            {!selectedSiteId ? (
+            {siteSelectorMode === 'filter' ? (
+              <option value="">
+                {t('portal.all_sites_option', {}, 'All sites')}
+              </option>
+            ) : !selectedSiteId ? (
               <option value="" disabled>
                 {t('portal.select_site_placeholder', {}, 'Select a site')}
               </option>

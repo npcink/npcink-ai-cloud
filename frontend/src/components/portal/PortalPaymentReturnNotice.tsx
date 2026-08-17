@@ -15,7 +15,6 @@ type PortalPaymentReturnNoticeProps = {
   provider: string;
   orderId: string;
   isAuthenticated: boolean;
-  contextSiteId?: string;
   entitlements: Entitlements | null;
   refreshSession: () => Promise<unknown>;
   refreshBilling: () => Promise<unknown>;
@@ -40,7 +39,6 @@ export function PortalPaymentReturnNotice({
   provider,
   orderId,
   isAuthenticated,
-  contextSiteId,
   entitlements,
   refreshSession,
   refreshBilling,
@@ -54,13 +52,11 @@ export function PortalPaymentReturnNotice({
   const [reconcileError, setReconcileError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const dependenciesRef = useRef({ t, refreshSession, refreshBilling, refreshPaymentOrders });
-  const normalizedContextSiteId = String(contextSiteId || '').trim();
-  const contextSiteIdRef = useRef(normalizedContextSiteId);
   const loadRequestVersionRef = useRef(0);
   const loadOrderPromiseRef = useRef<Promise<PortalPaymentOrder | null> | null>(null);
   const reconcilePromiseRef = useRef<Promise<void> | null>(null);
   const shouldPoll = provider === 'alipay' && Boolean(orderId);
-  const visible = Boolean(normalizedContextSiteId) && (shouldPoll || Boolean(order));
+  const visible = shouldPoll || Boolean(order);
   const activeOrderId = orderId || order?.order_id || '';
 
   useEffect(() => {
@@ -68,7 +64,6 @@ export function PortalPaymentReturnNotice({
   }, [refreshBilling, refreshPaymentOrders, refreshSession, t]);
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = normalizedContextSiteId;
     loadRequestVersionRef.current += 1;
     setOrder(null);
     setError(null);
@@ -79,36 +74,26 @@ export function PortalPaymentReturnNotice({
     setIsRefreshing(false);
     loadOrderPromiseRef.current = null;
     reconcilePromiseRef.current = null;
-  }, [normalizedContextSiteId]);
+  }, [orderId, provider]);
 
   const loadOrder = useCallback((): Promise<PortalPaymentOrder | null> => {
     if (loadOrderPromiseRef.current) return loadOrderPromiseRef.current;
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!requestContextSiteId || !activeOrderId) return Promise.resolve(null);
+    if (!activeOrderId) return Promise.resolve(null);
     const requestVersion = ++loadRequestVersionRef.current;
     const loadPromise = (async () => {
       try {
         const response = await portalClient.getAccountPaymentOrder(activeOrderId);
-        if (
-          requestVersion !== loadRequestVersionRef.current
-          || requestContextSiteId !== contextSiteIdRef.current
-        ) return null;
+        if (requestVersion !== loadRequestVersionRef.current) return null;
         setOrder(response.data.order);
         setError(null);
         return response.data.order;
       } catch (loadError) {
-        if (
-          requestVersion !== loadRequestVersionRef.current
-          || requestContextSiteId !== contextSiteIdRef.current
-        ) return null;
+        if (requestVersion !== loadRequestVersionRef.current) return null;
         const translate = dependenciesRef.current.t;
         setError(formatPortalErrorMessage(loadError, translate, translate('error.failed_load')));
         return null;
       } finally {
-        if (
-          requestVersion === loadRequestVersionRef.current
-          && requestContextSiteId === contextSiteIdRef.current
-        ) {
+        if (requestVersion === loadRequestVersionRef.current) {
           loadOrderPromiseRef.current = null;
         }
       }
@@ -119,8 +104,6 @@ export function PortalPaymentReturnNotice({
 
   const reconcile = useCallback((): Promise<void> => {
     if (reconcilePromiseRef.current) return reconcilePromiseRef.current;
-    const reconcileContextSiteId = contextSiteIdRef.current;
-    if (!reconcileContextSiteId) return Promise.resolve();
     setIsRefreshing(true);
     setReconciled(false);
     setBillingFresh(false);
@@ -131,7 +114,6 @@ export function PortalPaymentReturnNotice({
       dependencies.refreshBilling(),
       dependencies.refreshPaymentOrders(),
     ]).then((results) => {
-      if (reconcileContextSiteId !== contextSiteIdRef.current) return;
       const failed = results.some(
         (result) => result.status === 'rejected' || result.value === false
       );
@@ -153,28 +135,25 @@ export function PortalPaymentReturnNotice({
       if (reconcilePromiseRef.current === reconcilePromise) {
         reconcilePromiseRef.current = null;
       }
-      if (reconcileContextSiteId === contextSiteIdRef.current) {
-        setIsRefreshing(false);
-      }
+      setIsRefreshing(false);
     });
     reconcilePromiseRef.current = reconcilePromise;
     return reconcilePromise;
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || !normalizedContextSiteId || !shouldPoll) return;
-    const pollContextSiteId = normalizedContextSiteId;
+    if (!isAuthenticated || !shouldPoll) return;
     let canceled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempts = 0;
     const poll = async () => {
       const nextOrder = await loadOrder();
-      if (canceled || pollContextSiteId !== contextSiteIdRef.current) return;
+      if (canceled) return;
       const status = normalizePaymentText(nextOrder?.status);
       if (isPaidPaymentStatus(status) || isClosedPaymentStatus(status)) {
         window.history.replaceState(window.history.state, '', '/portal/billing');
         await reconcile();
-        if (canceled || pollContextSiteId !== contextSiteIdRef.current) return;
+        if (canceled) return;
         return;
       }
       attempts += 1;
@@ -190,7 +169,7 @@ export function PortalPaymentReturnNotice({
       canceled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [isAuthenticated, loadOrder, normalizedContextSiteId, reconcile, shouldPoll]);
+  }, [isAuthenticated, loadOrder, reconcile, shouldPoll]);
 
   if (!visible) return null;
 
@@ -204,11 +183,9 @@ export function PortalPaymentReturnNotice({
   const nextExpiry = String(creditQuota?.paid_next_expires_at || '');
 
   const handleRefresh = async () => {
-    const refreshContextSiteId = contextSiteIdRef.current;
-    if (!refreshContextSiteId || isRefreshing) return;
+    if (isRefreshing) return;
     setTimedOut(false);
     const nextOrder = await loadOrder();
-    if (refreshContextSiteId !== contextSiteIdRef.current) return;
     const nextStatus = normalizePaymentText(nextOrder?.status);
     if (isPaidPaymentStatus(nextStatus) || isClosedPaymentStatus(nextStatus)) {
       window.history.replaceState(window.history.state, '', '/portal/billing');

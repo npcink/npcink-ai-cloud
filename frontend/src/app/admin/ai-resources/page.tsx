@@ -35,12 +35,12 @@ import {
 import {
   buildProviderConnectionForm,
   EMPTY_PROVIDER_CONNECTION_FORM,
+  hasProviderWorkbenchDraftChanges,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
   type ModelReferenceFeatureFilter,
   type ModelReferenceVisibilityFilter,
   type ProviderCatalogPreview,
-  type ProviderCatalogPreviewModel,
   type ProviderConnectionForm,
 } from '@/features/admin/ai-resources/provider-workbench-state';
 import {
@@ -59,86 +59,35 @@ import {
   referenceProviderLabel,
   type ProviderExternalLinkItem,
 } from '@/features/admin/ai-resources/provider-presets';
-import type {
-  ConnectionStatusFilter,
-  ProviderConnectionTestResult,
-  ProviderImageDeliveryProbeResult,
-  SupplierConnection as Connection,
+import {
+  isProviderConnectionDeletePreflight,
+  type ConnectionStatusFilter,
+  type ProviderConnectionDeletePreflight,
+  type ProviderConnectionTestResult,
+  type ProviderImageDeliveryProbeResult,
+  type SupplierConnection as Connection,
 } from '@/features/admin/ai-resources/types';
+import {
+  MODEL_VISIBILITY_PAGE_SIZE,
+  buildModelVisibilityRows,
+  catalogPreviewForMetadata,
+  catalogPreviewFromConnection,
+  formatReferenceContext,
+  formatReferenceContextTitle,
+  formatReferencePrice,
+  hasReferencePrice,
+  hasModelMetadataFor,
+  modelReferenceCapabilityTags,
+  modelReferenceSourceNeedsSync,
+  normalizeProviderCatalogPreview,
+  type ModelReferenceEntry,
+  type ModelReferenceSourceSummary,
+} from '@/features/admin/ai-resources/model-reference-model';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
 
 type SupplierCategory = 'ai' | 'capability';
-
-type ModelReferenceEntry = {
-  source_id: string;
-  source_label: string;
-  provider_id: string;
-  provider_label: string;
-  model_id: string;
-  display_name: string;
-  family: string;
-  feature: string;
-  status: string;
-  modalities: {
-    input?: string[];
-    output?: string[];
-  };
-  capability_flags: {
-    reasoning?: boolean;
-    tool_call?: boolean;
-    structured_output?: boolean;
-    attachment?: boolean;
-    open_weights?: boolean;
-  };
-  context_window?: number | null;
-  output_limit?: number | null;
-  price: {
-    input?: number | null;
-    output?: number | null;
-    cache_read?: number | null;
-    cache_write?: number | null;
-    unit: string;
-    billing_truth: boolean;
-  };
-  source_updated_at: string;
-  synced_at: string;
-  is_deprecated: boolean;
-  override_present: boolean;
-};
-
-type ModelReferenceSourceSummary = {
-  source_id: string;
-  display_name: string;
-  source_url: string;
-  status: string;
-  last_synced_at: string;
-  last_error_code: string;
-  last_error_message: string;
-};
-
-function modelReferenceSourceNeedsSync(source: ModelReferenceSourceSummary | null, total: number): boolean {
-  if (total > 0) return false;
-  if (!source) return true;
-  if (source.last_synced_at) return false;
-  return source.status !== 'active';
-}
-
-type ModelVisibilityRow = {
-  modelId: string;
-  family: string;
-  feature: string;
-  sourceLabel: string;
-  sourceKind: 'reference' | 'catalog' | 'manual';
-  selected: boolean;
-  verified: boolean;
-  deprecated: boolean;
-  reference?: ModelReferenceEntry;
-  catalog?: ProviderCatalogPreviewModel;
-};
-
-const MODEL_VISIBILITY_PAGE_SIZE = 25;
 
 type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
   receipt?: AdminMutationReceiptPayload | null;
@@ -210,204 +159,6 @@ function providerConnectionTestResultFromError(error: unknown): ProviderConnecti
     : undefined;
 }
 
-function formatCompactTokenCount(value: number | null): string {
-  if (typeof value !== 'number') return '-';
-  return new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatRawTokenCount(value: number | null): string {
-  if (typeof value !== 'number') return '-';
-  return new Intl.NumberFormat('en-US').format(value);
-}
-
-function formatReferenceContext(reference: ModelReferenceEntry, missingLabel: string): string {
-  const contextWindow = typeof reference.context_window === 'number' ? reference.context_window : null;
-  const outputLimit = typeof reference.output_limit === 'number' ? reference.output_limit : null;
-  if (contextWindow === null && outputLimit === null) {
-    return missingLabel;
-  }
-  return `${formatCompactTokenCount(contextWindow)} / ${formatCompactTokenCount(outputLimit)}`;
-}
-
-function formatReferenceContextTitle(reference: ModelReferenceEntry): string {
-  const contextWindow = typeof reference.context_window === 'number' ? reference.context_window : null;
-  const outputLimit = typeof reference.output_limit === 'number' ? reference.output_limit : null;
-  return `${formatRawTokenCount(contextWindow)} / ${formatRawTokenCount(outputLimit)} tokens`;
-}
-
-function hasReferencePrice(reference: ModelReferenceEntry): boolean {
-  return typeof reference.price.input === 'number'
-    || typeof reference.price.output === 'number'
-    || typeof reference.price.cache_read === 'number'
-    || typeof reference.price.cache_write === 'number';
-}
-
-function formatReferencePrice(reference: ModelReferenceEntry, cacheLabel: string, missingLabel: string): string {
-  if (!hasReferencePrice(reference)) {
-    return missingLabel;
-  }
-  const input = typeof reference.price.input === 'number' ? `$${reference.price.input}` : '-';
-  const output = typeof reference.price.output === 'number' ? `$${reference.price.output}` : '-';
-  const cacheRead = typeof reference.price.cache_read === 'number' ? `$${reference.price.cache_read}` : '';
-  const cacheWrite = typeof reference.price.cache_write === 'number' ? `$${reference.price.cache_write}` : '';
-  const cache = cacheRead || cacheWrite ? ` · ${cacheLabel} ${cacheRead || '-'} / ${cacheWrite || '-'}` : '';
-  return `${input} / ${output}${cache}`;
-}
-
-function modelReferenceCapabilityTags(reference: ModelReferenceEntry): string[] {
-  return [
-    reference.capability_flags.reasoning ? 'reasoning' : '',
-    reference.capability_flags.tool_call ? 'tool_call' : '',
-    reference.capability_flags.structured_output ? 'structured_output' : '',
-    reference.capability_flags.attachment ? 'attachment' : '',
-    reference.capability_flags.open_weights ? 'open_weights' : '',
-  ].filter(Boolean);
-}
-
-function modelReferenceSearchText(row: ModelVisibilityRow): string {
-  return [
-    row.modelId,
-    row.family,
-    row.feature,
-    row.sourceLabel,
-    row.reference?.display_name,
-    row.reference?.provider_label,
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureFilter {
-  const normalized = feature.trim().toLowerCase();
-  if (normalized.includes('image')) return 'image';
-  if (normalized.includes('audio')) return 'audio';
-  if (normalized.includes('video')) return 'video';
-  if (normalized.includes('embedding') || normalized.includes('vector')) return 'embedding';
-  if (normalized.includes('text')) return 'text';
-  return 'all';
-}
-
-function catalogDisplayFeature(modelId: string, catalogFeature: string): string {
-  const normalized = modelId.trim().toLowerCase();
-  if (/(^|[\/_-])(cosyvoice|sensevoice|funasr|whisper|tts|speech|audio)([\/_:.-]|$)/.test(normalized)) {
-    return 'audio';
-  }
-  if (/(^|[\/_-])(video|wan2\.[0-9]|sora)([\/_:.-]|$)/.test(normalized)) {
-    return 'video';
-  }
-  return catalogFeature;
-}
-
-function normalizeModelLookupValue(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function modelLookupKeys(modelId: string, providerId: string): string[] {
-  const normalizedModelId = normalizeModelLookupValue(modelId);
-  const normalizedProviderId = normalizeModelLookupValue(providerId);
-  const keys = new Set<string>();
-  if (normalizedModelId) {
-    keys.add(normalizedModelId);
-    const slashIndex = normalizedModelId.indexOf('/');
-    if (slashIndex > 0 && slashIndex < normalizedModelId.length - 1) {
-      keys.add(normalizedModelId.slice(slashIndex + 1));
-    }
-    if (normalizedProviderId && normalizedModelId.startsWith(`${normalizedProviderId}/`)) {
-      keys.add(normalizedModelId.slice(normalizedProviderId.length + 1));
-    }
-    if (normalizedProviderId && !normalizedModelId.includes('/')) {
-      keys.add(`${normalizedProviderId}/${normalizedModelId}`);
-    }
-  }
-  return Array.from(keys);
-}
-
-function modelLookupKeySet(modelId: string, providerId: string): Set<string> {
-  return new Set(modelLookupKeys(modelId, providerId));
-}
-
-function selectedModelIdFor(
-  modelId: string,
-  providerId: string,
-  selectedModelIds: string[],
-  selectedLookup: Map<string, string>
-): string {
-  for (const key of modelLookupKeys(modelId, providerId)) {
-    const selectedModelId = selectedLookup.get(key);
-    if (selectedModelId) return selectedModelId;
-  }
-  return selectedModelIds.includes(modelId) ? modelId : '';
-}
-
-function hasModelMetadataFor(
-  modelId: string,
-  providerId: string,
-  references: ModelReferenceEntry[]
-): boolean {
-  const keys = modelLookupKeySet(modelId, providerId);
-  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)));
-}
-
-function normalizeProviderCatalogPreview(value: any): ProviderCatalogPreview | null {
-  if (!value || typeof value !== 'object') return null;
-  const models: ProviderCatalogPreviewModel[] = Array.isArray(value.models)
-    ? value.models
-      .map((model: any): ProviderCatalogPreviewModel => ({
-        model_id: String(model?.model_id ?? ''),
-        family: String(model?.family ?? ''),
-        feature: String(model?.feature ?? ''),
-        status: String(model?.status ?? ''),
-        is_deprecated: Boolean(model?.is_deprecated),
-        runtime_supported: Boolean(model?.runtime_supported),
-        verified: Boolean(model?.verified),
-        capability_tags: Array.isArray(model?.capability_tags) ? model.capability_tags.map(String) : [],
-      }))
-      .filter((model: ProviderCatalogPreviewModel) => model.model_id)
-    : [];
-  const modelIds = Array.isArray(value.model_ids)
-    ? value.model_ids.map(String).filter(Boolean)
-    : models.map((model) => model.model_id);
-  if (!modelIds.length && !models.length) return null;
-  return {
-    provider_id: String(value.provider_id ?? ''),
-    display_name: String(value.display_name ?? ''),
-    adapter_type: String(value.adapter_type ?? ''),
-    model_count: Number(value.model_count ?? modelIds.length) || modelIds.length,
-    model_ids: modelIds,
-    models,
-    truncated: Boolean(value.truncated),
-  };
-}
-
-function catalogPreviewForMetadata(preview: ProviderCatalogPreview | null): ProviderCatalogPreview | undefined {
-  if (!preview) return undefined;
-  return {
-    provider_id: preview.provider_id,
-    display_name: preview.display_name,
-    adapter_type: preview.adapter_type,
-    model_count: preview.model_count,
-    model_ids: preview.model_ids,
-    models: (preview.models || []).map((model) => ({
-      model_id: model.model_id,
-      family: model.family,
-      feature: model.feature,
-      status: model.status,
-      is_deprecated: model.is_deprecated,
-      runtime_supported: model.runtime_supported,
-      verified: model.verified,
-      capability_tags: model.capability_tags,
-    })),
-    truncated: preview.truncated,
-  };
-}
-
-function catalogPreviewFromConnection(connection: Connection): ProviderCatalogPreview | null {
-  return normalizeProviderCatalogPreview(
-    connection.metadata?.model_catalog_preview || connection.metadata?.model_catalog
-  );
-}
-
 function AiResourcesContent() {
   const { t } = useLocale();
   const toast = useToast();
@@ -436,8 +187,10 @@ function AiResourcesContent() {
   const [probingImageDeliveryConnectionId, setProbingImageDeliveryConnectionId] = useState('');
   const [imageDeliveryProbeResult, setImageDeliveryProbeResult] = useState<ProviderImageDeliveryProbeResult | null>(null);
   const [approvingImageHostConnectionId, setApprovingImageHostConnectionId] = useState('');
+  const [preflightingDeleteConnectionId, setPreflightingDeleteConnectionId] = useState('');
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
+  const [deletePreflight, setDeletePreflight] = useState<ProviderConnectionDeletePreflight | null>(null);
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState(false);
   const [loadingModelReferences, setLoadingModelReferences] = useState(false);
   const [syncingModelReferences, setSyncingModelReferences] = useState(false);
@@ -469,12 +222,14 @@ function AiResourcesContent() {
     confirmingModelBatch,
     customModelInput,
   } = providerWorkbench;
+  const providerDraftDirty = hasProviderWorkbenchDraftChanges(providerWorkbench);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models'>('connection');
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
+  const deletePreflightRequestRevision = useRef(0);
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -653,8 +408,85 @@ function AiResourcesContent() {
     }
   }
 
+  async function requestProviderConnectionDelete(connection: Connection) {
+    if (connection.managed_by !== 'cloud_provider_connections') return;
+    const requestRevision = deletePreflightRequestRevision.current + 1;
+    deletePreflightRequestRevision.current = requestRevision;
+    setConfirmingDeleteConnectionId('');
+    setDeletePreflight(null);
+    if (
+      providerConnectionForm.connectionId === connection.connection_id &&
+      providerDraftDirty
+    ) {
+      const draftMessage = aiText(
+        'error_delete_connection_unsaved_draft',
+        'Save or discard the unsaved provider draft before deleting this connection.'
+      );
+      setProviderWorkbenchSection('connection');
+      dispatchProviderWorkbench({ type: 'reopen_draft' });
+      setError(draftMessage);
+      toast.error(draftMessage, t('common.error'));
+      return;
+    }
+
+    setPreflightingDeleteConnectionId(connection.connection_id);
+    setError('');
+    try {
+      const response = await aiResourcesClient.request<ProviderConnectionDeletePreflight>(
+        `/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}/delete-preflight`
+      );
+      if (!isProviderConnectionDeletePreflight(response.data)) {
+        throw new Error('provider deletion preflight is incomplete');
+      }
+      if (deletePreflightRequestRevision.current !== requestRevision) return;
+      if (response.data.connection.connection_id !== connection.connection_id) {
+        throw new Error('provider deletion preflight does not match the requested connection');
+      }
+      setDeletePreflight(response.data);
+      setConfirmingDeleteConnectionId(connection.connection_id);
+    } catch (preflightError) {
+      if (deletePreflightRequestRevision.current !== requestRevision) return;
+      const preflightMessage = resolveUiErrorMessage(
+        preflightError,
+        aiText(
+          'error_delete_connection_preflight',
+          'Could not inspect the current provider deletion impact.'
+        )
+      );
+      setError(preflightMessage);
+      toast.error(preflightMessage, t('common.error'));
+    } finally {
+      if (deletePreflightRequestRevision.current === requestRevision) {
+        setPreflightingDeleteConnectionId('');
+      }
+    }
+  }
+
   async function deleteProviderConnection(connection: Connection) {
     if (connection.managed_by !== 'cloud_provider_connections') return;
+    if (
+      !deletePreflight ||
+      deletePreflight.connection.connection_id !== connection.connection_id
+    ) {
+      await requestProviderConnectionDelete(connection);
+      return;
+    }
+    if (
+      providerConnectionForm.connectionId === connection.connection_id &&
+      providerDraftDirty
+    ) {
+      setConfirmingDeleteConnectionId('');
+      setDeletePreflight(null);
+      setProviderWorkbenchSection('connection');
+      dispatchProviderWorkbench({ type: 'reopen_draft' });
+      const draftMessage = aiText(
+        'error_delete_connection_unsaved_draft',
+        'Save or discard the unsaved provider draft before deleting this connection.'
+      );
+      setError(draftMessage);
+      toast.error(draftMessage, t('common.error'));
+      return;
+    }
     setDeletingConnectionId(connection.connection_id);
     setError('');
     setMessage('');
@@ -663,6 +495,9 @@ function AiResourcesContent() {
         `/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}`,
         {
           method: 'DELETE',
+          body: {
+            expected_updated_at: deletePreflight.expected_updated_at,
+          },
         }
       );
       setLastReceipt(response.data.receipt || null);
@@ -673,9 +508,25 @@ function AiResourcesContent() {
         dispatchProviderWorkbench({ type: 'reset_after_save' });
       }
       setConfirmingDeleteConnectionId('');
+      setDeletePreflight(null);
       await loadResources();
     } catch (deleteError) {
-      const deleteMessage = resolveUiErrorMessage(deleteError, aiText('error_delete_connection', 'Failed to delete provider connection.'));
+      const isConflict = deleteError instanceof ApiError &&
+        deleteError.errorCode === 'provider_connection.delete_conflict';
+      if (isConflict) {
+        setConfirmingDeleteConnectionId('');
+        setDeletePreflight(null);
+        await loadResources();
+      }
+      const deleteMessage = isConflict
+        ? aiText(
+            'error_delete_connection_conflict',
+            'This provider connection changed after the deletion check. Review the refreshed row and try again.'
+          )
+        : resolveUiErrorMessage(
+            deleteError,
+            aiText('error_delete_connection', 'Failed to delete provider connection.')
+          );
       setError(deleteMessage);
       toast.error(deleteMessage, t('common.error'));
     } finally {
@@ -1294,18 +1145,6 @@ function AiResourcesContent() {
     providerReferenceLinksForForm(providerConnectionForm)
   );
 
-  const selectedModelLookup = useMemo(() => {
-    const lookup = new Map<string, string>();
-    for (const modelId of selectedProviderModelIds) {
-      for (const key of modelLookupKeys(modelId, modelReferenceProviderId)) {
-        if (!lookup.has(key)) {
-          lookup.set(key, modelId);
-        }
-      }
-    }
-    return lookup;
-  }, [modelReferenceProviderId, selectedProviderModelIds]);
-
   const selectedModelMetadataGapCount = useMemo(
     () => selectedProviderModelIds.filter((modelId) => !hasModelMetadataFor(
       modelId,
@@ -1367,99 +1206,29 @@ function AiResourcesContent() {
     modelReferenceAutoSyncError || modelsDevReferenceSource?.status === 'error'
   );
 
-  const modelVisibilityRows = useMemo<ModelVisibilityRow[]>(() => {
-    const rows = new Map<string, ModelVisibilityRow>();
-
-    for (const reference of modelReferences) {
-      const selectedModelId = selectedModelIdFor(
-        reference.model_id,
-        reference.provider_id || modelReferenceProviderId,
-        selectedProviderModelIds,
-        selectedModelLookup
-      );
-      const rowModelId = selectedModelId || reference.model_id;
-      rows.set(rowModelId, {
-        modelId: rowModelId,
-        family: reference.family || reference.source_label,
-        feature: reference.feature,
-        sourceLabel: reference.source_label,
-        sourceKind: 'reference',
-        selected: Boolean(selectedModelId),
-        verified: false,
-        deprecated: reference.is_deprecated,
-        reference,
-      });
-    }
-
-    for (const model of providerCatalogPreview?.models || []) {
-      const selectedModelId = selectedModelIdFor(
-        model.model_id,
-        modelReferenceProviderId,
-        selectedProviderModelIds,
-        selectedModelLookup
-      );
-      const rowModelId = selectedModelId || model.model_id;
-      const existing = rows.get(rowModelId);
-      rows.set(rowModelId, {
-        modelId: rowModelId,
-        family: existing?.family || model.family,
-        feature: existing?.feature || catalogDisplayFeature(model.model_id, model.feature),
-        sourceLabel: existing?.sourceLabel || aiText('model_source_upstream', 'Upstream catalog'),
-        sourceKind: existing?.sourceKind || 'catalog',
-        selected: Boolean(selectedModelId),
-        verified: model.verified || existing?.verified || false,
-        deprecated: model.is_deprecated || existing?.deprecated || false,
-        reference: existing?.reference,
-        catalog: model,
-      });
-    }
-
-    for (const modelId of selectedProviderModelIds) {
-      if (!rows.has(modelId)) {
-        rows.set(modelId, {
-          modelId,
-          family: aiText('model_source_manual', 'Manually added'),
-          feature: '',
-          sourceLabel: aiText('model_source_enabled_only', 'Saved model ID only'),
-          sourceKind: 'manual',
-          selected: true,
-          verified: false,
-          deprecated: false,
-        });
-      }
-    }
-
-    const normalizedSearch = modelReferenceSearch.trim().toLowerCase();
-    return Array.from(rows.values())
-      .filter((row) => {
-        if (!modelReferenceShowDeprecated && row.deprecated && !row.selected) return false;
-        if (modelReferenceVisibilityFilter === 'enabled' && !row.selected) return false;
-        if (modelReferenceVisibilityFilter === 'disabled' && row.selected) return false;
-        if (modelReferenceIntelligenceFilter === 'missing' && row.reference) return false;
-        if (modelReferenceFeatureFilter !== 'all' && normalizeModelReferenceFeature(row.feature) !== modelReferenceFeatureFilter) {
-          return false;
-        }
-        if (normalizedSearch && !modelReferenceSearchText(row).includes(normalizedSearch)) {
-          return false;
-        }
-        return true;
-      })
-      .sort((left, right) => {
-        if (left.selected !== right.selected) return left.selected ? -1 : 1;
-        if (left.deprecated !== right.deprecated) return left.deprecated ? 1 : -1;
-        return left.modelId.localeCompare(right.modelId);
-      });
-  }, [
+  const modelVisibilityRows = useMemo(() => buildModelVisibilityRows({
+    references: modelReferences,
+    catalogPreview: providerCatalogPreview,
+    selectedModelIds: selectedProviderModelIds,
+    providerId: modelReferenceProviderId,
+    search: modelReferenceSearch,
+    featureFilter: modelReferenceFeatureFilter,
+    visibilityFilter: modelReferenceVisibilityFilter,
+    intelligenceFilter: modelReferenceIntelligenceFilter,
+    showDeprecated: modelReferenceShowDeprecated,
+    upstreamLabel: aiText('model_source_upstream', 'Upstream catalog'),
+    manualLabel: aiText('model_source_manual', 'Manually added'),
+    enabledOnlyLabel: aiText('model_source_enabled_only', 'Saved model ID only'),
+  }), [
     aiText,
     modelReferenceFeatureFilter,
     modelReferenceIntelligenceFilter,
+    modelReferenceProviderId,
     modelReferenceSearch,
     modelReferenceShowDeprecated,
     modelReferenceVisibilityFilter,
-    modelReferenceProviderId,
     modelReferences,
     providerCatalogPreview,
-    selectedModelLookup,
     selectedProviderModelIds,
   ]);
 
@@ -2542,7 +2311,9 @@ function AiResourcesContent() {
           testingConnectionId={testingConnectionId}
           approvingImageHostConnectionId={approvingImageHostConnectionId}
           deletingConnectionId={deletingConnectionId}
+          preflightingDeleteConnectionId={preflightingDeleteConnectionId}
           confirmingDeleteConnectionId={confirmingDeleteConnectionId}
+          deletePreflight={deletePreflight}
           providerKindLabel={providerKindLabel}
           providerTestStageLabel={providerTestStageLabel}
           providerTestMessage={providerTestMessage}
@@ -2551,8 +2322,11 @@ function AiResourcesContent() {
           onTest={(connectionId) => void runProviderConnectionTest(connectionId)}
           onApproveImageHost={(connection) => void approveDetectedImageHost(connection)}
           onDelete={(connection) => void deleteProviderConnection(connection)}
-          onRequestDelete={setConfirmingDeleteConnectionId}
-          onCancelDelete={() => setConfirmingDeleteConnectionId('')}
+          onRequestDelete={(connection) => void requestProviderConnectionDelete(connection)}
+          onCancelDelete={() => {
+            setConfirmingDeleteConnectionId('');
+            setDeletePreflight(null);
+          }}
           translate={aiText}
         />
 

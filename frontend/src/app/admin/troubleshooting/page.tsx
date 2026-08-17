@@ -73,6 +73,14 @@ const WINDOW_OPTIONS = [24, 72, 168] as const;
 
 const evidenceLanes: EvidenceLane[] = [
   {
+    id: 'audit',
+    href: '/admin/audit',
+    titleKey: 'admin.audit_workspace.title',
+    titleFallback: 'Audit evidence',
+    descKey: 'admin.audit_workspace.lane_description',
+    descFallback: 'Exact service operation receipts, outcomes, scopes, and bounded request metadata.',
+  },
+  {
     id: 'plugin',
     href: '/admin/plugin-observability',
     titleKey: 'admin.nav_plugin_observability',
@@ -265,8 +273,8 @@ export default function AdminTroubleshootingPage() {
     error: '',
     generatedAt: '',
   });
-  const requestActiveRef = useRef(false);
   const requestSequenceRef = useRef(0);
+  const requestAbortRef = useRef<AbortController | null>(null);
   const hasLoadedRef = useRef(false);
 
   const updateUrl = useCallback((updates: { window?: number | null; focus?: string | null }) => {
@@ -280,16 +288,18 @@ export default function AdminTroubleshootingPage() {
   }, [pathname, router, searchParams]);
 
   const loadTelemetry = useCallback(async (refresh = false) => {
-    if (requestActiveRef.current) return;
-    requestActiveRef.current = true;
+    requestAbortRef.current?.abort();
     const sequence = ++requestSequenceRef.current;
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     if (refresh || hasLoadedRef.current) setRefreshing(true);
     else setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams({ recent_minutes: String(windowHours * 60), limit: '25' });
       const response = await runtimeTelemetryClient.request<unknown>(
-        `/api/admin/runtime-telemetry?${params.toString()}`
+        `/api/admin/runtime-telemetry?${params.toString()}`,
+        { signal: controller.signal }
       );
       if (sequence !== requestSequenceRef.current) return;
       setData(normalizeRuntimeTelemetry(response.data));
@@ -299,7 +309,7 @@ export default function AdminTroubleshootingPage() {
       setError(resolveUiErrorMessage(loadError, t('admin.troubleshooting.load_error', {}, 'Failed to load runtime diagnostics.')));
     } finally {
       if (sequence === requestSequenceRef.current) {
-        requestActiveRef.current = false;
+        requestAbortRef.current = null;
         setLoading(false);
         setRefreshing(false);
       }
@@ -308,6 +318,10 @@ export default function AdminTroubleshootingPage() {
 
   useEffect(() => {
     void loadTelemetry();
+    return () => {
+      requestSequenceRef.current += 1;
+      requestAbortRef.current?.abort();
+    };
   }, [loadTelemetry]);
 
   const issues = data?.alertSummary.alerts || [];

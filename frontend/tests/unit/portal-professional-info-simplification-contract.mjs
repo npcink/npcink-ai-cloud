@@ -107,11 +107,39 @@ assert.doesNotMatch(
   /usage\.tokens_month|usage\.requests_month|site_record_runtime_label|site_record_runtime_title|resolveCustomerPackageDisplay|common\.package|packageLabel/,
   'Portal site record must not default to runtime, token, request, or package terminology'
 );
+assert.match(siteRecordSource, /titleAccessory=[\s\S]*metadata=[\s\S]*contextPanel=/);
 assert.match(
   siteRecordSource,
-  /site_address_label[\s\S]*site_record_current_label[\s\S]*site_record_current_title/,
-  'Portal site record should focus on the site address and site record status'
+  /siteConnectionStatusLabel = site\.status === 'active'[\s\S]*portal\.sites\.table_ready[\s\S]*status=\{site\.status === 'active' \? 'active' : 'warning'\}/,
+  'Portal site header must keep connection lifecycle separate from service-health attention'
 );
+assert.match(
+  siteServiceStatusSource,
+  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
+  'Portal service status should use a compact semantic table'
+);
+assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
+assert.doesNotMatch(
+  siteRecordSource,
+  /selectedSiteName=|showSiteContextSummary|metrics=\{|site_record_current_title|href="\/portal\/account"/,
+  'Portal site record must keep site identity and service attention in one compact header without a duplicate account section'
+);
+assert.match(
+  siteRecordSource,
+  /<PortalSiteServiceStatus[\s\S]*<PortalSiteKnowledgePanel[\s\S]*<details>[\s\S]*portal\.site_other_actions/,
+  'Portal site record should keep service and knowledge summaries visible while placing destructive actions in low-frequency disclosure'
+);
+assert.match(
+  siteRecordSource,
+  /site\.status === 'inactive'[\s\S]*portal\.site_inactive_recovery_detail[\s\S]*WordPress plugin/,
+  'An inactive site must direct customers to reconnect from WordPress before escalating to support'
+);
+assert.match(
+  siteServiceStatusSource,
+  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
+  'Portal service status should use a compact semantic table'
+);
+assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
   siteRecordSource,
   /primaryAction=|secondaryActions=|href=\{`\/portal\/billing\?site=\$\{siteId\}`\}|href=\{`\/portal\/usage\?site=\$\{siteId\}`\}|portal\.site_record_service_title/,
@@ -123,6 +151,8 @@ assert.doesNotMatch(
   /site\.site_id\.toLowerCase\(\)\.includes\(query\)|account_id[^;]+includes\(query\)/,
   'Portal site search must not encourage internal site or account ID lookup'
 );
+assert.match(sitesSource, /portal\.sites\.table_status[\s\S]*portal\.sites\.table_ready/);
+assert.match(i18nSource, /'portal\.sites\.table_status': '接入状态'[\s\S]*'portal\.sites\.table_ready': '已接入'/);
 assert.doesNotMatch(
   sitesSource,
   /sites_management_actions_title|handleExportFilteredSites|export_filtered_sites|select_visible_sites|remove_selected_sites|pendingBatchAction|activateSite|deactivateSite/,
@@ -184,25 +214,25 @@ assert.doesNotMatch(
   /t\('audit\.title'|audit\.event_types|audit\.success_rate|eventKindFilter|outcomeFilter|record_type_label|all_record_types|all_results|record_count_label|range_label|apply_filters/,
   'Portal recent activity must not expose audit-log copy, advanced filters, or event-type controls'
 );
-assert.doesNotMatch(
+assert.match(
   auditSource,
-  /usePortalSiteSelection|selectedSiteId|getAuditBundle\(siteId|getAuditBundle\(selectedSiteId|listAuditEvents\(siteId/,
-  'Portal recent activity must keep using the account-level audit projection without a site query filter'
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getAuditBundle\(\{ limit, siteId: requestSiteFilterId \|\| undefined \}\)/,
+  'Portal recent activity must use the account projection with an optional site query filter'
 );
 assert.match(
   auditSource,
-  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*if \(!isAuthenticated \|\| !requestContextSiteId\) return/,
-  'Portal recent activity must require an explicit selected context before loading account activity'
+  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
+  'Portal recent activity must offer all-sites and single-site scopes'
 );
 assert.match(
   auditSource,
   /useLayoutEffect\([\s\S]*setAuditEvents\(\[\]\)[\s\S]*setAuditSummary\(null\)[\s\S]*setVisibleLimit\(10\)/,
-  'Portal recent activity must clear records and paging when context changes'
+  'Portal recent activity must clear records and paging when the site filter changes'
 );
 assert.match(
   auditSource,
-  /portalClient\.getAuditBundle\(\{ limit \}\)/,
-  'Portal recent activity must use the account-level audit bundle with the requested page size'
+  /portalClient\.getAuditBundle\(\{ limit, siteId: requestSiteFilterId \|\| undefined \}\)/,
+  'Portal recent activity must use the account-level audit bundle with the requested page size and optional site filter'
 );
 assert.match(
   auditSource,
@@ -213,6 +243,16 @@ assert.match(
   auditSource,
   /<details[\s\S]*portal\.support_information[\s\S]*Event ID[\s\S]*audit\.trace_id/,
   'Portal recent activity must collapse support identifiers behind support information'
+);
+assert.match(
+  auditSource,
+  /selectedSiteName[\s\S]*customer_desc_with_site[\s\S]*showSupportInformation = !isSuccessfulAuditOutcome\(event\.outcome\) \|\| Boolean\(traceId\)/,
+  'Portal recent activity must name the selected site once and suppress empty support affordances on successful rows'
+);
+assert.match(
+  auditSource,
+  /data-portal-audit="records-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_information/,
+  'Portal recent activity must use a semantic PC table with low-frequency support detail'
 );
 assert.match(
   auditSource,
