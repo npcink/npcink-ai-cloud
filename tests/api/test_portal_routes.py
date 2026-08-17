@@ -5358,7 +5358,8 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         state="portal-pro-trial-addon-state",
         idempotency_key="portal-pro-trial-addon-001",
     )
-    assert str(addon_exchange["site_id"])
+    selected_site_id = str(addon_exchange["site_id"])
+    assert selected_site_id
     assert addon_exchange["free_entitlement_activated"] is True
 
     offers_response = client.get(
@@ -5426,12 +5427,26 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert active_trial["allowed_tiers"] == []
     assert active_trial["trial_ends_at"]
 
-    order_response = client.post(
+    unselected_order_response = client.post(
         "/portal/v1/account/subscription-orders",
         json={"offer_id": "pro_monthly_v1", "provider": "alipay"},
         headers=build_portal_headers(
             principal_id=principal_id,
             site_id="",
+            idempotency_key="portal-pro-monthly-order-unselected-001",
+        ),
+    )
+    assert unselected_order_response.status_code == 409
+    assert unselected_order_response.json()["error_code"] == (
+        "portal.site_selection_required"
+    )
+
+    order_response = client.post(
+        "/portal/v1/account/subscription-orders",
+        json={"offer_id": "pro_monthly_v1", "provider": "alipay"},
+        headers=build_portal_headers(
+            principal_id=principal_id,
+            site_id=selected_site_id,
             idempotency_key="portal-pro-monthly-order-001",
         ),
     )
@@ -5444,11 +5459,30 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert order["purchase_kind"] == "subscription_plan"
     assert order["subscription_id"] == trial_data["subscription"]["subscription_id"]
     assert order["target_tier_id"] == "pro"
+    assert order["site_id"] == selected_site_id
     _assert_no_portal_commercial_internal_fields(order_payload)
+
+    with get_session(database_url) as session:
+        legacy_payment_order = session.get(PaymentOrder, order["order_id"])
+        assert legacy_payment_order is not None
+        legacy_payment_order.site_id = None
+        session.commit()
+
+    unselected_payment_orders_response = client.get(
+        "/portal/v1/account/payment-orders?limit=10",
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
+    )
+    assert unselected_payment_orders_response.status_code == 409
+    assert unselected_payment_orders_response.json()["error_code"] == (
+        "portal.site_selection_required"
+    )
 
     payment_orders_response = client.get(
         "/portal/v1/account/payment-orders?limit=10",
-        headers=build_portal_headers(principal_id=principal_id, site_id=""),
+        headers=build_portal_headers(
+            principal_id=principal_id,
+            site_id=selected_site_id,
+        ),
     )
     assert payment_orders_response.status_code == 200, payment_orders_response.text
     payment_orders_data = payment_orders_response.json()["data"]
@@ -5478,7 +5512,10 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
 
     order_detail_response = client.get(
         f"/portal/v1/account/payment-orders/{order['order_id']}",
-        headers=build_portal_headers(principal_id=principal_id, site_id=""),
+        headers=build_portal_headers(
+            principal_id=principal_id,
+            site_id=selected_site_id,
+        ),
     )
     assert order_detail_response.status_code == 200, order_detail_response.text
     order_detail = order_detail_response.json()["data"]
@@ -5492,7 +5529,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         f"{order_payload['subscription_order']['subscription_order_id']}",
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id="",
+            site_id=selected_site_id,
             idempotency_key="portal-pro-monthly-order-cancel-001",
         ),
     )
@@ -5504,7 +5541,10 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
 
     closed_orders_response = client.get(
         "/portal/v1/account/payment-orders?status_group=closed&limit=10",
-        headers=build_portal_headers(principal_id=principal_id, site_id=""),
+        headers=build_portal_headers(
+            principal_id=principal_id,
+            site_id=selected_site_id,
+        ),
     )
     assert closed_orders_response.status_code == 200, closed_orders_response.text
     closed_orders_data = closed_orders_response.json()["data"]
@@ -7412,12 +7452,29 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_credit_ledger_response.status_code == 200
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(account_credit_ledger_data)
-    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 5.0
-    assert account_credit_ledger_data["pagination"]["total"] == 4
+    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 4.0
+    assert account_credit_ledger_data["pagination"]["total"] == 3
     assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
-        "site_portal_reads",
-        "site_other_portal_reads",
+        "site_portal_reads"
     }
+
+    unselected_account_credit_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger?limit=10",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert unselected_account_credit_ledger_response.status_code == 409
+    assert unselected_account_credit_ledger_response.json()["error_code"] == (
+        "portal.site_selection_required"
+    )
+
+    mismatched_account_credit_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger?limit=10&site_id=site_other_portal_reads",
+        headers=portal_reads_headers(),
+    )
+    assert mismatched_account_credit_ledger_response.status_code == 409
+    assert mismatched_account_credit_ledger_response.json()["error_code"] == (
+        "portal.site_selection_required"
+    )
 
     filtered_account_credit_ledger_response = client.get(
         "/portal/v1/account/credit-ledger?limit=10&site_id=site_portal_reads",
@@ -7453,10 +7510,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         session.commit()
 
     expected_trends = {
-        "1h": {"points": 12, "ai_credits": 5.0, "entries": 4},
-        "24h": {"points": 24, "ai_credits": 5.0, "entries": 4},
-        "7d": {"points": 7, "ai_credits": 7.0, "entries": 5},
-        "30d": {"points": 30, "ai_credits": 7.0, "entries": 5},
+        "1h": {"points": 12, "ai_credits": 4.0, "entries": 3},
+        "24h": {"points": 24, "ai_credits": 4.0, "entries": 3},
+        "7d": {"points": 7, "ai_credits": 4.0, "entries": 3},
+        "30d": {"points": 30, "ai_credits": 4.0, "entries": 3},
     }
     for trend_window, expectation in expected_trends.items():
         trend_response = client.get(
@@ -7535,7 +7592,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_events_data = credit_events_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(credit_events_data)
     assert credit_events_data["contract_version"] == "portal-credit-events-v1"
-    assert credit_events_data["pagination"]["total"] == 4
+    assert credit_events_data["pagination"]["total"] == 3
     assert all(item["direction"] == "consumed" for item in credit_events_data["items"])
     grouped_event = next(
         item
@@ -7606,8 +7663,8 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert recent_bucket_response.status_code == 200
     recent_bucket_data = recent_bucket_response.json()["data"]
-    assert bucket_data["summary"]["consumed_ai_credits"] == 8.0
-    assert recent_bucket_data["summary"]["consumed_ai_credits"] == 10.0
+    assert bucket_data["summary"]["consumed_ai_credits"] == 7.0
+    assert recent_bucket_data["summary"]["consumed_ai_credits"] == 7.0
     assert all(item["start_at"] < item["end_at"] for item in recent_bucket_data["items"])
 
     filtered_bucket_response = client.get(
@@ -7743,12 +7800,24 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         )
         assert len(credit_pack_entries) == 1
 
+    unselected_account_credit_pack_order_response = client.post(
+        "/portal/v1/account/credit-pack-orders",
+        json={"pack_id": "pack_medium"},
+        headers=portal_reads_headers(
+            idempotency_key="portal-account-credit-pack-order-unselected-001",
+            site_id="",
+        ),
+    )
+    assert unselected_account_credit_pack_order_response.status_code == 409
+    assert unselected_account_credit_pack_order_response.json()["error_code"] == (
+        "portal.site_selection_required"
+    )
+
     account_credit_pack_order_response = client.post(
         "/portal/v1/account/credit-pack-orders",
         json={"pack_id": "pack_medium"},
         headers=portal_reads_headers(
             idempotency_key="portal-account-credit-pack-order-001",
-            site_id="",
         ),
     )
     assert account_credit_pack_order_response.status_code == 200
@@ -7757,6 +7826,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     _assert_no_portal_commercial_internal_fields(account_credit_pack_order_data)
     assert account_credit_pack_order_data["order"]["purchase_kind"] == "credit_pack"
     assert account_credit_pack_order_data["order"]["credit_pack"]["pack_id"] == "pack_medium"
+    assert account_credit_pack_order_data["order"]["site_id"] == "site_portal_reads"
     assert account_credit_pack_order_data["order"]["available_actions"] == ["cancel"]
 
     cancel_account_credit_pack_order_response = client.post(
@@ -7767,7 +7837,6 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         json={},
         headers=portal_reads_headers(
             idempotency_key="portal-account-credit-pack-order-cancel-001",
-            site_id="",
         ),
     )
     assert cancel_account_credit_pack_order_response.status_code == 200
