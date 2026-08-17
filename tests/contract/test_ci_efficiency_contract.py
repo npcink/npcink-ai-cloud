@@ -183,6 +183,11 @@ def test_production_push_reuses_tree_bound_production_pr_ci_evidence() -> None:
     assert "Verify production PR base, head, and approval contract" in workflow
     assert "Production PR CI evidence" in workflow
     assert "commits/${GITHUB_SHA}/pulls" in workflow
+    assert "gh api graphql" in workflow
+    assert "associatedPullRequests" in workflow
+    assert "headRefOid" in workflow
+    assert "associated-pulls-graphql-api" in workflow
+    assert "associated-pulls-graphql-shape" in workflow
     assert "production-pr-ci-evidence-${pr_number}-${pr_head_sha}" in workflow
     assert "python3 scripts/production-ci-evidence.py verify" in workflow
     assert 'PRODUCTION_EVIDENCE_MAX_ATTEMPTS: "5"' in workflow
