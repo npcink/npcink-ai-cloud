@@ -28,7 +28,11 @@ from app.core.models import (
     PaymentOrder,
     PaymentRefund,
 )
-from app.domain.commercial.errors import CommercialConflictError, CommercialValidationError
+from app.domain.commercial.errors import (
+    CommercialConflictError,
+    CommercialNotFoundError,
+    CommercialValidationError,
+)
 from app.domain.commercial.payment_gateways import (
     PaymentGatewayRefundRequest,
     PaymentGatewayRefundResult,
@@ -812,14 +816,45 @@ def test_account_can_cancel_pending_credit_pack_payment_order(tmp_path: Path) ->
         assert pending_record.status == PAYMENT_ORDER_STATUS_PENDING
         pending_record.checkout_url = None
         session.commit()
+    assert service.list_account_payment_orders(
+        "acct_pay",
+        site_id="site_selected",
+        status_group="pending",
+    )["items"] == []
+    legacy_orders = service.list_account_payment_orders(
+        "acct_pay",
+        site_id="site_selected",
+        include_unscoped=True,
+        status_group="pending",
+    )
+    assert [item["order_id"] for item in legacy_orders["items"]] == [
+        order["order_id"]
+    ]
+    with pytest.raises(CommercialNotFoundError):
+        service.get_account_payment_order(
+            account_id="acct_pay",
+            order_id=str(order["order_id"]),
+            site_id="site_selected",
+        )
+    legacy_order = service.get_account_payment_order(
+        account_id="acct_pay",
+        order_id=str(order["order_id"]),
+        site_id="site_selected",
+        include_unscoped=True,
+    )
+    assert legacy_order["order_id"] == order["order_id"]
     canceled = service.cancel_account_payment_order(
         account_id="acct_pay",
         order_id=str(order["order_id"]),
+        site_id="site_selected",
+        include_unscoped=True,
         audit_context=_audit("credit-pack-cancel"),
     )
     canceled_again = service.cancel_account_payment_order(
         account_id="acct_pay",
         order_id=str(order["order_id"]),
+        site_id="site_selected",
+        include_unscoped=True,
         audit_context=_audit("credit-pack-cancel-again"),
     )
 

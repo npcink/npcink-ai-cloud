@@ -48,6 +48,7 @@ class CommercialPaymentQueries:
         *,
         account_id: str,
         site_id: str | None = None,
+        include_unscoped: bool = False,
         statuses: tuple[str, ...] | None = None,
         canceled_visible_after: datetime | None = None,
         limit: int | None = None,
@@ -55,7 +56,10 @@ class CommercialPaymentQueries:
     ) -> list[PaymentOrder]:
         statement = select(PaymentOrder).where(PaymentOrder.account_id == account_id)
         if site_id:
-            statement = statement.where(PaymentOrder.site_id == site_id)
+            site_scope = PaymentOrder.site_id == site_id
+            if include_unscoped:
+                site_scope = or_(site_scope, PaymentOrder.site_id.is_(None))
+            statement = statement.where(site_scope)
         if statuses is not None:
             statement = statement.where(PaymentOrder.status.in_(statuses))
         if canceled_visible_after is not None:
@@ -79,6 +83,7 @@ class CommercialPaymentQueries:
         cutoff: datetime,
         account_id: str | None = None,
         site_id: str | None = None,
+        include_unscoped: bool = False,
     ) -> list[PaymentOrder]:
         statement = select(PaymentOrder).where(
             PaymentOrder.status == PAYMENT_ORDER_STATUS_PENDING,
@@ -87,7 +92,10 @@ class CommercialPaymentQueries:
         if account_id:
             statement = statement.where(PaymentOrder.account_id == account_id)
         if site_id:
-            statement = statement.where(PaymentOrder.site_id == site_id)
+            site_scope = PaymentOrder.site_id == site_id
+            if include_unscoped:
+                site_scope = or_(site_scope, PaymentOrder.site_id.is_(None))
+            statement = statement.where(site_scope)
         return list(self.session.scalars(statement))
 
     def count_payment_orders_by_status(
@@ -95,6 +103,7 @@ class CommercialPaymentQueries:
         *,
         account_id: str,
         site_id: str | None = None,
+        include_unscoped: bool = False,
         canceled_visible_after: datetime | None = None,
     ) -> dict[str, int]:
         statement = (
@@ -103,7 +112,10 @@ class CommercialPaymentQueries:
             .group_by(PaymentOrder.status)
         )
         if site_id:
-            statement = statement.where(PaymentOrder.site_id == site_id)
+            site_scope = PaymentOrder.site_id == site_id
+            if include_unscoped:
+                site_scope = or_(site_scope, PaymentOrder.site_id.is_(None))
+            statement = statement.where(site_scope)
         if canceled_visible_after is not None:
             statement = statement.where(
                 or_(
