@@ -58,17 +58,26 @@ export async function recordPortalJourneyBestEffort(
     viewport_class: viewportClass(),
     occurred_at: new Date().toISOString(),
   };
+  const markSent = () => {
+    if (options.oncePerSession) window.sessionStorage.setItem(sentKey, '1');
+  };
   try {
     const request = portalClient.recordCustomerJourney(siteId, [event]);
     if (options.deadlineMs) {
-      await Promise.race([
-        request,
-        new Promise<void>((resolve) => window.setTimeout(resolve, options.deadlineMs)),
+      const deliveredBeforeDeadline = await Promise.race([
+        request.then(() => true),
+        new Promise<false>((resolve) =>
+          window.setTimeout(() => resolve(false), options.deadlineMs)
+        ),
       ]);
+      if (!deliveredBeforeDeadline) {
+        void request.then(markSent).catch(() => undefined);
+        return;
+      }
     } else {
       await request;
     }
-    if (options.oncePerSession) window.sessionStorage.setItem(sentKey, '1');
+    markSent();
   } catch {
     // Journey evidence is diagnostic only and must never block Portal work.
   }
