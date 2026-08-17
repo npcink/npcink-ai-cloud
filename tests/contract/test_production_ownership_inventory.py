@@ -4,7 +4,9 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from importlib import util
 from pathlib import Path
+from types import ModuleType
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -20,9 +22,22 @@ from app.core.models import (
     PrincipalSiteBinding,
     Site,
 )
-from scripts.production_ownership_inventory import CONTRACT, collect_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load_inventory_module() -> ModuleType:
+    path = ROOT / ".github/scripts/production-ownership-inventory.py"
+    spec = util.spec_from_file_location("production_ownership_inventory", path)
+    assert spec is not None and spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+INVENTORY_MODULE = _load_inventory_module()
+CONTRACT = INVENTORY_MODULE.CONTRACT
+collect_inventory = INVENTORY_MODULE.collect_inventory
 
 
 @contextmanager
@@ -233,10 +248,10 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     workflow = (ROOT / ".github/workflows/production-maintenance.yml").read_text(
         encoding="utf-8"
     )
-    helper = (ROOT / "deploy/production-ownership-inventory-ssh.sh").read_text(
+    helper = (ROOT / ".github/scripts/production-ownership-inventory-ssh.sh").read_text(
         encoding="utf-8"
     )
-    inventory = (ROOT / "scripts/production_ownership_inventory.py").read_text(
+    inventory = (ROOT / ".github/scripts/production-ownership-inventory.py").read_text(
         encoding="utf-8"
     )
 
@@ -244,10 +259,10 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     assert "Checkout ownership inventory helper" in workflow
     assert "if: inputs.action == 'ownership-inventory'" in workflow
     assert workflow.index("Checkout ownership inventory helper") < workflow.index(
-        "bash deploy/production-ownership-inventory-ssh.sh"
+        "bash .github/scripts/production-ownership-inventory-ssh.sh"
     )
     assert 'MAINTENANCE_ACTION}" = "ownership-inventory"' in workflow
-    assert "bash deploy/production-ownership-inventory-ssh.sh" in workflow
+    assert "bash .github/scripts/production-ownership-inventory-ssh.sh" in workflow
     assert "docker compose exec" not in helper
     assert 'npcink_ai_cloud_compose "${current_release}" exec -T api python -' in helper
     assert "SET TRANSACTION READ ONLY" in inventory
