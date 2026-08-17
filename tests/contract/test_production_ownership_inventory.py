@@ -256,13 +256,22 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     )
 
     assert '- "ownership-inventory"' in workflow
+    assert "ownership-inventory:" in workflow
+    assert (
+        "if: github.ref == 'refs/heads/production' && "
+        "inputs.action == 'ownership-inventory'"
+    ) in workflow
     assert "permissions:\n      contents: read" in workflow
+    assert (
+        "if: github.ref == 'refs/heads/production' && "
+        "inputs.action != 'ownership-inventory'"
+    ) in workflow
+    assert "permissions: {}" in workflow
     assert "Checkout ownership inventory helper" in workflow
-    assert "if: inputs.action == 'ownership-inventory'" in workflow
+    assert "if: inputs.action == 'ownership-inventory'" not in workflow
     assert workflow.index("Checkout ownership inventory helper") < workflow.index(
         "bash .github/scripts/production-ownership-inventory-ssh.sh"
     )
-    assert 'MAINTENANCE_ACTION}" = "ownership-inventory"' in workflow
     assert "bash .github/scripts/production-ownership-inventory-ssh.sh" in workflow
     assert "docker compose exec" not in helper
     assert 'npcink_ai_cloud_compose "${current_release}" exec -T api python -' in helper
