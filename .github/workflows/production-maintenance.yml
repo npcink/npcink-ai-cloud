@@ -11,6 +11,7 @@ on:
         options:
           - "disk-report"
           - "certificate-readiness"
+          - "ownership-inventory"
           - "safe-prune"
       release_retention_count:
         description: "Number of release-* directories to keep when pruning old releases."
@@ -56,6 +57,10 @@ jobs:
           fi
           ssh-keygen -F "${known_host_lookup}" -f ~/.ssh/known_hosts >/dev/null
 
+      - name: Checkout ownership inventory helper
+        if: inputs.action == 'ownership-inventory'
+        uses: actions/checkout@v6
+
       - name: Run maintenance
         env:
           MAINTENANCE_ACTION: ${{ inputs.action }}
@@ -69,7 +74,7 @@ jobs:
           set -euo pipefail
           test "${PROD_SSH_USER}" = "root"
           case "${MAINTENANCE_ACTION}" in
-            disk-report|certificate-readiness|safe-prune) ;;
+            disk-report|certificate-readiness|ownership-inventory|safe-prune) ;;
             *)
               echo "[fail] Unknown maintenance action: ${MAINTENANCE_ACTION}" >&2
               exit 1
@@ -110,6 +115,17 @@ jobs:
             -o ConnectTimeout=10
           )
           ssh_target="${PROD_SSH_USER}@${PROD_SSH_HOST}"
+
+          if [ "${MAINTENANCE_ACTION}" = "ownership-inventory" ]; then
+            NPCINK_CLOUD_DEPLOY_SSH_HOST="${PROD_SSH_HOST}" \
+            NPCINK_CLOUD_DEPLOY_SSH_USER="${PROD_SSH_USER}" \
+            NPCINK_CLOUD_DEPLOY_SSH_PORT="${PROD_SSH_PORT}" \
+            NPCINK_CLOUD_DEPLOY_IDENTITY_FILE=/home/runner/.ssh/npcink_prod_maintenance_key \
+            NPCINK_CLOUD_DEPLOY_REMOTE_DIR="${PROD_REMOTE_DIR}" \
+              bash deploy/production-ownership-inventory-ssh.sh
+            exit 0
+          fi
+
           remote_command="bash -s -- $(remote_shell_arg "${MAINTENANCE_ACTION}") $(remote_shell_arg "${PROD_REMOTE_DIR}") $(remote_shell_arg "${RELEASE_RETENTION_COUNT}")"
 
           ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}" <<'REMOTE'

@@ -100,6 +100,15 @@ requires the exact phrase `Prune production images and old releases.` and
 atomically acquires the same remote `.deploy-lock` used by deployment. It must
 never prune images or releases while another host mutation holds that lock.
 
+`Production Maintenance` also exposes the operator-initiated,
+database-read-only `ownership-inventory` action defined by
+[ADR-046](../docs/decisions/046-read-only-production-ownership-inventory.md).
+It streams the checked-in inventory query to the current API container, starts
+a PostgreSQL read-only transaction, and prints only aggregate counts plus
+bounded opaque principal/account/site IDs. It never assigns ownership. A
+blocked result stops migration or real-user Portal enablement and requires a
+separately reviewed remediation based on verified Addon evidence.
+
 The manually approved production deploy job:
 
 Before the runtime sequence below, the workflow reads the exact bundle-bound
