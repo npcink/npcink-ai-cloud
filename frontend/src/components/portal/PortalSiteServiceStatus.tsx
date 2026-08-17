@@ -9,7 +9,6 @@ import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type { PortalMonitoringOverviewSummary } from '@/lib/portal-client';
 import {
   getPortalCustomerIssueTitle,
-  getPortalMonitoringIssueCategory,
   getPortalServiceOperationStatus,
   hasPortalQuotaPressure,
 } from '@/lib/portal-monitoring-display';
@@ -19,7 +18,6 @@ type TranslateFn = (key: string, params?: Record<string, string>, fallback?: str
 
 type PortalSiteServiceStatusProps = {
   t: TranslateFn;
-  siteId: string;
   overview: PortalMonitoringOverviewSummary | null;
   isLoading: boolean;
   error: string;
@@ -40,7 +38,6 @@ function statusTone(status: string, issueCount: number, hasQuotaPressure: boolea
 
 export function PortalSiteServiceStatus({
   t,
-  siteId,
   overview,
   isLoading,
   error,
@@ -169,29 +166,6 @@ export function PortalSiteServiceStatus({
             </tbody>
           </table>
         </div>
-      ) : null}
-
-      {!isLoading && !error && overview && overview.action_required.length > 0 ? (
-        <PortalCard className="space-y-2" data-portal-site="next-safe-action">
-          <h3 className="text-base font-semibold text-slate-950 dark:text-white">
-            {t('portal.monitoring.next_safe_action', {}, 'Next safe action')}
-          </h3>
-          <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-            {getPortalCustomerIssueTitle(overview.action_required[0], t)}
-          </p>
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {getPortalMonitoringIssueCategory(overview.action_required[0]) === 'quota'
-              ? t('portal.monitoring.quota_evidence_attention', {}, 'Usage is near or over the current package limit.')
-              : t('portal.monitoring.attention_action', {}, 'If this continues, contact support and include the site name.')}
-          </p>
-          <Link href={getPortalMonitoringIssueCategory(overview.action_required[0]) === 'quota'
-            ? '/portal/billing'
-            : `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm w-fit">
-            {getPortalMonitoringIssueCategory(overview.action_required[0]) === 'quota'
-              ? t('portal.nav_billing', {}, 'View package')
-              : t('portal.support_request_new_action', {}, 'Submit ticket')}
-          </Link>
-        </PortalCard>
       ) : null}
 
       {!isLoading && !error && overview && issueCount > 1 ? (
