@@ -34,6 +34,7 @@ import {
 import {
   getPortalSiteDisplayName,
   getPortalSiteSecondaryLabel,
+  getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
@@ -57,6 +58,8 @@ function PortalSupportContent() {
   const contextSiteId = selectedContextSite?.site_id || '';
   const initialTopic = String(searchParams?.get('topic') || 'general').toLowerCase();
   const initialSiteId = searchParams?.get('site') || '';
+  const initialSiteIsVisible = getVisiblePortalSites(session?.sites || [])
+    .some((site) => site.site_id === initialSiteId);
   const shouldOpenForm = searchParams?.get('new') === '1';
   const [items, setItems] = useState<PortalSupportRequest[]>([]);
   const [total, setTotal] = useState(0);
@@ -140,8 +143,8 @@ function PortalSupportContent() {
     );
     setTitle('');
     setDescription('');
-    setSiteId(initialSiteId === contextSiteId ? contextSiteId : '');
-  }, [contextSiteId, initialSiteId, initialTopic, isAuthenticated, shouldOpenForm]);
+    setSiteId(initialSiteIsVisible ? initialSiteId : '');
+  }, [contextSiteId, initialSiteId, initialSiteIsVisible, initialTopic, isAuthenticated, shouldOpenForm]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -151,7 +154,18 @@ function PortalSupportContent() {
     };
   }, [contextSiteId, isAuthenticated, loadRequests]);
 
-  const visibleSites = selectedContextSite ? [selectedContextSite] : [];
+  const accountSites = getVisiblePortalSites(session?.sites || []);
+  const visibleSites = accountSites;
+  const supportRequestSiteLabel = (item: PortalSupportRequest) => {
+    if (!item.site_id) {
+      return t('portal.support_request_no_site', {}, 'Account-level issue');
+    }
+    const relatedSite = accountSites.find((site) => site.site_id === item.site_id);
+    if (relatedSite) {
+      return getPortalSiteDisplayName(relatedSite);
+    }
+    return t('portal.support_request_other_site', {}, 'Another site');
+  };
   const supportStatusRules = [
     {
       key: 'open',
@@ -196,7 +210,7 @@ function PortalSupportContent() {
         topic,
         title,
         description,
-        site_id: siteId === requestContextSiteId ? requestContextSiteId : '',
+        site_id: siteId,
         source_path: '/portal/support',
         context: {
           source: 'portal_support_tab',
@@ -252,9 +266,6 @@ function PortalSupportContent() {
           'Send billing, site, usage, or account issues to the support queue.'
         )}
         currentPage="support"
-        selectedSiteId={contextSiteId}
-        sites={session.sites}
-        onSiteChange={(nextSiteId) => void handleSiteChange(nextSiteId)}
         actions={
           <button
             type="button"
@@ -407,27 +418,118 @@ function PortalSupportContent() {
             {t('portal.support_request_list_desc', {}, 'Open and in-progress tickets stay visible until support resolves them.')}
           </p>
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {SUPPORT_STATUSES.map((status) => (
-            <button
-              key={status || 'all'}
-              type="button"
-              className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-              aria-pressed={statusFilter === status}
-              onClick={() => {
-                setOffset(0);
-                setStatusFilter(status);
-              }}
-            >
-              {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-            </button>
-          ))}
+        <div className="mb-4 flex flex-col gap-3 border-y border-slate-200/75 py-3 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
+          <div className="w-full max-w-sm">
+            <label htmlFor="portal-support-site-selector" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              {t('portal.current_site', {}, 'Current site')}
+            </label>
+            {accountSites.length > 1 ? (
+              <select
+                id="portal-support-site-selector"
+                className="input h-10 py-2 text-sm"
+                value={contextSiteId}
+                onChange={(event) => void handleSiteChange(event.target.value)}
+              >
+                {!contextSiteId ? (
+                  <option value="" disabled>
+                    {t('portal.select_site_placeholder', {}, 'Select a site')}
+                  </option>
+                ) : null}
+                {accountSites.map((site) => (
+                  <option key={site.site_id} value={site.site_id}>
+                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
+                {selectedContextSite
+                  ? getPortalSiteDisplayName(selectedContextSite)
+                  : t('portal.select_site_placeholder', {}, 'Select a site')}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2" aria-label={t('portal.support_status_rules_title', {}, 'Ticket status')}>
+            {SUPPORT_STATUSES.map((status) => (
+              <button
+                key={status || 'all'}
+                type="button"
+                className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                aria-pressed={statusFilter === status}
+                onClick={() => {
+                  setOffset(0);
+                  setStatusFilter(status);
+                }}
+              >
+                {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
+              </button>
+            ))}
+          </div>
         </div>
 
         {isListLoading ? (
           <LoadingFallback />
         ) : items.length ? (
-          <div className="space-y-3">
+          <>
+            <div className="hidden overflow-x-auto lg:block" data-portal-support="tickets-table">
+              <table className="w-full min-w-[980px] text-left text-sm">
+                <caption className="sr-only">
+                  {t('portal.support_request_list_desc', {}, 'Open and in-progress tickets stay visible until support resolves them.')}
+                </caption>
+                <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <tr>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_column', {}, 'Ticket')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_topic', {}, 'Topic')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.support_request_site', {}, 'Related site')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('common.status', {}, 'Status')}</th>
+                    <th scope="col" className="px-3 py-3 font-medium">{t('portal.updated_at', {}, 'Updated')}</th>
+                    <th scope="col" className="px-3 py-3 text-right font-medium">{t('common.actions', {}, 'Actions')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                  {items.map((item) => {
+                    const relatedSite = item.site_id
+                      ? accountSites.find((site) => site.site_id === item.site_id)
+                      : null;
+                    return (
+                    <tr key={item.request_id} className="align-middle">
+                      <th scope="row" className="max-w-[26rem] px-3 py-4 font-normal">
+                        <p className="truncate font-semibold text-slate-950 dark:text-white">{item.title}</p>
+                        <p className="mt-1 line-clamp-1 text-xs font-normal leading-5 text-slate-500 dark:text-slate-400">
+                          {item.description}
+                        </p>
+                      </th>
+                      <td className="whitespace-nowrap px-3 py-4 text-slate-600 dark:text-slate-300">
+                        {t(`portal.support_topic_${item.topic}`, {}, item.topic)}
+                      </td>
+                      <td className="max-w-[14rem] truncate px-3 py-4 text-slate-600 dark:text-slate-300">
+                        {supportRequestSiteLabel(item)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4">
+                        <PortalStatusBadge
+                          status={statusTone(item.status)}
+                          label={t(`portal.support_status_${item.status}`, {}, item.status)}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-slate-500 dark:text-slate-400">
+                        {item.updated_at ? formatDate(item.updated_at) : '—'}
+                      </td>
+                      <td className="px-3 py-4 text-right">
+                        <Link
+                          className="btn btn-secondary btn-sm"
+                          href={`/portal/support/${encodeURIComponent(item.request_id)}`}
+                        >
+                          {t('portal.support_request_view_detail', {}, 'View detail')}
+                        </Link>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 lg:hidden" data-portal-support="ticket-cards">
             {items.map((item) => (
               <PortalCard key={item.request_id} variant="portal" className="bg-white/70 dark:bg-slate-950/35">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -451,12 +553,14 @@ function PortalSupportContent() {
                   </div>
                   <div className="shrink-0 text-sm text-slate-500 dark:text-slate-400 lg:text-right">
                     <p>{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
+                    <p className="mt-1">{supportRequestSiteLabel(item)}</p>
                     <p className="mt-1">{item.updated_at ? formatDate(item.updated_at) : item.request_id}</p>
                   </div>
                 </div>
               </PortalCard>
             ))}
-          </div>
+            </div>
+          </>
         ) : (
           <PortalEmptyState
             title={t('portal.support_request_empty_title', {}, 'No tickets yet')}

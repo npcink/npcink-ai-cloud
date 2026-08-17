@@ -37,6 +37,15 @@ def test_portal_api_changes_select_only_portal_api_tests() -> None:
     ]
 
 
+def test_customer_journey_route_selects_its_bounded_api_tests() -> None:
+    selected, fallback = selector.select_impacted_tests(
+        ["app/api/routes/customer_journey.py"]
+    )
+
+    assert fallback == []
+    assert _relative(selected) == ["tests/api/test_customer_journey_routes.py"]
+
+
 def test_service_route_changes_select_the_bounded_service_family() -> None:
     selected, fallback = selector.select_impacted_tests(["app/api/routes/service.py"])
     selected_paths = _relative(selected)
@@ -101,6 +110,19 @@ def test_commercial_mixins_keep_domain_and_portal_service_protection() -> None:
     assert "tests/domain/test_commercial_runtime_defaults.py" in selected_paths
     assert "tests/api/test_portal_routes.py" in selected_paths
     assert "tests/api/test_service_routes.py" in selected_paths
+
+
+def test_nested_wordpress_connector_changes_select_connector_contract_tests() -> None:
+    selected, fallback = selector.select_impacted_tests(
+        ["app/domain/wordpress_ai_connector/contracts.py"]
+    )
+
+    assert fallback == []
+    assert _relative(selected) == [
+        "tests/api/test_wordpress_ai_connector_runtime.py",
+        "tests/domain/test_wordpress_ai_generation_context.py",
+        "tests/domain/test_wordpress_operation_runtime.py",
+    ]
 
 
 def test_every_current_api_module_has_an_explicit_impact_policy() -> None:

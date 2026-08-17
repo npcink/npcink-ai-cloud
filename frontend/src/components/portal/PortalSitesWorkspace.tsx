@@ -125,6 +125,10 @@ function PortalSitesWorkspaceContent() {
     }),
     { active_count: 0, active_limit: 0, bound_count: 0, bound_limit: 0 }
   );
+  const activeCapacityOverLimit = totalCapacity.active_limit > 0
+    && totalCapacity.active_count > totalCapacity.active_limit;
+  const boundCapacityOverLimit = totalCapacity.bound_limit > 0
+    && totalCapacity.bound_count > totalCapacity.bound_limit;
   const pendingCapacity = pendingLifecycleSite?.capacity;
   const requiredReleaseCount = pendingLifecycleStatus === 'active'
     && pendingCapacity
@@ -394,14 +398,14 @@ function PortalSitesWorkspaceContent() {
             </h2>
             <div className="mt-3 flex flex-wrap gap-2">
               <PortalTag>{visibleSites.length} {t('common.site')}</PortalTag>
-              <PortalTag tone="success">
+              <PortalTag tone={activeCapacityOverLimit ? 'warning' : 'success'}>
                 {t(
                   'portal.sites.active_capacity',
                   { used: String(totalCapacity.active_count), limit: String(totalCapacity.active_limit) },
                   `Active ${totalCapacity.active_count}/${totalCapacity.active_limit}`
                 )}
               </PortalTag>
-              <PortalTag tone="info">
+              <PortalTag tone={boundCapacityOverLimit ? 'warning' : 'info'}>
                 {t(
                   'portal.sites.bound_capacity',
                   { used: String(totalCapacity.bound_count), limit: String(totalCapacity.bound_limit) },
@@ -458,7 +462,133 @@ function PortalSitesWorkspaceContent() {
           </div>
         ) : null}
 
-        <div className="grid gap-3">
+        <div className="hidden overflow-x-auto lg:block" data-portal-sites="desktop-table">
+          {sortedSites.length === 0 ? (
+            <PortalEmptyState
+              title={visibleSites.length
+                ? t('portal.sites.empty_title', {}, 'No sites match this search')
+                : t('portal.no_sites', {}, 'No sites')}
+              description={visibleSites.length
+                ? t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')
+                : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.')}
+            />
+          ) : (
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <caption className="sr-only">
+                {t('portal.site_register_desc', {}, 'Every connected site appears here with its current service status.')}
+              </caption>
+              <thead className="border-b border-slate-200/80 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <tr>
+                  <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_site', {}, 'Site')}</th>
+                  <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_status', {}, 'Connection')}</th>
+                  <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_context', {}, 'Context')}</th>
+                  <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.sites.table_actions', {}, 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                {sortedSites.map((site) => (
+                  <tr key={site.site_id} className="align-middle">
+                    <th scope="row" className="max-w-[22rem] px-3 py-4 font-normal">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-semibold text-slate-950 dark:text-white">
+                          {getPortalSiteDisplayName(site)}
+                        </span>
+                        {site.site_id === selectedSiteId ? (
+                          <PortalTag tone="info" className="shrink-0">
+                            {t('portal.current_site', {}, 'Site record')}
+                          </PortalTag>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                        {getPortalSiteUrl(site) || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
+                      </p>
+                    </th>
+                    <td className="whitespace-nowrap px-3 py-4">
+                      <PortalStatusBadge
+                        status={site.status === 'active' ? 'active' : 'warning'}
+                        label={site.status === 'active'
+                          ? t('portal.sites.table_ready', {}, 'Connected')
+                          : site.status === 'inactive'
+                            ? t('portal.site_status_inactive', {}, 'Inactive')
+                            : site.status === 'provisioning'
+                              ? t('portal.site_status_provisioning', {}, 'Provisioning')
+                              : t('portal.site_status_suspended', {}, 'Suspended')}
+                        className="normal-case tracking-normal"
+                      />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-slate-600 dark:text-slate-300">
+                      {site.site_id === selectedSiteId
+                        ? t('portal.sites.current_context', {}, 'Current site')
+                        : t('portal.sites.available_context', {}, 'Available')}
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {site.site_id !== selectedSiteId ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleSelectSite(site.site_id)}
+                            className="btn btn-secondary btn-sm"
+                            disabled={Boolean(selectingSiteId)}
+                          >
+                            {selectingSiteId === site.site_id
+                              ? t('common.loading', {}, 'Loading...')
+                              : t('portal.select_site_action', {}, 'Select site')}
+                          </button>
+                        ) : null}
+                        <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-primary btn-sm">
+                          {t('portal.site_record', {}, 'Open site')}
+                        </Link>
+                        {(site.allowed_actions?.includes('provision_sites')
+                          && site.status !== 'suspended'
+                          && site.status !== 'archived')
+                          || (canRemoveSites
+                            && site.site_id === selectedSiteId
+                            && site.status !== 'suspended') ? (
+                          <details className="w-full text-right" data-portal-sites="desktop-actions">
+                            <summary className="btn btn-secondary btn-sm ml-auto list-none cursor-pointer">
+                              {t('portal.site_other_actions', {}, 'Other actions')}
+                            </summary>
+                            <div className="mt-2 flex flex-wrap justify-end gap-2">
+                              {site.allowed_actions?.includes('provision_sites')
+                                && site.status !== 'suspended'
+                                && site.status !== 'archived' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                                  className="btn btn-secondary btn-sm"
+                                >
+                                  {site.status === 'active'
+                                    ? t('portal.deactivate_site_action', {}, 'Deactivate')
+                                    : t('portal.activate_site_action', {}, 'Activate')}
+                                </button>
+                              ) : null}
+                              {canRemoveSites
+                                && site.site_id === selectedSiteId
+                                && site.status !== 'suspended' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRemoveError('');
+                                    setPendingRemoveSite(site);
+                                  }}
+                                  className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
+                                >
+                                  {t('portal.remove_site_action', {}, 'Remove site')}
+                                </button>
+                              ) : null}
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="grid gap-3 lg:hidden">
           {sortedSites.length === 0 ? (
             <PortalEmptyState
               title={visibleSites.length
@@ -479,7 +609,7 @@ function PortalSitesWorkspaceContent() {
                     <PortalStatusBadge
                       status={site.status === 'active' ? 'active' : 'warning'}
                       label={site.status === 'active'
-                        ? t('portal.site_status_active', {}, 'Active')
+                        ? t('portal.sites.table_ready', {}, 'Connected')
                         : site.status === 'inactive'
                           ? t('portal.site_status_inactive', {}, 'Inactive')
                           : site.status === 'provisioning'

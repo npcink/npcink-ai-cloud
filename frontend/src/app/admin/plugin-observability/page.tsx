@@ -513,8 +513,8 @@ function AdminPluginObservabilityContent() {
     useState<AttentionSeverityFilter>('all');
   const [attentionCodeFilter, setAttentionCodeFilter] = useState('all');
   const [attentionActionKey, setAttentionActionKey] = useState('');
-  const requestActiveRef = useRef(false);
   const requestSequenceRef = useRef(0);
+  const requestAbortRef = useRef<AbortController | null>(null);
   const hasLoadedRef = useRef(false);
 
   const updateUrl = useCallback((updates: {
@@ -533,9 +533,10 @@ function AdminPluginObservabilityContent() {
   }, [pathname, router, searchParams]);
 
   const loadData = useCallback(async (refresh = false) => {
-    if (requestActiveRef.current) return;
-    requestActiveRef.current = true;
+    requestAbortRef.current?.abort();
     const sequence = ++requestSequenceRef.current;
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     if (!hasLoadedRef.current || !refresh) setLoading(true);
     setError('');
     try {
@@ -543,7 +544,8 @@ function AdminPluginObservabilityContent() {
       if (pluginFilter !== 'all') params.set('plugin_slug', pluginFilter);
       if (siteIdFilter) params.set('site_id', siteIdFilter);
       const response = await pluginObservabilityClient.request<unknown>(
-        `/api/admin/plugin-observability?${params.toString()}`
+        `/api/admin/plugin-observability?${params.toString()}`,
+        { signal: controller.signal }
       );
       if (sequence !== requestSequenceRef.current) return;
       setData(normalizePluginObservability(response.data));
@@ -553,7 +555,7 @@ function AdminPluginObservabilityContent() {
       setError(resolveUiErrorMessage(err, t('error.failed_load')));
     } finally {
       if (sequence === requestSequenceRef.current) {
-        requestActiveRef.current = false;
+        requestAbortRef.current = null;
         setLoading(false);
       }
     }
@@ -561,6 +563,10 @@ function AdminPluginObservabilityContent() {
 
   useEffect(() => {
     void loadData();
+    return () => {
+      requestSequenceRef.current += 1;
+      requestAbortRef.current?.abort();
+    };
   }, [loadData]);
 
   useEffect(() => {

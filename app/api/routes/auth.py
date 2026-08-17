@@ -15,6 +15,7 @@ from app.api.admin_ops import (
     resolve_admin_login_identity,
 )
 from app.api.auth import (
+    ADMIN_SESSION_COOKIE,
     PortalBearerTokenError,
     get_cloud_services,
 )
@@ -34,7 +35,6 @@ from app.domain.commercial.identity import (
     _platform_capability_flags,
 )
 
-COOKIE_ADMIN_TOKEN = "npcink_admin_session_token"
 ADMIN_SESSION_ALGORITHM = "HS256"
 ADMIN_SESSION_ISSUER = "npcink-ai-cloud"
 ADMIN_SESSION_AUDIENCE = "npcink-ai-cloud-admin"
@@ -128,7 +128,7 @@ def _build_admin_session_token(
 
 def _resolve_admin_session_cookie_candidates(request: Request) -> list[str]:
     candidates: list[str] = []
-    parsed_cookie = str(request.cookies.get(COOKIE_ADMIN_TOKEN, "") or "").strip()
+    parsed_cookie = str(request.cookies.get(ADMIN_SESSION_COOKIE, "") or "").strip()
     if parsed_cookie:
         candidates.append(parsed_cookie)
 
@@ -140,7 +140,7 @@ def _resolve_admin_session_cookie_candidates(request: Request) -> list[str]:
         name, separator, value = chunk.partition("=")
         if separator != "=":
             continue
-        if name.strip() != COOKIE_ADMIN_TOKEN:
+        if name.strip() != ADMIN_SESSION_COOKIE:
             continue
         token = value.strip()
         if token and token not in candidates:
@@ -205,7 +205,7 @@ def _validate_admin_session_claims(payload: object) -> dict[str, Any]:
     return claims
 
 
-def _current_admin_session(request: Request) -> dict[str, Any]:
+def resolve_current_admin_session(request: Request) -> dict[str, Any]:
     tokens = _resolve_admin_session_cookie_candidates(request)
     if not tokens:
         raise PortalBearerTokenError(
@@ -310,9 +310,9 @@ def _set_admin_session_cookie(response: Response, request: Request, token: str) 
     secure = portal_cookie_secure(request)
     ttl_seconds = max(60, int(get_cloud_services(request).settings.admin_session_ttl_seconds or 0))
     expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
-    response.delete_cookie(COOKIE_ADMIN_TOKEN, path="/admin")
+    response.delete_cookie(ADMIN_SESSION_COOKIE, path="/admin")
     response.set_cookie(
-        COOKIE_ADMIN_TOKEN,
+        ADMIN_SESSION_COOKIE,
         token,
         httponly=True,
         secure=secure,
@@ -324,8 +324,8 @@ def _set_admin_session_cookie(response: Response, request: Request, token: str) 
 
 
 def _clear_admin_session_cookie(response: RedirectResponse) -> None:
-    response.delete_cookie(COOKIE_ADMIN_TOKEN, path="/")
-    response.delete_cookie(COOKIE_ADMIN_TOKEN, path="/admin")
+    response.delete_cookie(ADMIN_SESSION_COOKIE, path="/")
+    response.delete_cookie(ADMIN_SESSION_COOKIE, path="/admin")
 
 
 def _admin_session_json_error(
@@ -351,7 +351,7 @@ def _admin_session_json_error(
 
 def _require_admin_session_json(request: Request) -> dict[str, Any] | JSONResponse:
     try:
-        return _current_admin_session(request)
+        return resolve_current_admin_session(request)
     except PortalBearerTokenError as error:
         return _admin_session_json_error(
             request,

@@ -94,7 +94,7 @@ important structural evidence is:
 - most `.mjs` frontend contracts inspect source text. They are useful for
   architecture and forbidden-pattern rules, but do not prove runtime behavior;
 - the repository already owns `AdminDataTableFrame`,
-  `AdminConfigurationTable`, `AdminWorkbenchDialog`,
+  `AdminCommandDialog`, `AdminConfigurationTable`, `AdminWorkbenchDialog`,
   `AdminCredentialField`, `AdminSettingsWorkbench`,
   `AdminSettingsDisclosure`, Backoffice primitives, global Toast, and
   `--admin-*` geometry tokens.
@@ -194,14 +194,18 @@ Hard rules:
 9. A browser must not derive a durable queue clock from `created_at` or
    `updated_at` when public domain activity owns the transition. Persist or
    project the canonical event time on the service and expose it read-only.
-10. Workflow status, attention view, waiting object, and risk rank are distinct
+10. Audit event directories and summaries are metadata-only by default. Raw or
+   structured event payloads require an explicit server-side opt-in for a
+   bounded internal diagnostic consumer; ordinary Admin browser reads must not
+   request or render them.
+11. Workflow status, attention view, waiting object, and risk rank are distinct
     state dimensions. Give each one an explicit owner and test their combined
     behavior before adding UI labels.
-11. Internal notes, notification delivery, and public conversation activity
+12. Internal notes, notification delivery, and public conversation activity
     must not accidentally share one update timestamp as their only semantic
     source. Test the mutation that changes the waiting owner and the mutation
     that deliberately does not.
-12. When a new projection is backfilled, migration fixtures must include every
+13. When a new projection is backfilled, migration fixtures must include every
     historical event family that can own the result, including messages and
     attachments, plus internal events that must be ignored.
 

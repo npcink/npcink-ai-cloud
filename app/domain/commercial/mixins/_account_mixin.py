@@ -52,7 +52,7 @@ from app.domain.commercial.membership_policy import (
     assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
-from app.domain.commercial.service import (
+from app.domain.commercial.plan_catalog import (
     DEFAULT_FREE_PLAN_KIND,
     DEFAULT_FREE_SUBSCRIPTION_SOURCE,
     PLAN_TIER_REGISTRY,

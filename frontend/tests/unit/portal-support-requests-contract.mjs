@@ -56,8 +56,8 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
-  /selectedSiteId=\{contextSiteId\}[\s\S]*sites=\{session\.sites\}[\s\S]*onSiteChange=/,
-  'Portal support must allow multi-account users to establish context without leaving the page'
+  /handleSiteChange\(event\.target\.value\)[\s\S]*id="portal-support-site-selector"|id="portal-support-site-selector"[\s\S]*handleSiteChange\(event\.target\.value\)/,
+  'Portal support must keep site context in the ticket-list toolbar instead of spending a header row on it'
 );
 assert.match(
   portalSupportPageSource,
@@ -77,6 +77,26 @@ assert.match(
   portalSupportPageSource,
   /<ListPagination[\s\S]*offset=\{offset\}[\s\S]*total=\{total\}/,
   'Portal support history must expose all tickets through pagination'
+);
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="tickets-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_request_view_detail/,
+  'Portal support history must use a semantic PC table with one detail action per ticket'
+);
+assert.match(
+  portalSupportPageSource,
+  /supportRequestSiteLabel[\s\S]*!item\.site_id[\s\S]*support_request_no_site[\s\S]*accountSites\.find\(\(site\) => site\.site_id === item\.site_id\)[\s\S]*support_request_other_site/,
+  'Portal support rows must distinguish account-level, known-site, and other-site tickets'
+);
+assert.match(
+  portalSupportPageSource,
+  /portal\.support_request_column[\s\S]*supportRequestSiteLabel\(item\)[\s\S]*data-portal-support="ticket-cards"[\s\S]*supportRequestSiteLabel\(item\)/,
+  'Portal support history must use a concise ticket column and the same site semantics in desktop and mobile layouts'
+);
+assert.match(
+  i18nSource,
+  /'portal\.support_topic_technical': 'Technical support'[\s\S]*'portal\.support_topic_technical': '技术支持'/,
+  'Portal support must localize legacy technical ticket topics'
 );
 assert.match(
   portalSupportPageSource,
@@ -102,6 +122,16 @@ assert.doesNotMatch(
   portalSupportPageSource,
   /const initialSiteId = searchParams\?\.get\('site'\) \|\| selectedSiteId|if \(!siteId && selectedSiteId\)/,
   'Portal support form must default to account-level issues unless a site is explicitly passed'
+);
+assert.match(
+  portalSupportPageSource,
+  /initialSiteIsVisible[\s\S]*setSiteId\(initialSiteIsVisible \? initialSiteId : ''\)/,
+  'Portal support must preserve an explicitly linked visible account site, including an inactive site'
+);
+assert.match(
+  portalSupportPageSource,
+  /const visibleSites = accountSites;[\s\S]*site_id: siteId,/,
+  'Portal support must let the customer associate any visible account site and rely on server-side access validation'
 );
 assert.doesNotMatch(
   portalBillingPageSource,

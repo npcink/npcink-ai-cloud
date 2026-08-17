@@ -13,13 +13,11 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
 type UsePortalCommercialCatalogOptions = {
-  contextSiteId?: string;
   isAuthenticated: boolean;
   t: TranslateFn;
 };
 
 export function usePortalCommercialCatalog({
-  contextSiteId,
   isAuthenticated,
   t,
 }: UsePortalCommercialCatalogOptions) {
@@ -29,13 +27,10 @@ export function usePortalCommercialCatalog({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState('');
-  const normalizedContextSiteId = String(contextSiteId || '').trim();
-  const contextSiteIdRef = useRef(normalizedContextSiteId);
   const requestVersionRef = useRef(0);
 
   const load = useCallback(async () => {
-    const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) {
+    if (!isAuthenticated) {
       requestVersionRef.current += 1;
       setEntitlements(null);
       setCreditPacks(null);
@@ -51,47 +46,35 @@ export function usePortalCommercialCatalog({
     setErrorCode('');
     try {
       const bundle = await portalClient.getAccountCommercialBundle();
-      if (
-        requestVersion !== requestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-      ) return false;
+      if (requestVersion !== requestVersionRef.current) return false;
       setEntitlements(bundle.entitlements);
       setCreditPacks(bundle.creditPacks);
       setPlanOffers(bundle.planOffers || null);
       return true;
     } catch (loadError) {
-      if (
-        requestVersion !== requestVersionRef.current
-        || requestContextSiteId !== contextSiteIdRef.current
-      ) return false;
+      if (requestVersion !== requestVersionRef.current) return false;
       setError(formatPortalErrorMessage(loadError, t, t('error.failed_load', {}, 'Failed to load.')));
       setErrorCode(loadError instanceof ApiError ? loadError.errorCode : '');
       return false;
     } finally {
-      if (
-        requestVersion === requestVersionRef.current
-        && requestContextSiteId === contextSiteIdRef.current
-      ) setIsLoading(false);
+      if (requestVersion === requestVersionRef.current) setIsLoading(false);
     }
   }, [isAuthenticated, t]);
 
   useLayoutEffect(() => {
-    contextSiteIdRef.current = normalizedContextSiteId;
     requestVersionRef.current += 1;
     setEntitlements(null);
     setCreditPacks(null);
     setPlanOffers(null);
     setError(null);
     setErrorCode('');
-    setIsLoading(Boolean(isAuthenticated && normalizedContextSiteId));
-  }, [isAuthenticated, normalizedContextSiteId]);
+    setIsLoading(Boolean(isAuthenticated));
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || !normalizedContextSiteId) {
-      return;
-    }
+    if (!isAuthenticated) return;
     void load();
-  }, [isAuthenticated, load, normalizedContextSiteId]);
+  }, [isAuthenticated, load]);
 
   return {
     entitlements,

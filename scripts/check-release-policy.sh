@@ -326,7 +326,7 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"acceptance_sha256"'
 require_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
 require_marker "deploy/image-lock/production-images.json" \
-	'python:3.14-alpine@sha256:a1321512d6a287428c50dcdf2ab3857761127e03a23b1f648e9c1c0de59288f8'
+	'python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc'
 require_marker "deploy/image-lock/production-images.json" \
 	'node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
 require_marker "deploy/OPS_PLAYBOOK.md" \

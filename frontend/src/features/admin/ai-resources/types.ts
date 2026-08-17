@@ -36,6 +36,7 @@ export type SupplierConnection = {
   last_tested_at?: string;
   last_error_code?: string;
   last_error_message?: string;
+  updated_at?: string;
   detail_href?: string;
   managed_by?: string;
   metadata?: Record<string, unknown>;
@@ -60,6 +61,72 @@ export type SupplierConnection = {
     approved_at?: string;
   };
 };
+
+export type ProviderConnectionDeletePreflight = {
+  surface: 'admin_provider_connection_delete_preflight';
+  connection: {
+    connection_id: string;
+    provider_id: string;
+    display_name: string;
+    enabled: boolean;
+    configuration_status: string;
+  };
+  expected_updated_at: string;
+  impact: {
+    risk_level: 'low' | 'warning' | 'high' | string;
+    runtime_profile_ids: string[];
+    uncovered_runtime_profile_ids: string[];
+    capability_ids: string[];
+    model_count: number;
+    alternative_connections: Array<{
+      connection_id: string;
+      display_name: string;
+      shared_runtime_profile_ids: string[];
+    }>;
+  };
+  requires_confirmation: true;
+};
+
+export function isProviderConnectionDeletePreflight(
+  value: unknown
+): value is ProviderConnectionDeletePreflight {
+  if (!value || typeof value !== 'object') return false;
+  const preflight = value as Record<string, unknown>;
+  const connection = preflight.connection;
+  const impact = preflight.impact;
+  if (!connection || typeof connection !== 'object' || !impact || typeof impact !== 'object') {
+    return false;
+  }
+  const connectionRecord = connection as Record<string, unknown>;
+  const impactRecord = impact as Record<string, unknown>;
+  const stringArray = (candidate: unknown): candidate is string[] => (
+    Array.isArray(candidate) && candidate.every((item) => typeof item === 'string')
+  );
+  const alternatives = impactRecord.alternative_connections;
+  return preflight.surface === 'admin_provider_connection_delete_preflight'
+    && preflight.requires_confirmation === true
+    && typeof preflight.expected_updated_at === 'string'
+    && preflight.expected_updated_at.length > 0
+    && typeof connectionRecord.connection_id === 'string'
+    && typeof connectionRecord.provider_id === 'string'
+    && typeof connectionRecord.display_name === 'string'
+    && typeof connectionRecord.enabled === 'boolean'
+    && typeof connectionRecord.configuration_status === 'string'
+    && typeof impactRecord.risk_level === 'string'
+    && stringArray(impactRecord.runtime_profile_ids)
+    && stringArray(impactRecord.uncovered_runtime_profile_ids)
+    && stringArray(impactRecord.capability_ids)
+    && typeof impactRecord.model_count === 'number'
+    && Number.isFinite(impactRecord.model_count)
+    && Array.isArray(alternatives)
+    && alternatives.every((alternative) => {
+      if (!alternative || typeof alternative !== 'object') return false;
+      const record = alternative as Record<string, unknown>;
+      return typeof record.connection_id === 'string'
+        && typeof record.display_name === 'string'
+        && stringArray(record.shared_runtime_profile_ids);
+    });
+}
 
 export type ProviderImageDeliveryProbeResult = {
   probe_id: string;

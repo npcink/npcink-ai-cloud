@@ -28,6 +28,11 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialValidationError,
 )
+from app.domain.commercial.mixins._billing_mixin import (
+    PLAN_TIER_REGISTRY as BILLING_PLAN_TIER_REGISTRY,
+)
+from app.domain.commercial.plan_catalog import PLAN_TIER_REGISTRY as CANONICAL_PLAN_TIER_REGISTRY
+from app.domain.commercial.service import PLAN_TIER_REGISTRY as FACADE_PLAN_TIER_REGISTRY
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -143,6 +148,22 @@ def test_public_plan_catalog_reads_published_versions_and_active_offers(
     }
 
     dispose_engine(database_url)
+
+
+def test_facade_and_billing_plan_catalogs_share_resource_limits() -> None:
+    assert FACADE_PLAN_TIER_REGISTRY is CANONICAL_PLAN_TIER_REGISTRY
+    assert BILLING_PLAN_TIER_REGISTRY is CANONICAL_PLAN_TIER_REGISTRY
+    assert set(FACADE_PLAN_TIER_REGISTRY) == set(BILLING_PLAN_TIER_REGISTRY)
+    for tier_id, facade_tier in FACADE_PLAN_TIER_REGISTRY.items():
+        billing_tier = BILLING_PLAN_TIER_REGISTRY[tier_id]
+        for key in (
+            "monthly_included_points",
+            "site_limit",
+            "max_vector_documents",
+            "max_batch_items",
+            "nightly_inspection_retention_days",
+        ):
+            assert facade_tier[key] == billing_tier[key], (tier_id, key)
 
 
 def test_paid_trial_is_shared_and_only_moves_upward(tmp_path: Path) -> None:

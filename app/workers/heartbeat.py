@@ -119,6 +119,7 @@ def build_worker_heartbeat_summary(
             event_kind=WORKER_HEARTBEAT_EVENT_KIND,
             outcome="succeeded",
             limit=max(20, len(effective_worker_ids) * 10),
+            include_payload=True,
         )
         .get("items")
     )

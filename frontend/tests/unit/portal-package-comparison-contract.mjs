@@ -25,6 +25,8 @@ assert.match(
   packagePanelSource,
   /compare_monthly_points[\s\S]*compare_site_limit[\s\S]*compare_knowledge_limit[\s\S]*compare_concurrency_limit[\s\S]*compare_batch_limit/
 );
+assert.match(i18nSource, /'portal\.billing\.compare_site_limit': 'Active sites'/);
+assert.match(i18nSource, /'portal\.billing\.compare_site_limit': '活动站点'/);
 assert.match(packagePanelSource, /showOnlyDifferences[\s\S]*new Set\(comparisonTiers\.map/);
 assert.match(packagePanelSource, /formatComparisonRight[\s\S]*tier\.comparison_rights\[key\]/);
 assert.doesNotMatch(

@@ -120,6 +120,243 @@ def _build_admin_operational_readiness_projection(
     }
 
 
+def _build_admin_overview_operator_projection(
+    overview: dict[str, object],
+) -> dict[str, object]:
+    readiness = _dict_value(overview.get("operational_readiness"))
+    runtime = _dict_value(overview.get("runtime_diagnostics"))
+    callback = _dict_value(runtime.get("callback"))
+    guard = _dict_value(runtime.get("guard"))
+    telemetry = _dict_value(overview.get("runtime_telemetry"))
+    telemetry_summary = _dict_value(telemetry.get("alert_summary"))
+    counts = _dict_value(overview.get("counts"))
+    expiring = _dict_value(overview.get("expiring_subscriptions"))
+    attention_subscriptions = _dict_list(overview.get("attention_subscriptions"))
+
+    readiness_status = str(readiness.get("status") or "").strip().lower()
+    if readiness_status == "error":
+        resolved_readiness_status = "blocked"
+    elif readiness_status == "ok":
+        resolved_readiness_status = "ready"
+    else:
+        resolved_readiness_status = "unknown"
+
+    checks_failed = max(0, _coerce_int(readiness.get("checks_failed"), default=0))
+    raw_failure_scopes = readiness.get("failure_scopes")
+    failure_scopes = (
+        [str(scope) for scope in raw_failure_scopes]
+        if isinstance(raw_failure_scopes, list)
+        else []
+    )
+    readiness_href = str(readiness.get("href") or "/admin/troubleshooting")
+    callback_failed = max(0, _coerce_int(callback.get("failed"), default=0))
+    callback_pending = max(0, _coerce_int(callback.get("pending"), default=0))
+    guard_events = max(0, _coerce_int(guard.get("recent_events"), default=0))
+    expiring_in_7_days = max(0, _coerce_int(expiring.get("within_7_days"), default=0))
+    sites_active = max(0, _coerce_int(counts.get("sites_active"), default=0))
+    telemetry_status = str(telemetry_summary.get("status") or "inactive").strip().lower()
+    telemetry_alerts = _dict_list(telemetry_summary.get("alerts"))
+    first_telemetry_alert = telemetry_alerts[0] if telemetry_alerts else {}
+    telemetry_alert_count = max(
+        0,
+        _coerce_int(telemetry_summary.get("alert_count"), default=len(telemetry_alerts)),
+    )
+
+    watch_items: list[tuple[int, dict[str, object]]] = []
+    if resolved_readiness_status == "blocked":
+        watch_items.append(
+            (
+                0,
+                {
+                    "code": "operational_readiness_blocked",
+                    "scope": "runtime.operational_readiness",
+                    "severity": "action_needed",
+                    "value": checks_failed,
+                    "detail_code": "operational_readiness_blocked",
+                    "detail_args": {"failure_scopes": failure_scopes},
+                },
+            )
+        )
+    elif resolved_readiness_status == "unknown":
+        watch_items.append(
+            (
+                0,
+                {
+                    "code": "operational_readiness_unknown",
+                    "scope": "runtime.operational_readiness",
+                    "severity": "warn",
+                    "value": None,
+                    "detail_code": "operational_readiness_unknown",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    if callback_failed > 0:
+        watch_items.append(
+            (
+                10,
+                {
+                    "code": "runtime_callback_failed",
+                    "scope": "runtime.callback",
+                    "severity": "action_needed",
+                    "value": callback_failed,
+                    "detail_code": "runtime_callback_failed",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    if telemetry_status in {"error", "warning"}:
+        telemetry_severity = "action_needed" if telemetry_status == "error" else "warn"
+        watch_items.append(
+            (
+                15 if telemetry_status == "error" else 35,
+                {
+                    "code": "runtime_telemetry",
+                    "scope": "runtime.telemetry_coverage",
+                    "severity": telemetry_severity,
+                    "value": max(telemetry_alert_count, 1),
+                    "detail_code": "runtime_telemetry",
+                    "detail_args": {
+                        "alert_code": str(first_telemetry_alert.get("code") or ""),
+                    },
+                },
+            )
+        )
+
+    if guard_events > 0:
+        is_hot = guard_events >= 25
+        watch_items.append(
+            (
+                20 if is_hot else 40,
+                {
+                    "code": "request_guard_events",
+                    "scope": "request.guard",
+                    "severity": "action_needed" if is_hot else "warn",
+                    "value": guard_events,
+                    "detail_code": "request_guard_hot" if is_hot else "request_guard_events",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    if attention_subscriptions:
+        first_attention = attention_subscriptions[0]
+        watch_items.append(
+            (
+                30,
+                {
+                    "code": "commercial_subscription_attention",
+                    "scope": "commercial.subscription",
+                    "severity": "action_needed",
+                    "value": len(attention_subscriptions),
+                    "detail_code": "commercial_subscription_attention",
+                    "detail_args": {
+                        "reason": str(
+                            first_attention.get("reason")
+                            or first_attention.get("message")
+                            or ""
+                        )
+                    },
+                },
+            )
+        )
+
+    if expiring_in_7_days > 0:
+        watch_items.append(
+            (
+                50,
+                {
+                    "code": "commercial_subscription_expiring",
+                    "scope": "commercial.subscription",
+                    "severity": "warn",
+                    "value": expiring_in_7_days,
+                    "detail_code": "commercial_subscription_expiring",
+                    "detail_args": {},
+                },
+            )
+        )
+
+    ordered_watch_items = [item for _, item in sorted(watch_items, key=lambda entry: entry[0])]
+    if resolved_readiness_status == "blocked":
+        status = "error"
+        conclusion_code = "operational_readiness_blocked"
+    elif resolved_readiness_status == "unknown":
+        status = "warning"
+        conclusion_code = "operational_readiness_unknown"
+    elif callback_failed > 0 or telemetry_status == "error":
+        status = "error"
+        conclusion_code = "runtime_error"
+    elif (
+        attention_subscriptions
+        or telemetry_status == "warning"
+        or expiring_in_7_days > 0
+        or guard_events > 0
+        or callback_pending > 0
+    ):
+        status = "warning"
+        conclusion_code = "warning"
+    elif sites_active == 0:
+        status = "inactive"
+        conclusion_code = "inactive"
+    else:
+        status = "ok"
+        conclusion_code = "ok"
+
+    first_watch_item = ordered_watch_items[0] if ordered_watch_items else {}
+    first_watch_scope = str(first_watch_item.get("scope") or "")
+    first_watch_code = str(first_watch_item.get("code") or "")
+    if resolved_readiness_status in {"blocked", "unknown"}:
+        primary_action = {
+            "kind": "readiness",
+            "href": readiness_href,
+        }
+    elif first_watch_code == "runtime_telemetry":
+        primary_action = {
+            "kind": "runtime_telemetry",
+            "href": "/admin/troubleshooting",
+        }
+    elif first_watch_scope.startswith(("runtime.", "request.")):
+        primary_action = {
+            "kind": "accounts",
+            "href": "/admin/accounts",
+        }
+    elif status == "error" or attention_subscriptions or expiring_in_7_days > 0:
+        primary_action = {
+            "kind": "coverage",
+            "href": "/admin/coverage",
+        }
+    else:
+        primary_action = {
+            "kind": "accounts",
+            "href": "/admin/accounts",
+        }
+
+    has_runtime_watch_item = any(
+        str(item.get("scope") or "").startswith(("runtime.", "queue.", "request."))
+        for item in ordered_watch_items
+    )
+    return {
+        "revision": "admin-overview-operator-projection-v1",
+        "status": status,
+        "conclusion_code": conclusion_code,
+        "conclusion_args": {
+            "checks_failed": checks_failed,
+            "failure_scopes": failure_scopes,
+        },
+        "readiness": {
+            "status": resolved_readiness_status,
+            "checks_failed": checks_failed,
+            "failure_scopes": failure_scopes,
+            "href": readiness_href,
+        },
+        "primary_action": primary_action,
+        "follow_up_focus": "runtime" if has_runtime_watch_item else "commercial",
+        "watch_items": ordered_watch_items,
+    }
+
+
 def _coerce_int(value: object, *, default: int) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -395,6 +632,12 @@ class ProviderConnectionPayload(BaseModel):
     secretless: bool = False
 
 
+class ProviderConnectionDeletePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_updated_at: datetime
+
+
 class ProviderImageHostApprovalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -521,7 +764,12 @@ class HostedRuntimeProfileSettingsPayload(BaseModel):
 class OpsSummaryDisclosureReviewPayload(BaseModel):
     cache_key: str = Field(min_length=16, max_length=128)
     review_status: str = Field(max_length=32)
-    actor_ref: str = Field(default="internal", max_length=191)
+    actor_ref: str = Field(
+        default="internal",
+        max_length=191,
+        deprecated=True,
+        description="Deprecated and ignored; reviewer identity comes from trusted auth context.",
+    )
     note: str = Field(default="", max_length=512)
 
 
@@ -600,8 +848,8 @@ def _build_audit_context(request: Request) -> ServiceAuditContext:
         idempotency_key=request.headers.get("Idempotency-Key", "").strip(),
         method=request.method,
         path=request.url.path,
-        actor_kind="internal_token",
-        actor_ref="internal",
+        actor_kind=str(getattr(request.state, "internal_actor_kind", "internal_token")),
+        actor_ref=str(getattr(request.state, "internal_actor_ref", "internal")),
     )
 
 
@@ -905,6 +1153,9 @@ def _build_audit_filters(
     site_id: str | None = None,
     event_kind: str | None = None,
     outcome: str | None = None,
+    idempotency_key: str | None = None,
+    scope_kind: str | None = None,
+    scope_id: str | None = None,
 ) -> dict[str, str]:
     filters: dict[str, str] = {}
     if account_id:
@@ -915,6 +1166,12 @@ def _build_audit_filters(
         filters["event_kind"] = str(event_kind)
     if outcome:
         filters["outcome"] = str(outcome)
+    if idempotency_key:
+        filters["idempotency_key"] = str(idempotency_key)
+    if scope_kind:
+        filters["scope_kind"] = str(scope_kind)
+    if scope_id:
+        filters["scope_id"] = str(scope_id)
     return filters
 
 
@@ -926,22 +1183,31 @@ def _build_operator_receipt(
     outcome: str,
     effective_summary: str,
     audit_event: dict[str, Any] | None = None,
+    audit_state: Literal["persisted", "unavailable", "not_applicable"],
     account_id: str | None = None,
     site_id: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     resolved_account_id = str((audit_event or {}).get("account_id") or account_id or "").strip()
     resolved_site_id = str((audit_event or {}).get("site_id") or site_id or "").strip()
+    resolved_idempotency_key = str(
+        (audit_event or {}).get("idempotency_key") or idempotency_key or ""
+    ).strip()
     receipt: dict[str, Any] = {
         "event_kind": event_kind,
         "scope_kind": scope_kind,
         "scope_id": scope_id,
         "outcome": outcome,
         "effective_summary": effective_summary,
+        "audit_state": audit_state,
         "audit_filters": _build_audit_filters(
             account_id=resolved_account_id,
             site_id=resolved_site_id,
             event_kind=event_kind,
             outcome=outcome,
+            idempotency_key=resolved_idempotency_key,
+            scope_kind=scope_kind,
+            scope_id=scope_id,
         ),
     }
     audit_event_id = int((audit_event or {}).get("event_id") or 0)
@@ -1407,8 +1673,10 @@ async def suspend_admin_account(
                 scope_kind="account",
                 scope_id=account_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=f"Account {account_id} is now suspended.",
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -1453,8 +1721,10 @@ async def restore_admin_account(
                 scope_kind="account",
                 scope_id=account_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=f"Account {account_id} is now active.",
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -1790,9 +2060,11 @@ async def upsert_plan(
                 scope_kind="plan",
                 scope_id=payload.plan_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Plan {payload.plan_id} is now saved on the commercial truth plane."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -1847,10 +2119,12 @@ async def publish_plan_version(
                 scope_kind="plan_version",
                 scope_id=payload.plan_version_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Plan version {payload.plan_version_id} is now published. "
                     "Existing subscriptions on this plan use the latest package values."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -1907,11 +2181,13 @@ async def upsert_account_subscription(
                     result.get("subscription_id") or payload.subscription_id or account_id
                 ),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Account {account_id} now resolves to subscription "
                     f"{result.get('subscription_id') or payload.subscription_id or account_id}."
                 ),
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -1947,10 +2223,12 @@ async def suspend_account_subscription(request: Request, account_id: str) -> Any
                 scope_kind="subscription",
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Current subscription coverage for account {account_id} is now suspended."
                 ),
                 account_id=str(result.get("account_id") or ""),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2003,6 +2281,7 @@ async def apply_subscription_topup(
                 scope_kind="subscription",
                 scope_id=subscription_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Subscription {subscription_id} now has operator-managed "
                     "budget headroom added "
@@ -2013,6 +2292,7 @@ async def apply_subscription_topup(
                         else "."
                     )
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2301,10 +2581,12 @@ async def cancel_account_subscription(request: Request, account_id: str) -> Any:
                 scope_kind="subscription",
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Current subscription coverage for account {account_id} is now canceled."
                 ),
                 account_id=str(result.get("account_id") or ""),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -2480,31 +2762,46 @@ async def get_admin_overview(
         account_id=first_attention_account_id,
         subscription_id=first_attention_subscription_id,
     )
+    result["operator_projection"] = _build_admin_overview_operator_projection(result)
     return build_envelope(
         status="ok",
         message="admin overview loaded",
         data=result,
-        revision="m6",
+        revision="m7",
     )
 
 
 @router.get("/admin/coverage-work-queue")
 async def get_admin_coverage_work_queue(
     request: Request,
+    q: str | None = Query(default=None, max_length=191),
+    status: Literal["all", "needs_action", "error", "warning", "ok", "inactive"] = Query(
+        default="all"
+    ),
+    reason: str | None = Query(default=None, max_length=191),
+    sort: Literal["priority", "expiry", "customer"] = Query(default="priority"),
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_coverage_work_queue(limit=limit)
+        result = _get_commercial_service(request).get_admin_coverage_work_queue(
+            q=q,
+            status=status,
+            reason=reason,
+            sort=sort,
+            offset=offset,
+            limit=limit,
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return build_envelope(
         status="ok",
         message="admin coverage work queue loaded",
         data=result,
-        revision="m1",
+        revision="m2",
     )
 
 
@@ -2741,14 +3038,15 @@ async def review_ops_summary_disclosure(
     request: Request,
     payload: OpsSummaryDisclosureReviewPayload,
 ) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
+    auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
     try:
+        actor_context = _build_audit_context(request)
         result = _get_advisor_service(request).review_ops_summary_disclosure(
             cache_key=payload.cache_key,
             review_status=payload.review_status,
-            actor_ref=payload.actor_ref,
+            actor_ref=actor_context.actor_ref,
             note=payload.note,
         )
     except ValueError:
@@ -3239,10 +3537,12 @@ async def batch_disable_admin_portal_users(
                 scope_kind="portal_user_batch",
                 scope_id=str(audit_context.idempotency_key or ""),
                 outcome="succeeded" if int(totals.get("failed") or 0) == 0 else "partial",
+                audit_state="persisted",
                 effective_summary=(
                     f"Batch disable processed {int(totals.get('attempted') or 0)} "
                     f"portal users with {int(totals.get('failed') or 0)} failures."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3292,7 +3592,9 @@ async def disable_admin_portal_user(
                 scope_kind="principal",
                 scope_id=principal_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=effective_summary,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3341,12 +3643,14 @@ async def apply_admin_account_credit_adjustment(
                 scope_kind="account",
                 scope_id=account_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Account {account_id} AI credit ledger received "
                     f"{entry.get('event_type') or payload.event_type} "
                     f"delta {entry.get('ai_credit_delta') or payload.ai_credit_delta}."
                 ),
                 account_id=account_id,
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3620,11 +3924,13 @@ async def rebuild_admin_subscription_billing_snapshots(
                 scope_kind="subscription",
                 scope_id=subscription_id,
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Billing snapshots for subscription {subscription_id} were rebuilt "
                     "from usage records."
                 ),
                 account_id=str(_dict_value(result.get("subscription")).get("account_id") or ""),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -3684,6 +3990,7 @@ async def update_admin_plan_parameters(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    audit_context = _build_audit_context(request)
     try:
         result = _get_commercial_service(request).update_admin_plan_parameters(
             plan_id=plan_id,
@@ -3695,7 +4002,7 @@ async def update_admin_plan_parameters(
             max_active_runs=payload.max_active_runs,
             max_batch_items=payload.max_batch_items,
             grace_period_days=payload.grace_period_days,
-            audit_context=_build_audit_context(request),
+            audit_context=audit_context,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3709,10 +4016,12 @@ async def update_admin_plan_parameters(
                 scope_kind="plan_version",
                 scope_id=str(result.get("plan_version_id") or ""),
                 outcome="succeeded",
+                audit_state="persisted",
                 effective_summary=(
                     f"Plan {plan_id} structured parameters are now published. "
                     "Unexposed commercial policy fields were preserved."
                 ),
+                idempotency_key=audit_context.idempotency_key,
             ),
         ),
         revision="m6",
@@ -4492,6 +4801,7 @@ async def update_admin_site_knowledge_vector_profile(
                     "Site Knowledge vector profile was saved and verified with 1024 dimensions."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4553,6 +4863,7 @@ async def update_admin_site_knowledge_vector_store(
                     "Zilliz Cloud was verified for the fixed 1024-dimension COSINE profile."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4624,6 +4935,7 @@ async def rebuild_admin_site_knowledge_vector_index(
                     else "Compatible Cloud index chunks were rebuilt in Zilliz Cloud."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4703,6 +5015,7 @@ async def create_admin_provider_connection(
                     f"Provider connection {str(result.get('connection_id') or '')} was saved."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4766,6 +5079,7 @@ async def update_admin_provider_connection(
                     f"{str(result.get('connection_id') or connection_id)} was saved."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4804,8 +5118,44 @@ async def preview_admin_provider_connection_catalog(
     )
 
 
+@router.get("/admin/provider-connections/{connection_id}/delete-preflight")
+async def preflight_admin_provider_connection_delete(
+    request: Request,
+    connection_id: str,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ProviderConnectionAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).get_delete_preflight(connection_id)
+    except ProviderConnectionAdminError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m7",
+            ),
+        )
+    return build_envelope(
+        status="ok",
+        message="provider connection deletion preflight loaded",
+        data=result,
+        revision="m7",
+    )
+
+
 @router.delete("/admin/provider-connections/{connection_id}")
-async def delete_admin_provider_connection(request: Request, connection_id: str) -> Any:
+async def delete_admin_provider_connection(
+    request: Request,
+    connection_id: str,
+    payload: ProviderConnectionDeletePayload,
+) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
@@ -4814,7 +5164,10 @@ async def delete_admin_provider_connection(request: Request, connection_id: str)
         result = ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).delete_connection(connection_id)
+        ).delete_connection(
+            connection_id,
+            expected_updated_at=payload.expected_updated_at,
+        )
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -4830,7 +5183,7 @@ async def delete_admin_provider_connection(request: Request, connection_id: str)
                 status="error",
                 error_code=error.error_code,
                 message=error.message,
-                revision="m6",
+                revision="m7",
             ),
         )
     audit_event = _record_provider_connection_audit(
@@ -4852,9 +5205,10 @@ async def delete_admin_provider_connection(request: Request, connection_id: str)
                 outcome="succeeded",
                 effective_summary=f"Provider connection {connection_id} was deleted.",
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
-        revision="m6",
+        revision="m7",
     )
 
 
@@ -4913,6 +5267,7 @@ async def test_admin_provider_connection(request: Request, connection_id: str) -
                 outcome="succeeded" if result.get("ok") else "error",
                 effective_summary=str(result.get("message") or "Provider connection was tested."),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -4978,6 +5333,7 @@ async def approve_admin_provider_connection_image_host(
                     f"{str(result.get('approved_image_output_host') or '')}."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5041,6 +5397,7 @@ async def create_admin_provider_connection_image_delivery_probe(
                     result.get("message") or "Provider image delivery probe completed."
                 ),
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5255,6 +5612,7 @@ async def update_admin_hosted_runtime_profiles(
                 outcome="succeeded",
                 effective_summary="Hosted runtime profiles were updated.",
                 audit_event=audit_event,
+                audit_state="persisted" if audit_event else "unavailable",
             ),
         ),
         revision="m6",
@@ -5411,21 +5769,33 @@ async def update_admin_plugin_observability_attention_state(
 @router.get("/audit-events")
 async def list_service_audit_events(
     request: Request,
-    site_id: str | None = Query(default=None),
-    account_id: str | None = Query(default=None),
-    event_kind: str | None = Query(default=None),
-    outcome: str | None = Query(default=None),
+    event_id: int | None = Query(default=None, ge=1),
+    site_id: str | None = Query(default=None, max_length=191),
+    account_id: str | None = Query(default=None, max_length=191),
+    event_kind: str | None = Query(default=None, max_length=64),
+    outcome: str | None = Query(default=None, max_length=32),
+    idempotency_key: str | None = Query(default=None, max_length=191),
+    scope_kind: str | None = Query(default=None, max_length=32),
+    scope_id: str | None = Query(default=None, max_length=191),
     limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=100000),
+    include_payload: bool = Query(default=False),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
     result = _get_commercial_service(request).list_service_audit_events(
+        event_id=event_id,
         site_id=site_id,
         account_id=account_id,
         event_kind=event_kind,
         outcome=outcome,
+        idempotency_key=idempotency_key,
+        scope_kind=scope_kind,
+        scope_id=scope_id,
         limit=limit,
+        offset=offset,
+        include_payload=include_payload,
     )
     return build_envelope(
         status="ok",
@@ -5782,14 +6152,24 @@ async def cleanup_runtime_retention(request: Request) -> Any:
     audit_context = _build_audit_context(request)
     try:
         services = get_cloud_services(request)
-        purged = RuntimeService(services.settings.database_url).cleanup_expired_run_results()
+        runtime_service = RuntimeService(
+            services.settings.database_url,
+            settings=services.settings,
+        )
+        purged = runtime_service.cleanup_expired_run_results()
+        remaining_due_runs = runtime_service.count_expired_run_results()
         _get_commercial_service(request).record_service_audit_event(
             audit_context=audit_context,
             event_kind="runtime.retention_cleanup",
             outcome="succeeded",
             scope_kind="runtime",
             scope_id="retention_cleanup",
-            payload_json={"purged_runs": purged},
+            payload_json={
+                "purged_runs": purged,
+                "retention_batch_limit": services.settings.retention_cleanup_batch_size,
+                "retention_remaining_due_runs": remaining_due_runs,
+                "retention_partial": remaining_due_runs > 0,
+            },
         )
     except Exception as error:
         _get_commercial_service(request).record_service_audit_event(
@@ -5813,6 +6193,11 @@ async def cleanup_runtime_retention(request: Request) -> Any:
     return build_envelope(
         status="ok",
         message="runtime retention cleanup completed",
-        data={"purged_runs": purged},
+        data={
+            "purged_runs": purged,
+            "retention_batch_limit": services.settings.retention_cleanup_batch_size,
+            "retention_remaining_due_runs": remaining_due_runs,
+            "retention_partial": remaining_due_runs > 0,
+        },
         revision="m6",
     )

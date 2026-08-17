@@ -281,6 +281,7 @@ class RuntimeService:
                 ),
                 execution_response_builder=self._build_execution_response,
                 artifact_store=self.artifact_store,
+                provider_lookup=lambda provider_id: self.providers.get(provider_id),
             ),
             run_controller=self.run_lifecycle_service,
             execution_input_loader=self._get_execution_input_payload,
@@ -2529,6 +2530,8 @@ class RuntimeService:
                     run,
                     repository=repository,
                     usage=error.usage,
+                    source_type=plan.intent,
+                    intent=plan.intent,
                 )
             report = plan.to_report(
                 status="failed",
@@ -2582,6 +2585,8 @@ class RuntimeService:
             run,
             repository=repository,
             usage=search_result.usage,
+            source_type=plan.intent,
+            intent=plan.intent,
         )
         report = build_automatic_web_search_success_report(
             plan,
@@ -2601,6 +2606,8 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
         usage: Any,
+        source_type: str,
+        intent: str,
     ) -> None:
         self.provider_execution_service.record_provider_call(
             repository=repository,
@@ -2618,6 +2625,12 @@ class RuntimeService:
                 fallback_used=False,
                 error_code=usage.error_code,
             ),
+            usage_context={
+                "managed_source": "web_search",
+                "source_type": source_type,
+                "intent": intent,
+                "provider": str(getattr(usage, "provider_id", "") or ""),
+            },
         )
 
     def _record_automatic_web_search_report(
@@ -2996,11 +3009,49 @@ class RuntimeService:
         *,
         payload_json: dict[str, object] | None = None,
     ) -> float:
-        return estimate_runtime_request_ai_credits(
+        estimate = estimate_runtime_request_ai_credits(
             ability_name=request.ability_name,
             ability_family=request.ability_family,
             execution_kind=request.execution_kind,
             payload_json=payload_json if payload_json is not None else request.input_payload,
+        )
+        if payload_json is None and self._supports_automatic_web_search(request):
+            plan = build_automatic_web_search_plan(
+                request.input_payload,
+                ability_name=request.ability_name,
+                workflow_id=request.workflow_id or "",
+                channel=request.channel or "",
+            )
+            if plan is not None and not plan.is_dry_run:
+                explicit_provider = plan.provider if plan.provider != "auto" else ""
+                search_component = classify_provider_credit_component(
+                    execution_kind="web_search",
+                    ability_family="search",
+                    payload_json={
+                        "managed_source": "web_search",
+                        "source_type": plan.intent if explicit_provider else "web_search",
+                        "intent": plan.intent if explicit_provider else "",
+                        "provider": explicit_provider,
+                    },
+                )
+                estimate += max(
+                    0.0,
+                    float(self._coerce_float(search_component.get("rate")) or 0.0),
+                )
+        return round(max(0.0, estimate), 6)
+
+    def _supports_automatic_web_search(self, request: RuntimeRequest) -> bool:
+        return not any(
+            predicate(request)
+            for predicate in (
+                self._is_cloud_batch_runtime_request,
+                self._is_site_ops_analysis_request,
+                self._is_media_batch_plan_request,
+                self._is_image_context_evidence_request,
+                self._is_image_source_request,
+                self._is_site_knowledge_request,
+                self._is_web_search_request,
+            )
         )
 
     def _build_web_search_usage_context(
@@ -5104,8 +5155,19 @@ class RuntimeService:
             input_payload=run.input_payload if hasattr(run, "input_payload") else {},
         )
 
-    def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:
-        return self.run_lifecycle_service.cleanup_expired_run_results(now=now)
+    def cleanup_expired_run_results(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int | None = None,
+    ) -> int:
+        return self.run_lifecycle_service.cleanup_expired_run_results(
+            now=now,
+            limit=limit or self.settings.retention_cleanup_batch_size,
+        )
+
+    def count_expired_run_results(self, *, now: datetime | None = None) -> int:
+        return self.run_lifecycle_service.count_expired_run_results(now=now)
 
     def _serialize_runtime_diagnostic_run(self, run: RunRecord) -> dict[str, object]:
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}

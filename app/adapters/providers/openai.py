@@ -159,8 +159,8 @@ def _normalize_model_metadata_overrides(
     return normalized
 
 
-def normalize_provider_image_output_hosts(value: Iterable[str]) -> tuple[str, ...]:
-    """Normalize exact provider-owned image hosts for the private fetch seam."""
+def normalize_provider_output_hosts(value: Iterable[str]) -> tuple[str, ...]:
+    """Normalize exact provider-owned hosts for private media fetch seams."""
 
     normalized_hosts: list[str] = []
     for raw_host in value:
@@ -170,16 +170,22 @@ def normalize_provider_image_output_hosts(value: Iterable[str]) -> tuple[str, ..
             or any(character.isspace() for character in host)
             or any(marker in host for marker in ("://", "/", "*", "@", "?", "#", ":"))
         ):
-            raise ValueError("image_output_hosts must contain exact host names")
+            raise ValueError("provider output hosts must contain exact host names")
         try:
             host = host.encode("idna").decode("ascii")
         except UnicodeError as error:
             raise ValueError(
-                "image_output_hosts must contain valid exact host names"
+                "provider output hosts must contain valid exact host names"
             ) from error
         if host not in normalized_hosts:
             normalized_hosts.append(host)
     return tuple(normalized_hosts)
+
+
+def normalize_provider_image_output_hosts(value: Iterable[str]) -> tuple[str, ...]:
+    """Backward-compatible image output host normalizer."""
+
+    return normalize_provider_output_hosts(value)
 
 
 class OpenAIProviderAdapter:

@@ -15,7 +15,7 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
-from app.adapters.providers.openai import OpenAIProviderAdapter
+from app.adapters.providers.openai import OpenAIProviderAdapter, normalize_provider_output_hosts
 from app.domain.audio_generation.contracts import (
     AUDIO_GENERATION_RESULT_CONTRACT,
     resolve_audio_generation_text,
@@ -151,6 +151,7 @@ class MiniMaxProviderAdapter:
         default_voice_id: str = "male-qn-qingse",
         allow_sample_catalog: bool = False,
         allow_sample_execution: bool = False,
+        audio_output_hosts: tuple[str, ...] = (),
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -160,6 +161,7 @@ class MiniMaxProviderAdapter:
         self.default_voice_id = str(default_voice_id or "male-qn-qingse").strip()
         self.allow_sample_catalog = allow_sample_catalog
         self.allow_sample_execution = allow_sample_execution
+        self.audio_output_hosts = normalize_provider_output_hosts(audio_output_hosts)
         self.transport = transport
 
     def fetch_catalog(self) -> ProviderCatalogSnapshot:

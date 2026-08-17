@@ -12,9 +12,8 @@ const headerBeforeSummary = source.slice(
   source.indexOf('<PortalWorkspaceHeader'),
   source.indexOf('data-portal-usage="usage-records"')
 );
-const headerMetricStart = source.indexOf('const usageHeaderMetrics');
-const headerMetricEnd = source.indexOf('\n\n  return (', headerMetricStart);
-const headerMetricDefinition = source.slice(headerMetricStart, headerMetricEnd);
+const headerStart = source.lastIndexOf('<PortalWorkspaceHeader');
+const headerDefinition = source.slice(headerStart, source.indexOf('\n      />', headerStart));
 
 assert.match(
   source,
@@ -33,21 +32,31 @@ assert.doesNotMatch(
   'portal usage page must not repeat the package rights summary owned by the package page'
 );
 assert.doesNotMatch(
-  headerMetricDefinition,
+  headerDefinition,
   /ai_credits_label|resource_bound_sites|remaining_requests_test_label/,
   'portal usage header must not repeat the detailed usage numbers shown in the current usage card'
 );
 assert.match(
-  headerMetricDefinition,
+  headerDefinition,
   /period_end_detail/,
   'portal usage header must show the exact period end as secondary context'
 );
 assert.doesNotMatch(
-  headerMetricDefinition,
+  headerDefinition,
   /context_generated|header_updated_detail/,
   'portal usage header must not render a standalone generated-time metric'
 );
 assert.match(source, /updated_at_inline/, 'latest update time must remain as subtle inline context');
+assert.match(
+  headerDefinition,
+  /titleAccessory=\{!usageNeedsAttention[\s\S]*metadata=[\s\S]*contextPanel=\{usageNeedsAttention/,
+  'portal usage header must keep normal status and period compact while reserving the right panel for attention states'
+);
+assert.doesNotMatch(
+  headerDefinition,
+  /eyebrow=|metrics=/,
+  'portal usage header must not repeat its title or render a second status rail'
+);
 
 assert.match(
   source,
@@ -62,30 +71,25 @@ assert.match(
   'usage tabs and retired view links must keep the URL canonical'
 );
 
-assert.doesNotMatch(
+assert.match(
   source,
-  /portal-usage-site-select|portal-usage-site|creditLedgerSiteId|siteId:\s*[^\n,}]+|usePortalSiteSelection|getUsageBundle\(selectedSiteId/,
-  'portal usage page must not render or depend on a site selector because usage is account-level'
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getUsageBundle\(\{ siteId: requestSiteFilterId \|\| undefined \}\)/,
+  'portal usage must default to the account bundle and optionally pass an explicit site filter'
 );
 assert.match(
   source,
-  /portalClient\.getUsageBundle\(\)/,
-  'portal usage page must load the account-level usage bundle'
-);
-assert.match(
-  source,
-  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*if \(!isAuthenticated \|\| !requestContextSiteId\) return/,
-  'account-level usage requests must fail closed until selected context exists'
+  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
+  'portal usage must expose the shared all-sites or single-site filter'
 );
 assert.match(
   source,
   /useLayoutEffect\([\s\S]*setUsage\(null\)[\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditEventBuckets\(null\)[\s\S]*setCreditTrend\(null\)/,
-  'usage must clear account projections and subresources when selected context changes'
+  'usage must clear account projections and subresources when the site filter changes'
 );
 assert.match(
   source,
-  /selectedContext\.current_subscription[\s\S]*currentSubscription\?\.current_period_start_at[\s\S]*currentSubscription\?\.current_period_end_at/,
-  'usage period context must come from the selected-context subscription contract'
+  /entitlements\?\.current_subscription[\s\S]*currentSubscription\?\.current_period_start_at[\s\S]*currentSubscription\?\.current_period_end_at/,
+  'usage period context must come from the account entitlement contract'
 );
 
 const summaryIndex = source.indexOf('data-portal-usage="current-summary"');
@@ -123,6 +127,11 @@ assert.match(
 );
 assert.match(
   source,
+  /data-portal-usage="records-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*common\.view_details/,
+  'PC usage records must use a semantic table with an explicit detail action'
+);
+assert.match(
+  source,
   /getAccountCreditEventBuckets\([\s\S]*offset: nextOffset[\s\S]*<ListPagination[\s\S]*total=\{creditEventCount\}/,
   'customer point summaries must expose filtered history through pagination'
 );
@@ -131,8 +140,8 @@ assert.match(source, /startAt: bucket\.start_at[\s\S]*endAt: bucket\.end_at/);
 assert.match(source, /component_count[\s\S]*support_reference/);
 assert.match(
   source,
-  /getAccountCreditTrend\(\{[\s\S]*window: creditTrendWindow,[\s\S]*\}\)/,
-  'point trend must use the account credit ledger projection without a retired site filter'
+  /getAccountCreditTrend\(\{[\s\S]*window: creditTrendWindow,[\s\S]*siteId: requestSiteFilterId \|\| undefined/,
+  'point trend must use the account credit ledger projection with an optional site filter'
 );
 assert.match(
   creditTrendSource,

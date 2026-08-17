@@ -214,6 +214,7 @@ test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', 
   const laneTable = lanes.locator('[data-ui="runtime-evidence-lane-table"]');
   await expect(laneTable.getByRole('columnheader', { name: /Channel|通道/i })).toBeVisible();
   await expect(laneTable.getByRole('columnheader', { name: /Evidence scope|证据范围/i })).toBeVisible();
+  await expect(lanes.locator('a[href="/admin/audit"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/plugin-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/media-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/vector-observability"]')).toBeVisible();
