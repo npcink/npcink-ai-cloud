@@ -256,6 +256,7 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     )
 
     assert '- "ownership-inventory"' in workflow
+    assert "permissions:\n      contents: read" in workflow
     assert "Checkout ownership inventory helper" in workflow
     assert "if: inputs.action == 'ownership-inventory'" in workflow
     assert workflow.index("Checkout ownership inventory helper") < workflow.index(
