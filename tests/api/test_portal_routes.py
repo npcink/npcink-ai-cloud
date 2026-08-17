@@ -6346,6 +6346,140 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     dispose_engine(database_url)
 
 
+def test_portal_account_routes_use_selected_site_account_for_multi_account_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_jwt_issuer": "npcink-cloud-portal",
+            "portal_jwt_audience": "npcink-cloud-customers",
+        },
+    )
+    email = "portal-multi-account@example.com"
+    selected_grant: dict[str, object] = {}
+    for suffix in ("selected", "other"):
+        account_id = f"acct_portal_multi_{suffix}"
+        site_id = f"site_portal_multi_{suffix}"
+        account_response = client.post(
+            "/internal/service/accounts",
+            json={"account_id": account_id, "name": f"Portal {suffix} account"},
+            headers=build_internal_headers(
+                idempotency_key=f"portal-multi-{suffix}-account"
+            ),
+        )
+        assert account_response.status_code == 200, account_response.text
+        site_response = client.post(
+            "/internal/service/sites",
+            json={
+                "site_id": site_id,
+                "account_id": account_id,
+                "name": f"Portal {suffix} site",
+                "status": "provisioning",
+            },
+            headers=build_internal_headers(
+                idempotency_key=f"portal-multi-{suffix}-site"
+            ),
+        )
+        assert site_response.status_code == 200, site_response.text
+        activate_response = client.post(
+            f"/internal/service/sites/{site_id}/activate",
+            headers=build_internal_headers(
+                idempotency_key=f"portal-multi-{suffix}-activate"
+            ),
+        )
+        assert activate_response.status_code == 200, activate_response.text
+        if suffix == "selected":
+            selected_grant = _grant_account_member_access(
+                client,
+                site_id=site_id,
+                email=email,
+                idempotency_key=f"portal-multi-{suffix}-member",
+            )
+        else:
+            principal_id = str(selected_grant["principal_id"])
+            now = datetime.now(UTC)
+            with get_session(database_url) as session:
+                selected_membership = session.scalar(
+                    select(AccountUserMembership).where(
+                        AccountUserMembership.principal_id == principal_id,
+                        AccountUserMembership.account_id
+                        == "acct_portal_multi_selected",
+                    )
+                )
+                assert selected_membership is not None
+                allowed_actions = list(selected_membership.allowed_actions_json or [])
+                session.add_all(
+                    [
+                        AccountUserMembership(
+                            membership_id="mem_portal_multi_other",
+                            principal_id=principal_id,
+                            account_id=account_id,
+                            role="owner",
+                            status="active",
+                            allowed_actions_json=allowed_actions,
+                            metadata_json={"source": "legacy_multi_account_fixture"},
+                        ),
+                        PrincipalSiteBinding(
+                            binding_id="psb_portal_multi_other",
+                            principal_id=principal_id,
+                            site_id=site_id,
+                            account_id=account_id,
+                            status="active",
+                            bound_at=now,
+                            released_at=None,
+                            release_reason=None,
+                            metadata_json={"source": "legacy_multi_account_fixture"},
+                        ),
+                    ]
+                )
+                session.commit()
+
+    principal_id = str(selected_grant["principal_id"])
+    session_version = int(selected_grant.get("session_version") or 1)
+    _set_portal_cookie_session(
+        client,
+        principal_id=principal_id,
+        site_id="",
+        session_version=session_version,
+    )
+    unselected_response = client.get("/portal/v1/account/plan-offers")
+    assert unselected_response.status_code == 409
+    assert unselected_response.json()["error_code"] == "portal.account_selection_required"
+
+    captured_account_ids: list[str] = []
+    original_list_account_plan_offers = CommercialService.list_account_plan_offers
+
+    def capture_list_account_plan_offers(
+        service: CommercialService,
+        *,
+        account_id: str,
+    ) -> dict[str, object]:
+        captured_account_ids.append(account_id)
+        return original_list_account_plan_offers(service, account_id=account_id)
+
+    monkeypatch.setattr(
+        CommercialService,
+        "list_account_plan_offers",
+        capture_list_account_plan_offers,
+    )
+    _set_portal_cookie_session(
+        client,
+        principal_id=principal_id,
+        site_id="site_portal_multi_selected",
+        session_version=session_version,
+    )
+
+    selected_response = client.get("/portal/v1/account/plan-offers")
+
+    assert selected_response.status_code == 200, selected_response.text
+    assert captured_account_ids == ["acct_portal_multi_selected"]
+
+    dispose_engine(database_url)
+
+
 def test_portal_session_persists_site_id_longer_than_128_characters(
     tmp_path: Path,
 ) -> None:
