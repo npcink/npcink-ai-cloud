@@ -11,6 +11,8 @@ assert.match(client, /\/sites\/\$\{siteId\}\/customer-journey\/events/);
 assert.match(client, /contract_version: 'customer_journey_event\.v1'/);
 assert.match(journey, /surface: 'portal'/);
 assert.match(journey, /window\.sessionStorage/);
+assert.match(journey, /crypto\.getRandomValues/);
+assert.equal(journey.includes('Math.random'), false);
 assert.match(journey, /catch \{/);
 assert.match(boundary, /'login', 'succeeded'/);
 assert.match(connect, /'site_connect',\s*'succeeded'/);

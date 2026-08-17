@@ -7,9 +7,13 @@ const SESSION_ID_KEY = 'npcink.portal.journey.session.v1';
 const SENT_PREFIX = 'npcink.portal.journey.sent.v1';
 
 function opaqueId(prefix: string): string {
-  const randomValue = globalThis.crypto?.randomUUID?.()
-    || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-  return `${prefix}_${randomValue.replaceAll('-', '')}`;
+  const randomBytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(randomBytes);
+  const randomValue = Array.from(
+    randomBytes,
+    (value) => value.toString(16).padStart(2, '0')
+  ).join('');
+  return `${prefix}_${randomValue}`;
 }
 
 function sessionId(): string {
