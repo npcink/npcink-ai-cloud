@@ -11,6 +11,7 @@ on:
         options:
           - "disk-report"
           - "certificate-readiness"
+          - "ownership-inventory"
           - "safe-prune"
       release_retention_count:
         description: "Number of release-* directories to keep when pruning old releases."
@@ -27,10 +28,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ownership-inventory:
+    name: Production ownership inventory
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/production' && inputs.action == 'ownership-inventory'
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Install SSH key
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "${PROD_SSH_KEY}"
+          test -n "${PROD_SSH_HOST}"
+          test -n "${PROD_SSH_KNOWN_HOSTS}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "${PROD_SSH_KEY}" > ~/.ssh/npcink_prod_maintenance_key
+          chmod 600 ~/.ssh/npcink_prod_maintenance_key
+          printf '%s\n' "${PROD_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          known_host_lookup="${PROD_SSH_HOST}"
+          if [ "${PROD_SSH_PORT}" != "22" ]; then
+            known_host_lookup="[${PROD_SSH_HOST}]:${PROD_SSH_PORT}"
+          fi
+          ssh-keygen -F "${known_host_lookup}" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Checkout ownership inventory helper
+        uses: actions/checkout@v6
+
+      - name: Run ownership inventory
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+        run: |
+          set -euo pipefail
+          test "${PROD_SSH_USER}" = "root"
+          NPCINK_CLOUD_DEPLOY_SSH_HOST="${PROD_SSH_HOST}" \
+          NPCINK_CLOUD_DEPLOY_SSH_USER="${PROD_SSH_USER}" \
+          NPCINK_CLOUD_DEPLOY_SSH_PORT="${PROD_SSH_PORT}" \
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE=/home/runner/.ssh/npcink_prod_maintenance_key \
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR="${PROD_REMOTE_DIR}" \
+            bash .github/scripts/production-ownership-inventory-ssh.sh
+
   maintenance:
     name: Production SSH maintenance
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/production'
+    if: github.ref == 'refs/heads/production' && inputs.action != 'ownership-inventory'
     environment: production
     permissions: {}
     steps:
@@ -110,6 +160,7 @@ jobs:
             -o ConnectTimeout=10
           )
           ssh_target="${PROD_SSH_USER}@${PROD_SSH_HOST}"
+
           remote_command="bash -s -- $(remote_shell_arg "${MAINTENANCE_ACTION}") $(remote_shell_arg "${PROD_REMOTE_DIR}") $(remote_shell_arg "${RELEASE_RETENTION_COUNT}")"
 
           ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}" <<'REMOTE'
