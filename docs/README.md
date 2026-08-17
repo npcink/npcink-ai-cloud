@@ -138,7 +138,14 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Image Source AI Generation Handoff](image-source-ai-generation-handoff-v1.md)
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
+- [Customer Journey Metadata](customer-journey-metadata-v1.md) — active
+  metadata-only WordPress and Portal event, consent, retention, summary, and
+  release-evidence contract
 - [Real Editor Cohort Operations](real-editor-cohort-operations-v1.md)
+- [Pre-user Customer Journey Observability Closeout and Development Retrospective — 2026-08-17](pre-user-customer-journey-observability-closeout-and-development-retrospective-2026-08-17.md)
+  — dated Cloud/Add-on/Portal/M4/local evidence, privacy decision, lean
+  single-operator method, and formal-release/human-cohort handoff; not
+  production or recruitment authorization
 - [Real Editor Technical Monitoring Closeout and Development Retrospective — 2026-08-15](real-editor-technical-monitoring-closeout-and-development-retrospective-2026-08-15.md)
   — dated two-site Provider, AI-credit, metadata-only quality, Addon PR `#97`,
   correction, and remaining-observation evidence; not production or human-value
