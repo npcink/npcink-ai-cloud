@@ -400,6 +400,13 @@ async def test_bound_but_unavailable_site_reports_lifecycle_state(
             await _authorize(_build_request(headers), _settings(database_url), loader)
         assert exc_info.value.error_code == expected_error
         assert exc_info.value.status_code == 403
+        if site_status == SITE_STATUS_INACTIVE:
+            assert exc_info.value.data == {
+                "recovery_contract": "cloud_site_activation_recovery.v1",
+                "site_status": SITE_STATUS_INACTIVE,
+                "activation_required": True,
+                "action": "activate_site",
+            }
     finally:
         dispose_engine(database_url)
 

@@ -246,6 +246,7 @@ def _instantiate_connection_adapter(
     ) and image_response_format not in ALLOWED_IMAGE_RESPONSE_FORMATS | {""}:
         return None
     image_output_hosts = _coerce_string_list(config.get("image_output_hosts"))
+    audio_output_hosts = _coerce_string_list(config.get("audio_output_hosts"))
 
     if kind in OPENAI_COMPATIBLE_CONNECTION_KINDS:
         return _with_connection_identity(
@@ -295,6 +296,7 @@ def _instantiate_connection_adapter(
                 ),
                 allow_sample_catalog=allow_sample_fallback,
                 allow_sample_execution=allow_sample_fallback,
+                audio_output_hosts=tuple(audio_output_hosts),
             ),
             provider_id=provider_id,
             display_name=display_name,

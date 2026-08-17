@@ -33,6 +33,7 @@ from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     SITE_API_KEY_STATUS_REVOKED,
     AccountSubscription,
+    CreditLedgerEntry,
     MediaArtifact,
     PlanVersion,
     ProviderCallRecord,
@@ -67,10 +68,12 @@ from app.domain.media_artifacts.store import (
     ArtifactStoreError,
     _LocalVolumePublicationSession,
 )
+from app.domain.runtime.errors import RuntimeQuotaExceededError
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.web_search.service import (
     WebSearchExecutionResult,
+    WebSearchProviderError,
     WebSearchProviderUsage,
     WebSearchService,
 )
@@ -333,6 +336,252 @@ def test_runtime_auto_web_search_enriches_provider_input(
     evidence = provider.requests[0].input_payload["cloud_evidence"]["web_search"]
     assert evidence["report"]["status"] == "ready"
     assert evidence["result"]["results"][0]["url"] == "https://example.com/source"
+    with get_session(database_url) as session:
+        usage_events = session.execute(
+            select(UsageMeterEvent).where(UsageMeterEvent.site_id == "site_alpha")
+        ).scalars().all()
+    search_events = [
+        event
+        for event in usage_events
+        if event.meter_key == "provider_calls"
+        and event.payload_json.get("managed_source") == "web_search"
+    ]
+    assert len(search_events) == 1
+    with get_session(database_url) as session:
+        search_credits = session.execute(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.run_id == response.run_id,
+                CreditLedgerEntry.source_type == "web_search",
+            )
+        ).scalars().all()
+    assert len(search_credits) == 1
+    assert search_credits[0].ai_credit_delta == -5.0
+
+
+def test_runtime_auto_web_search_preserves_zhihu_deepsearch_credit_lane(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    provider = RecordingProviderAdapter()
+    init_schema(database_url)
+    CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+    captured_input: dict[str, Any] = {}
+
+    def fake_search(
+        self: WebSearchService,
+        *,
+        site_id: str,
+        ability_name: str,
+        contract_version: str,
+        input_payload: dict[str, Any],
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        captured_input.update(input_payload)
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "external_web_evidence",
+                "status": "ready",
+                "provider": "zhihu",
+                "intent": "zhida_deepsearch",
+                "query_hash": "hash-only",
+                "query_chars": len(input_payload["query"]),
+                "evidence_gate": {
+                    "status": "passed",
+                    "source_count": 1,
+                    "allows_web_grounded_assertion": True,
+                },
+                "results": [],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="zhihu",
+                model_id="zhida-agent",
+                instance_id="cloud-managed",
+                region="cn",
+                latency_ms=20,
+                cost=0.01,
+            ),
+        )
+
+    monkeypatch.setattr(WebSearchService, "execute", fake_search)
+
+    response = RuntimeService(
+        database_url,
+        settings=Settings(environment="test", database_url=database_url),
+        providers={"openai": provider},
+    ).execute(
+        RuntimeRequest(
+            site_id="site_alpha",
+            ability_name="npcink-abilities-toolkit/build-article-block-plan",
+            ability_family="workflow",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            contract_version="v1",
+            input_payload={
+                "topic": "latest WordPress AI search trends",
+                "search_policy": {
+                    "mode": "required",
+                    "intent": "zhida_deepsearch",
+                    "provider": "zhihu",
+                },
+            },
+        )
+    )
+
+    assert response.status == "succeeded"
+    assert captured_input["intent"] == "zhida_deepsearch"
+    with get_session(database_url) as session:
+        search_events = session.execute(
+            select(UsageMeterEvent).where(
+                UsageMeterEvent.run_id == response.run_id,
+                UsageMeterEvent.meter_key == "provider_calls",
+            )
+        ).scalars().all()
+        search_event = next(
+            event
+            for event in search_events
+            if event.payload_json.get("managed_source") == "web_search"
+        )
+        search_credit = session.execute(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.run_id == response.run_id,
+                CreditLedgerEntry.source_type == "zhihu_direct_answer_deepsearch",
+            )
+        ).scalar_one()
+    assert search_event.payload_json["provider"] == "zhihu"
+    assert search_event.payload_json["source_type"] == "zhida_deepsearch"
+    assert search_event.payload_json["intent"] == "zhida_deepsearch"
+    assert search_credit.ai_credit_delta == -10.0
+
+
+def test_runtime_auto_web_search_is_included_in_budget_preflight(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    provider = RecordingProviderAdapter()
+    init_schema(database_url)
+    CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+        budgets={"max_ai_credits_per_period": 1},
+    )
+
+    def unexpected_search(self: WebSearchService, **kwargs: Any) -> WebSearchExecutionResult:
+        raise AssertionError("budget preflight must run before automatic web search")
+
+    monkeypatch.setattr(WebSearchService, "execute", unexpected_search)
+
+    with pytest.raises(RuntimeQuotaExceededError) as exc_info:
+        RuntimeService(
+            database_url,
+            settings=Settings(environment="test", database_url=database_url),
+            providers={"openai": provider},
+        ).execute(
+            RuntimeRequest(
+                site_id="site_alpha",
+                ability_name="npcink-abilities-toolkit/build-article-block-plan",
+                ability_family="workflow",
+                channel="openapi",
+                execution_kind="text",
+                profile_id="text.balanced",
+                contract_version="v1",
+                input_payload={
+                    "topic": "latest WordPress AI search trends",
+                    "search_policy": {"mode": "auto", "intent": "news"},
+                },
+            )
+        )
+
+    assert exc_info.value.error_code == "commercial.quota_exceeded"
+    assert provider.requests == []
+
+
+def test_runtime_auto_web_search_provider_failure_is_metered_explicitly(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    provider = RecordingProviderAdapter()
+    init_schema(database_url)
+    CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+
+    def failed_search(self: WebSearchService, **kwargs: Any) -> WebSearchExecutionResult:
+        raise WebSearchProviderError(
+            "web_search.upstream_error",
+            "search failed",
+            usage=WebSearchProviderUsage(
+                provider_id="tavily",
+                model_id="web-search",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=31,
+                cost=0.002,
+                error_code="web_search.upstream_error",
+            ),
+        )
+
+    monkeypatch.setattr(WebSearchService, "execute", failed_search)
+
+    response = RuntimeService(
+        database_url,
+        settings=Settings(environment="test", database_url=database_url),
+        providers={"openai": provider},
+    ).execute(
+        RuntimeRequest(
+            site_id="site_alpha",
+            ability_name="npcink-abilities-toolkit/build-article-block-plan",
+            ability_family="workflow",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            contract_version="v1",
+            input_payload={
+                "topic": "latest WordPress AI search trends",
+                "search_policy": {"mode": "auto", "intent": "news"},
+            },
+        )
+    )
+
+    assert response.status == "succeeded"
+    assert response.provider_call_count == 2
+    assert response.result["automatic_web_search"]["status"] == "failed"
+    with get_session(database_url) as session:
+        usage_events = session.execute(
+            select(UsageMeterEvent).where(
+                UsageMeterEvent.run_id == response.run_id,
+                UsageMeterEvent.meter_key == "provider_calls",
+            )
+        ).scalars().all()
+        search_credit = session.execute(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.run_id == response.run_id,
+                CreditLedgerEntry.source_type == "web_search",
+            )
+        ).scalar_one()
+    search_event = next(
+        event
+        for event in usage_events
+        if event.payload_json.get("managed_source") == "web_search"
+    )
+    assert search_event.payload_json["error_code"] == "web_search.upstream_error"
+    assert search_credit.ai_credit_delta == -5.0
 
 
 def test_runtime_auto_web_search_dry_run_does_not_call_search(

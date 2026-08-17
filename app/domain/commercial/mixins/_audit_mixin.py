@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 
 from app.adapters.repositories.commercial_decision_repository import (
     CommercialDecisionRepository,
@@ -67,8 +68,13 @@ class CommercialServiceAuditMixin:
         self.now_factory = now_factory or (lambda: datetime.now(UTC))
         self.settings = settings or get_settings()
 
-    def _serialize_service_audit_event(self, event: ServiceAuditEvent) -> dict[str, object]:
-        return {
+    def _serialize_service_audit_event(
+        self,
+        event: ServiceAuditEvent,
+        *,
+        include_payload: bool = True,
+    ) -> dict[str, object]:
+        serialized: dict[str, object] = {
             "event_id": int(event.id or 0),
             "account_id": event.account_id or "",
             "site_id": event.site_id or "",
@@ -86,9 +92,11 @@ class CommercialServiceAuditMixin:
             "idempotency_key": event.idempotency_key or "",
             "actor_kind": event.actor_kind,
             "actor_ref": event.actor_ref or "",
-            "payload": event.payload_json or {},
             "created_at": self._serialize_datetime(event.created_at),
         }
+        if include_payload:
+            serialized["payload"] = event.payload_json or {}
+        return serialized
 
     def _serialize_commercial_decision_event(
         self,
@@ -551,31 +559,84 @@ class CommercialServiceAuditMixin:
     def list_service_audit_events(
         self,
         *,
+        event_id: int | None = None,
         site_id: str | None = None,
         site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
+        idempotency_key: str | None = None,
+        scope_kind: str | None = None,
+        scope_id: str | None = None,
         limit: int = 50,
+        offset: int = 0,
+        include_payload: bool = False,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialServiceAuditRepository(session)
-            events = repository.list_service_audit_events(
+            query_started_at = perf_counter()
+            total = repository.count_service_audit_events(
+                event_id=event_id,
                 site_id=site_id,
                 site_ids=site_ids,
                 account_id=account_id,
                 event_kind=event_kind,
                 outcome=outcome,
-                limit=limit,
+                idempotency_key=idempotency_key,
+                scope_kind=scope_kind,
+                scope_id=scope_id,
             )
+            events = repository.list_service_audit_events(
+                event_id=event_id,
+                site_id=site_id,
+                site_ids=site_ids,
+                account_id=account_id,
+                event_kind=event_kind,
+                outcome=outcome,
+                idempotency_key=idempotency_key,
+                scope_kind=scope_kind,
+                scope_id=scope_id,
+                limit=limit,
+                offset=offset,
+            )
+            query_duration_ms = max(0.0, (perf_counter() - query_started_at) * 1000)
+            next_offset = offset + len(events)
+            pagination_limit = max(1, limit)
+            last_offset = ((total - 1) // pagination_limit) * pagination_limit if total > 0 else 0
+            is_out_of_range = offset > 0 and offset >= total
             return {
-                "items": [self._serialize_service_audit_event(event) for event in events],
-                "total": len(events),
+                "items": [
+                    self._serialize_service_audit_event(
+                        event,
+                        include_payload=include_payload,
+                    )
+                    for event in events
+                ],
+                "total": total,
                 "filters": {
+                    "event_id": event_id or 0,
                     "site_id": site_id or "",
                     "site_ids": site_ids or [],
                     "account_id": account_id or "",
                     "event_kind": event_kind or "",
                     "outcome": outcome or "",
+                    "idempotency_key": idempotency_key or "",
+                    "scope_kind": scope_kind or "",
+                    "scope_id": scope_id or "",
                 },
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "total": total,
+                    "has_more": next_offset < total,
+                    "next_offset": next_offset if next_offset < total else None,
+                    "last_offset": last_offset,
+                    "is_out_of_range": is_out_of_range,
+                },
+                "generated_at": self._serialize_datetime(self.now_factory()),
+                "diagnostics": {
+                    "returned_count": len(events),
+                    "query_duration_ms": round(query_duration_ms, 3),
+                },
+                "sort": {"created_at": "desc", "event_id": "desc"},
             }

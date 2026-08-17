@@ -50,7 +50,7 @@ export function PortalSiteKnowledgePanel({
   return (
     <PortalSection
       id="site-knowledge"
-      className="scroll-mt-24 space-y-5"
+      className="scroll-mt-24 space-y-4"
       data-portal-site="site-knowledge"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -114,6 +114,7 @@ export function PortalSiteKnowledgePanel({
       {!isLoading && !error && summary && hasKnowledge ? (
         <PortalMetricStrip
           columnsClassName="md:grid-cols-3"
+          variant="header"
           items={[
             {
               label: t('portal.vector_obs.indexed', {}, 'Saved pages'),

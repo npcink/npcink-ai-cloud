@@ -1,91 +1,65 @@
 import { describe, expect, it } from 'vitest';
 import { buildAdminOperatorWatchItems } from '@/lib/admin-operator-signals';
 
-function buildInputs(overrides = {}) {
-	return {
-		runtimeSummary: {
-			queuedRuns: 0,
-			runningRuns: 0,
-			callbackFailed: 0,
-			callbackPending: 0,
-			guardEvents: 0,
-		},
-		expiringSubscriptionsIn7Days: 0,
-		attentionSubscriptionsCount: 0,
-		firstAttentionReason: '',
-		runtimeTelemetry: {
-			status: 'inactive',
-			alertCount: 0,
-			firstAlertTitle: '',
-			firstAlertSummary: '',
-			summary: '',
-		},
-		formatValue: (value: number) => String(value),
-		copy: {
-			callbackTitle: 'Callback failures',
-			callbackReason: 'Callbacks failed.',
-			guardTitle: 'Guard events',
-			guardReason: 'Guard events are active.',
-			expiryTitle: 'Expiring subscriptions',
-			expiryReason: 'Subscriptions are expiring.',
-			attentionTitle: 'Coverage attention',
-			attentionFallbackReason: 'Coverage needs attention.',
-			runtimeTelemetryTitle: 'Runtime telemetry needs review',
-			runtimeTelemetryReason: 'Runtime telemetry coverage needs review.',
-		},
-		...overrides,
-	};
-}
+describe('buildAdminOperatorWatchItems', () => {
+  it('preserves backend order and severity without recalculating operator policy', () => {
+    const items = buildAdminOperatorWatchItems({
+      items: [
+        {
+          code: 'commercial_subscription_attention',
+          scope: 'commercial.subscription',
+          severity: 'action_needed',
+          value: 1,
+          detailCode: 'commercial_subscription_attention',
+          detailArgs: {},
+        },
+        {
+          code: 'runtime_telemetry',
+          scope: 'runtime.telemetry_coverage',
+          severity: 'warn',
+          value: 2,
+          detailCode: 'runtime_telemetry',
+          detailArgs: { alert_code: 'hosted_model.provider_call_gap' },
+        },
+      ],
+      formatValue: (value) => `#${value}`,
+      localize: (item) => ({ title: `title:${item.code}`, reason: `reason:${item.detailCode}` }),
+    });
 
-describe( 'buildAdminOperatorWatchItems', () => {
-	it( 'places runtime telemetry errors beside the highest operator risks', () => {
-		const items = buildAdminOperatorWatchItems(
-			buildInputs( {
-				attentionSubscriptionsCount: 1,
-				firstAttentionReason: 'Billing follow-up is active.',
-				runtimeTelemetry: {
-					status: 'error',
-					alertCount: 2,
-					firstAlertTitle: 'Runtime metering gap',
-					firstAlertSummary: 'Image and vector runs are missing metering.',
-					summary: 'Runtime telemetry has gaps.',
-				},
-			} )
-		);
+    expect(items.map((item) => item.scope)).toEqual([
+      'commercial.subscription',
+      'runtime.telemetry_coverage',
+    ]);
+    expect(items[0]).toMatchObject({
+      severity: 'action-needed',
+      value: '#1',
+      title: 'title:commercial_subscription_attention',
+    });
+    expect(items[1]).toMatchObject({ severity: 'warn', value: '#2' });
+  });
 
-		expect( items.map( ( item ) => item.scope ) ).toEqual( [
-			'runtime.telemetry_coverage',
-			'commercial.subscription',
-		] );
-		expect( items[0] ).toMatchObject( {
-			severity: 'action-needed',
-			value: '2',
-			title: 'Runtime metering gap',
-		} );
-	} );
+  it('renders an unavailable backend value without inventing a numeric signal', () => {
+    const items = buildAdminOperatorWatchItems({
+      items: [
+        {
+          code: 'operational_readiness_unknown',
+          scope: 'runtime.operational_readiness',
+          severity: 'warn',
+          value: null,
+          detailCode: 'operational_readiness_unknown',
+          detailArgs: {},
+        },
+      ],
+      formatValue: String,
+      localize: () => ({ title: 'Readiness unknown', reason: 'Evidence unavailable.' }),
+    });
 
-	it( 'keeps runtime telemetry warnings in the main queue ahead of expiry-only work', () => {
-		const items = buildAdminOperatorWatchItems(
-			buildInputs( {
-				expiringSubscriptionsIn7Days: 1,
-				runtimeTelemetry: {
-					status: 'warning',
-					alertCount: 1,
-					firstAlertTitle: 'Provider call coverage gap',
-					firstAlertSummary: 'Some runtime runs do not have provider telemetry.',
-					summary: 'Runtime telemetry has coverage gaps.',
-				},
-			} )
-		);
-
-		expect( items.map( ( item ) => item.scope ) ).toEqual( [
-			'runtime.telemetry_coverage',
-			'commercial.subscription',
-		] );
-		expect( items[0] ).toMatchObject( {
-			severity: 'warn',
-			value: '1',
-			reason: 'Some runtime runs do not have provider telemetry.',
-		} );
-	} );
-} );
+    expect(items[0]).toEqual({
+      title: 'Readiness unknown',
+      scope: 'runtime.operational_readiness',
+      severity: 'warn',
+      reason: 'Evidence unavailable.',
+      value: '?',
+    });
+  });
+});

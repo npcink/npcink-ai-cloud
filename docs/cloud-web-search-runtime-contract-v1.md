@@ -365,6 +365,16 @@ Supported input controls:
 - `required`: run search and fail the runtime request if search fails.
 - `dry_run`: report that search would run, but do not call a provider.
 
+Automatic search participates in the same AI-credit preflight as the hosted
+model request. A non-dry-run plan reserves the declared search provider's
+component rate, or the generic Web Search rate when provider selection remains
+automatic. A realized search Provider call records its own `provider_calls`
+usage event and AI-credit ledger component with
+`managed_source=web_search`; this remains separate from the downstream model
+call. Provider-specific components such as Zhihu direct-answer modes retain
+their more specific rate and source type. Dry-run and contract failures before
+a Provider call do not create search usage or credit consumption.
+
 The search query is resolved from `search_policy.query`, `search_query`,
 `query`, `topic`, `title`, or `headline`, in that order.
 

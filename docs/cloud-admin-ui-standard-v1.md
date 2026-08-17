@@ -383,6 +383,7 @@ Prefer these shared surfaces:
   `BackofficeDiagnosticNotice`;
 - `AdminDataTableFrame`;
 - `AdminActionMenu` for collision-aware, keyboard-accessible low-frequency row actions;
+- `AdminCommandDialog` for the global quick-switcher dialog shell;
 - `AdminConfigurationTable`;
 - `AdminWorkbenchDialog`;
 - `AdminCredentialField`;

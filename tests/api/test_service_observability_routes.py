@@ -347,7 +347,7 @@ def test_service_routes_cleanup_retention_and_record_audit(tmp_path: Path) -> No
         assert run.result_json is None
 
     audit_response = client.get(
-        "/internal/service/audit-events?event_kind=runtime.retention_cleanup&limit=5",
+        "/internal/service/audit-events?event_kind=runtime.retention_cleanup&limit=5&include_payload=true",
         headers=build_internal_headers(),
     )
     assert audit_response.status_code == 200

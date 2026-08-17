@@ -4,6 +4,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import type {
+  ProviderConnectionDeletePreflight,
   ProviderConnectionTestResult,
   ResourceStatus,
   SupplierConnection,
@@ -118,9 +119,11 @@ type SharedTableProps = {
   testingConnectionId: string;
   approvingImageHostConnectionId: string;
   deletingConnectionId: string;
+  preflightingDeleteConnectionId: string;
   confirmingDeleteConnectionId: string;
+  deletePreflight: ProviderConnectionDeletePreflight | null;
   onDelete: (connection: SupplierConnection) => void;
-  onRequestDelete: (connectionId: string) => void;
+  onRequestDelete: (connection: SupplierConnection) => void;
   onCancelDelete: () => void;
   providerTestStageLabel: (stage: string) => string;
   providerTestMessage: (result: ProviderConnectionTestResult) => string;
@@ -144,7 +147,7 @@ type SupplierMoreActionsProps = {
   providerLinks: ReferenceLinkItem[];
   isDeleting: boolean;
   onSelectConnection: () => void;
-  onRequestDelete: (connectionId: string) => void;
+  onRequestDelete: (connection: SupplierConnection) => void;
   translate: Translate;
 };
 
@@ -170,7 +173,7 @@ function SupplierMoreActions({
       disabled: isDeleting,
       onSelect: () => {
         onSelectConnection();
-        onRequestDelete(connection.connection_id);
+        onRequestDelete(connection);
       },
     });
   }
@@ -194,7 +197,9 @@ export function ModelSupplierTable({
   testingConnectionId,
   approvingImageHostConnectionId,
   deletingConnectionId,
+  preflightingDeleteConnectionId,
   confirmingDeleteConnectionId,
+  deletePreflight,
   providerKindLabel,
   providerTestStageLabel,
   providerTestMessage,
@@ -247,7 +252,11 @@ export function ModelSupplierTable({
               const isTesting = testingConnectionId === connection.connection_id;
               const isApprovingImageHost = approvingImageHostConnectionId === connection.connection_id;
               const isDeleting = deletingConnectionId === connection.connection_id;
+              const isPreflightingDelete = preflightingDeleteConnectionId === connection.connection_id;
               const isConfirmingDelete = confirmingDeleteConnectionId === connection.connection_id;
+              const matchingDeletePreflight = deletePreflight?.connection.connection_id === connection.connection_id
+                ? deletePreflight
+                : null;
               const providerLinks = referenceLinksForConnection(connection);
               const imageDeliveryRepair = connection.image_delivery_repair;
               const hasPendingImageHostRepair = imageDeliveryRepair?.status === 'pending'
@@ -256,7 +265,13 @@ export function ModelSupplierTable({
                   imageDeliveryRepair.detected_host
                   && (imageDeliveryRepair.run_id || imageDeliveryRepair.probe_id)
                 );
-              const hasFeedback = Boolean(testResult || connection.last_error_code || isConfirmingDelete || hasPendingImageHostRepair);
+              const hasFeedback = Boolean(
+                testResult ||
+                connection.last_error_code ||
+                isPreflightingDelete ||
+                isConfirmingDelete ||
+                hasPendingImageHostRepair
+              );
               const selectConnection = () => onSelectConnection(connection.connection_id);
               return (
                 <Fragment key={connection.connection_id}>
@@ -316,7 +331,7 @@ export function ModelSupplierTable({
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"
-                          disabled={isDeleting}
+                          disabled={isDeleting || isPreflightingDelete}
                           onClick={() => {
                             selectConnection();
                             onConfigure(connection);
@@ -328,7 +343,7 @@ export function ModelSupplierTable({
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"
-                            disabled={isTesting || isDeleting}
+                            disabled={isTesting || isDeleting || isPreflightingDelete}
                             onClick={() => {
                               selectConnection();
                               onTest(connection.connection_id);
@@ -340,7 +355,7 @@ export function ModelSupplierTable({
                         <SupplierMoreActions
                           connection={connection}
                           providerLinks={providerLinks}
-                          isDeleting={isDeleting}
+                          isDeleting={isDeleting || isPreflightingDelete}
                           onSelectConnection={selectConnection}
                           onRequestDelete={onRequestDelete}
                           translate={translate}
@@ -383,13 +398,45 @@ export function ModelSupplierTable({
                             </button>
                           </div>
                         ) : null}
+                        {isPreflightingDelete ? (
+                          <p role="status" data-ui="provider-delete-preflight-loading" className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+                            {translate('delete_preflight_loading', 'Checking the current deletion impact...')}
+                          </p>
+                        ) : null}
                         {isConfirmingDelete ? (
                           <div role="alert" className="flex flex-wrap items-center justify-between gap-3 text-xs text-rose-800 dark:text-rose-200">
-                            <span>
-                              {translate('delete_confirmation_notice', 'Deleting {{name}} removes this runtime connection. Existing model bindings may stop resolving.', { name: connection.display_name })}
+                            <span className="max-w-3xl leading-5">
+                              {matchingDeletePreflight ? (
+                                <>
+                                  {translate(
+                                    'delete_preflight_impact',
+                                    'Deleting {{name}} affects {{models}} models and {{profiles}} runtime profiles.',
+                                    {
+                                      name: connection.display_name,
+                                      models: String(matchingDeletePreflight.impact.model_count),
+                                      profiles: String(matchingDeletePreflight.impact.runtime_profile_ids.length),
+                                    }
+                                  )}
+                                  {' '}
+                                  {matchingDeletePreflight.impact.uncovered_runtime_profile_ids.length
+                                    ? translate(
+                                        'delete_preflight_uncovered_profiles',
+                                        'No ready alternative covers: {{profiles}}.',
+                                        { profiles: matchingDeletePreflight.impact.uncovered_runtime_profile_ids.join(', ') }
+                                      )
+                                    : translate(
+                                        'delete_preflight_profiles_covered',
+                                        'Ready alternatives cover all affected runtime profiles.'
+                                      )}
+                                </>
+                              ) : translate(
+                                'delete_confirmation_notice',
+                                'Deleting {{name}} removes this runtime connection. Existing model bindings may stop resolving.',
+                                { name: connection.display_name }
+                              )}
                             </span>
                             <span className="flex gap-2">
-                              <button type="button" className={TABLE_CONFIRM_DELETE_BUTTON_CLASS} disabled={isDeleting} onClick={() => onDelete(connection)}>
+                              <button type="button" className={TABLE_CONFIRM_DELETE_BUTTON_CLASS} disabled={isDeleting || !matchingDeletePreflight} onClick={() => onDelete(connection)}>
                                 {isDeleting ? translate('deleting', 'Deleting...') : translate('action_confirm_delete', 'Confirm delete')}
                               </button>
                               <button type="button" className={TABLE_ACTION_BUTTON_CLASS} disabled={isDeleting} onClick={onCancelDelete}>

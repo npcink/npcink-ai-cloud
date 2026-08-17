@@ -51,6 +51,17 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   await expect(page.getByText(/Commercial operation completed|商业操作已完成|商業操作已完成/i)).toHaveCount(0, {
     timeout: 10_000,
   });
+  const nextDevToolsButton = page.getByRole('button', { name: 'Open Next.js Dev Tools' });
+  if (await nextDevToolsButton.count()) {
+    await nextDevToolsButton.evaluate((element) => {
+      const rootNode = element.getRootNode();
+      if (rootNode instanceof ShadowRoot) {
+        (rootNode.host as HTMLElement).style.display = 'none';
+        return;
+      }
+      element.style.display = 'none';
+    });
+  }
   await expect(page).toHaveScreenshot(
     'admin-customer-detail-credits-pc.png',
     { animations: 'disabled' }

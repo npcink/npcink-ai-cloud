@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
-import sys
 from argparse import Namespace
 from pathlib import Path
 
@@ -149,6 +147,7 @@ def test_receipt_requires_current_successful_verification(monkeypatch) -> None:
             "documents": [],
             "domains": ["engineering_validation_tooling"],
             "followups": [],
+            "runtime_lane": "github-actions",
         },
         "verification_runs": [
             {
@@ -165,6 +164,7 @@ def test_receipt_requires_current_successful_verification(monkeypatch) -> None:
 
     assert receipt["verification_current"] is True
     assert receipt["highest_evidence_state"] == "local verified"
+    assert receipt["runtime_lane"] == "github-actions"
     assert "AI_TASK_RECEIPT" in module.receipt_markdown(receipt)
 
 
@@ -180,6 +180,7 @@ def test_tampered_saved_command_is_rejected(monkeypatch) -> None:
         "commands": [["python3", "-m", "compileall", "scripts"]],
         "specialized_commands": [],
         "followups": [],
+        "runtime_lane": "github-actions",
     }
     envelope = {
         "base_ref": "origin/master",
@@ -234,11 +235,22 @@ def test_negative_resource_budget_is_rejected(tmp_path: Path, monkeypatch) -> No
         raise AssertionError("negative budget did not fail closed")
 
 
-def test_pnpm_style_separator_is_parsed_before_worktree_guard(tmp_path: Path) -> None:
+def test_pnpm_style_separator_is_parsed_before_task_planning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_module()
     output = tmp_path / "pnpm-envelope.json"
-    completed = subprocess.run(
+    captured: dict[str, object] = {}
+
+    def fake_create_envelope(args):
+        captured["args"] = args
+        return output, {"plan": {"tier": "L2"}}
+
+    monkeypatch.setattr(module, "create_envelope", fake_create_envelope)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
         [
-            sys.executable,
             str(SCRIPT),
             "plan",
             "--",
@@ -252,14 +264,35 @@ def test_pnpm_style_separator_is_parsed_before_worktree_guard(tmp_path: Path) ->
             str(output),
             "app/domain/agent_feedback/service.py",
         ],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
     )
 
-    assert completed.returncode != 0
-    assert "codex/* branch" in completed.stderr
-    assert "codex/* branch" in completed.stderr
-    assert "unrecognized arguments" not in completed.stderr
-    assert not output.exists()
+    assert module.main() == 0
+    args = captured["args"]
+    assert args.task_id == "pnpm-contract"
+    assert args.paths == ["app/domain/agent_feedback/service.py"]
+
+
+def test_successful_verification_is_reusable_only_for_exact_identity() -> None:
+    module = _load_module()
+    commands = [["python3", "-m", "pytest", "tests/contract/test_ai_task_contract.py"]]
+    envelope = {
+        "base_revision": "base-sha",
+        "verification_runs": [
+            {
+                "status": "passed",
+                "base_revision": "base-sha",
+                "source_fingerprint_after": "source-sha",
+                "commands": [{"command": commands[0], "status": "passed"}],
+            }
+        ],
+    }
+
+    assert module.reusable_verification(
+        envelope, {"commands": commands}, "source-sha"
+    ) is not None
+    assert module.reusable_verification(
+        envelope, {"commands": commands}, "changed-source"
+    ) is None
+    assert module.reusable_verification(
+        envelope, {"commands": [["python3", "--version"]]}, "source-sha"
+    ) is None

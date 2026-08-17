@@ -6,6 +6,7 @@ import {
 
 test('admin overview keeps canonical work destinations primary and evidence collapsed', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
   await page.goto('/admin');
 
@@ -13,6 +14,8 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   await expect(page.getByLabel(
     /2 formal readiness checks failed across workers, operations cadence|正式运营就绪检查有 2 项失败.*工作进程.*运维定时任务/i
   )).toBeVisible();
+  await expect(page.getByText(/Provider call coverage gap|供应商调用遥测缺口/i).first()).toBeVisible();
+  await expect(page.getByText(/Attention subscriptions already need review|Attention 订阅已经需要审查/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toHaveAttribute(
     'href',
     '/admin/troubleshooting'

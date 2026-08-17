@@ -5,10 +5,10 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
-  PortalPrimaryPanel,
   PortalSection,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
+import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import {
@@ -139,8 +139,8 @@ function AccountPageContent() {
         )
       );
       setMessage(t('portal.account.qq_unbound', undefined, 'QQ quick login has been unbound. Sign in again.'));
-      await refresh();
       setStatus('idle');
+      window.location.assign('/portal/login?reason=qq_unbound');
     } catch (error) {
       setStatus('error');
       setMessage(
@@ -251,7 +251,7 @@ function AccountPageContent() {
 
   return (
     <PortalPageStack>
-      <PortalPrimaryPanel
+      <PortalWorkspaceHeader
         eyebrow={t('portal.account.settings_eyebrow', undefined, 'Account settings')}
         title={t('portal.account.title', undefined, 'Contact')}
         description={t(
@@ -259,6 +259,12 @@ function AccountPageContent() {
           undefined,
           'Manage the email used for verification codes and optional quick login.'
         )}
+        currentPage="account"
+        actions={
+          <Link href="/portal/audit" className="btn btn-secondary btn-sm">
+            {t('portal.audit.nav_label', undefined, 'Recent activity')}
+          </Link>
+        }
       />
 
       {message ? (
@@ -300,15 +306,39 @@ function AccountPageContent() {
                   />
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
+                  {t(
+                    'portal.account.email_login_desc',
+                    undefined,
+                    'Sign in with a verification code sent to the contact email shown on this page.'
+                  )}
                 </p>
               </div>
-              <Link href="/portal/audit" className="btn btn-secondary">
-                {t('portal.audit.nav_label', undefined, 'Recent activity')}
-              </Link>
             </div>
           </PortalCard>
 
+          {!qqProvider?.configured && !qqProvider?.bound ? (
+            <details className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+                <span>
+                  <span className="block text-sm font-semibold text-slate-950 dark:text-white">
+                    {t('portal.account.other_login_methods_title', undefined, 'Other sign-in methods')}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    {t('portal.account.qq_unavailable_short', undefined, 'QQ quick login is not available in the current environment.')}
+                  </span>
+                </span>
+                <span aria-hidden="true" className="text-slate-400">⌄</span>
+              </summary>
+              <div className="mt-4 border-t border-slate-200/80 pt-4 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                <p className="font-semibold text-slate-950 dark:text-white">
+                  {t('portal.account.qq_login_title', undefined, 'QQ quick login')}
+                </p>
+                <p className="mt-1">
+                  {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}
+                </p>
+              </div>
+            </details>
+          ) : (
           <PortalCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -336,6 +366,11 @@ function AccountPageContent() {
                     ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
                     : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')}
                 </p>
+                {qqProvider?.bound && qqProvider.binding?.display_name ? (
+                  <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
+                    {t('portal.account.qq_bound_as', undefined, '绑定账号')}: {qqProvider.binding.display_name}
+                  </p>
+                ) : null}
                 {!qqProvider?.configured ? (
                   <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
                     {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}
@@ -376,6 +411,7 @@ function AccountPageContent() {
               </div>
             </div>
           </PortalCard>
+          )}
         </PortalSection>
 
         <div data-portal-account="contact-info">

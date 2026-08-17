@@ -173,6 +173,7 @@ def create_envelope(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         "budgets": budgets,
         "plan": plan,
         "verification_runs": [],
+        "verification_reuses": [],
     }
     output = Path(args.output).resolve() if args.output else default_envelope_path(task_id)
     write_json(output, payload)
@@ -208,6 +209,7 @@ def rebuild_and_validate_plan(
         "documents",
         "commands",
         "specialized_commands",
+        "runtime_lane",
         "followups",
     ):
         if current_plan[key] != envelope["plan"].get(key):
@@ -215,6 +217,25 @@ def rebuild_and_validate_plan(
                 f"[fail] task plan definition changed at {key}; regenerate it before verification"
             )
     return current_plan
+
+
+def reusable_verification(
+    envelope: dict[str, Any], current_plan: dict[str, Any], current_fingerprint: str
+) -> dict[str, Any] | None:
+    """Return the latest successful run only for an exact plan/source identity."""
+    runs = envelope.get("verification_runs", [])
+    if not runs:
+        return None
+    latest = runs[-1]
+    if (
+        latest.get("status") == "passed"
+        and latest.get("base_revision") == envelope.get("base_revision")
+        and latest.get("source_fingerprint_after") == current_fingerprint
+        and [item.get("command") for item in latest.get("commands", [])]
+        == current_plan.get("commands")
+    ):
+        return latest
+    return None
 
 
 def plan_source_is_current(envelope: dict[str, Any]) -> bool:
@@ -229,18 +250,37 @@ def plan_source_is_current(envelope: dict[str, Any]) -> bool:
         return False
 
 
-def verify_envelope(path: Path) -> int:
+def verify_envelope(path: Path, *, reuse_current_evidence: bool = False) -> int:
     envelope = read_envelope(path)
     python_bin = os.environ.get(
         "NPCINK_CLOUD_PYTHON_BIN", str(ROOT / ".venv" / "bin" / "python")
     )
     current_plan = rebuild_and_validate_plan(envelope, python_bin)
+    current_fingerprint = source_fingerprint(envelope["plan"]["paths"])
+    if reuse_current_evidence:
+        reusable = reusable_verification(envelope, current_plan, current_fingerprint)
+        if reusable:
+            event = {
+                "reused_at": now_iso(),
+                "base_revision": envelope["base_revision"],
+                "source_fingerprint": current_fingerprint,
+                "verification_started_at": reusable.get("started_at"),
+                "reason": "base revision, source fingerprint, and command plan are unchanged",
+            }
+            envelope.setdefault("verification_reuses", []).append(event)
+            envelope["updated_at"] = now_iso()
+            write_json(path, envelope)
+            print(
+                "[reuse] current successful verification retained; "
+                "caller confirmed the environment and risk question are unchanged"
+            )
+            return 0
     state_before = repository_state()
     run: dict[str, Any] = {
         "started_at": now_iso(),
         "base_revision": envelope["base_revision"],
         "source_state_before": state_before,
-        "source_fingerprint_before": source_fingerprint(envelope["plan"]["paths"]),
+        "source_fingerprint_before": current_fingerprint,
         "commands": [],
         "status": "running",
     }
@@ -306,8 +346,14 @@ def receipt_payload(envelope: dict[str, Any]) -> dict[str, Any]:
         "expected_files": envelope["change"]["expected_files"],
         "documents": envelope["plan"]["documents"],
         "domains": envelope["plan"]["domains"],
+        "runtime_lane": envelope["plan"].get("runtime_lane", "unclassified"),
         "budgets": envelope["budgets"],
         "latest_verification": latest,
+        "latest_verification_reuse": (
+            envelope.get("verification_reuses", [])[-1]
+            if envelope.get("verification_reuses")
+            else None
+        ),
         "verification_current": verification_current,
         "plan_current": plan_current,
         "highest_evidence_state": highest_state,
@@ -332,6 +378,7 @@ def receipt_markdown(receipt: dict[str, Any]) -> str:
             f"- task: {receipt['task_id']}",
             f"- module: {receipt['focused_module']}",
             f"- tier: {receipt['tier']}",
+            f"- runtime lane: {receipt['runtime_lane']}",
             "- source: "
             f"{receipt['current_source_state']['head']} "
             f"({receipt['current_source_state']['branch']})",
@@ -372,6 +419,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     verify = subparsers.add_parser("verify", help="run and record the planned local gates")
     verify.add_argument("envelope", type=Path)
+    verify.add_argument(
+        "--reuse-current-evidence",
+        action="store_true",
+        help=(
+            "reuse the latest successful run only when the base revision, source "
+            "fingerprint, and command plan are unchanged; the caller remains responsible "
+            "for confirming the environment and risk question are unchanged"
+        ),
+    )
 
     receipt = subparsers.add_parser("receipt", help="render a closeout receipt")
     receipt.add_argument("envelope", type=Path)
@@ -391,7 +447,10 @@ def main() -> int:
         print(json.dumps(payload["plan"], ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     if args.command == "verify":
-        return verify_envelope(args.envelope.resolve())
+        return verify_envelope(
+            args.envelope.resolve(),
+            reuse_current_evidence=args.reuse_current_evidence,
+        )
     envelope = read_envelope(args.envelope.resolve())
     receipt = receipt_payload(envelope)
     rendered = (

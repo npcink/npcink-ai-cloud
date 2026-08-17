@@ -1521,7 +1521,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         )
 
     audit_response = client.get(
-        "/internal/service/audit-events?site_id=site_primary-example-com&limit=20",
+        "/internal/service/audit-events?site_id=site_primary-example-com&limit=20&include_payload=true",
         headers=build_internal_headers(),
     )
     assert audit_response.status_code == 200
@@ -2754,7 +2754,7 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
         },
         headers=build_internal_headers(idempotency_key="portal-ai-site-001"),
     )
-    _grant_account_member_access(
+    grant = _grant_account_member_access(
         client,
         site_id="site_portal_ai",
         email="portal-admin@example.com",
@@ -2817,6 +2817,15 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert len(provider.requests) == 1
     assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
 
+    replayed = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": False},
+        headers=build_portal_headers(idempotency_key="portal-ai-analyze-001"),
+    )
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.json() == first.json()
+    assert len(provider.requests) == 1
+
     second = client.post(
         "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
         json={"force_refresh": False},
@@ -2849,6 +2858,46 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert "tokens_out" not in history_serialized
     assert '"cost":' not in history_serialized
     assert '"cache_key":' not in history_serialized
+
+    forced = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": True},
+        headers=build_portal_headers(idempotency_key="portal-ai-force-001"),
+    )
+    assert forced.status_code == 200, forced.text
+    assert len(provider.requests) == 2
+
+    force_limited = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": True},
+        headers=build_portal_headers(idempotency_key="portal-ai-force-002"),
+    )
+    assert force_limited.status_code == 429
+    assert force_limited.json()["error_code"] == (
+        "portal.ai_insight_force_refresh_limited"
+    )
+    assert int(force_limited.headers["retry-after"]) > 0
+    assert len(provider.requests) == 2
+
+    with get_session(database_url) as session:
+        membership = session.scalar(
+            select(AccountUserMembership).where(
+                AccountUserMembership.principal_id == str(grant["principal_id"]),
+                AccountUserMembership.account_id == "acct_portal_ai",
+            )
+        )
+        assert membership is not None
+        membership.allowed_actions_json = ["view_sites"]
+        session.commit()
+
+    revoked_replay = client.post(
+        "/portal/v1/sites/site_portal_ai/ai-insights/analyze",
+        json={"force_refresh": False},
+        headers=build_portal_headers(idempotency_key="portal-ai-analyze-001"),
+    )
+    assert revoked_replay.status_code == 403
+    assert revoked_replay.json()["error_code"] == "service.portal_action_forbidden"
+    assert len(provider.requests) == 2
 
     dispose_engine(database_url)
 
@@ -4114,6 +4163,13 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
 
     monkeypatch.setattr(portal_routes, "_exchange_qq_code", fake_exchange_qq_code)
     monkeypatch.setattr(portal_routes, "_fetch_qq_openid", fake_fetch_qq_openid)
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {
+            "display_name": "  Portal   QQ User  ",
+        },
+    )
 
     client.post(
         "/internal/service/accounts",
@@ -4181,11 +4237,13 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         "provider",
         "status",
         "has_unionid",
+        "display_name",
         "last_login_at",
     }
     assert bind_data["binding"]["provider"] == "qq"
     assert bind_data["binding"]["status"] == "active"
     assert bind_data["binding"]["has_unionid"] is True
+    assert bind_data["binding"]["display_name"] == "Portal QQ User"
     bound_provider_response = client.get("/portal/v1/auth/identity-providers")
     assert bound_provider_response.status_code == 200, bound_provider_response.text
     bound_provider_payload = bound_provider_response.json()["data"]
@@ -4194,6 +4252,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
     assert bound_provider_data["bound"] is True
     assert bound_provider_data["binding"]["provider"] == "qq"
     assert bound_provider_data["binding"]["status"] == "active"
+    assert bound_provider_data["binding"]["display_name"] == "Portal QQ User"
 
     with get_session(database_url) as session:
         binding = session.scalar(select(IdentityProviderBinding))
@@ -4202,6 +4261,9 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         assert binding.provider == "qq"
         assert binding.external_subject_hash != "qq-openid-001"
         assert binding.unionid_hash != "qq-union-001"
+        assert binding.metadata_json["profile"]["display_name"] == (
+            "  Portal   QQ User  "
+        )
 
     logout_response = client.post("/portal/v1/logout")
     assert logout_response.status_code == 200
@@ -4246,6 +4308,11 @@ def test_portal_qq_callback_bind_intent_binds_current_session(
             "openid": "qq-openid-callback-bind",
             "unionid": "qq-union-callback-bind",
         },
+    )
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {},
     )
 
     client.post(
@@ -4485,6 +4552,24 @@ def test_portal_qq_bind_rejects_nonce_mismatch(
     assert bind_response.json()["error_code"] == "service.portal_oauth_nonce_invalid"
 
     dispose_engine(database_url)
+
+
+def test_portal_qq_optional_profile_parse_failure_falls_back(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: (_ for _ in ()).throw(
+            ValueError("malformed QQ profile")
+        ),
+    )
+
+    assert portal_routes._try_fetch_qq_profile(
+        object(),
+        access_token="token-malformed-profile",
+        openid="qq-openid-malformed-profile",
+    ) == {}
 
 
 def test_portal_qq_unbind_revokes_current_session(
@@ -5273,12 +5358,12 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         state="portal-pro-trial-addon-state",
         idempotency_key="portal-pro-trial-addon-001",
     )
-    site_id = str(addon_exchange["site_id"])
+    assert str(addon_exchange["site_id"])
     assert addon_exchange["free_entitlement_activated"] is True
 
     offers_response = client.get(
         "/portal/v1/account/plan-offers",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert offers_response.status_code == 200, offers_response.text
     _assert_no_portal_commercial_internal_fields(offers_response.json()["data"])
@@ -5313,7 +5398,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         json={"tier_id": "pro"},
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-trial-start-001",
         ),
     )
@@ -5328,12 +5413,11 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     )
     trial_session = trial_data["session"]
     _assert_strict_portal_session(trial_session)
-    assert trial_session["selected_context"]["site"]["site_id"] == site_id
-    assert trial_session["selected_context"]["current_subscription"]["plan_id"] == "pro"
+    assert trial_session["selected_context"] is None
 
     active_offers_response = client.get(
         "/portal/v1/account/plan-offers",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert active_offers_response.status_code == 200, active_offers_response.text
     active_trial = active_offers_response.json()["data"]["trial"]
@@ -5347,7 +5431,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         json={"offer_id": "pro_monthly_v1", "provider": "alipay"},
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-monthly-order-001",
         ),
     )
@@ -5364,7 +5448,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
 
     payment_orders_response = client.get(
         "/portal/v1/account/payment-orders?limit=10",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert payment_orders_response.status_code == 200, payment_orders_response.text
     payment_orders_data = payment_orders_response.json()["data"]
@@ -5387,14 +5471,14 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert listed_order["amount"] == 29.0
     assert listed_order["currency"] == "CNY"
     assert listed_order["purchase_kind"] == "subscription_plan"
-    assert listed_order["site_id"] == site_id
+    assert listed_order["site_id"] == ""
     assert listed_order["status"] == "pending"
     assert listed_order["target_tier_id"] == "pro"
     assert listed_order["expires_at"]
 
     order_detail_response = client.get(
         f"/portal/v1/account/payment-orders/{order['order_id']}",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert order_detail_response.status_code == 200, order_detail_response.text
     order_detail = order_detail_response.json()["data"]
@@ -5408,7 +5492,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         f"{order_payload['subscription_order']['subscription_order_id']}",
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-monthly-order-cancel-001",
         ),
     )
@@ -5420,7 +5504,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
 
     closed_orders_response = client.get(
         "/portal/v1/account/payment-orders?status_group=closed&limit=10",
-        headers=build_portal_headers(principal_id=principal_id, site_id=site_id),
+        headers=build_portal_headers(principal_id=principal_id, site_id=""),
     )
     assert closed_orders_response.status_code == 200, closed_orders_response.text
     closed_orders_data = closed_orders_response.json()["data"]
@@ -5438,7 +5522,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         "/portal/v1/account/free-downgrade",
         headers=build_portal_headers(
             principal_id=principal_id,
-            site_id=site_id,
+            site_id="",
             idempotency_key="portal-pro-free-downgrade-001",
         ),
     )
@@ -6230,6 +6314,7 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
                     "manage_billing",
                     "provision_sites",
                     "remove_sites",
+                    "run_ai_insights",
                     "view_audit",
                     "view_billing",
                     "view_sites",
@@ -6257,6 +6342,140 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     expired_session_response = client.get("/portal/v1/session")
     assert expired_session_response.status_code == 401
     assert expired_session_response.json()["error_code"] == "auth.portal_session_required"
+
+    dispose_engine(database_url)
+
+
+def test_portal_account_routes_use_selected_site_account_for_multi_account_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_jwt_issuer": "npcink-cloud-portal",
+            "portal_jwt_audience": "npcink-cloud-customers",
+        },
+    )
+    email = "portal-multi-account@example.com"
+    selected_grant: dict[str, object] = {}
+    for suffix in ("selected", "other"):
+        account_id = f"acct_portal_multi_{suffix}"
+        site_id = f"site_portal_multi_{suffix}"
+        account_response = client.post(
+            "/internal/service/accounts",
+            json={"account_id": account_id, "name": f"Portal {suffix} account"},
+            headers=build_internal_headers(
+                idempotency_key=f"portal-multi-{suffix}-account"
+            ),
+        )
+        assert account_response.status_code == 200, account_response.text
+        site_response = client.post(
+            "/internal/service/sites",
+            json={
+                "site_id": site_id,
+                "account_id": account_id,
+                "name": f"Portal {suffix} site",
+                "status": "provisioning",
+            },
+            headers=build_internal_headers(
+                idempotency_key=f"portal-multi-{suffix}-site"
+            ),
+        )
+        assert site_response.status_code == 200, site_response.text
+        activate_response = client.post(
+            f"/internal/service/sites/{site_id}/activate",
+            headers=build_internal_headers(
+                idempotency_key=f"portal-multi-{suffix}-activate"
+            ),
+        )
+        assert activate_response.status_code == 200, activate_response.text
+        if suffix == "selected":
+            selected_grant = _grant_account_member_access(
+                client,
+                site_id=site_id,
+                email=email,
+                idempotency_key=f"portal-multi-{suffix}-member",
+            )
+        else:
+            principal_id = str(selected_grant["principal_id"])
+            now = datetime.now(UTC)
+            with get_session(database_url) as session:
+                selected_membership = session.scalar(
+                    select(AccountUserMembership).where(
+                        AccountUserMembership.principal_id == principal_id,
+                        AccountUserMembership.account_id
+                        == "acct_portal_multi_selected",
+                    )
+                )
+                assert selected_membership is not None
+                allowed_actions = list(selected_membership.allowed_actions_json or [])
+                session.add_all(
+                    [
+                        AccountUserMembership(
+                            membership_id="mem_portal_multi_other",
+                            principal_id=principal_id,
+                            account_id=account_id,
+                            role="owner",
+                            status="active",
+                            allowed_actions_json=allowed_actions,
+                            metadata_json={"source": "legacy_multi_account_fixture"},
+                        ),
+                        PrincipalSiteBinding(
+                            binding_id="psb_portal_multi_other",
+                            principal_id=principal_id,
+                            site_id=site_id,
+                            account_id=account_id,
+                            status="active",
+                            bound_at=now,
+                            released_at=None,
+                            release_reason=None,
+                            metadata_json={"source": "legacy_multi_account_fixture"},
+                        ),
+                    ]
+                )
+                session.commit()
+
+    principal_id = str(selected_grant["principal_id"])
+    session_version = int(selected_grant.get("session_version") or 1)
+    _set_portal_cookie_session(
+        client,
+        principal_id=principal_id,
+        site_id="",
+        session_version=session_version,
+    )
+    unselected_response = client.get("/portal/v1/account/plan-offers")
+    assert unselected_response.status_code == 409
+    assert unselected_response.json()["error_code"] == "portal.account_selection_required"
+
+    captured_account_ids: list[str] = []
+    original_list_account_plan_offers = CommercialService.list_account_plan_offers
+
+    def capture_list_account_plan_offers(
+        service: CommercialService,
+        *,
+        account_id: str,
+    ) -> dict[str, object]:
+        captured_account_ids.append(account_id)
+        return original_list_account_plan_offers(service, account_id=account_id)
+
+    monkeypatch.setattr(
+        CommercialService,
+        "list_account_plan_offers",
+        capture_list_account_plan_offers,
+    )
+    _set_portal_cookie_session(
+        client,
+        principal_id=principal_id,
+        site_id="site_portal_multi_selected",
+        session_version=session_version,
+    )
+
+    selected_response = client.get("/portal/v1/account/plan-offers")
+
+    assert selected_response.status_code == 200, selected_response.text
+    assert captured_account_ids == ["acct_portal_multi_selected"]
 
     dispose_engine(database_url)
 
@@ -6933,10 +7152,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert rebuild_response.status_code == 200
 
-    def portal_reads_headers(*, idempotency_key: str = "") -> dict[str, str]:
+    def portal_reads_headers(
+        *, idempotency_key: str = "", site_id: str = "site_portal_reads"
+    ) -> dict[str, str]:
         return build_portal_headers(
             principal_id="principal:portal-reads@example.com",
-            site_id="site_portal_reads",
+            site_id=site_id,
             idempotency_key=idempotency_key,
         )
 
@@ -6999,6 +7220,21 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     _assert_no_portal_identity_wrapper(account_usage_data)
     assert account_usage_data["site_ids"] == ["site_portal_reads"]
     assert account_usage_data["totals"]["sites_total"] == 1
+
+    filtered_account_usage_response = client.get(
+        "/portal/v1/account/usage-summary?site_id=site_portal_reads",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert filtered_account_usage_response.status_code == 200
+    assert filtered_account_usage_response.json()["data"]["site_ids"] == [
+        "site_portal_reads"
+    ]
+
+    account_usage_without_site_response = client.get(
+        "/portal/v1/account/usage-summary",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert account_usage_without_site_response.status_code == 200
 
     monitoring_response = client.get(
         "/portal/v1/sites/site_portal_reads/monitoring-overview?window_hours=24",
@@ -7106,6 +7342,16 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         ]
         == 5.0
     )
+    assert account_entitlements_data["current_subscription"]["status"] == "active"
+
+    account_entitlements_without_site_response = client.get(
+        "/portal/v1/account/entitlements",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert account_entitlements_without_site_response.status_code == 200
+    assert account_entitlements_without_site_response.json()["data"]["quota_summary"][
+        "ai_credits"
+    ]["limit"] == 2000.0
 
     credit_ledger_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-ledger?limit=10",
@@ -7166,9 +7412,22 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_credit_ledger_response.status_code == 200
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(account_credit_ledger_data)
-    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 4.0
-    assert account_credit_ledger_data["pagination"]["total"] == 3
+    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 5.0
+    assert account_credit_ledger_data["pagination"]["total"] == 4
     assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
+        "site_portal_reads",
+        "site_other_portal_reads",
+    }
+
+    filtered_account_credit_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger?limit=10&site_id=site_portal_reads",
+        headers=portal_reads_headers(),
+    )
+    assert filtered_account_credit_ledger_response.status_code == 200
+    filtered_account_credit_ledger_data = filtered_account_credit_ledger_response.json()["data"]
+    assert filtered_account_credit_ledger_data["summary"]["total_ai_credits"] == 4.0
+    assert filtered_account_credit_ledger_data["pagination"]["total"] == 3
+    assert {item["site_id"] for item in filtered_account_credit_ledger_data["items"]} == {
         "site_portal_reads"
     }
 
@@ -7194,10 +7453,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         session.commit()
 
     expected_trends = {
-        "1h": {"points": 12, "ai_credits": 4.0, "entries": 3},
-        "24h": {"points": 24, "ai_credits": 4.0, "entries": 3},
-        "7d": {"points": 7, "ai_credits": 4.0, "entries": 3},
-        "30d": {"points": 30, "ai_credits": 4.0, "entries": 3},
+        "1h": {"points": 12, "ai_credits": 5.0, "entries": 4},
+        "24h": {"points": 24, "ai_credits": 5.0, "entries": 4},
+        "7d": {"points": 7, "ai_credits": 7.0, "entries": 5},
+        "30d": {"points": 30, "ai_credits": 7.0, "entries": 5},
     }
     for trend_window, expectation in expected_trends.items():
         trend_response = client.get(
@@ -7276,7 +7535,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_events_data = credit_events_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(credit_events_data)
     assert credit_events_data["contract_version"] == "portal-credit-events-v1"
-    assert credit_events_data["pagination"]["total"] == 3
+    assert credit_events_data["pagination"]["total"] == 4
     assert all(item["direction"] == "consumed" for item in credit_events_data["items"])
     grouped_event = next(
         item
@@ -7288,6 +7547,17 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert {item["key"] for item in grouped_event["components"]} == {
         "model_processing",
         "request",
+    }
+
+    filtered_credit_events_response = client.get(
+        "/portal/v1/account/credit-events?window=period&limit=20&site_id=site_portal_reads",
+        headers=portal_reads_headers(),
+    )
+    assert filtered_credit_events_response.status_code == 200
+    filtered_credit_events_data = filtered_credit_events_response.json()["data"]
+    assert filtered_credit_events_data["pagination"]["total"] == 3
+    assert {item["site_id"] for item in filtered_credit_events_data["items"]} == {
+        "site_portal_reads"
     }
 
     topic_events_response = client.get(
@@ -7336,10 +7606,18 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert recent_bucket_response.status_code == 200
     recent_bucket_data = recent_bucket_response.json()["data"]
-    assert recent_bucket_data["summary"]["consumed_ai_credits"] == bucket_data["summary"][
-        "consumed_ai_credits"
-    ]
+    assert bucket_data["summary"]["consumed_ai_credits"] == 8.0
+    assert recent_bucket_data["summary"]["consumed_ai_credits"] == 10.0
     assert all(item["start_at"] < item["end_at"] for item in recent_bucket_data["items"])
+
+    filtered_bucket_response = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={"bucket": "30m", "window": "7d", "site_id": "site_portal_reads"},
+        headers=portal_reads_headers(),
+    )
+    assert filtered_bucket_response.status_code == 200
+    filtered_bucket_data = filtered_bucket_response.json()["data"]
+    assert filtered_bucket_data["summary"]["consumed_ai_credits"] == 7.0
 
     # Keep the remainder of this long scenario focused on the payment grant it creates below.
     with get_session(database_url) as session:
@@ -7370,7 +7648,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     account_credit_packs_response = client.get(
         "/portal/v1/account/credit-packs",
-        headers=portal_reads_headers(),
+        headers=portal_reads_headers(site_id=""),
     )
     assert account_credit_packs_response.status_code == 200
     account_credit_packs_data = account_credit_packs_response.json()["data"]
@@ -7470,6 +7748,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         json={"pack_id": "pack_medium"},
         headers=portal_reads_headers(
             idempotency_key="portal-account-credit-pack-order-001",
+            site_id="",
         ),
     )
     assert account_credit_pack_order_response.status_code == 200
@@ -7488,6 +7767,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         json={},
         headers=portal_reads_headers(
             idempotency_key="portal-account-credit-pack-order-cancel-001",
+            site_id="",
         ),
     )
     assert cancel_account_credit_pack_order_response.status_code == 200
@@ -7523,6 +7803,19 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_audit_data["totals"]["events"] >= 1
     _assert_no_bounded_portal_internal_fields(account_audit_data)
 
+    account_audit_without_site_response = client.get(
+        "/portal/v1/account/audit-summary",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert account_audit_without_site_response.status_code == 200
+
+    filtered_account_audit_response = client.get(
+        "/portal/v1/account/audit-summary?site_id=site_portal_reads",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert filtered_account_audit_response.status_code == 200
+    assert filtered_account_audit_response.json()["data"]["totals"]["events"] >= 1
+
     audit_events_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-events?event_kind=site_key.issue&limit=10",
         headers=portal_reads_headers(),
@@ -7550,6 +7843,16 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_audit_events_data["filters"]["event_kind"] == "site_key.issue"
     assert len(account_audit_events_data["items"]) >= 1
     _assert_no_bounded_portal_internal_fields(account_audit_events_data)
+
+    filtered_account_audit_events_response = client.get(
+        (
+            "/portal/v1/account/audit-events?event_kind=site_key.issue&limit=10"
+            "&site_id=site_portal_reads"
+        ),
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert filtered_account_audit_events_response.status_code == 200
+    assert len(filtered_account_audit_events_response.json()["data"]["items"]) >= 1
 
     billing_response = client.get(
         "/portal/v1/sites/site_portal_reads/billing-snapshots",

@@ -15,6 +15,7 @@ from app.adapters.providers.base import (
     ProviderCatalogSnapshot,
 )
 from app.adapters.repositories.runtime_repository import RuntimeRepository
+from app.api.routes import service as service_routes
 from app.core.db import get_session
 from app.core.models import (
     ModelReferenceModel,
@@ -46,6 +47,11 @@ from tests.conftest import (
     build_internal_headers,
     merge_json_headers,
 )
+
+
+class _UnavailableAuditService:
+    def record_service_audit_event(self, **_: Any) -> None:
+        raise RuntimeError("audit storage unavailable")
 
 
 def test_admin_web_search_provider_env_settings_route_is_retired(
@@ -439,6 +445,7 @@ def test_admin_provider_connections_store_encrypted_credentials_and_project_to_a
     assert data["receipt"]["event_kind"] == "provider_connection.save"
     assert data["receipt"]["scope_kind"] == "provider_connection"
     assert data["receipt"]["scope_id"] == "openai_primary"
+    assert data["receipt"]["audit_state"] == "persisted"
     assert data["receipt"]["audit_filters"]["event_kind"] == "provider_connection.save"
     assert data["model_ids"] == ["gpt-5.5", "gpt-4o-mini"]
     assert data["secrets"]["credential"]["display"] == "configured"
@@ -1879,6 +1886,40 @@ def test_admin_provider_connection_test_reports_missing_secret_without_leaking(
         )
 
 
+def test_admin_provider_connection_success_reports_unavailable_audit_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service_routes,
+        "_get_commercial_service",
+        lambda request: _UnavailableAuditService(),
+    )
+    _, client = _build_client(tmp_path)
+
+    response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="provider-audit-unavailable"),
+        json={
+            "connection_id": "audit_unavailable_provider",
+            "provider_id": "audit_unavailable",
+            "provider_type": "openai_compatible",
+            "display_name": "Audit unavailable",
+            "enabled": False,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["connection_id"] == "audit_unavailable_provider"
+    assert data["receipt"]["outcome"] == "succeeded"
+    assert data["receipt"]["audit_state"] == "unavailable"
+    assert "audit_event_id" not in data["receipt"]
+    with get_session(_sqlite_url(tmp_path)) as session:
+        assert session.get(ProviderConnection, "audit_unavailable_provider") is not None
+        assert session.scalar(select(ServiceAuditEvent)) is None
+
+
 def test_admin_provider_connections_env_import_route_is_retired(
     tmp_path: Path,
 ) -> None:
@@ -1938,15 +1979,42 @@ def test_admin_provider_connections_can_be_deleted(
     )
     assert create_response.status_code == 200, create_response.text
 
-    delete_response = client.delete(
+    preflight_response = client.get(
+        "/internal/service/admin/provider-connections/delete_me_provider/delete-preflight",
+        headers=build_internal_headers(),
+    )
+    assert preflight_response.status_code == 200, preflight_response.text
+    preflight = preflight_response.json()["data"]
+    assert preflight["surface"] == "admin_provider_connection_delete_preflight"
+    assert preflight["expected_updated_at"]
+    assert preflight["impact"]["risk_level"] == "high"
+    assert preflight["impact"]["runtime_profile_ids"] == ["web-search.managed"]
+    assert preflight["impact"]["uncovered_runtime_profile_ids"] == [
+        "web-search.managed"
+    ]
+    assert preflight["impact"]["model_count"] == 0
+    assert preflight["requires_confirmation"] is True
+    assert "delete-me-secret" not in preflight_response.text
+
+    missing_version_response = client.request(
+        "DELETE",
+        "/internal/service/admin/provider-connections/delete_me_provider",
+        headers=build_internal_headers(idempotency_key="provider-connection-delete-missing"),
+    )
+    assert missing_version_response.status_code == 422, missing_version_response.text
+
+    delete_response = client.request(
+        "DELETE",
         "/internal/service/admin/provider-connections/delete_me_provider",
         headers=build_internal_headers(idempotency_key="provider-connection-delete"),
+        json={"expected_updated_at": preflight["expected_updated_at"]},
     )
     assert delete_response.status_code == 200, delete_response.text
     delete_data = delete_response.json()["data"]
     assert delete_data["deleted"] is True
     assert delete_data["receipt"]["event_kind"] == "provider_connection.delete"
     assert delete_data["receipt"]["scope_id"] == "delete_me_provider"
+    assert delete_data["receipt"]["audit_state"] == "persisted"
     assert delete_data["receipt"]["audit_filters"]["event_kind"] == "provider_connection.delete"
     with get_session(_sqlite_url(tmp_path)) as session:
         audit_event = session.scalar(
@@ -1965,3 +2033,67 @@ def test_admin_provider_connections_can_be_deleted(
     )
     assert list_response.status_code == 200, list_response.text
     assert list_response.json()["data"]["connections"] == []
+
+
+def test_admin_provider_connection_delete_rejects_stale_preflight(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(tmp_path)
+    create_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="provider-delete-conflict-create"),
+        json={
+            "connection_id": "delete_conflict_provider",
+            "provider_id": "delete_conflict",
+            "provider_type": "openai_compatible",
+            "display_name": "Delete conflict",
+            "enabled": True,
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+            "credential": "delete-conflict-secret",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    preflight_response = client.get(
+        "/internal/service/admin/provider-connections/delete_conflict_provider/delete-preflight",
+        headers=build_internal_headers(),
+    )
+    assert preflight_response.status_code == 200, preflight_response.text
+    expected_updated_at = preflight_response.json()["data"]["expected_updated_at"]
+
+    update_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="provider-delete-conflict-update"),
+        json={
+            "connection_id": "delete_conflict_provider",
+            "provider_id": "delete_conflict",
+            "provider_type": "openai_compatible",
+            "display_name": "Delete conflict updated",
+            "enabled": True,
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["data"]["updated_at"] != expected_updated_at
+
+    stale_delete_response = client.request(
+        "DELETE",
+        "/internal/service/admin/provider-connections/delete_conflict_provider",
+        headers=build_internal_headers(idempotency_key="provider-delete-conflict-stale"),
+        json={"expected_updated_at": expected_updated_at},
+    )
+    assert stale_delete_response.status_code == 409, stale_delete_response.text
+    assert stale_delete_response.json()["error_code"] == (
+        "provider_connection.delete_conflict"
+    )
+
+    list_response = client.get(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(),
+    )
+    assert list_response.status_code == 200, list_response.text
+    assert [
+        connection["display_name"]
+        for connection in list_response.json()["data"]["connections"]
+    ] == ["Delete conflict updated"]

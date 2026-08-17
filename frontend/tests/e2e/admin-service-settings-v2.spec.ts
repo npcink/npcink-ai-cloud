@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -29,6 +29,14 @@ function setting(
     last_error_code: '',
     last_error_message: '',
   };
+}
+
+async function hideNextDevelopmentPortal(page: Page) {
+  await page.locator('nextjs-portal').evaluateAll((portals) => {
+    portals.forEach((portal) => {
+      (portal as HTMLElement).style.display = 'none';
+    });
+  });
 }
 
 test('service settings v2 preserves dirty input, guards navigation, validates, saves, and keeps one active form', async ({ page }, testInfo) => {
@@ -142,6 +150,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
     inputHeight: 32,
     rowHeight: 49,
   });
+  await hideNextDevelopmentPortal(page);
   await expect(page).toHaveScreenshot('admin-service-settings-workbench-pc.png', {
     animations: 'disabled',
     fullPage: true,

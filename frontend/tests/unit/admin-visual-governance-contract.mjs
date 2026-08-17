@@ -37,6 +37,11 @@ const pilotRoutes = {
     states: ['ready', 'selected', 'filtered', 'operation_error', 'dialog'],
     spec: 'tests/e2e/admin-provider-directory-v2.spec.ts',
   },
+  '/admin/coverage': {
+    pageModel: 'queue',
+    states: ['ready', 'filtered', 'paginated', 'selected', 'refresh_error'],
+    spec: 'tests/e2e/admin-service-queue-v2.spec.ts',
+  },
   '/admin/service-settings': {
     pageModel: 'configuration',
     states: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog'],
@@ -46,6 +51,11 @@ const pilotRoutes = {
     pageModel: 'diagnostic',
     states: ['ready', 'selected', 'partial_error', 'disclosure'],
     spec: 'tests/e2e/admin-runtime-diagnostics-v2.spec.ts',
+  },
+  '/admin/audit': {
+    pageModel: 'diagnostic',
+    states: ['ready', 'filtered', 'selected', 'refresh_error'],
+    spec: 'tests/e2e/admin-audit-workspace.spec.ts',
   },
   '/admin/support-requests': {
     pageModel: 'queue',
@@ -61,7 +71,7 @@ const pilotRoutes = {
   },
 };
 
-assert.equal(manifest.version, 7, 'visual governance must use the reviewed v7 manifest');
+assert.equal(manifest.version, 9, 'visual governance must use the reviewed v9 manifest');
 assert.equal(manifest.visualGovernance.version, 1);
 assert.equal(manifest.visualGovernance.receiptSchema, 'admin-visual-receipt.schema.json');
 assert.deepEqual(manifest.visualGovernance.resultStates, expectedStatuses);
@@ -138,4 +148,4 @@ assert.match(helper, /testInfo\.outputPath[\s\S]*testInfo\.attach/);
 assert.match(packageSource, /admin-visual-governance-contract\.mjs/);
 assert.match(packageSource, /admin-runtime-diagnostics-v2\.spec\.ts/);
 
-console.log('admin_visual_governance_contract: ok (12 rules, 5 pilot routes, structured receipts)');
+console.log(`admin_visual_governance_contract: ok (12 rules, ${Object.keys(pilotRoutes).length} pilot routes, structured receipts)`);

@@ -29,6 +29,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestHost = getExternalRequestHost(request);
   const requestProto = getExternalRequestProto(request) || request.nextUrl.protocol.replace(/:$/, '');
   const body = await request.json().catch(() => ({}));
+  const reviewBody =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? { ...(body as Record<string, unknown>) }
+      : {};
+  delete reviewBody.actor_ref;
   const headers = buildForwardedRequestHeaders(request, {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -47,10 +52,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     response = await fetch(buildBackendUrl('/internal/service/advisor/ops-summary-review'), {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        ...body,
-        actor_ref: sessionResult.session.principal_id,
-      }),
+      body: JSON.stringify(reviewBody),
       cache: 'no-store',
     });
   } catch {

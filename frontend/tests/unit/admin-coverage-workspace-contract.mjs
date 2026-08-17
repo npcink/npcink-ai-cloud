@@ -19,14 +19,26 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /useSearchParams\(\)[\s\S]*updateQueueUrl[\s\S]*status[\s\S]*reason[\s\S]*sort/,
-  'Coverage filters and sort must survive refresh and detail navigation through the URL'
+  /useSearchParams\(\)[\s\S]*updateQueueUrl[\s\S]*status[\s\S]*reason[\s\S]*sort[\s\S]*offset[\s\S]*limit/,
+  'Coverage filters, sort, and pagination must survive refresh and detail navigation through the URL'
 );
 
 assert.match(
   coverageSource,
-  /type QueueSort = 'priority' \| 'expiry' \| 'customer'[\s\S]*searchQuery[\s\S]*reasonFilter[\s\S]*visibleItems = useMemo/,
-  'Coverage queue must support search, reason filtering, and explicit prioritization'
+  /type QueueSort = 'priority' \| 'expiry' \| 'customer'[\s\S]*coverageRequestKey = useMemo[\s\S]*status: view[\s\S]*sort[\s\S]*offset[\s\S]*limit[\s\S]*params\.set\('q'[\s\S]*params\.set\('reason'/,
+  'Coverage queue must send search, reason, ordering, and pagination scope to the service'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /visibleQueueItems[\s\S]*\.filter\([\s\S]*\.sort\(/,
+  'Coverage must not filter and reorder one fetched page in the browser'
+);
+
+assert.match(
+  coverageSource + serviceSource,
+  /data-ui="coverage-pagination"[\s\S]*setOffset\([\s\S]*updateQueueUrl\(\{ offset:[\s\S]*filtered_items\.sort[\s\S]*pagination[\s\S]*has_more/,
+  'Coverage pagination must be URL-backed while filtering and ordering happen before service pagination'
 );
 
 assert.match(
