@@ -439,6 +439,7 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert 'pytest "${contract_tests[@]}" -q --durations=25' in source
     assert "--targeted-contract-shard" in source
     assert "--shards 3" in source
+    assert "--collected-item-floor-seconds 1.0" in workflow
     assert "mapfile" not in source
     assert '$(<"${TMP_CONTRACTS}")' not in source
     assert source.count("--diff-filter=ACMRD") == 6
@@ -576,7 +577,7 @@ def test_pytest_weight_refresh_is_reproducible_and_fail_closed(
     assert "at least 3 run ids are required" in too_few_result.stderr
     assert valid_args_without_gh_result.returncode == 1
     assert "GitHub CLI (gh) is required" in valid_args_without_gh_result.stderr
-    assert "EXPECTED_SHARDS=3" in source
+    assert "EXPECTED_SHARDS=4" in source
     assert "MINIMUM_RUNS=3" in source
     assert "gh run download" in source
     assert "validate_master_run" in source
@@ -619,7 +620,7 @@ def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
     assert "report-changed-code-coverage.py" in workflow
     assert "changed-code-coverage.json" in workflow
     assert "changed-code-coverage.md" in workflow
-    assert "expected 3 backend coverage shard files" in workflow
+    assert "expected 4 backend coverage shard files" in workflow
     assert "github.event_name == 'pull_request'" in workflow
     assert "HEAD_SHA: ${{ github.sha }}" in workflow
     assert "--fail-under" not in workflow

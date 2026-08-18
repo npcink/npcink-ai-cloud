@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-EXPECTED_SHARDS=3
+EXPECTED_SHARDS=4
 MINIMUM_RUNS=3
 
 usage() {
