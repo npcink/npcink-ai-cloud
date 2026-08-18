@@ -301,6 +301,12 @@ private runtime configuration or expand the receipt with customer fields.
   remains fail closed; its presence stops production migration or real-user
   enablement, and any later operator-reviewed assignment is a separately
   authorized remediation rather than part of this inventory or release
+- [ ] a stale invalid current principal-site binding is repaired only through
+  the protected `ownership-binding-diagnose` then `ownership-binding-release`
+  maintenance sequence; the release action requires the exact diagnosis token
+  and confirmation sentence, releases exactly one compare-and-set-matched
+  binding, records a service audit event, and never assigns ownership or
+  changes the principal, account, site, or credentials
 - [ ] legacy `platform:internal_root` remains unchanged unless a separately
   approved rotation plan covers persisted grants, sessions, audit actors,
   rollback, and operator recovery
