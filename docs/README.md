@@ -134,6 +134,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Providers, Media, and Quality
 
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
+- [Cloud Web Search Provider Integration Standard](cloud-web-search-provider-integration-standard-v1.md) — active investigation, adapter, secret-handling, verification, M4, merge, and rollout rules for managed search providers
+- [AnySearch Web Search Provider Integration Closeout — 2026-08-18](anysearch-web-search-provider-integration-closeout-2026-08-18.md) — dated evidence for PR `#793`, the stale-branch migration correction, M4 acceptance, bounded real-upstream validation, and extracted development lessons; not production or human acceptance authority
 - [Operator-initiated Provider Image Delivery Probe](decisions/042-operator-initiated-provider-image-delivery-probe.md)
 - [Model Reference Metadata](model-reference-metadata-v1.md)
 - [Cloud Web Search Runtime Contract](cloud-web-search-runtime-contract-v1.md)
