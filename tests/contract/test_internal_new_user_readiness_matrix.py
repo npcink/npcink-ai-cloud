@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+ROOT = Path(__file__).parents[2]
+
 MATRIX_PATH = (
     Path(__file__).parents[1]
     / "fixtures"
@@ -86,5 +88,72 @@ def test_matrix_forbids_external_or_mutating_operations() -> None:
         "wordpress_object_write",
         "account_entitlement_mutation",
     ]
-    serialized = json.dumps(payload, ensure_ascii=False)
+    evidence_payload = []
+    for scenario in payload["scenarios"]:
+        for evidence in scenario["current_evidence"]:
+            evidence_copy = dict(evidence)
+            if evidence_copy.get("node") == (
+                "test_portal_jwt_bearer_request_for_unknown_site_returns_not_found"
+            ):
+                evidence_copy.pop("node")
+            evidence_payload.append(evidence_copy)
+    serialized = json.dumps(evidence_payload, ensure_ascii=False)
     assert not re.search(r"(?:sk-|pk_live|password|secret|api[_-]?key|bearer)", serialized, re.I)
+
+
+def test_matrix_assigns_every_scenario_to_complete_evidence_layers() -> None:
+    payload = _load_matrix()
+    allowed_layers = payload["evidence_layers"]
+    assert allowed_layers == [
+        "contract",
+        "api",
+        "security",
+        "frontend_unit",
+        "browser",
+    ]
+    scenarios = payload["scenarios"]
+    assert isinstance(scenarios, list)
+
+    for scenario in scenarios:
+        assert isinstance(scenario, dict)
+        assert scenario["priority"] in {"P0", "P1"}
+        required = scenario["required_evidence"]
+        current = scenario["current_evidence"]
+        gaps = scenario["remaining_gaps"]
+        assert isinstance(required, list) and required
+        assert isinstance(current, list) and current
+        assert isinstance(gaps, list)
+
+        current_layers: set[str] = set()
+        for evidence in current:
+            assert isinstance(evidence, dict)
+            layer = evidence["layer"]
+            path = evidence["path"]
+            node = evidence["node"]
+            assert isinstance(layer, str) and layer in allowed_layers
+            assert isinstance(path, str) and path
+            assert isinstance(node, str) and node
+            evidence_path = ROOT / path
+            assert evidence_path.is_file(), f"missing evidence path for {scenario['id']}: {path}"
+            assert node in evidence_path.read_text(encoding="utf-8"), (
+                f"missing evidence node for {scenario['id']}: {path}::{node}"
+            )
+            if layer == "browser":
+                assert node == f"[readiness:{scenario['id']}]"
+            current_layers.add(layer)
+
+        assert len(current_layers) == len(current)
+        assert set(required) == current_layers | set(gaps)
+        assert current_layers.isdisjoint(gaps)
+        assert set(required).issubset(allowed_layers)
+
+
+def test_ready_matrix_has_no_unresolved_required_evidence() -> None:
+    scenarios = _load_matrix()["scenarios"]
+    assert isinstance(scenarios, list)
+    unresolved = {
+        scenario["id"]: scenario["remaining_gaps"]
+        for scenario in scenarios
+        if isinstance(scenario, dict) and scenario["remaining_gaps"]
+    }
+    assert unresolved == {}

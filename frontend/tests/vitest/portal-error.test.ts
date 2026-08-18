@@ -40,7 +40,7 @@ describe('Portal customer-safe errors', () => {
     expect(formatPortalErrorReference(error)).toBe('service.unmapped_internal_failure');
   });
 
-  it('explains the difference between an unbound and inactive site', () => {
+  it('distinguishes unbound, inactive, and suspended site recovery messages', () => {
     expect(formatPortalErrorMessage(
       apiError('auth.site_not_found', 'site is not found'),
       translate,
@@ -51,6 +51,11 @@ describe('Portal customer-safe errors', () => {
       translate,
       'Try again.'
     )).toContain('currently inactive');
+    expect(formatPortalErrorMessage(
+      apiError('auth.site_suspended', 'site is suspended by an operator'),
+      translate,
+      'Try again.'
+    )).toContain('is suspended');
   });
 
   it('keeps connector, quota, and transient service faults actionable', () => {
@@ -70,4 +75,30 @@ describe('Portal customer-safe errors', () => {
       'Try again.'
     )).toContain('temporarily unavailable');
   });
+
+  it.each([
+    ['auth.site_not_found', 'foreign account site exists', 'not connected'],
+    ['auth.site_inactive', 'internal lifecycle detail', 'currently inactive'],
+    ['auth.site_suspended', 'suspension operator note', 'is suspended'],
+    ['provider_connection.auth_failed', 'provider credential value', 'credential was rejected'],
+    ['commercial.quota_exceeded', 'internal entitlement ledger', 'account has reached'],
+    [
+      'service.entitlements_temporarily_unavailable',
+      'database host failed',
+      'temporarily unavailable',
+    ],
+  ])(
+    'maps %s to actionable customer copy without backend disclosure',
+    (errorCode, backendMessage, expectedCopy) => {
+      const message = formatPortalErrorMessage(
+        apiError(errorCode, backendMessage),
+        translate,
+        'Try again.'
+      );
+
+      expect(message).toContain(expectedCopy);
+      expect(message).not.toContain(backendMessage);
+      expect(message).not.toContain(errorCode);
+    }
+  );
 });

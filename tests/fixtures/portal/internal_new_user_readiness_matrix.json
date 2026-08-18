@@ -2,6 +2,17 @@
   "contract_version": "internal_new_user_readiness_matrix.v1",
   "fixture_scope": "deterministic_synthetic_metadata_only",
   "purpose": "Exercise high-risk Portal and connector states before first external users.",
+  "priority_scale": {
+    "P0": "Blocks a safe first-user journey or risks isolation, mutation, or recovery correctness.",
+    "P1": "Materially harms comprehension or efficiency but has a bounded recovery path."
+  },
+  "evidence_layers": [
+    "contract",
+    "api",
+    "security",
+    "frontend_unit",
+    "browser"
+  ],
   "forbidden_operations": [
     "production_data_write",
     "provider_call",
@@ -29,27 +40,73 @@
     {
       "id": "new_account_no_site",
       "persona": "new_account",
+      "priority": "P0",
       "account_state": "active_without_subscription",
       "site_states": [],
-      "primary_goal": "Reach the WordPress connection path without a dead end."
+      "primary_goal": "Reach the WordPress connection path without a dead end.",
+      "required_evidence": ["contract", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_readiness_matrix.py",
+          "node": "test_matrix_is_deterministic_and_covers_first_user_risks"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:new_account_no_site]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "single_site_ready",
       "persona": "first_time_connected",
+      "priority": "P1",
       "account_state": "free_active",
       "site_states": ["active_ready"],
-      "primary_goal": "See account service state and a healthy site context."
+      "primary_goal": "See account service state and a healthy site context.",
+      "required_evidence": ["contract", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_readiness_matrix.py",
+          "node": "test_matrix_is_deterministic_and_covers_first_user_risks"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:single_site_ready]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "multi_site_context_switch",
       "persona": "multi_site_owner",
+      "priority": "P1",
       "account_state": "paid_active",
       "site_states": ["active_ready", "active_attention"],
-      "primary_goal": "Switch site context without changing account package data."
+      "primary_goal": "Switch site context without changing account package data.",
+      "required_evidence": ["contract", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_readiness_matrix.py",
+          "node": "test_matrix_is_deterministic_and_covers_first_user_risks"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:multi_site_context_switch]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "inactive_site_recovery",
       "persona": "bound_but_inactive",
+      "priority": "P0",
       "account_state": "paid_active",
       "site_states": ["inactive_bound"],
       "primary_goal": "Distinguish activation recovery from credential failure.",
@@ -58,11 +115,36 @@
         "http_status": 403,
         "recovery_action": "activate_site",
         "disclosure": "site_state_only"
-      }
+      },
+      "required_evidence": ["contract", "api", "frontend_unit", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_fault_injection_contract.py",
+          "node": "test_fault_injection_matrix_has_stable_recovery_contracts"
+        },
+        {
+          "layer": "api",
+          "path": "tests/api/test_entitlement_routes.py",
+          "node": "test_current_entitlement_inactive_site_returns_activation_recovery"
+        },
+        {
+          "layer": "frontend_unit",
+          "path": "frontend/tests/vitest/portal-error.test.ts",
+          "node": "distinguishes unbound, inactive, and suspended site recovery messages"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:inactive_site_recovery]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "suspended_site_read_only",
       "persona": "site_suspended",
+      "priority": "P0",
       "account_state": "paid_active",
       "site_states": ["suspended"],
       "primary_goal": "Keep runtime unavailable while preserving read-only evidence.",
@@ -71,31 +153,101 @@
         "http_status": 403,
         "recovery_action": "contact_support",
         "disclosure": "site_state_only"
-      }
+      },
+      "required_evidence": ["contract", "security", "frontend_unit", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_fault_injection_contract.py",
+          "node": "test_fault_injection_matrix_has_stable_recovery_contracts"
+        },
+        {
+          "layer": "security",
+          "path": "tests/core/test_security_body_evidence.py",
+          "node": "test_bound_but_unavailable_site_reports_lifecycle_state"
+        },
+        {
+          "layer": "frontend_unit",
+          "path": "frontend/tests/vitest/portal-error.test.ts",
+          "node": "distinguishes unbound, inactive, and suspended site recovery messages"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:suspended_site_read_only]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "quota_attention_account_scope",
       "persona": "quota_pressure",
+      "priority": "P0",
       "account_state": "paid_near_limit",
       "site_states": ["active_ready", "active_attention"],
       "primary_goal": "Show account quota pressure without inventing site-level rights.",
       "fault_injection": {
         "error_code": "commercial.quota_exceeded",
-        "http_status": 409,
+        "http_status": 429,
         "recovery_action": "review_account_quota",
         "disclosure": "account_scope_only"
-      }
+      },
+      "required_evidence": ["contract", "api", "frontend_unit", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_fault_injection_contract.py",
+          "node": "test_fault_injection_matrix_has_stable_recovery_contracts"
+        },
+        {
+          "layer": "api",
+          "path": "tests/api/test_runtime_execute.py",
+          "node": "test_execute_route_rejects_budget_exhaustion"
+        },
+        {
+          "layer": "frontend_unit",
+          "path": "frontend/tests/vitest/portal-error.test.ts",
+          "node": "keeps connector, quota, and transient service faults actionable"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:quota_attention_account_scope]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "session_expired_recovery",
       "persona": "returning_user",
+      "priority": "P0",
       "account_state": "active_with_expired_session",
       "site_states": ["active_ready"],
-      "primary_goal": "Return to login safely and restore the intended Portal path."
+      "primary_goal": "Return to login safely and restore the intended Portal path.",
+      "required_evidence": ["contract", "api", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_readiness_matrix.py",
+          "node": "test_matrix_is_deterministic_and_covers_first_user_risks"
+        },
+        {
+          "layer": "api",
+          "path": "tests/api/test_web_routes.py",
+          "node": "test_web_portal_session_evidence_comes_only_from_signed_claims"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:session_expired_recovery]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "cross_account_site_denial",
       "persona": "wrong_account",
+      "priority": "P0",
       "account_state": "active",
       "site_states": ["foreign_site_reference"],
       "primary_goal": "Fail closed without disclosing another account or site.",
@@ -104,11 +256,31 @@
         "http_status": 404,
         "recovery_action": "choose_owned_site",
         "disclosure": "no_foreign_record"
-      }
+      },
+      "required_evidence": ["contract", "security", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_fault_injection_contract.py",
+          "node": "test_fault_injection_matrix_has_stable_recovery_contracts"
+        },
+        {
+          "layer": "security",
+          "path": "tests/api/test_portal_routes.py",
+          "node": "test_portal_jwt_bearer_request_for_unknown_site_returns_not_found"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:cross_account_site_denial]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "invalid_connector_credential",
       "persona": "credential_failure",
+      "priority": "P0",
       "account_state": "paid_active",
       "site_states": ["active_invalid_key"],
       "primary_goal": "Show credential recovery rather than an unrelated service error.",
@@ -117,11 +289,36 @@
         "http_status": 502,
         "recovery_action": "update_connector_credential",
         "disclosure": "credential_presence_only"
-      }
+      },
+      "required_evidence": ["contract", "api", "frontend_unit", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_fault_injection_contract.py",
+          "node": "test_fault_injection_matrix_has_stable_recovery_contracts"
+        },
+        {
+          "layer": "api",
+          "path": "tests/api/test_service_provider_routes.py",
+          "node": "test_admin_provider_connection_test_redacts_catalog_fetch_exception"
+        },
+        {
+          "layer": "frontend_unit",
+          "path": "frontend/tests/vitest/portal-error.test.ts",
+          "node": "keeps connector, quota, and transient service faults actionable"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:invalid_connector_credential]"
+        }
+      ],
+      "remaining_gaps": []
     },
     {
       "id": "service_temporarily_unavailable",
       "persona": "transient_failure",
+      "priority": "P0",
       "account_state": "paid_active",
       "site_states": ["active_ready"],
       "primary_goal": "Offer bounded retry/support recovery without duplicate mutations.",
@@ -130,7 +327,26 @@
         "http_status": 503,
         "recovery_action": "retry_or_contact_support",
         "disclosure": "trace_reference_only"
-      }
+      },
+      "required_evidence": ["contract", "frontend_unit", "browser"],
+      "current_evidence": [
+        {
+          "layer": "contract",
+          "path": "tests/contract/test_internal_new_user_fault_injection_contract.py",
+          "node": "test_fault_injection_matrix_has_stable_recovery_contracts"
+        },
+        {
+          "layer": "frontend_unit",
+          "path": "frontend/tests/vitest/portal-error.test.ts",
+          "node": "keeps connector, quota, and transient service faults actionable"
+        },
+        {
+          "layer": "browser",
+          "path": "frontend/tests/e2e/portal-workspace-path.spec.ts",
+          "node": "[readiness:service_temporarily_unavailable]"
+        }
+      ],
+      "remaining_gaps": []
     }
   ]
 }
