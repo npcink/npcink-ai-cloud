@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -127,6 +128,61 @@ def test_material_files_are_split_before_they_can_bind_one_shard(
 
     assert [shard.total_seconds for shard in shards] == [100, 100, 100]
     assert all(len(shard.selectors) == 2 for shard in shards)
+
+
+def test_collected_parameterized_items_raise_the_file_and_node_weight_floor(
+    tmp_path: Path,
+) -> None:
+    tests_root = tmp_path / "tests" / "api"
+    tests_root.mkdir(parents=True)
+    material = tests_root / "test_material.py"
+    material.write_text(
+        "def test_parametrized(): pass\ndef test_other(): pass\n",
+        encoding="utf-8",
+    )
+    material_path = material.as_posix()
+    parametrized_node = f"{material_path}::test_parametrized"
+    other_node = f"{material_path}::test_other"
+
+    weighted = select_pytest_shard.build_weighted_selectors(
+        [material],
+        {material_path: 1},
+        {parametrized_node: 1, other_node: 1},
+        shard_count=3,
+        collected_item_counts={parametrized_node: 12, other_node: 1},
+        item_floor_seconds=1.0,
+    )
+
+    assert weighted == [(12.0, parametrized_node), (1, other_node)]
+
+
+def test_collected_item_counts_preserve_parameterized_case_cardinality(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        select_pytest_shard.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "tests/api/test_runtime.py::test_case[first]\n"
+                "tests/api/test_runtime.py::test_case[second]\n"
+                "tests/contract/test_release.py::test_release\n"
+                "unrelated/path.py::test_noise\n"
+            ),
+            stderr="",
+        ),
+    )
+
+    counts = select_pytest_shard.discover_collected_test_item_counts(
+        [Path("tests/api"), Path("tests/contract/test_release.py")]
+    )
+
+    assert counts == {
+        "tests/api/test_runtime.py::test_case": 2,
+        "tests/contract/test_release.py::test_release": 1,
+    }
 
 
 def test_material_file_without_complete_node_evidence_skips_collection(

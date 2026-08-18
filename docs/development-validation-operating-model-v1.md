@@ -444,9 +444,10 @@ tests completing materially faster than their conservative predictions, not a
 new critical-path regression. Continue natural observation; do not manufacture
 full runs solely to complete a sample count.
 
-Add a fourth shard only when three shards remain balanced but the critical
-path still misses the agreed feedback target. Split sustained slow files or
-remove repeated fixture setup before adding more scheduling metadata.
+The complete backend lane currently uses four shards after collected-case-aware
+three-shard assignment remained balanced but still exceeded the feedback and
+timeout budget. Split sustained slow files or remove repeated fixture setup
+before considering a fifth shard or more scheduling metadata.
 
 ## 9. Lessons From the Remediation History
 
