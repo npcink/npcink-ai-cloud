@@ -42,6 +42,7 @@ Start with:
 - [Cloud Content Generation Boundary](docs/cloud-content-generation-boundary-v1.md)
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
+- [Internal New-User Readiness Gate](docs/internal-new-user-readiness-gate-v1.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
 

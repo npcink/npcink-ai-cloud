@@ -65,6 +65,7 @@ deleting the old decision history.
 - [Development and Delivery Efficiency Closeout and Retrospective](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
+- [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
 - [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
