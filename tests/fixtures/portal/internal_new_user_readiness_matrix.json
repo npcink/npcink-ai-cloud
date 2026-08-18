@@ -1,0 +1,100 @@
+{
+  "contract_version": "internal_new_user_readiness_matrix.v1",
+  "fixture_scope": "deterministic_synthetic_metadata_only",
+  "purpose": "Exercise high-risk Portal and connector states before first external users.",
+  "forbidden_operations": [
+    "production_data_write",
+    "provider_call",
+    "wordpress_object_write",
+    "account_entitlement_mutation"
+  ],
+  "ownership": {
+    "account": [
+      "identity",
+      "subscription",
+      "entitlements",
+      "billing",
+      "credit_balance"
+    ],
+    "site": [
+      "binding",
+      "lifecycle",
+      "usage",
+      "run_evidence",
+      "connection_diagnostics",
+      "support_context"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "new_account_no_site",
+      "persona": "new_account",
+      "account_state": "active_without_subscription",
+      "site_states": [],
+      "primary_goal": "Reach the WordPress connection path without a dead end."
+    },
+    {
+      "id": "single_site_ready",
+      "persona": "first_time_connected",
+      "account_state": "free_active",
+      "site_states": ["active_ready"],
+      "primary_goal": "See account service state and a healthy site context."
+    },
+    {
+      "id": "multi_site_context_switch",
+      "persona": "multi_site_owner",
+      "account_state": "paid_active",
+      "site_states": ["active_ready", "active_attention"],
+      "primary_goal": "Switch site context without changing account package data."
+    },
+    {
+      "id": "inactive_site_recovery",
+      "persona": "bound_but_inactive",
+      "account_state": "paid_active",
+      "site_states": ["inactive_bound"],
+      "primary_goal": "Distinguish activation recovery from credential failure."
+    },
+    {
+      "id": "suspended_site_read_only",
+      "persona": "site_suspended",
+      "account_state": "paid_active",
+      "site_states": ["suspended"],
+      "primary_goal": "Keep runtime unavailable while preserving read-only evidence."
+    },
+    {
+      "id": "quota_attention_account_scope",
+      "persona": "quota_pressure",
+      "account_state": "paid_near_limit",
+      "site_states": ["active_ready", "active_attention"],
+      "primary_goal": "Show account quota pressure without inventing site-level rights."
+    },
+    {
+      "id": "session_expired_recovery",
+      "persona": "returning_user",
+      "account_state": "active_with_expired_session",
+      "site_states": ["active_ready"],
+      "primary_goal": "Return to login safely and restore the intended Portal path."
+    },
+    {
+      "id": "cross_account_site_denial",
+      "persona": "wrong_account",
+      "account_state": "active",
+      "site_states": ["foreign_site_reference"],
+      "primary_goal": "Fail closed without disclosing another account or site."
+    },
+    {
+      "id": "invalid_connector_credential",
+      "persona": "credential_failure",
+      "account_state": "paid_active",
+      "site_states": ["active_invalid_key"],
+      "primary_goal": "Show credential recovery rather than an unrelated service error."
+    },
+    {
+      "id": "service_temporarily_unavailable",
+      "persona": "transient_failure",
+      "account_state": "paid_active",
+      "site_states": ["active_ready"],
+      "primary_goal": "Offer bounded retry/support recovery without duplicate mutations."
+    }
+  ]
+}
