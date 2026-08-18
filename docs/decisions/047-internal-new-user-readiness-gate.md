@@ -83,4 +83,3 @@ Trade-offs:
 - PR #789: localized Portal browser regression;
 - M4 accepted revisions are recorded in each task's promotion status and
   observation receipt.
-

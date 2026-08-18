@@ -160,4 +160,3 @@ This gate reduces deterministic internal defects; it does not prove:
 The next useful evidence after this gate is a bounded internal operator/browser
 soak using synthetic or disposable data, followed by a separate decision about
 whether real-user or production validation is authorized.
-
