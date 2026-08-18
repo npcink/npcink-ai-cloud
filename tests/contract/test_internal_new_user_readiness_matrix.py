@@ -4,7 +4,6 @@ import json
 import re
 from pathlib import Path
 
-
 MATRIX_PATH = (
     Path(__file__).parents[1]
     / "fixtures"
