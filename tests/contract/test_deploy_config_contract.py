@@ -2117,6 +2117,11 @@ def test_production_operational_readiness_uses_private_loopback() -> None:
 def test_remote_deploy_keeps_env_file_private_end_to_end() -> None:
     deploy_script = (_cloud_root() / "deploy" / "deploy-to-ssh-host.sh").read_text()
 
+    assert 'REMOTE_INCOMING_ROOT="${REMOTE_DIR}/.incoming"' in deploy_script
+    assert (
+        'install -d -o root -g root -m 0700 -- '
+        '$(remote_shell_arg "${REMOTE_INCOMING_ROOT}")' in deploy_script
+    )
     assert 'chmod 0700 $(remote_shell_arg "${REMOTE_INCOMING_DIR}")' in deploy_script
     upload_marker = 'scp "${SCP_ARGS[@]}" "${ENV_FILE}" "${SSH_TARGET}:${REMOTE_ENV_PATH}"'
     restrict_marker = 'chmod 0600 $(remote_shell_arg "${REMOTE_ENV_PATH}")'

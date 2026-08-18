@@ -20,6 +20,14 @@ def _remote_mutation_body() -> str:
     return source[start:end]
 
 
+def _remote_prepare_body() -> str:
+    source = SCRIPT.read_text(encoding="utf-8")
+    opening = "<<'REMOTE_PREPARE'\n"
+    start = source.index(opening) + len(opening)
+    end = source.index("\nREMOTE_PREPARE\n", start)
+    return source[start:end]
+
+
 def _write_executable(path: Path, source: str) -> None:
     path.write_text(source, encoding="utf-8")
     path.chmod(0o755)
@@ -259,6 +267,30 @@ def _run_remote(
     )
 
 
+def _run_prepare(
+    fixture: StaticTermsFixture,
+    *,
+    token: str = "b" * 32,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    bundle = fixture.remote / ".incoming" / f"static-terms.{token}.tgz"
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            _remote_prepare_body(),
+            "static-terms-prepare",
+            str(fixture.remote),
+            str(bundle),
+        ],
+        cwd=ROOT,
+        env=fixture.env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, bundle
+
+
 def _wait_for(path: Path, *, timeout: float = 5) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -293,6 +325,31 @@ def test_static_terms_source_contract_is_fail_closed() -> None:
     assert "rolled_back_unlock_failed" in source
     assert (
         'release_deploy_lock || fail "Shared deployment lock release could not be proved"' in source
+    )
+
+
+def test_prepare_restricts_shared_incoming_root_and_reports_failures(tmp_path: Path) -> None:
+    fixture = _build_fixture(tmp_path)
+    fixture.bundle.unlink()
+    incoming = fixture.remote / ".incoming"
+    incoming.chmod(0o755)
+
+    result, bundle = _run_prepare(fixture)
+
+    assert result.returncode == 0, result.stderr
+    assert incoming.stat().st_mode & 0o777 == 0o700
+    assert bundle.is_file()
+    assert bundle.stat().st_mode & 0o777 == 0o600
+
+    bundle.unlink()
+    incoming.rmdir()
+    incoming.symlink_to(fixture.release_a)
+
+    unsafe_result, _ = _run_prepare(fixture)
+
+    assert unsafe_result.returncode != 0
+    assert "Static terms prepare: protected incoming path is not a real directory" in (
+        unsafe_result.stderr
     )
 
 

@@ -152,33 +152,40 @@ mode_of() {
 	stat -c '%a' -- "$1"
 }
 
-[ "$(id -u)" = "0" ] || {
-	echo "[fail] Static terms deployment must run as root." >&2
+fail() {
+	echo "[fail] Static terms prepare: $*" >&2
 	exit 1
 }
-[[ "${REMOTE_DIR}" =~ ^/[A-Za-z0-9._/-]+$ ]] || exit 1
+
+[ "$(id -u)" = "0" ] || fail "deployment must run as root"
+[[ "${REMOTE_DIR}" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "managed remote directory is unsafe"
 case "${REMOTE_DIR}" in
-	*/../*|*/..|*/./*|*/.|*//*|/) exit 1 ;;
+	*/../*|*/..|*/./*|*/.|*//*|/) fail "managed remote directory is not canonical" ;;
 esac
-[ -d "${REMOTE_DIR}" ] && [ ! -L "${REMOTE_DIR}" ] || exit 1
-[ "$(cd "${REMOTE_DIR}" && pwd -P)" = "${REMOTE_DIR}" ] || exit 1
-[ "$(stat -c '%u' "${REMOTE_DIR}")" = "0" ] || exit 1
+[ -d "${REMOTE_DIR}" ] && [ ! -L "${REMOTE_DIR}" ] || fail "managed remote directory is missing or linked"
+[ "$(cd "${REMOTE_DIR}" && pwd -P)" = "${REMOTE_DIR}" ] || fail "managed remote directory changed after canonicalization"
+[ "$(stat -c '%u' "${REMOTE_DIR}")" = "0" ] || fail "managed remote directory owner is unsafe"
 REMOTE_MODE="$(mode_of "${REMOTE_DIR}")"
-(( (8#${REMOTE_MODE} & 0022) == 0 )) || exit 1
+[[ "${REMOTE_MODE}" =~ ^[0-7]{3,4}$ ]] || fail "managed remote directory mode is invalid"
+(( (8#${REMOTE_MODE} & 0022) == 0 )) || fail "managed remote directory is group- or world-writable"
 
 INCOMING_DIR="${REMOTE_DIR}/.incoming"
 if [ -e "${INCOMING_DIR}" ] || [ -L "${INCOMING_DIR}" ]; then
-	[ -d "${INCOMING_DIR}" ] && [ ! -L "${INCOMING_DIR}" ] || exit 1
+	[ -d "${INCOMING_DIR}" ] && [ ! -L "${INCOMING_DIR}" ] || fail "protected incoming path is not a real directory"
+	[ "$(stat -c '%u' "${INCOMING_DIR}")" = "0" ] || fail "protected incoming directory owner is unsafe"
+	chmod 0700 "${INCOMING_DIR}" || fail "protected incoming directory could not be restricted"
 else
-	install -d -o root -g root -m 0700 -- "${INCOMING_DIR}"
+	install -d -o root -g root -m 0700 -- "${INCOMING_DIR}" || fail "protected incoming directory could not be created"
 fi
-[ "$(stat -c '%u' "${INCOMING_DIR}")" = "0" ] || exit 1
-[ "$(mode_of "${INCOMING_DIR}")" = "700" ] || exit 1
-[ "$(dirname "${REMOTE_TERMS_BUNDLE}")" = "${INCOMING_DIR}" ] || exit 1
-[[ "$(basename "${REMOTE_TERMS_BUNDLE}")" =~ ^static-terms\.[0-9a-f]{32}\.tgz$ ]] || exit 1
-[ ! -e "${REMOTE_TERMS_BUNDLE}" ] && [ ! -L "${REMOTE_TERMS_BUNDLE}" ] || exit 1
-(set -o noclobber; : >"${REMOTE_TERMS_BUNDLE}")
-chmod 0600 "${REMOTE_TERMS_BUNDLE}"
+[ "$(stat -c '%u' "${INCOMING_DIR}")" = "0" ] || fail "protected incoming directory owner changed"
+[ "$(mode_of "${INCOMING_DIR}")" = "700" ] || fail "protected incoming directory mode is not 0700"
+[ "$(dirname "${REMOTE_TERMS_BUNDLE}")" = "${INCOMING_DIR}" ] || fail "protected upload path is outside the incoming directory"
+[[ "$(basename "${REMOTE_TERMS_BUNDLE}")" =~ ^static-terms\.[0-9a-f]{32}\.tgz$ ]] || fail "protected upload name is unsafe"
+[ ! -e "${REMOTE_TERMS_BUNDLE}" ] && [ ! -L "${REMOTE_TERMS_BUNDLE}" ] || fail "protected upload path already exists"
+(set -o noclobber; : >"${REMOTE_TERMS_BUNDLE}") || fail "protected upload placeholder could not be created"
+chmod 0600 "${REMOTE_TERMS_BUNDLE}" || fail "protected upload placeholder could not be restricted"
+[ "$(stat -c '%u' "${REMOTE_TERMS_BUNDLE}")" = "0" ] || fail "protected upload placeholder owner is unsafe"
+[ "$(mode_of "${REMOTE_TERMS_BUNDLE}")" = "600" ] || fail "protected upload placeholder mode is not 0600"
 REMOTE_PREPARE
 
 echo "[info] Uploading static terms bundle through a unique protected incoming path"
