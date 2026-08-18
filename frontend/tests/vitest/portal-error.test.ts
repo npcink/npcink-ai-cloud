@@ -52,4 +52,22 @@ describe('Portal customer-safe errors', () => {
       'Try again.'
     )).toContain('currently inactive');
   });
+
+  it('keeps connector, quota, and transient service faults actionable', () => {
+    expect(formatPortalErrorMessage(
+      apiError('provider_connection.auth_failed', 'provider rejected credential'),
+      translate,
+      'Try again.'
+    )).toContain('credential was rejected');
+    expect(formatPortalErrorMessage(
+      apiError('commercial.quota_exceeded', 'account quota exceeded'),
+      translate,
+      'Try again.'
+    )).toContain('account has reached');
+    expect(formatPortalErrorMessage(
+      apiError('service.entitlements_temporarily_unavailable', 'database unavailable'),
+      translate,
+      'Try again.'
+    )).toContain('temporarily unavailable');
+  });
 });

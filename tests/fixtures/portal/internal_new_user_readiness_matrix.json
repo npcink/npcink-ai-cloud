@@ -52,21 +52,39 @@
       "persona": "bound_but_inactive",
       "account_state": "paid_active",
       "site_states": ["inactive_bound"],
-      "primary_goal": "Distinguish activation recovery from credential failure."
+      "primary_goal": "Distinguish activation recovery from credential failure.",
+      "fault_injection": {
+        "error_code": "auth.site_inactive",
+        "http_status": 403,
+        "recovery_action": "activate_site",
+        "disclosure": "site_state_only"
+      }
     },
     {
       "id": "suspended_site_read_only",
       "persona": "site_suspended",
       "account_state": "paid_active",
       "site_states": ["suspended"],
-      "primary_goal": "Keep runtime unavailable while preserving read-only evidence."
+      "primary_goal": "Keep runtime unavailable while preserving read-only evidence.",
+      "fault_injection": {
+        "error_code": "auth.site_suspended",
+        "http_status": 403,
+        "recovery_action": "contact_support",
+        "disclosure": "site_state_only"
+      }
     },
     {
       "id": "quota_attention_account_scope",
       "persona": "quota_pressure",
       "account_state": "paid_near_limit",
       "site_states": ["active_ready", "active_attention"],
-      "primary_goal": "Show account quota pressure without inventing site-level rights."
+      "primary_goal": "Show account quota pressure without inventing site-level rights.",
+      "fault_injection": {
+        "error_code": "commercial.quota_exceeded",
+        "http_status": 409,
+        "recovery_action": "review_account_quota",
+        "disclosure": "account_scope_only"
+      }
     },
     {
       "id": "session_expired_recovery",
@@ -80,21 +98,39 @@
       "persona": "wrong_account",
       "account_state": "active",
       "site_states": ["foreign_site_reference"],
-      "primary_goal": "Fail closed without disclosing another account or site."
+      "primary_goal": "Fail closed without disclosing another account or site.",
+      "fault_injection": {
+        "error_code": "auth.site_not_found",
+        "http_status": 404,
+        "recovery_action": "choose_owned_site",
+        "disclosure": "no_foreign_record"
+      }
     },
     {
       "id": "invalid_connector_credential",
       "persona": "credential_failure",
       "account_state": "paid_active",
       "site_states": ["active_invalid_key"],
-      "primary_goal": "Show credential recovery rather than an unrelated service error."
+      "primary_goal": "Show credential recovery rather than an unrelated service error.",
+      "fault_injection": {
+        "error_code": "provider_connection.auth_failed",
+        "http_status": 502,
+        "recovery_action": "update_connector_credential",
+        "disclosure": "credential_presence_only"
+      }
     },
     {
       "id": "service_temporarily_unavailable",
       "persona": "transient_failure",
       "account_state": "paid_active",
       "site_states": ["active_ready"],
-      "primary_goal": "Offer bounded retry/support recovery without duplicate mutations."
+      "primary_goal": "Offer bounded retry/support recovery without duplicate mutations.",
+      "fault_injection": {
+        "error_code": "service.entitlements_temporarily_unavailable",
+        "http_status": 503,
+        "recovery_action": "retry_or_contact_support",
+        "disclosure": "trace_reference_only"
+      }
     }
   ]
 }
