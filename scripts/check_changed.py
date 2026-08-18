@@ -16,6 +16,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATION_RULES_PATH = ROOT / "config" / "ai-development-validation-rules-v1.json"
 TIER_RANK = {"documentation-only": 0, "L0": 1, "L1": 2, "L2": 3}
+WORKFLOW_LANE_TARGET_MINUTES = {
+    "development": 45,
+    "merge": 90,
+    "release": 120,
+}
 M4_DEPLOY_INPUTS = {
     ".dockerignore",
     "Dockerfile",
@@ -268,7 +273,15 @@ def classify_tier(
     return tier, list(dict.fromkeys(reasons))
 
 
-def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, object]:
+def build_plan(
+    paths: list[str],
+    python_bin: str,
+    base_ref: str,
+    workflow_lane: str = "development",
+) -> dict[str, object]:
+    if workflow_lane not in WORKFLOW_LANE_TARGET_MINUTES:
+        raise SystemExit(f"[fail] invalid workflow lane: {workflow_lane}")
+
     kinds = classify(paths)
     rules = select_validation_rules(paths)
     tier, tier_reasons = classify_tier(paths, kinds, rules)
@@ -412,6 +425,38 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
         runtime_lane = "github-actions"
     else:
         runtime_lane = "none"
+
+    pr_required = workflow_lane in {"merge", "release"}
+    production_required = workflow_lane == "release"
+    if workflow_lane == "development":
+        closeout_authority = "local"
+        followups.append(
+            "Development lane stops after focused evidence and any risk-required candidate "
+            "feedback; PR, merge, and production are outside the current plan."
+        )
+    elif workflow_lane == "merge":
+        closeout_authority = (
+            "m4" if runtime_lane.startswith("m4:preview:") else "github-actions"
+        )
+        followups.append(
+            "Merge lane requires a focused PR, required GitHub checks, merge into master, "
+            "and clean-master M4 acceptance only when the runtime lane requires it."
+        )
+    else:
+        closeout_authority = "production"
+        followups.append(
+            "Release lane declares production evidence as required but does not authorize a "
+            "deployment; follow the separate operator-approved production policy."
+        )
+
+    stop_conditions = [
+        "Stop scope expansion after a second independent blocker and split unrelated work "
+        "into a follow-up.",
+        "Do not repeat a broad gate for the same revision unless it answers a distinct risk "
+        "question.",
+        "After two consecutive external-transfer failures with the same signature, stop "
+        "automatic retries and use the documented recovery lane or report the blocker.",
+    ]
     return {
         "paths": paths,
         "classification": kinds,
@@ -421,7 +466,13 @@ def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, ob
         "documents": sorted(set(documents)),
         "commands": commands,
         "specialized_commands": specialized_commands,
+        "workflow_lane": workflow_lane,
+        "target_elapsed_minutes": WORKFLOW_LANE_TARGET_MINUTES[workflow_lane],
+        "pr_required": pr_required,
+        "production_required": production_required,
+        "closeout_authority": closeout_authority,
         "runtime_lane": runtime_lane,
+        "stop_conditions": stop_conditions,
         "followups": list(dict.fromkeys(followups)),
     }
 
@@ -602,6 +653,15 @@ def main() -> int:
         help="report local prerequisites for the selected plan without running gates",
     )
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument(
+        "--workflow-lane",
+        choices=tuple(WORKFLOW_LANE_TARGET_MINUTES),
+        default="development",
+        help=(
+            "declare the requested closeout stage; changed paths never promote a task "
+            "from development to merge or release"
+        ),
+    )
     parser.add_argument("--base", default="origin/master")
     parser.add_argument("paths", nargs="*")
     argv = sys.argv[1:]
@@ -617,7 +677,7 @@ def main() -> int:
     python_bin = os.environ.get(
         "NPCINK_CLOUD_PYTHON_BIN", str(ROOT / ".venv" / "bin" / "python")
     )
-    plan = build_plan(paths, python_bin, args.base)
+    plan = build_plan(paths, python_bin, args.base, args.workflow_lane)
     if args.doctor:
         checks = environment_checks(plan, python_bin)
         if args.format == "json":
@@ -630,6 +690,7 @@ def main() -> int:
                 )
             )
         else:
+            print(f"[doctor] workflow lane: {plan['workflow_lane']}")
             print(f"[doctor] runtime lane: {plan['runtime_lane']}")
             for check in checks:
                 required = "required" if check["required"] else "advisory"
@@ -649,6 +710,14 @@ def main() -> int:
         for path in paths:
             print(f" - {path}")
         print(f"[plan] tier: {plan['tier']}")
+        print(f"[plan] workflow lane: {plan['workflow_lane']}")
+        print(f"[plan] target elapsed minutes: {plan['target_elapsed_minutes']}")
+        print(f"[plan] closeout authority: {plan['closeout_authority']}")
+        print(f"[plan] PR required: {str(plan['pr_required']).lower()}")
+        print(
+            "[plan] production required: "
+            f"{str(plan['production_required']).lower()}"
+        )
         print(f"[plan] runtime lane: {plan['runtime_lane']}")
         for reason in plan["tier_reasons"]:  # type: ignore[index]
             print(f" - {reason}")
@@ -668,6 +737,8 @@ def main() -> int:
             print(" - " + " ".join(command))
         for followup in plan["followups"]:  # type: ignore[index]
             print(f"[next] {followup}")
+        for condition in plan["stop_conditions"]:  # type: ignore[index]
+            print(f"[stop] {condition}")
 
     if args.plan:
         return 0

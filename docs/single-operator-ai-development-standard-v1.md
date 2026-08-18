@@ -79,7 +79,27 @@ AI 的价值是降低搜索、实现、测试和文档整理成本，不是替�
 
 任何第二路由、共享 primitive、状态所有权、API、凭据、破坏性动作、依赖或部署输入出现时，立即向上重新分级。
 
-### 3.5 内循环验证
+### 3.5 三层工作流与时间盒
+
+每个任务默认只进入 `development` 通道。changed paths 只判断风险和运行时需求，不能自行授权 PR、合并或生产操作：
+
+| 通道 | 目标 | 目标时间 | 结束条件 |
+| --- | --- | --- | --- |
+| `development` | 形成可验证候选 | 45 分钟 | 最窄有效门通过；需要时取得候选 M4/浏览器反馈 |
+| `merge` | 将已选候选合入 `master` | 90 分钟 | PR、required checks、merge；运行时变更再做 clean-master M4 接受 |
+| `release` | 完成单独批准的生产发布 | 120 分钟 | 生产策略、操作者授权、精确发布计划和健康证据 |
+
+时间盒只触发拆分和汇报，不降低验证。超过目标时，报告主要耗时来源，并把任务缩成一个仍有独立价值的切片；若必须扩大预算，明确请求操作者决定。出现第二个独立阻断时，停止继续扩张当前任务，把无关发现写入后续清单。
+
+只有操作者要求提交或合并时才进入 `merge`；只有操作者明确要求生产结果时才进入 `release`。review 或 CI 发现的无关问题默认进入 backlog，除非它直接阻塞当前通道的安全或正确性。
+
+```bash
+pnpm run check:changed -- --plan --workflow-lane development
+pnpm run check:changed -- --plan --workflow-lane merge
+pnpm run check:changed -- --plan --workflow-lane release
+```
+
+### 3.6 内循环验证
 
 先选能回答当前风险的最窄命令：
 
@@ -90,7 +110,7 @@ pnpm run check:changed
 
 随后按 seam 运行聚焦 pytest、Ruff、mypy、TypeScript、Admin 或 perimeter 检查。`check:fast` 不是所有小改动的默认首选；只有在集成收尾或真实风险需要时使用。不要为了“更安心”重复同一 broad gate。
 
-### 3.6 提交与发布
+### 3.7 提交与发布
 
 提交前检查：
 
@@ -110,7 +130,7 @@ pnpm run pr:wait -- --pr <number>
 
 失败时先读取失败签名再修复；相同外部传输签名连续失败两次后停止盲目重试，保存证据并进入记录的恢复路径。
 
-### 3.7 合并、验收与收尾
+### 3.8 合并、验收与收尾
 
 区分：`local verified` → `PR verified` → `merged into master` → `candidate validated` → `accepted on M4` → `production validated` → `human accepted`。只报告实际达到的最高状态。
 
@@ -134,9 +154,9 @@ Cloud 仍是 hosted runtime enhancement layer，不得变成第二套 WordPress 
 
 开发效率基础设施已经覆盖任务准入、风险分级、聚焦验证、发布时序和 worktree/PR 对账。除非出现自然证据，否则不要继续制造流程 PR：
 
-- 当前 CI 结构下的普通后端 PR，证明聚焦选择改善关键路径；
-- 同类 `full/runtime` 生产发布，可与兼容基线比较；
-- 明确的误选、漏检、重复 gate、预算超支或 worktree 生命周期故障。
+- 同类误选、漏检、重复 gate、预算超支或 worktree 生命周期故障自然重复至少三次；
+- 单次问题直接阻塞安全、合并或发布，且现有恢复路径无法处理；
+- 当前 CI 结构下的普通后端 PR 或同类 `full/runtime` 生产发布提供了可比较的新证据。
 
 没有这些证据时，优先真实产品闭环、用户观察和缺陷修复，而不是扩张治理平台。
 

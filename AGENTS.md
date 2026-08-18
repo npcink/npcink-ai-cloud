@@ -14,11 +14,15 @@ Every AI development session should start with:
    `docs/development-validation-operating-model-v1.md` and
    `docs/ai-development-validation-tiers-v1.md`. Classify the change as L0,
    L1, or L2 before selecting preview and closeout gates.
-5. Read the relevant boundary docs before editing:
-   - `docs/cloud-content-generation-boundary-v1.md`
-   - `docs/cloud-task-pack-boundary-v1.md`
-   - `docs/cloud-agent-workflow-metadata-projection-v1.md`
-   - `docs/cloud-agent-feedback-quality-gate-v1.md`
+5. Read only the boundary docs selected by the changed seam. Use
+   `pnpm run check:changed -- --plan <expected-files...>` as the default router;
+   when the expected files are not known yet, inspect the owning module first.
+   The candidate boundary set is:
+   - `docs/cloud-content-generation-boundary-v1.md` for content generation;
+   - `docs/cloud-task-pack-boundary-v1.md` for the retired task-pack guard;
+   - `docs/cloud-agent-workflow-metadata-projection-v1.md` for metadata projection;
+   - `docs/cloud-agent-feedback-quality-gate-v1.md` for feedback quality.
+   Do not load all four for an unrelated documentation, CI, or product seam.
 6. Briefly report the focused module, relevant Cloud boundary, and intended
    verification gate before editing.
 
@@ -50,6 +54,14 @@ prompt/router/preset local truth, or WordPress write owner.
   outcome, explicit non-goals, public contracts touched, expected files, and
   verification plus rollback. Add external-system, cross-repository, or
   forbidden-file detail only when the task actually touches those seams.
+- Default every task to the `development` workflow lane. Move to `merge` only
+  when the operator requests publication or merge, and move to `release` only
+  when the operator explicitly requests a production outcome. Changed paths
+  classify risk and runtime needs; they never authorize PR or production work.
+- Use 45 minutes for a development candidate, 90 minutes for merge closeout,
+  and 120 minutes for release closeout as split-and-report targets, not as
+  permission to skip a required gate. When a task reaches a second independent
+  blocker, stop expanding its scope and move unrelated findings to follow-up.
 - Treat elapsed time, paid Provider calls, full-gate executions, image builds,
   and shared-runtime operations as bounded task resources. Declare the relevant
   budget before using them, reuse valid evidence for the same revision, and do
@@ -181,6 +193,17 @@ with the narrowest test, lint, type, or contract gate that covers the changed
 seam. Use `check:fast` when risk or integration closeout requires the combined
 contract/domain suite, and do not duplicate the same full gate for one revision
 without a distinct reason.
+
+Declare the workflow stage explicitly when planning beyond the default:
+
+```bash
+pnpm run check:changed -- --plan --workflow-lane development
+pnpm run check:changed -- --plan --workflow-lane merge
+pnpm run check:changed -- --plan --workflow-lane release
+```
+
+The stage changes closeout expectations only. It must not change the selected
+risk tier, focused commands, or M4 runtime classification.
 
 When a broad command proves an earlier sub-gate and later fails on an unrelated
 assertion, preserve the successful sub-gate evidence but do not call the whole
