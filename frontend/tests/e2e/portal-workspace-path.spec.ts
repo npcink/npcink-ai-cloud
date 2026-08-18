@@ -3,6 +3,8 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 const BASE_URL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||
   `http://127.0.0.1:${process.env.NPCINK_CLOUD_FRONTEND_PORT || '3301'}`;
+const LOGIN_EMAIL = 'portal-readiness@example.com';
+const LOGIN_CODE = '246810';
 
 async function fulfillJson(route: Route, data: unknown) {
   await route.fulfill({
@@ -18,9 +20,9 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
-async function fulfillError(route: Route, errorCode: string) {
+async function fulfillError(route: Route, errorCode: string, status = 503) {
   await route.fulfill({
-    status: 503,
+    status,
     contentType: 'application/json',
     body: JSON.stringify({
       status: 'error',
@@ -74,41 +76,23 @@ function buildPortalSession(selectedSiteId: string) {
   if (!currentSite) {
     throw new Error(`Unknown Portal E2E selected site: ${selectedSiteId}`);
   }
-  const currentSubscription = currentSite.site_id === 'site_attention'
-    ? {
-        subscription_id: 'sub_growth',
-        plan_id: 'plan_growth',
-        plan_version_id: 'plan_growth_v1',
-        status: 'expired',
-        tier_id: 'pro',
-        plan_kind: 'paid',
-        package_kind: 'subscription',
-        package_alias: 'Pro',
-        display_package_label: 'Pro',
-        coverage_state: 'expired',
-        current_period_start_at: '2026-04-01T00:00:00Z',
-        current_period_end_at: '2026-04-12T00:00:00Z',
-        scheduled_plan_id: '',
-        scheduled_plan_version_id: '',
-        scheduled_change_at: '',
-      }
-    : {
-        subscription_id: 'sub_growth',
-        plan_id: 'plan_growth',
-        plan_version_id: 'plan_growth_v1',
-        status: 'active',
-        tier_id: 'pro',
-        plan_kind: 'paid',
-        package_kind: 'subscription',
-        package_alias: 'Growth',
-        display_package_label: 'Growth',
-        coverage_state: 'covered',
-        current_period_start_at: '2026-04-01T00:00:00Z',
-        current_period_end_at: '2026-04-30T00:00:00Z',
-        scheduled_plan_id: '',
-        scheduled_plan_version_id: '',
-        scheduled_change_at: '',
-      };
+  const currentSubscription = {
+    subscription_id: 'sub_growth',
+    plan_id: 'plan_growth',
+    plan_version_id: 'plan_growth_v1',
+    status: 'active',
+    tier_id: 'pro',
+    plan_kind: 'paid',
+    package_kind: 'subscription',
+    package_alias: 'Growth',
+    display_package_label: 'Growth',
+    coverage_state: 'covered',
+    current_period_start_at: '2026-04-01T00:00:00Z',
+    current_period_end_at: '2026-04-30T00:00:00Z',
+    scheduled_plan_id: '',
+    scheduled_plan_version_id: '',
+    scheduled_change_at: '',
+  };
 
   return {
     email: 'portal-demo@example.com',
@@ -142,15 +126,19 @@ async function installPortalMocks(
     delayInitialEntitlements?: boolean;
     zeroEntitlements?: boolean;
     failInitialEntitlements?: boolean;
+    sessionExpiredOnce?: boolean;
   } = {}
 ) {
   let selectedSiteId = 'site_attention';
+  let loggedIn = !options.sessionExpiredOnce;
+  let loginVerified = false;
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
   let paymentReturnEntitlementsFailed = false;
   let sessionRequestCount = 0;
   let accountProjectionRequestCount = 0;
+  const accountProjectionRequests: string[] = [];
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
   let initialEntitlementsFailed = false;
@@ -185,6 +173,10 @@ async function installPortalMocks(
 
     if (pathname === '/session') {
       sessionRequestCount += 1;
+      if (!loggedIn) {
+        await fulfillError(route, 'auth.portal_session_expired', 401);
+        return;
+      }
       if (options.delaySessionRefresh && sessionRequestCount > 1) {
         await sessionRefreshGate;
       }
@@ -197,6 +189,38 @@ async function installPortalMocks(
       return;
     }
 
+    if (pathname === '/logout') {
+      loggedIn = false;
+      await fulfillJson(route, {});
+      return;
+    }
+
+    if (pathname === '/auth/code/request') {
+      const body = route.request().postDataJSON() as { email?: string } | null;
+      expect(body?.email).toBe(LOGIN_EMAIL);
+      await fulfillJson(route, {
+        email: LOGIN_EMAIL,
+        delivery: 'development_code',
+        expires_in_seconds: 300,
+        resend_cooldown_seconds: 1,
+        code: LOGIN_CODE,
+      });
+      return;
+    }
+
+    if (pathname === '/auth/code/verify') {
+      const body = route.request().postDataJSON() as {
+        email?: string;
+        code?: string;
+      } | null;
+      expect(body?.email).toBe(LOGIN_EMAIL);
+      expect(body?.code).toBe(LOGIN_CODE);
+      loggedIn = true;
+      loginVerified = true;
+      await fulfillJson(route, buildPortalSession(selectedSiteId));
+      return;
+    }
+
     if (pathname === '/session/site') {
       const body = route.request().postDataJSON() as { site_id?: string } | null;
       selectedSiteId = body?.site_id || selectedSiteId;
@@ -206,6 +230,7 @@ async function installPortalMocks(
 
     if (pathname.startsWith('/account/')) {
       accountProjectionRequestCount += 1;
+      accountProjectionRequests.push(`${pathname}${url.search}`);
     }
 
     if (pathname === '/auth/identity-providers') {
@@ -257,7 +282,6 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/entitlements') {
-      const requestSiteId = selectedSiteId;
       if (
         options.failPaymentReturnEntitlements
         && paymentReturnConfirmed
@@ -275,16 +299,13 @@ async function installPortalMocks(
       const shouldDelayThisResponse = Boolean(
         options.delayInitialEntitlements
         && !initialEntitlementsDelayed
-        && requestSiteId === 'site_attention'
       );
       if (shouldDelayThisResponse) {
         initialEntitlementsDelayed = true;
         await initialEntitlementsGate;
       }
       const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
-      const packageRemaining = options.delayInitialEntitlements
-        ? requestSiteId === 'site_attention' ? 987654 : 4242
-        : options.zeroEntitlements ? 0 : 2419;
+      const packageRemaining = options.zeroEntitlements ? 0 : 2419;
       const totalRemaining = packageRemaining + paidRemaining;
       await fulfillJson(route, {
         site_id: '',
@@ -418,6 +439,7 @@ async function installPortalMocks(
 
     if (pathname === '/account/credit-trend') {
       const trendWindow = url.searchParams.get('window') || '24h';
+      const trendSiteId = url.searchParams.get('site_id') || '';
       const pointCount = trendWindow === '1h' ? 12 : trendWindow === '24h' ? 24 : trendWindow === '7d' ? 7 : 30;
       const bucketSeconds = trendWindow === '1h' ? 300 : trendWindow === '24h' ? 3600 : 86400;
       const endAt = new Date('2026-04-07T10:00:00Z').getTime();
@@ -427,9 +449,9 @@ async function installPortalMocks(
         const aiCredits = options.emptyCreditTrend
           ? 0
           : index === pointCount - 1
-            ? 18
+            ? trendSiteId === 'site_clear' ? 4 : 18
             : index === pointCount - 2
-              ? 6
+              ? trendSiteId === 'site_clear' ? 2 : 6
               : 0;
         return {
           start_at: new Date(pointStart).toISOString(),
@@ -442,7 +464,7 @@ async function installPortalMocks(
         contract_version: 'portal-credit-trend-v1',
         account_id: 'acct_portal',
         generated_at: '2026-04-07T10:00:00Z',
-        site_id: url.searchParams.get('site_id') || '',
+        site_id: trendSiteId,
         window: trendWindow,
         bucket_seconds: bucketSeconds,
         start_at: points[0]?.start_at || '',
@@ -1576,7 +1598,9 @@ async function installPortalMocks(
 
   return {
     accountProjectionRequestCount: () => accountProjectionRequestCount,
+    accountProjectionRequests: () => [...accountProjectionRequests],
     delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
+    loginVerified: () => loginVerified,
     releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
     sessionRequestCount: () => sessionRequestCount,
     releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
@@ -1957,7 +1981,7 @@ test('a new account without sites gets a WordPress connection path instead of a 
   await expect(dialog.getByRole('combobox', { name: /Related site|关联站点/i }).locator('option')).toHaveCount(1);
 });
 
-test('late account entitlements cannot overwrite a newly selected site context', async ({ page }) => {
+test('switching site context keeps account package and entitlements stable', async ({ page }) => {
   const calls = await installPortalMocks(page, { delayInitialEntitlements: true });
 
   await page.goto('/portal');
@@ -1965,12 +1989,76 @@ test('late account entitlements cannot overwrite a newly selected site context',
   await page.getByRole('button', { name: /Select site|选择站点/i }).click();
 
   await expect(page.getByText(/^Growth$/).first()).toBeVisible();
-  await expect(page.getByText(/^4,242$|^4,242 点$/i).first()).toBeVisible();
+  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  await expect(
+    page.getByRole('row', { name: /Clear Site/i }).getByRole('cell', {
+      name: /^Current site$|^当前站点$/i,
+    })
+  ).toBeVisible();
 
   calls.releaseInitialEntitlements();
   await expect.poll(calls.delayedEntitlementsCompleted).toBe(true);
-  await expect(page.getByText(/987,654/)).toHaveCount(0);
-  await expect(page.getByText(/^4,242$|^4,242 点$/i).first()).toBeVisible();
+  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+});
+
+test('site filter scopes usage evidence without changing account package data', async ({ page }) => {
+  const calls = await installPortalMocks(page);
+
+  await page.goto('/portal/usage');
+  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  await expect(page.getByText(/24 AI credits used|共使用 24 AI 积分/i)).toBeVisible();
+
+  await page.getByRole('combobox', { name: /Site filter|站点筛选/i }).selectOption('site_clear');
+  await expect.poll(() => new URL(page.url()).searchParams.get('site')).toBe('site_clear');
+  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  await expect(page.getByText(/6 AI credits used|共使用 6 AI 积分/i)).toBeVisible();
+  await expect.poll(() => calls.accountProjectionRequests()).toContain(
+    '/account/usage-summary?site_id=site_clear'
+  );
+  await expect.poll(() => calls.accountProjectionRequests()).toContain(
+    '/account/credit-trend?window=24h&site_id=site_clear'
+  );
+  const entitlementRequests = calls.accountProjectionRequests().filter((request) => (
+    request.startsWith('/account/entitlements')
+  ));
+  expect(entitlementRequests.length).toBeGreaterThan(0);
+  expect(entitlementRequests.every((request) => request === '/account/entitlements')).toBe(true);
+
+  await page.locator('[data-portal-usage="view-tabs"]')
+    .getByRole('tab', { name: /AI credit records|AI 积分记录/i })
+    .click();
+  await expect.poll(() => calls.accountProjectionRequests().some((request) => (
+    request.startsWith('/account/credit-event-buckets?')
+    && request.includes('site_id=site_clear')
+  ))).toBe(true);
+  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+});
+
+test('expired session returns through login to the requested site-filtered view', async ({ page }) => {
+  const calls = await installPortalMocks(page, { sessionExpiredOnce: true });
+
+  await page.goto('/portal/usage?view=records&site=site_clear');
+  await expect(page).toHaveURL(/\/portal\/login\?redirect=/);
+  expect(new URL(page.url()).searchParams.get('redirect')).toBe(
+    '/portal/usage?view=records&site=site_clear'
+  );
+
+  await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+  await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
+  await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
+
+  await expect(page).toHaveURL(/\/portal\/usage\?/);
+  const restoredUrl = new URL(page.url());
+  expect(restoredUrl.pathname).toBe('/portal/usage');
+  expect(restoredUrl.searchParams.get('view')).toBe('records');
+  expect(restoredUrl.searchParams.get('site')).toBe('site_clear');
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('site_clear');
+  await expect(
+    page.locator('[data-portal-usage="view-tabs"]')
+      .getByRole('tab', { name: /AI credit records|AI 积分记录/i })
+  ).toHaveAttribute('aria-selected', 'true');
+  expect(calls.loginVerified()).toBe(true);
 });
 
 test('portal home renders a real zero entitlement balance', async ({ page }) => {
