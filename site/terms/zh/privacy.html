@@ -43,16 +43,18 @@
 			</div>
 
 			<h2>我们接收的信息</h2>
-			<p>根据站点配置和功能使用情况，发送到 Npcink Cloud 的请求可能包含：配置的 site identifier、key identifier、request timestamp、nonce、trace identifier、idempotency key、HMAC signature headers、Cloud Base URL target、本地 Npcink 组件提供的 runtime request payload、health check requests、run status 和 run result requests、usage、entitlement 和 observability summary requests、管理员启用后的 metadata-only 插件 monitoring events，以及本地 Npcink 组件启用后的 public content-change hints。</p>
-			<p>对于由本地主机提供的 media derivative runtime jobs，请求还可能包含短期 source artifact descriptor、derivative parameters，以及本地主机组件提供的 bounded media derivative inputs。</p>
+			<p><strong>WordPress AI 和 runtime：</strong>本地功能明确运行时，请求可能包含用于生成结果的 prompt 或 source text、任务配置以及必要的技术标识。</p>
+			<p><strong>Media：</strong>明确启动受限媒体任务时，请求可能包含选定的图片/媒体字节，或短期 source artifact descriptor 和 derivative parameters。</p>
+			<p><strong>Site Knowledge：</strong>启用投递后，公开文章/页面及其公开元数据可能发送给 Cloud 进行索引。草稿、私密或受密码保护内容、凭据和原始数据库字段不会发送。</p>
+			<p><strong>Monitoring：</strong>仅发送插件版本、事件类型、状态、耗时、错误代码、路由、标识符、计数和延迟等元数据，不包含 prompt、文章正文、生成内容或媒体字节。</p>
 
 			<h2>我们不会有意收集的信息</h2>
-			<p>Npcink Cloud Addon 的 metadata-only monitoring 设计为不上传 prompts、generated content、article body content、raw request or response payloads、provider credentials、Cloud API secrets、passwords、cookies、无关系统的 nonces、Authorization headers、database names、table names 或 filesystem paths。</p>
-			<p>Cloud API Key secret 仅由本地 WordPress 站点用于服务端签名，不会打印到 wp-admin 页面。</p>
+			<p>Cloud API Key secret 仅由本地 WordPress 站点用于服务端签名，不会打印到 wp-admin 页面。数据保留和删除由已配置的 Cloud 服务依据其<a href="https://cloud.npc.ink/terms/en/data-retention.html">数据保留政策</a>负责。</p>
 
 			<h2>可选监控</h2>
-			<p>插件 monitoring 是可选功能，需要管理员明确 opt-in。启用后，monitoring 可能上传 plugin slug、plugin version、event kind、status、timing、error code、route、proposal id、ability id、correlation id、counters 和 latency 等运行元数据。</p>
-			<p>Monitoring 数据用于提供服务健康、可靠性、质量和诊断摘要。它不是本地 WordPress governance truth。</p>
+			<p>插件监控是可选功能，需要管理员明确同意。启用后，可能上传插件标识与版本、事件类型、状态、耗时、错误码、路由、业务关联标识、计数和延迟等运行元数据。</p>
+			<p>对受支持的编辑器使用流程，可能记录生成已开始、成功、失败、重试、接受，以及接受后是否保存或放弃。不会发送 Prompt 文本、源内容或生成内容、WordPress 用户或文章原始 ID、邮箱、URL、DOM 数据、凭据或自由文本错误消息。</p>
+			<p>上传请求会使用已配置 Cloud 站点的身份认证，因此这些数据可与该站点关联。监控数据仅用于排查故障、衡量可靠性和改进 Npcink 功能，不用于广告、个人用户评分、自动审批或自动修改 WordPress 内容。该功能默认关闭，管理员可随时关闭。</p>
 
 			<h2>信息用途</h2>
 			<p>Npcink Cloud 可能使用收到的信息来认证和验证签名请求、提供 hosted runtime 功能、返回 health、entitlement 和 usage summaries、处理 bounded media derivative jobs、提供可选 observability 和 quality summaries、保护服务可靠性、防止滥用并排查服务错误。</p>
