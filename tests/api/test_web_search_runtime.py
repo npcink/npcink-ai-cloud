@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -30,6 +31,7 @@ from app.domain.web_search.service import (
     _TAVILY_POOL_CURSOR,
     _TAVILY_POOL_QUARANTINED_UNTIL,
     _ZHIHU_HOT_LIST_CACHE,
+    AnySearchWebSearchProvider,
     ApifyWebSearchProvider,
     BochaWebSearchProvider,
     DoubaoSearchWebSearchProvider,
@@ -47,6 +49,155 @@ from tests.conftest import (
     merge_json_headers,
     seed_site_auth,
 )
+
+
+def test_anysearch_provider_maps_bearer_response_and_region(monkeypatch: Any) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(self, *, timeout: float) -> None:
+            captured["timeout"] = timeout
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(
+            self,
+            endpoint: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+        ) -> httpx.Response:
+            captured.update({"endpoint": endpoint, "headers": headers, "json": json})
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "message": "success",
+                    "data": {
+                        "results": [
+                            {
+                                "title": "AnySearch source",
+                                "url": "https://example.com/source",
+                                "snippet": "bounded source snippet",
+                                "content": "long source content should not win over snippet",
+                            }
+                        ]
+                    },
+                },
+                request=httpx.Request("POST", endpoint),
+            )
+
+    monkeypatch.setattr("app.domain.web_search.service.httpx.Client", FakeClient)
+    provider = AnySearchWebSearchProvider(
+        SimpleNamespace(
+            web_search_anysearch_api_key="anysearch-secret",
+            web_search_anysearch_base_url="https://api.anysearch.com",
+            web_search_anysearch_timeout_seconds=20.0,
+            web_search_anysearch_cost_per_query=0.01,
+            deployment_region="test-region",
+        )
+    )
+
+    result = provider.search(
+        query="AI 搜索",
+        options={
+            "intent": "general_research",
+            "max_results": 3,
+            "language": "zh-CN",
+            "region": "CN",
+        },
+        site_id="site-test",
+        run_id="run-test",
+    )
+
+    assert captured["endpoint"] == "https://api.anysearch.com/v1/search"
+    assert captured["headers"] == {"Authorization": "Bearer anysearch-secret"}
+    assert captured["json"] == {
+        "query": "AI 搜索",
+        "max_results": 3,
+        "format": "json",
+        "language": "zh-CN",
+        "zone": "cn",
+    }
+    assert result.result_json["provider"] == "anysearch"
+    assert result.result_json["results"][0]["snippet"] == "bounded source snippet"
+    assert result.usage.provider_id == "anysearch"
+    assert result.usage.cost == 0.01
+
+
+def test_anysearch_provider_rejects_unsupported_filters() -> None:
+    provider = AnySearchWebSearchProvider(
+        SimpleNamespace(
+            web_search_anysearch_api_key="anysearch-secret",
+            web_search_anysearch_base_url="https://api.anysearch.com",
+            web_search_anysearch_timeout_seconds=20.0,
+            web_search_anysearch_cost_per_query=0.0,
+            deployment_region="test-region",
+        )
+    )
+
+    with pytest.raises(WebSearchProviderError) as error:
+        provider.search(
+            query="latest AI news",
+            options={"intent": "news", "recency_days": 7},
+            site_id="site-test",
+            run_id="run-test",
+        )
+
+    assert error.value.error_code == "web_search.anysearch_filters_unsupported"
+
+
+def test_anysearch_provider_maps_quota_error(monkeypatch: Any) -> None:
+    class FakeClient:
+        def __init__(self, *, timeout: float) -> None:
+            del timeout
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(
+            self,
+            endpoint: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+        ) -> httpx.Response:
+            del headers, json
+            return httpx.Response(
+                402,
+                json={"code": 402, "message": "quota exhausted"},
+                request=httpx.Request("POST", endpoint),
+            )
+
+    monkeypatch.setattr("app.domain.web_search.service.httpx.Client", FakeClient)
+    provider = AnySearchWebSearchProvider(
+        SimpleNamespace(
+            web_search_anysearch_api_key="anysearch-secret",
+            web_search_anysearch_base_url="https://api.anysearch.com",
+            web_search_anysearch_timeout_seconds=20.0,
+            web_search_anysearch_cost_per_query=0.0,
+            deployment_region="test-region",
+        )
+    )
+
+    with pytest.raises(WebSearchProviderError) as error:
+        provider.search(
+            query="AI search",
+            options={"intent": "general_research"},
+            site_id="site-test",
+            run_id="run-test",
+        )
+
+    assert error.value.error_code == "provider.quota_exhausted"
+    assert error.value.usage is not None
+    assert error.value.usage.error_code == "provider.quota_exhausted"
 
 
 def _sqlite_url(tmp_path: Path) -> str:
