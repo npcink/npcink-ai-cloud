@@ -11,6 +11,8 @@ on:
         options:
           - "disk-report"
           - "certificate-readiness"
+          - "ownership-binding-diagnose"
+          - "ownership-binding-release"
           - "ownership-inventory"
           - "safe-prune"
       release_retention_count:
@@ -19,6 +21,16 @@ on:
         default: "4"
       safe_prune_confirmation:
         description: "For safe-prune only, type: Prune production images and old releases."
+        required: false
+        default: ""
+        type: string
+      ownership_binding_finding_token:
+        description: "For ownership-binding-release only, paste the exact 64-character diagnosis token."
+        required: false
+        default: ""
+        type: string
+      ownership_binding_repair_confirmation:
+        description: "For ownership-binding-release only, type: Release the invalid production ownership binding."
         required: false
         default: ""
         type: string
@@ -77,10 +89,77 @@ jobs:
           NPCINK_CLOUD_DEPLOY_REMOTE_DIR="${PROD_REMOTE_DIR}" \
             bash .github/scripts/production-ownership-inventory-ssh.sh
 
+  ownership-remediation:
+    name: Production ownership binding remediation
+    runs-on: ubuntu-latest
+    if: >-
+      github.ref == 'refs/heads/production' &&
+      (inputs.action == 'ownership-binding-diagnose' ||
+      inputs.action == 'ownership-binding-release')
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Install SSH key
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "${PROD_SSH_KEY}"
+          test -n "${PROD_SSH_HOST}"
+          test -n "${PROD_SSH_KNOWN_HOSTS}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "${PROD_SSH_KEY}" > ~/.ssh/npcink_prod_maintenance_key
+          chmod 600 ~/.ssh/npcink_prod_maintenance_key
+          printf '%s\n' "${PROD_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          known_host_lookup="${PROD_SSH_HOST}"
+          if [ "${PROD_SSH_PORT}" != "22" ]; then
+            known_host_lookup="[${PROD_SSH_HOST}]:${PROD_SSH_PORT}"
+          fi
+          ssh-keygen -F "${known_host_lookup}" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Checkout ownership remediation helper
+        uses: actions/checkout@v6
+
+      - name: Run ownership binding remediation
+        env:
+          MAINTENANCE_ACTION: ${{ inputs.action }}
+          OWNERSHIP_BINDING_FINDING_TOKEN: ${{ inputs.ownership_binding_finding_token }}
+          OWNERSHIP_BINDING_REPAIR_CONFIRMATION: ${{ inputs.ownership_binding_repair_confirmation }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          PROD_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+        run: |
+          set -euo pipefail
+          set +x
+          test "${PROD_SSH_USER}" = "root"
+          remediation_mode="diagnose"
+          if [ "${MAINTENANCE_ACTION}" = "ownership-binding-release" ]; then
+            remediation_mode="release"
+          fi
+          NPCINK_CLOUD_DEPLOY_SSH_HOST="${PROD_SSH_HOST}" \
+          NPCINK_CLOUD_DEPLOY_SSH_USER="${PROD_SSH_USER}" \
+          NPCINK_CLOUD_DEPLOY_SSH_PORT="${PROD_SSH_PORT}" \
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE=/home/runner/.ssh/npcink_prod_maintenance_key \
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR="${PROD_REMOTE_DIR}" \
+          NPCINK_CLOUD_OWNERSHIP_REMEDIATION_MODE="${remediation_mode}" \
+          NPCINK_CLOUD_OWNERSHIP_FINDING_TOKEN="${OWNERSHIP_BINDING_FINDING_TOKEN}" \
+          NPCINK_CLOUD_OWNERSHIP_REPAIR_CONFIRMATION="${OWNERSHIP_BINDING_REPAIR_CONFIRMATION}" \
+            bash .github/scripts/production-ownership-binding-remediation-ssh.sh
+
   maintenance:
     name: Production SSH maintenance
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/production' && inputs.action != 'ownership-inventory'
+    if: >-
+      github.ref == 'refs/heads/production' &&
+      inputs.action != 'ownership-inventory' &&
+      inputs.action != 'ownership-binding-diagnose' &&
+      inputs.action != 'ownership-binding-release'
     environment: production
     permissions: {}
     steps:
