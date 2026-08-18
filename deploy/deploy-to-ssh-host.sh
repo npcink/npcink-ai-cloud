@@ -634,6 +634,7 @@ if [[ ! "${BUNDLE_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
 fi
 UPLOAD_ID="${BUNDLE_SHA256:0:16}-$(date -u +%Y%m%d%H%M%S)-$$"
 RELEASE_NAME="release-${UPLOAD_ID}"
+REMOTE_INCOMING_ROOT="${REMOTE_DIR}/.incoming"
 REMOTE_INCOMING_DIR="${REMOTE_DIR}/.incoming/${UPLOAD_ID}"
 REMOTE_BUNDLE_PATH="${REMOTE_INCOMING_DIR}/deploy-bundle.tgz"
 REMOTE_BUNDLE_CHECKSUM_PATH="${REMOTE_BUNDLE_PATH}.sha256"
@@ -699,7 +700,7 @@ trap cleanup_remote_incoming_on_exit EXIT
 echo "[info] Preparing remote directory ${SSH_TARGET}:${REMOTE_DIR}"
 npcink_ai_cloud_run_timed "prepare remote directory" \
 	ssh "${SSH_ARGS[@]}" "${SSH_TARGET}" \
-		"mkdir -p $(remote_shell_arg "${REMOTE_DIR}") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/deploy") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/scripts") && chmod 0700 $(remote_shell_arg "${REMOTE_INCOMING_DIR}")"
+		"mkdir -p $(remote_shell_arg "${REMOTE_DIR}") && install -d -o root -g root -m 0700 -- $(remote_shell_arg "${REMOTE_INCOMING_ROOT}") && mkdir -p $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/deploy") $(remote_shell_arg "${REMOTE_PREFLIGHT_DIR}/scripts") && chmod 0700 $(remote_shell_arg "${REMOTE_INCOMING_DIR}")"
 
 npcink_ai_cloud_run_timed "upload deploy bundle preflight" \
 	scp "${SCP_ARGS[@]}" \
