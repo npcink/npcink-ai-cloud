@@ -25,7 +25,7 @@ EXPECTED_FAULTS = {
     },
     "quota_attention_account_scope": {
         "error_code": "commercial.quota_exceeded",
-        "http_status": 409,
+        "http_status": 429,
         "recovery_action": "review_account_quota",
         "disclosure": "account_scope_only",
     },

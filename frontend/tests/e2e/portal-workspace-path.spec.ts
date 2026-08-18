@@ -34,14 +34,17 @@ async function fulfillError(route: Route, errorCode: string, status = 503) {
   });
 }
 
-function buildPortalSession(selectedSiteId: string) {
+function buildPortalSession(
+  selectedSiteId: string,
+  options: { singleReadySite?: boolean; siteAttentionStatus?: string } = {}
+) {
   const sites = [
     {
       site_id: 'site_attention',
       name: 'Attention Site',
       site_url: '',
       platform_kind: 'wordpress',
-      status: 'active',
+      status: options.siteAttentionStatus || 'active',
       capacity_scope: 'scope_1',
       capacity: {
         active_count: 2,
@@ -70,7 +73,7 @@ function buildPortalSession(selectedSiteId: string) {
       },
       allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
     },
-  ];
+  ].filter((site) => !options.singleReadySite || site.site_id === 'site_clear');
 
   const currentSite = sites.find((site) => site.site_id === selectedSiteId);
   if (!currentSite) {
@@ -126,10 +129,15 @@ async function installPortalMocks(
     delayInitialEntitlements?: boolean;
     zeroEntitlements?: boolean;
     failInitialEntitlements?: boolean;
+    accountEntitlementsErrorCode?: string;
+    siteSummaryErrorCode?: string;
+    siteSummaryErrorSiteId?: string;
+    siteAttentionStatus?: string;
+    singleReadySite?: boolean;
     sessionExpiredOnce?: boolean;
   } = {}
 ) {
-  let selectedSiteId = 'site_attention';
+  let selectedSiteId = options.singleReadySite ? 'site_clear' : 'site_attention';
   let loggedIn = !options.sessionExpiredOnce;
   let loginVerified = false;
   const canceledPaymentOrderIds = new Set<string>();
@@ -139,6 +147,8 @@ async function installPortalMocks(
   let sessionRequestCount = 0;
   let accountProjectionRequestCount = 0;
   const accountProjectionRequests: string[] = [];
+  let accountEntitlementsRequestCount = 0;
+  let portalStateMutationRequestCount = 0;
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
   let initialEntitlementsFailed = false;
@@ -170,6 +180,12 @@ async function installPortalMocks(
   await page.route(/\/(?:api\/portal|portal\/v1)\/.*/, async (route) => {
     const url = new URL(route.request().url());
     const pathname = url.pathname.replace(/^\/api\/portal/, '').replace(/^\/portal\/v1/, '');
+    if (
+      route.request().method() !== 'GET'
+      && !pathname.endsWith('/customer-journey/events')
+    ) {
+      portalStateMutationRequestCount += 1;
+    }
 
     if (pathname === '/session') {
       sessionRequestCount += 1;
@@ -180,7 +196,7 @@ async function installPortalMocks(
       if (options.delaySessionRefresh && sessionRequestCount > 1) {
         await sessionRefreshGate;
       }
-      const portalSession = buildPortalSession(selectedSiteId);
+      const portalSession = buildPortalSession(selectedSiteId, options);
       await fulfillJson(route, options.emptySites
         ? { ...portalSession, sites: [], selected_context: null }
         : options.withoutSelectedContext
@@ -217,14 +233,14 @@ async function installPortalMocks(
       expect(body?.code).toBe(LOGIN_CODE);
       loggedIn = true;
       loginVerified = true;
-      await fulfillJson(route, buildPortalSession(selectedSiteId));
+      await fulfillJson(route, buildPortalSession(selectedSiteId, options));
       return;
     }
 
     if (pathname === '/session/site') {
       const body = route.request().postDataJSON() as { site_id?: string } | null;
       selectedSiteId = body?.site_id || selectedSiteId;
-      await fulfillJson(route, buildPortalSession(selectedSiteId));
+      await fulfillJson(route, buildPortalSession(selectedSiteId, options));
       return;
     }
 
@@ -282,6 +298,19 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/entitlements') {
+      accountEntitlementsRequestCount += 1;
+      if (options.accountEntitlementsErrorCode) {
+        const statusByCode: Record<string, number> = {
+          'commercial.quota_exceeded': 429,
+          'service.entitlements_temporarily_unavailable': 503,
+        };
+        await fulfillError(
+          route,
+          options.accountEntitlementsErrorCode,
+          statusByCode[options.accountEntitlementsErrorCode] || 503
+        );
+        return;
+      }
       if (
         options.failPaymentReturnEntitlements
         && paymentReturnConfirmed
@@ -1043,6 +1072,22 @@ async function installPortalMocks(
       return;
     }
 
+    const siteSummaryErrorPath = `/sites/${options.siteSummaryErrorSiteId || 'site_attention'}/summary`;
+    if (options.siteSummaryErrorCode && pathname === siteSummaryErrorPath) {
+      const statusByCode: Record<string, number> = {
+        'auth.site_not_found': 404,
+        'auth.site_inactive': 403,
+        'auth.site_suspended': 403,
+        'provider_connection.auth_failed': 502,
+      };
+      await fulfillError(
+        route,
+        options.siteSummaryErrorCode,
+        statusByCode[options.siteSummaryErrorCode] || 503
+      );
+      return;
+    }
+
     if (pathname === '/sites/site_attention/summary') {
       await fulfillJson(route, {
         site_id: 'site_attention',
@@ -1597,10 +1642,12 @@ async function installPortalMocks(
   });
 
   return {
+    accountEntitlementsRequestCount: () => accountEntitlementsRequestCount,
     accountProjectionRequestCount: () => accountProjectionRequestCount,
     accountProjectionRequests: () => [...accountProjectionRequests],
     delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     loginVerified: () => loginVerified,
+    portalStateMutationRequestCount: () => portalStateMutationRequestCount,
     releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
     sessionRequestCount: () => sessionRequestCount,
     releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
@@ -1964,7 +2011,7 @@ test('account-level support stays available without a selected site context', as
   expect(calls.accountProjectionRequestCount()).toBe(0);
 });
 
-test('a new account without sites gets a WordPress connection path instead of a dead end', async ({ page }) => {
+test('[readiness:new_account_no_site] a new account gets a WordPress connection path instead of a dead end', async ({ page }) => {
   await installPortalMocks(page, { emptySites: true });
 
   await page.goto('/portal');
@@ -1981,7 +2028,17 @@ test('a new account without sites gets a WordPress connection path instead of a 
   await expect(dialog.getByRole('combobox', { name: /Related site|关联站点/i }).locator('option')).toHaveCount(1);
 });
 
-test('switching site context keeps account package and entitlements stable', async ({ page }) => {
+test('[readiness:single_site_ready] one ready site shows healthy account and site context', async ({ page }) => {
+  await installPortalMocks(page, { singleReadySite: true });
+
+  await page.goto('/portal');
+  await expect(page.getByText(/1 connected|1 个已连接/i)).toBeVisible();
+  await page.goto('/portal/sites/site_clear');
+  await expect(page.getByRole('heading', { level: 1, name: 'Clear Site' })).toBeVisible();
+  await expect(page.getByText(/^Connected$|^已接入$/i)).toBeVisible();
+});
+
+test('[readiness:multi_site_context_switch] switching site keeps account package and entitlements stable', async ({ page }) => {
   const calls = await installPortalMocks(page, { delayInitialEntitlements: true });
 
   await page.goto('/portal');
@@ -2034,7 +2091,7 @@ test('site filter scopes usage evidence without changing account package data', 
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
 });
 
-test('expired session returns through login to the requested site-filtered view', async ({ page }) => {
+test('[readiness:session_expired_recovery] expired session restores the requested site-filtered view', async ({ page }) => {
   const calls = await installPortalMocks(page, { sessionExpiredOnce: true });
 
   await page.goto('/portal/usage?view=records&site=site_clear');
@@ -2070,14 +2127,22 @@ test('portal home renders a real zero entitlement balance', async ({ page }) => 
   await expect(remainingMetric.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
 });
 
-test('portal home exposes a safe retry when entitlements fail', async ({ page }) => {
-  await installPortalMocks(page, { failInitialEntitlements: true });
+test('[readiness:service_temporarily_unavailable] retry is bounded, support-aware, and mutation-free', async ({ page }) => {
+  const calls = await installPortalMocks(page, { failInitialEntitlements: true });
   await page.goto('/portal');
   const retryButton = page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i });
   await expect(retryButton).toBeVisible();
   await expect(page.getByText(/internal backend detail/i)).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Contact support|联系支持/i })).toHaveAttribute(
+    'href',
+    '/portal/support?new=1&topic=account'
+  );
+  await expect.poll(calls.accountEntitlementsRequestCount).toBe(1);
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
   await retryButton.click();
   await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+  await expect.poll(calls.accountEntitlementsRequestCount).toBe(2);
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
 });
 
 test('portal fault recovery keeps localized copy and hides backend details', async ({ page }) => {
@@ -2095,6 +2160,104 @@ test('portal fault recovery keeps localized copy and hides backend details', asy
   ).toHaveCount(0);
   await retryButton.click();
   await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+});
+
+test('[readiness:quota_attention_account_scope] quota failure stays account-scoped', async ({ page }) => {
+  const calls = await installPortalMocks(page, {
+    accountEntitlementsErrorCode: 'commercial.quota_exceeded',
+  });
+
+  await page.goto('/portal');
+
+  await expect(
+    page.getByText(/account has reached its current usage limit|账户已达到使用额度上限/i)
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: /Review account usage|查看账户用量/i })).toHaveAttribute(
+    'href',
+    '/portal/usage'
+  );
+  await expect(page.getByText(/internal backend detail|commercial\.quota_exceeded/i)).toHaveCount(0);
+  await expect.poll(calls.accountEntitlementsRequestCount).toBe(1);
+  expect(calls.accountProjectionRequests()).toContain('/account/entitlements');
+  expect(calls.portalStateMutationRequestCount()).toBe(0);
+});
+
+test.describe('portal first-user fault journeys', () => {
+  const faultCases = [
+    {
+      scenarioId: 'inactive_site_recovery',
+      readinessNode: '[readiness:inactive_site_recovery]',
+      errorCode: 'auth.site_inactive',
+      expectedCopy: /currently inactive|当前未激活/i,
+      expectedAction: /Review site activation|检查站点激活/i,
+      expectedHref: '/portal#sites',
+      siteId: 'site_attention',
+      siteStatus: 'inactive',
+      preservesOwnedSiteEvidence: true,
+    },
+    {
+      scenarioId: 'suspended_site_read_only',
+      readinessNode: '[readiness:suspended_site_read_only]',
+      errorCode: 'auth.site_suspended',
+      expectedCopy: /is suspended|已暂停/i,
+      expectedAction: /Contact support|联系支持/i,
+      expectedHref: '/portal/support?new=1&topic=site&site=site_attention',
+      siteId: 'site_attention',
+      siteStatus: 'suspended',
+      preservesOwnedSiteEvidence: true,
+    },
+    {
+      scenarioId: 'cross_account_site_denial',
+      readinessNode: '[readiness:cross_account_site_denial]',
+      errorCode: 'auth.site_not_found',
+      expectedCopy: /not connected to your Cloud account|未连接到当前 Cloud 账户/i,
+      expectedAction: /Choose a connected site|选择已连接站点/i,
+      expectedHref: '/portal#sites',
+      siteId: 'foreign_site_reference',
+      siteStatus: 'active',
+      preservesOwnedSiteEvidence: false,
+    },
+    {
+      scenarioId: 'invalid_connector_credential',
+      readinessNode: '[readiness:invalid_connector_credential]',
+      errorCode: 'provider_connection.auth_failed',
+      expectedCopy: /connection credential was rejected|连接凭据被拒绝/i,
+      expectedAction: /Review connection steps|查看连接步骤/i,
+      expectedHref: '/portal#sites',
+      siteId: 'site_attention',
+      siteStatus: 'active',
+      preservesOwnedSiteEvidence: true,
+    },
+  ] as const;
+
+  for (const faultCase of faultCases) {
+    test(`${faultCase.readinessNode} ${faultCase.errorCode} has its own safe recovery`, async ({ page }) => {
+      await installPortalMocks(page, {
+        siteSummaryErrorCode: faultCase.errorCode,
+        siteSummaryErrorSiteId: faultCase.siteId,
+        siteAttentionStatus: faultCase.siteStatus,
+      });
+
+      await page.goto(`/portal/sites/${faultCase.siteId}`);
+
+      await expect(page.getByText(faultCase.expectedCopy).last()).toBeVisible();
+      await expect(page.getByRole('link', { name: faultCase.expectedAction })).toHaveAttribute(
+        'href',
+        faultCase.expectedHref
+      );
+      await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+      await expect(
+        page.getByText(new RegExp(`internal backend detail|${faultCase.errorCode.replaceAll('.', '\\.')}`, 'i'))
+      ).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Remove site|移除站点/i })).toHaveCount(0);
+      if (faultCase.preservesOwnedSiteEvidence) {
+        await expect(page.getByRole('heading', { level: 1, name: 'Attention Site' })).toBeVisible();
+      } else {
+        await expect(page.getByText(/foreign_site_reference|foreign account|其他账户站点/i)).toHaveCount(0);
+        await expect(page.getByRole('heading', { level: 1, name: 'Attention Site' })).toHaveCount(0);
+      }
+    });
+  }
 });
 
 test('portal PC tables stay readable across supported desktop widths, themes, and locales', async ({ page }) => {

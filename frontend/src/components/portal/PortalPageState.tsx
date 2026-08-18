@@ -19,6 +19,8 @@ type PortalErrorStateProps = {
   description: string;
   retryLabel: string;
   onRetry: () => void;
+  recoveryLabel?: string;
+  recoveryHref?: string;
 };
 
 type PortalEmptyStateProps = {
@@ -71,15 +73,28 @@ export function PortalErrorState({
   description,
   retryLabel,
   onRetry,
+  recoveryLabel,
+  recoveryHref,
 }: PortalErrorStateProps) {
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
       <div className="max-w-md text-center">
         <h2 className="mb-4 text-2xl font-bold">{title}</h2>
         <p className="mb-6 text-gray-600 dark:text-gray-400">{description}</p>
-        <button onClick={onRetry} className="btn btn-primary">
-          {retryLabel}
-        </button>
+        <div className="flex flex-wrap justify-center gap-3">
+          {recoveryLabel && recoveryHref ? (
+            <a href={recoveryHref} className="btn btn-primary">
+              {recoveryLabel}
+            </a>
+          ) : null}
+          <button
+            type="button"
+            onClick={onRetry}
+            className={recoveryLabel && recoveryHref ? 'btn btn-secondary' : 'btn btn-primary'}
+          >
+            {retryLabel}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalSiteMonitoring } from '@/hooks/usePortalSiteMonitoring';
 import { usePortalSiteKnowledge } from '@/hooks/usePortalSiteKnowledge';
 import { useSession } from '@/hooks/useSession';
+import { ApiError } from '@/lib/errors';
 import {
   portalClient,
   type PortalSiteRelinkPolicy,
@@ -32,6 +33,54 @@ import {
   getPortalSiteUrl,
 } from '@/lib/portal-site-display';
 
+type PortalSiteLoadError = {
+  code: string;
+  message: string;
+};
+
+function getPortalSiteRecovery(
+  errorCode: string,
+  siteId: string,
+  t: (key: string, params?: Record<string, string>, fallback?: string) => string
+): { label: string; href: string } | null {
+  switch (errorCode) {
+    case 'auth.site_inactive':
+      return {
+        label: t('error.portal_recovery_activate_site', {}, 'Review site activation'),
+        href: '/portal#sites',
+      };
+    case 'auth.site_suspended':
+      return {
+        label: t('error.portal_recovery_contact_support', {}, 'Contact support'),
+        href: `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`,
+      };
+    case 'commercial.quota_exceeded':
+      return {
+        label: t('error.portal_recovery_review_account_quota', {}, 'Review account usage'),
+        href: '/portal/usage',
+      };
+    case 'auth.site_not_found':
+      return {
+        label: t('error.portal_recovery_choose_owned_site', {}, 'Choose a connected site'),
+        href: '/portal#sites',
+      };
+    case 'provider_connection.auth_failed':
+      return {
+        label: t('error.portal_recovery_update_connector', {}, 'Review connection steps'),
+        href: '/portal#sites',
+      };
+    case 'provider_connection.network_error':
+    case 'provider.unavailable':
+    case 'service.entitlements_temporarily_unavailable':
+      return {
+        label: t('error.portal_recovery_contact_support', {}, 'Contact support'),
+        href: `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`,
+      };
+    default:
+      return null;
+  }
+}
+
 function PortalSiteRecordContent() {
   const params = useParams<{ siteId?: string }>();
   const router = useRouter();
@@ -39,7 +88,7 @@ function PortalSiteRecordContent() {
   const { t } = useLocale();
   const { session, isLoading, isAuthenticated, refresh } = useSession();
   const [summary, setSummary] = useState<PortalSiteSummaryRecord | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<PortalSiteLoadError | null>(null);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [removeError, setRemoveError] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
@@ -50,7 +99,7 @@ function PortalSiteRecordContent() {
 
   useEffect(() => {
     setSummary(null);
-    setError('');
+    setError(null);
     if (!isAuthenticated || !siteId) return;
     let alive = true;
     portalClient
@@ -62,7 +111,10 @@ function PortalSiteRecordContent() {
       })
       .catch((err) => {
         if (alive) {
-          setError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+          setError({
+            code: err instanceof ApiError ? err.errorCode : '',
+            message: formatPortalErrorMessage(err, t, t('error.failed_load')),
+          });
         }
       });
 
@@ -113,14 +165,48 @@ function PortalSiteRecordContent() {
     );
   }
 
+  const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
+
   if (error) {
+    const recovery = getPortalSiteRecovery(error.code, siteId, t);
+    const sessionSiteStatusLabel = sessionSite?.status === 'active'
+      ? t('portal.sites.table_ready', {}, 'Connected')
+      : sessionSite?.status === 'inactive'
+        ? t('portal.site_status_inactive', {}, 'Inactive')
+        : sessionSite?.status === 'provisioning'
+          ? t('portal.site_status_provisioning', {}, 'Provisioning')
+          : t('portal.site_status_suspended', {}, 'Suspended');
+
     return (
-      <PortalErrorState
-        title={t('common.error')}
-        description={error}
-        retryLabel={t('common.retry')}
-        onRetry={() => window.location.reload()}
-      />
+      <PortalPageStack>
+        {sessionSite ? (
+          <PortalWorkspaceHeader
+            title={getPortalSiteDisplayName(sessionSite)}
+            currentPage="record"
+            selectedSiteId={siteId}
+            sites={session.sites}
+            titleAccessory={(
+              <PortalStatusBadge
+                status={sessionSite.status === 'active' ? 'active' : 'warning'}
+                label={sessionSiteStatusLabel}
+              />
+            )}
+            metadata={getPortalSiteUrl(sessionSite) ? (
+              <span className="break-all text-sm text-slate-600 dark:text-slate-300">
+                {getPortalSiteUrl(sessionSite)}
+              </span>
+            ) : undefined}
+          />
+        ) : null}
+        <PortalErrorState
+          title={t('common.error')}
+          description={error.message}
+          retryLabel={t('common.retry')}
+          onRetry={() => window.location.reload()}
+          recoveryLabel={recovery?.label}
+          recoveryHref={recovery?.href}
+        />
+      </PortalPageStack>
     );
   }
 
@@ -128,7 +214,6 @@ function PortalSiteRecordContent() {
     return <PortalLoadingState message={t('common.loading')} />;
   }
 
-  const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
   const site: Site = {
     site_id: siteId,
     name: summary.site?.name || sessionSite?.name || siteId,
