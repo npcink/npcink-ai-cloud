@@ -43,6 +43,7 @@ Start with:
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
 - [Internal New-User Readiness Gate](docs/internal-new-user-readiness-gate-v1.md)
+- [Internal Readiness Final Handoff — 2026-08-18](docs/internal-readiness-final-handoff-2026-08-18.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
 

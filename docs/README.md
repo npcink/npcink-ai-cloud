@@ -67,6 +67,7 @@ deleting the old decision history.
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
+- [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
 - [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
