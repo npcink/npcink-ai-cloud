@@ -34,6 +34,7 @@ from app.core.runtime_config import config_dir_from_environment, load_runtime_se
 CONTRACT = "npcink.production_ownership_binding_remediation.v1"
 REPAIR_CONFIRMATION = "Release the invalid production ownership binding."
 RELEASE_REASON = "operator_invalid_ownership_binding_repair"
+MAX_RELEVANT_ROWS = 100_000
 OPAQUE_ID_PATTERN = re.compile(r"[A-Za-z0-9:_-]{1,191}\Z")
 
 
@@ -76,6 +77,22 @@ def collect_invalid_current_bindings(
     *,
     for_update: bool = False,
 ) -> list[dict[str, Any]]:
+    relevant_rows = sum(
+        int(session.scalar(select(func.count()).select_from(model)) or 0)
+        for model in (
+            Account,
+            Principal,
+            AccountUserMembership,
+            Site,
+            PrincipalSiteBinding,
+        )
+    )
+    if relevant_rows > MAX_RELEVANT_ROWS:
+        raise RuntimeError(
+            "ownership remediation scope exceeds the bounded row limit "
+            f"({relevant_rows}>{MAX_RELEVANT_ROWS})"
+        )
+
     binding_statement = select(
         PrincipalSiteBinding.binding_id,
         PrincipalSiteBinding.principal_id,

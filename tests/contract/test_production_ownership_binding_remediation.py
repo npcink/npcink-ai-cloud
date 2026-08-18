@@ -109,6 +109,17 @@ def test_diagnose_reports_only_reason_codes_and_finding_token() -> None:
     assert "private@example.test" not in serialized
 
 
+def test_diagnose_fails_before_materializing_an_oversized_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _database() as session:
+        _add_archived_site_with_stale_binding(session)
+        monkeypatch.setattr(MODULE, "MAX_RELEVANT_ROWS", 4)
+
+        with pytest.raises(RuntimeError, match="bounded row limit"):
+            MODULE.diagnose(session)
+
+
 def test_release_requires_exact_token_and_confirmation_then_audits() -> None:
     with _database() as session:
         _add_archived_site_with_stale_binding(session)
