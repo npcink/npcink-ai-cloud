@@ -781,7 +781,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -816,8 +816,9 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           python3 scripts/select-pytest-shard.py \
-            --shards 3 \
+            --shards 4 \
             --shard "${{ matrix.shard }}" \
+            --collected-item-floor-seconds 1.0 \
             tests/api tests/contract tests/domain \
             > "artifacts/pytest-files-shard-${{ matrix.shard }}.txt"
           echo "## Pytest Shard ${{ matrix.shard }}" >> "${GITHUB_STEP_SUMMARY}"
@@ -1353,8 +1354,8 @@ jobs:
               find "${coverage_root}/download" -type f \
                 -name 'coverage-backend-shard-*.data' -print | sort
             )
-            if [ "${#coverage_files[@]}" -ne 3 ]; then
-              echo "expected 3 backend coverage shard files, found ${#coverage_files[@]}" >&2
+            if [ "${#coverage_files[@]}" -ne 4 ]; then
+              echo "expected 4 backend coverage shard files, found ${#coverage_files[@]}" >&2
               exit 1
             fi
             for index in "${!coverage_files[@]}"; do

@@ -45,9 +45,17 @@ unknown future `app/api/**` files also fall back to all API tests with a
 warning. A missing mapping therefore costs time but cannot silently reduce
 coverage.
 
-The complete backend lane remains three shards and is still selected for CI
+The complete backend lane uses four shards and is still selected for CI
 configuration, dependencies, migrations, core models, and other high-risk
 surfaces. Targeted-lane optimization must not change that authority.
+
+The fourth shard was activated after runs `32087229487` and `32088789753`
+repeatedly timed out shard 1 at 1200 seconds without a test assertion failure.
+Collected pytest case counts now provide a one-second-per-case scheduling floor
+so new and parameterized cases cannot appear nearly free when historical timing
+weights are stale. With that floor, the three-shard assignment was balanced at
+953, 947, and 970 collected cases but still predicted roughly 1078 seconds per
+shard, satisfying the documented capacity trigger for a fourth shard.
 
 ## Weight source
 
@@ -71,7 +79,7 @@ pnpm run ci:pytest:weights:refresh -- \
 The generator first sums all shard reports within each run. For every file and
 test node it stores the five-run mean plus population standard deviation. This
 safety margin prevents a high-variance file from being grouped with several
-other hotspots merely because its median run was fast. Runs without all three shard reports
+other hotspots merely because its median run was fast. Runs without all four shard reports
 are rejected in explicit mode and skipped in recent-master discovery mode. The
 checked-in payload records every source run ID and the aggregation method.
 
@@ -100,9 +108,9 @@ one runner can be temporarily slow.
 ## Changed-code coverage observation
 
 Pull requests that enter the complete backend pytest lane and change Python
-under `app/**` also collect branch coverage while the existing three shards
-run. No fourth pytest execution is added. Each shard uploads one coverage.py
-data file; `CI observability` combines the three files and compares the result
+under `app/**` also collect branch coverage while the existing four shards
+run. No separate coverage-only pytest execution is added. Each shard uploads one coverage.py
+data file; `CI observability` combines the four files and compares the result
 with the pull request diff. Pull requests without changed `app/**` Python keep
 the original pytest command and publish a no-app-changes observation without
 installing or running coverage.py.
@@ -180,9 +188,10 @@ database, external coverage service, or another test execution.
    Static discovery must include new test functions, current pytest collection
    must match static discovery, and incomplete/dynamic discovery must fall back
    to the whole file. Keep all assertions and recovery semantics.
-5. Add a fourth shard only when three shards are balanced but the critical path
-   still misses the agreed feedback target. Changing from three to four jobs
-   increases runner concurrency by 33 percent.
+5. The fourth shard is justified only while collected-case-aware three-shard
+   assignment remains balanced but the critical path still misses the agreed
+   feedback target. Four jobs increase runner concurrency by 33 percent; do not
+   add a fifth shard without a new natural-run capacity review.
 
 The first files to investigate are the sustained timing leaders shown by the
 rolling report, not files selected from one isolated run. Node-ID sharding is a
