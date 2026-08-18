@@ -8,6 +8,7 @@ from importlib import util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,7 @@ def _load_inventory_module() -> ModuleType:
 INVENTORY_MODULE = _load_inventory_module()
 CONTRACT = INVENTORY_MODULE.CONTRACT
 collect_inventory = INVENTORY_MODULE.collect_inventory
+database_url_from_runtime_config = INVENTORY_MODULE.database_url_from_runtime_config
 
 
 @contextmanager
@@ -244,6 +246,42 @@ def test_unsafe_identifier_is_counted_but_never_printed() -> None:
     assert "acct_unsafe@example.com" not in serialized
 
 
+def test_inventory_reads_only_the_database_url_from_runtime_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = "postgresql+psycopg://inventory:private@postgres/inventory"
+    monkeypatch.setattr(
+        INVENTORY_MODULE,
+        "config_dir_from_environment",
+        lambda: Path("/run/npcink-config"),
+    )
+    monkeypatch.setattr(
+        INVENTORY_MODULE,
+        "load_runtime_settings_values",
+        lambda config_dir: {"database_url": database_url},
+    )
+
+    assert database_url_from_runtime_config() == database_url
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    ["", "://malformed", " sqlite+pysqlite:///:memory:", "sqlite+pysqlite:///:memory:"],
+)
+def test_inventory_rejects_missing_malformed_or_non_postgres_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+) -> None:
+    monkeypatch.setattr(
+        INVENTORY_MODULE,
+        "load_runtime_settings_values",
+        lambda config_dir: {"database_url": database_url},
+    )
+
+    with pytest.raises(RuntimeError, match="database URL|requires PostgreSQL"):
+        database_url_from_runtime_config()
+
+
 def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     workflow = (ROOT / ".github/workflows/production-maintenance.yml").read_text(
         encoding="utf-8"
@@ -276,6 +314,8 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     assert "docker compose exec" not in helper
     assert 'npcink_ai_cloud_compose "${current_release}" exec -T api python -' in helper
     assert "SET TRANSACTION READ ONLY" in inventory
+    assert "Settings()" not in inventory
+    assert "load_runtime_settings_values(config_dir_from_environment())" in inventory
     assert "select(Principal.principal_id, Principal.status)" in inventory
     assert "select(Site)" not in inventory
     assert "select(Principal)" not in inventory
