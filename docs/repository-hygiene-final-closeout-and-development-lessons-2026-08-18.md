@@ -14,7 +14,26 @@ The active rules remain the
 [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md),
 and [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md).
 
-## 1. Final outcome
+## 1. Historical progression
+
+This final closeout follows an earlier evidence-first cleanup session. The
+earlier numbers are phase snapshots, not cumulative deletion quotas:
+
+| Phase snapshot | Result | Why the remaining objects stayed |
+| --- | --- | --- |
+| 160 registrations | Created a dedicated cleanup worktree and began read-only classification | Protected roles, locks, dirty data, unique commits, and uncertain ownership were separated |
+| 160 → 159 | Removed one exact detached worktree backed by merged PR #344 | It was clean, inactive, unowned, and fully represented by current integration history |
+| 159 → 152 | Removed seven exact worktrees backed by merged PRs #292, #338, #371, #387, #409, #425, and #431 | Each passed fresh lock, process, Git-operation, inactivity, PR, and ancestry checks |
+| 152 → 144 | Removed eight additional evidence-complete worktrees | The remaining 25 locked objects and 38 old registrations still lacked sufficient ownership/content evidence |
+| 144 → 66 → 2 | Later stage-transition consolidation reduced the registered topology to the bounded steady state recorded below | Dirty work was archived; uncertain history was preserved; M4 operations remained protected |
+
+The earlier session explicitly rejected global `git worktree prune`, force
+removal, branch deletion, and “wait 72 hours then delete” as substitutes for
+content and ownership evidence. This explains why the final consolidation was
+performed as a separate, freshly audited phase rather than as a blind
+continuation of the first cleanup.
+
+## 2. Final outcome
 
 The cleanup reduced local repository topology without blindly merging
 historical work or disturbing the production branch.
@@ -42,7 +61,7 @@ seven Dependabot branches are intentionally retained because they correspond
 to open dependency-update PRs and must be reviewed on their own security and
 compatibility merits.
 
-## 2. What was merged, and what was not
+## 3. What was merged, and what was not
 
 The cleanup used protected merge evidence for the four completed documentation
 and architecture batches:
@@ -67,7 +86,7 @@ particular:
 This is the central distinction: a branch can be historically important
 without being a current integration candidate.
 
-## 3. Preservation and rollback layers
+## 4. Preservation and rollback layers
 
 Recoverability was established before local refs or worktree registrations were
 removed:
@@ -95,7 +114,7 @@ The layers protect different failure modes:
 
 No single layer is sufficient for all four categories.
 
-## 4. Reusable execution method
+## 5. Reusable execution method
 
 Future stage transitions should proceed in this order:
 
@@ -154,7 +173,7 @@ These states answer different questions and must not be collapsed:
 The cleanup was a local and merged-source topology operation. It performed no
 M4 build, deployment, production operation, or human-value trial.
 
-## 5. Development lessons and corrections
+## 6. Development lessons and corrections
 
 ### Lesson 1: ancestry is not merge proof
 
@@ -194,7 +213,7 @@ particular, avoid assigning to zsh’s special lowercase `path`, capture
 `git worktree prune --dry-run` stderr, normalize checksum paths before
 comparison, and avoid loose regexes that confuse `tracked` with `untracked`.
 
-## 6. Ongoing branch and worktree policy
+## 7. Ongoing branch and worktree policy
 
 The recommended steady state is intentionally small:
 
@@ -210,7 +229,7 @@ explicit release condition. Dependabot branches are an exception to the human
 branch count because open dependency PRs are external review work, not idle
 local development lanes.
 
-## 7. Closeout checklist
+## 8. Closeout checklist
 
 Before declaring a future cleanup complete, verify:
 
@@ -227,7 +246,7 @@ Before declaring a future cleanup complete, verify:
 - [ ] the final worktree/branch counts match the declared target;
 - [ ] the receipt names residual archives, risks, rollback, and next owner.
 
-## 8. Final receipt for this closeout
+## 9. Final receipt for this closeout
 
 ```text
 REPOSITORY_HYGIENE_RECEIPT
