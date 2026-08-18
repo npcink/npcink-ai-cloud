@@ -2080,6 +2080,23 @@ test('portal home exposes a safe retry when entitlements fail', async ({ page })
   await expect(page.getByText(/^2,419$/).first()).toBeVisible();
 });
 
+test('portal fault recovery keeps localized copy and hides backend details', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+  });
+  await installPortalMocks(page, { failInitialEntitlements: true });
+
+  await page.goto('/portal');
+  await expect(page.getByText(/套餐用量暂不可用/i)).toBeVisible();
+  const retryButton = page.getByRole('button', { name: /暂不可用.*重试/i });
+  await expect(retryButton).toBeVisible();
+  await expect(
+    page.getByText(/internal backend detail|service\.entitlements_temporarily_unavailable/i)
+  ).toHaveCount(0);
+  await retryButton.click();
+  await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+});
+
 test('portal PC tables stay readable across supported desktop widths, themes, and locales', async ({ page }) => {
   await installPortalMocks(page);
 
