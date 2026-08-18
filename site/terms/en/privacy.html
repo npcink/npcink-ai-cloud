@@ -43,16 +43,19 @@
 			</div>
 
 			<h2>Information We Receive</h2>
-			<p>Depending on site configuration and feature use, requests to Npcink Cloud may include configured site identifier, key identifier, request timestamp, nonce, trace identifier, idempotency key, HMAC signature headers, Cloud Base URL target, runtime request payloads supplied by local Npcink components, health check requests, run status and run result requests, usage, entitlement, and observability summary requests, metadata-only plugin monitoring events when enabled by an administrator, and public content-change hints for Site Knowledge synchronization when enabled by local Npcink components.</p>
-			<p>For host-supplied media derivative runtime jobs, requests may also include a short-lived source artifact descriptor, derivative parameters, and bounded media derivative inputs supplied by the local host component.</p>
+			<p><strong>Service metadata:</strong> routine connection and read requests may include the configured site and key identifiers, request timestamp, nonce, trace and idempotency identifiers, HMAC signature headers, Cloud Base URL target, health checks, run status or result reads, and usage, entitlement, or observability summary requests.</p>
+			<p><strong>WordPress AI and runtime:</strong> when a local feature explicitly runs, the request can include the prompt or source text and task configuration needed for that result.</p>
+			<p><strong>Media:</strong> when a bounded media job is explicitly started, the request can include selected image/media bytes or a short-lived source artifact descriptor and derivative parameters.</p>
+			<p><strong>Site Knowledge:</strong> when delivery is enabled, public posts/pages and public metadata may be sent for Cloud-owned indexing. Drafts, private or password-protected content, credentials, and raw database fields are excluded.</p>
+			<p><strong>Monitoring:</strong> only optional metadata such as plugin version, event kind, status, timing, error code, route, identifiers, counters, and latency. Monitoring does not include prompts, article content, generated content, or media bytes.</p>
 
 			<h2>Information We Do Not Intentionally Collect</h2>
-			<p>The Npcink Cloud Addon is designed not to upload prompts, generated content, article body content, raw request or response payloads, provider credentials, Cloud API secrets, passwords, cookies, nonces from unrelated systems, Authorization headers, database names, table names, or filesystem paths as part of metadata-only monitoring.</p>
-			<p>The Cloud API Key secret is used for server-side signing by the local WordPress site and is not printed in wp-admin.</p>
+			<p>The Cloud API Key secret is used for server-side signing by the local WordPress site and is not printed in wp-admin. The configured Cloud service controls retention and deletion under its <a href="https://cloud.npc.ink/terms/en/data-retention.html">data retention policy</a>.</p>
 
 			<h2>Optional Monitoring</h2>
 			<p>Plugin monitoring is optional and requires explicit administrator opt-in. When enabled, monitoring may upload operational metadata such as plugin slug, plugin version, event kind, status, timing, error code, route, proposal id, ability id, correlation id, counters, and latency.</p>
-			<p>Monitoring data is used to provide service health, reliability, quality, and diagnostic summaries. It is not local WordPress governance truth.</p>
+			<p>For supported editor journeys, this may record that generation started, succeeded, failed, was retried or accepted, and whether an accepted result was saved or abandoned. It does not send prompt text, source or generated content, raw WordPress user or post IDs, email addresses, URLs, DOM data, credentials, or free-form error messages.</p>
+			<p>Uploads are authenticated to the configured Cloud site and may therefore be associated with that site. Monitoring data is used to diagnose failures, measure reliability, and improve Npcink features. It is not used for advertising, individual user scoring, automatic approval, or automatic WordPress content changes. Monitoring is off by default and an administrator can turn it off at any time.</p>
 
 			<h2>How We Use Information</h2>
 			<p>Npcink Cloud may use received information to authenticate and verify signed requests, provide hosted runtime features, return health, entitlement, and usage summaries, process bounded media derivative jobs, provide optional observability and quality summaries, protect service reliability, prevent abuse, and troubleshoot service errors.</p>
