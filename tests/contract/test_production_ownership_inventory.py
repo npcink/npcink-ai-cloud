@@ -300,10 +300,9 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
         "inputs.action == 'ownership-inventory'"
     ) in workflow
     assert "permissions:\n      contents: read" in workflow
-    assert (
-        "if: github.ref == 'refs/heads/production' && "
-        "inputs.action != 'ownership-inventory'"
-    ) in workflow
+    assert "inputs.action != 'ownership-inventory'" in workflow
+    assert "inputs.action != 'ownership-binding-diagnose'" in workflow
+    assert "inputs.action != 'ownership-binding-release'" in workflow
     assert "permissions: {}" in workflow
     assert "Checkout ownership inventory helper" in workflow
     assert "if: inputs.action == 'ownership-inventory'" not in workflow
