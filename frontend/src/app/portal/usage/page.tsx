@@ -2,7 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
@@ -148,6 +148,7 @@ function formatCreditBucketRange(startValue: string, endValue: string, locale: L
 
 function PortalUsageContent() {
   const { locale, t } = useLocale();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const siteFilterId = searchParams.get('site') || '';
@@ -550,7 +551,7 @@ function PortalUsageContent() {
     if (nextSiteId) nextParams.set('site', nextSiteId);
     else nextParams.delete('site');
     const query = nextParams.toString();
-    window.history.replaceState(window.history.state, '', `/portal/usage${query ? `?${query}` : ''}`);
+    router.replace(`/portal/usage${query ? `?${query}` : ''}`);
   };
 
   return (
