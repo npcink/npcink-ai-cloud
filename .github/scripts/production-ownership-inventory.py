@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
@@ -26,6 +25,7 @@ from app.core.models import (
     PrincipalSiteBinding,
     Site,
 )
+from app.core.runtime_config import config_dir_from_environment, load_runtime_settings_values
 
 CONTRACT = "npcink.production_ownership_inventory.v1"
 MAX_RELEVANT_ROWS = 100_000
@@ -33,9 +33,14 @@ MAX_SAMPLES = 100
 OPAQUE_ID_PATTERN = re.compile(r"[A-Za-z0-9:_-]{1,191}\Z")
 
 
-def database_url_from_environment() -> str:
-    database_url = os.environ.get("NPCINK_CLOUD_DATABASE_URL", "")
-    if not database_url or database_url != database_url.strip():
+def database_url_from_runtime_config() -> str:
+    runtime_values = load_runtime_settings_values(config_dir_from_environment())
+    database_url = runtime_values.get("database_url")
+    if (
+        not isinstance(database_url, str)
+        or not database_url
+        or database_url != database_url.strip()
+    ):
         raise RuntimeError("production database URL is missing or malformed")
     try:
         backend_name = make_url(database_url).get_backend_name()
@@ -306,7 +311,7 @@ def collect_inventory(session: Session) -> dict[str, Any]:
 
 
 def main() -> int:
-    with get_session(database_url_from_environment()) as session:
+    with get_session(database_url_from_runtime_config()) as session:
         if session.bind is not None and session.bind.dialect.name == "postgresql":
             session.execute(text("SET TRANSACTION READ ONLY"))
         report = collect_inventory(session)

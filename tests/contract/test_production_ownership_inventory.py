@@ -39,7 +39,7 @@ def _load_inventory_module() -> ModuleType:
 INVENTORY_MODULE = _load_inventory_module()
 CONTRACT = INVENTORY_MODULE.CONTRACT
 collect_inventory = INVENTORY_MODULE.collect_inventory
-database_url_from_environment = INVENTORY_MODULE.database_url_from_environment
+database_url_from_runtime_config = INVENTORY_MODULE.database_url_from_runtime_config
 
 
 @contextmanager
@@ -246,15 +246,22 @@ def test_unsafe_identifier_is_counted_but_never_printed() -> None:
     assert "acct_unsafe@example.com" not in serialized
 
 
-def test_inventory_reads_only_the_database_url_from_process_environment(
+def test_inventory_reads_only_the_database_url_from_runtime_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url = "postgresql+psycopg://inventory:private@postgres/inventory"
-    monkeypatch.setenv("NPCINK_CLOUD_ENVIRONMENT", "production")
-    monkeypatch.delenv("NPCINK_CLOUD_ADMIN_SESSION_SECRET", raising=False)
-    monkeypatch.setenv("NPCINK_CLOUD_DATABASE_URL", database_url)
+    monkeypatch.setattr(
+        INVENTORY_MODULE,
+        "config_dir_from_environment",
+        lambda: Path("/run/npcink-config"),
+    )
+    monkeypatch.setattr(
+        INVENTORY_MODULE,
+        "load_runtime_settings_values",
+        lambda config_dir: {"database_url": database_url},
+    )
 
-    assert database_url_from_environment() == database_url
+    assert database_url_from_runtime_config() == database_url
 
 
 @pytest.mark.parametrize(
@@ -265,10 +272,14 @@ def test_inventory_rejects_missing_malformed_or_non_postgres_database_url(
     monkeypatch: pytest.MonkeyPatch,
     database_url: str,
 ) -> None:
-    monkeypatch.setenv("NPCINK_CLOUD_DATABASE_URL", database_url)
+    monkeypatch.setattr(
+        INVENTORY_MODULE,
+        "load_runtime_settings_values",
+        lambda config_dir: {"database_url": database_url},
+    )
 
     with pytest.raises(RuntimeError, match="database URL|requires PostgreSQL"):
-        database_url_from_environment()
+        database_url_from_runtime_config()
 
 
 def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
@@ -304,7 +315,7 @@ def test_workflow_routes_inventory_through_read_only_ssh_helper() -> None:
     assert 'npcink_ai_cloud_compose "${current_release}" exec -T api python -' in helper
     assert "SET TRANSACTION READ ONLY" in inventory
     assert "Settings()" not in inventory
-    assert 'os.environ.get("NPCINK_CLOUD_DATABASE_URL", "")' in inventory
+    assert "load_runtime_settings_values(config_dir_from_environment())" in inventory
     assert "select(Principal.principal_id, Principal.status)" in inventory
     assert "select(Site)" not in inventory
     assert "select(Principal)" not in inventory
