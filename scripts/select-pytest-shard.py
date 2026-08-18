@@ -8,6 +8,7 @@ import ast
 import json
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -138,17 +139,64 @@ def discover_collected_test_nodes(path: Path) -> list[str]:
     )
 
 
+def discover_collected_test_item_counts(roots: list[Path]) -> dict[str, int]:
+    pytest_python = Path(".venv/bin/python")
+    if not pytest_python.is_file():
+        pytest_python = Path(sys.executable)
+    if not pytest_python.is_file():
+        raise SystemExit("pytest collection requires an available Python executable")
+    completed = subprocess.run(
+        [
+            str(pytest_python),
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            *(normalize_repo_path(root) for root in roots),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise SystemExit("pytest collection failed while calculating shard item floors")
+    root_prefixes = tuple(normalize_repo_path(root).rstrip("/") for root in roots)
+    counts: Counter[str] = Counter()
+    for raw_line in completed.stdout.splitlines():
+        node_id = raw_line.strip()
+        if "::" not in node_id or not any(
+            node_id.startswith(f"{prefix}::") or node_id.startswith(f"{prefix}/")
+            for prefix in root_prefixes
+        ):
+            continue
+        counts[node_id.split("[", 1)[0]] += 1
+    if not counts:
+        raise SystemExit("pytest collection did not produce shardable test items")
+    return dict(counts)
+
+
 def build_weighted_selectors(
     files: list[Path],
     file_weights: dict[str, float],
     node_weights: dict[str, float],
     shard_count: int,
     collected_node_loader: Callable[[Path], list[str]] = discover_collected_test_nodes,
+    collected_item_counts: dict[str, int] | None = None,
+    item_floor_seconds: float = 0.0,
 ) -> list[tuple[float, str]]:
-    weighted_files = [
-        (file_weights.get(normalize_repo_path(path), DEFAULT_WEIGHT_SECONDS), path)
-        for path in files
-    ]
+    item_counts = collected_item_counts or {}
+    weighted_files: list[tuple[float, Path]] = []
+    for path in files:
+        repo_path = normalize_repo_path(path)
+        file_item_count = sum(
+            count
+            for node_id, count in item_counts.items()
+            if node_id.startswith(f"{repo_path}::")
+        )
+        historical_weight = file_weights.get(repo_path, DEFAULT_WEIGHT_SECONDS)
+        weighted_files.append(
+            (max(historical_weight, file_item_count * item_floor_seconds), path)
+        )
     shard_target = sum(weight for weight, _path in weighted_files) / shard_count
     split_threshold = shard_target * NODE_SPLIT_TARGET_SHARE
     selectors: list[tuple[float, str]] = []
@@ -164,12 +212,26 @@ def build_weighted_selectors(
         if len(discovered_nodes) < 2 or historic_nodes != set(discovered_nodes):
             selectors.append((file_weight, repo_path))
             continue
-        collected_nodes = collected_node_loader(path)
+        collected_nodes = (
+            sorted(
+                node_id
+                for node_id, count in item_counts.items()
+                if count > 0 and node_id.startswith(f"{repo_path}::")
+            )
+            if item_counts
+            else collected_node_loader(path)
+        )
         if set(collected_nodes) != set(discovered_nodes):
             selectors.append((file_weight, repo_path))
             continue
         selectors.extend(
-            (node_weights.get(node_id, DEFAULT_WEIGHT_SECONDS), node_id)
+            (
+                max(
+                    node_weights.get(node_id, DEFAULT_WEIGHT_SECONDS),
+                    item_counts.get(node_id, 0) * item_floor_seconds,
+                ),
+                node_id,
+            )
             for node_id in discovered_nodes
         )
     return selectors
@@ -216,6 +278,7 @@ def main() -> int:
     )
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--shard", type=int, required=True)
+    parser.add_argument("--collected-item-floor-seconds", type=float, default=0.0)
     argv = sys.argv[1:]
     if argv[:1] == ["--"]:
         argv = argv[1:]
@@ -225,12 +288,24 @@ def main() -> int:
         raise SystemExit("--shards must be greater than zero")
     if args.shard < 1 or args.shard > args.shards:
         raise SystemExit("--shard must be between 1 and --shards")
+    if args.collected_item_floor_seconds < 0:
+        raise SystemExit("--collected-item-floor-seconds must not be negative")
 
     files = discover_test_files(args.roots)
     weights = load_duration_weights(args.durations_json)
     node_weights = load_node_duration_weights(args.durations_json)
+    item_counts = (
+        discover_collected_test_item_counts(args.roots)
+        if args.collected_item_floor_seconds > 0
+        else {}
+    )
     weighted_selectors = build_weighted_selectors(
-        files, weights, node_weights, args.shards
+        files,
+        weights,
+        node_weights,
+        args.shards,
+        collected_item_counts=item_counts,
+        item_floor_seconds=args.collected_item_floor_seconds,
     )
     shards = assign_weighted_selectors(weighted_selectors, args.shards)
     selected = shards[args.shard - 1]

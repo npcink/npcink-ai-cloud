@@ -2387,7 +2387,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "backend-static:" in ci_workflow
     assert "backend-pytest:" in ci_workflow
     assert "matrix:" in ci_workflow
-    assert "shard: [1, 2, 3]" in ci_workflow
+    assert "shard: [1, 2, 3, 4]" in ci_workflow
     assert "scripts/select-pytest-shard.py" in ci_workflow
     assert "backend pytest shards did not pass" in ci_workflow
     assert "bash deploy/deploy-static-terms-to-ssh-host.sh" not in ci_workflow
