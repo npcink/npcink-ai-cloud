@@ -139,10 +139,16 @@ def create_envelope(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     python_bin = os.environ.get(
         "NPCINK_CLOUD_PYTHON_BIN", str(ROOT / ".venv" / "bin" / "python")
     )
-    plan = check_changed.build_plan(paths, python_bin, args.base)
+    workflow_lane = getattr(args, "workflow_lane", "development")
+    plan = check_changed.build_plan(paths, python_bin, args.base, workflow_lane)
     state = repository_state()
+    elapsed_minutes = (
+        args.elapsed_minutes
+        if args.elapsed_minutes is not None
+        else int(plan["target_elapsed_minutes"])
+    )
     budgets = {
-        "elapsed_minutes": args.elapsed_minutes,
+        "elapsed_minutes": elapsed_minutes,
         "provider_calls": args.provider_calls,
         "full_gate_executions": args.full_gate_executions,
         "image_builds": args.image_builds,
@@ -200,7 +206,10 @@ def rebuild_and_validate_plan(
             "[fail] task plan is stale; regenerate it before verification"
             + (": " + "; ".join(details) if details else "")
         )
-    current_plan = check_changed.build_plan(current_paths, python_bin, base_ref)
+    workflow_lane = str(envelope["plan"].get("workflow_lane", "development"))
+    current_plan = check_changed.build_plan(
+        current_paths, python_bin, base_ref, workflow_lane
+    )
     for key in (
         "classification",
         "tier",
@@ -209,7 +218,13 @@ def rebuild_and_validate_plan(
         "documents",
         "commands",
         "specialized_commands",
+        "workflow_lane",
+        "target_elapsed_minutes",
+        "pr_required",
+        "production_required",
+        "closeout_authority",
         "runtime_lane",
+        "stop_conditions",
         "followups",
     ):
         if current_plan[key] != envelope["plan"].get(key):
@@ -346,6 +361,13 @@ def receipt_payload(envelope: dict[str, Any]) -> dict[str, Any]:
         "expected_files": envelope["change"]["expected_files"],
         "documents": envelope["plan"]["documents"],
         "domains": envelope["plan"]["domains"],
+        "workflow_lane": envelope["plan"].get("workflow_lane", "development"),
+        "target_elapsed_minutes": envelope["plan"].get("target_elapsed_minutes"),
+        "pr_required": envelope["plan"].get("pr_required", False),
+        "production_required": envelope["plan"].get("production_required", False),
+        "closeout_authority": envelope["plan"].get(
+            "closeout_authority", "local"
+        ),
         "runtime_lane": envelope["plan"].get("runtime_lane", "unclassified"),
         "budgets": envelope["budgets"],
         "latest_verification": latest,
@@ -359,6 +381,7 @@ def receipt_payload(envelope: dict[str, Any]) -> dict[str, Any]:
         "highest_evidence_state": highest_state,
         "current_source_state": current_state,
         "current_source_fingerprint": current_fingerprint,
+        "stop_conditions": envelope["plan"].get("stop_conditions", []),
         "followups": envelope["plan"]["followups"],
         "rollback": envelope["change"]["rollback"],
     }
@@ -378,6 +401,9 @@ def receipt_markdown(receipt: dict[str, Any]) -> str:
             f"- task: {receipt['task_id']}",
             f"- module: {receipt['focused_module']}",
             f"- tier: {receipt['tier']}",
+            f"- workflow lane: {receipt['workflow_lane']}",
+            f"- target elapsed minutes: {receipt['target_elapsed_minutes']}",
+            f"- closeout authority: {receipt['closeout_authority']}",
             f"- runtime lane: {receipt['runtime_lane']}",
             "- source: "
             f"{receipt['current_source_state']['head']} "
@@ -392,6 +418,8 @@ def receipt_markdown(receipt: dict[str, Any]) -> str:
             *[f"  {line}" for line in gate_lines],
             "- followups:",
             *[f"  - {item}" for item in receipt["followups"]],
+            "- stop conditions:",
+            *[f"  - {item}" for item in receipt["stop_conditions"]],
             f"- rollback: {receipt['rollback']}",
         ]
     )
@@ -409,8 +437,18 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--public-contract", action="append", default=[])
     plan.add_argument("--rollback", required=True)
     plan.add_argument("--base", default="origin/master")
+    plan.add_argument(
+        "--workflow-lane",
+        choices=tuple(check_changed.WORKFLOW_LANE_TARGET_MINUTES),
+        default="development",
+        help="declare development, merge, or release closeout without authorizing it",
+    )
     plan.add_argument("--output")
-    plan.add_argument("--elapsed-minutes", type=int, default=60)
+    plan.add_argument(
+        "--elapsed-minutes",
+        type=int,
+        help="override the selected workflow lane's target elapsed budget",
+    )
     plan.add_argument("--provider-calls", type=int, default=0)
     plan.add_argument("--full-gate-executions", type=int, default=0)
     plan.add_argument("--image-builds", type=int, default=0)

@@ -12,9 +12,20 @@ PYTHON_QUALITY = ROOT / "scripts" / "check-changed-python-quality.sh"
 MYPY_TARGETED = ROOT / "scripts" / "mypy-targeted.sh"
 
 
-def _plan(*paths: str) -> dict[str, object]:
+def _plan(
+    *paths: str, workflow_lane: str = "development"
+) -> dict[str, object]:
     completed = subprocess.run(
-        [sys.executable, str(CHECKER), "--plan", "--format", "json", *paths],
+        [
+            sys.executable,
+            str(CHECKER),
+            "--plan",
+            "--format",
+            "json",
+            "--workflow-lane",
+            workflow_lane,
+            *paths,
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -31,7 +42,13 @@ def test_documentation_plan_stays_local_and_focused() -> None:
     assert ["git", "diff", "--cached", "--check"] in plan["commands"]
     assert ["git", "diff", "--check"] in plan["commands"]
     assert ["bash", "scripts/check-release-policy.sh"] in plan["commands"]
+    assert plan["workflow_lane"] == "development"
+    assert plan["target_elapsed_minutes"] == 45
+    assert plan["pr_required"] is False
+    assert plan["production_required"] is False
+    assert plan["closeout_authority"] == "local"
     assert plan["runtime_lane"] == "none"
+    assert plan["stop_conditions"]
     assert not any("m4:preview" in " ".join(command) for command in plan["commands"])
 
 
@@ -165,7 +182,81 @@ def test_build_runtime_plan_never_mutates_m4_automatically() -> None:
 def test_engineering_tooling_uses_github_actions_runtime_lane() -> None:
     plan = _plan("scripts/ai_task.py")
 
+    assert plan["workflow_lane"] == "development"
+    assert plan["closeout_authority"] == "local"
     assert plan["runtime_lane"] == "github-actions"
+
+
+def test_cloud_source_and_build_inputs_keep_development_as_default() -> None:
+    source_plan = _plan("app/main.py")
+    build_plan = _plan("Dockerfile")
+
+    assert source_plan["workflow_lane"] == "development"
+    assert source_plan["runtime_lane"] == "m4:preview:sync"
+    assert source_plan["pr_required"] is False
+    assert build_plan["workflow_lane"] == "development"
+    assert build_plan["runtime_lane"] == "m4:preview:deploy"
+    assert build_plan["production_required"] is False
+
+
+def test_explicit_merge_lane_changes_closeout_without_reclassifying_risk() -> None:
+    development = _plan("app/main.py")
+    merge = _plan("app/main.py", workflow_lane="merge")
+
+    assert merge["workflow_lane"] == "merge"
+    assert merge["target_elapsed_minutes"] == 90
+    assert merge["pr_required"] is True
+    assert merge["production_required"] is False
+    assert merge["closeout_authority"] == "m4"
+    assert merge["tier"] == development["tier"]
+    assert merge["runtime_lane"] == development["runtime_lane"]
+    assert merge["commands"] == development["commands"]
+
+
+def test_explicit_release_lane_declares_but_does_not_authorize_production() -> None:
+    plan = _plan("app/main.py", workflow_lane="release")
+
+    assert plan["workflow_lane"] == "release"
+    assert plan["target_elapsed_minutes"] == 120
+    assert plan["pr_required"] is True
+    assert plan["production_required"] is True
+    assert plan["closeout_authority"] == "production"
+    assert any("does not authorize" in item for item in plan["followups"])
+
+
+def test_invalid_workflow_lane_fails_closed() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            "--plan",
+            "--workflow-lane",
+            "automatic-production",
+            "README.md",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "invalid choice" in completed.stderr
+
+
+def test_text_plan_reports_workflow_lane_and_stop_conditions() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(CHECKER), "--plan", "README.md"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "[plan] workflow lane: development" in completed.stdout
+    assert "[plan] target elapsed minutes: 45" in completed.stdout
+    assert "[plan] PR required: false" in completed.stdout
+    assert "[stop] Stop scope expansion after a second independent blocker" in completed.stdout
 
 
 def test_planned_commands_are_unique() -> None:

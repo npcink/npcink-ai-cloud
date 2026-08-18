@@ -29,6 +29,7 @@ def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path, monkeypatc
         public_contract=["pnpm run check:changed"],
         rollback="Revert the tooling change.",
         base="origin/master",
+        workflow_lane="development",
         output=str(output),
         elapsed_minutes=30,
         provider_calls=0,
@@ -44,6 +45,8 @@ def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path, monkeypatc
     assert payload["schema_version"] == 1
     assert payload["plan"]["tier"] == "L2"
     assert payload["plan"]["domains"] == ["agent_feedback_quality"]
+    assert payload["plan"]["workflow_lane"] == "development"
+    assert payload["plan"]["pr_required"] is False
     assert payload["base_revision"]
     assert payload["budgets"]["provider_calls"] == 0
     assert json.loads(output.read_text(encoding="utf-8"))["task_id"] == "validation-router-test"
@@ -147,7 +150,13 @@ def test_receipt_requires_current_successful_verification(monkeypatch) -> None:
             "documents": [],
             "domains": ["engineering_validation_tooling"],
             "followups": [],
+            "workflow_lane": "development",
+            "target_elapsed_minutes": 45,
+            "pr_required": False,
+            "production_required": False,
+            "closeout_authority": "local",
             "runtime_lane": "github-actions",
+            "stop_conditions": [],
         },
         "verification_runs": [
             {
@@ -164,6 +173,7 @@ def test_receipt_requires_current_successful_verification(monkeypatch) -> None:
 
     assert receipt["verification_current"] is True
     assert receipt["highest_evidence_state"] == "local verified"
+    assert receipt["workflow_lane"] == "development"
     assert receipt["runtime_lane"] == "github-actions"
     assert "AI_TASK_RECEIPT" in module.receipt_markdown(receipt)
 
@@ -180,7 +190,13 @@ def test_tampered_saved_command_is_rejected(monkeypatch) -> None:
         "commands": [["python3", "-m", "compileall", "scripts"]],
         "specialized_commands": [],
         "followups": [],
+        "workflow_lane": "development",
+        "target_elapsed_minutes": 45,
+        "pr_required": False,
+        "production_required": False,
+        "closeout_authority": "local",
         "runtime_lane": "github-actions",
+        "stop_conditions": [],
     }
     envelope = {
         "base_ref": "origin/master",
@@ -196,7 +212,7 @@ def test_tampered_saved_command_is_rejected(monkeypatch) -> None:
     monkeypatch.setattr(
         module.check_changed,
         "build_plan",
-        lambda _paths, _python, _base: expected_plan,
+        lambda _paths, _python, _base, _workflow_lane: expected_plan,
     )
 
     try:
@@ -218,6 +234,7 @@ def test_negative_resource_budget_is_rejected(tmp_path: Path, monkeypatch) -> No
         public_contract=[],
         rollback="No file should be written.",
         base="origin/master",
+        workflow_lane="development",
         output=str(tmp_path / "invalid.json"),
         elapsed_minutes=30,
         provider_calls=-1,
@@ -270,6 +287,36 @@ def test_pnpm_style_separator_is_parsed_before_task_planning(
     args = captured["args"]
     assert args.task_id == "pnpm-contract"
     assert args.paths == ["app/domain/agent_feedback/service.py"]
+
+
+def test_task_parser_uses_workflow_lane_target_when_elapsed_budget_is_omitted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
+    output = tmp_path / "merge-task.json"
+    args = module.build_parser().parse_args(
+        [
+            "plan",
+            "--task-id",
+            "merge-target",
+            "--workflow-lane",
+            "merge",
+            "--outcome",
+            "Prepare merge evidence.",
+            "--rollback",
+            "Revert the tooling change.",
+            "--output",
+            str(output),
+            "scripts/ai_task.py",
+        ]
+    )
+
+    _, payload = module.create_envelope(args)
+
+    assert payload["plan"]["workflow_lane"] == "merge"
+    assert payload["plan"]["target_elapsed_minutes"] == 90
+    assert payload["budgets"]["elapsed_minutes"] == 90
 
 
 def test_successful_verification_is_reusable_only_for_exact_identity() -> None:
