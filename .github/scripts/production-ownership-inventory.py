@@ -7,9 +7,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -24,11 +25,30 @@ from app.core.models import (
     PrincipalSiteBinding,
     Site,
 )
+from app.core.runtime_config import config_dir_from_environment, load_runtime_settings_values
 
 CONTRACT = "npcink.production_ownership_inventory.v1"
 MAX_RELEVANT_ROWS = 100_000
 MAX_SAMPLES = 100
 OPAQUE_ID_PATTERN = re.compile(r"[A-Za-z0-9:_-]{1,191}\Z")
+
+
+def database_url_from_runtime_config() -> str:
+    runtime_values = load_runtime_settings_values(config_dir_from_environment())
+    database_url = runtime_values.get("database_url")
+    if (
+        not isinstance(database_url, str)
+        or not database_url
+        or database_url != database_url.strip()
+    ):
+        raise RuntimeError("production database URL is missing or malformed")
+    try:
+        backend_name = make_url(database_url).get_backend_name()
+    except (ArgumentError, TypeError, ValueError) as error:
+        raise RuntimeError("production database URL is missing or malformed") from error
+    if backend_name != "postgresql":
+        raise RuntimeError("production ownership inventory requires PostgreSQL")
+    return database_url
 
 
 def _safe_identifier(value: object) -> bool:
@@ -291,8 +311,7 @@ def collect_inventory(session: Session) -> dict[str, Any]:
 
 
 def main() -> int:
-    settings = Settings()
-    with get_session(settings.database_url) as session:
+    with get_session(database_url_from_runtime_config()) as session:
         if session.bind is not None and session.bind.dialect.name == "postgresql":
             session.execute(text("SET TRANSACTION READ ONLY"))
         report = collect_inventory(session)
