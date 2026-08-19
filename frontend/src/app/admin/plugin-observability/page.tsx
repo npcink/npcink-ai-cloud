@@ -56,6 +56,8 @@ type PluginItem = {
 
 type SiteItem = {
   siteId: string;
+  siteName: string;
+  siteUrl: string;
   eventsTotal: number;
   errorTotal: number;
   okTotal: number;
@@ -253,6 +255,8 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
             reasons: Array.isArray(s.health?.reasons) ? s.health.reasons.map((item: any) => String(item)) : [],
           },
           siteId: String(s.site_id ?? ''),
+          siteName: String(s.site_name ?? ''),
+          siteUrl: String(s.site_url ?? ''),
           eventsTotal: Number(s.events_total ?? 0),
           errorTotal: Number(s.error_total ?? 0),
           okTotal: Number(s.ok_total ?? 0),
@@ -977,7 +981,15 @@ function AdminPluginObservabilityContent() {
                       return (
                         <tr key={site.siteId} className="align-top">
                           <td className="px-4 py-3">
-                            <BackofficeIdentifier value={site.siteId} className="font-medium text-slate-950 dark:text-white" />
+                            {site.siteName ? (
+                              <p className="font-medium text-slate-950 dark:text-white">{site.siteName}</p>
+                            ) : null}
+                            <BackofficeIdentifier value={site.siteId} className={`${site.siteName ? 'mt-1 ' : ''}font-medium text-slate-950 dark:text-white`} />
+                            {site.siteUrl ? (
+                              <p className="mt-1 max-w-[20rem] truncate text-xs text-slate-500 dark:text-slate-400" title={site.siteUrl}>
+                                {site.siteUrl}
+                              </p>
+                            ) : null}
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               {t(
                                 'admin.plugin_obs_plugins_detail',
