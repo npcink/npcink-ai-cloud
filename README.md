@@ -46,6 +46,8 @@ Start with:
 - [Internal Readiness Final Handoff — 2026-08-18](docs/internal-readiness-final-handoff-2026-08-18.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
+- [Formal-user Observability Consent and Site Support Standard](docs/production-observability-consent-and-site-support-standard-v1.md)
+- [Formal-user Observability Development Retrospective](docs/production-user-observability-development-retrospective-2026-08-19.md)
 
 `docs/decisions/` contains architectural decisions. Do not delete old ADRs;
 supersede them with a newer decision. Dated acceptance, closeout, validation,
