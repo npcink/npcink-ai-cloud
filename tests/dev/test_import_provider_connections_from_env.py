@@ -48,6 +48,8 @@ def test_import_provider_connections_from_env_stores_connections_without_secret_
         "NPCINK_CLOUD_WEB_SEARCH_JINA_READER_ENABLED": "1",
         "NPCINK_CLOUD_WEB_SEARCH_ZHIHU_ACCESS_SECRET": "zhihu-secret",
         "NPCINK_CLOUD_WEB_SEARCH_ZHIHU_BASE_URL": "https://developer.zhihu.test",
+        "NPCINK_CLOUD_WEB_SEARCH_ANYSEARCH_API_KEY": "anysearch-secret",
+        "NPCINK_CLOUD_WEB_SEARCH_ANYSEARCH_BASE_URL": "https://api.anysearch.test",
         "NPCINK_CLOUD_IMAGE_SOURCE_UNSPLASH_ACCESS_KEY": "unsplash-secret",
         "NPCINK_CLOUD_SITE_KNOWLEDGE_EMBEDDING_PROVIDER": "tei",
         "NPCINK_CLOUD_SITE_KNOWLEDGE_EMBEDDING_MODEL": "BAAI/bge-m3",
@@ -68,6 +70,7 @@ def test_import_provider_connections_from_env_stores_connections_without_secret_
     assert dry_run["mode"] == "dry_run"
     assert dry_run["imported"] == []
     assert "zhihu-secret" not in str(dry_run)
+    assert "anysearch-secret" not in str(dry_run)
     assert "unsplash-secret" not in str(dry_run)
     assert "zilliz-token" not in str(dry_run)
 
@@ -83,6 +86,7 @@ def test_import_provider_connections_from_env_stores_connections_without_secret_
         "search_apify",
         "search_jina_reader",
         "search_zhihu",
+        "search_anysearch",
         "image_unsplash",
         "tei_env",
         "vector_zilliz",
@@ -90,12 +94,14 @@ def test_import_provider_connections_from_env_stores_connections_without_secret_
     assert result["credential_value_exposure"] == "none"
     assert "zhihu-secret" not in str(result)
     assert "bocha-secret" not in str(result)
+    assert "anysearch-secret" not in str(result)
     assert "apify-token" not in str(result)
     assert "unsplash-secret" not in str(result)
     assert "zilliz-token" not in str(result)
 
     with get_session(database_url) as session:
         zhihu = session.get(ProviderConnection, "search_zhihu")
+        anysearch = session.get(ProviderConnection, "search_anysearch")
         bocha = session.get(ProviderConnection, "search_bocha")
         apify = session.get(ProviderConnection, "search_apify")
         jina_reader = session.get(ProviderConnection, "search_jina_reader")
@@ -103,6 +109,7 @@ def test_import_provider_connections_from_env_stores_connections_without_secret_
         tei = session.get(ProviderConnection, "tei_env")
         vector = session.get(ProviderConnection, "vector_zilliz")
         assert zhihu is not None
+        assert anysearch is not None
         assert bocha is not None
         assert apify is not None
         assert jina_reader is not None
@@ -114,6 +121,8 @@ def test_import_provider_connections_from_env_stores_connections_without_secret_
         assert bocha.config_json["provider_id"] == "bocha"
         assert apify.config_json["provider_id"] == "apify"
         assert apify.config_json["actor_id"] == "apify/test-search-scraper"
+        assert anysearch.config_json["provider_id"] == "anysearch"
+        assert anysearch.base_url == "https://api.anysearch.test"
         assert jina_reader.config_json["provider_id"] == "jina_reader"
         assert jina_reader.config_json["secretless"] is True
         assert image.config_json["provider_id"] == "unsplash"

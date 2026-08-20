@@ -127,6 +127,26 @@ export function formatPortalErrorMessage(
           undefined,
           'Cloud service for this site is not ready yet. Try again shortly.'
         );
+      case 'provider_connection.auth_failed':
+        return t(
+          'error.portal_connector_credential_invalid',
+          undefined,
+          'The site connection credential was rejected. Update the WordPress connector credential and try again.'
+        );
+      case 'provider_connection.network_error':
+      case 'provider.unavailable':
+      case 'service.entitlements_temporarily_unavailable':
+        return t(
+          'error.portal_service_temporarily_unavailable',
+          undefined,
+          'Cloud service is temporarily unavailable. Try again shortly or contact support if it continues.'
+        );
+      case 'commercial.quota_exceeded':
+        return t(
+          'error.portal_account_quota_exceeded',
+          undefined,
+          'This account has reached its current usage limit. Review account usage or upgrade the package before retrying.'
+        );
       case 'auth.origin_required':
       case 'auth.origin_forbidden':
         return t(

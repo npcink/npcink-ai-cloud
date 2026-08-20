@@ -35,6 +35,43 @@ authoring Mac while preserving a persistent, realistic integration runtime.
 It is only useful while the workflow remains faster than running a release
 rehearsal after every edit.
 
+### 1.1 Three Workflow Lanes
+
+Every task starts in one explicit workflow lane. The lane describes the
+requested outcome; changed paths classify risk and runtime needs but cannot
+promote or authorize the task by themselves.
+
+| Lane | Requested outcome | Target elapsed time | Required authority |
+| --- | --- | --- | --- |
+| `development` | produce a coherent, focused, locally verified candidate and any risk-required preview evidence | 45 minutes | local evidence; candidate M4 only when the changed Cloud seam requires runtime feedback |
+| `merge` | publish a focused PR, pass required checks, merge to `master`, and complete clean-master M4 acceptance when applicable | 90 minutes | GitHub required checks; M4 for runtime-bearing Cloud changes |
+| `release` | execute a separately approved production promotion and verification | 120 minutes | production policy and explicit operator authorization |
+
+The elapsed targets are split-and-report prompts, not service-level guarantees
+and never permission to skip a required gate. When a target is exceeded, name
+the dominant delay and either reduce the task to one independently valuable
+slice or ask the operator to expand the budget. A task that encounters a
+second independent blocker stops scope expansion: preserve the first seam's
+evidence and move unrelated repairs to follow-up.
+
+The default lane is `development`. Enter `merge` only when publication or merge
+is explicitly requested. Enter `release` only when a production outcome is
+explicitly requested. Review or CI discoveries outside the change envelope go
+to backlog unless they directly block the requested lane's safety or
+correctness.
+
+Plan the lane with the existing router:
+
+```bash
+pnpm run check:changed -- --plan --workflow-lane development
+pnpm run check:changed -- --plan --workflow-lane merge
+pnpm run check:changed -- --plan --workflow-lane release
+```
+
+The plan reports `workflow_lane`, `target_elapsed_minutes`, `pr_required`,
+`production_required`, `closeout_authority`, and `stop_conditions`. These fields
+do not mutate GitHub, M4, or production.
+
 The authoritative details are:
 
 - [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md);
@@ -75,7 +112,8 @@ Direct `sync` and `deploy` therefore create a candidate. Only a merged PR plus
 Before editing:
 
 1. run `git status --short --branch`;
-2. read `README.md`, `AGENTS.md`, this guide, and the relevant Cloud boundary;
+2. read `README.md`, `AGENTS.md`, this guide, and only the Cloud boundary
+   documents selected by the expected changed seam;
 3. fetch `origin` when the current integration baseline matters;
 4. preserve all existing user changes;
 5. create a clean `codex/*` worktree from current `origin/master` when the
@@ -205,7 +243,8 @@ feels more complete.
 
 ## 5. Feature and Bug-Fix Loop
 
-Use the same loop for a new feature and a defect:
+Use the same loop for a new feature and a defect. Stop at the boundary of the
+declared workflow lane; later steps are not implied by completing earlier ones:
 
 1. reproduce or precisely state the observed and expected behavior;
 2. trace the full consumer path before editing;
@@ -216,14 +255,20 @@ Use the same loop for a new feature and a defect:
 6. validate the actual consumer: API, worker, browser, or disposable Local
    WordPress;
 7. repeat until the source and runtime evidence agree;
-8. inspect the diff and stage only named task files;
-9. commit, push, and publish a focused PR using the repository PR template;
+8. finish the `development` lane by reporting the verified candidate, dominant
+   delay, and any explicitly deferred findings;
+9. only in the `merge` or `release` lane, inspect the diff and stage only named
+   task files, then commit, push, and publish a focused PR using the repository
+   PR template;
 10. let required GitHub checks decide merge eligibility; while they run, use
     `pnpm run pr:wait -- --pr <number>` so unresolved review threads surface
     before the final check completes;
 11. merge into `master`;
-12. promote clean current `master` to M4 and run the relevant smoke;
-13. report exact states, revisions, tests, limitations, and rollback.
+12. when required by the runtime lane, promote clean current `master` to M4 and
+    run the relevant smoke;
+13. only in the `release` lane and after explicit operator authorization,
+    follow the frozen production promotion plan;
+14. report exact states, revisions, tests, limitations, and rollback.
 
 Do not commit every experimental save, and do not wait until after merge to
 discover whether the feature works in the real integration runtime. Candidate

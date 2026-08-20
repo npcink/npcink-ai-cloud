@@ -54,7 +54,11 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Early Product Validation and Minimal Telemetry Standard](early-product-validation-and-minimal-telemetry-standard-v1.md)
+  — active stop rules, minimum non-author trial loop, privacy-safe journey
+  evidence, defect priority, and commercial-proof reopening triggers
 - [Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md)
+- [Single-Operator Pre-User Development Closeout and Next-Stage Guide — 2026-08-18](single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md) — dated synthesis of the solo-AI pre-user phase, user-experience remediation, privacy-safe observation, delivery-time lessons, workflow lanes, and the next ordinary-development stop point; not production or human-value authority
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
@@ -63,9 +67,15 @@ deleting the old decision history.
 - [Development Efficiency Phase 3 Observation Plan](development-efficiency-phase3-observation-plan-v1.md) — current plan for collecting comparable delivery samples before further CI/shard/cache optimization
 - [Development Efficiency Phases 1–3 Closeout and Retrospective](development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
 - [Development and Delivery Efficiency Closeout and Retrospective](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
+- [Production Release Feedback Loop Closeout and Standard — 2026-08-13](production-release-feedback-loop-closeout-and-standard-2026-08-13.md) — dated release-identity/readiness/CI closeout plus the reusable early-failure, promotion, exact-SHA preflight, and timing discipline; current release authority remains the production policy
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
+- [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
+- [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
+- [Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md)
+- [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
+- [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
 - [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
@@ -96,6 +106,7 @@ deleting the old decision history.
 - [Text Hosted Routing Profile](text-ai-hosted-routing-profile-v1.md)
 - [Source Extraction Preview](source-extraction-preview-v1.md)
 - [Site Knowledge Runtime Contract](site-knowledge-runtime-contract-v1.md)
+- [Site Knowledge Search Architecture Standard](site-knowledge-search-architecture-standard-v1.md) — lexical, vector, and hybrid retrieval selection, Meilisearch admission gate, evaluation, and Cloud ownership rules
 - [Site Operations Cloud Analysis Runtime](site-ops-cloud-analysis-runtime-v1.md)
 - [Commercial Repository Decomposition Plan](commercial-repository-decomposition-plan-v1.md)
 - [Commercial Repository Decomposition Closeout and Retrospective](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)
@@ -131,6 +142,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Providers, Media, and Quality
 
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
+- [Cloud Web Search Provider Integration Standard](cloud-web-search-provider-integration-standard-v1.md) — active investigation, adapter, secret-handling, verification, M4, merge, and rollout rules for managed search providers
+- [AnySearch Web Search Provider Integration Closeout — 2026-08-18](anysearch-web-search-provider-integration-closeout-2026-08-18.md) — dated evidence for PR `#793`, the stale-branch migration correction, M4 acceptance, bounded real-upstream validation, and extracted development lessons; not production or human acceptance authority
 - [Operator-initiated Provider Image Delivery Probe](decisions/042-operator-initiated-provider-image-delivery-probe.md)
 - [Model Reference Metadata](model-reference-metadata-v1.md)
 - [Cloud Web Search Runtime Contract](cloud-web-search-runtime-contract-v1.md)

@@ -267,6 +267,10 @@ class Settings(BaseSettings):
     web_search_zhihu_timeout_seconds: float = Field(default=15.0)
     web_search_zhihu_cost_per_query: float = Field(default=0.0)
     web_search_zhihu_hot_list_cache_ttl_seconds: int = Field(default=3600)
+    web_search_anysearch_base_url: str = Field(default="https://api.anysearch.com")
+    web_search_anysearch_api_key: str | None = Field(default=None)
+    web_search_anysearch_timeout_seconds: float = Field(default=20.0)
+    web_search_anysearch_cost_per_query: float = Field(default=0.0)
     web_search_admin_env_path: str = Field(default=".env.local")
     image_source_provider: str = Field(default="disabled")
     image_source_auto_strategy: str = Field(default="fast_first")
@@ -631,11 +635,12 @@ class Settings(BaseSettings):
             "doubao_search",
             "apify",
             "zhihu",
+            "anysearch",
         }
         if web_search_provider not in allowed_web_search_providers:
             raise ValueError(
                 "web_search_provider must be disabled, auto, tavily, bocha, doubao_search, "
-                "apify, or zhihu"
+                "apify, zhihu, or anysearch"
             )
         self.web_search_provider = web_search_provider
         if self.web_search_tavily_timeout_seconds <= 0:
@@ -667,6 +672,10 @@ class Settings(BaseSettings):
             raise ValueError("web_search_zhihu_timeout_seconds must be greater than 0")
         if self.web_search_zhihu_cost_per_query < 0:
             raise ValueError("web_search_zhihu_cost_per_query must be zero or greater")
+        if self.web_search_anysearch_timeout_seconds <= 0:
+            raise ValueError("web_search_anysearch_timeout_seconds must be greater than 0")
+        if self.web_search_anysearch_cost_per_query < 0:
+            raise ValueError("web_search_anysearch_cost_per_query must be zero or greater")
         if self.web_search_zhihu_hot_list_cache_ttl_seconds <= 0:
             raise ValueError("web_search_zhihu_hot_list_cache_ttl_seconds must be greater than 0")
         for zhihu_path_name in (
@@ -735,6 +744,15 @@ class Settings(BaseSettings):
             if not str(self.web_search_zhihu_access_secret or "").strip():
                 raise ValueError(
                     "web_search_zhihu_access_secret is required when web_search_provider=zhihu"
+                )
+        if web_search_provider == "anysearch":
+            if not str(self.web_search_anysearch_base_url or "").strip():
+                raise ValueError(
+                    "web_search_anysearch_base_url is required when web_search_provider=anysearch"
+                )
+            if not str(self.web_search_anysearch_api_key or "").strip():
+                raise ValueError(
+                    "web_search_anysearch_api_key is required when web_search_provider=anysearch"
                 )
         image_source_provider = str(self.image_source_provider or "disabled").strip().lower()
         if image_source_provider not in {"disabled", "auto", "unsplash", "pixabay", "pexels"}:

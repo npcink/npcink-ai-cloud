@@ -5,6 +5,8 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
+import { ApiError } from '@/lib/errors';
+import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
   getPortalSiteUrl,
   getVisiblePortalSites,
@@ -34,6 +36,11 @@ type RestrictionItem = {
 };
 
 type AccountEntitlementsState = 'idle' | 'loading' | 'loaded' | 'error';
+
+type AccountEntitlementsError = {
+  code: string;
+  message: string;
+};
 
 function buildRestrictionItems({
   t,
@@ -76,6 +83,8 @@ export default function PortalPage() {
   const [accountEntitlements, setAccountEntitlements] = useState<Entitlements | null>(null);
   const [accountEntitlementsState, setAccountEntitlementsState] =
     useState<AccountEntitlementsState>('idle');
+  const [accountEntitlementsError, setAccountEntitlementsError] =
+    useState<AccountEntitlementsError | null>(null);
   const [accountEntitlementsRetryVersion, setAccountEntitlementsRetryVersion] = useState(0);
   const contextSiteId = session?.selected_context?.site.site_id || '';
   const contextSiteIdRef = useRef(contextSiteId);
@@ -85,6 +94,7 @@ export default function PortalPage() {
     contextSiteIdRef.current = contextSiteId;
     const requestVersion = ++accountEntitlementsRequestVersionRef.current;
     setAccountEntitlements(null);
+    setAccountEntitlementsError(null);
     setAccountEntitlementsState('idle');
     if (!isAuthenticated) return;
     setAccountEntitlementsState('loading');
@@ -97,15 +107,28 @@ export default function PortalPage() {
           && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(response.data);
+          setAccountEntitlementsError(null);
           setAccountEntitlementsState('loaded');
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (
           requestVersion === accountEntitlementsRequestVersionRef.current
           && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(null);
+          setAccountEntitlementsError({
+            code: error instanceof ApiError ? error.errorCode : '',
+            message: formatPortalErrorMessage(
+              error,
+              t,
+              t(
+                'portal.home.entitlements_failed_desc',
+                {},
+                'Package usage could not be loaded. Retry before relying on the service status.'
+              )
+            ),
+          });
           setAccountEntitlementsState('error');
         }
       });
@@ -115,7 +138,7 @@ export default function PortalPage() {
         accountEntitlementsRequestVersionRef.current += 1;
       }
     };
-  }, [accountEntitlementsRetryVersion, contextSiteId, isAuthenticated]);
+  }, [accountEntitlementsRetryVersion, contextSiteId, isAuthenticated, t]);
 
   if (isLoading) {
     return (
@@ -355,12 +378,24 @@ export default function PortalPage() {
     ...(accountEntitlementsUnavailable
       ? [{
           tone: 'warn' as const,
-          label: t('portal.home.entitlements_failed_title', {}, 'Package usage is unavailable'),
-          detail: t(
-            'portal.home.entitlements_failed_desc',
-            {},
-            'Package usage could not be loaded. Retry before relying on the service status.'
-          ),
+          label: accountEntitlementsError?.code === 'commercial.quota_exceeded'
+            ? t('portal.home.credit_attention_title', {}, 'AI credits need attention')
+            : t('portal.home.entitlements_failed_title', {}, 'Package usage is unavailable'),
+          detail: accountEntitlementsError?.message || t(
+              'portal.home.entitlements_failed_desc',
+              {},
+              'Package usage could not be loaded. Retry before relying on the service status.'
+            ),
+          href: accountEntitlementsError?.code === 'commercial.quota_exceeded'
+            ? '/portal/usage'
+            : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
+              ? '/portal/support?new=1&topic=account'
+              : undefined,
+          action: accountEntitlementsError?.code === 'commercial.quota_exceeded'
+            ? t('error.portal_recovery_review_account_quota', {}, 'Review account usage')
+            : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
+              ? t('error.portal_recovery_contact_support', {}, 'Contact support')
+              : undefined,
         }]
       : []),
   ];

@@ -12,6 +12,7 @@ from app.core.db import get_session
 from app.core.models import (
     PluginObservabilityAttentionState,
     PluginObservabilityEvent,
+    Site,
 )
 
 ALLOWED_EVENT_FIELDS = {
@@ -438,6 +439,8 @@ class PluginObservabilityService:
             site_rows = session.execute(
                 select(
                     PluginObservabilityEvent.site_id,
+                    Site.name,
+                    Site.site_url,
                     func.count(PluginObservabilityEvent.id),
                     func.sum(
                         case(
@@ -449,8 +452,14 @@ class PluginObservabilityService:
                     func.count(func.distinct(PluginObservabilityEvent.plugin_slug)),
                     func.max(PluginObservabilityEvent.received_at),
                 )
+                .select_from(PluginObservabilityEvent)
+                .outerjoin(Site, Site.site_id == PluginObservabilityEvent.site_id)
                 .where(*base_conditions)
-                .group_by(PluginObservabilityEvent.site_id)
+                .group_by(
+                    PluginObservabilityEvent.site_id,
+                    Site.name,
+                    Site.site_url,
+                )
                 .order_by(PluginObservabilityEvent.site_id.asc())
             ).all()
 
@@ -505,17 +514,19 @@ class PluginObservabilityService:
 
         sites = []
         for row in site_rows:
-            site_events_total = int(row[1] or 0)
-            site_error_total = int(row[2] or 0)
+            site_events_total = int(row[3] or 0)
+            site_error_total = int(row[4] or 0)
             site_summary: dict[str, object] = {
                 "site_id": str(row[0] or ""),
+                "site_name": str(row[1] or ""),
+                "site_url": str(row[2] or ""),
                 "events_total": site_events_total,
                 "error_total": site_error_total,
                 "ok_total": max(0, site_events_total - site_error_total),
                 "success_rate": self._success_rate(site_events_total, site_error_total),
-                "avg_latency_ms": self._optional_avg(row[3]),
-                "plugin_count": self._coerce_int(row[4]),
-                "last_seen_at": self._format_datetime(row[5]),
+                "avg_latency_ms": self._optional_avg(row[5]),
+                "plugin_count": self._coerce_int(row[6]),
+                "last_seen_at": self._format_datetime(row[7]),
             }
             site_summary["health"] = self._build_health(
                 events_total=site_events_total,

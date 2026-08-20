@@ -146,7 +146,7 @@
     "max_exception_days": 30,
     "allowlist_file": "deploy/image-lock/cve-allowlist.json",
     "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
-    "authoritative_not_affected_sha256": "7ff700f09faf7b89f9e9c973f47aba200e84e3851945d642881321c8670af442",
+    "authoritative_not_affected_sha256": "98c86e9712a6de693cf4a1ac81b9dbe1cad6f34d67f81b41d6501aa7459b7929",
     "generated_artifacts_must_not_be_committed": true
   }
 }
