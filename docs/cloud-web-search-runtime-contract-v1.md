@@ -62,6 +62,16 @@ Supported built-in provider IDs:
 - `apify`
 - `jina_reader`
 - `zhihu`
+- `anysearch`
+
+`anysearch` is an optional unified AI search provider. Its Cloud adapter uses
+the Bearer-authenticated `POST /v1/search` endpoint and normalizes
+`data.results[].title/url/snippet/content` into the existing evidence contract.
+The first adapter version supports query, language, region (`cn`/`intl`), and
+bounded `max_results`; it fails closed when recency or domain filters are
+requested because those filters are not part of AnySearch's documented unified
+API request shape. AnySearch MCP and Skill packages are not part of the Cloud
+runtime integration.
 
 Provider credentials must be stored as provider connection secrets. Runtime
 requests must never carry provider API keys. Secrets are encrypted at rest and

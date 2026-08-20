@@ -42,7 +42,7 @@ MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
 MAX_READER_RESPONSE_BYTES = 500_000
 MAX_SOURCE_READER_CONTENT_CHARS = 8_000
 MAX_SOURCE_PREVIEW_CHARS = 600
-WEB_SEARCH_PROVIDER_ORDER = ("tavily", "bocha", "doubao_search", "apify", "zhihu")
+WEB_SEARCH_PROVIDER_ORDER = ("tavily", "bocha", "doubao_search", "apify", "zhihu", "anysearch")
 TAVILY_KEY_QUARANTINE_SECONDS = 300.0
 _TAVILY_POOL_LOCK = threading.Lock()
 # Opaque runtime-local tokens avoid deriving identifiers from provider secrets.
@@ -362,6 +362,147 @@ class TavilyWebSearchProvider:
             region=str(self.settings.deployment_region or "unspecified"),
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),
             cost=max(0.0, float(self.settings.web_search_tavily_cost_per_query or 0.0)),
+            error_code=error_code,
+        )
+
+
+class AnySearchWebSearchProvider:
+    provider_id = "anysearch"
+    model_id = "web-search"
+    instance_id = "cloud-managed"
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def search(
+        self,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        del site_id, run_id
+        api_key = str(self.settings.web_search_anysearch_api_key or "").strip()
+        if not api_key:
+            raise WebSearchProviderError(
+                "web_search.anysearch_api_key_missing",
+                "Cloud-managed AnySearch API key is not configured",
+            )
+        has_unsupported_filters = (
+            int(options.get("recency_days") or 0) > 0
+            or bool(options.get("allowed_domains"))
+            or bool(options.get("blocked_domains"))
+        )
+        if has_unsupported_filters:
+            raise WebSearchProviderError(
+                "web_search.anysearch_filters_unsupported",
+                "AnySearch does not support the requested recency or domain filters",
+            )
+
+        base_url = str(self.settings.web_search_anysearch_base_url or "").strip().rstrip("/")
+        if not base_url:
+            raise WebSearchProviderError(
+                "web_search.anysearch_endpoint_missing",
+                "AnySearch base URL is not configured",
+            )
+        endpoint = f"{base_url}/v1/search"
+        request_body: dict[str, Any] = {
+            "query": query,
+            "max_results": coerce_positive_int(options.get("max_results"), default=5, maximum=10),
+            "format": "json",
+        }
+        if options.get("language"):
+            request_body["language"] = str(options["language"])
+        if options.get("region"):
+            region = str(options["region"]).strip().lower()
+            request_body["zone"] = "cn" if region in {"cn", "china", "zh", "zh-cn"} else "intl"
+
+        started = time.monotonic()
+        response: httpx.Response | None = None
+        last_error: Exception | None = None
+        error_code: str | None = None
+        try:
+            timeout_seconds = float(self.settings.web_search_anysearch_timeout_seconds)
+            with httpx.Client(timeout=timeout_seconds) as client:
+                response = client.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=request_body,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as error:
+            last_error = error
+            error_code = "provider.timeout"
+            error_message = "AnySearch web search timed out"
+        except httpx.HTTPStatusError as error:
+            last_error = error
+            error_code = _map_anysearch_error(error.response)
+            error_message = _extract_http_error_message(
+                error.response,
+                provider_id=self.provider_id,
+            )
+            response = None
+        except httpx.RequestError as error:
+            last_error = error
+            error_code = "provider.network_error"
+            error_message = "AnySearch web search request failed"
+        else:
+            error_message = ""
+
+        if response is None:
+            usage = self._usage(started, error_code=error_code)
+            raise WebSearchProviderError(
+                error_code or "web_search.anysearch_http_error",
+                error_message or "AnySearch web search request failed",
+                usage=usage,
+            ) from last_error
+
+        usage = self._usage(started)
+        payload = _json_payload(response, provider_id=self.provider_id, usage=usage)
+        if isinstance(payload, dict) and payload.get("code") not in {None, 0}:
+            message = _normalize_text(payload.get("message"), limit=200)
+            raise WebSearchProviderError(
+                "provider.invalid_response",
+                message or "AnySearch returned an unsuccessful response",
+                usage=usage,
+            )
+        data = payload.get("data") if isinstance(payload, dict) else {}
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise WebSearchProviderError(
+                "provider.invalid_response",
+                "AnySearch response did not contain data.results",
+                usage=usage,
+            )
+        raw_results = data.get("results") if isinstance(data, dict) else []
+        if not isinstance(raw_results, list):
+            raw_results = []
+        intent = str(options.get("intent") or "general_research")
+        results = _normalize_results(
+            raw_results,
+            intent=intent,
+            provider_id=self.provider_id,
+            snippet_keys=("snippet", "content"),
+        )
+        evidence_policy = _resolve_evidence_policy(options.get("evidence_policy"))
+        results = _apply_evidence_policy(results, evidence_policy)
+        result_json = _build_result_json(
+            provider_id=self.provider_id,
+            query=query,
+            options=options,
+            results=results,
+            evidence_policy=evidence_policy,
+        )
+        return WebSearchExecutionResult(result_json=result_json, usage=usage)
+
+    def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
+        return WebSearchProviderUsage(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            instance_id=self.instance_id,
+            region=str(self.settings.deployment_region or "unspecified"),
+            latency_ms=max(0, int((time.monotonic() - started) * 1000)),
+            cost=max(0.0, float(self.settings.web_search_anysearch_cost_per_query or 0.0)),
             error_code=error_code,
         )
 
@@ -1294,6 +1435,7 @@ def _build_provider(
     | DoubaoSearchWebSearchProvider
     | ApifyWebSearchProvider
     | ZhihuWebSearchProvider
+    | AnySearchWebSearchProvider
 ):
     if provider_id == "tavily":
         return TavilyWebSearchProvider(settings)
@@ -1305,6 +1447,8 @@ def _build_provider(
         return ApifyWebSearchProvider(settings)
     if provider_id == "zhihu":
         return ZhihuWebSearchProvider(settings)
+    if provider_id == "anysearch":
+        return AnySearchWebSearchProvider(settings)
     raise WebSearchProviderError(
         "web_search.provider_not_supported",
         "Cloud-managed web search provider is not supported",
@@ -1356,6 +1500,8 @@ def _provider_configured(settings: Settings, provider_id: str) -> bool:
         )
     if provider_id == "zhihu":
         return bool(str(settings.web_search_zhihu_access_secret or "").strip())
+    if provider_id == "anysearch":
+        return bool(str(settings.web_search_anysearch_api_key or "").strip())
     return False
 
 
@@ -2708,6 +2854,18 @@ def _hash_query(query: str) -> str:
 
 def _map_tavily_error(response: httpx.Response) -> str:
     return _map_provider_http_error(response)
+
+
+def _map_anysearch_error(response: httpx.Response) -> str:
+    if response.status_code in {401, 403}:
+        return "provider.auth_invalid"
+    if response.status_code == 402:
+        return "provider.quota_exhausted"
+    if response.status_code == 429:
+        return "provider.rate_limited"
+    if response.status_code >= 500:
+        return "provider.unavailable"
+    return "web_search.anysearch_http_error"
 
 
 def _map_provider_http_error(response: httpx.Response) -> str:

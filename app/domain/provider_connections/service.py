@@ -83,6 +83,10 @@ _PUBLIC_PROVIDER_TEST_ERROR_CODES = {
     "web_search.apify_actor_missing": "web_search.apify_actor_missing",
     "web_search.apify_api_token_missing": "web_search.apify_api_token_missing",
     "web_search.apify_http_error": "web_search.apify_http_error",
+    "web_search.anysearch_api_key_missing": "web_search.anysearch_api_key_missing",
+    "web_search.anysearch_endpoint_missing": "web_search.anysearch_endpoint_missing",
+    "web_search.anysearch_filters_unsupported": "web_search.anysearch_filters_unsupported",
+    "web_search.anysearch_http_error": "web_search.anysearch_http_error",
     "web_search.bocha_api_key_missing": "web_search.bocha_api_key_missing",
     "web_search.bocha_http_error": "web_search.bocha_http_error",
     "web_search.doubao_api_key_missing": "web_search.doubao_api_key_missing",
@@ -98,6 +102,7 @@ _PUBLIC_PROVIDER_TEST_ERROR_CODES = {
     "web_search.zhihu_access_secret_missing": "web_search.zhihu_access_secret_missing",
     "web_search.zhihu_endpoint_missing": "web_search.zhihu_endpoint_missing",
     "web_search.zhihu_http_error": "web_search.zhihu_http_error",
+    "provider.quota_exhausted": "provider.quota_exhausted",
 }
 
 

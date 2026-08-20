@@ -10,8 +10,8 @@
       "authority_url": "https://cveawg.mitre.org/api/cve/CVE-2026-11940",
       "affected_version": "3.14.0",
       "affected_less_than": "3.14.7",
-      "verified_on": "2026-08-12",
-      "recheck_after": "2026-08-19"
+      "verified_on": "2026-08-20",
+      "recheck_after": "2026-08-27"
     },
     {
       "image": "api",
@@ -22,8 +22,8 @@
       "authority_url": "https://cveawg.mitre.org/api/cve/CVE-2026-11972",
       "affected_version": "3.14.0",
       "affected_less_than": "3.14.7",
-      "verified_on": "2026-08-12",
-      "recheck_after": "2026-08-19"
+      "verified_on": "2026-08-20",
+      "recheck_after": "2026-08-27"
     },
     {
       "image": "api",
@@ -34,8 +34,8 @@
       "authority_url": "https://cveawg.mitre.org/api/cve/CVE-2026-15308",
       "affected_version": "3.14.0",
       "affected_less_than": "3.14.7",
-      "verified_on": "2026-08-12",
-      "recheck_after": "2026-08-19"
+      "verified_on": "2026-08-20",
+      "recheck_after": "2026-08-27"
     }
   ]
 }

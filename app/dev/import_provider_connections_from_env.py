@@ -449,6 +449,27 @@ def _add_web_search_specs(
             )
         )
 
+    anysearch_key = _env_value(env, "WEB_SEARCH_ANYSEARCH_API_KEY")
+    if anysearch_key:
+        specs.append(
+            ProviderConnectionImportSpec(
+                connection_id="search_anysearch",
+                provider_id="anysearch",
+                provider_type="web_search_provider",
+                display_name="AnySearch",
+                base_url=_env_value(env, "WEB_SEARCH_ANYSEARCH_BASE_URL")
+                or "https://api.anysearch.com",
+                capability_ids=["web_search"],
+                runtime_profile_ids=["web-search.managed"],
+                credential=anysearch_key,
+                config={
+                    "provider_mode": provider_mode,
+                    "timeout_seconds": _env_value(env, "WEB_SEARCH_ANYSEARCH_TIMEOUT_SECONDS"),
+                    "cost_per_query": _env_value(env, "WEB_SEARCH_ANYSEARCH_COST_PER_QUERY"),
+                },
+            )
+        )
+
 
 def _add_image_source_specs(
     specs: list[ProviderConnectionImportSpec],

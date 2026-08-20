@@ -56,6 +56,7 @@ Minimum field mapping:
 | Doubao Search Custom | `search_doubao_search` | `doubao_search` | `web_search_provider` | `https://open.feedcoopapi.com` | `web-search.managed` |
 | Actor-backed web search | `search_apify` | `apify` | `web_search_provider` | `https://api.apify.com/v2` | `web-search.managed` |
 | Zhihu search | `search_zhihu` | `zhihu` | `web_search_provider` | `https://developer.zhihu.com` | `web-search.managed` |
+| Unified AI web search | `search_anysearch` | `anysearch` | `web_search_provider` | `https://api.anysearch.com` | `web-search.managed` |
 | URL reader enhancement | `search_jina_reader` | `jina_reader` | `web_search_provider` | `https://r.jina.ai` | `web-search.reader` |
 | Image source | `image_unsplash` | `unsplash` | `image_source_provider` | `https://api.unsplash.com` | `image-source.managed` |
 | Model provider with embeddings | `siliconflow_env` | `siliconflow` | `siliconflow` | `https://api.siliconflow.cn/v1` | `text.ai`, `embed.default` |
@@ -65,10 +66,11 @@ Minimum field mapping:
 
 Use at least one configured provider for each required capability. For search,
 the supported primary providers are `search_tavily`, `search_bocha`,
-`search_doubao_search`, `search_apify`, and `search_zhihu`; they all project to `web_search`, while
-provider-specific requests can still select the matching provider. `search_jina_reader`
-is optional URL reader enhancement and should not be counted as the primary
-search provider.
+`search_doubao_search`, `search_apify`, `search_zhihu`, and
+`search_anysearch`; they all project to `web_search`, while provider-specific
+requests can still select the matching provider. `search_jina_reader` is
+optional URL reader enhancement and should not be counted as the primary search
+provider.
 
 ## Config JSON Templates
 
@@ -141,6 +143,21 @@ Zhihu:
   "hot_list_cache_ttl_seconds": 3600
 }
 ```
+
+AnySearch:
+
+```json
+{
+  "provider_mode": "auto",
+  "timeout_seconds": 20,
+  "cost_per_query": 0
+}
+```
+
+AnySearch is last in the automatic provider order by default. Use explicit
+provider selection for a bounded canary before relying on automatic fallback.
+The current adapter fails closed when recency or domain filters are requested.
+Set `cost_per_query` only after the actual supplier billing basis is confirmed.
 
 Image source:
 

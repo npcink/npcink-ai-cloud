@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
-from app.core.models import PluginObservabilityEvent
+from app.core.models import PluginObservabilityEvent, Site
 from app.core.services import CloudServices
 from app.domain.observability.plugin_events import EXPECTED_PLUGIN_SLUGS
 from tests.conftest import build_internal_headers, seed_site_auth
@@ -100,6 +100,10 @@ def _seed_plugin_events(database_url: str) -> None:
         ),
     ]
     with get_session(database_url) as session:
+        session.get(Site, "site-001").name = "Primary Support Site"
+        session.get(Site, "site-001").site_url = "https://primary.example.test"
+        session.get(Site, "site-002").name = "Secondary Support Site"
+        session.get(Site, "site-002").site_url = "https://secondary.example.test"
         session.add_all(events)
         session.commit()
 
@@ -151,6 +155,11 @@ def test_admin_plugin_observability_returns_cross_site_aggregation(tmp_path: Pat
     assert isinstance(data["plugins"], list)
     assert isinstance(data["sites"], list)
     assert all("health" in site for site in data["sites"])
+    sites_by_id = {site["site_id"]: site for site in data["sites"]}
+    assert sites_by_id["site-001"]["site_name"] == "Primary Support Site"
+    assert sites_by_id["site-001"]["site_url"] == "https://primary.example.test"
+    assert sites_by_id["site-002"]["site_name"] == "Secondary Support Site"
+    assert sites_by_id["site-002"]["site_url"] == "https://secondary.example.test"
     assert isinstance(data["timeline"], list)
     assert isinstance(data["errors"], list)
     assert isinstance(data["recent_errors"], list)
@@ -180,6 +189,41 @@ def test_admin_plugin_observability_site_id_filter(tmp_path: Path) -> None:
     data = response.json()["data"]
     for site in data["sites"]:
         assert site["site_id"] == "site-001"
+
+
+def test_admin_plugin_observability_keeps_site_id_without_record(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        session.add(
+            PluginObservabilityEvent(
+                dedupe_key="dedupe-admin-missing-site",
+                site_id="site-missing",
+                key_id="key_default",
+                schema_version="2026-06-01",
+                plugin_slug="npcink-cloud-addon",
+                plugin_version="0.1.0",
+                source="local",
+                event_kind="addon.monitoring.state_projected",
+                event_id="evt_admin_missing_site",
+                status="ok",
+                latency_ms=20,
+                captured_at=now - timedelta(minutes=2),
+                received_at=now - timedelta(minutes=2),
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/plugin-observability?window_hours=24",
+        headers=build_internal_headers(trace_id="traceadmin0025000000000000000000"),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    missing_site = next(site for site in data["sites"] if site["site_id"] == "site-missing")
+    assert missing_site["site_name"] == ""
+    assert missing_site["site_url"] == ""
+    assert missing_site["events_total"] == 1
 
 
 def test_admin_plugin_observability_plugin_slug_filter(tmp_path: Path) -> None:

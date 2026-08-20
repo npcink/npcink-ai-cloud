@@ -1360,6 +1360,46 @@ def test_runtime_settings_project_doubao_search_custom_connection(
     dispose_engine(database_url)
 
 
+def test_runtime_settings_project_anysearch_connection(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.web_search_provider = "disabled"
+    service = ProviderConnectionAdminService(database_url, settings)
+
+    service.save_connection(
+        {
+            "connection_id": "search_anysearch",
+            "provider_id": "anysearch",
+            "provider_type": "web_search_provider",
+            "kind": "web_search_provider",
+            "display_name": "AnySearch",
+            "enabled": True,
+            "base_url": "https://api.anysearch.com",
+            "capability_ids": ["web_search"],
+            "runtime_profile_ids": ["web-search.managed"],
+            "config": {
+                "provider_mode": "auto",
+                "timeout_seconds": 18,
+                "cost_per_query": 0.01,
+            },
+            "credential": "anysearch-key",
+        }
+    )
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.web_search_count == 1
+    assert settings.web_search_provider == "auto"
+    assert settings.web_search_anysearch_base_url == "https://api.anysearch.com"
+    assert settings.web_search_anysearch_api_key == "anysearch-key"
+    assert settings.web_search_anysearch_timeout_seconds == 18
+    assert settings.web_search_anysearch_cost_per_query == 0.01
+    assert "anysearch-key" not in str(service.list_connections())
+
+    dispose_engine(database_url)
+
+
 def test_image_source_connections_remain_parallel_without_priority(
     tmp_path: Path,
 ) -> None:

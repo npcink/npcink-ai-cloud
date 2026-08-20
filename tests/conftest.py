@@ -34,6 +34,7 @@ for _provider_env_name in (
     "NPCINK_CLOUD_WEB_SEARCH_BOCHA_API_KEY",
     "NPCINK_CLOUD_WEB_SEARCH_JINA_READER_API_KEY",
     "NPCINK_CLOUD_WEB_SEARCH_APIFY_API_TOKEN",
+    "NPCINK_CLOUD_WEB_SEARCH_ANYSEARCH_API_KEY",
 ):
     os.environ[_provider_env_name] = ""
 os.environ["NPCINK_CLOUD_WEB_SEARCH_PROVIDER"] = "disabled"

@@ -102,7 +102,14 @@ def apply_provider_connection_runtime_settings(
                 projection.web_search_count += 1
                 projection.applied_count += 1
                 applied_provider_channels.add(provider_channel_key)
-                if provider_id in {"tavily", "bocha", "doubao_search", "apify", "zhihu"}:
+                if provider_id in {
+                    "tavily",
+                    "bocha",
+                    "doubao_search",
+                    "apify",
+                    "zhihu",
+                    "anysearch",
+                }:
                     web_search_primary_seen = True
             continue
         if kind == "image_source_provider":
@@ -289,6 +296,19 @@ def _apply_web_search_connection(
             config.get("hot_list_cache_ttl_seconds"),
             settings.web_search_zhihu_hot_list_cache_ttl_seconds,
         )
+    elif provider_id == "anysearch":
+        settings.web_search_anysearch_base_url = (
+            row.base_url or settings.web_search_anysearch_base_url
+        )
+        if credential:
+            settings.web_search_anysearch_api_key = credential
+        settings.web_search_anysearch_timeout_seconds = _positive_float(
+            config.get("timeout_seconds"), settings.web_search_anysearch_timeout_seconds
+        )
+        settings.web_search_anysearch_cost_per_query = _nonnegative_float(
+            config.get("cost_per_query") or config.get("cost"),
+            settings.web_search_anysearch_cost_per_query,
+        )
     else:
         return False
 
@@ -298,6 +318,7 @@ def _apply_web_search_connection(
         "doubao_search",
         "apify",
         "zhihu",
+        "anysearch",
     }:
         settings.web_search_provider = _string(config.get("provider_mode") or "auto")
     return True
