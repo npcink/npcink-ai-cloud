@@ -505,15 +505,21 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
 def test_release_policy_rejects_all_production_udp_listener_forms() -> None:
     policy = (ROOT / "scripts" / "check-release-policy.sh").read_text()
 
-    udp_protocol_pattern = r"^[[:space:]]*protocol:[[:space:]]*udp([[:space:]#]|$)"
+    udp_protocol_pattern = r'''^[[:space:]]*protocol:[[:space:]]*['"]?udp['"]?([[:space:]#]|$)'''
+    udp_protocol_source = udp_protocol_pattern.replace('"', r'\"')
 
     for marker in ("quic", "http3", "http_v3", "/udp"):
         assert f'reject_marker_case_insensitive "${{production_path}}" \'{marker}\'' in policy
     assert (
         "reject_pattern_case_insensitive \"${production_path}\" "
-        f"'{udp_protocol_pattern}'"
+        f'"{udp_protocol_source}"'
     ) in policy
-    for compose_line in ("protocol: udp", "      protocol: UDP # prohibited"):
+    for compose_line in (
+        "protocol: udp",
+        "      protocol: UDP # prohibited",
+        'protocol: "udp"',
+        "protocol: 'UDP' # prohibited",
+    ):
         assert subprocess.run(
             ["grep", "-Eiq", "--", udp_protocol_pattern],
             input=compose_line,
@@ -526,6 +532,23 @@ def test_release_policy_rejects_all_production_udp_listener_forms() -> None:
         text=True,
         check=False,
     ).returncode == 1
+
+
+def test_active_release_contract_records_the_exact_openssl_exception() -> None:
+    policy = (ROOT / "docs" / "cloud-production-release-policy-v1.md").read_text()
+    checklist = (ROOT / "deploy" / "RELEASE_CHECKLIST.md").read_text()
+
+    for surface in (policy, checklist):
+        assert "CVE-2026-14456" in surface
+        assert "2026-09-19" in surface
+        assert "libcrypto3" in surface
+        assert "libssl3" in surface
+        assert "3.5.7-r0" in surface
+        assert "QUIC" in surface
+        assert "HTTP/3" in surface
+        assert "UDP" in surface
+    assert "exactly six" in checklist
+    assert "quoted and unquoted Compose UDP protocols" in checklist
 
 
 def test_high_unfixed_finding_blocks_and_exact_temporary_exception_is_audited(

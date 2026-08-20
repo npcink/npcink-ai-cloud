@@ -366,12 +366,20 @@ require_marker "deploy/image-lock/cve-allowlist.json" \
 	'Stop immediately if QUIC or UDP is enabled'
 require_marker "deploy/image-lock/cve-allowlist.json" \
 	'OpenSSL 3.5.8 or newer'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'`CVE-2026-14456` exception is active only through `2026-09-19`'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'valid only while production has no'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'current OpenSSL `CVE-2026-14456` exception contains exactly six'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'quoted and unquoted Compose UDP protocols must'
 for production_path in docker-compose.prod.yml docker-compose.runtime.yml deploy/nginx.prod.conf; do
 	reject_marker_case_insensitive "${production_path}" 'quic'
 	reject_marker_case_insensitive "${production_path}" 'http3'
 	reject_marker_case_insensitive "${production_path}" 'http_v3'
 	reject_marker_case_insensitive "${production_path}" '/udp'
-	reject_pattern_case_insensitive "${production_path}" '^[[:space:]]*protocol:[[:space:]]*udp([[:space:]#]|$)'
+	reject_pattern_case_insensitive "${production_path}" "^[[:space:]]*protocol:[[:space:]]*['\"]?udp['\"]?([[:space:]#]|$)"
 done
 require_marker "deploy/image-lock/production-images.json" \
 	'python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc'
