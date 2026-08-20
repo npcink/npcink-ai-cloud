@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -48,6 +49,13 @@ def udp_publications(model: object) -> list[str]:
 
 
 def normalized_compose_model(path: Path) -> dict[str, Any]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "NPCINK_CLOUD_BACKEND_ENV_FILE": "/dev/null",
+            "NPCINK_CLOUD_CONFIG_DIR_HOST": "/tmp/npcink-cloud-config",
+        }
+    )
     result = subprocess.run(
         [
             "docker",
@@ -55,13 +63,13 @@ def normalized_compose_model(path: Path) -> dict[str, Any]:
             "-f",
             str(path),
             "config",
-            "--no-interpolate",
             "--format",
             "json",
         ],
         check=False,
         capture_output=True,
         text=True,
+        env=environment,
     )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown Compose error"
