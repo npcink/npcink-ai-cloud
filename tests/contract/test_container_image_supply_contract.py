@@ -457,7 +457,7 @@ def test_application_runtime_identity_is_stable_and_verified_in_built_images() -
     assert '[ "$(id -g)" = "999" ]' in smoke
 
 
-def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
+def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
     lock = _lock()
     policy = lock["scan_policy"]
     allowlist = json.loads((ROOT / policy["allowlist_file"]).read_text())
@@ -480,7 +480,22 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
     entries = allowlist["entries"]
-    assert entries == []
+    expected_identities = [
+        (image, package)
+        for image in ("api", "frontend", "nginx")
+        for package in ("libcrypto3", "libssl3")
+    ]
+    assert [(entry["image"], entry["package"]) for entry in entries] == expected_identities
+    assert {entry["vulnerability_id"] for entry in entries} == {"CVE-2026-14456"}
+    assert {entry["package_version"] for entry in entries} == {"3.5.7-r0"}
+    assert {entry["owner"] for entry in entries} == {"Npcink Cloud release operator"}
+    assert {entry["expires_on"] for entry in entries} == {"2026-09-19"}
+    for entry in entries:
+        reason = entry["reason"]
+        assert "OpenSSL QUIC server listeners" in reason
+        assert "no QUIC, HTTP/3, or UDP listener" in reason
+        assert "Stop immediately if QUIC or UDP is enabled" in reason
+        assert "OpenSSL 3.5.8 or newer" in reason
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
