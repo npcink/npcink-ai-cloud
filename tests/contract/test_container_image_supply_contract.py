@@ -502,6 +502,32 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
     assert schema["properties"]["entries"]["items"]["additionalProperties"] is False
 
 
+def test_release_policy_rejects_all_production_udp_listener_forms() -> None:
+    policy = (ROOT / "scripts" / "check-release-policy.sh").read_text()
+
+    udp_protocol_pattern = r"^[[:space:]]*protocol:[[:space:]]*udp([[:space:]#]|$)"
+
+    for marker in ("quic", "http3", "http_v3", "/udp"):
+        assert f'reject_marker_case_insensitive "${{production_path}}" \'{marker}\'' in policy
+    assert (
+        "reject_pattern_case_insensitive \"${production_path}\" "
+        f"'{udp_protocol_pattern}'"
+    ) in policy
+    for compose_line in ("protocol: udp", "      protocol: UDP # prohibited"):
+        assert subprocess.run(
+            ["grep", "-Eiq", "--", udp_protocol_pattern],
+            input=compose_line,
+            text=True,
+            check=False,
+        ).returncode == 0
+    assert subprocess.run(
+        ["grep", "-Eiq", "--", udp_protocol_pattern],
+        input="protocol: tcp",
+        text=True,
+        check=False,
+    ).returncode == 1
+
+
 def test_high_unfixed_finding_blocks_and_exact_temporary_exception_is_audited(
     tmp_path: Path,
 ) -> None:
