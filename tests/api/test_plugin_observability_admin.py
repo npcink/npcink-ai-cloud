@@ -191,7 +191,7 @@ def test_admin_plugin_observability_site_id_filter(tmp_path: Path) -> None:
         assert site["site_id"] == "site-001"
 
 
-def test_admin_plugin_observability_keeps_site_id_when_site_record_is_missing(tmp_path: Path) -> None:
+def test_admin_plugin_observability_keeps_site_id_without_record(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
     now = datetime.now(UTC)
     with get_session(database_url) as session:
