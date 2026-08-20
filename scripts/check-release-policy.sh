@@ -28,11 +28,41 @@ require_marker() {
 	fi
 }
 
+require_marker_count() {
+	local path="$1"
+	local marker="$2"
+	local expected_count="$3"
+	local actual_count
+	actual_count="$(grep -F -c -- "${marker}" "${ROOT_DIR}/${path}" || true)"
+	if [ "${actual_count}" != "${expected_count}" ]; then
+		echo "[fail] Release policy marker count mismatch in ${path}: ${marker}; expected=${expected_count} actual=${actual_count}" >&2
+		exit 1
+	fi
+}
+
 reject_marker() {
 	local path="$1"
 	local marker="$2"
 	if grep -Fq -- "${marker}" "${ROOT_DIR}/${path}"; then
 		echo "[fail] Forbidden release policy marker in ${path}: ${marker}" >&2
+		exit 1
+	fi
+}
+
+reject_marker_case_insensitive() {
+	local path="$1"
+	local marker="$2"
+	if grep -Fiq -- "${marker}" "${ROOT_DIR}/${path}"; then
+		echo "[fail] Forbidden release policy marker in ${path}: ${marker}" >&2
+		exit 1
+	fi
+}
+
+reject_pattern_case_insensitive() {
+	local path="$1"
+	local pattern="$2"
+	if grep -Eiq -- "${pattern}" "${ROOT_DIR}/${path}"; then
+		echo "[fail] Forbidden release policy pattern in ${path}: ${pattern}" >&2
 		exit 1
 	fi
 }
@@ -324,7 +354,37 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"receipt_sha256"'
 reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'"acceptance_sha256"'
-require_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
+require_marker_count "deploy/image-lock/cve-allowlist.json" '"vulnerability_id": "CVE-2026-14456"' 6
+require_marker_count "deploy/image-lock/cve-allowlist.json" '"package": "libcrypto3"' 3
+require_marker_count "deploy/image-lock/cve-allowlist.json" '"package": "libssl3"' 3
+require_marker_count "deploy/image-lock/cve-allowlist.json" '"package_version": "3.5.7-r0"' 6
+require_marker_count "deploy/image-lock/cve-allowlist.json" '"owner": "Npcink Cloud release operator"' 6
+require_marker_count "deploy/image-lock/cve-allowlist.json" '"expires_on": "2026-09-19"' 6
+require_marker "deploy/image-lock/cve-allowlist.json" \
+	'no QUIC, HTTP/3, or UDP listener'
+require_marker "deploy/image-lock/cve-allowlist.json" \
+	'Stop immediately if QUIC or UDP is enabled'
+require_marker "deploy/image-lock/cve-allowlist.json" \
+	'OpenSSL 3.5.8 or newer'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'`CVE-2026-14456` exception is active only through `2026-09-19`'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'valid only while production has no'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'current OpenSSL `CVE-2026-14456` exception contains exactly six'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'quoted and unquoted Compose UDP protocols must'
+for production_path in \
+	docker-compose.prod.yml \
+	docker-compose.runtime.yml \
+	deploy/nginx.prod.conf \
+	deploy/magick-domain-nginx.conf.template; do
+	reject_marker_case_insensitive "${production_path}" 'quic'
+	reject_marker_case_insensitive "${production_path}" 'http3'
+	reject_marker_case_insensitive "${production_path}" 'http_v3'
+	reject_marker_case_insensitive "${production_path}" '/udp'
+	reject_pattern_case_insensitive "${production_path}" "^[[:space:]]*protocol:[[:space:]]*['\"]?udp['\"]?([[:space:]#]|$)"
+done
 require_marker "deploy/image-lock/production-images.json" \
 	'python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc'
 require_marker "deploy/image-lock/production-images.json" \
