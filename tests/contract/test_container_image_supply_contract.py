@@ -510,6 +510,7 @@ def test_release_policy_rejects_all_production_udp_listener_forms() -> None:
 
     for marker in ("quic", "http3", "http_v3", "/udp"):
         assert f'reject_marker_case_insensitive "${{production_path}}" \'{marker}\'' in policy
+    assert "deploy/magick-domain-nginx.conf.template" in policy
     assert (
         "reject_pattern_case_insensitive \"${production_path}\" "
         f'"{udp_protocol_source}"'
