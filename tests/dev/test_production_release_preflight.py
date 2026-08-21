@@ -107,6 +107,8 @@ def test_ready_snapshot_binds_exact_checks_bundle_and_secret_names() -> None:
         "missing_formal_smoke_secret_names": [],
         "active_deploy_run_ids": [],
         "release_preflight": "ready",
+        "preflight_elapsed_seconds": result["preflight_elapsed_seconds"],
+        "preflight_mode": "snapshot",
     }
     rendered = module.render_text(result)
     assert f"dispatch_expected_sha={SHA}" in rendered
