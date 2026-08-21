@@ -123,8 +123,9 @@ authorization, cutover, and health work.
 The pause is valid only when all of these are recorded:
 
 - current `origin/master` and `origin/production` revisions;
-- production host mutation has not started, or the existing release has been
-  closed independently before beginning another consolidation;
+- production host mutation has not started; if mutation started, the release
+  must first complete the normal recovery or rollback path, including terminal
+  runtime-state and health verification, before this pause flow is considered;
 - the deferred change has a finite owner, scope, validation tier, and stop
   condition;
 - security/CVE expiry, rollback, entitlement, Provider, or other time-bounded
