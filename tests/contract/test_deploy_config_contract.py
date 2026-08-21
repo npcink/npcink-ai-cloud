@@ -207,6 +207,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "production-application-image-inputs.py",
         "production-image-supply.py",
         "check-authoritative-cve-ranges.py",
+        "check-production-compose-protocols.py",
         "check-dockerfile-copy-contract.py",
         "check-production-pr-base.py",
         "release-readiness-summary.py",
@@ -230,12 +231,23 @@ def _run_release_policy_with_restricted_path(
 ) -> subprocess.CompletedProcess[str]:
     restricted_bin = tmp_path / "release-policy-bin"
     restricted_bin.mkdir(exist_ok=True)
-    for command in ("awk", "cmp", "cut", "dirname", "git", "grep"):
+    for command in ("awk", "cmp", "cut", "dirname", "git", "grep", "python3"):
         command_path = shutil.which(command)
         assert command_path is not None
         destination = restricted_bin / command
         if not destination.exists():
             destination.symlink_to(command_path)
+
+    docker_stub = restricted_bin / "docker"
+    docker_stub.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = compose ]; then\n"
+        "  printf '%s\\n' '{\"services\":{}}'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n"
+    )
+    docker_stub.chmod(0o755)
 
     assert shutil.which("uv", path=str(restricted_bin)) is None
     return subprocess.run(
