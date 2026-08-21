@@ -1687,8 +1687,10 @@ test('portal workspace interaction path: account overview to site detail and ser
   ).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
-  await expect(sitesWorkspace.getByText(/^Shared active capacity 2\/5$|^共享活动容量 2\/5$/i)).toBeVisible();
-  await expect(sitesWorkspace.getByText(/^Shared bound capacity 2\/15$|^共享绑定容量 2\/15$/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toBeVisible();
+  await expect(sitesWorkspace.getByRole('columnheader', { name: /Context|当前上下文/i })).toHaveCount(0);
+  await expect(sitesWorkspace.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
   await expect(
     sitesWorkspace.locator('[data-portal-sites="desktop-table"]').getByText(/^Connected$|^已接入$/i)
   ).toHaveCount(2);
@@ -2043,15 +2045,18 @@ test('[readiness:multi_site_context_switch] switching site keeps account package
 
   await page.goto('/portal');
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
-  await page.getByRole('button', { name: /Select site|选择站点/i }).click();
+  const managementSiteSelector = page.getByRole('combobox', {
+    name: /Current management site|当前管理站点/i,
+  });
+  await expect(managementSiteSelector).toBeVisible();
+  await expect(page.getByText(/Switching changes the account scope|切换后，账号服务、套餐、用量和工单/i)).toBeVisible();
+  await managementSiteSelector.selectOption('site_clear');
 
   await expect(page.getByText(/^Growth$/).first()).toBeVisible();
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
-  await expect(
-    page.getByRole('row', { name: /Clear Site/i }).getByRole('cell', {
-      name: /^Current site$|^当前站点$/i,
-    })
-  ).toBeVisible();
+  await expect(page.getByRole('row', { name: /Clear Site/i }).getByText(
+    /Current management site|当前管理站点/i
+  )).toBeVisible();
 
   calls.releaseInitialEntitlements();
   await expect.poll(calls.delayedEntitlementsCompleted).toBe(true);
