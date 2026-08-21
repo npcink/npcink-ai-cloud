@@ -178,10 +178,10 @@ assert.match(
   /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc/,
   'Portal site list should explain that new site connections start from the WordPress addon'
 );
-assert.match(
+assert.doesNotMatch(
   sitesSource,
-  /const handleSelectSite = async \(siteId: string\)[\s\S]*await selectSite\(siteId\)[\s\S]*portal\.sites\.management_site_label[\s\S]*data-portal-sites="management-site-selector"/,
-  'Portal site list must expose context switching once through the clearly labeled management-site selector'
+  /management-site-selector|switch_management_site_action|handleSelectSite/,
+  'Portal account site list must not expose site-context switching controls'
 );
 assert.doesNotMatch(
   sitesSource,

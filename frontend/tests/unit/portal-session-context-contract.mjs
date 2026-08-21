@@ -277,8 +277,13 @@ assert.match(
 
 assert.match(
   sitesSource,
-  /const requiresManagementSiteSelector = visibleSites\.length === 1 && !selectedSiteId[\s\S]*const showManagementSiteDisclosure = visibleSites\.length > 1[\s\S]*const showSiteSearch = visibleSites\.length > 20/,
-  'the Portal workspace must keep a retryable selector while deferring multi-site context switching and search'
+  /const showSiteSearch = visibleSites\.length > 20/,
+  'the Portal workspace must keep search deferred until the site list is large'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /management-site-selector|switch_management_site_action|handleSelectSite/,
+  'the account homepage must not expose site-context switching controls'
 );
 assert.match(
   sitesSource,

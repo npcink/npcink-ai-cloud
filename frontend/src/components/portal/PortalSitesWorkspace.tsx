@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { PortalSection, PortalCard } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
-import { PortalTag } from '@/components/portal/PortalTag';
 import { PortalEmptyState } from '@/components/portal/PortalPageState';
 import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
 import { Modal } from '@/components/ui/Modal';
@@ -56,15 +55,13 @@ function PortalSitesWorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLocale();
-  const { session, isAuthenticated, refresh, selectSite } = useSession();
+  const { session, isAuthenticated, refresh } = useSession();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [addonAccounts, setAddonAccounts] = useState<PortalAddonConnectionAccount[]>([]);
   const [addonAccountsError, setAddonAccountsError] = useState('');
   const [isLoadingAddonAccounts, setIsLoadingAddonAccounts] = useState(false);
   const [addonAccountsRetryVersion, setAddonAccountsRetryVersion] = useState(0);
-  const [selectingSiteId, setSelectingSiteId] = useState('');
-  const [siteSelectionError, setSiteSelectionError] = useState('');
   const [pendingRemoveSite, setPendingRemoveSite] = useState<Site | null>(null);
   const [removeError, setRemoveError] = useState('');
   const [removeNotice, setRemoveNotice] = useState('');
@@ -80,8 +77,6 @@ function PortalSitesWorkspaceContent() {
   const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
-  const requiresManagementSiteSelector = visibleSites.length === 1 && !selectedSiteId;
-  const showManagementSiteDisclosure = visibleSites.length > 1;
   const showSiteSearch = visibleSites.length > 20;
   const canRemoveSites = Boolean(
     session?.selected_context?.allowed_actions.includes('remove_sites')
@@ -245,25 +240,6 @@ function PortalSitesWorkspaceContent() {
     setRemoveError('');
   };
 
-  const handleSelectSite = async (siteId: string) => {
-    if (!siteId || siteId === selectedSiteId || selectingSiteId) return;
-    setSelectingSiteId(siteId);
-    setSiteSelectionError('');
-    try {
-      await selectSite(siteId);
-    } catch (error) {
-      setSiteSelectionError(
-        formatPortalErrorMessage(
-          error,
-          t,
-          t('portal.site_select_failed', {}, 'Failed to select this site.')
-        )
-      );
-    } finally {
-      setSelectingSiteId('');
-    }
-  };
-
   const handleRemoveSite = async () => {
     if (!pendingRemoveSite) return;
     setIsRemovingSite(true);
@@ -379,83 +355,15 @@ function PortalSitesWorkspaceContent() {
             <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
               {visibleSites.length} {t('common.site')}
               {visibleSites.filter((site) => site.status !== 'active').length > 0 ? (
-                <> · {visibleSites.filter((site) => site.status !== 'active').length} {t('portal.home.site_connection_attention_value', {}, 'need attention')}</>
+                <> · {t(
+                  'portal.home.site_connection_attention_value',
+                  { count: String(visibleSites.filter((site) => site.status !== 'active').length) },
+                  `${visibleSites.filter((site) => site.status !== 'active').length} need attention`
+                )}</>
               ) : null}
             </p>
           </div>
           <div className="flex w-full flex-col gap-3 sm:items-end lg:max-w-3xl">
-            {requiresManagementSiteSelector ? (
-              <div>
-                <label
-                  htmlFor="portal-service-management-site"
-                  className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300"
-                >
-                  {t('portal.sites.management_site_label', {}, 'Current management site')}
-                </label>
-                <select
-                  id="portal-service-management-site"
-                  data-portal-sites="management-site-selector"
-                  className="input"
-                  value={selectedSiteId}
-                  onChange={(event) => void handleSelectSite(event.target.value)}
-                  disabled={Boolean(selectingSiteId)}
-                >
-                  {!selectedSiteId ? (
-                    <option value="" disabled>
-                      {t('portal.select_site_placeholder', {}, 'Select a site')}
-                    </option>
-                  ) : null}
-                  {visibleSites.map((site) => (
-                    <option key={site.site_id} value={site.site_id}>
-                      {getPortalSiteDisplayName(site)}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {t(
-                    'portal.sites.management_site_desc',
-                    {},
-                    'Switching changes the account scope shown by Account service, Package, Usage, and Tickets.'
-                  )}
-                </p>
-              </div>
-            ) : null}
-            {showManagementSiteDisclosure ? (
-              <details className="w-full sm:max-w-sm">
-                <summary className="cursor-pointer list-none text-right text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
-                  {t('portal.sites.switch_management_site_action', {}, 'Switch current site')}
-                </summary>
-                <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/35">
-                  <label
-                    htmlFor="portal-service-management-site"
-                    className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300"
-                  >
-                    {t('portal.sites.management_site_label', {}, 'Current management site')}
-                  </label>
-                  <select
-                    id="portal-service-management-site"
-                    data-portal-sites="management-site-selector"
-                    className="input"
-                    value={selectedSiteId}
-                    onChange={(event) => void handleSelectSite(event.target.value)}
-                    disabled={Boolean(selectingSiteId)}
-                  >
-                    {visibleSites.map((site) => (
-                      <option key={site.site_id} value={site.site_id}>
-                        {getPortalSiteDisplayName(site)}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    {t(
-                      'portal.sites.management_site_desc',
-                      {},
-                      'Use this only when a site-specific page or action asks for a current site.'
-                    )}
-                  </p>
-                </div>
-              </details>
-            ) : null}
             {showSiteSearch ? <div className="w-full sm:max-w-sm">
               <label htmlFor="portal-service-site-search" className="sr-only">
                 {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
@@ -499,12 +407,6 @@ function PortalSitesWorkspaceContent() {
           </div>
         ) : null}
 
-        {siteSelectionError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-            {siteSelectionError}
-          </div>
-        ) : null}
-
         <div className="hidden overflow-x-auto lg:block" data-portal-sites="desktop-table">
           {sortedSites.length === 0 ? (
             <PortalEmptyState
@@ -535,11 +437,6 @@ function PortalSitesWorkspaceContent() {
                         <span className="truncate font-semibold text-slate-950 dark:text-white">
                           {getPortalSiteDisplayName(site)}
                         </span>
-                        {site.site_id === selectedSiteId ? (
-                          <PortalTag tone="info" className="shrink-0">
-                            {t('portal.sites.management_site_badge', {}, 'Current management site')}
-                          </PortalTag>
-                        ) : null}
                       </div>
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                         {getPortalSiteUrl(site) || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
@@ -560,47 +457,40 @@ function PortalSitesWorkspaceContent() {
                     </td>
                     <td className="px-3 py-4">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-primary btn-sm">
+                        <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
                           {t('portal.site_record', {}, 'Open site')}
                         </Link>
-                        {(site.allowed_actions?.includes('provision_sites')
+                        {site.allowed_actions?.includes('provision_sites')
                           && site.status !== 'suspended'
-                          && site.status !== 'archived')
-                          || (canRemoveSites
-                            && site.site_id === selectedSiteId
-                            && site.status !== 'suspended') ? (
+                          && site.status !== 'archived' ? (
+                          <button
+                            type="button"
+                            onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                            className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                          >
+                            {site.status === 'active'
+                              ? t('portal.deactivate_site_action', {}, 'Deactivate')
+                              : t('portal.activate_site_action', {}, 'Activate')}
+                          </button>
+                        ) : null}
+                        {canRemoveSites
+                          && site.site_id === selectedSiteId
+                          && site.status !== 'suspended' ? (
                           <details className="relative inline-block text-right" data-portal-sites="desktop-actions">
                             <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
                               {t('portal.site_other_actions', {}, 'Other actions')}
                             </summary>
                             <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                              {site.allowed_actions?.includes('provision_sites')
-                                && site.status !== 'suspended'
-                                && site.status !== 'archived' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
-                                  className="btn btn-secondary btn-sm"
-                                >
-                                  {site.status === 'active'
-                                    ? t('portal.deactivate_site_action', {}, 'Deactivate')
-                                    : t('portal.activate_site_action', {}, 'Activate')}
-                                </button>
-                              ) : null}
-                              {canRemoveSites
-                                && site.site_id === selectedSiteId
-                                && site.status !== 'suspended' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setRemoveError('');
-                                    setPendingRemoveSite(site);
-                                  }}
-                                  className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                                >
-                                  {t('portal.remove_site_action', {}, 'Remove site')}
-                                </button>
-                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRemoveError('');
+                                  setPendingRemoveSite(site);
+                                }}
+                                className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
+                              >
+                                {t('portal.remove_site_action', {}, 'Remove site')}
+                              </button>
                             </div>
                           </details>
                         ) : null}
@@ -642,11 +532,6 @@ function PortalSitesWorkspaceContent() {
                             : t('portal.site_status_suspended', {}, 'Suspended')}
                       className="normal-case tracking-normal"
                     />
-                    {site.site_id === selectedSiteId ? (
-                      <PortalTag tone="info">
-                        {t('portal.sites.management_site_badge', {}, 'Current management site')}
-                      </PortalTag>
-                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                     {getPortalSiteUrl(site)
@@ -654,47 +539,40 @@ function PortalSitesWorkspaceContent() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
+                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
                     {t('portal.site_record', {}, 'Site record')}
                   </Link>
-                  {(site.allowed_actions?.includes('provision_sites')
+                  {site.allowed_actions?.includes('provision_sites')
                     && site.status !== 'suspended'
-                    && site.status !== 'archived')
-                    || (canRemoveSites
-                      && site.site_id === selectedSiteId
-                      && site.status !== 'suspended') ? (
+                    && site.status !== 'archived' ? (
+                    <button
+                      type="button"
+                      onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                      className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                    >
+                      {site.status === 'active'
+                        ? t('portal.deactivate_site_action', {}, 'Deactivate')
+                        : t('portal.activate_site_action', {}, 'Activate')}
+                    </button>
+                  ) : null}
+                  {canRemoveSites
+                    && site.site_id === selectedSiteId
+                    && site.status !== 'suspended' ? (
                     <details className="relative" data-portal-sites="mobile-actions">
                       <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
                         {t('portal.site_other_actions', {}, 'Other actions')}
                       </summary>
                       <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                        {site.allowed_actions?.includes('provision_sites')
-                          && site.status !== 'suspended'
-                          && site.status !== 'archived' ? (
-                          <button
-                            type="button"
-                            onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
-                            className="btn btn-secondary btn-sm"
-                          >
-                            {site.status === 'active'
-                              ? t('portal.deactivate_site_action', {}, 'Deactivate')
-                              : t('portal.activate_site_action', {}, 'Activate')}
-                          </button>
-                        ) : null}
-                        {canRemoveSites
-                          && site.site_id === selectedSiteId
-                          && site.status !== 'suspended' ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRemoveError('');
-                              setPendingRemoveSite(site);
-                            }}
-                            className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                          >
-                            {t('portal.remove_site_action', {}, 'Remove site')}
-                          </button>
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRemoveError('');
+                            setPendingRemoveSite(site);
+                          }}
+                          className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
+                        >
+                          {t('portal.remove_site_action', {}, 'Remove site')}
+                        </button>
                       </div>
                     </details>
                   ) : null}
