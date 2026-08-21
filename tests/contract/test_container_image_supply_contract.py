@@ -1460,7 +1460,7 @@ def test_evaluator_rejects_allowlist_authoritative_overlap(tmp_path: Path) -> No
                         "package_version": entry["package_version"],
                         "owner": "release-security",
                         "reason": "fixture overlap is intentionally covered",
-                        "expires_on": "2026-08-20",
+                        "expires_on": (supply._utc_now().date() + timedelta(days=1)).isoformat(),
                 }
             ],
         },
