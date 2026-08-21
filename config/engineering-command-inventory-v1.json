@@ -229,6 +229,7 @@
       ],
       "commands": {
         "check:changed": "Plan gates, diagnose prerequisites, and run the narrowest safe local checks for the current diff.",
+        "verify:local": "Run the development-lane local gates for the current diff; do not publish or invoke GitHub.",
         "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
         "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
         "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."

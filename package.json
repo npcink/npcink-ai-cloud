@@ -28,6 +28,7 @@
     "test:pr-body-contract": "python3 scripts/test-pr-body-contract.py",
     "check:pr-backend": "bash scripts/check-pr-backend-gate.sh",
     "check:changed": "python3 scripts/check_changed.py",
+    "verify:local": "bash scripts/verify-local.sh",
     "ai:task:plan": "python3 scripts/ai_task.py plan",
     "ai:task:verify": "python3 scripts/ai_task.py verify",
     "ai:task:receipt": "python3 scripts/ai_task.py receipt",
