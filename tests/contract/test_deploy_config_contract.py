@@ -227,10 +227,10 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
 
 
 def _run_release_policy_with_restricted_path(
-    fixture_root: Path, tmp_path: Path
+    fixture_root: Path, tmp_path: Path, *, compose_guard: str = "required"
 ) -> subprocess.CompletedProcess[str]:
     restricted_bin = tmp_path / "release-policy-bin"
-    restricted_bin.mkdir(exist_ok=True)
+    restricted_bin.mkdir(parents=True, exist_ok=True)
     for command in ("awk", "cmp", "cut", "dirname", "git", "grep", "python3"):
         command_path = shutil.which(command)
         assert command_path is not None
@@ -238,22 +238,26 @@ def _run_release_policy_with_restricted_path(
         if not destination.exists():
             destination.symlink_to(command_path)
 
-    docker_stub = restricted_bin / "docker"
-    docker_stub.write_text(
-        "#!/bin/sh\n"
-        "if [ \"$1\" = compose ]; then\n"
-        "  printf '%s\\n' '{\"services\":{}}'\n"
-        "  exit 0\n"
-        "fi\n"
-        "exit 1\n"
-    )
-    docker_stub.chmod(0o755)
+    if compose_guard == "required":
+        docker_stub = restricted_bin / "docker"
+        docker_stub.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = compose ]; then\n"
+            "  printf '%s\\n' '{\"services\":{}}'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 1\n"
+        )
+        docker_stub.chmod(0o755)
 
     assert shutil.which("uv", path=str(restricted_bin)) is None
     return subprocess.run(
         ["/bin/bash", str(fixture_root / "scripts" / "check-release-policy.sh")],
         cwd=fixture_root,
-        env={"PATH": str(restricted_bin)},
+        env={
+            "PATH": str(restricted_bin),
+            "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD": compose_guard,
+        },
         text=True,
         capture_output=True,
         check=False,
@@ -2750,6 +2754,14 @@ def test_lightweight_release_policy_gate_is_documented(tmp_path: Path) -> None:
     assert valid_result.returncode == 0, valid_result.stderr
     assert "Lightweight release policy gate passed" in valid_result.stdout
 
+    no_docker_result = _run_release_policy_with_restricted_path(
+        valid_fixture,
+        tmp_path / "valid-no-docker",
+        compose_guard="skip",
+    )
+    assert no_docker_result.returncode == 0, no_docker_result.stderr
+    assert "protocol guard skipped" in no_docker_result.stdout
+
     for index, adversarial_config in enumerate(adversarial_configs):
         case_root = tmp_path / f"invalid-{index}"
         fixture_root = _release_policy_fixture_root(case_root, adversarial_config)
@@ -2882,6 +2894,14 @@ def test_release_policy_service_marker_checks_are_pipefail_safe(tmp_path: Path) 
     assert old_pipeline not in script_text
     assert script_text.count('service_block="$(compose_service_block "${path}" "${service}")"') == 2
     assert script_text.count('grep -Fq -- "${marker}" <<<"${service_block}"') == 2
+
+
+def test_release_policy_compose_guard_rejects_unknown_mode() -> None:
+    script_text = (_cloud_root() / "scripts" / "check-release-policy.sh").read_text()
+
+    assert 'NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD:-required' in script_text
+    assert 'Production Compose protocol guard skipped for a non-runtime policy lane' in script_text
+    assert 'Unsupported NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD' in script_text
 
 
 def test_controlled_production_cve_risk_acceptance_is_external_and_bundle_bound() -> None:

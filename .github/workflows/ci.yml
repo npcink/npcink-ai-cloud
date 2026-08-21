@@ -1184,7 +1184,7 @@ jobs:
       - name: Validate static terms tree
         run: |
           set -euo pipefail
-          bash scripts/check-release-policy.sh
+          NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD=skip bash scripts/check-release-policy.sh
           test -f site/terms/index.html
           test -f site/terms/en/terms.html
           test -f site/terms/zh/terms.html
