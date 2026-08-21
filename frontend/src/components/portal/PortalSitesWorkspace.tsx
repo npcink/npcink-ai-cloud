@@ -109,48 +109,6 @@ function PortalSitesWorkspaceContent() {
       return getPortalSiteDisplayName(left).localeCompare(getPortalSiteDisplayName(right));
     });
   }, [filteredSites]);
-  const capacities = Array.from(
-    new Map(
-      sites
-        .flatMap((site) => (
-          site.capacity_scope && site.capacity
-            ? [[site.capacity_scope, site.capacity] as const]
-            : []
-        ))
-    ).values()
-  );
-  const totalCapacity = capacities.reduce(
-    (total, capacity) => ({
-      active_count: total.active_count + capacity.active_count,
-      active_limit: total.active_limit + capacity.active_limit,
-      bound_count: total.bound_count + capacity.bound_count,
-      bound_limit: total.bound_limit + capacity.bound_limit,
-    }),
-    { active_count: 0, active_limit: 0, bound_count: 0, bound_limit: 0 }
-  );
-  const activeCapacityOverLimit = totalCapacity.active_limit > 0
-    && totalCapacity.active_count > totalCapacity.active_limit;
-  const boundCapacityOverLimit = totalCapacity.bound_limit > 0
-    && totalCapacity.bound_count > totalCapacity.bound_limit;
-  const activeCapacityExceededBy = activeCapacityOverLimit
-    ? totalCapacity.active_count - totalCapacity.active_limit
-    : 0;
-  const boundCapacityExceededBy = boundCapacityOverLimit
-    ? totalCapacity.bound_count - totalCapacity.bound_limit
-    : 0;
-  const boundCapacityFull = totalCapacity.bound_limit > 0
-    && totalCapacity.bound_count === totalCapacity.bound_limit;
-  const boundCapacityRemaining = totalCapacity.bound_limit > 0
-    ? Math.max(0, totalCapacity.bound_limit - totalCapacity.bound_count)
-    : 0;
-  const activeCapacityRemaining = totalCapacity.active_limit > 0
-    ? Math.max(0, totalCapacity.active_limit - totalCapacity.active_count)
-    : 0;
-  const showCapacitySummary = activeCapacityOverLimit
-    || boundCapacityOverLimit
-    || boundCapacityFull
-    || (totalCapacity.bound_limit > 0 && boundCapacityRemaining <= 2)
-    || (totalCapacity.active_limit > 0 && activeCapacityRemaining <= 2);
   const pendingCapacity = pendingLifecycleSite?.capacity;
   const requiredReleaseCount = pendingLifecycleStatus === 'active'
     && pendingCapacity
@@ -418,47 +376,12 @@ function PortalSitesWorkspaceContent() {
             <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">
               {t('portal.home.my_sites_title', {}, 'My sites')}
             </h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <PortalTag>{visibleSites.length} {t('common.site')}</PortalTag>
-              {showCapacitySummary ? (
-                <>
-                  <PortalTag tone={activeCapacityOverLimit ? 'warning' : 'success'}>
-                    {t(
-                      activeCapacityOverLimit
-                        ? 'portal.sites.active_capacity_over'
-                        : 'portal.sites.active_capacity',
-                      {
-                        used: String(totalCapacity.active_count),
-                        limit: String(totalCapacity.active_limit),
-                        exceeded: String(activeCapacityExceededBy),
-                      },
-                      activeCapacityOverLimit
-                        ? `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit} · ${activeCapacityExceededBy} over`
-                        : `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit}`
-                    )}
-                  </PortalTag>
-                  <PortalTag tone={boundCapacityOverLimit || boundCapacityFull ? 'warning' : 'info'}>
-                    {t(
-                      boundCapacityOverLimit
-                        ? 'portal.sites.bound_capacity_over'
-                        : boundCapacityFull
-                          ? 'portal.sites.bound_capacity_full'
-                          : 'portal.sites.bound_capacity',
-                      {
-                        used: String(totalCapacity.bound_count),
-                        limit: String(totalCapacity.bound_limit),
-                        exceeded: String(boundCapacityExceededBy),
-                      },
-                      boundCapacityOverLimit
-                        ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · ${boundCapacityExceededBy} over`
-                        : boundCapacityFull
-                          ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · Full`
-                          : `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit}`
-                    )}
-                  </PortalTag>
-                </>
+            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+              {visibleSites.length} {t('common.site')}
+              {visibleSites.filter((site) => site.status !== 'active').length > 0 ? (
+                <> · {visibleSites.filter((site) => site.status !== 'active').length} {t('portal.home.site_connection_attention_value', {}, 'need attention')}</>
               ) : null}
-            </div>
+            </p>
           </div>
           <div className="flex w-full flex-col gap-3 sm:items-end lg:max-w-3xl">
             {requiresManagementSiteSelector ? (
@@ -646,11 +569,11 @@ function PortalSitesWorkspaceContent() {
                           || (canRemoveSites
                             && site.site_id === selectedSiteId
                             && site.status !== 'suspended') ? (
-                          <details className="w-full text-right" data-portal-sites="desktop-actions">
-                            <summary className="btn btn-secondary btn-sm ml-auto list-none cursor-pointer">
+                          <details className="relative inline-block text-right" data-portal-sites="desktop-actions">
+                            <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
                               {t('portal.site_other_actions', {}, 'Other actions')}
                             </summary>
-                            <div className="mt-2 flex flex-wrap justify-end gap-2">
+                            <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900">
                               {site.allowed_actions?.includes('provision_sites')
                                 && site.status !== 'suspended'
                                 && site.status !== 'archived' ? (
@@ -730,36 +653,50 @@ function PortalSitesWorkspaceContent() {
                       || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <div className="flex flex-wrap items-center gap-3 lg:justify-end">
                   <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
                     {t('portal.site_record', {}, 'Site record')}
                   </Link>
-                  {site.allowed_actions?.includes('provision_sites')
+                  {(site.allowed_actions?.includes('provision_sites')
                     && site.status !== 'suspended'
-                    && site.status !== 'archived' ? (
-                    <button
-                      type="button"
-                      onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
-                      className="btn btn-secondary btn-sm"
-                    >
-                      {site.status === 'active'
-                        ? t('portal.deactivate_site_action', {}, 'Deactivate')
-                        : t('portal.activate_site_action', {}, 'Activate')}
-                    </button>
-                  ) : null}
-                  {canRemoveSites
-                    && site.site_id === selectedSiteId
-                    && site.status !== 'suspended' ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRemoveError('');
-                        setPendingRemoveSite(site);
-                      }}
-                      className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                    >
-                      {t('portal.remove_site_action', {}, 'Remove site')}
-                    </button>
+                    && site.status !== 'archived')
+                    || (canRemoveSites
+                      && site.site_id === selectedSiteId
+                      && site.status !== 'suspended') ? (
+                    <details className="relative" data-portal-sites="mobile-actions">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
+                        {t('portal.site_other_actions', {}, 'Other actions')}
+                      </summary>
+                      <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        {site.allowed_actions?.includes('provision_sites')
+                          && site.status !== 'suspended'
+                          && site.status !== 'archived' ? (
+                          <button
+                            type="button"
+                            onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                            className="btn btn-secondary btn-sm"
+                          >
+                            {site.status === 'active'
+                              ? t('portal.deactivate_site_action', {}, 'Deactivate')
+                              : t('portal.activate_site_action', {}, 'Activate')}
+                          </button>
+                        ) : null}
+                        {canRemoveSites
+                          && site.site_id === selectedSiteId
+                          && site.status !== 'suspended' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRemoveError('');
+                              setPendingRemoveSite(site);
+                            }}
+                            className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
+                          >
+                            {t('portal.remove_site_action', {}, 'Remove site')}
+                          </button>
+                        ) : null}
+                      </div>
+                    </details>
                   ) : null}
                 </div>
               </div>

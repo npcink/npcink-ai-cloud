@@ -183,7 +183,7 @@ export default function PortalPage() {
   const contextDetail = selectedSite
     ? getPortalSiteSecondaryLabel(selectedSite)
     : hasVisibleSites
-      ? t('portal.home.account_context_detail', {}, 'Package and usage are shown for the account. Choose a site below when you need site-specific status.')
+      ? t('portal.home.account_context_detail', {}, 'Package, usage, and tickets belong to this account. Site details are listed below.')
       : t('portal.home.no_site_context_detail', {}, 'Connect a WordPress site to unlock site status and service actions.');
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
@@ -439,14 +439,6 @@ export default function PortalPage() {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-portal-home="context-summary">
               <span className="font-semibold text-slate-700 dark:text-slate-200">{contextLabel}</span>
               <span className="text-slate-500 dark:text-slate-400">{contextDetail}</span>
-              <Link
-                href="#sites"
-                className="font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              >
-                {selectedSite
-                  ? t('portal.home.change_site_action', {}, 'Change site')
-                  : t('portal.home.choose_site_action', {}, 'Choose a site')}
-              </Link>
             </div>
           )}
           contextPanel={primaryOperationFocusItem ? (

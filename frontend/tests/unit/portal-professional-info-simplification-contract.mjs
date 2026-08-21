@@ -290,8 +290,8 @@ for (const expectedCopy of [
   "'portal.site_record': '查看站点'",
   "'portal.sites.connect_hint_title': 'Need to connect another site?'",
   "'portal.sites.connect_hint_title': '需要连接新站点？'",
-  "'portal.home.account_status_ok_desc': 'This account can use the hosted service normally.'",
-  "'portal.home.account_status_ok_desc': '当前账号可以正常使用托管服务。'",
+  "'portal.home.account_status_ok_desc': 'Package, usage, and tickets belong to this account. Site details are listed below.'",
+  "'portal.home.account_status_ok_desc': '套餐、用量和工单属于当前账号；站点详情请在下方查看。'",
 ]) {
   assert.ok(i18nSource.includes(expectedCopy), `${expectedCopy} must be present`);
 }
