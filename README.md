@@ -163,6 +163,7 @@ Common commands:
 pnpm run check:changed -- --plan
 pnpm run check:changed -- --doctor
 pnpm run check:changed
+pnpm run verify:local
 pnpm run worktree:audit
 pnpm run test:contract
 pnpm run test:domain
@@ -179,6 +180,13 @@ pnpm run frontend:lint
 The complete command catalog and lifecycle metadata live in
 [`config/engineering-command-inventory-v1.json`](config/engineering-command-inventory-v1.json)
 and the [Engineering Command Inventory Standard](docs/engineering-command-inventory-standard-v1.md).
+
+`pnpm run verify:local` is the explicit development gate. It runs the
+current-diff checks selected by `check:changed` in the `development` lane and
+does not create a PR, invoke GitHub Actions, mutate M4, or touch production.
+Run it before publishing a branch. The merge and release lanes remain separate
+because they answer different questions: repository integration and production
+safety, respectively.
 
 ## M4 Preview and Evidence
 
