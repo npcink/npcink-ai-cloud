@@ -112,6 +112,39 @@ Non-blocking findings become separate follow-up work. A real release blocker
 requires a separately reviewed `release-fix`, backported to `master`, before
 promotion continues. Do not turn a promotion into a second development cycle.
 
+### Step 4A — Pause and consolidate before production when justified
+
+An operator may intentionally pause after source reaches green `master` but
+before a production promotion merges or a deployment starts. This is useful
+when one bounded, adjacent user-facing change is already local-ready and a
+second immediate production cycle would repeat the same promotion, artifact,
+authorization, cutover, and health work.
+
+The pause is valid only when all of these are recorded:
+
+- current `origin/master` and `origin/production` revisions;
+- production host mutation has not started; if mutation started, the release
+  must first complete the normal recovery or rollback path, including terminal
+  runtime-state and health verification, before this pause flow is considered;
+- the deferred change has a finite owner, scope, validation tier, and stop
+  condition;
+- security/CVE expiry, rollback, entitlement, Provider, or other time-bounded
+  constraints remain visible;
+- any open production PR has auto-merge disabled and is closed when its exact
+  tree is objectively superseded.
+
+Do not append product work to a frozen production PR. Do not reopen or reuse a
+closed exact-tree promotion after `master` or `production` advances. Resume by
+integrating the deferred slice through a focused master PR, then generate one
+fresh production promotion whose parent equals current production and whose
+tree equals current master. Protected production CI, exact-SHA preflight, and
+new operator authorization are still required.
+
+Pausing is not production validation, rollback, risk-exception renewal, or
+permission to miss an expiry deadline. If the consolidation threatens a hard
+security deadline, stop and request an explicit release-versus-deferral
+decision rather than extending the pause silently.
+
 ### Step 5 — Run the exact-SHA preflight
 
 Use the read-only exact-SHA preflight before dispatching production. It must
