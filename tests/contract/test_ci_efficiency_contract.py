@@ -364,7 +364,10 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert workflow.count("--diff-filter=ACMRD") == 5
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
-    assert "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD=skip bash scripts/check-release-policy.sh" in workflow
+    assert (
+        "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD=skip bash scripts/check-release-policy.sh"
+        in workflow
+    )
     assert "specialized-quality:" in workflow
     assert "python3 scripts/check_changed.py" in workflow
     assert "--specialized-only" in workflow
