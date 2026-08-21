@@ -679,6 +679,9 @@ function PortalSitesWorkspaceContent() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
+                    {t('portal.site_record', {}, 'Site record')}
+                  </Link>
                   {site.allowed_actions?.includes('provision_sites')
                     && site.status !== 'suspended'
                     && site.status !== 'archived' ? (
@@ -692,9 +695,6 @@ function PortalSitesWorkspaceContent() {
                         : t('portal.activate_site_action', {}, 'Activate')}
                     </button>
                   ) : null}
-                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
-                    {t('portal.site_record', {}, 'Site record')}
-                  </Link>
                   {canRemoveSites
                     && site.site_id === selectedSiteId
                     && site.status !== 'suspended' ? (
