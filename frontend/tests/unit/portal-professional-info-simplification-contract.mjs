@@ -180,8 +180,13 @@ assert.match(
 );
 assert.match(
   sitesSource,
-  /const handleSelectSite = async \(siteId: string\)[\s\S]*await selectSite\(siteId\)[\s\S]*portal\.select_site_action/,
-  'Portal site list must expose context switching only as an explicit customer action'
+  /const handleSelectSite = async \(siteId: string\)[\s\S]*await selectSite\(siteId\)[\s\S]*portal\.sites\.management_site_label[\s\S]*data-portal-sites="management-site-selector"/,
+  'Portal site list must expose context switching once through the clearly labeled management-site selector'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /portal\.sites\.table_context|portal\.sites\.current_context|portal\.sites\.available_context|portal\.select_site_action/,
+  'Portal site rows must not expose the internal context column or repeated select-site buttons'
 );
 assert.match(
   sitesSource,

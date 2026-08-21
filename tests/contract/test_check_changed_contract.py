@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKER = ROOT / "scripts" / "check_changed.py"
@@ -32,6 +35,54 @@ def _plan(
         text=True,
     )
     return json.loads(completed.stdout)
+
+
+@pytest.mark.parametrize(
+    ("workflow_lane", "pr_required", "production_required"),
+    [("development", False, False), ("merge", True, False), ("release", True, True)],
+)
+def test_empty_json_plan_is_machine_readable(
+    monkeypatch, capsys, workflow_lane, pr_required, production_required
+) -> None:
+    spec = importlib.util.spec_from_file_location("check_changed", CHECKER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "collect_changed_paths", lambda _base: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [str(CHECKER), "--plan", "--format", "json", "--workflow-lane", workflow_lane],
+    )
+
+    assert module.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["paths"] == []
+    assert result["specialized_commands"] == []
+    assert result["tier"] == "L0"
+    assert result["runtime_lane"] == "none"
+    assert result["pr_required"] is pr_required
+    assert result["production_required"] is production_required
+
+
+def test_empty_json_doctor_preserves_normal_envelope(monkeypatch, capsys) -> None:
+    spec = importlib.util.spec_from_file_location("check_changed_doctor", CHECKER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "collect_changed_paths", lambda _base: [])
+    monkeypatch.setattr(module, "environment_checks", lambda _plan, _python: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [str(CHECKER), "--doctor", "--format", "json", "--workflow-lane", "release"],
+    )
+
+    assert module.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["plan"]["paths"] == []
+    assert result["plan"]["production_required"] is True
+    assert result["environment_checks"] == []
 
 
 def test_documentation_plan_stays_local_and_focused() -> None:
