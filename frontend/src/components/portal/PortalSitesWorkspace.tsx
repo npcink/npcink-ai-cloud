@@ -80,8 +80,9 @@ function PortalSitesWorkspaceContent() {
   const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
-  const showManagementSiteSelector = visibleSites.length > 1
-    || (visibleSites.length === 1 && !selectedSiteId);
+  const requiresManagementSiteSelector = visibleSites.length === 1 && !selectedSiteId;
+  const showManagementSiteDisclosure = visibleSites.length > 1;
+  const showSiteSearch = visibleSites.length > 20;
   const canRemoveSites = Boolean(
     session?.selected_context?.allowed_actions.includes('remove_sites')
   );
@@ -139,6 +140,17 @@ function PortalSitesWorkspaceContent() {
     : 0;
   const boundCapacityFull = totalCapacity.bound_limit > 0
     && totalCapacity.bound_count === totalCapacity.bound_limit;
+  const boundCapacityRemaining = totalCapacity.bound_limit > 0
+    ? Math.max(0, totalCapacity.bound_limit - totalCapacity.bound_count)
+    : 0;
+  const activeCapacityRemaining = totalCapacity.active_limit > 0
+    ? Math.max(0, totalCapacity.active_limit - totalCapacity.active_count)
+    : 0;
+  const showCapacitySummary = activeCapacityOverLimit
+    || boundCapacityOverLimit
+    || boundCapacityFull
+    || (totalCapacity.bound_limit > 0 && boundCapacityRemaining <= 2)
+    || (totalCapacity.active_limit > 0 && activeCapacityRemaining <= 2);
   const pendingCapacity = pendingLifecycleSite?.capacity;
   const requiredReleaseCount = pendingLifecycleStatus === 'active'
     && pendingCapacity
@@ -408,44 +420,48 @@ function PortalSitesWorkspaceContent() {
             </h2>
             <div className="mt-3 flex flex-wrap gap-2">
               <PortalTag>{visibleSites.length} {t('common.site')}</PortalTag>
-              <PortalTag tone={activeCapacityOverLimit ? 'warning' : 'success'}>
-                {t(
-                  activeCapacityOverLimit
-                    ? 'portal.sites.active_capacity_over'
-                    : 'portal.sites.active_capacity',
-                  {
-                    used: String(totalCapacity.active_count),
-                    limit: String(totalCapacity.active_limit),
-                    exceeded: String(activeCapacityExceededBy),
-                  },
-                  activeCapacityOverLimit
-                    ? `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit} · ${activeCapacityExceededBy} over`
-                    : `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit}`
-                )}
-              </PortalTag>
-              <PortalTag tone={boundCapacityOverLimit || boundCapacityFull ? 'warning' : 'info'}>
-                {t(
-                  boundCapacityOverLimit
-                    ? 'portal.sites.bound_capacity_over'
-                    : boundCapacityFull
-                      ? 'portal.sites.bound_capacity_full'
-                      : 'portal.sites.bound_capacity',
-                  {
-                    used: String(totalCapacity.bound_count),
-                    limit: String(totalCapacity.bound_limit),
-                    exceeded: String(boundCapacityExceededBy),
-                  },
-                  boundCapacityOverLimit
-                    ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · ${boundCapacityExceededBy} over`
-                    : boundCapacityFull
-                      ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · Full`
-                      : `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit}`
-                )}
-              </PortalTag>
+              {showCapacitySummary ? (
+                <>
+                  <PortalTag tone={activeCapacityOverLimit ? 'warning' : 'success'}>
+                    {t(
+                      activeCapacityOverLimit
+                        ? 'portal.sites.active_capacity_over'
+                        : 'portal.sites.active_capacity',
+                      {
+                        used: String(totalCapacity.active_count),
+                        limit: String(totalCapacity.active_limit),
+                        exceeded: String(activeCapacityExceededBy),
+                      },
+                      activeCapacityOverLimit
+                        ? `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit} · ${activeCapacityExceededBy} over`
+                        : `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit}`
+                    )}
+                  </PortalTag>
+                  <PortalTag tone={boundCapacityOverLimit || boundCapacityFull ? 'warning' : 'info'}>
+                    {t(
+                      boundCapacityOverLimit
+                        ? 'portal.sites.bound_capacity_over'
+                        : boundCapacityFull
+                          ? 'portal.sites.bound_capacity_full'
+                          : 'portal.sites.bound_capacity',
+                      {
+                        used: String(totalCapacity.bound_count),
+                        limit: String(totalCapacity.bound_limit),
+                        exceeded: String(boundCapacityExceededBy),
+                      },
+                      boundCapacityOverLimit
+                        ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · ${boundCapacityExceededBy} over`
+                        : boundCapacityFull
+                          ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · Full`
+                          : `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit}`
+                    )}
+                  </PortalTag>
+                </>
+              ) : null}
             </div>
           </div>
-          <div className="grid w-full gap-3 sm:grid-cols-2 lg:max-w-3xl">
-            {showManagementSiteSelector ? (
+          <div className="flex w-full flex-col gap-3 sm:items-end lg:max-w-3xl">
+            {requiresManagementSiteSelector ? (
               <div>
                 <label
                   htmlFor="portal-service-management-site"
@@ -481,7 +497,43 @@ function PortalSitesWorkspaceContent() {
                 </p>
               </div>
             ) : null}
-            <div className={showManagementSiteSelector ? '' : 'sm:col-start-2'}>
+            {showManagementSiteDisclosure ? (
+              <details className="w-full sm:max-w-sm">
+                <summary className="cursor-pointer list-none text-right text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
+                  {t('portal.sites.switch_management_site_action', {}, 'Switch current site')}
+                </summary>
+                <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/35">
+                  <label
+                    htmlFor="portal-service-management-site"
+                    className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300"
+                  >
+                    {t('portal.sites.management_site_label', {}, 'Current management site')}
+                  </label>
+                  <select
+                    id="portal-service-management-site"
+                    data-portal-sites="management-site-selector"
+                    className="input"
+                    value={selectedSiteId}
+                    onChange={(event) => void handleSelectSite(event.target.value)}
+                    disabled={Boolean(selectingSiteId)}
+                  >
+                    {visibleSites.map((site) => (
+                      <option key={site.site_id} value={site.site_id}>
+                        {getPortalSiteDisplayName(site)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    {t(
+                      'portal.sites.management_site_desc',
+                      {},
+                      'Use this only when a site-specific page or action asks for a current site.'
+                    )}
+                  </p>
+                </div>
+              </details>
+            ) : null}
+            {showSiteSearch ? <div className="w-full sm:max-w-sm">
               <label htmlFor="portal-service-site-search" className="sr-only">
                 {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
               </label>
@@ -493,7 +545,7 @@ function PortalSitesWorkspaceContent() {
                 placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
                 className="input"
               />
-            </div>
+            </div> : null}
           </div>
         </div>
 
