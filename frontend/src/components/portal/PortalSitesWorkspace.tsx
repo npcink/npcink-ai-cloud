@@ -80,6 +80,8 @@ function PortalSitesWorkspaceContent() {
   const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
+  const showManagementSiteSelector = visibleSites.length > 1
+    || (visibleSites.length === 1 && !selectedSiteId);
   const canRemoveSites = Boolean(
     session?.selected_context?.allowed_actions.includes('remove_sites')
   );
@@ -443,7 +445,7 @@ function PortalSitesWorkspaceContent() {
             </div>
           </div>
           <div className="grid w-full gap-3 sm:grid-cols-2 lg:max-w-3xl">
-            {visibleSites.length > 1 ? (
+            {showManagementSiteSelector ? (
               <div>
                 <label
                   htmlFor="portal-service-management-site"
@@ -479,7 +481,7 @@ function PortalSitesWorkspaceContent() {
                 </p>
               </div>
             ) : null}
-            <div className={visibleSites.length > 1 ? '' : 'sm:col-start-2'}>
+            <div className={showManagementSiteSelector ? '' : 'sm:col-start-2'}>
               <label htmlFor="portal-service-site-search" className="sr-only">
                 {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
               </label>
