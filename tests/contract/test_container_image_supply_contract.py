@@ -68,6 +68,16 @@ def _supply_module() -> ModuleType:
     return module
 
 
+def _compose_protocol_module() -> ModuleType:
+    path = ROOT / "scripts" / "check-production-compose-protocols.py"
+    spec = importlib.util.spec_from_file_location("check_production_compose_protocols", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _lock() -> dict[str, object]:
     return json.loads(LOCK_PATH.read_text())
 
@@ -457,7 +467,7 @@ def test_application_runtime_identity_is_stable_and_verified_in_built_images() -
     assert '[ "$(id -g)" = "999" ]' in smoke
 
 
-def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
+def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
     lock = _lock()
     policy = lock["scan_policy"]
     allowlist = json.loads((ROOT / policy["allowlist_file"]).read_text())
@@ -480,11 +490,75 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_empty() -> None:
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
     entries = allowlist["entries"]
-    assert entries == []
+    expected_identities = [
+        (image, package)
+        for image in ("api", "frontend", "nginx")
+        for package in ("libcrypto3", "libssl3")
+    ]
+    assert [(entry["image"], entry["package"]) for entry in entries] == expected_identities
+    assert {entry["vulnerability_id"] for entry in entries} == {"CVE-2026-14456"}
+    assert {entry["package_version"] for entry in entries} == {"3.5.7-r0"}
+    assert {entry["owner"] for entry in entries} == {"Npcink Cloud release operator"}
+    assert {entry["expires_on"] for entry in entries} == {"2026-09-19"}
+    for entry in entries:
+        reason = entry["reason"]
+        assert "OpenSSL QUIC server listeners" in reason
+        assert "no QUIC, HTTP/3, or UDP listener" in reason
+        assert "Stop immediately if QUIC or UDP is enabled" in reason
+        assert "OpenSSL 3.5.8 or newer" in reason
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
     assert schema["properties"]["entries"]["items"]["additionalProperties"] is False
+
+
+def test_release_policy_uses_normalized_compose_protocol_guard() -> None:
+    policy = (ROOT / "scripts" / "check-release-policy.sh").read_text()
+
+    for marker in ("quic", "http3", "http_v3", "/udp"):
+        assert f'reject_marker_case_insensitive "${{production_path}}" \'{marker}\'' in policy
+    assert "deploy/magick-domain-nginx.conf.template" in policy
+    assert 'python3 "${ROOT_DIR}/scripts/check-production-compose-protocols.py"' in policy
+
+
+def test_normalized_compose_protocol_guard_rejects_every_udp_shape() -> None:
+    module = _compose_protocol_module()
+
+    assert module.udp_publications(
+        {
+            "services": {
+                "short": {"ports": ["443:443/udp"]},
+                "block": {"ports": [{"target": 443, "published": 443, "protocol": "UDP"}]},
+                "flow": {"ports": [{"target": 8443, "published": 8443, "protocol": "udp"}]},
+            }
+        }
+    ) == ["short.ports[0]", "block.ports[0]", "flow.ports[0]"]
+    assert module.udp_publications(
+        {
+            "services": {
+                "short": {"ports": ["127.0.0.1:${PORT:-8010}:8080"]},
+                "long": {"ports": [{"target": 443, "published": 443, "protocol": "tcp"}]},
+                "none": {},
+            }
+        }
+    ) == []
+
+
+def test_active_release_contract_records_the_exact_openssl_exception() -> None:
+    policy = (ROOT / "docs" / "cloud-production-release-policy-v1.md").read_text()
+    checklist = (ROOT / "deploy" / "RELEASE_CHECKLIST.md").read_text()
+
+    for surface in (policy, checklist):
+        assert "CVE-2026-14456" in surface
+        assert "2026-09-19" in surface
+        assert "libcrypto3" in surface
+        assert "libssl3" in surface
+        assert "3.5.7-r0" in surface
+        assert "QUIC" in surface
+        assert "HTTP/3" in surface
+        assert "UDP" in surface
+    assert "exactly six" in checklist
+    assert "quoted and unquoted Compose UDP protocols" in checklist
 
 
 def test_high_unfixed_finding_blocks_and_exact_temporary_exception_is_audited(
@@ -1386,7 +1460,7 @@ def test_evaluator_rejects_allowlist_authoritative_overlap(tmp_path: Path) -> No
                         "package_version": entry["package_version"],
                         "owner": "release-security",
                         "reason": "fixture overlap is intentionally covered",
-                        "expires_on": "2026-08-20",
+                        "expires_on": (supply._utc_now().date() + timedelta(days=1)).isoformat(),
                 }
             ],
         },

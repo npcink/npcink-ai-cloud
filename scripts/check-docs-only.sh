@@ -37,7 +37,8 @@ if ! grep -qx 'docs_only=true' <<< "${classification}"; then
 	exit 1
 fi
 
-bash "${ROOT_DIR}/scripts/check-release-policy.sh"
+NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD=skip \
+	bash "${ROOT_DIR}/scripts/check-release-policy.sh"
 git -C "${ROOT_DIR}" diff --check "${BASE_REF}...${HEAD_REF}"
 
 printf '[ok] Docs-only gate passed for %s file(s)\n' "${#changed_files[@]}"

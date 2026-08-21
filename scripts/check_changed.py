@@ -236,6 +236,9 @@ def classify(paths: list[str]) -> dict[str, bool]:
 def classify_tier(
     paths: list[str], kinds: dict[str, bool], rules: list[dict[str, object]]
 ) -> tuple[str, list[str]]:
+    if not paths:
+        return "L0", ["No changed files detected."]
+
     tier = "documentation-only" if kinds["documentation_only"] else "L2"
     reasons: list[str] = []
     if kinds["documentation_only"]:
@@ -408,7 +411,7 @@ def build_plan(
             "Migration changed: use source sync plus migration-head, persistence, and rollback "
             "evidence; do not cold-build unless a fingerprint input also changed."
         )
-    if not any(kinds.values()):
+    if paths and not any(kinds.values()):
         followups.append(
             "No specialized lane matched; select one focused test for the changed seam before "
             "closeout."
@@ -669,15 +672,14 @@ def main() -> int:
         argv = argv[1:]
     args = parser.parse_args(argv)
 
-    paths = normalize_paths(args.paths) if args.paths else collect_changed_paths(args.base)
-    if not paths:
-        print("[ok] No changed files detected.")
-        return 0
-
     python_bin = os.environ.get(
         "NPCINK_CLOUD_PYTHON_BIN", str(ROOT / ".venv" / "bin" / "python")
     )
+    paths = normalize_paths(args.paths) if args.paths else collect_changed_paths(args.base)
     plan = build_plan(paths, python_bin, args.base, args.workflow_lane)
+    if not paths and args.format == "text" and not args.doctor:
+        print("[ok] No changed files detected.")
+        return 0
     if args.doctor:
         checks = environment_checks(plan, python_bin)
         if args.format == "json":
