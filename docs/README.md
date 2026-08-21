@@ -63,6 +63,11 @@ deleting the old decision history.
 - [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
+- [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
+  — dated history from issue synthesis and privacy-safe observation through the
+  OpenSSL exception review chain, Docker-capable gate split, retired production
+  promotions, and the current Portal-first consolidation handoff; not
+  production or human-value authority
 - [Multi-Session Development Observation Synthesis and Next-Stage Plan — 2026-08-15](multi-session-development-observation-synthesis-and-next-stage-plan-2026-08-15.md) — dated four-track evidence matrix, cross-session problem triage, phased execution plan, and observation stop lines; not runtime, production, or human-value authority
 - [Development Efficiency Phase 3 Observation Plan](development-efficiency-phase3-observation-plan-v1.md) — current plan for collecting comparable delivery samples before further CI/shard/cache optimization
 - [Development Efficiency Phases 1–3 Closeout and Retrospective](development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
