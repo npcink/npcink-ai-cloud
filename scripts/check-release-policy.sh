@@ -49,6 +49,22 @@ reject_marker() {
 	fi
 }
 
+run_compose_protocol_guard() {
+	local mode="${NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD:-required}"
+	case "${mode}" in
+		required)
+			python3 "${ROOT_DIR}/scripts/check-production-compose-protocols.py"
+			;;
+		skip)
+			echo "[ok] Production Compose protocol guard skipped for a non-runtime policy lane"
+			;;
+		*)
+			echo "[fail] Unsupported NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD: ${mode}" >&2
+			exit 1
+			;;
+	esac
+}
+
 reject_marker_case_insensitive() {
 	local path="$1"
 	local marker="$2"
@@ -365,7 +381,7 @@ require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'current OpenSSL `CVE-2026-14456` exception contains exactly six'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'quoted and unquoted Compose UDP protocols must'
-python3 "${ROOT_DIR}/scripts/check-production-compose-protocols.py"
+run_compose_protocol_guard
 for production_path in docker-compose.prod.yml docker-compose.runtime.yml; do
 	reject_marker_case_insensitive "${production_path}" 'quic'
 	reject_marker_case_insensitive "${production_path}" 'http3'
