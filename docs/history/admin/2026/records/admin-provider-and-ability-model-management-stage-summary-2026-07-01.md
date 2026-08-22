@@ -1,6 +1,12 @@
 # Admin Provider And Ability Model Management Stage Summary - 2026-07-01
 
-## Status
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+## Original Status
 
 Implemented as local Cloud admin frontend iteration history.
 

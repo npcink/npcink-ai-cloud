@@ -1,6 +1,12 @@
 # Cloud Admin Commercial Operations Density Closeout and Development Retrospective — 2026-08-01
 
-Status: local verification and M4 candidate validation recorded; repository
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: local verification and M4 candidate validation recorded; repository
 merge, accepted M4 promotion, production deployment, and human acceptance are
 separate later states.
 
@@ -13,11 +19,11 @@ This record travels in the same feature commit as the implementation. It is
 historical evidence and a reusable development retrospective. Normative
 authority lives in:
 
-- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
-- [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
-- [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md);
-- [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
-- [Development Validation Operating Model v1](development-validation-operating-model-v1.md).
+- [Cloud Admin Customer Operations Workspace Standard v1](../../../../cloud-admin-customer-operations-workspace-standard-v1.md);
+- [Cloud Admin Information Architecture v2](../../../../cloud-admin-information-architecture-v2.md);
+- [Cloud Admin UI Standard v1](../../../../cloud-admin-ui-standard-v1.md);
+- [Cloud Admin Frontend Engineering Standard v1](../../../../cloud-admin-frontend-engineering-standard-v1.md);
+- [Development Validation Operating Model v1](../../../../development-validation-operating-model-v1.md).
 
 This document does not authorize production deployment, a second customer
 directory, a CRM, Cloud-side WordPress control truth, or a broad frontend

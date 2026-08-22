@@ -1,6 +1,12 @@
 # Cloud 后台与 Site Knowledge 向量能力开发总结
 
-状态：阶段完成，等待真实站点闭环验证。
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+原始状态：阶段完成，等待真实站点闭环验证。
 
 日期：2026-07-14。
 
@@ -12,10 +18,10 @@
 
 本文不是新的运行合同。发生冲突时，以下现有合同优先：
 
-- [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md)
-- [ADR-002: Use Task-Oriented Page Models For Cloud Admin](decisions/002-cloud-admin-task-oriented-information-architecture.md)
-- [Site Knowledge Runtime Contract v1](site-knowledge-runtime-contract-v1.md)
-- [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md)
+- [Cloud Admin Information Architecture v2](../../../../cloud-admin-information-architecture-v2.md)
+- [ADR-002: Use Task-Oriented Page Models For Cloud Admin](../../../../decisions/002-cloud-admin-task-oriented-information-architecture.md)
+- [Site Knowledge Runtime Contract v1](../../../../site-knowledge-runtime-contract-v1.md)
+- [Cloud Content Generation Boundary v1](../../../../cloud-content-generation-boundary-v1.md)
 - Addon 仓库中的 `docs/site-knowledge-vector-operations.md`
 
 ## 2. 一句话结论

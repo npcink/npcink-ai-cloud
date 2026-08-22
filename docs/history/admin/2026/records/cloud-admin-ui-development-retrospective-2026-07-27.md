@@ -1,6 +1,12 @@
 # Cloud Admin UI 开发复盘与工作方法 — 2026-07-27
 
-状态：阶段开发已完成，方法与经验已固化。
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+原始状态：阶段开发已完成，方法与经验已固化。
 
 更新：2026-07-28，补充向量设置落地证据和平台管理员设置页的后续表格化路线。
 
@@ -9,7 +15,7 @@
 治理、验证和 M4 验收。
 
 本文是开发历史和工作方法记录，不替代
-[Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)，不增加新的
+[Cloud Admin UI Standard v1](../../../../cloud-admin-ui-standard-v1.md)，不增加新的
 Cloud 产品边界，不批准生产发布，也不表示所有 Admin 页面都需要立即重构。
 
 ## 1. 原始目标
@@ -367,9 +373,9 @@ PC 验收以目标工作面为准：
 
 ## 10. 权威参考
 
-- [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md)
-- [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
-- [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md)
-- [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
-- [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
-- [ADR-002: Cloud Admin Task-Oriented Information Architecture](decisions/002-cloud-admin-task-oriented-information-architecture.md)
+- [Cloud Admin Information Architecture v2](../../../../cloud-admin-information-architecture-v2.md)
+- [Cloud Admin UI Standard v1](../../../../cloud-admin-ui-standard-v1.md)
+- [Cloud Admin Feedback And Layout Contract v1](../../../../cloud-admin-feedback-and-layout-contract-v1.md)
+- [Development and Validation Operating Model v1](../../../../development-validation-operating-model-v1.md)
+- [M4 Preview AI Development Standard v1](../../../../m4-preview-ai-development-standard-v1.md)
+- [ADR-002: Cloud Admin Task-Oriented Information Architecture](../../../../decisions/002-cloud-admin-task-oriented-information-architecture.md)

@@ -104,7 +104,7 @@ Relevant records include:
 
 - `docs/release-readiness-legacy-cleanup-closeout-2026-07-02.md`
 - `docs/release-readiness-cleanup-closeout-2026-07-07.md`
-- `docs/admin-surface-cleanup-closeout-2026-07-02.md`
+- `docs/history/admin/2026/records/admin-surface-cleanup-closeout-2026-07-02.md`
 - `docs/npcink-naming-reset-closeout-2026-06-24.md`
 
 ### 3.3 Canonical scope enforcement

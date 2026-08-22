@@ -1,6 +1,12 @@
 # Cloud Admin Frontend Remediation Retrospective
 
-Status: final accepted retrospective after the bounded 2026-07-29 remediation
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: final accepted retrospective after the bounded 2026-07-29 remediation
 sequence.
 
 Final accepted revision: `0b3119c3725550ccf737a78b966b707ce2d68db7`

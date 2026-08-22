@@ -322,7 +322,7 @@ Portal 页面按用户任务分工：
 - [订阅商业验收记录](subscription-commerce-acceptance-2026-07-11.md)
 - [AI 积分扣费契约](ai-credit-charge-contract-v1.md)
 - [Portal 客户工作区演进](portal-customer-workspace-evolution-2026-07-10.md)
-- [后台客户页面收口历史](admin-customer-surface-consolidation-history-2026-06-30.md)
+- [后台客户页面收口历史](history/admin/2026/records/admin-customer-surface-consolidation-history-2026-06-30.md)
 - [Portal 邮件验证收口](portal-auth-verification-closeout-2026-07-08.md)
 - [历史兼容债务清理](pre-release-legacy-debt-and-development-history-2026-07-10.md)
 - [未使用能力审计](unused-capability-audit-2026-07-11.md)

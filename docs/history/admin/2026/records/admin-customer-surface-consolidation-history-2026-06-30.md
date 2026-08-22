@@ -1,6 +1,12 @@
 # Admin Customer Surface Consolidation History - 2026-06-30
 
-Status: accepted implementation history.
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: accepted implementation history.
 
 Purpose: summarize the recent platform-admin customer surface cleanup so future
 operators and AI agents can understand why the account, Portal user, service

@@ -340,7 +340,7 @@ Provider ID、错误代码、结果数和来源域名即可。不得把 API Key�
 - [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
 - [Cloud Web Search Runtime Contract v1](cloud-web-search-runtime-contract-v1.md)
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
-- [Cloud Admin UI Development Retrospective](cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [Cloud Admin UI Development Retrospective](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
 - [ADR-023: M4 Candidate, Acceptance, and Promotion](decisions/023-m4-preview-candidate-acceptance-promotion.md)
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)

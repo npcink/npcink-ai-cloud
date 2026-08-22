@@ -1,6 +1,12 @@
 # Admin Runtime Surface Cleanup Closeout - 2026-07-01
 
-Status: local closeout summary.
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: local closeout summary.
 
 Purpose: summarize the July 1 admin cleanup around AI Resources, runtime
 telemetry, hosted model compatibility, Ability Models, and Internal AI Advisor.
@@ -175,7 +181,7 @@ Runtime/API:
 Docs:
 
 - `docs/cloud-billing-entitlement-v1.md`
-- `docs/admin-runtime-surface-cleanup-closeout-2026-07-01.md`
+- `docs/history/admin/2026/records/admin-runtime-surface-cleanup-closeout-2026-07-01.md`
 
 Frontend:
 

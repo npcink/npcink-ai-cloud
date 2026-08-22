@@ -1,6 +1,12 @@
 # Cloud Admin Frontend Remediation Final Closeout
 
-Status: accepted and frozen pending new operator evidence.
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: accepted and frozen pending new operator evidence.
 
 Date: 2026-07-29.
 
@@ -208,7 +214,7 @@ Any next session must:
 
 1. start from clean current `origin/master`;
 2. read `AGENTS.md`, `README.md`,
-   [Cloud Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md),
+   [Cloud Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
    this closeout, the Admin UI standard, and the development-validation model;
 3. state the operator problem, state owners, affected contract, non-goals,
    narrow gate, bundle/runtime evidence requirement, and rollback before
@@ -220,12 +226,12 @@ Any next session must:
 
 ## 9. Document Map
 
-- [Cloud Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)
+- [Cloud Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md)
 - [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md)
 - [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md)
 - [Cloud Admin Account Create Form Pilot Closeout](cloud-admin-account-create-form-pilot-closeout-2026-07-29.md)
 - [Cloud Admin Frontend Remediation Retrospective](cloud-admin-frontend-remediation-retrospective-2026-07-29.md)
-- [Development and Validation Operating Model](development-validation-operating-model-v1.md)
+- [Development and Validation Operating Model](../../../../development-validation-operating-model-v1.md)
 
 Rollback for this documentation closeout is a focused revert of its PR. It does
 not require an M4 operation, backend change, data migration, or production

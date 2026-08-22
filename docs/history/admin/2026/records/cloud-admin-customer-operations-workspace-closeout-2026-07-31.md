@@ -1,6 +1,12 @@
 # Cloud Admin Customer Operations Workspace Closeout — 2026-07-31
 
-Status: development integration and clean-`master` M4 acceptance complete.
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: development integration and clean-`master` M4 acceptance complete.
 
 Scope: summarize the customer-directory, service-status, customer-creation,
 customer-detail, commercial, and AI-credit layout decisions completed through
@@ -9,10 +15,10 @@ PRs #425, #428, #430, and #431.
 This document is historical evidence and a reusable development retrospective.
 Normative authority lives in:
 
-- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
-- [ADR-037: Separate the customer directory from the service problem queue](decisions/037-separate-customer-directory-from-service-problem-queue.md);
-- [Customer Account and Identity Stage Standard v1](customer-account-identity-stage-standard-v1.md);
-- [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md).
+- [Cloud Admin Customer Operations Workspace Standard v1](../../../../cloud-admin-customer-operations-workspace-standard-v1.md);
+- [ADR-037: Separate the customer directory from the service problem queue](../../../../decisions/037-separate-customer-directory-from-service-problem-queue.md);
+- [Customer Account and Identity Stage Standard v1](../../../../customer-account-identity-stage-standard-v1.md);
+- [Cloud Admin UI Standard v1](../../../../cloud-admin-ui-standard-v1.md).
 
 It does not authorize production deployment, organization support, a CRM, or
 changes to WordPress-local write authority.

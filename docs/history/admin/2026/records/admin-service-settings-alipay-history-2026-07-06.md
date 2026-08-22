@@ -1,6 +1,12 @@
 # Admin Service Settings Alipay History - 2026-07-06
 
-## Status
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+## Original Status
 
 Local fix prepared on branch `codex/alipay-key-format-ui`.
 
