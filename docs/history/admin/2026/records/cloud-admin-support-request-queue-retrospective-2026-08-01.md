@@ -1,15 +1,21 @@
 # Cloud Admin 工单队列收口与开发复盘 — 2026-08-01
 
-状态：阶段功能已合并并在 M4 开发环境接受；人工视觉验收与生产发布仍是独立状态。
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+原始状态：阶段功能已合并并在 M4 开发环境接受；人工视觉验收与生产发布仍是独立状态。
 
 范围：从工单页面信息密度审查、全宽队列与按需检查、筛选工具栏收口、
 Portal 演示入口和确定性数据，到服务端等待对象与等待时长投影的完整开发链。
 
 本文记录历史、设计思路、自我审视和可复用方法。当前强制规则仍以
-[Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)、
-[Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md)、
-[Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
-和 [ADR-038](decisions/038-server-owned-support-waiting-state-projection.md)
+[Cloud Admin UI Standard v1](../../../../cloud-admin-ui-standard-v1.md)、
+[Cloud Admin Frontend Engineering Standard v1](../../../../cloud-admin-frontend-engineering-standard-v1.md)、
+[Development and Validation Operating Model v1](../../../../development-validation-operating-model-v1.md)
+和 [ADR-038](../../../../decisions/038-server-owned-support-waiting-state-projection.md)
 为准。本文不授权生产部署、Cloudflare 修改、WordPress 写入、AI 自动回复、
 工单分配或新的 SLA 控制中心。
 
@@ -285,11 +291,11 @@ model + reversible migration
 
 ## 8. 权威参考
 
-- [ADR-038: Server-owned support waiting-state projection](decisions/038-server-owned-support-waiting-state-projection.md)
-- [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
-- [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md)
+- [ADR-038: Server-owned support waiting-state projection](../../../../decisions/038-server-owned-support-waiting-state-projection.md)
+- [Cloud Admin UI Standard v1](../../../../cloud-admin-ui-standard-v1.md)
+- [Cloud Admin Frontend Engineering Standard v1](../../../../cloud-admin-frontend-engineering-standard-v1.md)
 - [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md)
-- [Cloud Admin Phase C Support Request Queue Acceptance](history/admin/2026/phase-c/cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md)
-- [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
-- [M4 Preview Development Workflow](m4-preview-development-v1.md)
-- [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
+- [Cloud Admin Phase C Support Request Queue Acceptance](../../../../history/admin/2026/phase-c/cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md)
+- [M4 Preview AI Development Standard v1](../../../../m4-preview-ai-development-standard-v1.md)
+- [M4 Preview Development Workflow](../../../../m4-preview-development-v1.md)
+- [Development and Validation Operating Model v1](../../../../development-validation-operating-model-v1.md)

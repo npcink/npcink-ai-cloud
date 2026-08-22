@@ -1,6 +1,12 @@
 # Admin Surface Cleanup Closeout - 2026-07-02
 
-Status: closed on `master`.
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: closed on `master`.
 
 Related PR: <https://github.com/muze-page/npcink-ai-cloud/pull/84>
 

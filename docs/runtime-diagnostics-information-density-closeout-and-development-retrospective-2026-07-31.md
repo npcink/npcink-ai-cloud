@@ -271,7 +271,7 @@ merged `master`，也不使用一次全绿掩盖部分数据源失败。
 
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md)
-- [Cloud Admin UI Development Retrospective](cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [Cloud Admin UI Development Retrospective](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
 - [Development And Validation Operating Model v1](development-validation-operating-model-v1.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
 

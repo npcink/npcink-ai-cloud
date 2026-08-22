@@ -1,6 +1,12 @@
 # Cloud Admin Account Site Runtime Evidence Remediation Retrospective
 
-Status: accepted follow-on remediation; one responsibility completed and
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: accepted follow-on remediation; one responsibility completed and
 frozen pending new evidence.
 
 Date: 2026-07-29.
@@ -263,11 +269,11 @@ For future Cloud Admin evidence surfaces:
 
 ## 9. Related Documents
 
-- [Cloud Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)
+- [Cloud Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md)
 - [Cloud Admin Frontend Remediation Retrospective](cloud-admin-frontend-remediation-retrospective-2026-07-29.md)
 - [Cloud Admin Frontend Remediation Final Closeout](cloud-admin-frontend-remediation-final-closeout-2026-07-29.md)
-- [Cloud Admin UI Standard](cloud-admin-ui-standard-v1.md)
-- [Development and Validation Operating Model](development-validation-operating-model-v1.md)
+- [Cloud Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md)
+- [Development and Validation Operating Model](../../../../development-validation-operating-model-v1.md)
 
 This document records one accepted follow-on responsibility. It does not reopen
 the broad remediation sequence or authorize another Admin refactor.

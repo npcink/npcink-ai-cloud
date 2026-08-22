@@ -11,3 +11,6 @@ or architecture documents in the `docs/` root.
 - [Phase D-H](phase-d-h/) - shared-shell, desktop workflow, interaction, and
   regression evidence from 2026-07-12.
 - [Pilots](pilots/) - early route-model acceptance evidence from 2026-07-12.
+- [Admin historical records](records/) - dated implementation histories,
+  stage summaries, remediation closeouts, and retrospectives from June through
+  August 2026.

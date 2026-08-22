@@ -1,6 +1,12 @@
 # Cloud Admin Query Pilot Closeout
 
-Status: accepted queue baseline; the bounded second queue and form decision are
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+Original status: accepted queue baseline; the bounded second queue and form decision are
 also complete.
 
 Date: 2026-07-29.

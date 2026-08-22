@@ -330,7 +330,7 @@ For `/admin/support-requests` and any future bounded conversation queue:
   deterministic fixtures or governed demo data and states exactly which one.
 
 The durable reasoning and delivery evidence for these rules are recorded in
-[Cloud Admin Support Request Queue Retrospective](cloud-admin-support-request-queue-retrospective-2026-08-01.md)
+[Cloud Admin Support Request Queue Retrospective](history/admin/2026/records/cloud-admin-support-request-queue-retrospective-2026-08-01.md)
 and [ADR-038](decisions/038-server-owned-support-waiting-state-projection.md).
 
 ## 6. Dialogs And Configuration

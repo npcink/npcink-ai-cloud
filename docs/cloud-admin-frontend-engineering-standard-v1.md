@@ -15,7 +15,7 @@ This document is the engineering companion to:
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md);
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
-- [Cloud Admin UI Development Retrospective](cloud-admin-ui-development-retrospective-2026-07-27.md);
+- [Cloud Admin UI Development Retrospective](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md);
 - [Development Validation Operating Model v1](development-validation-operating-model-v1.md).
 
 The information-architecture and UI standards remain authoritative for page
@@ -24,7 +24,7 @@ This document owns frontend code structure, state ownership, dependency
 adoption, behavior tests, and the bounded remediation sequence.
 
 The completed sequence and final work review are recorded in
-[Cloud Admin Frontend Remediation Final Closeout](cloud-admin-frontend-remediation-final-closeout-2026-07-29.md).
+[Cloud Admin Frontend Remediation Final Closeout](history/admin/2026/records/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md).
 
 Current implementation evidence:
 
@@ -35,16 +35,16 @@ Current implementation evidence:
   engineering-method evidence; it is not an active route baseline and does
   not authorize restoring Portal users.
 - The historical measured acceptance record is
-  [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md).
+  [Cloud Admin Query Pilot Closeout](history/admin/2026/records/cloud-admin-query-pilot-closeout-2026-07-29.md).
 - `/admin/support-requests` is the bounded second Query-first queue. It reuses
   the existing provider and adapter, keeps its accepted operator layout, and
   makes retained or placeholder result scopes read-only. Its measured record
-  is [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md).
+  is [Cloud Admin Support Requests Query Closeout](history/admin/2026/records/cloud-admin-support-requests-query-closeout-2026-07-29.md).
 - PRs #436, #438, #439, and #450 then evolved that same queue without replacing
   its Query ownership: full-width comparison with on-demand inspection,
   one-row PC filters, queue-to-detail operator closure, and a server-owned
   waiting-state projection. The consolidated record is
-  [Cloud Admin Support Request Queue Retrospective](cloud-admin-support-request-queue-retrospective-2026-08-01.md).
+  [Cloud Admin Support Request Queue Retrospective](history/admin/2026/records/cloud-admin-support-request-queue-retrospective-2026-08-01.md).
 - A headless table library and React Hook Form remain unadopted. They require
   their own burden-removal evidence; the Query pilot does not pre-approve them.
 - Stage 3 tested React Hook Form plus the Zod resolver on the bounded account
@@ -52,14 +52,14 @@ Current implementation evidence:
   the dependency failed the proportionality stop condition and was removed.
   The accepted dependency-free form boundary grew by only `1,272` raw and
   `455` gzip bytes while retaining the behavior fixes. The evidence is
-  [Cloud Admin Account Create Form Pilot Closeout](cloud-admin-account-create-form-pilot-closeout-2026-07-29.md).
+  [Cloud Admin Account Create Form Pilot Closeout](history/admin/2026/records/cloud-admin-account-create-form-pilot-closeout-2026-07-29.md).
 - Fresh correctness evidence later authorized one Stage 4 responsibility in
   `/admin/accounts/[accountId]`: per-site runtime request ownership and
   incomplete-evidence semantics. PR #360 reused the existing Query provider,
   preserved partial evidence, rejected a completely unavailable scope, and
   prevented missing evidence from driving account health or quota conclusions.
   The route was not broadly split or migrated. The record is
-  [Cloud Admin Account Site Runtime Evidence Remediation Retrospective](cloud-admin-account-site-runtime-evidence-remediation-retrospective-2026-07-29.md).
+  [Cloud Admin Account Site Runtime Evidence Remediation Retrospective](history/admin/2026/records/cloud-admin-account-site-runtime-evidence-remediation-retrospective-2026-07-29.md).
 
 ## 1. Problem Statement
 

@@ -1,6 +1,12 @@
 # Admin Service Settings QQ and Open Callback History - 2026-06-29
 
-## Status
+Status: time-bounded Admin historical evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
+## Original Status
 
 Accepted implementation history.
 
@@ -10,7 +16,7 @@ QQ quick login, the public `/open` callback namespace, and the
 
 It is a local history record for future operators and AI agents. The normative
 callback contract remains in
-[`cloud-open-callback-boundary-v1.md`](cloud-open-callback-boundary-v1.md).
+[`cloud-open-callback-boundary-v1.md`](../../../../cloud-open-callback-boundary-v1.md).
 
 ## Boundary
 

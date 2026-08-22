@@ -49,7 +49,7 @@
 
 ### 2.2 Cloud Admin 已完成一轮系统治理
 
-[Cloud Admin UI 开发复盘](cloud-admin-ui-development-retrospective-2026-07-27.md)
+[Cloud Admin UI 开发复盘](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
 记录了从 PR `#295` 到 PR `#315` 的信息架构、共享工作台、凭据控件、
 结构门禁和视觉证据。PR `#315` 的合并版本 `fbb667a3` 曾在 M4 上达到
 `acceptance_state=accepted`。
@@ -294,6 +294,6 @@ PR `#317` 对 Vector Settings 工作台的收口属于这一类有边界的整�
 - [Development Validation Operating Model](development-validation-operating-model-v1.md)
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
 - [Production / Master 差异审查](production-master-delta-audit-2026-07-25.md)
-- [Cloud Admin UI 开发复盘](cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [Cloud Admin UI 开发复盘](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
 - [账户、权益、站点重连与前台发布复盘](account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
 - [公开前台发布代码收口](public-frontend-release-code-closeout-2026-07-26.md)
