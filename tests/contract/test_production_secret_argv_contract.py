@@ -282,6 +282,15 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert "cleanup_ssh_control" in deploy_script
     assert "group: production-maintenance" not in maintenance
     assert 'certificate-readiness' in maintenance
+    assert 'certificate-readiness-refresh' in maintenance
+    assert "Refresh production certificate readiness evidence." in maintenance
+    assert '"${readiness_script}" generate' in maintenance
+    assert '--certificate-path /etc/letsencrypt/live/cloud.npc.ink/fullchain.pem' in maintenance
+    assert '--evidence-path /var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json' in maintenance
+    assert (
+        'current release changed while acquiring the certificate readiness refresh lock'
+        in maintenance
+    )
     assert 'readiness is not passed for cloud.npc.ink' in maintenance
     assert 'current_link="${remote_dir}/current"' in maintenance
     assert 'if [ -L "${current_link}" ]; then' in maintenance

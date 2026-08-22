@@ -78,6 +78,18 @@ the `Production Maintenance` workflow with the `certificate-readiness` action;
 it warns after five days and fails after seven days. Refresh evidence only via
 the governed `certificate-renewal-readiness.sh generate` procedure.
 
+When that receipt is stale and the current production SSH key is available only
+through the protected GitHub Environment, manually dispatch `Production
+Maintenance` from the exact `production` revision with action
+`certificate-readiness-refresh` and enter
+`Refresh production certificate readiness evidence.` exactly. This separate
+operator-initiated action acquires the shared deploy lock, resolves the current
+managed release before and after locking, runs that release's governed
+generator with the fixed `cloud.npc.ink` Certbot/NGINX bindings, and then runs
+the read-only receipt check. It may perform the documented Certbot dry run and
+NGINX hook/reload; it never deploys application source, changes Compose, or
+runs automatically from `Deploy Production`.
+
 Neither a normal `production` push nor a static-terms-only push deploys
 automatically. The only temporary exception is the exact
 bundle-bound trusted-workstation path for the current empty-host PostgreSQL 18
