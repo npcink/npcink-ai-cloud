@@ -1,5 +1,11 @@
 # Cloud Admin Phase C — Agent Feedback Quality Acceptance
 
+Status: dated Phase C acceptance evidence; not current Admin UI authority.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
+
 Date: 2026-07-12
 Surface: `/admin/agent-feedback`
 
