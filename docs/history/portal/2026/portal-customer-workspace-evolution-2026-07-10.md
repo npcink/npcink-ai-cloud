@@ -1,6 +1,10 @@
 # Portal Customer Workspace Evolution - 2026-07-10
 
-Status: accepted stage summary with follow-up work.
+Status: time-bounded Portal historical evidence; not current Portal authority.
+
+Current authority: [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+
+Original status: accepted stage summary with follow-up work.
 
 Purpose: consolidate the recent Portal product discussions, implemented changes,
 root-cause lessons, and next-stage engineering direction into one local record.
@@ -11,9 +15,9 @@ continue. It does not introduce a new API or database contract.
 
 This summary builds on the more focused historical records below:
 
-- `docs/portal-customer-surface-simplification-history-2026-07-04.md`
-- `docs/portal-auth-verification-closeout-2026-07-08.md`
-- `docs/cloud-account-portal-stage-closeout-summary-2026-06-29.md`
+- `docs/history/portal/2026/portal-customer-surface-simplification-history-2026-07-04.md`
+- `docs/history/portal/2026/portal-auth-verification-closeout-2026-07-08.md`
+- `docs/history/portal/2026/cloud-account-portal-stage-closeout-summary-2026-06-29.md`
 - `docs/cloud-site-connection-closeout-history-2026-06-29.md`
 - `docs/history/admin/2026/records/admin-portal-user-management-history-2026-06-29.md`
 

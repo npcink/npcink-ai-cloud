@@ -127,7 +127,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Admin, Portal, Identity, and Commercial
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
-- [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
+- [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](history/portal/2026/portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
   merge, production, or customer acceptance authority

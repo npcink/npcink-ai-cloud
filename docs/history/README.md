@@ -10,6 +10,8 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
 
 - [Admin acceptance evidence](admin/2026/) - dated route and interaction
   acceptance records, grouped by delivery phase.
+- [Portal evidence](portal/2026/) - dated Portal implementation histories,
+  closeouts, and workspace retrospectives.
 - [Repository hygiene evidence](repository-hygiene/2026/) - dated cleanup,
   worktree consolidation, preservation, and rollback records from 2026.
 
