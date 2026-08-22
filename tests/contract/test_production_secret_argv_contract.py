@@ -286,7 +286,10 @@ def test_production_workflows_serialize_host_mutation_and_confirm_prune() -> Non
     assert "Refresh production certificate readiness evidence." in maintenance
     assert '"${readiness_script}" generate' in maintenance
     assert '--certificate-path /etc/letsencrypt/live/cloud.npc.ink/fullchain.pem' in maintenance
-    assert '--evidence-path /var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json' in maintenance
+    assert (
+        '--evidence-path /var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json'
+        in maintenance
+    )
     assert (
         'current release changed while acquiring the certificate readiness refresh lock'
         in maintenance
