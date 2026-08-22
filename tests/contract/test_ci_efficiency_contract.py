@@ -345,6 +345,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "--diff-filter=ACMRD" in docs_gate
     assert "diff --check" in docs_gate
     assert "check-release-policy.sh" in docs_gate
+    assert "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD=skip" in docs_gate
     assert "docs_only=true" in docs_gate
     assert "received a non-documentation change" in docs_gate
 
@@ -363,6 +364,10 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert workflow.count("--diff-filter=ACMRD") == 5
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
+    assert (
+        "NPCINK_CLOUD_RELEASE_POLICY_COMPOSE_GUARD=skip bash scripts/check-release-policy.sh"
+        in workflow
+    )
     assert "specialized-quality:" in workflow
     assert "python3 scripts/check_changed.py" in workflow
     assert "--specialized-only" in workflow

@@ -1,5 +1,7 @@
 # Text Model Provider Integration Decision - 2026-07-11
 
+Status: historical decision record; current source and active Provider contracts are authoritative.
+
 ## Status
 
 Accepted for the current phase.

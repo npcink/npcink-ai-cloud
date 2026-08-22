@@ -67,11 +67,13 @@ from app.domain.runtime.models import (
 )
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.contracts import (
+    MAX_SITE_KNOWLEDGE_STATUS_POST_IDS,
     SITE_KNOWLEDGE_ABILITIES,
     SITE_KNOWLEDGE_ABILITY_FAMILY,
     SITE_KNOWLEDGE_DATA_CLASSIFICATION,
     SITE_KNOWLEDGE_EXECUTION_KIND,
     SITE_KNOWLEDGE_PROFILE_ID,
+    SITE_KNOWLEDGE_STATUS_ABILITY,
     SITE_KNOWLEDGE_SYNC_ABILITY,
 )
 from app.domain.site_ops_analysis.contracts import (
@@ -201,6 +203,11 @@ class RuntimePayload(BaseModel):
         _validate_runtime_json_shape(
             self.input,
             field_name="input",
+            list_item_limits=(
+                {("post_ids",): MAX_SITE_KNOWLEDGE_STATUS_POST_IDS}
+                if self.ability_name == SITE_KNOWLEDGE_STATUS_ABILITY
+                else None
+            ),
             allow_wordpress_ai_output_schema=(
                 self.ability_name in CONNECTOR_RUNTIME_ABILITIES
             ),
@@ -215,6 +222,7 @@ def _validate_runtime_json_shape(
     field_name: str,
     depth: int = 0,
     path: tuple[str, ...] = (),
+    list_item_limits: dict[tuple[str, ...], int] | None = None,
     allow_wordpress_ai_output_schema: bool = False,
 ) -> None:
     depth_limit = MAX_RUNTIME_JSON_DEPTH
@@ -238,11 +246,13 @@ def _validate_runtime_json_shape(
                 field_name=field_name,
                 depth=depth + 1,
                 path=(*path, str(key)),
+                list_item_limits=list_item_limits,
                 allow_wordpress_ai_output_schema=allow_wordpress_ai_output_schema,
             )
         return
     if isinstance(value, list):
-        if len(value) > MAX_RUNTIME_LIST_ITEMS:
+        max_items = (list_item_limits or {}).get(path, MAX_RUNTIME_LIST_ITEMS)
+        if len(value) > max_items:
             raise ValueError(f"{field_name} contains too many items")
         for item in value:
             _validate_runtime_json_shape(
@@ -250,6 +260,7 @@ def _validate_runtime_json_shape(
                 field_name=field_name,
                 depth=depth + 1,
                 path=(*path, "[]"),
+                list_item_limits=list_item_limits,
                 allow_wordpress_ai_output_schema=allow_wordpress_ai_output_schema,
             )
         return

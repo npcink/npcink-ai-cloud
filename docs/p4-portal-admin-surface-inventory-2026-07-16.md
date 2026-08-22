@@ -1,5 +1,7 @@
 # P4 Portal/Admin Surface Inventory — 2026-07-16
 
+Status: historical refactor inventory and closeout evidence; not current frontend authority.
+
 ## Status
 
 Accepted inventory and completed P4 closeout record. `P4-E01`, `P4-E02`, and

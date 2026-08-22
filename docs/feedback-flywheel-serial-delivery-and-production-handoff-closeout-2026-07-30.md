@@ -1,5 +1,7 @@
 # 反馈数据飞轮、串行交付与生产交接阶段复盘 — 2026-07-30
 
+Status: historical closeout and production handoff; not current deployment authority.
+
 状态：当前开发阶段已按受保护合并、clean-master M4 acceptance 和双释放完成
 收口；Issue `#406` 是下一步受控生产验证准备的唯一 handoff。生产部署、
 24 小时观察和 GA 均未由本文宣告完成。
@@ -433,7 +435,7 @@ accepted promotion 中得到验证。它只证明当前本地媒体消费者的 
 - [Editor Assist Quality Flywheel Closeout](editor-assist-quality-flywheel-closeout-and-development-retrospective-2026-07-26.md)
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
-- [Production Release Timing and Admin Freeze Retrospective](production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
+- [Production Release Timing and Admin Freeze Retrospective](history/production/2026/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
 - [Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Release queue Issue #406](https://github.com/npcink/npcink-ai-cloud/issues/406)

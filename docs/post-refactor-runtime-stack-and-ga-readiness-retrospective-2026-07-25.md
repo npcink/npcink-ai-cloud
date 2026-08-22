@@ -1,5 +1,7 @@
 # Post-Refactor Runtime Stack And GA-Readiness Retrospective — 2026-07-25
 
+Status: historical synthesis and next-stage handoff; not current GA or production authority.
+
 ## Status
 
 Project-history and next-stage closeout.
@@ -446,7 +448,7 @@ rollback is required.
 
 - [Runtime Stack Decision History](runtime-stack-decision-history-2026-07-09.md)
 - [WordPress-first Cloud Runtime Refactor](decisions/004-wordpress-first-cloud-runtime-refactor.md)
-- [P5-B4 Runtime Load/Soak Closeout](p5-b4-runtime-load-soak-closeout-2026-07-19.md)
+- [P5-B4 Runtime Load/Soak Closeout](history/refactor/2026/p5-b4-runtime-load-soak-closeout-2026-07-19.md)
 - [Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md)
 - [Provider Runtime Compatibility Development Retrospective](provider-runtime-compatibility-development-retrospective-2026-07-25.md)
 - [Provider Three-Item Closeout And Development Retrospective](provider-three-item-closeout-and-development-retrospective-2026-07-25.md)

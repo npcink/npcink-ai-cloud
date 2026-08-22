@@ -185,4 +185,4 @@ reporting infrastructure.
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
-- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
+- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](history/production/2026/production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)

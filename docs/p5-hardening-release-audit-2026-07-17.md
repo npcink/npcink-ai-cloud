@@ -1,5 +1,7 @@
 # P5 Hardening And Release Audit — 2026-07-17
 
+Status: historical release audit evidence; not current release or production approval.
+
 ## Status
 
 P5-A audit complete; global P5 release closure incomplete.
@@ -259,8 +261,8 @@ later engineering batches changed the current branch status:
 | Batch | Current result | Evidence |
 | --- | --- | --- |
 | P5-B1 connector cutover | engineering complete | [P5-B1 Hosted Profile Contract Cutover](p5-b1-hosted-profile-contract-cutover-2026-07-17.md) |
-| P5-B2 security blockers | engineering complete | [P5-B2 Security Hardening Closeout](p5-b2-security-hardening-2026-07-17.md) and [ADR-019](decisions/019-dedicated-runtime-data-encryption-domain.md) |
-| P5-B3 WordPress text acceptance | engineering complete | [P5-B3 WordPress Text Acceptance Closeout](p5-b3-wordpress-ai-text-acceptance-2026-07-18.md): exact revisions and packages passed Fresh data-path, browser review/apply, deterministic offline, provider/run-metadata, package, six-repository matrix, and cleanup evidence; summary/rewrite equality remains an explicit provider-quality limitation, and this is not production or Core-audit approval |
+| P5-B2 security blockers | engineering complete | [P5-B2 Security Hardening Closeout](history/refactor/2026/p5-b2-security-hardening-2026-07-17.md) and [ADR-019](decisions/019-dedicated-runtime-data-encryption-domain.md) |
+| P5-B3 WordPress text acceptance | engineering complete | [P5-B3 WordPress Text Acceptance Closeout](history/refactor/2026/p5-b3-wordpress-ai-text-acceptance-2026-07-18.md): exact revisions and packages passed Fresh data-path, browser review/apply, deterministic offline, provider/run-metadata, package, six-repository matrix, and cleanup evidence; summary/rewrite equality remains an explicit provider-quality limitation, and this is not production or Core-audit approval |
 | P5-B4 load/soak | pending | deterministic concurrent runtime, queue burst, query, worker, memory, and soak evidence remains required |
 | P5-B5 release closure | pending | exact bundle, media/text replay, restore, complete security follow-ups, central matrix, release-policy proof, and final audit remain required |
 
@@ -286,7 +288,7 @@ statements.
 P5-B4 engineering acceptance passed at revision
 `dff31baf942542d12860b82f6a65a47dd2129d91`. The complete evidence and
 limitations are recorded in
-[P5-B4 Runtime Load/Soak Closeout](p5-b4-runtime-load-soak-closeout-2026-07-19.md).
+[P5-B4 Runtime Load/Soak Closeout](history/refactor/2026/p5-b4-runtime-load-soak-closeout-2026-07-19.md).
 The formal runtime proof completed three independent fresh baselines, with all
 `29/29` record gates passing in every baseline. Queue-wait p95 was `4.6318`,
 `5.0296`, and `4.7298` seconds; transport failures and unexpected HTTP 5xx were
@@ -313,7 +315,7 @@ result.
 
 P5-B6 engineering acceptance passed at revision `fb58e354`. The evidence and
 remaining operator boundaries are recorded in
-[P5-B6 Production Topology Contraction Closeout](p5-b6-production-topology-contraction-closeout-2026-07-19.md).
+[P5-B6 Production Topology Contraction Closeout](history/refactor/2026/p5-b6-production-topology-contraction-closeout-2026-07-19.md).
 
 The default release bundle no longer includes Caddy, Jaeger, or an
 OpenTelemetry Collector. The external TLS Edge, loopback bundled NGINX, and
@@ -333,7 +335,7 @@ authorization remain incomplete.
 
 P5-B7 engineering acceptance passed at revision `0663d95f`. The complete
 artifact, scan, replay, failure-history, and limitation record is
-[P5-B7 Exact Release Bundle Closeout](p5-b7-exact-release-bundle-closeout-2026-07-19.md).
+[P5-B7 Exact Release Bundle Closeout](history/refactor/2026/p5-b7-exact-release-bundle-closeout-2026-07-19.md).
 
 The clean `linux/arm64` bundle SHA-256 is
 `592d1ce23334cddf4a09db0f147d6db48aa1c696980adc24630ed333660baa17`.

@@ -173,6 +173,43 @@ the ref from `refs/heads/<name>` to a dated namespace such as
 Verify the bundle and the full old/new ref set before and after the transaction.
 This reduces active branch clutter without discarding recoverable history.
 
+## Archive Ref Retention
+
+This section governs Git refs under `refs/archive/**`. It does not govern
+Docker image references, runtime artifacts, or other objects that happen to
+use the word archive.
+
+Every new archive ref must use a dated namespace. Its retention clock starts
+from that namespace date, not from the commit date. Keep each ref for at least
+30 calendar days after the namespace date and until all related tasks, PRs,
+handoffs, and ownership questions are closed. Reaching the end of that period
+only makes a ref eligible for review; it is not deletion authorization.
+
+Archive refs must not be pruned by a daemon, scheduled job, Git hook, or other
+automatic process. Before deleting any archive refs, the cleanup owner must:
+
+1. classify the exact proposed ref set and freshly verify every ref value;
+2. confirm that no ref protects a registered worktree, open PR, active handoff,
+   uncertain owner, or unique work that has not been preserved elsewhere;
+3. create a bundle containing exactly the reviewed ref set and verify it with
+   `git bundle verify`;
+4. restrict the bundle to mode `600` and record its absolute path, byte size,
+   and SHA-256 digest in the cleanup receipt;
+5. delete only the exact reviewed refs through a checked ref transaction, with
+   no broad wildcard or namespace deletion; and
+6. re-audit the remaining refs and repository state immediately afterward.
+
+Keep the corresponding verified bundle for at least 90 calendar days after
+the refs are deleted. Bundle expiry also requires explicit operator review;
+the elapsed retention period is not permission to delete it. Bundles that
+protect dirty or damaged worktrees, production evidence, release recovery, or
+other uniquely classified state require an explicit retention decision rather
+than automatic expiry.
+
+Archive refs and their bundles are local recovery evidence. They are not
+remote source truth, merge authority, release acceptance, or a substitute for
+the current repository and PR state.
+
 ## Generated and Runtime State
 
 Classify ignored and untracked data independently from Git refs:

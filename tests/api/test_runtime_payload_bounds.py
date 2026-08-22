@@ -4,7 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.routes.runs import RuntimeRepairPayload
-from app.api.routes.runtime import MAX_RUNTIME_STRING_CHARS, RuntimePayload
+from app.api.routes.runtime import (
+    MAX_RUNTIME_LIST_ITEMS,
+    MAX_RUNTIME_STRING_CHARS,
+    RuntimePayload,
+)
+from app.domain.site_knowledge.contracts import MAX_SITE_KNOWLEDGE_STATUS_POST_IDS
 
 
 def _connector_payload_input(request: dict[str, object]) -> dict[str, object]:
@@ -27,6 +32,53 @@ def test_runtime_payload_rejects_oversized_input_string() -> None:
         RuntimePayload(
             ability_name="npcink-abilities-toolkit/test",
             input={"prompt": "x" * (MAX_RUNTIME_STRING_CHARS + 1)},
+        )
+
+
+def test_site_knowledge_status_accepts_bounded_post_id_manifest() -> None:
+    RuntimePayload(
+        ability_name="npcink-cloud/site-knowledge-status",
+        contract_version="site_knowledge_status.v1",
+        input={
+            "contract_version": "site_knowledge_status.v1",
+            "post_ids": list(range(1, MAX_SITE_KNOWLEDGE_STATUS_POST_IDS + 1)),
+            "write_posture": "suggestion_only",
+        },
+    )
+
+
+def test_site_knowledge_status_rejects_oversized_post_id_manifest() -> None:
+    with pytest.raises(ValidationError, match="input contains too many items"):
+        RuntimePayload(
+            ability_name="npcink-cloud/site-knowledge-status",
+            contract_version="site_knowledge_status.v1",
+            input={
+                "contract_version": "site_knowledge_status.v1",
+                "post_ids": list(range(1, MAX_SITE_KNOWLEDGE_STATUS_POST_IDS + 2)),
+                "write_posture": "suggestion_only",
+            },
+        )
+
+
+def test_runtime_payload_keeps_generic_list_limit() -> None:
+    with pytest.raises(ValidationError, match="input contains too many items"):
+        RuntimePayload(
+            ability_name="npcink-abilities-toolkit/test",
+            input={"items": list(range(MAX_RUNTIME_LIST_ITEMS + 1))},
+        )
+
+
+def test_site_knowledge_status_keeps_other_list_limits() -> None:
+    with pytest.raises(ValidationError, match="input contains too many items"):
+        RuntimePayload(
+            ability_name="npcink-cloud/site-knowledge-status",
+            contract_version="site_knowledge_status.v1",
+            input={
+                "contract_version": "site_knowledge_status.v1",
+                "post_ids": [1],
+                "unexpected_items": list(range(MAX_RUNTIME_LIST_ITEMS + 1)),
+                "write_posture": "suggestion_only",
+            },
         )
 
 

@@ -1,5 +1,7 @@
 # Magick AI Root Harvest Inventory
 
+Status: historical migration inventory; not current workspace or repository authority.
+
 Date: 2026-06-24
 
 ## Purpose

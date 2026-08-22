@@ -1,5 +1,7 @@
 # M4 单人网页预览自动选路复盘（2026-07-25）
 
+Status: historical M4 implementation evidence; current M4 standards and live state are authoritative.
+
 状态：已完成，已合并。
 
 关联实现：

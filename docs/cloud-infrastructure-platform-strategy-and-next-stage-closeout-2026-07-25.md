@@ -1,5 +1,7 @@
 # 云基础设施、平台战略与下一阶段收尾 — 2026-07-25
 
+Status: historical strategy synthesis and handoff; not current procurement or production authority.
+
 ## 状态
 
 项目历史归纳、决策索引与执行交接记录。

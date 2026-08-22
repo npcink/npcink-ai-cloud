@@ -1,5 +1,7 @@
 # AI 开发阶段收口与生产就绪复盘（2026-08-02）
 
+Status: historical synthesis and operating handoff; not current release authority.
+
 状态：historical synthesis and operating handoff。
 
 观察区间：2026-07-28 至 2026-08-02；2026-08-03 按 current master 重新核对并纳入

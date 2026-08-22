@@ -80,6 +80,8 @@ function PortalSitesWorkspaceContent() {
   const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
+  const showManagementSiteSelector = visibleSites.length > 1
+    || (visibleSites.length === 1 && !selectedSiteId);
   const canRemoveSites = Boolean(
     session?.selected_context?.allowed_actions.includes('remove_sites')
   );
@@ -129,6 +131,14 @@ function PortalSitesWorkspaceContent() {
     && totalCapacity.active_count > totalCapacity.active_limit;
   const boundCapacityOverLimit = totalCapacity.bound_limit > 0
     && totalCapacity.bound_count > totalCapacity.bound_limit;
+  const activeCapacityExceededBy = activeCapacityOverLimit
+    ? totalCapacity.active_count - totalCapacity.active_limit
+    : 0;
+  const boundCapacityExceededBy = boundCapacityOverLimit
+    ? totalCapacity.bound_count - totalCapacity.bound_limit
+    : 0;
+  const boundCapacityFull = totalCapacity.bound_limit > 0
+    && totalCapacity.bound_count === totalCapacity.bound_limit;
   const pendingCapacity = pendingLifecycleSite?.capacity;
   const requiredReleaseCount = pendingLifecycleStatus === 'active'
     && pendingCapacity
@@ -400,32 +410,90 @@ function PortalSitesWorkspaceContent() {
               <PortalTag>{visibleSites.length} {t('common.site')}</PortalTag>
               <PortalTag tone={activeCapacityOverLimit ? 'warning' : 'success'}>
                 {t(
-                  'portal.sites.active_capacity',
-                  { used: String(totalCapacity.active_count), limit: String(totalCapacity.active_limit) },
-                  `Active ${totalCapacity.active_count}/${totalCapacity.active_limit}`
+                  activeCapacityOverLimit
+                    ? 'portal.sites.active_capacity_over'
+                    : 'portal.sites.active_capacity',
+                  {
+                    used: String(totalCapacity.active_count),
+                    limit: String(totalCapacity.active_limit),
+                    exceeded: String(activeCapacityExceededBy),
+                  },
+                  activeCapacityOverLimit
+                    ? `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit} · ${activeCapacityExceededBy} over`
+                    : `${totalCapacity.active_count} enabled sites · Plan limit ${totalCapacity.active_limit}`
                 )}
               </PortalTag>
-              <PortalTag tone={boundCapacityOverLimit ? 'warning' : 'info'}>
+              <PortalTag tone={boundCapacityOverLimit || boundCapacityFull ? 'warning' : 'info'}>
                 {t(
-                  'portal.sites.bound_capacity',
-                  { used: String(totalCapacity.bound_count), limit: String(totalCapacity.bound_limit) },
-                  `Bound ${totalCapacity.bound_count}/${totalCapacity.bound_limit}`
+                  boundCapacityOverLimit
+                    ? 'portal.sites.bound_capacity_over'
+                    : boundCapacityFull
+                      ? 'portal.sites.bound_capacity_full'
+                      : 'portal.sites.bound_capacity',
+                  {
+                    used: String(totalCapacity.bound_count),
+                    limit: String(totalCapacity.bound_limit),
+                    exceeded: String(boundCapacityExceededBy),
+                  },
+                  boundCapacityOverLimit
+                    ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · ${boundCapacityExceededBy} over`
+                    : boundCapacityFull
+                      ? `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit} · Full`
+                      : `${totalCapacity.bound_count} bound sites · Binding limit ${totalCapacity.bound_limit}`
                 )}
               </PortalTag>
             </div>
           </div>
-          <div className="w-full lg:max-w-sm">
-            <label htmlFor="portal-service-site-search" className="sr-only">
-              {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
-            </label>
-            <input
-              id="portal-service-site-search"
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
-              className="input"
-            />
+          <div className="grid w-full gap-3 sm:grid-cols-2 lg:max-w-3xl">
+            {showManagementSiteSelector ? (
+              <div>
+                <label
+                  htmlFor="portal-service-management-site"
+                  className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300"
+                >
+                  {t('portal.sites.management_site_label', {}, 'Current management site')}
+                </label>
+                <select
+                  id="portal-service-management-site"
+                  data-portal-sites="management-site-selector"
+                  className="input"
+                  value={selectedSiteId}
+                  onChange={(event) => void handleSelectSite(event.target.value)}
+                  disabled={Boolean(selectingSiteId)}
+                >
+                  {!selectedSiteId ? (
+                    <option value="" disabled>
+                      {t('portal.select_site_placeholder', {}, 'Select a site')}
+                    </option>
+                  ) : null}
+                  {visibleSites.map((site) => (
+                    <option key={site.site_id} value={site.site_id}>
+                      {getPortalSiteDisplayName(site)}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {t(
+                    'portal.sites.management_site_desc',
+                    {},
+                    'Switching changes the account scope shown by Account service, Package, Usage, and Tickets.'
+                  )}
+                </p>
+              </div>
+            ) : null}
+            <div className={showManagementSiteSelector ? '' : 'sm:col-start-2'}>
+              <label htmlFor="portal-service-site-search" className="sr-only">
+                {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
+              </label>
+              <input
+                id="portal-service-site-search"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
+                className="input"
+              />
+            </div>
           </div>
         </div>
 
@@ -481,7 +549,6 @@ function PortalSitesWorkspaceContent() {
                 <tr>
                   <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_site', {}, 'Site')}</th>
                   <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_status', {}, 'Connection')}</th>
-                  <th scope="col" className="px-3 py-3 font-medium">{t('portal.sites.table_context', {}, 'Context')}</th>
                   <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.sites.table_actions', {}, 'Actions')}</th>
                 </tr>
               </thead>
@@ -495,7 +562,7 @@ function PortalSitesWorkspaceContent() {
                         </span>
                         {site.site_id === selectedSiteId ? (
                           <PortalTag tone="info" className="shrink-0">
-                            {t('portal.current_site', {}, 'Site record')}
+                            {t('portal.sites.management_site_badge', {}, 'Current management site')}
                           </PortalTag>
                         ) : null}
                       </div>
@@ -516,25 +583,8 @@ function PortalSitesWorkspaceContent() {
                         className="normal-case tracking-normal"
                       />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-slate-600 dark:text-slate-300">
-                      {site.site_id === selectedSiteId
-                        ? t('portal.sites.current_context', {}, 'Current site')
-                        : t('portal.sites.available_context', {}, 'Available')}
-                    </td>
                     <td className="px-3 py-4">
                       <div className="flex flex-wrap justify-end gap-2">
-                        {site.site_id !== selectedSiteId ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleSelectSite(site.site_id)}
-                            className="btn btn-secondary btn-sm"
-                            disabled={Boolean(selectingSiteId)}
-                          >
-                            {selectingSiteId === site.site_id
-                              ? t('common.loading', {}, 'Loading...')
-                              : t('portal.select_site_action', {}, 'Select site')}
-                          </button>
-                        ) : null}
                         <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-primary btn-sm">
                           {t('portal.site_record', {}, 'Open site')}
                         </Link>
@@ -619,7 +669,7 @@ function PortalSitesWorkspaceContent() {
                     />
                     {site.site_id === selectedSiteId ? (
                       <PortalTag tone="info">
-                        {t('portal.current_site', {}, 'Current site')}
+                        {t('portal.sites.management_site_badge', {}, 'Current management site')}
                       </PortalTag>
                     ) : null}
                   </div>
@@ -629,6 +679,9 @@ function PortalSitesWorkspaceContent() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
+                    {t('portal.site_record', {}, 'Site record')}
+                  </Link>
                   {site.allowed_actions?.includes('provision_sites')
                     && site.status !== 'suspended'
                     && site.status !== 'archived' ? (
@@ -642,21 +695,6 @@ function PortalSitesWorkspaceContent() {
                         : t('portal.activate_site_action', {}, 'Activate')}
                     </button>
                   ) : null}
-                  {site.site_id !== selectedSiteId ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleSelectSite(site.site_id)}
-                      className="btn btn-secondary btn-sm"
-                      disabled={Boolean(selectingSiteId)}
-                    >
-                      {selectingSiteId === site.site_id
-                        ? t('common.loading', {}, 'Loading...')
-                        : t('portal.select_site_action', {}, 'Select site')}
-                    </button>
-                  ) : null}
-                  <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
-                    {t('portal.site_record', {}, 'Site record')}
-                  </Link>
                   {canRemoveSites
                     && site.site_id === selectedSiteId
                     && site.status !== 'suspended' ? (
