@@ -177,8 +177,8 @@ Core 必须保持治理内核定位，不变成产品工作台。
 
 - `docs/nightly-site-inspection-morning-brief-v1.md`
 - `docs/nightly-inspection-cloud-core-handoff-v1.md`
-- `docs/nightly-inspection-stage-closeout-2026-06-16.md`
-- `docs/live-site-trial-closeout-npcink-local-2026-06-21.md`
+- `docs/history/trials/2026/nightly-inspection-stage-closeout-2026-06-16.md`
+- `docs/history/trials/2026/live-site-trial-closeout-npcink-local-2026-06-21.md`
 
 ### Toolbox 侧
 
@@ -346,9 +346,9 @@ Cloud inspection run
 
 1. `docs/nightly-site-inspection-morning-brief-v1.md`
 2. `docs/nightly-inspection-cloud-core-handoff-v1.md`
-3. `docs/nightly-inspection-stage-closeout-2026-06-16.md`
-4. `docs/live-site-trial-closeout-npcink-local-2026-06-21.md`
-5. `docs/real-site-trial-go-no-go-npcink-trial-2026-06-20.md`
+3. `docs/history/trials/2026/nightly-inspection-stage-closeout-2026-06-16.md`
+4. `docs/history/trials/2026/live-site-trial-closeout-npcink-local-2026-06-21.md`
+5. `docs/history/trials/2026/real-site-trial-go-no-go-npcink-trial-2026-06-20.md`
 
 接手原则：
 
