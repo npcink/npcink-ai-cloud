@@ -1,5 +1,7 @@
 # Live Site Preflight Package: wp.local / npcink.local / dbd.local
 
+Status: historical preflight evidence; rerun current checks before selecting a live-site target.
+
 Date: 2026-06-20
 
 ## Purpose

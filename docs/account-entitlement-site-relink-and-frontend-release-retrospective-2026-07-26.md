@@ -1,5 +1,7 @@
 # Account, Entitlement, Site Relink, And Frontend Release Retrospective — 2026-07-26
 
+Status: historical release-readiness evidence; not current release or production authority.
+
 ## Status
 
 Source implementation and public-frontend code closeout are merged into

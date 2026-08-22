@@ -1,5 +1,7 @@
 # 豆包搜索与外部服务凭据入口收口及开发复盘 — 2026-07-29
 
+Status: historical development evidence; not current Provider or production authority.
+
 状态：开发阶段已收口，代码已合并到 `master`，合并后的开发预览已在 M4
 接受。生产未变更，真实豆包账号连接和搜索质量仍属于运营/外部验收。
 

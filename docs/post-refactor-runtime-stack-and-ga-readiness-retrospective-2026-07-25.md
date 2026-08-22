@@ -1,5 +1,7 @@
 # Post-Refactor Runtime Stack And GA-Readiness Retrospective — 2026-07-25
 
+Status: historical synthesis and next-stage handoff; not current GA or production authority.
+
 ## Status
 
 Project-history and next-stage closeout.

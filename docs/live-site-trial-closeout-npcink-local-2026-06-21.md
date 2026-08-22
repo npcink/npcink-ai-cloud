@@ -1,5 +1,7 @@
 # Live Site Trial Closeout: npcink.local
 
+Status: historical trial evidence; not current runtime or production authority.
+
 Date: 2026-06-21
 
 ## Summary

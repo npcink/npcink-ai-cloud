@@ -1,5 +1,7 @@
 # Post-P5 Final Integration And Production Validation Closeout — 2026-07-22
 
+Status: historical refactor and production-validation closeout; not current GA authority.
+
 ## Status
 
 The WordPress-first P0-P5 refactor is engineering-complete. The two previously

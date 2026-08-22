@@ -1,5 +1,7 @@
 # Hosted GPT-5.5 WordPress Short Text 闭环收口与开发复盘 — 2026-07-28
 
+Status: historical milestone evidence; not current Provider, M4, or production authority.
+
 状态：目标闭环已完成；PR `#325` 已合并；对应 `master` revision
 `318c2c4bdfa28a6f8d329795e6d9003efeb96b4f` 已完成 M4 accepted promotion。
 
