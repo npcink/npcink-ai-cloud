@@ -11,9 +11,9 @@ payment flow, Cloud publishing flow, or Cloud-side WordPress control plane.
 
 Use this package only after reviewing these local rehearsal records:
 
-- `docs/external-trial-candidate-preflight-wp-local-2026-06-19.md`
-- `docs/external-trial-record-wp-trial-2026-06-19.md`
-- `docs/external-trial-site-knowledge-wp-trial-2026-06-20.md`
+- `docs/history/trials/2026/external-trial-candidate-preflight-wp-local-2026-06-19.md`
+- `docs/history/trials/2026/external-trial-record-wp-trial-2026-06-19.md`
+- `docs/history/trials/2026/external-trial-site-knowledge-wp-trial-2026-06-20.md`
 
 The latest baseline proved:
 

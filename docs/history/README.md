@@ -16,6 +16,8 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
   and development retrospectives that do not authorize future deployment.
 - [Repository hygiene evidence](repository-hygiene/2026/) - dated cleanup,
   worktree consolidation, preservation, and rollback records from 2026.
+- [Trial and rehearsal evidence](trials/2026/) - dated external-trial,
+  live-site, Nightly Inspection, and real-site rehearsal records from 2026.
 
 Historical records preserve the revision, environment, commands, decisions,
 and limitations observed at their stated date. Before acting, return to the

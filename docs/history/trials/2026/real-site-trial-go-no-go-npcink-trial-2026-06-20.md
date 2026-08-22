@@ -28,14 +28,14 @@ owner.
 
 The `npcink-trial` path now has a staged evidence chain:
 
-- `c3b042b` - `docs/real-site-trial-preflight-npcink-trial-2026-06-20.md`
-- `0921d55` - `docs/real-site-trial-setup-npcink-trial-2026-06-20.md`
-- `ab5528b` - `docs/real-site-trial-runtime-smoke-npcink-trial-2026-06-20.md`
-- `439c566` - `docs/real-site-trial-site-knowledge-npcink-trial-2026-06-20.md`
+- `c3b042b` - `docs/history/trials/2026/real-site-trial-preflight-npcink-trial-2026-06-20.md`
+- `0921d55` - `docs/history/trials/2026/real-site-trial-setup-npcink-trial-2026-06-20.md`
+- `ab5528b` - `docs/history/trials/2026/real-site-trial-runtime-smoke-npcink-trial-2026-06-20.md`
+- `439c566` - `docs/history/trials/2026/real-site-trial-site-knowledge-npcink-trial-2026-06-20.md`
 
 Supporting package:
 
-- `7cfecb0` - `docs/real-site-trial-package-2026-06-20.md`
+- `7cfecb0` - `docs/history/trials/2026/real-site-trial-package-2026-06-20.md`
 
 ## Boundary Result
 
