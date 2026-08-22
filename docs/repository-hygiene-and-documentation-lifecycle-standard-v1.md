@@ -230,4 +230,4 @@ REPOSITORY_HYGIENE_RECEIPT
 ```
 
 The first complete application is recorded in
-[Repository Hygiene Cleanup Closeout and Development Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md).
+[Repository Hygiene Cleanup Closeout and Development Retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md).

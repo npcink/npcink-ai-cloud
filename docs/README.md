@@ -82,8 +82,8 @@ deleting the old decision history.
 - [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
 - [Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md)
-- [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
-- [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
+- [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](history/repository-hygiene/2026/repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
+- [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](history/repository-hygiene/2026/repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
 - [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
@@ -95,7 +95,7 @@ deleting the old decision history.
 - [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 - [Systematic Remediation Delivery Standard](systematic-remediation-delivery-standard-v1.md)
 - [Systematic Remediation Closeout and Retrospective — 2026-08-14](systematic-remediation-closeout-and-retrospective-2026-08-14.md) — dated evidence for the staged remediation sequence, validation chain, runtime observations, and development lessons
-- [Repository Hygiene Cleanup Closeout and Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
+- [Repository Hygiene Cleanup Closeout and Retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
 - [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
@@ -259,7 +259,7 @@ a deletion quota.
 Apply the
 [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 to every batch in this queue. The
-[first cleanup retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
+[first cleanup retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
 records the evidence and corrections that produced that standard.
 
 Review in bounded batches:
