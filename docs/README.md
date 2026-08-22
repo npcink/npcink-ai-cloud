@@ -64,6 +64,7 @@ deleting the old decision history.
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Single-Operator AI Development, M4 Validation, and Production Release Playbook](single-operator-ai-development-and-release-playbook-v1.md)
 - [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
+- [Operator-Initiated Certificate Readiness Refresh](decisions/050-operator-initiated-certificate-readiness-refresh.md)
 - [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
 - [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)

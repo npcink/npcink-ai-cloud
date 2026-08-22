@@ -11,6 +11,7 @@ on:
         options:
           - "disk-report"
           - "certificate-readiness"
+          - "certificate-readiness-refresh"
           - "ownership-binding-diagnose"
           - "ownership-binding-release"
           - "ownership-inventory"
@@ -21,6 +22,11 @@ on:
         default: "4"
       safe_prune_confirmation:
         description: "For safe-prune only, type: Prune production images and old releases."
+        required: false
+        default: ""
+        type: string
+      certificate_readiness_refresh_confirmation:
+        description: "For certificate-readiness-refresh only, type: Refresh production certificate readiness evidence."
         required: false
         default: ""
         type: string
@@ -190,6 +196,7 @@ jobs:
           MAINTENANCE_ACTION: ${{ inputs.action }}
           RELEASE_RETENTION_COUNT: ${{ inputs.release_retention_count }}
           SAFE_PRUNE_CONFIRMATION: ${{ inputs.safe_prune_confirmation }}
+          CERTIFICATE_READINESS_REFRESH_CONFIRMATION: ${{ inputs.certificate_readiness_refresh_confirmation }}
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
@@ -198,7 +205,7 @@ jobs:
           set -euo pipefail
           test "${PROD_SSH_USER}" = "root"
           case "${MAINTENANCE_ACTION}" in
-            disk-report|certificate-readiness|safe-prune) ;;
+            disk-report|certificate-readiness|certificate-readiness-refresh|safe-prune) ;;
             *)
               echo "[fail] Unknown maintenance action: ${MAINTENANCE_ACTION}" >&2
               exit 1
@@ -207,6 +214,12 @@ jobs:
           if [ "${MAINTENANCE_ACTION}" = "safe-prune" ] && \
             [ "${SAFE_PRUNE_CONFIRMATION}" != "Prune production images and old releases." ]; then
             echo "[fail] safe-prune requires the exact human confirmation phrase." >&2
+            exit 1
+          fi
+          if [ "${MAINTENANCE_ACTION}" = "certificate-readiness-refresh" ] && \
+            [ "${CERTIFICATE_READINESS_REFRESH_CONFIRMATION}" != \
+              "Refresh production certificate readiness evidence." ]; then
+            echo "[fail] certificate-readiness-refresh requires the exact human confirmation phrase." >&2
             exit 1
           fi
           case "${RELEASE_RETENTION_COUNT}" in
@@ -348,6 +361,54 @@ jobs:
           PY
           }
 
+          certificate_readiness_refresh() {
+            local candidate_release=""
+            local readiness_script=""
+            if [ "$(id -u)" != "0" ] || [ ! -x "${release_tool_python}" ] || \
+              ! "${release_tool_python}" -c \
+                'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+              echo "[fail] certificate readiness refresh requires root and /usr/bin/python3.11 or newer." >&2
+              return 1
+            fi
+            candidate_release="$(readlink -f -- "${remote_dir}/current" 2>/dev/null || true)"
+            if [[ "${candidate_release}" != "${remote_dir}"/release-* ]] || \
+              [ "$(dirname -- "${candidate_release}")" != "${remote_dir}" ] || \
+              [[ ! "$(basename -- "${candidate_release}")" =~ ^release-[A-Za-z0-9._-]+$ ]]; then
+              echo "[fail] certificate readiness refresh requires an exact direct managed current release." >&2
+              return 1
+            fi
+            readiness_script="${candidate_release}/deploy/certificate-renewal-readiness.sh"
+            if [ ! -f "${readiness_script}" ] || [ -L "${readiness_script}" ] || \
+              [ ! -x "${readiness_script}" ]; then
+              echo "[fail] certificate readiness generator is missing or unsafe in the current release." >&2
+              return 1
+            fi
+            if ! mkdir -m 0700 -- "${remote_dir}/.deploy-lock"; then
+              echo "[fail] Production deploy or another mutating operation holds the lock." >&2
+              return 1
+            fi
+            maintenance_lock_held=1
+            if [ -L "${remote_dir}/.deploy-lock" ] || \
+              [ "$(stat -c '%u:%g:%a' -- "${remote_dir}/.deploy-lock")" != "0:0:700" ]; then
+              echo "[fail] certificate readiness refresh lock must be a root-owned mode-0700 directory." >&2
+              return 1
+            fi
+            current_release="$(readlink -f -- "${remote_dir}/current" 2>/dev/null || true)"
+            if [ "${current_release}" != "${candidate_release}" ]; then
+              echo "[fail] current release changed while acquiring the certificate readiness refresh lock." >&2
+              return 1
+            fi
+            NPCINK_CLOUD_RELEASE_TOOL_PYTHON="${release_tool_python}" \
+              "${readiness_script}" generate \
+              --domain cloud.npc.ink \
+              --certificate-path /etc/letsencrypt/live/cloud.npc.ink/fullchain.pem \
+              --owner certbot \
+              --timer certbot-renew.timer \
+              --deploy-hook-path /etc/letsencrypt/renewal-hooks/deploy/reload-nginx \
+              --evidence-path /var/lib/npcink-ai-cloud/edge/certificate-renewal-readiness.json
+            certificate_readiness
+          }
+
           prune_old_releases() {
             if [ ! -d "${remote_dir}" ]; then
               echo "[warn] Remote directory missing: ${remote_dir}" >&2
@@ -376,6 +437,9 @@ jobs:
           disk_report
           if [ "${action}" = "certificate-readiness" ]; then
             certificate_readiness
+          fi
+          if [ "${action}" = "certificate-readiness-refresh" ]; then
+            certificate_readiness_refresh
           fi
           if [ "${action}" = "safe-prune" ]; then
             [ -d "${remote_dir}" ] || {

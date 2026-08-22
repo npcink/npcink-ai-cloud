@@ -1276,12 +1276,18 @@ require_marker ".github/workflows/production-maintenance.yml" "group: production
 require_marker ".github/workflows/production-maintenance.yml" "permissions: {}"
 require_marker ".github/workflows/production-maintenance.yml" "safe_prune_confirmation:"
 require_marker ".github/workflows/production-maintenance.yml" "Prune production images and old releases."
+require_marker ".github/workflows/production-maintenance.yml" "certificate_readiness_refresh_confirmation:"
+require_marker ".github/workflows/production-maintenance.yml" "Refresh production certificate readiness evidence."
+require_marker ".github/workflows/production-maintenance.yml" '"${readiness_script}" generate'
+require_marker ".github/workflows/production-maintenance.yml" 'current release changed while acquiring the certificate readiness refresh lock'
 require_marker ".github/workflows/production-maintenance.yml" '[[ ! "${PROD_REMOTE_DIR}" =~ ^/[A-Za-z0-9._/-]+$ ]]'
 require_marker ".github/workflows/production-maintenance.yml" 'remote_shell_arg() {'
 require_marker ".github/workflows/production-maintenance.yml" 'ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}"'
 reject_marker ".github/workflows/production-maintenance.yml" '"${ssh_target}" bash -s --'
 require_marker ".github/workflows/production-maintenance.yml" 'mkdir -m 0700 -- "${remote_dir}/.deploy-lock"'
 require_marker ".github/workflows/production-maintenance.yml" 'rmdir -- "${remote_dir}/.deploy-lock"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '`certificate-readiness-refresh`'
+require_marker "docs/decisions/050-operator-initiated-certificate-readiness-refresh.md" '`Deploy Production` remains read-only at this gate'
 for ssh_helper in \
 	deploy/bind-domain-to-ssh-host.sh \
 	deploy/deploy-static-terms-to-ssh-host.sh \
