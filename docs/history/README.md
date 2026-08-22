@@ -12,6 +12,8 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
   acceptance records, grouped by delivery phase.
 - [Portal evidence](portal/2026/) - dated Portal implementation histories,
   closeouts, and workspace retrospectives.
+- [Production evidence](production/2026/) - dated release audits, closeouts,
+  and development retrospectives that do not authorize future deployment.
 - [Repository hygiene evidence](repository-hygiene/2026/) - dated cleanup,
   worktree consolidation, preservation, and rollback records from 2026.
 

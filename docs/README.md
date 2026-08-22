@@ -182,7 +182,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Production Release Optimization and Formal Smoke Handoff](production-release-optimization-and-formal-smoke-handoff-v1.md)
-- [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
+- [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](history/production/2026/production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
   — dated evidence for the 2026-08-08 handoff ledger, bounded production
   promotion, Addon release, consumer paths, and review corrections; not future
   production authorization
@@ -198,7 +198,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
   — dated one-operator SiliconFlow lifecycle evidence, cleanup receipt,
   alt-text diagnosis, timing lesson, and remaining first-install blockers
-- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
+- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](history/production/2026/production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
   — dated deployment/recovery retrospective plus one-operator text adoption,
   autosave recovery, quota/ledger, and cleanup evidence
 - [Frontend Public/Portal Release Checklist](frontend-public-portal-release-checklist-v1.md)

@@ -516,6 +516,6 @@ architecture cannot resolve economically.
 - [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
 - [Cloud Production Release Policy v1](cloud-production-release-policy-v1.md)
-- [Production and Master Delta Audit](production-master-delta-audit-2026-07-25.md)
+- [Production and Master Delta Audit](history/production/2026/production-master-delta-audit-2026-07-25.md)
 - [Post-Refactor Runtime Stack and GA-Readiness Retrospective](post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
 - [Editor-Assist Quality Flywheel Closeout](editor-assist-quality-flywheel-closeout-and-development-retrospective-2026-07-26.md)

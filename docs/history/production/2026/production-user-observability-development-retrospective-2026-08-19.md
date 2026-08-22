@@ -1,5 +1,9 @@
 # 正式用户观测方案开发复盘（2026-08-19）
 
+Status: time-bounded production historical evidence; not current release authorization.
+
+Current authority: [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md).
+
 ## 原定目标
 
 - 本地阶段先消除大部分问题；

@@ -1,6 +1,10 @@
 # Production Release Historical Issues Closeout and Retrospective — 2026-08-14
 
-Status: time-bounded closeout and retrospective evidence; not current
+Status: time-bounded production historical evidence; not current release authorization.
+
+Current authority: [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md).
+
+Original status: time-bounded closeout and retrospective evidence; not current
 production authorization.
 
 ## Scope and Authority
@@ -13,7 +17,7 @@ the work.
 
 Future work must recheck current source, protected checks, release policy, and
 runtime state. The active method is
-[Historical Issue Closure and Release Evidence Standard v1](historical-issue-closure-and-release-evidence-standard-v1.md).
+[Historical Issue Closure and Release Evidence Standard v1](../../../historical-issue-closure-and-release-evidence-standard-v1.md).
 
 ## Original Goal
 
@@ -161,7 +165,7 @@ Final state: frozen historical ledger closed as of 2026-08-14; this receipt is n
 
 ## Related Records
 
-- [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
-- [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
-- [Cloud Site Capacity Production Release Retrospective — 2026-08-08](cloud-site-capacity-production-release-retrospective-2026-08-08.md)
-- [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
+- [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
+- [Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)
+- [Cloud Site Capacity Production Release Retrospective — 2026-08-08](../../../cloud-site-capacity-production-release-retrospective-2026-08-08.md)
+- [Repository Hygiene and Documentation Lifecycle Standard](../../../repository-hygiene-and-documentation-lifecycle-standard-v1.md)

@@ -433,7 +433,7 @@ accepted promotion 中得到验证。它只证明当前本地媒体消费者的 
 - [Editor Assist Quality Flywheel Closeout](editor-assist-quality-flywheel-closeout-and-development-retrospective-2026-07-26.md)
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
-- [Production Release Timing and Admin Freeze Retrospective](production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
+- [Production Release Timing and Admin Freeze Retrospective](history/production/2026/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
 - [Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Release queue Issue #406](https://github.com/npcink/npcink-ai-cloud/issues/406)

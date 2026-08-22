@@ -1,15 +1,19 @@
 # 正式生产发布时机与后台设置页冻结复盘 — 2026-07-28
 
-状态：阶段决策与开发经验已固化，正式生产发布仍须通过现行门禁。
+Status: time-bounded production historical evidence; not current release authorization.
+
+Current authority: [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md).
+
+原始状态：阶段决策与开发经验已固化，正式生产发布仍须通过现行门禁。
 
 范围：归纳公开前台、账户与站点连接规则、Cloud Admin 设置页收口后，
 关于“现在是否值得正式生产发布、后台设置页还能否继续优化”的判断过程、
 证据边界和下一阶段做法。
 
 本文是带日期的历史记录，不替代
-[Cloud Production Release Policy](cloud-production-release-policy-v1.md)、
-[Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md)、
-[M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
+[Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)、
+[Cloud Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)、
+[M4 Preview AI Development Standard](../../../m4-preview-ai-development-standard-v1.md)
 或生产操作员审批，也不授权生产部署。
 
 ## 1. 结论
@@ -49,7 +53,7 @@
 
 ### 2.2 Cloud Admin 已完成一轮系统治理
 
-[Cloud Admin UI 开发复盘](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
+[Cloud Admin UI 开发复盘](../../../history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
 记录了从 PR `#295` 到 PR `#315` 的信息架构、共享工作台、凭据控件、
 结构门禁和视觉证据。PR `#315` 的合并版本 `fbb667a3` 曾在 M4 上达到
 `acceptance_state=accepted`。
@@ -65,7 +69,7 @@
 
 ### 2.3 发布规范已经给出明确硬门槛
 
-现行 [Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md) 明确区分：
+现行 [Cloud Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md) 明确区分：
 
 - repository ready；
 - env required；
@@ -289,11 +293,11 @@ PR `#317` 对 Vector Settings 工作台的收口属于这一类有边界的整�
 
 ## 10. 参考
 
-- [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
-- [Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md)
-- [Development Validation Operating Model](development-validation-operating-model-v1.md)
-- [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
+- [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
+- [Cloud Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)
+- [Development Validation Operating Model](../../../development-validation-operating-model-v1.md)
+- [M4 Preview AI Development Standard](../../../m4-preview-ai-development-standard-v1.md)
 - [Production / Master 差异审查](production-master-delta-audit-2026-07-25.md)
-- [Cloud Admin UI 开发复盘](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
-- [账户、权益、站点重连与前台发布复盘](account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
-- [公开前台发布代码收口](public-frontend-release-code-closeout-2026-07-26.md)
+- [Cloud Admin UI 开发复盘](../../../history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [账户、权益、站点重连与前台发布复盘](../../../account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
+- [公开前台发布代码收口](../../../public-frontend-release-code-closeout-2026-07-26.md)

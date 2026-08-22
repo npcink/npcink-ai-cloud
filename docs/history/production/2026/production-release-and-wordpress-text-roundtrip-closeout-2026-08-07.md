@@ -1,6 +1,10 @@
 # Production Release and WordPress Text Round-Trip Closeout — 2026-08-07
 
-Status: time-bounded production and single-operator validation evidence.
+Status: time-bounded production historical evidence; not current release authorization.
+
+Current authority: [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md).
+
+Original status: time-bounded production and single-operator validation evidence.
 
 Purpose: preserve the final production release identity, deployment and
 recovery lessons, and the first completed single-operator WordPress text
@@ -9,7 +13,7 @@ adoption loop after first-install finalization.
 This record does not authorize a future deployment, Provider spend, external
 user access, GA, media expansion, bulk generation, or a commercial claim.
 Current code, protected policy, production state, and the active
-[Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md)
+[Production WordPress Round-Trip Validation Runbook](../../../production-wordpress-roundtrip-validation-runbook-v1.md)
 take precedence over this dated evidence.
 
 ## 1. Scope and boundary
@@ -294,8 +298,8 @@ blocking defect or an intentional release.
 
 ## 14. Related authority and evidence
 
-- [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
-- [Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md)
-- [Hosted WordPress Text Generation Closed-Loop Validation Standard](hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
-- [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
-- [Issue #406 Controlled Production Validation Preparation Retrospective — 2026-08-04](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
+- [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
+- [Production WordPress Round-Trip Validation Runbook](../../../production-wordpress-roundtrip-validation-runbook-v1.md)
+- [Hosted WordPress Text Generation Closed-Loop Validation Standard](../../../hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
+- [Production WordPress Image Round-Trip Evidence — 2026-08-05](../../../production-wordpress-image-roundtrip-evidence-2026-08-05.md)
+- [Issue #406 Controlled Production Validation Preparation Retrospective — 2026-08-04](../../../issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
