@@ -1,14 +1,18 @@
 # Production / Master 差异审查 — 2026-07-25
 
-## 状态
+Status: time-bounded production historical evidence; not current release authorization.
+
+Current authority: [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md).
+
+## 原始状态
 
 只读生产发布差异审查，结论为 **HOLD**。
 
 本记录回答“当前 `master` 相对 `production` 改了什么、能否直接发布、还缺
 什么证据、如何发布和回滚”。它不批准生产发布、不证明线上主机实际运行版本，
 也不替代
-[Cloud Production Release Policy](cloud-production-release-policy-v1.md)、
-[Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md)、
+[Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)、
+[Cloud Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)、
 受保护分支、正式发布包或发布操作员审批。
 
 审查过程没有连接生产主机、RDS、Edge、M4 或 WordPress，没有修改数据库、
@@ -371,12 +375,12 @@ CI pytest 分片、PR publisher、Provider 调用账本和 Python CVE daily watc
 
 ## 相关权威记录
 
-- [Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md)
-- [Post-Refactor Runtime Stack And GA-Readiness Retrospective](post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
-- [Python 3.14 CVE Upstream Checkpoint](python-3-14-cve-upstream-checkpoint-2026-07-24.md)
-- [Python 3.14.6 Controlled Production Validation Risk Decision](python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md)
-- [Public Frontend Development Retrospective And Standard](public-frontend-development-retrospective-and-standard-2026-07-25.md)
-- [Provider Three-Item Closeout And Development Retrospective](provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
-- [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
-- [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
-- [Cloud Release Checklist](../deploy/RELEASE_CHECKLIST.md)
+- [Post-P5 Final Integration And Production Validation Closeout](../../../post-p5-final-integration-and-production-validation-closeout-2026-07-22.md)
+- [Post-Refactor Runtime Stack And GA-Readiness Retrospective](../../../post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
+- [Python 3.14 CVE Upstream Checkpoint](../../../python-3-14-cve-upstream-checkpoint-2026-07-24.md)
+- [Python 3.14.6 Controlled Production Validation Risk Decision](../../../python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md)
+- [Public Frontend Development Retrospective And Standard](../../../public-frontend-development-retrospective-and-standard-2026-07-25.md)
+- [Provider Three-Item Closeout And Development Retrospective](../../../provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
+- [M4 Preview AI Development Standard](../../../m4-preview-ai-development-standard-v1.md)
+- [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
+- [Cloud Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)
