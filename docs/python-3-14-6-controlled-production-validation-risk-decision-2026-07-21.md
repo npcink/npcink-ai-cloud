@@ -1,5 +1,7 @@
 # Python 3.14.6 Controlled Production Validation Risk Decision — 2026-07-21
 
+Status: expired historical production-validation exception; not current deployment authority.
+
 > Status: Accepted for controlled production validation only
 >
 > Owner: Muze

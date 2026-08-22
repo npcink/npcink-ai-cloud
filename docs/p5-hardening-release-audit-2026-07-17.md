@@ -1,5 +1,7 @@
 # P5 Hardening And Release Audit — 2026-07-17
 
+Status: historical release audit evidence; not current release or production approval.
+
 ## Status
 
 P5-A audit complete; global P5 release closure incomplete.

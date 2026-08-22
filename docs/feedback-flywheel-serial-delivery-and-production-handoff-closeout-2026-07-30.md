@@ -1,5 +1,7 @@
 # 反馈数据飞轮、串行交付与生产交接阶段复盘 — 2026-07-30
 
+Status: historical closeout and production handoff; not current deployment authority.
+
 状态：当前开发阶段已按受保护合并、clean-master M4 acceptance 和双释放完成
 收口；Issue `#406` 是下一步受控生产验证准备的唯一 handoff。生产部署、
 24 小时观察和 GA 均未由本文宣告完成。

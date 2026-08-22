@@ -1,5 +1,7 @@
 # 运行诊断信息密度优化收口与开发复盘 — 2026-07-31
 
+Status: historical implementation evidence; current Admin standards remain authoritative.
+
 状态：应用源码已合并并包含在 M4 accepted `master`；PC 管理员路径已完成
 认证浏览器验证；本文与配套 Admin UI 标准修订通过独立治理变更交付。
 

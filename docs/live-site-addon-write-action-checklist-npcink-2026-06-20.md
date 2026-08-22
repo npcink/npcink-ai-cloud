@@ -1,5 +1,7 @@
 # Live Site Addon Write Action Checklist: npcink.local
 
+Status: historical trial checklist; not current WordPress write or operation authority.
+
 Date: 2026-06-20
 
 ## Purpose

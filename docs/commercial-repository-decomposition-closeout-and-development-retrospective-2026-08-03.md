@@ -1,5 +1,7 @@
 # CommercialRepository 拆分收口与开发复盘 — 2026-08-03
 
+Status: historical closeout and engineering synthesis; not authorization for further decomposition.
+
 状态：historical closeout and engineering synthesis
 
 目的：记录 CommercialRepository 渐进拆分的实际结果、有效经验、低效来源、停止决策和后续

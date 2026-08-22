@@ -1,5 +1,7 @@
 # Nightly Inspection wp/npcink Trial Record - 2026-06-17
 
+Status: historical trial evidence; not current site, runtime, or operation authority.
+
 ## Scope
 
 - Source sites:

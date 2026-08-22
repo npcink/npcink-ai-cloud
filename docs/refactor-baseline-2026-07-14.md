@@ -1,5 +1,7 @@
 # Npcink AI Cloud Refactor Baseline — 2026-07-14
 
+Status: historical pre-refactor baseline; not current performance or production evidence.
+
 ## Status
 
 Pre-refactor local baseline; not a production benchmark.
