@@ -491,7 +491,7 @@ Delivery:
 - `README.md` — current identity contract.
 - `docs/decisions/016-fail-closed-portal-admin-service-boundaries.md`.
 - `docs/decisions/031-principal-owned-portal-site-authorization.md`.
-- `docs/portal-auth-verification-closeout-2026-07-08.md`.
+- `docs/history/portal/2026/portal-auth-verification-closeout-2026-07-08.md`.
 - `docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md`.
 - `docs/cloud-payment-entitlement-v1.md`.
 - `docs/payment-gateway-contract-v1.md`.

@@ -1,6 +1,10 @@
 # Cloud Account and Portal Stage Closeout Summary - 2026-06-29
 
-Status: stage closeout summary.
+Status: time-bounded Portal historical evidence; not current Portal authority.
+
+Current authority: [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+
+Original status: stage closeout summary.
 
 Purpose: summarize the recent account, Portal, service settings, site
 connection, and article-audio decisions so future operators and AI agents can

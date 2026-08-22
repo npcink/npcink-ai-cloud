@@ -1,5 +1,9 @@
 # Portal Customer Surface Simplification History
 
+Status: time-bounded Portal historical evidence; not current Portal authority.
+
+Current authority: [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+
 Date: 2026-07-04
 
 ## Purpose

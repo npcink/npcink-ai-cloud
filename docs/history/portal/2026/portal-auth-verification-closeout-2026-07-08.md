@@ -1,6 +1,10 @@
 # Portal Auth Verification Closeout - 2026-07-08
 
-Status: accepted.
+Status: time-bounded Portal historical evidence; not current Portal authority.
+
+Current authority: [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+
+Original status: accepted.
 
 Scope: Npcink AI Cloud Portal email-code registration and login.
 

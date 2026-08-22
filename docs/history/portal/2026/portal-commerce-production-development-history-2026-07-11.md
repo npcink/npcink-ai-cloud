@@ -1,6 +1,10 @@
 # Portal 商业化与生产收口开发历史
 
-状态：截至 2026-07-11 的阶段总结
+Status: time-bounded Portal historical evidence; not current Portal authority.
+
+Current authority: [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+
+原始状态：截至 2026-07-11 的阶段总结
 
 范围：Portal 商业化、后台信息架构、身份授权、邮件与密钥、订单生命周期、生产发布与历史兼容清理
 
@@ -318,16 +322,16 @@ Portal 页面按用户任务分工：
 
 ## 15. 参考文档
 
-- [客户试用与商业套餐策略](customer-trial-commercial-package-policy-v1.md)
-- [订阅商业验收记录](subscription-commerce-acceptance-2026-07-11.md)
-- [AI 积分扣费契约](ai-credit-charge-contract-v1.md)
+- [客户试用与商业套餐策略](../../../customer-trial-commercial-package-policy-v1.md)
+- [订阅商业验收记录](../../../subscription-commerce-acceptance-2026-07-11.md)
+- [AI 积分扣费契约](../../../ai-credit-charge-contract-v1.md)
 - [Portal 客户工作区演进](portal-customer-workspace-evolution-2026-07-10.md)
-- [后台客户页面收口历史](history/admin/2026/records/admin-customer-surface-consolidation-history-2026-06-30.md)
+- [后台客户页面收口历史](../../../history/admin/2026/records/admin-customer-surface-consolidation-history-2026-06-30.md)
 - [Portal 邮件验证收口](portal-auth-verification-closeout-2026-07-08.md)
-- [历史兼容债务清理](pre-release-legacy-debt-and-development-history-2026-07-10.md)
-- [未使用能力审计](unused-capability-audit-2026-07-11.md)
-- [PC 上线准备](pc-launch-readiness-2026-07-10.md)
-- [发布候选记录](release-candidate-2026-07-10.md)
-- [生产备份恢复演练](production-backup-restore-drill-2026-07-11.md)
-- [生产发布策略](cloud-production-release-policy-v1.md)
-- [Cloud 内容生成边界](cloud-content-generation-boundary-v1.md)
+- [历史兼容债务清理](../../../pre-release-legacy-debt-and-development-history-2026-07-10.md)
+- [未使用能力审计](../../../unused-capability-audit-2026-07-11.md)
+- [PC 上线准备](../../../pc-launch-readiness-2026-07-10.md)
+- [发布候选记录](../../../release-candidate-2026-07-10.md)
+- [生产备份恢复演练](../../../production-backup-restore-drill-2026-07-11.md)
+- [生产发布策略](../../../cloud-production-release-policy-v1.md)
+- [Cloud 内容生成边界](../../../cloud-content-generation-boundary-v1.md)

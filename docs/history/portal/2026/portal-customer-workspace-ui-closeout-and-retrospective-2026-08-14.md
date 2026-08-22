@@ -1,6 +1,10 @@
 # Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15
 
-Status: dated merged-baseline and follow-up candidate evidence.
+Status: time-bounded Portal historical evidence; not current Portal authority.
+
+Current authority: [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+
+Original status: dated merged-baseline and follow-up candidate evidence.
 
 This record summarizes the Portal PC interface improvement started on 2026-08-14
 and delivered through four protected pull requests on 2026-08-15. It is evidence
@@ -9,7 +13,7 @@ below. It is not production deployment evidence, external customer acceptance,
 or authority to change the Portal/WordPress ownership boundary.
 
 The active rules extracted from this work live in
-[Cloud Portal Customer Workspace UI Standard v1](cloud-portal-customer-workspace-ui-standard-v1.md).
+[Cloud Portal Customer Workspace UI Standard v1](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
 
 ## 1. Objective
 
