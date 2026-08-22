@@ -8,7 +8,7 @@ completed on 2026-08-03. This is not current M4, production, or human-acceptance
 evidence.
 
 The durable procedure extracted from this work is the
-[Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md).
+[Repository Hygiene and Documentation Lifecycle Standard](../../../repository-hygiene-and-documentation-lifecycle-standard-v1.md).
 
 ## 1. Original Goal and Constraints
 

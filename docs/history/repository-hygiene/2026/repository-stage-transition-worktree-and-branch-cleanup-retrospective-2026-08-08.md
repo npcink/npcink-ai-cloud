@@ -168,6 +168,6 @@ production source, M4 accepted state, or remote branch inventory. It performed
 no M4 sync, preview, promotion, build, deployment, or runtime test.
 
 The active policy derived from this evidence is the
-[Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md).
+[Repository Stage-Transition Cleanup Standard](../../../repository-stage-transition-cleanup-standard-v1.md).
 Future cleanup must re-inventory current state and may not reuse the counts or
 candidate lists in this retrospective as deletion authority.

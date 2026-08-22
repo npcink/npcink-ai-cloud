@@ -10,9 +10,9 @@ release, M4 operation, or production action. Re-inventory the live repository
 before acting.
 
 The active rules remain the
-[Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md),
-[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md),
-and [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md).
+[Repository Stage-Transition Cleanup Standard](../../../repository-stage-transition-cleanup-standard-v1.md),
+[Single-Session Worktree Lifecycle](../../../single-session-worktree-lifecycle-v1.md),
+and [Repository Hygiene and Documentation Lifecycle Standard](../../../repository-hygiene-and-documentation-lifecycle-standard-v1.md).
 
 ## 1. Historical progression
 
