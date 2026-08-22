@@ -7,6 +7,7 @@ import io
 import json
 import re
 import subprocess
+import sys
 import tarfile
 from argparse import Namespace
 from datetime import UTC, datetime, timedelta
@@ -542,6 +543,27 @@ def test_normalized_compose_protocol_guard_rejects_every_udp_shape() -> None:
             }
         }
     ) == []
+
+
+def test_compose_protocol_guard_defaults_to_repository_paths_from_outside_checkout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _compose_protocol_module()
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, '{"services": {}}', "")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["check-production-compose-protocols.py"])
+
+    assert module.main() == 0
+    assert [Path(command[3]) for command in commands] == [
+        ROOT / "docker-compose.prod.yml",
+        ROOT / "docker-compose.runtime.yml",
+    ]
 
 
 def test_active_release_contract_records_the_exact_openssl_exception() -> None:
