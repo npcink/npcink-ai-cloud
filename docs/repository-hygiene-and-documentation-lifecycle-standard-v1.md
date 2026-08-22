@@ -174,6 +174,34 @@ Publish coherent batches sequentially. Rebase or recreate the next candidate
 from current `origin/master` before publication; do not assume an earlier
 local-ready commit still represents the integrated entry-point contracts.
 
+### 8.1 Cleanup Value Gate and Stopping Rule
+
+Repository tidiness is not an end in itself. Before opening another cleanup
+batch, state:
+
+1. the current authority, navigation, ownership, safety, or maintenance problem
+   the batch will solve;
+2. the active consumer or development workflow affected by that problem;
+3. the observable evidence that will show the problem is resolved; and
+4. the expected path churn, validation cost, and recovery burden.
+
+Continue when the batch removes a real ambiguity between current authority and
+historical evidence, repairs broken navigation, protects an executable
+consumer, closes an unsafe branch/worktree state, or materially reduces
+repeated onboarding and investigation cost.
+
+Pause and retain a review queue when all remaining work is primarily aesthetic,
+the documents are already indexed and clearly classified, no active consumer
+is failing, or link churn and protected-CI cost exceed the expected navigation
+benefit. A stable high-link historical document may remain in the root when its
+status is explicit and moving it would not improve current decision-making.
+
+Measure cleanup success by reduced authority ambiguity, smaller active Git
+topology, preserved recovery evidence, and faster current-work discovery. Do
+not measure success by the maximum number of files, refs, or worktrees removed.
+When the value gate closes, return effort to the repository's current product
+and validation priority.
+
 ## 9. Validation
 
 Select the narrowest useful gates, then let protected CI decide merge
@@ -206,6 +234,8 @@ Stop and report instead of deleting when:
   or unique historical receipt;
 - more than one root task contract is active without explicit selection;
 - local state may be in use or may contain non-regenerable data;
+- remaining work is cosmetic and already-indexed evidence has no failing active
+  consumer;
 - the change would need M4, production, credential, or merge-lane authority not
   owned by the task.
 
@@ -230,4 +260,4 @@ REPOSITORY_HYGIENE_RECEIPT
 ```
 
 The first complete application is recorded in
-[Repository Hygiene Cleanup Closeout and Development Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md).
+[Repository Hygiene Cleanup Closeout and Development Retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md).

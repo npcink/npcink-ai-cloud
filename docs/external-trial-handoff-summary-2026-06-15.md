@@ -152,7 +152,7 @@ Committed and pushed:
 
 Main files:
 
-- `docs/external-trial-record-magick-ai-local-2026-06-10.md`
+- `docs/history/trials/2026/external-trial-record-magick-ai-local-2026-06-10.md`
 - `docs/external-trial-user-briefing-copy-zh-2026-06-10.md`
 
 Purpose:

@@ -277,6 +277,11 @@ assert.match(
 
 assert.match(
   sitesSource,
+  /const showManagementSiteSelector = visibleSites\.length > 1[\s\S]*visibleSites\.length === 1 && !selectedSiteId/,
+  'the Portal workspace must keep a retryable site selector for one unselected site'
+);
+assert.match(
+  sitesSource,
   /portalClient\.listAddonConnectionAccounts\(\)[\s\S]*accounts=\{addonAccounts\}/,
   'addon binding candidates must come from the dedicated projection'
 );

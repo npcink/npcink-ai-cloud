@@ -1,5 +1,7 @@
 # Live Site Addon Setup Plan: npcink.local
 
+Status: historical trial plan; revalidate the site and current runbooks before any operation.
+
 Date: 2026-06-20
 
 ## Purpose

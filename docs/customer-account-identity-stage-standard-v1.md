@@ -24,7 +24,7 @@ Implementation history:
 - [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md)
   owns the current customer-directory, service-queue, customer-detail, table,
   dialog, and action-composition rules without changing identity semantics.
-- [Cloud Admin Customer Operations Workspace Closeout](cloud-admin-customer-operations-workspace-closeout-2026-07-31.md)
+- [Cloud Admin Customer Operations Workspace Closeout](history/admin/2026/records/cloud-admin-customer-operations-workspace-closeout-2026-07-31.md)
   records the route-boundary and layout evolution through the accepted M4
   revision.
 

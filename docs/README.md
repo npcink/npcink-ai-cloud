@@ -39,6 +39,8 @@ deleting the old decision history.
 
 ## Product Boundaries
 
+- [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
+
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
 - [Cloud Task Pack Boundary](cloud-task-pack-boundary-v1.md) — retired negative
   guard; retained to prevent Task Pack surfaces from returning
@@ -60,9 +62,17 @@ deleting the old decision history.
 - [Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md)
 - [Single-Operator Pre-User Development Closeout and Next-Stage Guide — 2026-08-18](single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md) — dated synthesis of the solo-AI pre-user phase, user-experience remediation, privacy-safe observation, delivery-time lessons, workflow lanes, and the next ordinary-development stop point; not production or human-value authority
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
+- [Single-Operator AI Development, M4 Validation, and Production Release Playbook](single-operator-ai-development-and-release-playbook-v1.md)
+- [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
 - [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
+- [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
+- [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
+  — dated history from issue synthesis and privacy-safe observation through the
+  OpenSSL exception review chain, Docker-capable gate split, retired production
+  promotions, and the current Portal-first consolidation handoff; not
+  production or human-value authority
 - [Multi-Session Development Observation Synthesis and Next-Stage Plan — 2026-08-15](multi-session-development-observation-synthesis-and-next-stage-plan-2026-08-15.md) — dated four-track evidence matrix, cross-session problem triage, phased execution plan, and observation stop lines; not runtime, production, or human-value authority
 - [Development Efficiency Phase 3 Observation Plan](development-efficiency-phase3-observation-plan-v1.md) — current plan for collecting comparable delivery samples before further CI/shard/cache optimization
 - [Development Efficiency Phases 1–3 Closeout and Retrospective](development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
@@ -74,8 +84,9 @@ deleting the old decision history.
 - [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
 - [Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md)
-- [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
-- [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
+- [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](history/repository-hygiene/2026/repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
+- [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](history/repository-hygiene/2026/repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
+- [Repository Documentation Consolidation Closeout and Lessons — 2026-08-22](history/repository-hygiene/2026/repository-documentation-consolidation-closeout-and-lessons-2026-08-22.md) — dated evidence for PRs `#836`–`#842`, branch recovery, documentation classification and archival, corrections, stopping decision, and reusable cleanup method; not future deletion authority
 - [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
@@ -87,7 +98,7 @@ deleting the old decision history.
 - [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 - [Systematic Remediation Delivery Standard](systematic-remediation-delivery-standard-v1.md)
 - [Systematic Remediation Closeout and Retrospective — 2026-08-14](systematic-remediation-closeout-and-retrospective-2026-08-14.md) — dated evidence for the staged remediation sequence, validation chain, runtime observations, and development lessons
-- [Repository Hygiene Cleanup Closeout and Retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
+- [Repository Hygiene Cleanup Closeout and Retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
 - [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
@@ -119,7 +130,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Admin, Portal, Identity, and Commercial
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
-- [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
+- [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](history/portal/2026/portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
   merge, production, or customer acceptance authority
@@ -174,7 +185,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Production Release Optimization and Formal Smoke Handoff](production-release-optimization-and-formal-smoke-handoff-v1.md)
-- [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
+- [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](history/production/2026/production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
   — dated evidence for the 2026-08-08 handoff ledger, bounded production
   promotion, Addon release, consumer paths, and review corrections; not future
   production authorization
@@ -190,7 +201,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
   — dated one-operator SiliconFlow lifecycle evidence, cleanup receipt,
   alt-text diagnosis, timing lesson, and remaining first-install blockers
-- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
+- [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](history/production/2026/production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
   — dated deployment/recovery retrospective plus one-operator text adoption,
   autosave recovery, quota/ledger, and cleanup evidence
 - [Frontend Public/Portal Release Checklist](frontend-public-portal-release-checklist-v1.md)
@@ -251,7 +262,7 @@ a deletion quota.
 Apply the
 [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 to every batch in this queue. The
-[first cleanup retrospective](repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
+[first cleanup retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
 records the evidence and corrections that produced that standard.
 
 Review in bounded batches:

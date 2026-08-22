@@ -1,5 +1,7 @@
 # Alipay Payment and Portal Entry Hardening - 2026-07-11
 
+Status: historical implementation and production-handoff evidence; not current release authority.
+
 Last updated: 2026-07-12
 
 ## Status

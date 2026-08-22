@@ -385,9 +385,9 @@ domain/API 调用方，也不改变 ADR-038 的 server-owned waiting-state proje
 - `docs/m4-preview-ai-development-standard-v1.md`
 - `docs/commercial-repository-decomposition-plan-v1.md`
 - `docs/decisions/038-server-owned-support-waiting-state-projection.md`
-- `docs/cloud-admin-support-requests-query-closeout-2026-07-29.md`
-- `docs/cloud-admin-support-request-queue-retrospective-2026-08-01.md`
-- `docs/cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md`
+- `docs/history/admin/2026/records/cloud-admin-support-requests-query-closeout-2026-07-29.md`
+- `docs/history/admin/2026/records/cloud-admin-support-request-queue-retrospective-2026-08-01.md`
+- `docs/history/admin/2026/phase-c/cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md`
 
 实现批默认只更新本计划的事实、方法清单和验收证据。纯结构迁移不新建 ADR，
 也不修改 ADR-038；若需要改变 waiting-state、48 小时阈值、Portal projection、

@@ -9,6 +9,8 @@ import { ApiError } from '@/lib/errors';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
   getPortalSiteUrl,
+  getPortalSiteDisplayName,
+  getPortalSiteSecondaryLabel,
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
@@ -173,6 +175,16 @@ export default function PortalPage() {
     || session.selected_context?.current_subscription
     || null;
   const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
+  const contextLabel = selectedSite
+    ? getPortalSiteDisplayName(selectedSite)
+    : hasVisibleSites
+      ? t('portal.home.account_context_label', {}, 'Account overview')
+      : t('portal.home.no_site_context_label', {}, 'Account overview · no connected sites');
+  const contextDetail = selectedSite
+    ? getPortalSiteSecondaryLabel(selectedSite)
+    : hasVisibleSites
+      ? t('portal.home.account_context_detail', {}, 'Package and usage are shown for the account. Choose a site below when you need site-specific status.')
+      : t('portal.home.no_site_context_detail', {}, 'Connect a WordPress site to unlock site status and service actions.');
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
     planVersionId: currentSubscription?.plan_version_id,
@@ -423,6 +435,20 @@ export default function PortalPage() {
               className="shrink-0 text-[0.68rem]"
             />
           ) : null}
+          metadata={(
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-portal-home="context-summary">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">{contextLabel}</span>
+              <span className="text-slate-500 dark:text-slate-400">{contextDetail}</span>
+              <Link
+                href="#sites"
+                className="font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+              >
+                {selectedSite
+                  ? t('portal.home.change_site_action', {}, 'Change site')
+                  : t('portal.home.choose_site_action', {}, 'Choose a site')}
+              </Link>
+            </div>
+          )}
           contextPanel={primaryOperationFocusItem ? (
             <div
               className={cn(

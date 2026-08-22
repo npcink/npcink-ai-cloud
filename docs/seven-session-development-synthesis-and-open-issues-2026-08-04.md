@@ -1,5 +1,7 @@
 # 七会话开发经验综合复盘与开放问题登记（2026-08-04）
 
+Status: historical synthesis and open-issue snapshot; revalidate all current-state claims.
+
 状态：historical synthesis and current open-issue triage snapshot。
 
 目的：归纳最近七个 Npcink AI Cloud 开发会话中已经验证的经验，按 current

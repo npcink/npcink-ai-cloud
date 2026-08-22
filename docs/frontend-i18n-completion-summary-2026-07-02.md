@@ -1,5 +1,7 @@
 # Frontend i18n Completion Summary - 2026-07-02
 
+Status: historical implementation evidence; current source remains authoritative.
+
 ## Status
 
 Completed and locally verified.

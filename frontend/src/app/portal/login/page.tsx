@@ -273,6 +273,29 @@ function LoginFormContent() {
         </>
       )}
     >
+      <div
+        className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2 text-xs dark:border-slate-800 dark:bg-slate-950/45"
+        aria-label={t('auth.sign_in_progress', undefined, 'Sign-in progress')}
+      >
+        <div className={cn(
+          'rounded-xl px-3 py-2 font-semibold',
+          form.step === 'request'
+            ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
+            : 'text-slate-500 dark:text-slate-400'
+        )}>
+          <span className="mr-1.5 text-blue-600 dark:text-blue-300">1</span>
+          {t('auth.sign_in_step_email', undefined, 'Email')}
+        </div>
+        <div className={cn(
+          'rounded-xl px-3 py-2 font-semibold',
+          form.step === 'verify'
+            ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
+            : 'text-slate-500 dark:text-slate-400'
+        )}>
+          <span className="mr-1.5 text-blue-600 dark:text-blue-300">2</span>
+          {t('auth.sign_in_step_code', undefined, 'Verification code')}
+        </div>
+      </div>
       <div className="space-y-5">
         <QqLoginButton returnTo={redirectTo} />
         <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
@@ -306,6 +329,11 @@ function LoginFormContent() {
                     className={cn('input', form.status === 'error' && 'border-red-500 focus:ring-red-500')}
                     disabled={form.status === 'submitting' || form.status === 'verifying' || form.step === 'verify'}
                   />
+                  {form.step === 'verify' ? (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      {t('auth.code_sent_to', { email: form.email }, `Code sent to ${form.email}`)}
+                    </p>
+                  ) : null}
                 </div>
 
                 {form.step === 'verify' ? (

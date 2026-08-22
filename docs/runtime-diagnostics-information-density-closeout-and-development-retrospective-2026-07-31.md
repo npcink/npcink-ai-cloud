@@ -1,5 +1,7 @@
 # 运行诊断信息密度优化收口与开发复盘 — 2026-07-31
 
+Status: historical implementation evidence; current Admin standards remain authoritative.
+
 状态：应用源码已合并并包含在 M4 accepted `master`；PC 管理员路径已完成
 认证浏览器验证；本文与配套 Admin UI 标准修订通过独立治理变更交付。
 
@@ -271,7 +273,7 @@ merged `master`，也不使用一次全绿掩盖部分数据源失败。
 
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md)
-- [Cloud Admin UI Development Retrospective](cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [Cloud Admin UI Development Retrospective](history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
 - [Development And Validation Operating Model v1](development-validation-operating-model-v1.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
 

@@ -313,8 +313,11 @@ private runtime configuration or expand the receipt with customer fields.
 
 - [ ] the exact release canonical CVE allowlist matches the reviewed active
   exception state and the four-part allowlist change discipline above is
-  complete; the current fixed Python 3.14.7 and Node 22.23.2 production-image
-  contract requires an empty active allowlist
+  complete; the current OpenSSL `CVE-2026-14456` exception contains exactly six
+  `libcrypto3`/`libssl3` version `3.5.7-r0` entries for `api`, `frontend`, and
+  `nginx`, expires on `2026-09-19`, and is used only while production has no
+  QUIC, HTTP/3, or UDP listener; quoted and unquoted Compose UDP protocols must
+  both fail the release-policy gate
 - [ ] the exact release binds the clean production source to a fresh passed
   Linux/AMD64 scan with zero unallowlisted blocking findings; an expired or
   retired controlled-validation receipt, no-user switch, or historical CVE ID

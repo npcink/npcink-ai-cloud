@@ -1,5 +1,7 @@
 # AI Provider Env Config Retirement - 2026-06-26
 
+Status: active retired negative guard; current authority remains the runtime storage contract.
+
 ## Status
 
 Accepted.

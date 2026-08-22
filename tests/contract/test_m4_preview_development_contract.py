@@ -235,6 +235,11 @@ def test_m4_preview_commands_are_explicit() -> None:
 def test_m4_preview_frontend_responses_cannot_reuse_stale_candidate_assets() -> None:
     proxy = PREVIEW_PROXY.read_text(encoding="utf-8")
 
+    assert "gzip on;" in proxy
+    assert "gzip_vary on;" in proxy
+    assert "application/javascript" in proxy
+    assert "text/css" in proxy
+
     for location in ("location /_next/ {", "location /api/ {", "location / {"):
         block = proxy.split(location, 1)[1].split("\n    }", 1)[0]
         assert "proxy_hide_header Cache-Control;" in block

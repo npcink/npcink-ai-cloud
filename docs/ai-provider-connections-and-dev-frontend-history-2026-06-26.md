@@ -1,5 +1,7 @@
 # AI Provider Connections 与本地前端依赖稳定性历史总结
 
+Status: historical implementation record; not current provider configuration authority.
+
 日期：2026-06-26
 
 状态：阶段记录，供后续开发、排障和产品边界复查使用。
