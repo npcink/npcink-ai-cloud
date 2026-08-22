@@ -1,6 +1,9 @@
 # P5-B7 Exact Release Bundle Closeout — 2026-07-19
 
-Status: **engineering acceptance complete** for Cloud revision
+Status: historical P5 release-bundle evidence; not current release or deployment
+authority.
+
+Original status: **engineering acceptance complete** for Cloud revision
 `0663d95f765a8c49154aac0536e26cbb51029094` on `linux/arm64`.
 P5-B8 WordPress text/media replay, backup/restore rehearsal, final Cloud and
 five-plugin gates, the strict six-repository matrix, dependency follow-up, and

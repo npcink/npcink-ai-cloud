@@ -54,7 +54,7 @@ Python 3.14.6 package contains that fix. The official `python:3.14-alpine` tag
 still resolved to the pinned Python 3.14.6 image at the amendment checkpoint.
 
 The earlier engineering reachability review is recorded in
-[P5-B7 Python API Image CVE Exception](p5-b7-python-api-image-cve-exception-2026-07-19.md).
+[P5-B7 Python API Image CVE Exception](history/refactor/2026/p5-b7-python-api-image-cve-exception-2026-07-19.md).
 That review found no direct `tarfile` call path for
 `CVE-2026-11940` or `CVE-2026-11972`, and no direct
 `html.parser.HTMLParser` call path for `CVE-2026-15308`. Bundled archive tools

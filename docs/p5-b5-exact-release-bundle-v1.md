@@ -227,7 +227,7 @@ must remain failed; it must not be bypassed to manufacture release evidence.
 
 The production-topology precondition passed at implementation revision
 `fb58e354`; see
-[P5-B6 Production Topology Contraction Closeout](p5-b6-production-topology-contraction-closeout-2026-07-19.md).
+[P5-B6 Production Topology Contraction Closeout](history/refactor/2026/p5-b6-production-topology-contraction-closeout-2026-07-19.md).
 Caddy, Jaeger, and the OpenTelemetry Collector are no longer active bundle
 inputs. This does not close this exact-bundle contract: the clean-tree platform
 scan, governed resolution of the current API-image CVE failure, archive build,

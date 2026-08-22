@@ -263,7 +263,7 @@ Exit criteria:
 Current status (2026-07-19):
 
 - P5-B4 has passed bounded engineering acceptance at revision `dff31baf`;
-  evidence: [P5-B4 runtime load/soak closeout](p5-b4-runtime-load-soak-closeout-2026-07-19.md).
+  evidence: [P5-B4 runtime load/soak closeout](history/refactor/2026/p5-b4-runtime-load-soak-closeout-2026-07-19.md).
 - The formal dual-worker proof completed three independent baselines with all
   29 checks passing in each baseline. Queue p95 was `4.6318s`, `5.0296s`, and
   `4.7298s`; transport errors and HTTP 5xx responses remained zero. The formal
@@ -273,14 +273,14 @@ Current status (2026-07-19):
   not change the production single-worker default.
 - P5-B6 production-topology contraction has passed engineering acceptance at
   revision `fb58e354`; evidence:
-  [P5-B6 production topology contraction closeout](p5-b6-production-topology-contraction-closeout-2026-07-19.md).
+  [P5-B6 production topology contraction closeout](history/refactor/2026/p5-b6-production-topology-contraction-closeout-2026-07-19.md).
 - P5-B6 removes bundled Caddy, Jaeger, and the OTel Collector, pins the
   external-Edge/NGINX/Gunicorn trust chain, and closes the two independent P1
   migration findings. It does not supply the clean-tree image scan/bundle or
   production Edge evidence.
 - P5-B7 exact-image and bundle engineering acceptance passed at revision
   `0663d95f`; evidence:
-  [P5-B7 exact release bundle closeout](p5-b7-exact-release-bundle-closeout-2026-07-19.md).
+  [P5-B7 exact release bundle closeout](history/refactor/2026/p5-b7-exact-release-bundle-closeout-2026-07-19.md).
   The clean `linux/arm64` bundle passed five-image scanning, archive and
   post-load identity checks, same-bundle double replay, migration, seed,
   health, and cleanup. Its three exact Python findings are covered only by the

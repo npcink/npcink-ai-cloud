@@ -189,7 +189,7 @@ fallback for rollback.
 
 ## References
 
-- [P5-B2 Security Hardening Closeout](../p5-b2-security-hardening-2026-07-17.md)
+- [P5-B2 Security Hardening Closeout](../history/refactor/2026/p5-b2-security-hardening-2026-07-17.md)
 - [Production Operations Playbook](../../deploy/OPS_PLAYBOOK.md)
 - [Production Release Policy](../cloud-production-release-policy-v1.md)
 - [WordPress-first Cloud Runtime Refactor](004-wordpress-first-cloud-runtime-refactor.md)
