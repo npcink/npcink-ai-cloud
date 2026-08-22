@@ -114,7 +114,9 @@ final ALT write.
 1000 public WordPress post/page IDs) for coverage comparison. When supplied,
 the response exposes only the matching `coverage.indexed_post_ids` plus
 `coverage.indexed_post_ids_requested`, the normalized number of IDs actually
-compared. Consumers must require that count to match their bounded local
+compared, regardless of whether the optional `include_coverage` summary flag
+is present. `include_coverage` controls the broader type/source coverage
+summaries; it is not required for post-ID comparison. Consumers must require that count to match their bounded local
 manifest before projecting absent IDs as `not_indexed`; a missing or mismatched
 count is incomplete evidence, not proof that an article is absent from the
 index. Cloud does not return article body content or become the WordPress

@@ -626,12 +626,12 @@ class SiteKnowledgeService:
                 source_type: 1.0
                 for source_type in sorted(self.repository.source_type_counts(site_id))
             }
-            if requested_post_ids:
-                coverage["indexed_post_ids"] = self.repository.indexed_post_ids(
-                    site_id,
-                    requested_post_ids,
-                )
-                coverage["indexed_post_ids_requested"] = len(requested_post_ids)
+        if requested_post_ids:
+            coverage["indexed_post_ids"] = self.repository.indexed_post_ids(
+                site_id,
+                requested_post_ids,
+            )
+            coverage["indexed_post_ids_requested"] = len(requested_post_ids)
 
         progress = self._status_progress(
             status=status,

@@ -769,6 +769,27 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert status_data["coverage"]["source_type_coverage"] == {"post": 1.0}
     assert status_data["coverage"]["indexed_post_ids"] == [123]
     assert status_data["coverage"]["indexed_post_ids_requested"] == 2
+
+    status_without_coverage_flag = _execute(
+        client,
+        {
+            "ability_name": "npcink-cloud/site-knowledge-status",
+            "contract_version": "site_knowledge_status.v1",
+            "execution_pattern": "inline",
+            "data_classification": "public_site_content",
+            "storage_mode": "result_only",
+            "input": {
+                "contract_version": "site_knowledge_status.v1",
+                "post_ids": [123, 999],
+                "write_posture": "suggestion_only",
+            },
+        },
+        idempotency_key="status-post-ids-without-coverage-flag",
+    )
+    status_without_coverage_data = status_without_coverage_flag["json"]["data"]["result"]
+    assert status_without_coverage_data["coverage"]["indexed_post_ids"] == [123]
+    assert status_without_coverage_data["coverage"]["indexed_post_ids_requested"] == 2
+    assert status_without_coverage_data["coverage"]["post_type_coverage"] == {}
     assert status_data["progress"]["stage"] == "completed"
     assert status_data["progress"]["percent"] == 100
     with get_session(database_url) as session:
