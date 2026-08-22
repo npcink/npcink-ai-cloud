@@ -289,7 +289,7 @@ model + reversible migration
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md)
 - [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md)
-- [Cloud Admin Phase C Support Request Queue Acceptance](cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md)
+- [Cloud Admin Phase C Support Request Queue Acceptance](history/admin/2026/phase-c/cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
 - [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
