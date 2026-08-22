@@ -84,6 +84,7 @@ deleting the old decision history.
 - [Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md)
 - [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](history/repository-hygiene/2026/repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
 - [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](history/repository-hygiene/2026/repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
+- [Repository Documentation Consolidation Closeout and Lessons — 2026-08-22](history/repository-hygiene/2026/repository-documentation-consolidation-closeout-and-lessons-2026-08-22.md) — dated evidence for PRs `#836`–`#842`, branch recovery, documentation classification and archival, corrections, stopping decision, and reusable cleanup method; not future deletion authority
 - [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
