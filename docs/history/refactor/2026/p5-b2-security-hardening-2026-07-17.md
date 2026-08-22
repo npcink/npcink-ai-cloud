@@ -1,7 +1,10 @@
 # P5-B2 Security Hardening Closeout
 
-Status: engineering batch complete; production cutover, production approval,
-and global P5 release closure remain incomplete.
+Status: historical P5 engineering closeout; not current release or production
+authority.
+
+Original status: engineering batch complete; production cutover, production
+approval, and global P5 release closure remain incomplete.
 
 Date: 2026-07-17.
 

@@ -1,8 +1,11 @@
 # P5-B3 WordPress Text Acceptance Closeout — 2026-07-18
 
-Status: **P5-B3 engineering acceptance complete** on the exact revisions and
-packages recorded below. Global P5, P5-B4 load/soak, and P5-B5 release closure
-remain incomplete.
+Status: historical P5 engineering acceptance; not current runtime or release
+authority.
+
+Original status: **P5-B3 engineering acceptance complete** on the exact
+revisions and packages recorded below. Global P5, P5-B4 load/soak, and P5-B5
+release closure remain incomplete.
 
 ## Purpose
 

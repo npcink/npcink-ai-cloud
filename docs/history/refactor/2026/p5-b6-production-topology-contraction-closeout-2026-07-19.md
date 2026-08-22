@@ -1,9 +1,12 @@
 # P5-B6 Production Topology Contraction Closeout — 2026-07-19
 
-Status: **engineering acceptance complete** for Cloud implementation revision
-`fb58e354`. P5-B7 exact-image scan/bundle evidence, P5-B8 WordPress replay and
-restore/matrix evidence, global P5, production migration, and GA remain
-incomplete.
+Status: historical P5 topology evidence; not current deployment or production
+authority.
+
+Original status: **engineering acceptance complete** for Cloud implementation
+revision `fb58e354`. P5-B7 exact-image scan/bundle evidence, P5-B8 WordPress
+replay and restore/matrix evidence, global P5, production migration, and GA
+remain incomplete.
 
 ## Accepted Outcome
 

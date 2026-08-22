@@ -1,8 +1,11 @@
 # P5-B4 Runtime Load/Soak Closeout — 2026-07-19
 
-Status: **P5-B4 engineering acceptance complete** on exact Cloud revision
-`dff31baf942542d12860b82f6a65a47dd2129d91`. Global P5 and P5-B5 release
-closure remain incomplete.
+Status: historical P5 load/soak evidence; not a current runtime or production
+SLO.
+
+Original status: **P5-B4 engineering acceptance complete** on exact Cloud
+revision `dff31baf942542d12860b82f6a65a47dd2129d91`. Global P5 and P5-B5
+release closure remain incomplete.
 
 ## Outcome
 
