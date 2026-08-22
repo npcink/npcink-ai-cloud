@@ -658,6 +658,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
             "input": {
                 "contract_version": "site_knowledge_status.v1",
                 "include_coverage": True,
+                "post_ids": [123, "123", 999, 0, -1],
                 "write_posture": "suggestion_only",
             },
         },
@@ -749,6 +750,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
             "input": {
                 "contract_version": "site_knowledge_status.v1",
                 "include_coverage": True,
+                "post_ids": [123, "123", 999, 0, -1],
                 "write_posture": "suggestion_only",
             },
         },
@@ -765,6 +767,8 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert status_data["coverage"]["indexed_chunks"] >= 1
     assert status_data["coverage"]["post_type_coverage"] == {"post": 1.0}
     assert status_data["coverage"]["source_type_coverage"] == {"post": 1.0}
+    assert status_data["coverage"]["indexed_post_ids"] == [123]
+    assert status_data["coverage"]["indexed_post_ids_requested"] == 2
     assert status_data["progress"]["stage"] == "completed"
     assert status_data["progress"]["percent"] == 100
     with get_session(database_url) as session:

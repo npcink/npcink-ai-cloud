@@ -39,6 +39,8 @@ deleting the old decision history.
 
 ## Product Boundaries
 
+- [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
+
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
 - [Cloud Task Pack Boundary](cloud-task-pack-boundary-v1.md) — retired negative
   guard; retained to prevent Task Pack surfaces from returning

@@ -110,6 +110,18 @@ read-only and suggestion-only. Callers must require a matching current local
 fingerprint before reuse, and WordPress remains responsible for review and any
 final ALT write.
 
+`site_knowledge_status.v1` may also receive a bounded `post_ids` list (up to
+1000 public WordPress post/page IDs) for coverage comparison. When supplied,
+the response exposes only the matching `coverage.indexed_post_ids` plus
+`coverage.indexed_post_ids_requested`, the normalized number of IDs actually
+compared. Consumers must require that count to match their bounded local
+manifest before projecting absent IDs as `not_indexed`; a missing or mismatched
+count is incomplete evidence, not proof that an article is absent from the
+index. Cloud does not return article body content or become the WordPress
+content manifest. WordPress remains responsible for resolving titles, URLs,
+publication state, and presenting `indexed` versus `not_indexed` status to the
+operator.
+
 ## Metering Boundary
 
 `npcink-cloud/site-knowledge-sync` is server-classified index maintenance. It
