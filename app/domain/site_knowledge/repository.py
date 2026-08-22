@@ -196,6 +196,27 @@ class SiteKnowledgeRepository:
             or 0
         )
 
+    def indexed_post_ids(self, site_id: str, post_ids: list[int]) -> list[int]:
+        normalized_ids = list(dict.fromkeys(post_id for post_id in post_ids if post_id > 0))
+        if not normalized_ids:
+            return []
+        statement = (
+            select(SiteKnowledgeDocument.post_id)
+            .where(
+                SiteKnowledgeDocument.site_id == site_id,
+                SiteKnowledgeDocument.post_id.in_(normalized_ids),
+                SiteKnowledgeDocument.source_type.in_(("post", "page")),
+                SiteKnowledgeDocument.post_status == "publish",
+            )
+            .distinct()
+            .order_by(SiteKnowledgeDocument.post_id.asc())
+        )
+        return [
+            int(post_id)
+            for post_id in self.session.scalars(statement)
+            if int(post_id or 0) > 0
+        ]
+
     def list_embedding_models(
         self,
         site_id: str,

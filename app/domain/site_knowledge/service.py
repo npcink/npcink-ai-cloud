@@ -31,6 +31,7 @@ from app.domain.site_knowledge.contracts import (
     ALLOWED_RESULT_GRANULARITIES,
     ALLOWED_SEARCH_INTENTS,
     ALLOWED_SYNC_MODES,
+    MAX_SITE_KNOWLEDGE_STATUS_POST_IDS,
     PUBLIC_COMMENT_STATUSES,
     PUBLIC_POST_STATUSES,
     PUBLIC_POST_TYPES,
@@ -582,6 +583,9 @@ class SiteKnowledgeService:
 
     def status(self, *, site_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
         include_coverage = bool(input_payload.get("include_coverage"))
+        requested_post_ids = _coerce_post_ids(input_payload.get("post_ids"))[
+            :MAX_SITE_KNOWLEDGE_STATUS_POST_IDS
+        ]
         media_attachment_ids = _coerce_post_ids(input_payload.get("media_attachment_ids"))[:20]
         indexed_posts = self.repository.count_documents(site_id)
         indexed_chunks = self.repository.count_chunks(site_id)
@@ -622,6 +626,12 @@ class SiteKnowledgeService:
                 source_type: 1.0
                 for source_type in sorted(self.repository.source_type_counts(site_id))
             }
+        if requested_post_ids:
+            coverage["indexed_post_ids"] = self.repository.indexed_post_ids(
+                site_id,
+                requested_post_ids,
+            )
+            coverage["indexed_post_ids_requested"] = len(requested_post_ids)
 
         progress = self._status_progress(
             status=status,
