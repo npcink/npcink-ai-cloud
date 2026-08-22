@@ -8,3 +8,6 @@ or architecture documents in the `docs/` root.
 
 - [Phase C](phase-c/) - route and interaction acceptance records from
   2026-07-12.
+- [Phase D-H](phase-d-h/) - shared-shell, desktop workflow, interaction, and
+  regression evidence from 2026-07-12.
+- [Pilots](pilots/) - early route-model acceptance evidence from 2026-07-12.

@@ -1,6 +1,12 @@
 # Cloud Admin Customer Detail Pilot Acceptance - 2026-07-12
 
-Status: accepted.
+Status: dated pilot acceptance evidence; not current Admin UI authority.
+
+Original acceptance: accepted.
+
+Current authority: [Admin UI Standard](../../../../cloud-admin-ui-standard-v1.md),
+[Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md),
+and [Admin Information Architecture](../../../../cloud-admin-information-architecture-v2.md).
 
 Route: `/admin/accounts/[accountId]`.
 
