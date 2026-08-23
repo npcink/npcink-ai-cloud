@@ -61,33 +61,130 @@ diagnostic_status=0
 set +e
 timeout --signal=TERM --kill-after=5s 45s \
 	docker exec -i "${api_container_id}" python - <<'PY' >/dev/null 2>&1
+import socket
+from pathlib import Path
+
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
-from app.core.config import get_settings
 from app.core.db import get_engine
+from app.core.runtime_config import (
+    RuntimeConfigError,
+    config_dir_from_environment,
+    load_runtime_settings_values,
+)
 from scripts.alembic_revision_gate import require_upgradeable_revisions
 
 try:
-    settings = get_settings()
+    runtime_values = load_runtime_settings_values(config_dir_from_environment())
+except RuntimeConfigError as error:
+    config_error = str(error)
+    if config_error == "runtime database TLS mode is invalid":
+        raise SystemExit(16)
+    if config_error.startswith("runtime database CA "):
+        raise SystemExit(17)
+    if config_error in {
+        "runtime database hostname could not be resolved",
+        "runtime database hostname resolution is invalid",
+        "runtime database hostname must resolve only to private addresses",
+    }:
+        raise SystemExit(18)
+    raise SystemExit(10)
 except Exception:
     raise SystemExit(10)
 try:
+    database_url_text = str(runtime_values["database_url"])
+    database_pool_size = int(runtime_values["database_pool_size"])
+    database_max_overflow = int(runtime_values["database_max_overflow"])
+    database_pool_timeout_seconds = int(
+        runtime_values["database_pool_timeout_seconds"]
+    )
+    database_pool_recycle_seconds = int(
+        runtime_values["database_pool_recycle_seconds"]
+    )
+    database_connect_timeout_seconds = int(
+        runtime_values["database_connect_timeout_seconds"]
+    )
+    database_url = make_url(database_url_text)
+except Exception:
+    raise SystemExit(10)
+if (
+    database_url.get_backend_name() != "postgresql"
+    or not database_url.host
+    or not database_url.query.get("hostaddr")
+    or database_url.query.get("sslmode") != "verify-full"
+    or not database_url.query.get("sslrootcert")
+):
+    raise SystemExit(16)
+ca_path = Path(str(database_url.query["sslrootcert"]))
+try:
+    with ca_path.open("rb") as ca_file:
+        ca_prefix = ca_file.read(1)
+except OSError:
+    raise SystemExit(17)
+if not ca_prefix:
+    raise SystemExit(17)
+database_port = database_url.port or 5432
+database_hostaddr = str(database_url.query["hostaddr"])
+try:
+    with socket.create_connection(
+        (database_hostaddr, database_port),
+        timeout=database_connect_timeout_seconds,
+    ):
+        pass
+except OSError:
+    raise SystemExit(19)
+try:
     engine = get_engine(
-        settings.database_url,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_max_overflow,
-        pool_timeout_seconds=settings.database_pool_timeout_seconds,
-        pool_recycle_seconds=settings.database_pool_recycle_seconds,
-        connect_timeout_seconds=settings.database_connect_timeout_seconds,
+        database_url_text,
+        pool_size=database_pool_size,
+        max_overflow=database_max_overflow,
+        pool_timeout_seconds=database_pool_timeout_seconds,
+        pool_recycle_seconds=database_pool_recycle_seconds,
+        connect_timeout_seconds=database_connect_timeout_seconds,
     )
 except Exception:
     raise SystemExit(11)
+
+
+def connection_failure_code(error: Exception) -> int:
+    current: object | None = error
+    for _ in range(6):
+        if current is None:
+            break
+        sqlstate = getattr(current, "sqlstate", None) or getattr(
+            current, "pgcode", None
+        )
+        if sqlstate in {"28000", "28P01"}:
+            return 20
+        if sqlstate == "53300":
+            return 21
+        if sqlstate == "57P03":
+            return 22
+        if sqlstate == "3D000":
+            return 24
+        current = (
+            getattr(current, "orig", None)
+            or getattr(current, "__cause__", None)
+            or getattr(current, "__context__", None)
+        )
+    return 14
+
+
 try:
     connection_context = engine.connect()
+except Exception as error:
+    raise SystemExit(connection_failure_code(error))
+try:
     with connection_context as connection:
-        version_num = int(connection.execute(text("SHOW server_version_num")).scalar_one())
+        try:
+            version_num = int(
+                connection.execute(text("SHOW server_version_num")).scalar_one()
+            )
+        except Exception:
+            raise SystemExit(23)
         if version_num // 10000 != 18:
             raise SystemExit(12)
         try:
@@ -119,8 +216,17 @@ case "${diagnostic_status}" in
 	11) diagnostic_reason="postgres_engine_initialization_failed" ;;
 	12) diagnostic_reason="postgres_major_not_18" ;;
 	13) diagnostic_reason="alembic_revision_not_upgradeable" ;;
-	14) diagnostic_reason="postgres_tls_or_server_version_query_failed" ;;
+	14) diagnostic_reason="postgres_tls_connection_failed" ;;
 	15) diagnostic_reason="alembic_revision_query_failed" ;;
+	16) diagnostic_reason="postgres_tls_contract_invalid" ;;
+	17) diagnostic_reason="postgres_ca_file_unavailable" ;;
+	18) diagnostic_reason="postgres_host_resolution_failed" ;;
+	19) diagnostic_reason="postgres_tcp_connection_failed" ;;
+	20) diagnostic_reason="postgres_authentication_failed" ;;
+	21) diagnostic_reason="postgres_connection_capacity_exhausted" ;;
+	22) diagnostic_reason="postgres_service_unavailable" ;;
+	23) diagnostic_reason="postgres_server_version_query_failed" ;;
+	24) diagnostic_reason="postgres_database_missing" ;;
 	124) diagnostic_reason="runtime_database_diagnostic_timeout" ;;
 	*) diagnostic_reason="running_api_diagnostic_execution_failed" ;;
 esac
