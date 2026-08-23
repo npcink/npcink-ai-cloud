@@ -32,15 +32,24 @@ class _Result:
 
 
 class _Connection:
-    def __init__(self, *, server_version_num: int, revisions: set[str]) -> None:
+    def __init__(
+        self,
+        *,
+        server_version_num: int,
+        revisions: set[str],
+        alembic_query_error: Exception | None = None,
+    ) -> None:
         self.server_version_num = server_version_num
         self.revisions = revisions
+        self.alembic_query_error = alembic_query_error
 
     def execute(self, statement: object) -> _Result:
         sql = str(statement)
         if "SHOW server_version_num" in sql:
             return _Result([(self.server_version_num,)])
         if "SELECT version_num FROM alembic_version" in sql:
+            if self.alembic_query_error is not None:
+                raise self.alembic_query_error
             return _Result([(revision,) for revision in sorted(self.revisions)])
         raise AssertionError(f"unexpected preflight SQL: {sql}")
 
@@ -58,7 +67,9 @@ def _execute_payload(
     *,
     server_version_num: int = 180000,
     revisions: set[str] | None = None,
+    settings_error: Exception | None = None,
     connection_error: Exception | None = None,
+    alembic_query_error: Exception | None = None,
 ) -> dict[str, Any]:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
@@ -89,10 +100,16 @@ def _execute_payload(
             _Connection(
                 server_version_num=server_version_num,
                 revisions=revisions if revisions is not None else {head},
+                alembic_query_error=alembic_query_error,
             )
         )
 
-    monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+    def fake_get_settings() -> SimpleNamespace:
+        if settings_error is not None:
+            raise settings_error
+        return settings
+
+    monkeypatch.setattr(config_module, "get_settings", fake_get_settings)
     monkeypatch.setattr(db_module, "get_engine", fake_get_engine)
     monkeypatch.chdir(ROOT)
     exec(compile(_payload(), str(PREFLIGHT), "exec"), {"__name__": "__main__"})
@@ -119,9 +136,13 @@ def test_real_candidate_preflight_payload_rejects_pg17(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with pytest.raises(SystemExit) as caught:
-        _execute_payload(monkeypatch, server_version_num=170006)
+        _execute_payload(
+            monkeypatch,
+            server_version_num=170006,
+            alembic_query_error=RuntimeError("alembic table must not be queried"),
+        )
 
-    assert caught.value.code == 2
+    assert caught.value.code == 12
 
 
 @pytest.mark.parametrize("revisions", [set(), {"unknown_revision"}, {"a", "b"}])
@@ -132,17 +153,31 @@ def test_real_candidate_preflight_payload_rejects_unupgradeable_revision_state(
     with pytest.raises(SystemExit) as caught:
         _execute_payload(monkeypatch, revisions=revisions)
 
-    assert caught.value.code == 3
+    assert caught.value.code == 13
 
 
-def test_real_candidate_preflight_payload_fails_closed_on_tls_connection_error(
+def test_real_candidate_preflight_payload_redacts_runtime_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with pytest.raises(ConnectionError, match="certificate verify failed"):
+    with pytest.raises(SystemExit) as caught:
+        _execute_payload(
+            monkeypatch,
+            settings_error=RuntimeError("sensitive setting detail"),
+        )
+
+    assert caught.value.code == 10
+
+
+def test_real_candidate_preflight_payload_redacts_tls_connection_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(SystemExit) as caught:
         _execute_payload(
             monkeypatch,
             connection_error=ConnectionError("certificate verify failed"),
         )
+
+    assert caught.value.code == 11
 
 
 def test_preflight_shell_binds_real_payload_to_exact_candidate_image_and_redacts_errors() -> None:
@@ -156,7 +191,19 @@ def test_preflight_shell_binds_real_payload_to_exact_candidate_image_and_redacts
     assert "from app.core.db import get_engine" in _payload()
     assert "require_upgradeable_revisions" in _payload()
     assert "PY' >/dev/null 2>&1" in source
-    assert "Candidate image could not prove protected runtime config" in source
+    assert "preflight_status=$?" in source
+    for marker in (
+        '10) preflight_reason="protected_runtime_config_invalid"',
+        '11) preflight_reason="postgres_tls_or_query_failed"',
+        '12) preflight_reason="postgres_major_not_18"',
+        '13) preflight_reason="alembic_revision_not_upgradeable"',
+        '1) preflight_reason="candidate_execution_or_image_proof_failed"',
+        '*) preflight_reason="unexpected_candidate_preflight_status"',
+    ):
+        assert marker in source
+    assert "Candidate runtime preflight failed closed: reason=${preflight_reason}." in source
+    assert "sensitive setting detail" not in source
+    assert "certificate verify failed" not in source
 
 
 def test_production_api_image_contains_candidate_revision_gate_helper() -> None:
