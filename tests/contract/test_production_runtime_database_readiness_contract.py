@@ -80,6 +80,12 @@ class _SqlstateError(RuntimeError):
         self.sqlstate = sqlstate
 
 
+class _WrappedConnectionError(RuntimeError):
+    def __init__(self, original: Exception) -> None:
+        super().__init__("secret wrapper detail")
+        self.orig = original
+
+
 def _execute_payload(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -210,6 +216,28 @@ def test_running_api_payload_accepts_fresh_pg18_tls_and_known_revision(
         ({"connection_error": _SqlstateError("57P03")}, 22),
         ({"server_version_query_error": RuntimeError("secret SHOW detail")}, 23),
         ({"connection_error": _SqlstateError("3D000")}, 24),
+        (
+            {
+                "connection_error": _WrappedConnectionError(
+                    RuntimeError("certificate verify failed: secret")
+                )
+            },
+            25,
+        ),
+        (
+            {"connection_error": RuntimeError("server does not support SSL")},
+            26,
+        ),
+        (
+            {
+                "connection_error": RuntimeError(
+                    "server closed the connection unexpectedly"
+                )
+            },
+            27,
+        ),
+        ({"connection_error": RuntimeError("connection timed out")}, 28),
+        ({"connection_error": RuntimeError("connection refused: secret")}, 29),
     ],
 )
 def test_running_api_payload_returns_only_fixed_failure_codes(
@@ -247,6 +275,11 @@ def test_helper_redacts_raw_errors_and_maps_fixed_reasons() -> None:
         "postgres_service_unavailable",
         "postgres_server_version_query_failed",
         "postgres_database_missing",
+        "postgres_tls_certificate_verification_failed",
+        "postgres_tls_protocol_failed",
+        "postgres_tls_handshake_terminated",
+        "postgres_connection_timeout",
+        "postgres_connection_transport_failed",
         "runtime_database_diagnostic_timeout",
         "running_api_diagnostic_execution_failed",
     ):
@@ -260,6 +293,9 @@ def test_helper_redacts_raw_errors_and_maps_fixed_reasons() -> None:
         "secret TCP detail",
         "secret postgres detail",
         "secret SHOW detail",
+        "secret wrapper detail",
+        "certificate verify failed: secret",
+        "connection refused: secret",
     ):
         assert secret_detail not in source
 
