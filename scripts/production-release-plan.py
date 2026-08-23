@@ -14,6 +14,11 @@ from pathlib import Path, PurePosixPath
 
 SCHEMA = "npcink.production_release_plan.v2"
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+REPOSITORY_ONLY_PATHS = frozenset(
+    {
+        "scripts/check-release-policy.sh",
+    }
+)
 
 
 class ReleasePlanError(ValueError):
@@ -84,6 +89,8 @@ def _normalize_paths(paths: Iterable[str]) -> tuple[str, ...]:
 
 
 def _is_no_deploy_path(path: str) -> bool:
+    if path in REPOSITORY_ONLY_PATHS:
+        return True
     if path.startswith(("docs/", "tests/", ".github/", "frontend/tests/")):
         return True
     if path.startswith("deploy/") and path.lower().endswith((".md", ".mdx")):
