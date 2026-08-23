@@ -99,6 +99,14 @@ release preflight:
 pnpm run production:release:preflight -- --sha <production-sha>
 ```
 
+Before creating a `master` to `production` promotion PR, the promotion
+preflight also performs a local read-only `git merge-tree` compatibility check
+between the current production base and the candidate. A conflict fails closed
+before PR creation; it does not auto-resolve, rewrite either branch, or treat
+historical production-only commits as release fixes. Resolve only the bounded
+deployment-path difference in a separately reviewed change, then generate a
+fresh promotion PR.
+
 The command waits up to 15 minutes for the exact production push Cloud CI and
 CodeQL runs, requires the unexpired SHA-bound deploy bundle, rejects another
 active deploy for the same revision, and checks only the names of repository

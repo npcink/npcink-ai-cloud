@@ -115,6 +115,36 @@ def inspect_candidate(root: Path, *, base_ref: str, candidate_ref: str) -> Candi
     )
 
 
+def _require_candidate_mergeable(
+    root: Path,
+    *,
+    base_ref: str,
+    candidate_ref: str,
+) -> None:
+    """Reject a promotion before PR creation when the refs conflict."""
+    try:
+        subprocess.run(
+            ["git", "merge-tree", "--write-tree", base_ref, candidate_ref],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise PromotionPreflightError("required command is unavailable: git") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stdout or "").splitlines()
+        conflict_count = sum(
+            1
+            for line in detail
+            if line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
+        )
+        suffix = f" ({conflict_count} conflict markers)" if conflict_count else ""
+        raise PromotionPreflightError(
+            f"candidate cannot merge cleanly into {base_ref}{suffix}"
+        ) from exc
+
+
 def _active_deploy_ids(payload: object) -> list[int]:
     if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
         raise PromotionPreflightError("Deploy Production run metadata is malformed")
@@ -392,6 +422,11 @@ def main() -> int:
     started = time.monotonic()
     try:
         candidate = inspect_candidate(
+            root,
+            base_ref=args.base_ref,
+            candidate_ref=args.candidate_ref,
+        )
+        _require_candidate_mergeable(
             root,
             base_ref=args.base_ref,
             candidate_ref=args.candidate_ref,
