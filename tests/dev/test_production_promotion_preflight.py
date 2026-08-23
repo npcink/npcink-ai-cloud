@@ -90,7 +90,7 @@ def test_github_metadata_error_uses_stable_preflight_error() -> None:
         )
 
 
-def test_secret_readiness_returns_count_without_exposing_names() -> None:
+def test_deploy_secret_readiness_does_not_expose_metadata() -> None:
     module = _load_module()
 
     class SourceError(RuntimeError):
@@ -99,39 +99,21 @@ def test_secret_readiness_returns_count_without_exposing_names() -> None:
     class PreflightStub:
         PreflightError = SourceError
         DEPLOY_REQUIRED_SECRETS = frozenset({"DEPLOY_REQUIRED"})
-        FORMAL_SMOKE_REQUIRED_SECRETS = frozenset(
-            {"SMOKE_AVAILABLE", "SMOKE_MISSING"}
-        )
 
         @staticmethod
         def _secret_names(_command: list[str]) -> set[str]:
-            return {"DEPLOY_REQUIRED", "SMOKE_AVAILABLE"}
+            return set()
 
-    missing_count = module._require_secret_names(
-        PreflightStub,
-        "npcink/npcink-ai-cloud",
-    )
+    with pytest.raises(
+        module.PromotionPreflightError,
+        match="metadata is incomplete",
+    ) as error:
+        module._require_deploy_secret_metadata(
+            PreflightStub,
+            "npcink/npcink-ai-cloud",
+        )
 
-    assert missing_count == 1
-    rendered = module.render_text(
-        {
-            "promotion_preflight": "ready",
-            "repository": "npcink/npcink-ai-cloud",
-            "candidate_branch": "master",
-            "candidate_sha": SHA,
-            "production_sha": "b" * 40,
-            "predicted_lane": "full",
-            "predicted_release_action": "runtime",
-            "certificate_readiness_run_id": 321,
-            "local_gates": "passed",
-            "deploy_secrets_ready": True,
-            "formal_smoke_secrets_ready": False,
-            "missing_formal_smoke_secret_count": missing_count,
-            "active_deploy_run_ids": [],
-        }
-    )
-    assert "missing_formal_smoke_secret_count=1" in rendered
-    assert "SMOKE_MISSING" not in rendered
+    assert "DEPLOY_REQUIRED" not in str(error.value)
 
 
 def test_certificate_readiness_wait_binds_request_and_production_sha(

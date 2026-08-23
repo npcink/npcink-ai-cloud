@@ -145,10 +145,11 @@ pnpm run production:promotion:preflight
 The command requires a clean current `master` or bounded `release-fix/*`
 candidate, runs complete Ruff and the release-policy contract, predicts the
 release lane from the current `origin/production` and candidate trees, checks
-deployment secret names, and rejects any active Deploy Production run. It then
-reports missing formal-smoke secret metadata only as an advisory count because
-the short-lived Portal code is obtained after deployment. For `static` or
-`runtime` plans, it dispatches the existing non-mutating
+deployment secret metadata without exposing names or derived values, and
+rejects any active Deploy Production run. Formal-smoke metadata remains outside
+this pre-promotion receipt because the short-lived Portal code is obtained
+after deployment. For `static` or `runtime` plans, it dispatches the existing
+non-mutating
 `certificate-readiness` maintenance action with a unique request identifier and
 waits for the exact production-SHA run to pass. A `no_deploy` plan skips that
 host check. The command does not create or merge a PR, refresh certificate
