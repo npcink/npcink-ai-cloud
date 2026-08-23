@@ -165,6 +165,50 @@ def connection_failure_code(error: Exception) -> int:
             return 22
         if sqlstate == "3D000":
             return 24
+        try:
+            detail = str(current).casefold()
+        except Exception:
+            detail = ""
+        if any(
+            marker in detail
+            for marker in (
+                "certificate verify failed",
+                "certificate verification failed",
+                "does not match host name",
+                "hostname mismatch",
+            )
+        ):
+            return 25
+        if any(
+            marker in detail
+            for marker in (
+                "server does not support ssl",
+                "ssl is not enabled on the server",
+                "wrong version number",
+                "no protocols available",
+            )
+        ):
+            return 26
+        if any(
+            marker in detail
+            for marker in (
+                "server closed the connection unexpectedly",
+                "connection reset by peer",
+                "eof detected",
+            )
+        ):
+            return 27
+        if "timeout expired" in detail or "timed out" in detail:
+            return 28
+        if any(
+            marker in detail
+            for marker in (
+                "connection refused",
+                "network is unreachable",
+                "no route to host",
+            )
+        ):
+            return 29
         current = (
             getattr(current, "orig", None)
             or getattr(current, "__cause__", None)
@@ -216,7 +260,7 @@ case "${diagnostic_status}" in
 	11) diagnostic_reason="postgres_engine_initialization_failed" ;;
 	12) diagnostic_reason="postgres_major_not_18" ;;
 	13) diagnostic_reason="alembic_revision_not_upgradeable" ;;
-	14) diagnostic_reason="postgres_tls_connection_failed" ;;
+		14) diagnostic_reason="postgres_connection_failed" ;;
 	15) diagnostic_reason="alembic_revision_query_failed" ;;
 	16) diagnostic_reason="postgres_tls_contract_invalid" ;;
 	17) diagnostic_reason="postgres_ca_file_unavailable" ;;
@@ -225,8 +269,13 @@ case "${diagnostic_status}" in
 	20) diagnostic_reason="postgres_authentication_failed" ;;
 	21) diagnostic_reason="postgres_connection_capacity_exhausted" ;;
 	22) diagnostic_reason="postgres_service_unavailable" ;;
-	23) diagnostic_reason="postgres_server_version_query_failed" ;;
-	24) diagnostic_reason="postgres_database_missing" ;;
+		23) diagnostic_reason="postgres_server_version_query_failed" ;;
+		24) diagnostic_reason="postgres_database_missing" ;;
+		25) diagnostic_reason="postgres_tls_certificate_verification_failed" ;;
+		26) diagnostic_reason="postgres_tls_protocol_failed" ;;
+		27) diagnostic_reason="postgres_connection_terminated" ;;
+		28) diagnostic_reason="postgres_connection_timeout" ;;
+		29) diagnostic_reason="postgres_connection_transport_failed" ;;
 	124) diagnostic_reason="runtime_database_diagnostic_timeout" ;;
 	*) diagnostic_reason="running_api_diagnostic_execution_failed" ;;
 esac
