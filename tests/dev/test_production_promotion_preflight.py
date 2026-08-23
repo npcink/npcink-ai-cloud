@@ -31,6 +31,83 @@ def test_release_action_maps_only_non_runtime_lanes() -> None:
         assert module._release_action(lane) == "runtime"
 
 
+def test_mergeability_preflight_accepts_clean_merge(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_module()
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> object:
+        calls.append(command)
+        return object()
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    module._require_candidate_mergeable(
+        ROOT,
+        base_ref="origin/production",
+        candidate_ref="HEAD",
+    )
+    assert calls == [["git", "merge-tree", "--write-tree", "origin/production", "HEAD"]]
+
+
+def test_mergeability_preflight_fails_closed_on_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+
+    def run(_command: list[str], **_kwargs: object) -> object:
+        raise module.subprocess.CalledProcessError(
+            1,
+            "git merge-tree",
+            output="changed in both\n<<<<<<< .our\n=======\n>>>>>>> .their\n",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    with pytest.raises(module.PromotionPreflightError, match="cannot merge cleanly"):
+        module._require_candidate_mergeable(
+            ROOT,
+            base_ref="origin/production",
+            candidate_ref="HEAD",
+        )
+
+
+def test_remote_ref_binding_rejects_stale_production_before_candidate_lookup() -> None:
+    module = _load_module()
+    calls: list[str] = []
+
+    class SourceError(RuntimeError):
+        pass
+
+    class PreflightStub:
+        PreflightError = SourceError
+
+        @staticmethod
+        def _gh_api(_repo: str, endpoint: str, **_kwargs: object) -> object:
+            calls.append(endpoint)
+            return {"object": {"sha": "b" * 40}}
+
+        @staticmethod
+        def _require_sha(value: object, _label: str) -> str:
+            assert isinstance(value, str)
+            return value
+
+    candidate = module.Candidate(
+        branch="master",
+        base_sha=SHA,
+        candidate_sha="c" * 40,
+        candidate_tree="d" * 40,
+        changed_files=(),
+        predicted_lane="no_deploy",
+    )
+
+    with pytest.raises(module.PromotionPreflightError, match="local production base"):
+        module._require_remote_refs_current(
+            PreflightStub,
+            repo="npcink/npcink-ai-cloud",
+            candidate=candidate,
+        )
+
+    assert calls == ["git/ref/heads/production"]
+
+
 def test_active_deploy_detection_is_global_and_sorted() -> None:
     module = _load_module()
     payload = {

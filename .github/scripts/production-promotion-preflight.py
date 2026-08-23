@@ -115,6 +115,36 @@ def inspect_candidate(root: Path, *, base_ref: str, candidate_ref: str) -> Candi
     )
 
 
+def _require_candidate_mergeable(
+    root: Path,
+    *,
+    base_ref: str,
+    candidate_ref: str,
+) -> None:
+    """Reject a promotion before PR creation when the refs conflict."""
+    try:
+        subprocess.run(
+            ["git", "merge-tree", "--write-tree", base_ref, candidate_ref],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise PromotionPreflightError("required command is unavailable: git") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stdout or "").splitlines()
+        conflict_count = sum(
+            1
+            for line in detail
+            if line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
+        )
+        suffix = f" ({conflict_count} conflict markers)" if conflict_count else ""
+        raise PromotionPreflightError(
+            f"candidate cannot merge cleanly into {base_ref}{suffix}"
+        ) from exc
+
+
 def _active_deploy_ids(payload: object) -> list[int]:
     if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
         raise PromotionPreflightError("Deploy Production run metadata is malformed")
@@ -168,6 +198,29 @@ def _resolve_remote_branch_sha(preflight: ModuleType, repo: str, branch: str) ->
         return preflight._require_sha(payload["object"].get("sha"), f"{branch} SHA")
     except Exception as exc:
         raise PromotionPreflightError(str(exc)) from exc
+
+
+def _require_remote_refs_current(
+    preflight: ModuleType,
+    *,
+    repo: str,
+    candidate: Candidate,
+) -> str:
+    production_sha = _resolve_remote_branch_sha(preflight, repo, "production")
+    if production_sha != candidate.base_sha:
+        raise PromotionPreflightError(
+            "local production base does not match the current GitHub production SHA"
+        )
+    remote_candidate_sha = _resolve_remote_branch_sha(
+        preflight,
+        repo,
+        candidate.branch,
+    )
+    if remote_candidate_sha != candidate.candidate_sha:
+        raise PromotionPreflightError(
+            "candidate SHA does not match the current GitHub branch"
+        )
+    return production_sha
 
 
 def _require_no_active_deploy(preflight: ModuleType, repo: str) -> None:
@@ -396,25 +449,21 @@ def main() -> int:
             base_ref=args.base_ref,
             candidate_ref=args.candidate_ref,
         )
-        _run_local_gates(root, python_bin)
         preflight = _load_module(
             "npcink_production_release_preflight_for_promotion",
             root / "scripts" / "production-release-preflight.py",
         )
-        production_sha = _resolve_remote_branch_sha(preflight, args.repo, "production")
-        if production_sha != candidate.base_sha:
-            raise PromotionPreflightError(
-                "local production base does not match the current GitHub production SHA"
-            )
-        remote_candidate_sha = _resolve_remote_branch_sha(
+        production_sha = _require_remote_refs_current(
             preflight,
-            args.repo,
-            candidate.branch,
+            repo=args.repo,
+            candidate=candidate,
         )
-        if remote_candidate_sha != candidate.candidate_sha:
-            raise PromotionPreflightError(
-                "candidate SHA does not match the current GitHub branch"
-            )
+        _require_candidate_mergeable(
+            root,
+            base_ref=args.base_ref,
+            candidate_ref=args.candidate_ref,
+        )
+        _run_local_gates(root, python_bin)
         _require_deploy_secret_metadata(preflight, args.repo)
         _require_no_active_deploy(preflight, args.repo)
         release_action = _release_action(candidate.predicted_lane)
