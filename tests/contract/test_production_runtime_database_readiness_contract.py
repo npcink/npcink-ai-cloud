@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+from contextlib import nullcontext
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+HELPER = ROOT / "deploy/remote-runtime-database-readiness.sh"
+WORKFLOW = ROOT / ".github/workflows/production-maintenance.yml"
+
+
+def _payload() -> str:
+    source = HELPER.read_text(encoding="utf-8")
+    start = source.index("from alembic.config import Config")
+    end = source.index("\nPY\n", start)
+    return source[start:end]
+
+
+class _Result:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+        self.rows = rows
+
+    def scalar_one(self) -> object:
+        assert len(self.rows) == 1 and len(self.rows[0]) == 1
+        return self.rows[0][0]
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        return iter(self.rows)
+
+
+class _Connection:
+    def __init__(
+        self,
+        *,
+        server_version_num: int,
+        revisions: set[str],
+        alembic_query_error: Exception | None,
+    ) -> None:
+        self.server_version_num = server_version_num
+        self.revisions = revisions
+        self.alembic_query_error = alembic_query_error
+
+    def execute(self, statement: object) -> _Result:
+        sql = str(statement)
+        if "SHOW server_version_num" in sql:
+            return _Result([(self.server_version_num,)])
+        if "SELECT version_num FROM alembic_version" in sql:
+            if self.alembic_query_error is not None:
+                raise self.alembic_query_error
+            return _Result([(revision,) for revision in sorted(self.revisions)])
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+
+class _Engine:
+    def __init__(
+        self,
+        connection: _Connection,
+        connection_error: Exception | None,
+    ) -> None:
+        self.connection = connection
+        self.connection_error = connection_error
+
+    def connect(self):  # type: ignore[no-untyped-def]
+        if self.connection_error is not None:
+            raise self.connection_error
+        return nullcontext(self.connection)
+
+
+def _execute_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    server_version_num: int = 180000,
+    revisions: set[str] | None = None,
+    settings_error: Exception | None = None,
+    engine_error: Exception | None = None,
+    connection_error: Exception | None = None,
+    alembic_query_error: Exception | None = None,
+) -> None:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from app.core import config as config_module
+    from app.core import db as db_module
+
+    head = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_heads()[0]
+    settings = SimpleNamespace(
+        database_url=(
+            "postgresql+psycopg://app:redacted@db.internal:5432/cloud"
+            "?sslmode=verify-full&sslrootcert=/run/npcink-config/rds-ca.pem"
+        ),
+        database_pool_size=2,
+        database_max_overflow=1,
+        database_pool_timeout_seconds=10,
+        database_pool_recycle_seconds=1800,
+        database_connect_timeout_seconds=5,
+    )
+
+    def fake_get_settings() -> SimpleNamespace:
+        if settings_error is not None:
+            raise settings_error
+        return settings
+
+    def fake_get_engine(*_args: object, **_kwargs: object) -> _Engine:
+        if engine_error is not None:
+            raise engine_error
+        return _Engine(
+            _Connection(
+                server_version_num=server_version_num,
+                revisions=revisions if revisions is not None else {head},
+                alembic_query_error=alembic_query_error,
+            ),
+            connection_error,
+        )
+
+    monkeypatch.setattr(config_module, "get_settings", fake_get_settings)
+    monkeypatch.setattr(db_module, "get_engine", fake_get_engine)
+    monkeypatch.chdir(ROOT)
+    exec(compile(_payload(), str(HELPER), "exec"), {"__name__": "__main__"})
+
+
+def test_running_api_payload_accepts_fresh_pg18_tls_and_known_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _execute_payload(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_code"),
+    [
+        ({"settings_error": RuntimeError("secret setting detail")}, 10),
+        ({"engine_error": RuntimeError("secret engine detail")}, 11),
+        (
+            {
+                "server_version_num": 170006,
+                "alembic_query_error": RuntimeError("must not query alembic"),
+            },
+            12,
+        ),
+        ({"revisions": {"unknown_revision"}}, 13),
+        ({"connection_error": RuntimeError("secret TLS detail")}, 14),
+        ({"alembic_query_error": RuntimeError("secret query detail")}, 15),
+    ],
+)
+def test_running_api_payload_returns_only_fixed_failure_codes(
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, object],
+    expected_code: int,
+) -> None:
+    with pytest.raises(SystemExit) as caught:
+        _execute_payload(monkeypatch, **kwargs)  # type: ignore[arg-type]
+
+    assert caught.value.code == expected_code
+
+
+def test_helper_redacts_raw_errors_and_maps_fixed_reasons() -> None:
+    source = HELPER.read_text(encoding="utf-8")
+
+    assert 'docker exec -i "${api_container_id}" python -' in source
+    assert "PY\ndiagnostic_status=$?" in source
+    assert "PY\n" in source
+    assert ">/dev/null 2>&1" in source
+    for reason in (
+        "protected_runtime_config_invalid",
+        "postgres_engine_initialization_failed",
+        "postgres_major_not_18",
+        "alembic_revision_not_upgradeable",
+        "postgres_tls_or_server_version_query_failed",
+        "alembic_revision_query_failed",
+        "running_api_diagnostic_execution_failed",
+    ):
+        assert reason in source
+    for secret_detail in (
+        "secret setting detail",
+        "secret engine detail",
+        "secret TLS detail",
+        "secret query detail",
+    ):
+        assert secret_detail not in source
+
+
+def test_production_maintenance_exposes_bounded_read_only_action() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert '- "runtime-database-readiness"' in workflow
+    assert "group: production-host-mutation" in workflow
+    assert "Checkout runtime database readiness helper" in workflow
+    assert "if: inputs.action == 'runtime-database-readiness'" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "permissions:\n      contents: read" in workflow
+    assert "StrictHostKeyChecking=yes" in workflow
+    assert 'diagnostic_script_local="deploy/remote-runtime-database-readiness.sh"' in workflow
+    assert 'ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}"' in workflow
+    assert '< "${diagnostic_script_local}"' in workflow
+    assert "scp " not in workflow
+    assert "/tmp/npcink-runtime-database-readiness" not in workflow
+    assert "Deploy Production" not in _payload()

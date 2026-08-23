@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - "disk-report"
+          - "runtime-database-readiness"
           - "certificate-readiness"
           - "certificate-readiness-refresh"
           - "ownership-binding-diagnose"
@@ -173,8 +174,15 @@ jobs:
       inputs.action != 'ownership-binding-diagnose' &&
       inputs.action != 'ownership-binding-release'
     environment: production
-    permissions: {}
+    permissions:
+      contents: read
     steps:
+      - name: Checkout runtime database readiness helper
+        if: inputs.action == 'runtime-database-readiness'
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
       - name: Install SSH key
         env:
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
@@ -211,7 +219,7 @@ jobs:
           set -euo pipefail
           test "${PROD_SSH_USER}" = "root"
           case "${MAINTENANCE_ACTION}" in
-            disk-report|certificate-readiness|certificate-readiness-refresh|safe-prune) ;;
+            disk-report|runtime-database-readiness|certificate-readiness|certificate-readiness-refresh|safe-prune) ;;
             *)
               echo "[fail] Unknown maintenance action: ${MAINTENANCE_ACTION}" >&2
               exit 1
@@ -258,6 +266,18 @@ jobs:
             -o ConnectTimeout=10
           )
           ssh_target="${PROD_SSH_USER}@${PROD_SSH_HOST}"
+          if [ "${MAINTENANCE_ACTION}" = "runtime-database-readiness" ]; then
+            diagnostic_script_local="deploy/remote-runtime-database-readiness.sh"
+            if [ ! -f "${diagnostic_script_local}" ] || [ -L "${diagnostic_script_local}" ] || \
+              [ ! -x "${diagnostic_script_local}" ]; then
+              echo "[fail] Runtime database readiness helper is missing or unsafe." >&2
+              exit 1
+            fi
+            remote_command="bash -s -- $(remote_shell_arg "${PROD_REMOTE_DIR}")"
+            ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}" \
+              < "${diagnostic_script_local}"
+            exit 0
+          fi
 
           remote_command="bash -s -- $(remote_shell_arg "${MAINTENANCE_ACTION}") $(remote_shell_arg "${PROD_REMOTE_DIR}") $(remote_shell_arg "${RELEASE_RETENTION_COUNT}")"
 
