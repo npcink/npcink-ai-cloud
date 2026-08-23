@@ -92,8 +92,8 @@ def _execute_payload(
     alembic_query_error: Exception | None = None,
     sslmode: str = "verify-full",
     sslrootcert: str | None = None,
-    dns_error: OSError | None = None,
     tcp_error: OSError | None = None,
+    expected_tcp_host: str | None = None,
 ) -> None:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
@@ -106,7 +106,7 @@ def _execute_payload(
     settings = {
         "database_url": (
             "postgresql+psycopg://app:redacted@db.internal:5432/cloud"
-            f"?sslmode={sslmode}&sslrootcert={ca_path}"
+            f"?sslmode={sslmode}&sslrootcert={ca_path}&hostaddr=127.0.0.1"
         ),
         "database_pool_size": 2,
         "database_max_overflow": 1,
@@ -140,16 +140,16 @@ def _execute_payload(
         fake_load_runtime_settings_values,
     )
 
-    def fake_getaddrinfo(*_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
-        if dns_error is not None:
-            raise dns_error
-        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 5432))]
+    def reject_getaddrinfo(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("validated runtime database address must be reused")
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(socket, "getaddrinfo", reject_getaddrinfo)
 
-    def fake_create_connection(*_args: object, **_kwargs: object):  # type: ignore[no-untyped-def]
+    def fake_create_connection(address, **_kwargs):  # type: ignore[no-untyped-def]
         if tcp_error is not None:
             raise tcp_error
+        if expected_tcp_host is not None:
+            assert address == (expected_tcp_host, 5432)
         return nullcontext()
 
     monkeypatch.setattr(socket, "create_connection", fake_create_connection)
@@ -160,7 +160,7 @@ def _execute_payload(
 def test_running_api_payload_accepts_fresh_pg18_tls_and_known_revision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _execute_payload(monkeypatch)
+    _execute_payload(monkeypatch, expected_tcp_host="127.0.0.1")
 
 
 @pytest.mark.parametrize(
@@ -204,7 +204,6 @@ def test_running_api_payload_accepts_fresh_pg18_tls_and_known_revision(
         ({"alembic_query_error": RuntimeError("secret query detail")}, 15),
         ({"sslmode": "require"}, 16),
         ({"sslrootcert": "/missing/secret-ca.pem"}, 17),
-        ({"dns_error": OSError("secret DNS detail")}, 18),
         ({"tcp_error": OSError("secret TCP detail")}, 19),
         ({"connection_error": _SqlstateError("28P01")}, 20),
         ({"connection_error": _SqlstateError("53300")}, 21),
