@@ -1122,6 +1122,7 @@ require_file "scripts/production-application-image-inputs.py"
 require_file "scripts/production-release-plan.py"
 require_file "scripts/resolve-production-release-action.py"
 require_file "scripts/production-release-preflight.py"
+require_file ".github/scripts/production-promotion-preflight.py"
 require_file "scripts/check-production-pr-base.py"
 require_file "scripts/release-readiness-summary.py"
 require_marker "scripts/production-release-plan.py" \
@@ -1138,6 +1139,7 @@ require_marker "docs/cloud-production-release-policy-v1.md" \
 	"npcink.production-application-image-cache.v1"
 require_marker "package.json" '"production:release:preflight":'
 require_marker "package.json" '"production:release:preflight:dry-run":'
+require_marker "package.json" '"production:promotion:preflight":'
 require_marker "package.json" '"check:production-pr-base":'
 require_marker "package.json" '"release:readiness":'
 require_marker "scripts/check-production-pr-base.py" \
@@ -1162,6 +1164,14 @@ require_marker "scripts/production-release-preflight.py" \
 	'bundle_artifact_text'
 require_marker "scripts/production-release-preflight.py" \
 	"FORMAL_SMOKE_REQUIRED_SECRETS"
+require_marker ".github/scripts/production-promotion-preflight.py" \
+	"npcink.production_promotion_preflight.v1"
+require_marker ".github/scripts/production-promotion-preflight.py" \
+	"action=certificate-readiness"
+require_marker ".github/scripts/production-promotion-preflight.py" \
+	"bootstrap maintenance run lacks certificate readiness evidence"
+require_marker ".github/scripts/production-promotion-preflight.py" \
+	"candidate SHA changed during the certificate readiness check"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
 require_marker "scripts/production-ci-evidence.py" \
 	"production commit tree does not match the tree tested by the production PR"
@@ -1277,6 +1287,7 @@ require_marker ".github/workflows/production-maintenance.yml" "permissions: {}"
 require_marker ".github/workflows/production-maintenance.yml" "safe_prune_confirmation:"
 require_marker ".github/workflows/production-maintenance.yml" "Prune production images and old releases."
 require_marker ".github/workflows/production-maintenance.yml" "certificate_readiness_refresh_confirmation:"
+require_marker ".github/workflows/production-maintenance.yml" "readiness_request_id:"
 require_marker ".github/workflows/production-maintenance.yml" "Refresh production certificate readiness evidence."
 require_marker ".github/workflows/production-maintenance.yml" '"${readiness_script}" generate'
 require_marker ".github/workflows/production-maintenance.yml" 'current release changed while acquiring the certificate readiness refresh lock'

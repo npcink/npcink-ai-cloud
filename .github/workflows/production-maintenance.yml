@@ -1,4 +1,5 @@
 name: Production Maintenance
+run-name: Production Maintenance / ${{ inputs.action }} / ${{ inputs.readiness_request_id || 'manual' }}
 
 on:
   workflow_dispatch:
@@ -27,6 +28,11 @@ on:
         type: string
       certificate_readiness_refresh_confirmation:
         description: "For certificate-readiness-refresh only, type: Refresh production certificate readiness evidence."
+        required: false
+        default: ""
+        type: string
+      readiness_request_id:
+        description: "Optional request identifier used by the promotion readiness preflight."
         required: false
         default: ""
         type: string
