@@ -3,9 +3,10 @@ from __future__ import annotations
 import socket
 from contextlib import nullcontext
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+
+from app.core.runtime_config import RuntimeConfigError
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "deploy/remote-runtime-database-readiness.sh"
@@ -97,24 +98,24 @@ def _execute_payload(
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    from app.core import config as config_module
     from app.core import db as db_module
+    from app.core import runtime_config as runtime_config_module
 
     head = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_heads()[0]
     ca_path = sslrootcert if sslrootcert is not None else str(ROOT / "alembic.ini")
-    settings = SimpleNamespace(
-        database_url=(
+    settings = {
+        "database_url": (
             "postgresql+psycopg://app:redacted@db.internal:5432/cloud"
             f"?sslmode={sslmode}&sslrootcert={ca_path}"
         ),
-        database_pool_size=2,
-        database_max_overflow=1,
-        database_pool_timeout_seconds=10,
-        database_pool_recycle_seconds=1800,
-        database_connect_timeout_seconds=5,
-    )
+        "database_pool_size": 2,
+        "database_max_overflow": 1,
+        "database_pool_timeout_seconds": 10,
+        "database_pool_recycle_seconds": 1800,
+        "database_connect_timeout_seconds": 5,
+    }
 
-    def fake_get_settings() -> SimpleNamespace:
+    def fake_load_runtime_settings_values(_config_dir: Path) -> dict[str, object]:
         if settings_error is not None:
             raise settings_error
         return settings
@@ -132,8 +133,12 @@ def _execute_payload(
             connection_error,
         )
 
-    monkeypatch.setattr(config_module, "get_settings", fake_get_settings)
     monkeypatch.setattr(db_module, "get_engine", fake_get_engine)
+    monkeypatch.setattr(
+        runtime_config_module,
+        "load_runtime_settings_values",
+        fake_load_runtime_settings_values,
+    )
 
     def fake_getaddrinfo(*_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
         if dns_error is not None:
@@ -162,6 +167,30 @@ def test_running_api_payload_accepts_fresh_pg18_tls_and_known_revision(
     ("kwargs", "expected_code"),
     [
         ({"settings_error": RuntimeError("secret setting detail")}, 10),
+        (
+            {
+                "settings_error": RuntimeConfigError(
+                    "runtime database TLS mode is invalid"
+                )
+            },
+            16,
+        ),
+        (
+            {
+                "settings_error": RuntimeConfigError(
+                    "runtime database CA digest is invalid"
+                )
+            },
+            17,
+        ),
+        (
+            {
+                "settings_error": RuntimeConfigError(
+                    "runtime database hostname could not be resolved"
+                )
+            },
+            18,
+        ),
         ({"engine_error": RuntimeError("secret engine detail")}, 11),
         (
             {

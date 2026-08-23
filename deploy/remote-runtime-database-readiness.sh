@@ -69,18 +69,47 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
-from app.core.config import get_settings
 from app.core.db import get_engine
+from app.core.runtime_config import (
+    RuntimeConfigError,
+    config_dir_from_environment,
+    load_runtime_settings_values,
+)
 from scripts.alembic_revision_gate import require_upgradeable_revisions
 
 try:
-    settings = get_settings()
+    runtime_values = load_runtime_settings_values(config_dir_from_environment())
+except RuntimeConfigError as error:
+    config_error = str(error)
+    if config_error == "runtime database TLS mode is invalid":
+        raise SystemExit(16)
+    if config_error.startswith("runtime database CA "):
+        raise SystemExit(17)
+    if config_error in {
+        "runtime database hostname could not be resolved",
+        "runtime database hostname resolution is invalid",
+        "runtime database hostname must resolve only to private addresses",
+    }:
+        raise SystemExit(18)
+    raise SystemExit(10)
 except Exception:
     raise SystemExit(10)
 try:
-    database_url = make_url(settings.database_url)
+    database_url_text = str(runtime_values["database_url"])
+    database_pool_size = int(runtime_values["database_pool_size"])
+    database_max_overflow = int(runtime_values["database_max_overflow"])
+    database_pool_timeout_seconds = int(
+        runtime_values["database_pool_timeout_seconds"]
+    )
+    database_pool_recycle_seconds = int(
+        runtime_values["database_pool_recycle_seconds"]
+    )
+    database_connect_timeout_seconds = int(
+        runtime_values["database_connect_timeout_seconds"]
+    )
+    database_url = make_url(database_url_text)
 except Exception:
-    raise SystemExit(16)
+    raise SystemExit(10)
 if (
     database_url.get_backend_name() != "postgresql"
     or not database_url.host
@@ -110,19 +139,19 @@ if not resolved_addresses:
 try:
     with socket.create_connection(
         (database_url.host, database_port),
-        timeout=settings.database_connect_timeout_seconds,
+        timeout=database_connect_timeout_seconds,
     ):
         pass
 except OSError:
     raise SystemExit(19)
 try:
     engine = get_engine(
-        settings.database_url,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_max_overflow,
-        pool_timeout_seconds=settings.database_pool_timeout_seconds,
-        pool_recycle_seconds=settings.database_pool_recycle_seconds,
-        connect_timeout_seconds=settings.database_connect_timeout_seconds,
+        database_url_text,
+        pool_size=database_pool_size,
+        max_overflow=database_max_overflow,
+        pool_timeout_seconds=database_pool_timeout_seconds,
+        pool_recycle_seconds=database_pool_recycle_seconds,
+        connect_timeout_seconds=database_connect_timeout_seconds,
     )
 except Exception:
     raise SystemExit(11)
