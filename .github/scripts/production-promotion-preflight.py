@@ -130,7 +130,7 @@ def _active_deploy_ids(payload: object) -> list[int]:
     return sorted(active)
 
 
-def _require_secret_names(preflight: ModuleType, repo: str) -> list[str]:
+def _require_secret_names(preflight: ModuleType, repo: str) -> int:
     try:
         repository_names = preflight._secret_names(
             ["gh", "secret", "list", "--repo", repo, "--json", "name"]
@@ -154,8 +154,10 @@ def _require_secret_names(preflight: ModuleType, repo: str) -> list[str]:
         preflight.DEPLOY_REQUIRED_SECRETS - (repository_names | environment_names)
     )
     if missing:
-        raise PromotionPreflightError("missing deployment secret names: " + ", ".join(missing))
-    return sorted(
+        raise PromotionPreflightError(
+            f"missing required deployment secret metadata: count={len(missing)}"
+        )
+    return len(
         preflight.FORMAL_SMOKE_REQUIRED_SECRETS
         - (repository_names | environment_names)
     )
@@ -304,7 +306,7 @@ def render_text(result: dict[str, Any]) -> str:
         "local_gates",
         "deploy_secrets_ready",
         "formal_smoke_secrets_ready",
-        "missing_formal_smoke_secret_names",
+        "missing_formal_smoke_secret_count",
         "active_deploy_run_ids",
     )
     return "\n".join(
@@ -370,7 +372,7 @@ def main() -> int:
             raise PromotionPreflightError(
                 "candidate SHA does not match the current GitHub branch"
             )
-        missing_smoke_secrets = _require_secret_names(preflight, args.repo)
+        missing_smoke_secret_count = _require_secret_names(preflight, args.repo)
         _require_no_active_deploy(preflight, args.repo)
         release_action = _release_action(candidate.predicted_lane)
         certificate_run_id: int | None = None
@@ -407,8 +409,8 @@ def main() -> int:
             "certificate_readiness_run_id": certificate_run_id,
             "local_gates": "passed",
             "deploy_secrets_ready": True,
-            "formal_smoke_secrets_ready": not missing_smoke_secrets,
-            "missing_formal_smoke_secret_names": missing_smoke_secrets,
+            "formal_smoke_secrets_ready": missing_smoke_secret_count == 0,
+            "missing_formal_smoke_secret_count": missing_smoke_secret_count,
             "active_deploy_run_ids": [],
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }
