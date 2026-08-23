@@ -1283,11 +1283,25 @@ reject_marker ".github/workflows/production-maintenance.yml" "ssh-keyscan"
 require_marker ".github/workflows/production-maintenance.yml" 'PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}'
 require_marker ".github/workflows/production-maintenance.yml" 'StrictHostKeyChecking=yes'
 require_marker ".github/workflows/production-maintenance.yml" "group: production-host-mutation"
-require_marker ".github/workflows/production-maintenance.yml" "permissions: {}"
+reject_marker ".github/workflows/production-maintenance.yml" "permissions: {}"
+require_marker ".github/workflows/production-maintenance.yml" "persist-credentials: false"
 require_marker ".github/workflows/production-maintenance.yml" "safe_prune_confirmation:"
 require_marker ".github/workflows/production-maintenance.yml" "Prune production images and old releases."
 require_marker ".github/workflows/production-maintenance.yml" "certificate_readiness_refresh_confirmation:"
 require_marker ".github/workflows/production-maintenance.yml" "readiness_request_id:"
+require_marker ".github/workflows/production-maintenance.yml" '"runtime-database-readiness"'
+require_marker ".github/workflows/production-maintenance.yml" \
+	'< "${diagnostic_script_local}"'
+require_file "deploy/remote-runtime-database-readiness.sh"
+require_executable "deploy/remote-runtime-database-readiness.sh"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"running_api_fresh_postgres_tls_and_alembic_ready"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"postgres_tls_or_server_version_query_failed"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"alembic_revision_query_failed"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"runtime_database_diagnostic_timeout"
 require_marker ".github/workflows/production-maintenance.yml" "Refresh production certificate readiness evidence."
 require_marker ".github/workflows/production-maintenance.yml" '"${readiness_script}" generate'
 require_marker ".github/workflows/production-maintenance.yml" 'current release changed while acquiring the certificate readiness refresh lock'
