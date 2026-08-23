@@ -1297,7 +1297,15 @@ require_executable "deploy/remote-runtime-database-readiness.sh"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"running_api_fresh_postgres_tls_and_alembic_ready"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
-	"postgres_tls_or_server_version_query_failed"
+	"postgres_ca_file_unavailable"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"postgres_host_resolution_failed"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"postgres_tcp_connection_failed"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"postgres_authentication_failed"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"postgres_tls_connection_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"alembic_revision_query_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
