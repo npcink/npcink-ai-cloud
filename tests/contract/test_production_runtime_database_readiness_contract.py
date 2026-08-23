@@ -158,6 +158,7 @@ def test_helper_redacts_raw_errors_and_maps_fixed_reasons() -> None:
     source = HELPER.read_text(encoding="utf-8")
 
     assert 'docker exec -i "${api_container_id}" python -' in source
+    assert "timeout --signal=TERM --kill-after=5s 45s" in source
     assert "PY\ndiagnostic_status=$?" in source
     assert "PY\n" in source
     assert ">/dev/null 2>&1" in source
@@ -168,6 +169,7 @@ def test_helper_redacts_raw_errors_and_maps_fixed_reasons() -> None:
         "alembic_revision_not_upgradeable",
         "postgres_tls_or_server_version_query_failed",
         "alembic_revision_query_failed",
+        "runtime_database_diagnostic_timeout",
         "running_api_diagnostic_execution_failed",
     ):
         assert reason in source
@@ -193,6 +195,9 @@ def test_production_maintenance_exposes_bounded_read_only_action() -> None:
     assert 'diagnostic_script_local="deploy/remote-runtime-database-readiness.sh"' in workflow
     assert 'ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}"' in workflow
     assert '< "${diagnostic_script_local}"' in workflow
+    assert "timeout --signal=TERM --kill-after=5s 75s" in workflow
+    assert 'if [ "${diagnostic_status}" = "124" ]' in workflow
+    assert "reason=runtime_database_diagnostic_timeout" in workflow
     assert "scp " not in workflow
     assert "/tmp/npcink-runtime-database-readiness" not in workflow
     assert "Deploy Production" not in _payload()

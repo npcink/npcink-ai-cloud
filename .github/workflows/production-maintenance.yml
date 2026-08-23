@@ -274,9 +274,18 @@ jobs:
               exit 1
             fi
             remote_command="bash -s -- $(remote_shell_arg "${PROD_REMOTE_DIR}")"
-            ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}" \
+            diagnostic_status=0
+            set +e
+            timeout --signal=TERM --kill-after=5s 75s \
+              ssh "${ssh_args[@]}" "${ssh_target}" "${remote_command}" \
               < "${diagnostic_script_local}"
-            exit 0
+            diagnostic_status=$?
+            set -e
+            if [ "${diagnostic_status}" = "124" ]; then
+              echo "[runtime-database-readiness:fail] reason=runtime_database_diagnostic_timeout." >&2
+              exit 1
+            fi
+            exit "${diagnostic_status}"
           fi
 
           remote_command="bash -s -- $(remote_shell_arg "${MAINTENANCE_ACTION}") $(remote_shell_arg "${PROD_REMOTE_DIR}") $(remote_shell_arg "${RELEASE_RETENTION_COUNT}")"

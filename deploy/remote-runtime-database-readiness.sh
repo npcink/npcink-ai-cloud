@@ -38,6 +38,7 @@ fi
 . "${ROOT_DIR}/deploy/common.sh"
 npcink_ai_cloud_load_env_file "${ROOT_DIR}"
 npcink_ai_cloud_require_cmd docker
+npcink_ai_cloud_require_cmd timeout
 
 api_container_ids="$(npcink_ai_cloud_compose "${ROOT_DIR}" ps -q api)" || {
 	echo "[runtime-database-readiness:fail] reason=api_container_query_failed." >&2
@@ -58,7 +59,8 @@ fi
 
 diagnostic_status=0
 set +e
-docker exec -i "${api_container_id}" python - <<'PY' >/dev/null 2>&1
+timeout --signal=TERM --kill-after=5s 45s \
+	docker exec -i "${api_container_id}" python - <<'PY' >/dev/null 2>&1
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
@@ -119,6 +121,7 @@ case "${diagnostic_status}" in
 	13) diagnostic_reason="alembic_revision_not_upgradeable" ;;
 	14) diagnostic_reason="postgres_tls_or_server_version_query_failed" ;;
 	15) diagnostic_reason="alembic_revision_query_failed" ;;
+	124) diagnostic_reason="runtime_database_diagnostic_timeout" ;;
 	*) diagnostic_reason="running_api_diagnostic_execution_failed" ;;
 esac
 

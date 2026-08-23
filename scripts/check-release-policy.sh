@@ -1300,6 +1300,8 @@ require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"postgres_tls_or_server_version_query_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"alembic_revision_query_failed"
+require_marker "deploy/remote-runtime-database-readiness.sh" \
+	"runtime_database_diagnostic_timeout"
 require_marker ".github/workflows/production-maintenance.yml" "Refresh production certificate readiness evidence."
 require_marker ".github/workflows/production-maintenance.yml" '"${readiness_script}" generate'
 require_marker ".github/workflows/production-maintenance.yml" 'current release changed while acquiring the certificate readiness refresh lock'
