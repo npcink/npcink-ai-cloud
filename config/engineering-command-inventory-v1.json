@@ -621,12 +621,15 @@
         "docs/cloud-production-release-policy-v1.md",
         "deploy/PRODUCTION_GITHUB_DEPLOY.md",
         "deploy/RELEASE_CHECKLIST.md",
+        ".github/scripts/production-promotion-preflight.py",
         "scripts/production-release-preflight.py",
+        "tests/dev/test_production_promotion_preflight.py",
         "tests/dev/test_production_release_preflight.py"
       ],
       "commands": {
         "production:release:preflight": "Verify exact production CI, CodeQL, bundle, active-deploy, and secret-name readiness before manual dispatch.",
-        "production:release:preflight:dry-run": "Validate saved production preflight metadata without GitHub access, waiting, or dispatch."
+        "production:release:preflight:dry-run": "Validate saved production preflight metadata without GitHub access, waiting, or dispatch.",
+        "production:promotion:preflight": "Run local release gates, predict the release action, verify deploy metadata, and dispatch the read-only certificate readiness check before opening a production PR."
       }
     },
     {
