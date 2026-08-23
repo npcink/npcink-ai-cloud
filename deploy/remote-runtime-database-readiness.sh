@@ -113,6 +113,7 @@ except Exception:
 if (
     database_url.get_backend_name() != "postgresql"
     or not database_url.host
+    or not database_url.query.get("hostaddr")
     or database_url.query.get("sslmode") != "verify-full"
     or not database_url.query.get("sslrootcert")
 ):
@@ -126,19 +127,10 @@ except OSError:
 if not ca_prefix:
     raise SystemExit(17)
 database_port = database_url.port or 5432
-try:
-    resolved_addresses = socket.getaddrinfo(
-        database_url.host,
-        database_port,
-        type=socket.SOCK_STREAM,
-    )
-except OSError:
-    raise SystemExit(18)
-if not resolved_addresses:
-    raise SystemExit(18)
+database_hostaddr = str(database_url.query["hostaddr"])
 try:
     with socket.create_connection(
-        (database_url.host, database_port),
+        (database_hostaddr, database_port),
         timeout=database_connect_timeout_seconds,
     ):
         pass
