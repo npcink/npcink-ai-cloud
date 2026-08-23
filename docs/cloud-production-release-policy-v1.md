@@ -136,6 +136,30 @@ evidence.
 
 #### Production PR base and readiness prechecks
 
+Before opening a normal production-promotion PR, run:
+
+```bash
+pnpm run production:promotion:preflight
+```
+
+The command requires a clean current `master` or bounded `release-fix/*`
+candidate, runs complete Ruff and the release-policy contract, predicts the
+release lane from the current `origin/production` and candidate trees, checks
+deployment secret names, and rejects any active Deploy Production run. It then
+reports missing formal-smoke secret names as advisory evidence because the
+short-lived Portal code is obtained after deployment. For `static` or `runtime`
+plans, it dispatches the existing non-mutating `certificate-readiness`
+maintenance action with a unique request identifier and waits for the exact
+production-SHA run to pass. A `no_deploy` plan skips that host check. The command
+does not create or merge a PR, refresh certificate evidence, dispatch Deploy
+Production, or mutate the production host. A stale local or GitHub branch,
+unknown changed path, missing deployment secret name, concurrent deployment,
+failed certificate check, or unbound workflow result blocks promotion.
+
+The resulting `npcink.production_promotion_preflight.v1` receipt is planning
+evidence only. Protected production-PR checks, the exact production-push plan,
+manual deployment authorization, and post-deploy verification remain required.
+
 Production pull requests targeting `production` run the lightweight
 `production-pr-base-precheck` before the aggregate backend check. It fails
 closed unless the base is this repository's `production` branch, the head is
@@ -289,10 +313,13 @@ promotion commit.
 
 The plan compares the exact event-before and production revisions. Empty or
 unknown path sets, Dockerfiles, dependency locks, image locks, and mixed
-backend/frontend impact fail closed to `full`. Documentation, tests, and CI
-workflow-only changes may select `no_deploy`; pure `site/terms/**` changes may
-select `static`. A missing, malformed, or SHA/tree-mismatched receipt is not
-deployment authority.
+backend/frontend impact fail closed to `full`. Documentation, tests, CI
+workflow-only changes, and explicitly allowlisted repository-policy validators
+that are absent from every production image, release bundle, and host runtime
+input may select `no_deploy`; pure `site/terms/**` changes may select `static`.
+The repository-only allowlist remains path-exact so an unknown `scripts/**`
+change continues to fail closed. A missing, malformed, or SHA/tree-mismatched
+receipt is not deployment authority.
 
 Production CI resolves the exact same-run plan before deciding whether runtime
 bundle work applies. `no_deploy` and `static` actions skip the runtime image
