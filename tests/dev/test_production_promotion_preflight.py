@@ -142,6 +142,7 @@ def test_certificate_readiness_wait_binds_request_and_production_sha(
         ROOT,
         repo="npcink/npcink-ai-cloud",
         request_id=request_id,
+        baseline_run_ids=set(),
         production_sha=SHA,
         wait_seconds=30,
         poll_seconds=1,
@@ -176,10 +177,141 @@ def test_certificate_readiness_rejects_mismatched_production_sha(
             ROOT,
             repo="npcink/npcink-ai-cloud",
             request_id=request_id,
+            baseline_run_ids=set(),
             production_sha=SHA,
             wait_seconds=30,
             poll_seconds=1,
         )
+
+
+def test_bootstrap_certificate_wait_binds_unique_new_production_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_certificate_runs",
+        lambda *_args, **_kwargs: [
+            {
+                "databaseId": 100,
+                "displayTitle": "Production Maintenance",
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": SHA,
+            },
+            {
+                "databaseId": 99,
+                "displayTitle": "Production Maintenance",
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": SHA,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: (
+            "maintenance [certificate-preflight:ok] readiness receipt age_seconds=0"
+        ),
+    )
+
+    run_id = module._wait_for_certificate_readiness(
+        ROOT,
+        repo="npcink/npcink-ai-cloud",
+        request_id=None,
+        baseline_run_ids={99},
+        production_sha=SHA,
+        wait_seconds=30,
+        poll_seconds=1,
+    )
+
+    assert run_id == 100
+
+
+def test_bootstrap_certificate_wait_rejects_other_maintenance_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_certificate_runs",
+        lambda *_args, **_kwargs: [
+            {
+                "databaseId": 100,
+                "displayTitle": "Production Maintenance",
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": SHA,
+            }
+        ],
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: "disk report only")
+
+    with pytest.raises(module.PromotionPreflightError, match="lacks certificate"):
+        module._wait_for_certificate_readiness(
+            ROOT,
+            repo="npcink/npcink-ai-cloud",
+            request_id=None,
+            baseline_run_ids=set(),
+            production_sha=SHA,
+            wait_seconds=30,
+            poll_seconds=1,
+        )
+
+
+def test_bootstrap_dispatch_omits_unknown_workflow_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **_kwargs: commands.append(command) or "",
+    )
+
+    module._dispatch_certificate_readiness(
+        ROOT,
+        "npcink/npcink-ai-cloud",
+        None,
+    )
+
+    assert "action=certificate-readiness" in commands[0]
+    assert all("readiness_request_id=" not in argument for argument in commands[0])
+
+
+def test_production_workflow_contract_selects_bootstrap_only_when_needed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: "name: Production Maintenance\naction:\n",
+    )
+    assert (
+        module._production_workflow_supports_request_id(
+            ROOT,
+            "npcink/npcink-ai-cloud",
+        )
+        is False
+    )
+
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: (
+            "readiness_request_id:\nrun-name: ${{ inputs.readiness_request_id }}\n"
+        ),
+    )
+    assert (
+        module._production_workflow_supports_request_id(
+            ROOT,
+            "npcink/npcink-ai-cloud",
+        )
+        is True
+    )
 
 
 def test_workflow_exposes_unique_readiness_request_contract() -> None:

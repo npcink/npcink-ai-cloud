@@ -152,11 +152,14 @@ after deployment. For `static` or `runtime` plans, it dispatches the existing
 non-mutating
 `certificate-readiness` maintenance action with a unique request identifier and
 waits for the exact production-SHA run to pass. A `no_deploy` plan skips that
-host check. The command does not create or merge a PR, refresh certificate
-evidence, dispatch Deploy Production, or mutate the production host. A stale
-local or GitHub branch, unknown changed path, missing deployment secret name,
-concurrent deployment, failed certificate check, or unbound workflow result
-blocks promotion.
+host check. Before the production workflow contains the request-ID contract,
+the one-time bootstrap path binds the result through the pre-dispatch run-ID
+set, the production SHA, unique new successful run, and the protected
+certificate-readiness log marker. The command does not create or merge a PR,
+refresh certificate evidence, dispatch Deploy Production, or mutate the
+production host. A stale local or GitHub branch, unknown changed path, missing
+deployment secret name, concurrent deployment, failed certificate check, or
+unbound workflow result blocks promotion.
 
 The resulting `npcink.production_promotion_preflight.v1` receipt is planning
 evidence only. Protected production-PR checks, the exact production-push plan,

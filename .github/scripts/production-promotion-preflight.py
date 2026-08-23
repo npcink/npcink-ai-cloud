@@ -191,67 +191,116 @@ def _require_no_active_deploy(preflight: ModuleType, repo: str) -> None:
         )
 
 
-def _dispatch_certificate_readiness(root: Path, repo: str, request_id: str) -> None:
-    if REQUEST_ID_PATTERN.fullmatch(request_id) is None:
-        raise PromotionPreflightError("certificate readiness request id is invalid")
-    _run(
+def _production_workflow_supports_request_id(root: Path, repo: str) -> bool:
+    source = _run(
         [
             "gh",
-            "workflow",
-            "run",
-            "production-maintenance.yml",
-            "--repo",
-            repo,
-            "--ref",
-            "production",
+            "api",
+            "--method",
+            "GET",
+            "-H",
+            "Accept: application/vnd.github.raw+json",
+            f"repos/{repo}/contents/.github/workflows/production-maintenance.yml",
             "-f",
-            "action=certificate-readiness",
-            "-f",
-            f"readiness_request_id={request_id}",
+            "ref=production",
         ],
         cwd=root,
     )
+    return "readiness_request_id:" in source and "inputs.readiness_request_id" in source
+
+
+def _certificate_runs(root: Path, repo: str) -> list[dict[str, Any]]:
+    payload = _run_json(
+        [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            repo,
+            "--workflow",
+            "production-maintenance.yml",
+            "--event",
+            "workflow_dispatch",
+            "--limit",
+            "30",
+            "--json",
+            "databaseId,displayTitle,status,conclusion,headSha",
+        ],
+        cwd=root,
+    )
+    if not isinstance(payload, list) or any(not isinstance(run, dict) for run in payload):
+        raise PromotionPreflightError("certificate readiness run metadata is malformed")
+    return payload
+
+
+def _dispatch_certificate_readiness(
+    root: Path,
+    repo: str,
+    request_id: str | None,
+) -> None:
+    if request_id is not None and REQUEST_ID_PATTERN.fullmatch(request_id) is None:
+        raise PromotionPreflightError("certificate readiness request id is invalid")
+    command = [
+        "gh",
+        "workflow",
+        "run",
+        "production-maintenance.yml",
+        "--repo",
+        repo,
+        "--ref",
+        "production",
+        "-f",
+        "action=certificate-readiness",
+    ]
+    if request_id is not None:
+        command.extend(("-f", f"readiness_request_id={request_id}"))
+    _run(command, cwd=root)
+
+
+def _require_bootstrap_certificate_log(root: Path, repo: str, run_id: int) -> None:
+    log = _run(
+        ["gh", "run", "view", str(run_id), "--repo", repo, "--log"],
+        cwd=root,
+    )
+    if re.search(
+        r"\[certificate-preflight:(?:ok|warn)\] readiness receipt ",
+        log,
+    ) is None:
+        raise PromotionPreflightError(
+            "bootstrap maintenance run lacks certificate readiness evidence"
+        )
 
 
 def _wait_for_certificate_readiness(
     root: Path,
     *,
     repo: str,
-    request_id: str,
+    request_id: str | None,
+    baseline_run_ids: set[int],
     production_sha: str,
     wait_seconds: int,
     poll_seconds: int,
 ) -> int:
-    expected_title = f"Production Maintenance / certificate-readiness / {request_id}"
+    expected_title = (
+        f"Production Maintenance / certificate-readiness / {request_id}"
+        if request_id is not None
+        else None
+    )
     deadline = time.monotonic() + wait_seconds
     while True:
-        payload = _run_json(
-            [
-                "gh",
-                "run",
-                "list",
-                "--repo",
-                repo,
-                "--workflow",
-                "production-maintenance.yml",
-                "--event",
-                "workflow_dispatch",
-                "--limit",
-                "30",
-                "--json",
-                "databaseId,displayTitle,status,conclusion,headSha",
-            ],
-            cwd=root,
-        )
-        if not isinstance(payload, list):
-            raise PromotionPreflightError("certificate readiness run metadata is malformed")
+        payload = _certificate_runs(root, repo)
         matches = [
             run
             for run in payload
-            if isinstance(run, dict) and run.get("displayTitle") == expected_title
+            if (
+                run.get("displayTitle") == expected_title
+                if expected_title is not None
+                else run.get("databaseId") not in baseline_run_ids
+                and str(run.get("headSha") or "").lower() == production_sha
+            )
         ]
         if len(matches) > 1:
-            raise PromotionPreflightError("certificate readiness request id is not unique")
+            raise PromotionPreflightError("certificate readiness run is not unique")
         if matches:
             run = matches[0]
             run_id = run.get("databaseId")
@@ -268,6 +317,8 @@ def _wait_for_certificate_readiness(
                     raise PromotionPreflightError(
                         f"certificate readiness run {run_id} concluded {conclusion or 'unknown'}"
                     )
+                if request_id is None:
+                    _require_bootstrap_certificate_log(root, repo, run_id)
                 return run_id
         if time.monotonic() >= deadline:
             raise PromotionPreflightError("timed out waiting for certificate readiness")
@@ -369,12 +420,24 @@ def main() -> int:
         release_action = _release_action(candidate.predicted_lane)
         certificate_run_id: int | None = None
         if release_action != "no_deploy":
-            request_id = f"preflight-{uuid.uuid4().hex[:12]}"
+            supports_request_id = _production_workflow_supports_request_id(
+                root,
+                args.repo,
+            )
+            request_id = (
+                f"preflight-{uuid.uuid4().hex[:12]}" if supports_request_id else None
+            )
+            baseline_run_ids = {
+                run["databaseId"]
+                for run in _certificate_runs(root, args.repo)
+                if isinstance(run.get("databaseId"), int)
+            }
             _dispatch_certificate_readiness(root, args.repo, request_id)
             certificate_run_id = _wait_for_certificate_readiness(
                 root,
                 repo=args.repo,
                 request_id=request_id,
+                baseline_run_ids=baseline_run_ids,
                 production_sha=production_sha,
                 wait_seconds=args.wait_seconds,
                 poll_seconds=args.poll_seconds,
@@ -385,6 +448,13 @@ def main() -> int:
         ):
             raise PromotionPreflightError(
                 "production SHA changed during the certificate readiness check"
+            )
+        if (
+            _resolve_remote_branch_sha(preflight, args.repo, candidate.branch)
+            != candidate.candidate_sha
+        ):
+            raise PromotionPreflightError(
+                "candidate SHA changed during the certificate readiness check"
             )
         _require_no_active_deploy(preflight, args.repo)
         result = {

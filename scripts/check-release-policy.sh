@@ -1168,6 +1168,10 @@ require_marker ".github/scripts/production-promotion-preflight.py" \
 	"npcink.production_promotion_preflight.v1"
 require_marker ".github/scripts/production-promotion-preflight.py" \
 	"action=certificate-readiness"
+require_marker ".github/scripts/production-promotion-preflight.py" \
+	"bootstrap maintenance run lacks certificate readiness evidence"
+require_marker ".github/scripts/production-promotion-preflight.py" \
+	"candidate SHA changed during the certificate readiness check"
 require_marker "scripts/production-ci-evidence.py" "npcink.production_pr_ci_evidence.v1"
 require_marker "scripts/production-ci-evidence.py" \
 	"production commit tree does not match the tree tested by the production PR"
