@@ -200,6 +200,29 @@ def _resolve_remote_branch_sha(preflight: ModuleType, repo: str, branch: str) ->
         raise PromotionPreflightError(str(exc)) from exc
 
 
+def _require_remote_refs_current(
+    preflight: ModuleType,
+    *,
+    repo: str,
+    candidate: Candidate,
+) -> str:
+    production_sha = _resolve_remote_branch_sha(preflight, repo, "production")
+    if production_sha != candidate.base_sha:
+        raise PromotionPreflightError(
+            "local production base does not match the current GitHub production SHA"
+        )
+    remote_candidate_sha = _resolve_remote_branch_sha(
+        preflight,
+        repo,
+        candidate.branch,
+    )
+    if remote_candidate_sha != candidate.candidate_sha:
+        raise PromotionPreflightError(
+            "candidate SHA does not match the current GitHub branch"
+        )
+    return production_sha
+
+
 def _require_no_active_deploy(preflight: ModuleType, repo: str) -> None:
     active: set[int] = set()
     for status in sorted(ACTIVE_DEPLOY_STATUSES):
@@ -426,30 +449,21 @@ def main() -> int:
             base_ref=args.base_ref,
             candidate_ref=args.candidate_ref,
         )
+        preflight = _load_module(
+            "npcink_production_release_preflight_for_promotion",
+            root / "scripts" / "production-release-preflight.py",
+        )
+        production_sha = _require_remote_refs_current(
+            preflight,
+            repo=args.repo,
+            candidate=candidate,
+        )
         _require_candidate_mergeable(
             root,
             base_ref=args.base_ref,
             candidate_ref=args.candidate_ref,
         )
         _run_local_gates(root, python_bin)
-        preflight = _load_module(
-            "npcink_production_release_preflight_for_promotion",
-            root / "scripts" / "production-release-preflight.py",
-        )
-        production_sha = _resolve_remote_branch_sha(preflight, args.repo, "production")
-        if production_sha != candidate.base_sha:
-            raise PromotionPreflightError(
-                "local production base does not match the current GitHub production SHA"
-            )
-        remote_candidate_sha = _resolve_remote_branch_sha(
-            preflight,
-            args.repo,
-            candidate.branch,
-        )
-        if remote_candidate_sha != candidate.candidate_sha:
-            raise PromotionPreflightError(
-                "candidate SHA does not match the current GitHub branch"
-            )
         _require_deploy_secret_metadata(preflight, args.repo)
         _require_no_active_deploy(preflight, args.repo)
         release_action = _release_action(candidate.predicted_lane)

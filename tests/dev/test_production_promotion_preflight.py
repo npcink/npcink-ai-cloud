@@ -69,6 +69,45 @@ def test_mergeability_preflight_fails_closed_on_conflict(
         )
 
 
+def test_remote_ref_binding_rejects_stale_production_before_candidate_lookup() -> None:
+    module = _load_module()
+    calls: list[str] = []
+
+    class SourceError(RuntimeError):
+        pass
+
+    class PreflightStub:
+        PreflightError = SourceError
+
+        @staticmethod
+        def _gh_api(_repo: str, endpoint: str, **_kwargs: object) -> object:
+            calls.append(endpoint)
+            return {"object": {"sha": "b" * 40}}
+
+        @staticmethod
+        def _require_sha(value: object, _label: str) -> str:
+            assert isinstance(value, str)
+            return value
+
+    candidate = module.Candidate(
+        branch="master",
+        base_sha=SHA,
+        candidate_sha="c" * 40,
+        candidate_tree="d" * 40,
+        changed_files=(),
+        predicted_lane="no_deploy",
+    )
+
+    with pytest.raises(module.PromotionPreflightError, match="local production base"):
+        module._require_remote_refs_current(
+            PreflightStub,
+            repo="npcink/npcink-ai-cloud",
+            candidate=candidate,
+        )
+
+    assert calls == ["git/ref/heads/production"]
+
+
 def test_active_deploy_detection_is_global_and_sorted() -> None:
     module = _load_module()
     payload = {
