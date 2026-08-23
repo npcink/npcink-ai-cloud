@@ -260,7 +260,7 @@ case "${diagnostic_status}" in
 	11) diagnostic_reason="postgres_engine_initialization_failed" ;;
 	12) diagnostic_reason="postgres_major_not_18" ;;
 	13) diagnostic_reason="alembic_revision_not_upgradeable" ;;
-	14) diagnostic_reason="postgres_tls_connection_failed" ;;
+		14) diagnostic_reason="postgres_connection_failed" ;;
 	15) diagnostic_reason="alembic_revision_query_failed" ;;
 	16) diagnostic_reason="postgres_tls_contract_invalid" ;;
 	17) diagnostic_reason="postgres_ca_file_unavailable" ;;
@@ -273,7 +273,7 @@ case "${diagnostic_status}" in
 		24) diagnostic_reason="postgres_database_missing" ;;
 		25) diagnostic_reason="postgres_tls_certificate_verification_failed" ;;
 		26) diagnostic_reason="postgres_tls_protocol_failed" ;;
-		27) diagnostic_reason="postgres_tls_handshake_terminated" ;;
+		27) diagnostic_reason="postgres_connection_terminated" ;;
 		28) diagnostic_reason="postgres_connection_timeout" ;;
 		29) diagnostic_reason="postgres_connection_transport_failed" ;;
 	124) diagnostic_reason="runtime_database_diagnostic_timeout" ;;

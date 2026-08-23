@@ -1305,13 +1305,13 @@ require_marker "deploy/remote-runtime-database-readiness.sh" \
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"postgres_authentication_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
-	"postgres_tls_connection_failed"
+	"postgres_connection_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"postgres_tls_certificate_verification_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"postgres_tls_protocol_failed"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
-	"postgres_tls_handshake_terminated"
+	"postgres_connection_terminated"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
 	"postgres_connection_timeout"
 require_marker "deploy/remote-runtime-database-readiness.sh" \
