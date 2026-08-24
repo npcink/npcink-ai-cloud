@@ -40,6 +40,9 @@ deleting the old decision history.
 ## Product Boundaries
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
+- [WordPress AI Recommendation Development Standard](wordpress-ai-recommendation-development-standard-v1.md) — consolidated WordPress-first product boundary, phased delivery, editor UX, validation, observation, and single-operator rules.
+- [WordPress Editor Readiness Runbook](wordpress-editor-readiness-runbook-v1.md) — read-only prerequisites for local editor acceptance; Cloud-unavailable results are blocked, not recommendation evidence.
+- [WordPress Editor Acceptance Observation — 2026-08-24](wordpress-editor-acceptance-observation-2026-08-24.md) — five-sample latency and evidence baseline; observation only, not a performance SLA.
 
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
 - [Cloud Task Pack Boundary](cloud-task-pack-boundary-v1.md) — retired negative
@@ -77,7 +80,9 @@ deleting the old decision history.
 - [Development Efficiency Phase 3 Observation Plan](development-efficiency-phase3-observation-plan-v1.md) — current plan for collecting comparable delivery samples before further CI/shard/cache optimization
 - [Development Efficiency Phases 1–3 Closeout and Retrospective](development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
 - [Development and Delivery Efficiency Closeout and Retrospective](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
+- [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md) — bounded timing, evidence reuse, retry budgets, and local acceptance measurement rules
 - [Production Release Feedback Loop Closeout and Standard — 2026-08-13](production-release-feedback-loop-closeout-and-standard-2026-08-13.md) — dated release-identity/readiness/CI closeout plus the reusable early-failure, promotion, exact-SHA preflight, and timing discipline; current release authority remains the production policy
+- [Production Release Efficiency Phase 1-2 Closeout and Development Retrospective — 2026-08-23](history/production/2026/production-release-efficiency-phase1-closeout-and-development-retrospective-2026-08-23.md) — PR #851 merge, clean-master M4 acceptance, root causes of delay, reusable evidence rules, and deferred next steps; not production authorization
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)

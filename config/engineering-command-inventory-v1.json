@@ -224,6 +224,12 @@
         "README.md",
         "scripts/check_changed.py",
         "scripts/ai_task.py",
+        "scripts/measure_acceptance_command.py",
+        "scripts/wordpress_editor_readiness.py",
+        "scripts/wordpress_editor_acceptance.py",
+        "scripts/summarize_editor_acceptance.py",
+        "docs/development-delivery-efficiency-standard-v1.md",
+        "docs/wordpress-editor-readiness-runbook-v1.md",
         "tests/contract/test_check_changed_contract.py",
         "tests/contract/test_ai_task_contract.py"
       ],
@@ -232,7 +238,11 @@
         "verify:local": "Run the development-lane local gates for the current diff; do not publish or invoke GitHub.",
         "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
         "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
-        "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."
+        "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON.",
+        "timing:acceptance": "Append timing evidence for one bounded local acceptance command.",
+        "wordpress:editor:readiness": "Run read-only WordPress, plugin, database, site, and Cloud readiness checks.",
+        "wordpress:editor:acceptance": "Run bounded read-only related-article and internal-link checks against existing WordPress posts.",
+        "wordpress:editor:acceptance:summary": "Summarize natural editor acceptance samples without changing their evidence."
       }
     },
     {
