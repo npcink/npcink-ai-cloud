@@ -39,7 +39,7 @@ deleting the old decision history.
 
 ## Product Boundaries
 
-- [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
+- [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector and anchor evidence, coverage comparison, metadata-only recommendation sessions, consumer debugging, and native-save validation; implementation authority remains with the active runtime and connector contracts.
 
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
 - [Cloud Task Pack Boundary](cloud-task-pack-boundary-v1.md) — retired negative
@@ -52,7 +52,7 @@ deleting the old decision history.
 - [Cloud Agent Positioning](cloud-agent-positioning-v1.md)
 - [Cloud Agent Workflow Metadata Projection](cloud-agent-workflow-metadata-projection-v1.md)
 - [Cloud Agent Feedback Contract](cloud-agent-feedback-contract-v1.md)
-- [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md)
+- [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md) — metadata-only Content Support, Nightly Inspection, media, and recommendation funnel rollup contract.
 
 ## Engineering and Delivery Standards
 

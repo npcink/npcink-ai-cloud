@@ -114,6 +114,49 @@ successful WordPress non-autosave transition is required before an ALT event is
 classified as saved. Attachment ALT remains outside this first rollup because
 the current flow has no attachment-metadata final-write receipt.
 
+## Related-Article And Internal-Link Feedback
+
+The `recommendation_quality` summary is session-based and separates
+`internal_links` from `related_articles`.
+
+The accepted correlation contract is:
+
+```text
+source_object_type=recommendation_session
+source_object_id=<random site-scoped session id>
+```
+
+Supported action families include impression, open, copy, ignore, editor
+Apply, saved unchanged, saved edited, and undo. Cloud must deduplicate metrics
+by `site_id + source_object_id`; the same random string from two sites is not
+one session. Actions without a matching impression are reported as orphan
+sessions and excluded from impression-based rates.
+
+The summary reports:
+
+- impression, open, copy, ignore, Apply, save-confirmed, edited-save, and undo
+  session totals;
+- bounded candidate and applicable count buckets;
+- engagement, open, copy, Apply, saved-adoption, save-confirmation, saved-edit,
+  and undo rates; and
+- `sample_status=insufficient` below 20 impression sessions.
+
+`impression_only` events are denominators, not quality outcomes. They remain in
+raw event/outcome counts for operational traceability but are excluded from
+generic acceptance rates, quality trend, scenario summaries, low-quality label
+counts, and quality-label rates.
+
+The gate must prove `raw_content_stored=false`, `raw_anchor_stored=false`, and
+`provider_output_stored=false`. Recommendation telemetry must also omit source
+matches, public URLs, WordPress post IDs and user IDs, raw prompts, and final
+saved content. Cloud summarizes behavior only; WordPress remains the final
+write and adoption truth.
+
+Funnel data does not replace a human gold set. Open, copy, Apply, or save may
+reflect UI placement or operator workflow rather than relevance. Ranking,
+prompt, or router changes require a repeated signal with sufficient sessions
+and a separately reviewed sample.
+
 After the `npcink.local` sample-expansion trial, the first watchlist for
 Nightly Intelligence quality review is:
 

@@ -53,6 +53,31 @@ The editor may open, copy, ignore, or manually apply a candidate to the visible
 editor state. The system must not automatically insert anchors, save content,
 publish content, or create a frontend related-articles block.
 
+### 2.5 Anchor evidence must survive the Cloud boundary
+
+Internal-link retrieval may return `anchor_or_context` or
+`suggested_anchor_text` as candidate evidence. Cloud preserves only bounded
+phrase and source-chunk evidence needed by the WordPress consumer to attempt an
+exact match. It does not decide that a link is safe to apply and does not use a
+target title as an automatic final anchor.
+
+The WordPress consumer must still reject generic, missing, stale, or
+non-matching phrases. A candidate without a safe exact `source_match` remains a
+valid copy/open result but cannot become an editor Apply action.
+
+### 2.6 Recommendation observation is session metadata
+
+One random, site-scoped `recommendation_session` correlates a result-set
+impression with later open, copy, ignore, Apply, native-save, edit, and undo
+events. Cloud aggregates these events as read-only quality detail. It stores no
+article body, anchor text, source excerpt, URL, Provider output, WordPress user
+ID, or final edited content for this funnel.
+
+Impression-only events provide denominators and must not enter generic
+acceptance, quality-trend, scenario, or quality-label rates. A save event is
+valid only after WordPress reports a successful non-autosave save transition;
+Apply by itself is editing intent, not persisted adoption.
+
 ## 3. Reusable Debugging Lessons
 
 1. Trace the whole consumer path before changing the UI. A zero-result panel
@@ -83,6 +108,7 @@ For runtime-bearing changes, record evidence separately:
 | Local | focused API tests, validator regression tests, Ruff/mypy, diff check |
 | M4 candidate | source sync and focused runtime test; never call this accepted M4 |
 | WordPress consumer | coverage summary, filters, 50-row pagination, empty state, editor recommendation result |
+| Native-save acceptance | database unchanged after Apply, changed only after explicit WordPress save, correlated metadata-only save receipt, temporary fixture cleanup |
 | Merge/acceptance | only after the requested publication lane, clean master, and governed promotion |
 
 The minimum regression set for coverage changes is:
@@ -98,11 +124,16 @@ The minimum regression set for coverage changes is:
 
 - A real missing-article browser case still requires an isolated test fixture;
   a site where every article is indexed cannot prove the missing-row action.
-- Recommendation quality needs a labelled set of at least 30 articles and
-  separate Precision@5 evaluation for related articles and internal links.
-- Feedback should record only bounded recommendation metadata such as result
-  ID, score, and `useful`/`ignored`/`opened`; never store article body text or
-  provider raw output for this purpose.
+- Recommendation quality still needs a human-labelled set of 30 naturally
+  accumulated query articles and separate Precision@5 evaluation for related
+  articles and internal links. This is a threshold, not a one-time user
+  recruitment quota.
+- Feedback now records bounded session actions, retrieval/source status, count
+  buckets, and save outcomes. Cloud candidates and behavior events must not be
+  treated as the human gold set.
+- Aggregate funnel interpretation starts only after at least 20 impression
+  sessions per recommendation kind. One site or one operator is insufficient
+  evidence for ranking, prompt, or routing changes.
 - Cross-platform adapters remain deferred until the WordPress loop has quality
   evidence and a stable contract.
 
@@ -117,6 +148,8 @@ The minimum regression set for coverage changes is:
 - Editor candidate behavior and SEO/internal-link rules: repository
   `npcink-workflow-toolbox`, file
   `docs/related-article-and-internal-link-recommendation-standard-v1.md`.
+- Dated cross-repository evidence: repository `npcink-workflow-toolbox`, file
+  `docs/archive/2026-08/cloud-vector-recommendation-funnel-closeout-2026-08-24.md`.
 
 When this record conflicts with code, tests, an active boundary, or a release
 policy, those current authorities win and this record should be updated.
