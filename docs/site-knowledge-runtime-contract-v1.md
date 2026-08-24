@@ -435,9 +435,17 @@ Supported first workflows:
   follow-up without Cloud producing article titles, article bodies, SEO copy,
   `article_write_plan` candidates, full drafts, ready-to-publish content, or
   automatic publishing instructions.
-- `internal_links`: editor link recommendation. Results include
-  `anchor_text_candidates`, `link_target`, `suggested_action`, and
-  `insert_mode=wordpress_local_only`.
+- `internal_links`: editor link recommendation. WordPress may send up to 24
+  visible-editor `source_passages`, with at most 1,200 characters per passage
+  and 12,000 characters total. Other intents reject this field. The existing
+  `result_only` storage posture leaves durable runtime input empty, and Cloud
+  does not echo those passages.
+  When a vector candidate and a source passage share a specific exact phrase,
+  the result adds `anchor_or_context` plus bounded `anchor_evidence`; generic
+  phrases and the complete target title are rejected. Results continue to
+  include `anchor_text_candidates`, `link_target`, `suggested_action`, and
+  `insert_mode=wordpress_local_only`. WordPress must independently match the
+  returned phrase against current visible editor state before enabling Apply.
 - `refresh_suggestions`: stale/overlapping content review. Results include
   `refresh_action`, `refresh_signals`, `suggested_action`, and
   `update_mode=wordpress_local_only`. The same results include

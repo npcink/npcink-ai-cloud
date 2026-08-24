@@ -25,6 +25,9 @@ SITE_KNOWLEDGE_EXECUTION_KIND = "knowledge"
 SITE_KNOWLEDGE_ABILITY_FAMILY = "knowledge"
 SITE_KNOWLEDGE_DATA_CLASSIFICATION = "public_site_content"
 MAX_SITE_KNOWLEDGE_STATUS_POST_IDS = 1000
+MAX_SOURCE_PASSAGES = 24
+MAX_SOURCE_PASSAGE_CHARS = 1200
+MAX_SOURCE_PASSAGES_TOTAL_CHARS = 12000
 
 ALLOWED_SEARCH_INTENTS = frozenset(
     {
@@ -122,6 +125,12 @@ def validate_site_knowledge_runtime_contract(
             "site_knowledge.result_granularity_unsupported",
             "site knowledge result_granularity must be chunk or document",
         )
+    source_passages = normalize_source_passages(input_payload.get("source_passages"))
+    if source_passages and str(input_payload.get("intent") or "site_search") != "internal_links":
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.source_passages_intent_not_allowed",
+            "site knowledge source_passages are allowed only for internal_links",
+        )
     forbidden_path = find_forbidden_write_field(input_payload)
     if forbidden_path:
         raise SiteKnowledgeContractViolation(
@@ -148,6 +157,52 @@ def find_forbidden_write_field(value: Any, *, path: str = "") -> str:
             if nested:
                 return nested
     return ""
+
+
+def normalize_source_passages(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.source_passages_invalid",
+            "site knowledge source_passages must be a list of strings",
+        )
+    if len(value) > MAX_SOURCE_PASSAGES:
+        raise SiteKnowledgeContractViolation(
+            "site_knowledge.source_passages_too_many",
+            f"site knowledge source_passages accepts at most {MAX_SOURCE_PASSAGES} items",
+        )
+
+    passages: list[str] = []
+    total_chars = 0
+    for passage in value:
+        if not isinstance(passage, str):
+            raise SiteKnowledgeContractViolation(
+                "site_knowledge.source_passages_invalid",
+                "site knowledge source_passages must contain only strings",
+            )
+        normalized = " ".join(passage.split())
+        if not normalized:
+            continue
+        if len(normalized) > MAX_SOURCE_PASSAGE_CHARS:
+            raise SiteKnowledgeContractViolation(
+                "site_knowledge.source_passage_too_long",
+                (
+                    "each site knowledge source passage accepts at most "
+                    f"{MAX_SOURCE_PASSAGE_CHARS} characters"
+                ),
+            )
+        total_chars += len(normalized)
+        if total_chars > MAX_SOURCE_PASSAGES_TOTAL_CHARS:
+            raise SiteKnowledgeContractViolation(
+                "site_knowledge.source_passages_too_large",
+                (
+                    "site knowledge source_passages accepts at most "
+                    f"{MAX_SOURCE_PASSAGES_TOTAL_CHARS} total characters"
+                ),
+            )
+        passages.append(normalized)
+    return passages
 
 
 def coerce_positive_int(value: Any, *, default: int, maximum: int) -> int:
