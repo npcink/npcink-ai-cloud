@@ -2609,8 +2609,11 @@ def _exact_shared_anchor_phrases(source: str, target: str) -> list[str]:
             phrase = raw.strip(" \t\n\r,.;:!?，。；：！？、()[]{}<>\"'")
             if len(phrase) < 4 or phrase in seen:
                 continue
+            phrase_start = start + raw.find(phrase)
+            if _splits_ascii_word(target, phrase_start, len(phrase)):
+                continue
             seen.add(phrase)
-            offset = source_lower.find(phrase.lower())
+            offset = _exact_anchor_offset(source_lower, phrase.lower())
             if offset < 0:
                 continue
             exact = source[offset : offset + len(phrase)]
@@ -2619,6 +2622,30 @@ def _exact_shared_anchor_phrases(source: str, target: str) -> list[str]:
         if phrases:
             break
     return phrases
+
+
+def _exact_anchor_offset(source: str, phrase: str) -> int:
+    offset = source.find(phrase)
+    while offset >= 0:
+        if not _splits_ascii_word(source, offset, len(phrase)):
+            return offset
+        offset = source.find(phrase, offset + 1)
+    return -1
+
+
+def _splits_ascii_word(text: str, start: int, length: int) -> bool:
+    end = start + length
+    starts_inside_word = (
+        start > 0
+        and bool(re.match(r"[A-Za-z0-9_]", text[start : start + 1]))
+        and bool(re.match(r"[A-Za-z0-9_]", text[start - 1 : start]))
+    )
+    ends_inside_word = (
+        end < len(text)
+        and bool(re.match(r"[A-Za-z0-9_]", text[end - 1 : end]))
+        and bool(re.match(r"[A-Za-z0-9_]", text[end : end + 1]))
+    )
+    return starts_inside_word or ends_inside_word
 
 
 def _normalize_anchor_comparison(value: str) -> str:

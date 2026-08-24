@@ -923,6 +923,26 @@ def test_internal_link_search_rejects_generic_or_full_title_anchor() -> None:
     assert "anchor_evidence" not in full_title
 
 
+def test_internal_link_search_rejects_partial_ascii_word_anchor() -> None:
+    result = _serialize_search_result(
+        post_id=459,
+        source_type="post",
+        source_id=459,
+        parent_post_id=0,
+        chunk_index=0,
+        title="WordPres教程",
+        url="https://example.test/partial-word",
+        chunk_text="WordPres教程介绍主题设置。",
+        score=0.75,
+        intent="internal_links",
+        source_passages=["WordPress 主题设置需要逐项检查。"],
+    )
+
+    assert result["anchor_or_context"] == "主题设置"
+    assert "WordPres" not in result["anchor_or_context"]
+    assert result["anchor_evidence"]["exact_source_passage_match"] is True
+
+
 def test_document_search_returns_each_post_once_with_bounded_chunk_refs(
     tmp_path: Path,
 ) -> None:
