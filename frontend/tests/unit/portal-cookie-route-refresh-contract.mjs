@@ -19,10 +19,10 @@ assert.match(
   'site selection must replace the client session with the strict session returned by Cloud'
 );
 
-assert.match(
+assert.doesNotMatch(
   sitesSource,
-  /const handleSelectSite = async \(siteId: string\)[\s\S]*await selectSite\(siteId\)/,
-  'site selection must be initiated only by an explicit workspace action'
+  /handleSelectSite|selectSite\(/,
+  'the site register must not mutate the account context after its selector is retired'
 );
 
 assert.doesNotMatch(

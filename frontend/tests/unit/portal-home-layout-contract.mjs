@@ -125,13 +125,23 @@ assert.match(
 );
 assert.match(
   sitesWorkspaceSource,
-  /portal\.sites\.active_capacity[\s\S]*portal\.sites\.bound_capacity[\s\S]*site\.status === 'active'/,
-  'Portal site list must show separate account capacity and each site lifecycle status'
+  /const showSiteSearch = visibleSites\.length > 20 \|\| searchQuery\.trim\(\)\.length > 0[\s\S]*site\.status === 'active'/,
+  'Portal site list must defer search until scale requires it, preserve active queries, and keep each site lifecycle status'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource,
+  /portal\.sites\.active_capacity|portal\.sites\.bound_capacity|<PortalTag/,
+  'Portal site list must not repeat account capacity as persistent tags'
 );
 assert.match(
   sitesWorkspaceSource,
   /data-portal-sites="desktop-table"[\s\S]*data-portal-sites="desktop-actions"[\s\S]*openLifecycleModal[\s\S]*setPendingRemoveSite/,
   'Portal desktop site rows must retain authorized lifecycle and removal controls behind a low-frequency disclosure'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource,
+  /data-portal-sites="desktop-actions"[\s\S]{0,500}className="absolute/,
+  'Portal desktop action disclosure must not be clipped by the table overflow container'
 );
 
 const siteRegisterIndex = sitesWorkspaceSource.indexOf('portal.site_register');
