@@ -1670,6 +1670,12 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toHaveCount(0);
   await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toHaveCount(0);
   await expect(sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i)).toHaveCount(0);
+  await page.goto('/portal?q=Attention');
+  const activeSiteSearch = sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i);
+  await expect(activeSiteSearch).toBeVisible();
+  await expect(activeSiteSearch).toHaveValue('Attention');
+  await activeSiteSearch.fill('');
+  await expect(page).not.toHaveURL(/(?:\?|&)q=/);
   await expect(sitesWorkspace.getByRole('columnheader', { name: /Context|当前上下文/i })).toHaveCount(0);
   await expect(sitesWorkspace.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
   await expect(
@@ -1679,6 +1685,9 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
   await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
+  const unselectedSiteRow = sitesWorkspace.getByRole('row', { name: /Clear Site/i });
+  await unselectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await expect(unselectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',

@@ -188,10 +188,10 @@ assert.doesNotMatch(
   /portal\.sites\.table_context|portal\.sites\.current_context|portal\.sites\.available_context|portal\.select_site_action/,
   'Portal site rows must not expose the internal context column or repeated select-site buttons'
 );
-assert.match(
+assert.doesNotMatch(
   sitesSource,
-  /const selectedSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''/,
-  'Portal site list must read current context only from selected_context'
+  /selectedSiteId|selected_context\?\.allowed_actions\.includes\('remove_sites'\)/,
+  'Portal site actions must use each row permission projection instead of the retired selected-site context'
 );
 assert.match(
   sitesSource,

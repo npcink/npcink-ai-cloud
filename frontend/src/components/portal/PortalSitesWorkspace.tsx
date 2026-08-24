@@ -56,7 +56,8 @@ function PortalSitesWorkspaceContent() {
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const { session, isAuthenticated, refresh } = useSession();
-  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+  const routeSearchQuery = searchParams.get('q') || '';
+  const [searchQuery, setSearchQuery] = useState(() => routeSearchQuery);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [addonAccounts, setAddonAccounts] = useState<PortalAddonConnectionAccount[]>([]);
   const [addonAccountsError, setAddonAccountsError] = useState('');
@@ -76,11 +77,7 @@ function PortalSitesWorkspaceContent() {
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
-  const selectedSiteId = session?.selected_context?.site.site_id || '';
-  const showSiteSearch = visibleSites.length > 20;
-  const canRemoveSites = Boolean(
-    session?.selected_context?.allowed_actions.includes('remove_sites')
-  );
+  const showSiteSearch = visibleSites.length > 20 || searchQuery.trim().length > 0;
   const addonConnectMode = searchParams.get('connect') === 'wordpress-addon';
   const addonSiteUrl = searchParams.get('site_url') || '';
   const addonSiteName = searchParams.get('site_name') || '';
@@ -120,8 +117,8 @@ function PortalSitesWorkspaceContent() {
     : [];
 
   useEffect(() => {
-    setSearchQuery(searchParams.get('q') || '');
-  }, [searchParams]);
+    setSearchQuery(routeSearchQuery);
+  }, [routeSearchQuery]);
 
   useEffect(() => {
     setPendingLifecycleSite((pendingSite) => {
@@ -221,18 +218,19 @@ function PortalSitesWorkspaceContent() {
     };
   }, [addonAccountsRetryVersion, addonConnectMode, isAuthenticated, t]);
 
-  useEffect(() => {
+  const updateSearchQuery = (value: string) => {
+    setSearchQuery(value);
     const params = new URLSearchParams(searchParams.toString());
-    if (searchQuery.trim()) {
-      params.set('q', searchQuery.trim());
+    if (value.trim()) {
+      params.set('q', value.trim());
     } else {
       params.delete('q');
     }
     const nextQuery = params.toString();
     if (nextQuery !== searchParams.toString()) {
-      router.replace(`${pathname}${nextQuery ? `?${nextQuery}` : ''}#sites`, { scroll: false });
+      window.history.replaceState(null, '', `${pathname}${nextQuery ? `?${nextQuery}` : ''}#sites`);
     }
-  }, [pathname, router, searchParams, searchQuery]);
+  };
 
   const closeRemoveSiteModal = () => {
     if (isRemovingSite) return;
@@ -372,7 +370,7 @@ function PortalSitesWorkspaceContent() {
                 id="portal-service-site-search"
                 type="search"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) => updateSearchQuery(event.target.value)}
                 placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
                 className="input"
               />
@@ -473,14 +471,13 @@ function PortalSitesWorkspaceContent() {
                               : t('portal.activate_site_action', {}, 'Activate')}
                           </button>
                         ) : null}
-                        {canRemoveSites
-                          && site.site_id === selectedSiteId
+                        {site.allowed_actions?.includes('remove_sites')
                           && site.status !== 'suspended' ? (
                           <details className="relative inline-block text-right" data-portal-sites="desktop-actions">
                             <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
                               {t('portal.site_other_actions', {}, 'Other actions')}
                             </summary>
-                            <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                            <div className="mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -555,8 +552,7 @@ function PortalSitesWorkspaceContent() {
                         : t('portal.activate_site_action', {}, 'Activate')}
                     </button>
                   ) : null}
-                  {canRemoveSites
-                    && site.site_id === selectedSiteId
+                  {site.allowed_actions?.includes('remove_sites')
                     && site.status !== 'suspended' ? (
                     <details className="relative" data-portal-sites="mobile-actions">
                       <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">

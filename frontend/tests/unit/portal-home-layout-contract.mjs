@@ -125,8 +125,8 @@ assert.match(
 );
 assert.match(
   sitesWorkspaceSource,
-  /const showSiteSearch = visibleSites\.length > 20[\s\S]*site\.status === 'active'/,
-  'Portal site list must defer search until scale requires it and keep each site lifecycle status'
+  /const showSiteSearch = visibleSites\.length > 20 \|\| searchQuery\.trim\(\)\.length > 0[\s\S]*site\.status === 'active'/,
+  'Portal site list must defer search until scale requires it, preserve active queries, and keep each site lifecycle status'
 );
 assert.doesNotMatch(
   sitesWorkspaceSource,
@@ -137,6 +137,11 @@ assert.match(
   sitesWorkspaceSource,
   /data-portal-sites="desktop-table"[\s\S]*data-portal-sites="desktop-actions"[\s\S]*openLifecycleModal[\s\S]*setPendingRemoveSite/,
   'Portal desktop site rows must retain authorized lifecycle and removal controls behind a low-frequency disclosure'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource,
+  /data-portal-sites="desktop-actions"[\s\S]{0,500}className="absolute/,
+  'Portal desktop action disclosure must not be clipped by the table overflow container'
 );
 
 const siteRegisterIndex = sitesWorkspaceSource.indexOf('portal.site_register');
