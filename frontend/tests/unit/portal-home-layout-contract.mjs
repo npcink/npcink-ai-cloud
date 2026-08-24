@@ -125,8 +125,13 @@ assert.match(
 );
 assert.match(
   sitesWorkspaceSource,
-  /portal\.sites\.active_capacity[\s\S]*portal\.sites\.bound_capacity[\s\S]*site\.status === 'active'/,
-  'Portal site list must show separate account capacity and each site lifecycle status'
+  /const showSiteSearch = visibleSites\.length > 20[\s\S]*site\.status === 'active'/,
+  'Portal site list must defer search until scale requires it and keep each site lifecycle status'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource,
+  /portal\.sites\.active_capacity|portal\.sites\.bound_capacity|<PortalTag/,
+  'Portal site list must not repeat account capacity as persistent tags'
 );
 assert.match(
   sitesWorkspaceSource,
