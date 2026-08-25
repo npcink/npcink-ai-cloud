@@ -269,7 +269,7 @@ class SiteKnowledgeObservabilityService:
         return {
             "sites": sites,
             "total_indexed_document_count": sum(
-                int(site.get("indexed_document_count") or 0) for site in sites
+                _coerce_int(site.get("indexed_document_count"), default=0) for site in sites
             ),
         }
 
