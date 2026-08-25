@@ -22,6 +22,8 @@ M4_RELAY_BASE_DIR="/var/tmp/npcink-ai-cloud-m4-source-relay"
 M4_TUNNEL_READY_TIMEOUT_SECONDS="${NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS:-120}"
 M4_BROWSER_PREFLIGHT_SAMPLE_BYTES=262144
 M4_BROWSER_PREFLIGHT_MIN_BYTES_PER_SECOND=65536
+M4_ALLOW_NON_MASTER_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE:-0}"
+M4_ALLOW_DIRTY_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE:-0}"
 
 DRY_RUN=0
 TMP_DIR=""
@@ -79,6 +81,8 @@ Environment overrides:
   NPCINK_CLOUD_M4_RELAY_SSH_HOST
   NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP
   NPCINK_CLOUD_M4_RELAY_HTTP_PORT
+  NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1 (explicit feature-branch candidate preview)
+  NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1 (explicit dirty-worktree candidate preview)
 EOF
 }
 
@@ -1541,6 +1545,14 @@ upload_and_apply() {
 	source_branch="$(git -C "${ROOT_DIR}" symbolic-ref --quiet --short HEAD || printf 'detached')"
 	source_dirty="$(source_dirty_state)"
 	dirty_count="$(source_dirty_count)"
+	if [ "${acceptance_state}" = "candidate" ]; then
+		if [ "${source_branch}" != "master" ] && [ "${M4_ALLOW_NON_MASTER_CANDIDATE}" != "1" ]; then
+			fail "candidate source branch is ${source_branch}; set NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1 for an explicit feature-branch preview"
+		fi
+		if [ "${source_dirty}" = "true" ] && [ "${M4_ALLOW_DIRTY_CANDIDATE}" != "1" ]; then
+			fail "candidate source worktree is dirty (${dirty_count} paths); set NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1 for an explicit dirty preview"
+		fi
+	fi
 	runtime_image_input_sha="$(runtime_image_fingerprint)"
 	frontend_image_input_sha="$(frontend_image_fingerprint)"
 	deployment_orchestration_sha="$(deployment_orchestration_fingerprint)"

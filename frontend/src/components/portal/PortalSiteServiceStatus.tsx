@@ -9,6 +9,7 @@ import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type { PortalMonitoringOverviewSummary } from '@/lib/portal-client';
 import {
   getPortalCustomerIssueTitle,
+  getPortalMonitoringIssueCategory,
   getPortalServiceOperationStatus,
   hasPortalQuotaPressure,
 } from '@/lib/portal-monitoring-display';
@@ -25,13 +26,14 @@ type PortalSiteServiceStatusProps = {
 };
 
 function statusLabel(status: string, issueCount: number, hasQuotaPressure: boolean, t: TranslateFn): string {
-  if (status === 'ok' && issueCount === 0 && !hasQuotaPressure) return t('portal.home.risk_level_normal', {}, 'Normal');
+  if (status === 'active' && issueCount === 0 && !hasQuotaPressure) return t('portal.home.risk_level_normal', {}, 'Normal');
   if (status === 'inactive') return t('status.inactive', {}, 'Inactive');
-  return t('portal.home.filter_attention_only', {}, 'Needs attention');
+  if (status === 'error') return t('portal.monitoring.status_error', {}, 'Service issue');
+  return t('portal.monitoring.status_pending', {}, 'To confirm');
 }
 
 function statusTone(status: string, issueCount: number, hasQuotaPressure: boolean): string {
-  if (status === 'ok' && issueCount === 0 && !hasQuotaPressure) return 'active';
+  if (status === 'active' && issueCount === 0 && !hasQuotaPressure) return 'active';
   if (status === 'error') return 'error';
   return 'warning';
 }
@@ -43,40 +45,53 @@ export function PortalSiteServiceStatus({
   error,
   onRefresh,
 }: PortalSiteServiceStatusProps) {
-  const issueCount = overview?.action_required.length || 0;
-  const healthStatus = overview?.health.status || 'inactive';
+  const serviceIssueCount = overview?.action_required.filter(
+    (item) => !['quota', 'knowledge'].includes(getPortalMonitoringIssueCategory(item))
+  ).length || 0;
   const hasQuotaPressure = Boolean(overview && hasPortalQuotaPressure(overview));
-  const currentStatusLabel = statusLabel(healthStatus, issueCount, hasQuotaPressure, t);
+  const serviceStatus = overview ? getPortalServiceOperationStatus(overview) : 'inactive';
+  const currentStatusLabel = statusLabel(serviceStatus, serviceIssueCount, hasQuotaPressure, t);
   const latestActivityAt = overview?.activity.last_seen_at || overview?.generated_at || '';
 
   const serviceOperationStatus = overview
     ? getPortalServiceOperationStatus(overview)
     : 'inactive';
   const errorCount = Number(overview?.activity.plugin_errors_total || 0);
+  const showRefresh = Boolean(
+    error || serviceStatus === 'inactive' || serviceStatus === 'error'
+  );
+  const showDetails = Boolean(
+    error
+    || serviceStatus !== 'active'
+    || hasQuotaPressure
+    || errorCount > 0
+  );
 
   return (
     <PortalSection id="service-status" className="scroll-mt-24 space-y-4" data-portal-site="service-status">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {t('portal.monitoring.overview_title', {}, 'Service status')}
+            {t('portal.monitoring.overview_title', {}, 'Connection and runtime')}
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
             {t(
               'portal.monitoring.overview_desc',
               {},
-              'Review connection, recorded errors, and usage pressure in one place.'
+              'Check whether this site is connected and whether its Cloud service is operating normally.'
             )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PortalStatusBadge
-            status={statusTone(healthStatus, issueCount, hasQuotaPressure)}
+            status={statusTone(serviceStatus, serviceIssueCount, hasQuotaPressure)}
             label={overview ? currentStatusLabel : t('common.loading')}
           />
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={isLoading}>
-            {t('common.refresh', {}, 'Refresh')}
-          </button>
+          {showRefresh ? (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={isLoading}>
+              {t('common.retry', {}, 'Check again')}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -90,7 +105,17 @@ export function PortalSiteServiceStatus({
         </PortalCard>
       ) : null}
 
-      {!isLoading && !error && overview ? (
+      {!isLoading && !error && overview && !showDetails ? (
+        <PortalCard className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+          {t(
+            'portal.monitoring.normal_summary',
+            {},
+            '服务正常，最近检查未发现影响使用的问题。'
+          )}
+        </PortalCard>
+      ) : null}
+
+      {!isLoading && !error && overview && showDetails ? (
         <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-slate-200/80 bg-slate-50/70 text-xs font-medium uppercase tracking-[0.1em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/45 dark:text-slate-400">
@@ -142,7 +167,7 @@ export function PortalSiteServiceStatus({
               </tr>
               <tr>
                 <th scope="row" className="px-4 py-3 font-semibold text-slate-950 dark:text-white">
-                  {t('portal.monitoring.quota_pressure', {}, 'Usage pressure')}
+                  {t('portal.monitoring.quota_pressure', {}, 'Account usage pressure')}
                 </th>
                 <td className="px-4 py-3">
                   <PortalStatusBadge
@@ -152,8 +177,8 @@ export function PortalSiteServiceStatus({
                 </td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                   {hasQuotaPressure
-                    ? t('portal.monitoring.quota_evidence_attention', {}, 'Usage is near or over the current package limit.')
-                    : t('portal.monitoring.quota_evidence_normal', {}, 'Usage is below the current package reminder threshold.')}
+                    ? t('portal.monitoring.quota_evidence_attention', {}, 'The account is near or over its shared package limit.')
+                    : t('portal.monitoring.quota_evidence_normal', {}, 'The account is below its shared package reminder threshold.')}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {hasQuotaPressure ? (
@@ -168,13 +193,16 @@ export function PortalSiteServiceStatus({
         </div>
       ) : null}
 
-      {!isLoading && !error && overview && issueCount > 1 ? (
+      {!isLoading && !error && overview && serviceIssueCount > 1 ? (
         <details className="rounded-xl border border-slate-200/80 px-4 py-3 text-sm dark:border-slate-800">
           <summary className="cursor-pointer font-medium text-slate-800 dark:text-slate-200">
-            {t('portal.monitoring.additional_items', { count: String(issueCount) }, '{{count}} service items need attention')}
+            {t('portal.monitoring.additional_items', { count: String(serviceIssueCount) }, '{{count}} service items need attention')}
           </summary>
           <ul className="mt-3 space-y-2 text-slate-600 dark:text-slate-300">
-            {overview.action_required.slice(0, 3).map((item) => (
+            {overview.action_required
+              .filter((item) => !['quota', 'knowledge'].includes(getPortalMonitoringIssueCategory(item)))
+              .slice(0, 3)
+              .map((item) => (
               <li key={`${item.code}-${item.source}`}>{getPortalCustomerIssueTitle(item, t)}</li>
             ))}
           </ul>

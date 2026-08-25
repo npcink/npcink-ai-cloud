@@ -263,6 +263,16 @@ class SiteKnowledgeObservabilityService:
             "errors": [self._error_summary(row) for row in error_rows],
         }
 
+    def get_account_document_breakdown(self, *, site_ids: list[str]) -> dict[str, object]:
+        with get_session(self.database_url) as session:
+            sites = SiteKnowledgeRepository(session).list_document_counts_by_site(site_ids)
+        return {
+            "sites": sites,
+            "total_indexed_document_count": sum(
+                _coerce_int(site.get("indexed_document_count"), default=0) for site in sites
+            ),
+        }
+
     def _latest_snapshots(
         self,
         session: Session,

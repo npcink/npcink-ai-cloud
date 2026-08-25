@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.core.models import RunRecord, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
 
 
 class SiteKnowledgeRepository:
@@ -185,6 +185,65 @@ class SiteKnowledgeRepository:
             )
             or 0
         )
+
+    def count_documents_for_account(self, account_id: str) -> int:
+        normalized_account_id = str(account_id or '').strip()
+        if not normalized_account_id:
+            return 0
+        return int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(SiteKnowledgeDocument)
+                .join(Site, Site.site_id == SiteKnowledgeDocument.site_id)
+                .where(Site.account_id == normalized_account_id)
+            )
+            or 0
+        )
+
+    def lock_account_and_count_documents(self, account_id: str) -> int:
+        normalized_account_id = str(account_id or '').strip()
+        if not normalized_account_id:
+            return 0
+        self.session.scalar(
+            select(Account.account_id)
+            .where(Account.account_id == normalized_account_id)
+            .with_for_update()
+        )
+        return self.count_documents_for_account(normalized_account_id)
+
+    def list_document_counts_by_site(self, site_ids: list[str]) -> list[dict[str, object]]:
+        normalized_site_ids = list(
+            dict.fromkeys(
+                str(site_id).strip() for site_id in site_ids if str(site_id).strip()
+            )
+        )
+        if not normalized_site_ids:
+            return []
+        statement = (
+            select(
+                Site.site_id,
+                Site.name,
+                Site.status,
+                func.count(SiteKnowledgeDocument.id),
+                func.max(SiteKnowledgeDocument.last_indexed_at),
+            )
+            .select_from(Site)
+            .outerjoin(SiteKnowledgeDocument, SiteKnowledgeDocument.site_id == Site.site_id)
+            .where(Site.site_id.in_(normalized_site_ids))
+            .group_by(Site.site_id, Site.name, Site.status)
+            .order_by(Site.name.asc(), Site.site_id.asc())
+        )
+        return [
+            {
+                "site_id": str(site_id),
+                "site_name": str(name or site_id),
+                "status": str(status or ""),
+                "indexed_document_count": int(document_count or 0),
+                "last_indexed_at": last_indexed_at.isoformat() if last_indexed_at else "",
+            }
+            for site_id, name, status, document_count, last_indexed_at
+            in self.session.execute(statement).all()
+        ]
 
     def count_chunks(self, site_id: str) -> int:
         return int(
