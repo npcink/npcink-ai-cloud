@@ -135,6 +135,10 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
   merge, production, or customer acceptance authority
+- [Portal UI Restoration and Delivery Retrospective — 2026-08-24 to 2026-08-25](history/portal/2026/portal-ui-restoration-and-delivery-retrospective-2026-08-25.md)
+  — dated diagnosis of a branch-only UI change that never entered `master`,
+  protected restoration PR `#865`, contract/review corrections, and the
+  delivery lifecycle extracted into the active Portal UI standard
 - [Cloud WordPress Connector State and Diagnostics Standard](cloud-wordpress-connector-state-and-diagnostics-standard-v1.md)
 - [Cloud Connector Recovery Contract](cloud-connector-recovery-contract-v1.md)
 - [Site-Inactive Recovery Closeout — 2026-08-13](site-inactive-recovery-closeout-2026-08-13.md) — dated cross-repository implementation, validation, and development-learning record
