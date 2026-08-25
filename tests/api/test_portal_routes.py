@@ -7276,6 +7276,16 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert account_usage_without_site_response.status_code == 200
 
+    site_knowledge_usage_response = client.get(
+        "/portal/v1/account/site-knowledge-usage",
+        headers=portal_reads_headers(site_id=""),
+    )
+    assert site_knowledge_usage_response.status_code == 200
+    site_knowledge_usage_data = site_knowledge_usage_response.json()["data"]
+    assert site_knowledge_usage_data["total_indexed_document_count"] == 0
+    assert site_knowledge_usage_data["sites"][0]["site_id"] == "site_portal_reads"
+    _assert_no_portal_identity_wrapper(site_knowledge_usage_data)
+
     monitoring_response = client.get(
         "/portal/v1/sites/site_portal_reads/monitoring-overview?window_hours=24",
         headers=portal_reads_headers(),

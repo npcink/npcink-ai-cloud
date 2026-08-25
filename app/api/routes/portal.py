@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlencode
 
@@ -3404,6 +3404,56 @@ async def get_portal_account_usage_summary(
     result["site_ids"] = scoped_site_ids
     return _portal_route_envelope(
         message="portal account usage summary loaded",
+        data=result,
+    )
+
+
+@router.get("/account/site-knowledge-usage")
+async def get_portal_account_site_knowledge_usage(request: Request) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_USAGE,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    site_ids = _portal_account_site_ids(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+    )
+    if isinstance(site_ids, JSONResponse):
+        return site_ids
+    commercial_service = _get_commercial_service(request)
+    quota_summary = commercial_service.get_portal_account_quota_summary(account_id)
+    vector_limit = next(
+        (
+            int(item.get("limit") or 0)
+            for item in _object_list(quota_summary.get("resource_limits"))
+            if str(item.get("key") or "") == "vector_documents"
+        ),
+        0,
+    )
+    result = SiteKnowledgeObservabilityService(
+        commercial_service.database_url
+    ).get_account_document_breakdown(site_ids=site_ids)
+    result.update(
+        {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "indexed_document_limit": vector_limit,
+        }
+    )
+    return _portal_route_envelope(
+        message="portal account site knowledge usage loaded",
         data=result,
     )
 

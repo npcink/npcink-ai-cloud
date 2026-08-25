@@ -1,6 +1,10 @@
+import { useCallback, useState } from 'react';
 import type { Entitlements } from '@/lib/portal-client';
+import { portalClient, type PortalAccountSiteKnowledgeUsagePayload } from '@/lib/portal-client';
 import type { Locale } from '@/lib/i18n';
 import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
+import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
+import { formatPortalErrorMessage } from '@/lib/portal-error';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 type QuotaSummary = NonNullable<Entitlements['quota_summary']>;
@@ -83,6 +87,28 @@ export function PortalEntitlementUsage({
   t,
   locale,
 }: PortalEntitlementUsageProps) {
+  const [siteKnowledgeUsage, setSiteKnowledgeUsage] = useState<PortalAccountSiteKnowledgeUsagePayload | null>(null);
+  const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
+  const [siteKnowledgeUsageLoading, setSiteKnowledgeUsageLoading] = useState(false);
+  const [siteKnowledgeUsageError, setSiteKnowledgeUsageError] = useState('');
+  const siteKnowledgeUsageDialogRef = useDialogFocusManagement<HTMLElement>(
+    siteKnowledgeUsageOpen,
+    () => setSiteKnowledgeUsageOpen(false),
+  );
+  const openSiteKnowledgeUsage = useCallback(async () => {
+    setSiteKnowledgeUsageOpen(true);
+    if (siteKnowledgeUsage) return;
+    setSiteKnowledgeUsageLoading(true);
+    setSiteKnowledgeUsageError('');
+    try {
+      const response = await portalClient.getAccountSiteKnowledgeUsage();
+      setSiteKnowledgeUsage(response.data);
+    } catch (err) {
+      setSiteKnowledgeUsageError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+    } finally {
+      setSiteKnowledgeUsageLoading(false);
+    }
+  }, [siteKnowledgeUsage, t]);
   const unlimitedLabel = t('common.unlimited', {}, 'Unlimited');
   const metrics = normalizeMetrics(quotaSummary);
   const title = t('portal.billing.current_entitlements_title', {}, 'Current package rights');
@@ -104,6 +130,13 @@ export function PortalEntitlementUsage({
           </h2>
           <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
             {description}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t(
+              'portal.billing.account_shared_quota_note',
+              {},
+              'Site and knowledge limits are shared by every site on this account.'
+            )}
           </p>
         </div>
       </div>
@@ -232,9 +265,16 @@ export function PortalEntitlementUsage({
                         style={{ width: `${ratio}%` }}
                       />
                     </div>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {usedLabel} / {limitLabel}
-                    </p>
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {usedLabel} / {limitLabel}
+                      </p>
+                      {key === 'vector_documents' ? (
+                        <button type="button" className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200" onClick={() => void openSiteKnowledgeUsage()}>
+                          {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -246,6 +286,36 @@ export function PortalEntitlementUsage({
           {t('portal.billing.no_feature_detail', {}, 'No package rights are available yet.')}
         </div>
       )}
+      {siteKnowledgeUsageOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button type="button" className="absolute inset-0 bg-slate-950/45" aria-label={t('common.close')} onClick={() => setSiteKnowledgeUsageOpen(false)} />
+          <aside ref={siteKnowledgeUsageDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="site-knowledge-usage-title" className="absolute left-1/2 top-1/2 flex max-h-[85vh] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-950">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
+              <div>
+                <h2 id="site-knowledge-usage-title" className="text-xl font-semibold text-slate-950 dark:text-white">{t('portal.usage.site_knowledge_breakdown_title', {}, 'Site knowledge usage')}</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t('portal.usage.site_knowledge_breakdown_desc', {}, 'Indexed documents grouped by site on this account.')}</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSiteKnowledgeUsageOpen(false)}>{t('common.close')}</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-5">
+              {siteKnowledgeUsageLoading ? <div className="space-y-3">{[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}</div> : siteKnowledgeUsageError ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{siteKnowledgeUsageError}</div> : siteKnowledgeUsage ? (
+                <>
+                  <dl className="mb-5 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900"><dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_total_label', {}, 'Account total')}</dt><dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{formatNumber(siteKnowledgeUsage.total_indexed_document_count)}{siteKnowledgeUsage.indexed_document_limit > 0 ? ` / ${formatNumber(siteKnowledgeUsage.indexed_document_limit)}` : ''}</dd></div>
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-900"><dt className="text-xs text-slate-500">{t('portal.usage.site_knowledge_limit_label', {}, 'Package limit')}</dt><dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{siteKnowledgeUsage.indexed_document_limit > 0 ? formatNumber(siteKnowledgeUsage.indexed_document_limit) : t('common.unlimited', {}, 'Unlimited')}</dd></div>
+                  </dl>
+                  <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                    {siteKnowledgeUsage.sites.length ? siteKnowledgeUsage.sites.map((site) => {
+                      const share = siteKnowledgeUsage.total_indexed_document_count > 0 ? Math.round((site.indexed_document_count / siteKnowledgeUsage.total_indexed_document_count) * 100) : 0;
+                      return <div key={site.site_id} className="flex items-center justify-between gap-4 px-4 py-3"><div className="min-w-0"><p className="truncate font-medium text-slate-950 dark:text-white">{site.site_name}</p><p className="mt-1 text-xs text-slate-500">{share}% {t('portal.usage.site_knowledge_share_label', {}, 'of account total')}</p></div><strong className="shrink-0 text-slate-950 dark:text-white">{formatNumber(site.indexed_document_count)}</strong></div>;
+                    }) : <p className="px-4 py-5 text-sm text-slate-500">{t('portal.usage.site_knowledge_empty', {}, 'No connected sites are available.')}</p>}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </section>
   );
 }
