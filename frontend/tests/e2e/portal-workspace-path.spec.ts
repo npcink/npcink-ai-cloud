@@ -1940,7 +1940,7 @@ test('portal site record focuses on address, status, and support actions', async
   await expect(page.getByText(/^Growth$/)).toHaveCount(0);
   await expect(page.getByText(/^plan_growth$/)).toHaveCount(0);
   const siteKnowledgePanel = page.locator('[data-portal-site="site-knowledge"]');
-  await expect(siteKnowledgePanel.getByRole('heading', { name: /Site knowledge|站点知识/i })).toBeVisible();
+  await expect(siteKnowledgePanel.getByRole('heading', { name: /AI content knowledge|AI 内容知识|Site knowledge|站点知识/i })).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/^86$/)).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/32 searches|32 次搜索/i)).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/3 could not find|3 次未找到相关内容/i)).toBeVisible();

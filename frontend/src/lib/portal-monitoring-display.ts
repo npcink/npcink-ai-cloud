@@ -5,7 +5,7 @@ import type {
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-export type PortalMonitoringIssueCategory = 'connection' | 'quota' | 'service';
+export type PortalMonitoringIssueCategory = 'connection' | 'quota' | 'knowledge' | 'service';
 export type PortalServiceOperationStatus = 'active' | 'warning' | 'error' | 'inactive';
 
 export function getPortalMonitoringIssueCategory(
@@ -13,6 +13,9 @@ export function getPortalMonitoringIssueCategory(
 ): PortalMonitoringIssueCategory {
   const raw = `${item.source || ''} ${item.code || ''} ${item.title || ''}`.toLowerCase();
   if (raw.includes('quota') || raw.includes('usage')) return 'quota';
+  if (raw.includes('vector') || raw.includes('knowledge') || raw.includes('site_search')) {
+    return 'knowledge';
+  }
   if (
     raw.includes('connection')
     || raw.includes('plugin')
@@ -33,6 +36,9 @@ export function getPortalCustomerIssueTitle(
   }
   if (category === 'quota') {
     return t('portal.monitoring.quota_pressure', {}, 'Usage pressure');
+  }
+  if (category === 'knowledge') {
+    return t('portal.vector_obs.status_attention', {}, 'Knowledge status needs confirmation');
   }
   if (raw.includes('runtime') || raw.includes('success')) {
     return t('portal.monitoring.customer_issue_service_success', {}, 'Service success rate needs attention');
@@ -55,11 +61,14 @@ export function getPortalServiceOperationStatus(
   if (overview.health.status === 'inactive') return 'inactive';
 
   const serviceActions = overview.action_required.filter(
-    (item) => getPortalMonitoringIssueCategory(item) !== 'quota'
+    (item) => !['quota', 'knowledge'].includes(getPortalMonitoringIssueCategory(item))
   );
-  const serviceComponents = overview.components.filter(
-    (component) => component.component !== 'quota'
-  );
+  const serviceComponents = overview.components.filter((component) => {
+    const name = component.component.toLowerCase();
+    return component.component !== 'quota'
+      && !name.includes('vector')
+      && !name.includes('knowledge');
+  });
   if (
     serviceActions.some((item) => item.severity === 'error')
     || serviceComponents.some((component) => component.status === 'error')
@@ -69,4 +78,11 @@ export function getPortalServiceOperationStatus(
     || serviceComponents.some((component) => component.status === 'warning')
   ) return 'warning';
   return 'active';
+}
+
+export function hasPortalServiceAttention(
+  overview: PortalMonitoringOverviewSummary
+): boolean {
+  return getPortalServiceOperationStatus(overview) !== 'active'
+    || hasPortalQuotaPressure(overview);
 }

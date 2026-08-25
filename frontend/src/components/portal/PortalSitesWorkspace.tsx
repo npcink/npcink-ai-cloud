@@ -77,6 +77,7 @@ function PortalSitesWorkspaceContent() {
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
+  const [hasOpenedRemoveModal, setHasOpenedRemoveModal] = useState(false);
   const sites = session?.sites || EMPTY_SITES;
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
@@ -172,7 +173,7 @@ function PortalSitesWorkspaceContent() {
   }, [addonConnectMode, isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !hasOpenedRemoveModal) {
       setSiteRelinkPolicy(null);
       setExpectedRelinkAvailableAt('');
       return;
@@ -196,7 +197,7 @@ function PortalSitesWorkspaceContent() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [hasOpenedRemoveModal, isAuthenticated]);
 
   useEffect(() => {
     const removedSiteId = searchParams.get('removed_site');
@@ -406,6 +407,13 @@ function PortalSitesWorkspaceContent() {
             <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">
               {t('portal.home.my_sites_title', {}, 'My sites')}
             </h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+              {t(
+                'portal.home.my_sites_desc',
+                {},
+                'Choose a site to check its connection status and AI content capabilities.'
+              )}
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <PortalTag>{visibleSites.length} {t('common.site')}</PortalTag>
               <PortalTag tone={activeCapacityOverLimit ? 'warning' : 'success'}>
@@ -451,7 +459,7 @@ function PortalSitesWorkspaceContent() {
                   htmlFor="portal-service-management-site"
                   className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300"
                 >
-                  {t('portal.sites.management_site_label', {}, 'Current management site')}
+                  {t('portal.sites.management_site_label', {}, 'Current site context')}
                 </label>
                 <select
                   id="portal-service-management-site"
@@ -476,7 +484,7 @@ function PortalSitesWorkspaceContent() {
                   {t(
                     'portal.sites.management_site_desc',
                     {},
-                    'Switching changes the account scope shown by Account service, Package, Usage, and Tickets.'
+                    'Choose a site to keep its status, package, usage, and support context together.'
                   )}
                 </p>
               </div>
@@ -586,7 +594,7 @@ function PortalSitesWorkspaceContent() {
                     <td className="px-3 py-4">
                       <div className="flex flex-wrap justify-end gap-2">
                         <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-primary btn-sm">
-                          {t('portal.site_record', {}, 'Open site')}
+                          {t('portal.home.view_site_details', {}, 'View site details')}
                         </Link>
                         {(site.allowed_actions?.includes('provision_sites')
                           && site.status !== 'suspended'
@@ -619,6 +627,7 @@ function PortalSitesWorkspaceContent() {
                                   type="button"
                                   onClick={() => {
                                     setRemoveError('');
+                                    setHasOpenedRemoveModal(true);
                                     setPendingRemoveSite(site);
                                   }}
                                   className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
@@ -680,7 +689,7 @@ function PortalSitesWorkspaceContent() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                   <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
-                    {t('portal.site_record', {}, 'Site record')}
+                    {t('portal.home.view_site_details', {}, 'View site details')}
                   </Link>
                   {site.allowed_actions?.includes('provision_sites')
                     && site.status !== 'suspended'
@@ -702,6 +711,7 @@ function PortalSitesWorkspaceContent() {
                       type="button"
                       onClick={() => {
                         setRemoveError('');
+                        setHasOpenedRemoveModal(true);
                         setPendingRemoveSite(site);
                       }}
                       className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"

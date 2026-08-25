@@ -29,6 +29,7 @@ from app.core.models import (
     SITE_STATUS_ACTIVE,
     ProviderCallRecord,
     RunRecord,
+    Site,
     UsageMeterEvent,
 )
 from app.core.secrets import (
@@ -2666,6 +2667,21 @@ class RuntimeService:
             else self._get_execution_input_payload(run)
         )
         execution_started_at = datetime.now(UTC)
+        site_account_id = str(
+            repository.session.scalar(
+                select(Site.account_id).where(Site.site_id == run.site_id)
+            )
+            or ''
+        )
+        account_vector_document_limit: int | None = None
+        if site_account_id and run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY:
+            account_quota = self.commercial_service.get_portal_account_quota_summary(
+                site_account_id
+            )
+            for resource in account_quota.get('resource_limits', []):
+                if isinstance(resource, dict) and resource.get('key') == 'vector_documents':
+                    account_vector_document_limit = int(resource.get('limit') or 0)
+                    break
 
         def record_progress(progress: dict[str, Any]) -> None:
             run.result_json = {
@@ -2705,6 +2721,8 @@ class RuntimeService:
                 if run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY
                 else None,
                 embedding_usage_callback=record_embedding_usage,
+                account_id=site_account_id,
+                account_vector_document_limit=account_vector_document_limit,
             ).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,

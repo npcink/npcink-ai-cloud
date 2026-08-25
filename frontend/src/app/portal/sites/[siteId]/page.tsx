@@ -26,6 +26,7 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
   getPortalCustomerIssueTitle,
   getPortalMonitoringIssueCategory,
+  hasPortalServiceAttention,
 } from '@/lib/portal-monitoring-display';
 import { formatDate } from '@/lib/utils';
 import {
@@ -94,6 +95,7 @@ function PortalSiteRecordContent() {
   const [isRemovingSite, setIsRemovingSite] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
+  const [hasOpenedRemoveModal, setHasOpenedRemoveModal] = useState(false);
   const siteMonitoring = usePortalSiteMonitoring(siteId, t);
   const siteKnowledge = usePortalSiteKnowledge(siteId, t);
 
@@ -124,7 +126,7 @@ function PortalSiteRecordContent() {
   }, [isAuthenticated, siteId, t]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !hasOpenedRemoveModal) {
       setSiteRelinkPolicy(null);
       setExpectedRelinkAvailableAt('');
       return;
@@ -149,7 +151,7 @@ function PortalSiteRecordContent() {
     return () => {
       alive = false;
     };
-  }, [isAuthenticated]);
+  }, [hasOpenedRemoveModal, isAuthenticated]);
 
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
@@ -167,37 +169,11 @@ function PortalSiteRecordContent() {
 
   const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
 
-  if (error) {
+  if (error && !sessionSite) {
     const recovery = getPortalSiteRecovery(error.code, siteId, t);
-    const sessionSiteStatusLabel = sessionSite?.status === 'active'
-      ? t('portal.sites.table_ready', {}, 'Connected')
-      : sessionSite?.status === 'inactive'
-        ? t('portal.site_status_inactive', {}, 'Inactive')
-        : sessionSite?.status === 'provisioning'
-          ? t('portal.site_status_provisioning', {}, 'Provisioning')
-          : t('portal.site_status_suspended', {}, 'Suspended');
 
     return (
       <PortalPageStack>
-        {sessionSite ? (
-          <PortalWorkspaceHeader
-            title={getPortalSiteDisplayName(sessionSite)}
-            currentPage="record"
-            selectedSiteId={siteId}
-            sites={session.sites}
-            titleAccessory={(
-              <PortalStatusBadge
-                status={sessionSite.status === 'active' ? 'active' : 'warning'}
-                label={sessionSiteStatusLabel}
-              />
-            )}
-            metadata={getPortalSiteUrl(sessionSite) ? (
-              <span className="break-all text-sm text-slate-600 dark:text-slate-300">
-                {getPortalSiteUrl(sessionSite)}
-              </span>
-            ) : undefined}
-          />
-        ) : null}
         <PortalErrorState
           title={t('common.error')}
           description={error.message}
@@ -210,26 +186,20 @@ function PortalSiteRecordContent() {
     );
   }
 
-  if (!summary) {
-    return <PortalLoadingState message={t('common.loading')} />;
-  }
-
   const site: Site = {
     site_id: siteId,
-    name: summary.site?.name || sessionSite?.name || siteId,
-    site_url: summary.site?.site_url || sessionSite?.site_url || '',
-    platform_kind: summary.site?.platform_kind || sessionSite?.platform_kind || 'wordpress',
-    status: summary.site?.status || sessionSite?.status || 'inactive',
+    name: summary?.site?.name || sessionSite?.name || siteId,
+    site_url: summary?.site?.site_url || sessionSite?.site_url || '',
+    platform_kind: summary?.site?.platform_kind || sessionSite?.platform_kind || 'wordpress',
+    status: summary?.site?.status || sessionSite?.status || 'inactive',
   };
   const siteUrl = getPortalSiteUrl(site);
   const monitoringNeedsAttention = siteMonitoring.overview
-    ? siteMonitoring.overview.health.status !== 'ok'
-      || siteMonitoring.overview.action_required.length > 0
-      || siteMonitoring.overview.quota.top_pressure !== 'none'
+    ? hasPortalServiceAttention(siteMonitoring.overview)
     : false;
   const siteNeedsAttention = site.status !== 'active'
     || !siteUrl
-    || Boolean(summary.customer_status?.needs_attention)
+    || Boolean(summary?.customer_status?.needs_attention)
     || monitoringNeedsAttention;
   const siteConnectionStatusLabel = site.status === 'active'
     ? t('portal.sites.table_ready', {}, 'Connected')
@@ -238,7 +208,9 @@ function PortalSiteRecordContent() {
       : site.status === 'provisioning'
         ? t('portal.site_status_provisioning', {}, 'Provisioning')
         : t('portal.site_status_suspended', {}, 'Suspended');
-  const primaryMonitoringAction = siteMonitoring.overview?.action_required[0] || null;
+  const primaryMonitoringAction = siteMonitoring.overview?.action_required.find(
+    (item) => getPortalMonitoringIssueCategory(item) !== 'knowledge'
+  ) || null;
   const primaryIssueCategory = primaryMonitoringAction
     ? getPortalMonitoringIssueCategory(primaryMonitoringAction)
     : null;
@@ -339,6 +311,11 @@ function PortalSiteRecordContent() {
     <PortalPageStack>
       <PortalWorkspaceHeader
         title={getPortalSiteDisplayName(site)}
+        description={t(
+          'portal.site_record.description',
+          {},
+          'Check whether this site is connected and whether AI can use its content.'
+        )}
         currentPage="record"
         selectedSiteId={siteId}
         sites={session.sites}
@@ -381,6 +358,12 @@ function PortalSiteRecordContent() {
         ) : undefined}
       />
 
+      {error ? (
+        <PortalSection className="py-3 md:py-3" variant="portal">
+          <p className="text-sm text-amber-800 dark:text-amber-200">{error.message}</p>
+        </PortalSection>
+      ) : null}
+
       <PortalSiteServiceStatus
         t={t}
         overview={siteMonitoring.overview}
@@ -406,7 +389,10 @@ function PortalSiteRecordContent() {
               <button
                 type="button"
                 className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                onClick={() => setShowRemoveModal(true)}
+                onClick={() => {
+                  setHasOpenedRemoveModal(true);
+                  setShowRemoveModal(true);
+                }}
               >
                 {t('portal.remove_site_action', {}, 'Remove site')}
               </button>

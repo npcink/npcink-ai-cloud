@@ -142,4 +142,22 @@ describe('Portal monitoring display categories', () => {
       components: [{ component: 'quota', status: 'error', score: 45, summary: '' }],
     }))).toBe('active');
   });
+
+  it('keeps knowledge warnings separate from service operation', () => {
+    const knowledgeAction = action(
+      'site_knowledge',
+      'site_monitoring.vector_no_hit_pressure',
+      'Knowledge search needs review'
+    );
+
+    expect(getPortalMonitoringIssueCategory(knowledgeAction)).toBe('knowledge');
+    expect(getPortalServiceOperationStatus(overview({
+      health: { status: 'warning', score: 70, summary: '', components_count: 2 },
+      action_required: [knowledgeAction],
+      components: [
+        { component: 'api_key', status: 'ok', score: 100, summary: '' },
+        { component: 'site_knowledge', status: 'warning', score: 70, summary: '' },
+      ],
+    }))).toBe('active');
+  });
 });

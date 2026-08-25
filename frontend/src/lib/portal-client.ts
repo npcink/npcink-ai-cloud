@@ -423,6 +423,21 @@ export interface PortalUsageSummaryPayload {
   };
 }
 
+export interface PortalSiteKnowledgeUsageRow {
+  site_id: string;
+  site_name: string;
+  status: string;
+  indexed_document_count: number;
+  last_indexed_at: string;
+}
+
+export interface PortalAccountSiteKnowledgeUsagePayload {
+  generated_at: string;
+  total_indexed_document_count: number;
+  indexed_document_limit: number;
+  sites: PortalSiteKnowledgeUsageRow[];
+}
+
 export interface PortalPluginObservabilityTotals {
   events_total: number;
   ok_total: number;
@@ -2352,6 +2367,10 @@ export class PortalClient {
   async getAccountUsageSummary(siteId?: string): Promise<PortalEnvelope<PortalUsageSummaryPayload>> {
     const query = siteId ? `?site_id=${encodeURIComponent(siteId)}` : '';
     return this.request('GET', `/account/usage-summary${query}`, undefined);
+  }
+
+  async getAccountSiteKnowledgeUsage(): Promise<PortalEnvelope<PortalAccountSiteKnowledgeUsagePayload>> {
+    return this.request('GET', '/account/site-knowledge-usage', undefined);
   }
 
   async getUsageBundle(options?: { siteId?: string }): Promise<PortalUsageBundle> {
