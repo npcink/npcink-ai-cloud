@@ -1355,9 +1355,25 @@ def test_m4_deploy_allows_recovery_when_primary_frontend_is_absent(
     reason="source transfer dry-run requires Git worktree metadata",
 )
 def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -> None:
+    blocked = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert blocked.returncode != 0
+    assert "explicit feature-branch preview" in blocked.stderr
+
+    candidate_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "1",
+        "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "1",
+    }
     relayed = subprocess.run(
         ["bash", str(SCRIPT), "sync", "--dry-run"],
         cwd=ROOT,
+        env=candidate_env,
         text=True,
         capture_output=True,
         check=True,
@@ -1367,7 +1383,7 @@ def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -
     assert "100.90.87.36:18080" in relayed.stdout
 
     direct_env = {
-        **os.environ,
+        **candidate_env,
         "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "direct",
     }
     direct = subprocess.run(
