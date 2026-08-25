@@ -2030,6 +2030,7 @@ test('[readiness:single_site_ready] one ready site shows healthy account and sit
   await expect(page.getByText(/^Connected$|^已接入$/i)).toBeVisible();
 });
 
+// [readiness:multi_site_context_switch]
 test('[readiness:multi_site_account_context] multi-site home keeps account service independent from site switching', async ({ page }) => {
   await installPortalMocks(page);
 
