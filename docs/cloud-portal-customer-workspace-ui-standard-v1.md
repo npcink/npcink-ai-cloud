@@ -311,8 +311,11 @@ During implementation:
 Before publication:
 
 - run targeted ESLint and TypeScript checks;
-- run the affected Portal unit contracts from the frontend workspace; test
-  commands must not depend on the operator's current directory;
+- run the affected Portal unit contracts first, then the complete frontend
+  contract suite before publication; a focused subset does not prove that an
+  older cross-cutting contract was updated;
+- run frontend tests from their declared frontend workspace; test commands
+  must not depend on the operator's current directory;
 - run the focused Portal browser/E2E path;
 - verify the target PC routes in light and dark mode;
 - inspect console errors and untranslated backend copy;
@@ -321,7 +324,77 @@ Before publication:
   required;
 - report candidate, pushed, merged, and accepted states separately.
 
-## 13. Rollback
+## 13. Delivery and Integration Lifecycle
+
+A Portal interface change is not durable merely because it was implemented,
+reviewed in a local browser, committed on a topic branch, or synchronized to
+M4. The durable source state is the protected merge into current `master`.
+
+Use this evidence chain for every user-visible Portal change:
+
+```text
+current origin/master baseline
+  -> focused implementation and regression protection
+  -> complete Portal contract and browser evidence
+  -> pushed topic branch and protected PR checks
+  -> merged master
+  -> clean-master M4 promotion when runtime preview applies
+```
+
+### 13.1 Prevent branch-only UI loss
+
+- Record the PR and merge revision for every completed UI batch.
+- Report a branch-only or direct-M4 revision as a candidate, never as shipped
+  repository truth.
+- Before retiring or repurposing a topic branch, verify that its intended patch
+  is represented in current `origin/master`; branch age, a clean worktree, and
+  a prior screenshot are not integration evidence.
+- When an expected interface disappears, compare current `origin/master`, PR
+  history, exact commits, and patch equivalence before editing. Do not infer
+  the cause from memory or reconstruct the design from a screenshot alone.
+- Restore the smallest coherent patch onto current `master`. Preserve newer
+  fixes and reconcile tests, translations, and contracts against the current
+  baseline instead of replacing whole files with an old snapshot.
+
+### 13.2 Keep interaction state operable
+
+- A hidden scale-dependent control must become visible whenever its state is
+  already active. A URL query, saved link, browser history entry, or reduced
+  result count must never leave the customer with a filter they cannot clear.
+- Give URL state and local component state an explicit synchronization model.
+  Test initial navigation, editing, clearing, back/forward navigation when
+  relevant, and the transition across any visibility threshold.
+- Use row-level service projections for row actions. Do not require an
+  unrelated selected-site context when each `Site` already projects the
+  authorization needed for that row.
+- Do not absolutely position a disclosure inside a horizontal overflow
+  container unless a tested overlay/portal primitive owns clipping and focus.
+  The last visible row must keep its low-frequency and destructive actions
+  reachable without nested scrolling.
+
+### 13.3 Treat contracts and review as product evidence
+
+- Static source contracts are executable ownership rules. When a behavior is
+  intentionally retired, update every contract that still requires it and run
+  the complete contract suite before publication.
+- Keep static contracts for prohibited dependencies, ownership boundaries, and
+  structural regressions; use Playwright or equivalent browser evidence for
+  visibility, URL synchronization, disclosure clipping, and user action paths.
+- A required-check failure after focused tests passed is evidence of an
+  incomplete change envelope. Diagnose the exact failed seam, update the
+  owning behavior or contract, and rerun the narrowest failed gate before the
+  protected check runs again.
+- Resolve review conversations with the implementing revision and regression
+  evidence. Do not mark a valid usability finding resolved only to unblock
+  auto-merge.
+- Any source change after M4 candidate validation requires a new candidate
+  sync before claiming revision-aligned preview evidence. M4 acceptance still
+  requires promotion from clean, current merged `master`.
+
+The first restoration that exercised this lifecycle is recorded in
+[Portal UI Restoration and Delivery Retrospective - 2026-08-24 to 2026-08-25](history/portal/2026/portal-ui-restoration-and-delivery-retrospective-2026-08-25.md).
+
+## 14. Rollback
 
 A Portal UI rollback should revert the focused frontend, translations, tests,
 and this standard update through Git. Do not patch M4 directly, weaken Portal
