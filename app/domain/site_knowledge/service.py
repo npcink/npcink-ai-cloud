@@ -394,13 +394,16 @@ class SiteKnowledgeService:
                 not existing_document
                 and account_document_count is not None
                 and account_document_limit > 0
-                and account_document_count >= account_document_limit
             ):
-                skipped_documents += 1
-                skipped_due_to_quota += 1
-                quota_limited = True
-                processed_documents += 1
-                continue
+                account_document_count = self.repository.lock_account_and_count_documents(
+                    self.account_id
+                )
+                if account_document_count >= account_document_limit:
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
             available_site_chunks = int(
                 self.settings.site_knowledge_max_indexed_chunks_per_site
             ) - max(0, site_chunk_count - existing_chunks)

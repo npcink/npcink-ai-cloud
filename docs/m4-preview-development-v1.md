@@ -532,8 +532,9 @@ M4 Preview separates fast behavioral feedback from repository completion:
 
 - `m4:preview:sync` and `m4:preview:deploy` always record
   `acceptance_state=candidate`;
-- a candidate may come from a feature branch or a dirty worktree and proves
-  only that the packaged source behaved correctly on M4;
+- a candidate may come from a feature branch or a dirty worktree only when the
+  operator explicitly sets the corresponding candidate-source override, and
+  proves only that the packaged source behaved correctly on M4;
 - a change is not accepted until its PR is merged into `master` and
   `m4:preview:promote` succeeds from a clean worktree whose `HEAD` equals the
   freshly fetched `origin/master`.
