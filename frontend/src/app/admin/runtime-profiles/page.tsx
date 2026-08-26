@@ -47,6 +47,13 @@ type RuntimeInstance = {
     checked_at: string;
     error_code: string;
   } | null;
+  capability_evidence: Record<string, {
+    state: string;
+    source: string;
+    revision: string;
+    checked_at: string;
+    error_code: string;
+  }>;
 };
 
 type RuntimeProfile = {
@@ -121,6 +128,19 @@ function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
         error_code: String((item.vision_evidence as Record<string, unknown>).error_code || ''),
       }
       : null,
+    capability_evidence: item.capability_evidence && typeof item.capability_evidence === 'object'
+      ? Object.fromEntries(Object.entries(item.capability_evidence as Record<string, unknown>).flatMap(([capability, raw]) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+        const evidence = raw as Record<string, unknown>;
+        return [[capability, {
+          state: String(evidence.state || ''),
+          source: String(evidence.source || ''),
+          revision: String(evidence.revision || ''),
+          checked_at: String(evidence.checked_at || ''),
+          error_code: String(evidence.error_code || ''),
+        }]];
+      }))
+      : {},
   };
 }
 
@@ -270,7 +290,8 @@ function instanceTone(instance: RuntimeInstance, executionKind = ''): 'success' 
   const modelStatus = instance.model_status.trim().toLowerCase();
   const healthStatus = instance.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
-  if (executionKind === 'vision' && instance.vision_evidence?.state !== 'verified') return 'warning';
+  if (['vision', 'image_generation'].includes(executionKind)
+    && instance.capability_evidence[executionKind]?.state !== 'verified') return 'warning';
   if (healthStatus !== 'healthy') return 'warning';
   return 'success';
 }
@@ -290,6 +311,15 @@ function profileLabelKey(profile: RuntimeProfile): string {
 function instanceMatchesExecutionKind(instance: RuntimeInstance, executionKind: string): boolean {
   const feature = instance.model_feature === 'text_generation' ? 'text' : instance.model_feature;
   return feature === executionKind || (executionKind === 'vision' && feature === 'text');
+}
+
+function requiresCapabilityVerification(executionKind: string): boolean {
+  return executionKind === 'vision' || executionKind === 'image_generation';
+}
+
+function capabilityEvidence(instance: RuntimeInstance, capability: string) {
+  return instance.capability_evidence[capability]
+    || (capability === 'vision' ? instance.vision_evidence : null);
 }
 
 export default function RuntimeProfilesPage() {
@@ -471,12 +501,12 @@ export default function RuntimeProfilesPage() {
 
   async function saveProfiles() {
     if (!dirty || saving) return;
-    const needsVisionVerification = drafts.find((profile) => profile.execution_kind === 'vision' && profile.candidate_instance_ids.some((instanceId) => {
+    const needsCapabilityVerification = drafts.find((profile) => requiresCapabilityVerification(profile.execution_kind) && profile.candidate_instance_ids.some((instanceId) => {
       const instance = instancesById.get(instanceId);
-      return instance && instance.vision_evidence?.state !== 'verified';
+      return instance && capabilityEvidence(instance, profile.execution_kind)?.state !== 'verified';
     }));
-    if (needsVisionVerification) {
-      setError(copy('vision_verification_required', '视觉候选尚未验证，请先点击“验证”后再保存。'));
+    if (needsCapabilityVerification) {
+      setError(copy('capability_verification_required', '该能力候选尚未验证，请先点击“验证”后再保存。'));
       return;
     }
     const incompatible = drafts.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
@@ -522,7 +552,7 @@ export default function RuntimeProfilesPage() {
     }
   }
 
-  async function verifyInstance(instance: RuntimeInstance) {
+  async function verifyInstance(instance: RuntimeInstance, capability: string) {
     if (probingInstanceId) return;
     setProbingInstanceId(instance.instance_id);
     setError('');
@@ -530,15 +560,15 @@ export default function RuntimeProfilesPage() {
       await runtimeProfilesClient.request('/api/admin/runtime-profiles/capability-probe', {
         method: 'POST',
         body: {
-          capability: 'vision',
+          capability,
           instance_id: instance.instance_id,
           timeout_ms: 30000,
         },
       });
       await loadProfiles();
-      toast.success(copy('probe_success', '视觉能力验证成功，可以保存配置。'), t('common.success'));
+      toast.success(copy('probe_success', '能力验证成功，可以保存配置。'), t('common.success'));
     } catch (cause) {
-      setError(resolveUiErrorMessage(cause, copy('probe_failed', '视觉能力验证未通过，请检查 Provider 或稍后重试。')));
+      setError(resolveUiErrorMessage(cause, copy('probe_failed', '能力验证未通过，请检查 Provider 或稍后重试。')));
     } finally {
       setProbingInstanceId('');
     }
@@ -914,16 +944,17 @@ export default function RuntimeProfilesPage() {
                               />
                             </td>
                             <td className="px-3 py-2 text-center align-middle">
-                              {editingProfile.execution_kind === 'vision' && instance.vision_evidence?.state !== 'verified' ? (
+                              {requiresCapabilityVerification(editingProfile.execution_kind)
+                                && capabilityEvidence(instance, editingProfile.execution_kind)?.state !== 'verified' ? (
                                 <button
                                   type="button"
                                   className="button-secondary px-2 py-1 text-xs"
                                   disabled={Boolean(probingInstanceId)}
-                                  onClick={() => void verifyInstance(instance)}
+                                  onClick={() => void verifyInstance(instance, editingProfile.execution_kind)}
                                 >
                                   {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy('verify', '验证')}
                                 </button>
-                              ) : instance.vision_evidence?.state === 'verified' ? (
+                              ) : capabilityEvidence(instance, editingProfile.execution_kind)?.state === 'verified' ? (
                                 <span className="text-xs text-emerald-600">{copy('verified', '已验证')}</span>
                               ) : null}
                             </td>
