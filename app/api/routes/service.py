@@ -1474,7 +1474,10 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
-                if model.feature != spec.execution_kind:
+                feature_compatible = model.feature == spec.execution_kind or (
+                    spec.execution_kind == "vision" and model.feature == "text"
+                )
+                if not feature_compatible:
                     return [], (
                         f"profile {profile_id} may only use {spec.execution_kind} instances"
                     )

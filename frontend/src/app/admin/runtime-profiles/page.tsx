@@ -266,11 +266,11 @@ function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInst
   return 'success';
 }
 
-function instanceTone(instance: RuntimeInstance): 'success' | 'warning' | 'error' {
+function instanceTone(instance: RuntimeInstance, executionKind = ''): 'success' | 'warning' | 'error' {
   const modelStatus = instance.model_status.trim().toLowerCase();
   const healthStatus = instance.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
-  if (instance.model_feature === 'vision' && instance.vision_evidence?.state !== 'verified') return 'warning';
+  if (executionKind === 'vision' && instance.vision_evidence?.state !== 'verified') return 'warning';
   if (healthStatus !== 'healthy') return 'warning';
   return 'success';
 }
@@ -289,7 +289,7 @@ function profileLabelKey(profile: RuntimeProfile): string {
 
 function instanceMatchesExecutionKind(instance: RuntimeInstance, executionKind: string): boolean {
   const feature = instance.model_feature === 'text_generation' ? 'text' : instance.model_feature;
-  return feature === executionKind;
+  return feature === executionKind || (executionKind === 'vision' && feature === 'text');
 }
 
 export default function RuntimeProfilesPage() {
@@ -399,7 +399,7 @@ export default function RuntimeProfilesPage() {
   const candidatePool = useMemo(() => {
     if (!editingProfile || !data) return [];
     const available = editingProfile.execution_kind === 'vision'
-      ? data.available_instances.vision
+      ? [...data.available_instances.vision, ...data.available_instances.text]
       : editingProfile.execution_kind === 'image_generation'
         ? data.available_instances.image_generation
         : editingProfile.execution_kind === 'audio_generation'
@@ -877,7 +877,7 @@ export default function RuntimeProfilesPage() {
                       {candidates.map((instance) => {
                         const primary = editingProfile.candidate_instance_ids[0] === instance.instance_id;
                         const fallback = editingProfile.candidate_instance_ids[1] === instance.instance_id;
-                        const tone = instanceTone(instance);
+                        const tone = instanceTone(instance, editingProfile.execution_kind);
                         return (
                           <tr key={instance.instance_id} data-instance-id={instance.instance_id} className="bg-white dark:bg-slate-950">
                             <td className="px-3 py-2 align-middle">
