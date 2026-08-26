@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import re
 from dataclasses import dataclass
 
@@ -101,4 +102,71 @@ def vision_probe_fingerprint(*, provider_connection_id: str, model_id: str, endp
         capability="vision",
         endpoint_variant=endpoint_variant,
         request_format="image_url:data_uri",
+    ).value
+
+
+def probe_embedding(
+    *,
+    provider: ProviderAdapter,
+    run_id: str,
+    site_id: str,
+    model_id: str,
+    instance_id: str,
+    endpoint_variant: str,
+    trace_id: str,
+    timeout_ms: int = 30_000,
+) -> CapabilityProbeResult:
+    """Check that an embeddings route returns a finite, stable-dimension vector."""
+
+    request = ProviderExecutionRequest(
+        run_id=run_id,
+        site_id=site_id,
+        ability_name="npcink-cloud/capability-probe",
+        profile_id="embedding.probe",
+        execution_kind="embedding",
+        model_id=model_id,
+        instance_id=instance_id,
+        endpoint_variant=endpoint_variant,
+        trace_id=trace_id,
+        input_payload={"input": "Capability probe text.", "params": {"encoding_format": "float"}},
+        policy={"capability_probe": True},
+        timeout_ms=timeout_ms,
+    )
+    try:
+        result = provider.execute(request)
+    except ProviderExecutionError as error:
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code=error.error_code,
+            detail=error.message,
+        )
+
+    vector = result.output.get("embedding")
+    if not isinstance(vector, list) or not vector:
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.embedding_invalid",
+            detail="Provider returned no embedding vector",
+        )
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        for value in vector
+    ):
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.embedding_invalid",
+            detail="Provider returned a non-numeric or non-finite embedding value",
+        )
+    return CapabilityProbeResult(state="verified")
+
+
+def embedding_probe_fingerprint(*, provider_connection_id: str, model_id: str, endpoint_variant: str) -> str:
+    return build_route_fingerprint(
+        provider_connection_id=provider_connection_id,
+        model_id=model_id,
+        capability="embedding",
+        endpoint_variant=endpoint_variant,
+        request_format="text",
     ).value

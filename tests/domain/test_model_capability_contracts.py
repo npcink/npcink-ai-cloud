@@ -2,12 +2,12 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionResult
 from app.domain.model_capabilities.contracts import (
     CapabilityEvidence,
     build_route_fingerprint,
 )
-from app.domain.model_capabilities.probes import probe_vision
-from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionResult
+from app.domain.model_capabilities.probes import probe_embedding, probe_vision
 
 
 class _ProbeProvider:
@@ -106,6 +106,41 @@ def test_vision_probe_keeps_transient_provider_failures_retryable() -> None:
 
     assert result.state == "verification_failed"
     assert result.error_code == "provider.timeout"
+
+
+@pytest.mark.parametrize(
+    "output, expected_state",
+    [
+        ({"embedding": [0.1, -0.2, 0.3]}, "verified"),
+        ({"embedding": []}, "verification_failed"),
+        ({"embedding": [0.1, "bad"]}, "verification_failed"),
+    ],
+)
+def test_embedding_probe_requires_a_finite_numeric_vector(output, expected_state) -> None:
+    class _EmbeddingProvider:
+        def execute(self, request):
+            self.request = request
+            return ProviderExecutionResult(
+                output=output,
+                latency_ms=1,
+                tokens_in=1,
+                tokens_out=0,
+                cost=0.0,
+            )
+
+    provider = _EmbeddingProvider()
+    result = probe_embedding(
+        provider=provider,
+        run_id="run_probe",
+        site_id="site_probe",
+        model_id="text-embedding-3-small",
+        instance_id="openai-embedding",
+        endpoint_variant="embeddings",
+        trace_id="trace_probe",
+    )
+
+    assert result.state == expected_state
+    assert provider.request.input_payload["input"] == "Capability probe text."
 
 
 def test_vision_probe_only_marks_explicit_image_rejection_unsupported() -> None:

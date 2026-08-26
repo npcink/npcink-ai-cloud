@@ -16,8 +16,8 @@ from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.db import get_session
-from app.core.models import CatalogInstance, CatalogModel
 from app.core.logging import get_logger
+from app.core.models import CatalogInstance, CatalogModel
 from app.core.security import extract_trace_id
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_feedback.service import AgentFeedbackService
@@ -36,11 +36,13 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
-from app.domain.model_references import ModelReferenceError, ModelReferenceService
 from app.domain.model_capabilities.probes import (
+    embedding_probe_fingerprint,
+    probe_embedding,
     probe_vision,
     vision_probe_fingerprint,
 )
+from app.domain.model_references import ModelReferenceError, ModelReferenceService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
@@ -769,7 +771,7 @@ class HostedRuntimeProfileSettingsPayload(BaseModel):
 class HostedRuntimeCapabilityProbePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    capability: Literal["vision"]
+    capability: Literal["vision", "embedding"]
     instance_id: str = Field(min_length=1, max_length=191)
     timeout_ms: int = Field(default=30000, ge=1000, le=120000)
 
@@ -5583,8 +5585,8 @@ async def probe_admin_hosted_runtime_capability(
             )
         model = session.get(CatalogModel, instance.model_id)
         if model is None or (
-            payload.capability != "vision"
-            and model.feature != payload.capability
+            model.feature != payload.capability
+            and not (payload.capability == "vision" and model.feature == "text")
         ):
             return JSONResponse(
                 status_code=400,
@@ -5633,19 +5635,27 @@ async def probe_admin_hosted_runtime_capability(
         model_id = instance.model_id
         endpoint_variant = instance.endpoint_variant
 
+    probe_kwargs = {
+        "provider": provider,
+        "run_id": f"capability_probe_{uuid4().hex}",
+        "site_id": "admin-capability-probe",
+        "model_id": model_id,
+        "instance_id": payload.instance_id,
+        "endpoint_variant": endpoint_variant,
+        "trace_id": extract_trace_id(request.headers.get("traceparent", "")),
+        "timeout_ms": payload.timeout_ms,
+    }
     probe_result = await run_in_threadpool(
-        probe_vision,
-        provider=provider,
-        run_id=f"capability_probe_{uuid4().hex}",
-        site_id="admin-capability-probe",
-        model_id=model_id,
-        instance_id=payload.instance_id,
-        endpoint_variant=endpoint_variant,
-        trace_id=extract_trace_id(request.headers.get("traceparent", "")),
-        timeout_ms=payload.timeout_ms,
+        probe_vision if payload.capability == "vision" else probe_embedding,
+        **probe_kwargs,
     )
     checked_at = datetime.now(UTC)
-    fingerprint = vision_probe_fingerprint(
+    fingerprint_builder = (
+        vision_probe_fingerprint
+        if payload.capability == "vision"
+        else embedding_probe_fingerprint
+    )
+    fingerprint = fingerprint_builder(
         provider_connection_id=provider_id,
         model_id=model_id,
         endpoint_variant=endpoint_variant,
