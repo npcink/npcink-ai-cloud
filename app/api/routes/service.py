@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.db import get_session
+from app.core.models import CatalogInstance, CatalogModel
 from app.core.logging import get_logger
 from app.core.security import extract_trace_id
 from app.domain.advisor.service import InternalAIAdvisorService
@@ -36,6 +37,10 @@ from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.model_references import ModelReferenceError, ModelReferenceService
+from app.domain.model_capabilities.probes import (
+    probe_vision,
+    vision_probe_fingerprint,
+)
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
@@ -759,6 +764,14 @@ class HostedRuntimeProfileSettingsPayload(BaseModel):
     connector_id: Literal["wordpress_ai_connector"]
     operation_contract_version: Literal["wordpress_operation.v1"]
     profiles: list[HostedRuntimeProfilePayload]
+
+
+class HostedRuntimeCapabilityProbePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability: Literal["vision"]
+    instance_id: str = Field(min_length=1, max_length=191)
+    timeout_ms: int = Field(default=30000, ge=1000, le=120000)
 
 
 class OpsSummaryDisclosureReviewPayload(BaseModel):
@@ -5503,6 +5516,141 @@ async def get_admin_hosted_runtime_profiles(request: Request) -> Any:
             settings=services.settings,
         ),
         revision="m6",
+    )
+
+
+@router.post("/admin/runtime-profiles/capability-probe")
+async def probe_admin_hosted_runtime_capability(
+    request: Request,
+    payload: HostedRuntimeCapabilityProbePayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    provider_allowlist = build_provider_model_allowlist(
+        services.settings.database_url,
+        settings=services.settings,
+    )
+    with get_session(services.settings.database_url) as session:
+        repository = CatalogRepository(session)
+        instance = session.get(CatalogInstance, payload.instance_id)
+        if instance is None:
+            return JSONResponse(
+                status_code=404,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.instance_not_found",
+                    message="The selected runtime instance was not found.",
+                    revision="m6",
+                ),
+            )
+        model = session.get(CatalogModel, instance.model_id)
+        if model is None or (
+            payload.capability != "vision"
+            and model.feature != payload.capability
+        ):
+            return JSONResponse(
+                status_code=400,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.capability_mismatch",
+                    message="The selected instance is not eligible for this capability.",
+                    revision="m6",
+                ),
+            )
+        if not _hosted_runtime_instance_is_routing_eligible(instance, model):
+            return JSONResponse(
+                status_code=400,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.instance_not_eligible",
+                    message="The selected instance is not routing eligible.",
+                    revision="m6",
+                ),
+            )
+        if not provider_allowlist.allows(
+            provider_id=instance.provider_id,
+            model_id=instance.model_id,
+        ):
+            return JSONResponse(
+                status_code=400,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.model_not_enabled",
+                    message="The selected model is not enabled for its Provider.",
+                    revision="m6",
+                ),
+            )
+        provider = _get_catalog_service(request).providers.get(instance.provider_id)
+        if provider is None:
+            return JSONResponse(
+                status_code=503,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.provider_unavailable",
+                    message="The Provider is unavailable for capability verification.",
+                    revision="m6",
+                ),
+            )
+        provider_id = instance.provider_id
+        model_id = instance.model_id
+        endpoint_variant = instance.endpoint_variant
+
+    probe_result = await run_in_threadpool(
+        probe_vision,
+        provider=provider,
+        run_id=f"capability_probe_{uuid4().hex}",
+        site_id="admin-capability-probe",
+        model_id=model_id,
+        instance_id=payload.instance_id,
+        endpoint_variant=endpoint_variant,
+        trace_id=extract_trace_id(request),
+        timeout_ms=payload.timeout_ms,
+    )
+    checked_at = datetime.now(UTC)
+    fingerprint = vision_probe_fingerprint(
+        provider_connection_id=provider_id,
+        model_id=model_id,
+        endpoint_variant=endpoint_variant,
+    )
+    with get_session(services.settings.database_url) as session:
+        repository = CatalogRepository(session)
+        evidence = repository.upsert_capability_evidence(
+            instance_id=payload.instance_id,
+            capability=payload.capability,
+            state=probe_result.state,
+            route_fingerprint=fingerprint,
+            source="provider_probe",
+            revision=checked_at.isoformat(),
+            checked_at=checked_at,
+            error_code=probe_result.error_code,
+            error_detail=probe_result.detail[:500] if probe_result.detail else None,
+        )
+        session.commit()
+
+    status_code = 200 if probe_result.state == "verified" else 400
+    return JSONResponse(
+        status_code=status_code,
+        content=build_envelope(
+            status="ok" if probe_result.state == "verified" else "error",
+            message=(
+                "Capability verification succeeded."
+                if probe_result.state == "verified"
+                else "Capability verification did not succeed."
+            ),
+            data={
+                "capability": evidence.capability,
+                "state": evidence.state,
+                "routing_eligible": evidence.state == "verified",
+                "route_fingerprint": evidence.route_fingerprint,
+                "source": evidence.source,
+                "revision": evidence.revision,
+                "checked_at": checked_at.isoformat(),
+                "error_code": evidence.error_code,
+            },
+            revision="m6",
+        ),
     )
 
 
