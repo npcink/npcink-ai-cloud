@@ -36,6 +36,7 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
+from app.domain.model_capabilities.contracts import MODEL_CAPABILITIES
 from app.domain.model_capabilities.probes import (
     embedding_probe_fingerprint,
     image_generation_probe_fingerprint,
@@ -1244,7 +1245,19 @@ def _serialize_hosted_runtime_instance(
     model: Any,
     provider: Any | None = None,
     evidence: Any | None = None,
+    capability_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    serialized_capability_evidence = {
+        capability: {
+            "state": str(item.state or ""),
+            "source": str(item.source or ""),
+            "revision": str(item.revision or ""),
+            "checked_at": item.checked_at.isoformat() if item.checked_at else "",
+            "error_code": str(item.error_code or ""),
+        }
+        for capability, item in (capability_evidence or {}).items()
+        if item is not None
+    }
     return {
         "instance_id": str(instance.instance_id or ""),
         "provider_id": str(instance.provider_id or ""),
@@ -1271,6 +1284,7 @@ def _serialize_hosted_runtime_instance(
             if evidence is not None
             else None
         ),
+        "capability_evidence": serialized_capability_evidence,
     }
 
 
@@ -1302,10 +1316,12 @@ def _build_hosted_runtime_profile_projection(
         )
         providers_by_id = {provider.provider_id: provider for provider in providers}
         instances_by_id = {instance.instance_id: instance for instance in instances}
-        vision_evidence_by_instance = repository.list_capability_evidence_for_instances(
-            instance_ids=list(instances_by_id),
-            capability="vision",
-        )
+        capability_evidence_by_capability = {
+            capability: repository.list_capability_evidence_for_instances(
+                instance_ids=list(instances_by_id), capability=capability
+            )
+            for capability in MODEL_CAPABILITIES
+        }
 
         available_instances_by_kind: dict[str, list[dict[str, Any]]] = {
             "text": [],
@@ -1330,7 +1346,13 @@ def _build_hosted_runtime_profile_projection(
                     instance,
                     model,
                     providers_by_id.get(instance.provider_id),
-                    vision_evidence_by_instance.get(instance.instance_id),
+                    capability_evidence_by_capability["vision"].get(instance.instance_id),
+                    capability_evidence={
+                        capability: evidence_by_instance.get(instance.instance_id)
+                        for capability, evidence_by_instance in (
+                            capability_evidence_by_capability.items()
+                        )
+                    },
                 )
             )
 
