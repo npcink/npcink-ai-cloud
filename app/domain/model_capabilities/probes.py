@@ -15,6 +15,7 @@ from app.adapters.providers.base import (
 from app.domain.audio_generation.artifacts import (
     AUDIO_ARTIFACT_DEFAULT_MAX_BYTES,
     AudioArtifactMaterializationConfig,
+    AudioArtifactMaterializationError,
     _audio_bytes_for_candidate,
 )
 from app.domain.image_generation.materialization import clean_provider_image
@@ -361,7 +362,7 @@ def probe_audio_generation(
             raise ValueError("audio candidate is not a recognizable MP3 stream")
         if audio_format in {"wav", "wave"} and not audio_bytes.startswith(b"RIFF"):
             raise ValueError("audio candidate is not a recognizable WAV stream")
-    except (ValueError, binascii.Error, OSError) as error:
+    except (AudioArtifactMaterializationError, ValueError, binascii.Error, OSError) as error:
         return CapabilityProbeResult(
             state="verification_failed",
             error_code="capability_probe.audio_invalid",
