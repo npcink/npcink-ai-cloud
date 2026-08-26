@@ -1290,6 +1290,22 @@ def _serialize_hosted_runtime_instance(
     }
 
 
+def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | None:
+    fingerprint_builder = {
+        "vision": vision_probe_fingerprint,
+        "embedding": embedding_probe_fingerprint,
+        "image_generation": image_generation_probe_fingerprint,
+        "audio_generation": audio_generation_probe_fingerprint,
+    }.get(capability)
+    if fingerprint_builder is None:
+        return None
+    return fingerprint_builder(
+        provider_connection_id=str(instance.provider_id or ""),
+        model_id=str(instance.model_id or ""),
+        endpoint_variant=str(instance.endpoint_variant or ""),
+    )
+
+
 def _hosted_runtime_instance_is_routing_eligible(
     instance: Any,
     model: Any | None,
@@ -1344,15 +1360,35 @@ def _build_hosted_runtime_profile_projection(
             if model.feature not in available_instances_by_kind:
                 continue
             available_instances_by_kind[model.feature].append(
+                # Evidence is only shown when it belongs to this exact route.
                 _serialize_hosted_runtime_instance(
                     instance,
                     model,
                     providers_by_id.get(instance.provider_id),
-                    capability_evidence_by_capability["vision"].get(instance.instance_id),
+                    (
+                        capability_evidence_by_capability["vision"].get(instance.instance_id)
+                        if (
+                            capability_evidence_by_capability["vision"].get(instance.instance_id)
+                            is not None
+                            and capability_evidence_by_capability["vision"]
+                            .get(instance.instance_id)
+                            .route_fingerprint
+                            == _capability_route_fingerprint(
+                                capability="vision", instance=instance
+                            )
+                        )
+                        else None
+                    ),
                     capability_evidence={
-                        capability: evidence_by_instance.get(instance.instance_id)
+                        capability: evidence
                         for capability, evidence_by_instance in (
                             capability_evidence_by_capability.items()
+                        )
+                        for evidence in [evidence_by_instance.get(instance.instance_id)]
+                        if evidence is not None
+                        and evidence.route_fingerprint
+                        == _capability_route_fingerprint(
+                            capability=capability, instance=instance
                         )
                     },
                 )

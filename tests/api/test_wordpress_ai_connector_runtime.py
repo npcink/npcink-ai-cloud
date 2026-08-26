@@ -3814,6 +3814,29 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
         assert audit_payload["operation_contract_version"] == ("wordpress_operation.v1")
 
 
+def test_admin_runtime_profiles_hides_evidence_for_a_changed_route(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        evidence = session.scalar(
+            select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id == "openai-wp-ai-image-test",
+                CatalogCapabilityEvidence.capability == "image_generation",
+            )
+        )
+        assert evidence is not None
+        evidence.route_fingerprint = "stale-route"
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/runtime-profiles",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    image_instance = response.json()["data"]["available_instances"]["image_generation"][0]
+    assert "image_generation" not in image_instance["capability_evidence"]
+
+
 def test_admin_runtime_profiles_rejects_unknown_profile(tmp_path: Path) -> None:
     _, client, _ = _build_client(tmp_path)
 
