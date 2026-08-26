@@ -126,7 +126,6 @@ async function installPortalMocks(
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
     emptySites?: boolean;
-    delayInitialEntitlements?: boolean;
     zeroEntitlements?: boolean;
     failInitialEntitlements?: boolean;
     accountEntitlementsErrorCode?: string;
@@ -149,13 +148,7 @@ async function installPortalMocks(
   const accountProjectionRequests: string[] = [];
   let accountEntitlementsRequestCount = 0;
   let portalStateMutationRequestCount = 0;
-  let delayedEntitlementsCompleted = false;
-  let initialEntitlementsDelayed = false;
   let initialEntitlementsFailed = false;
-  let releaseInitialEntitlementsGate: (() => void) | null = null;
-  const initialEntitlementsGate = new Promise<void>((resolve) => {
-    releaseInitialEntitlementsGate = resolve;
-  });
   let releaseSessionRefreshGate: (() => void) | null = null;
   const sessionRefreshGate = new Promise<void>((resolve) => {
     releaseSessionRefreshGate = resolve;
@@ -325,14 +318,6 @@ async function installPortalMocks(
         await fulfillError(route, 'service.entitlements_temporarily_unavailable');
         return;
       }
-      const shouldDelayThisResponse = Boolean(
-        options.delayInitialEntitlements
-        && !initialEntitlementsDelayed
-      );
-      if (shouldDelayThisResponse) {
-        initialEntitlementsDelayed = true;
-        await initialEntitlementsGate;
-      }
       const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
       const packageRemaining = options.zeroEntitlements ? 0 : 2419;
       const totalRemaining = packageRemaining + paidRemaining;
@@ -460,9 +445,6 @@ async function installPortalMocks(
         },
         generated_at: '2026-04-07T10:00:00Z',
       });
-      if (shouldDelayThisResponse) {
-        delayedEntitlementsCompleted = true;
-      }
       return;
     }
 
@@ -1645,10 +1627,8 @@ async function installPortalMocks(
     accountEntitlementsRequestCount: () => accountEntitlementsRequestCount,
     accountProjectionRequestCount: () => accountProjectionRequestCount,
     accountProjectionRequests: () => [...accountProjectionRequests],
-    delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     loginVerified: () => loginVerified,
     portalStateMutationRequestCount: () => portalStateMutationRequestCount,
-    releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
     sessionRequestCount: () => sessionRequestCount,
     releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
   };
@@ -1687,17 +1667,27 @@ test('portal workspace interaction path: account overview to site detail and ser
   ).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
-  await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toBeVisible();
-  await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toHaveCount(0);
+  await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toHaveCount(0);
+  await expect(sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i)).toHaveCount(0);
+  await page.goto('/portal?q=Attention');
+  const activeSiteSearch = sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i);
+  await expect(activeSiteSearch).toBeVisible();
+  await expect(activeSiteSearch).toHaveValue('Attention');
+  await activeSiteSearch.fill('');
+  await expect(page).not.toHaveURL(/(?:\?|&)q=/);
   await expect(sitesWorkspace.getByRole('columnheader', { name: /Context|当前上下文/i })).toHaveCount(0);
   await expect(sitesWorkspace.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
   await expect(
     sitesWorkspace.locator('[data-portal-sites="desktop-table"]').getByText(/^Connected$|^已接入$/i)
   ).toHaveCount(2);
   const selectedSiteRow = sitesWorkspace.getByRole('row', { name: /Attention Site/i });
-  await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
+  await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
+  const unselectedSiteRow = sitesWorkspace.getByRole('row', { name: /Clear Site/i });
+  await unselectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await expect(unselectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
@@ -2040,27 +2030,22 @@ test('[readiness:single_site_ready] one ready site shows healthy account and sit
   await expect(page.getByText(/^Connected$|^已接入$/i)).toBeVisible();
 });
 
-test('[readiness:multi_site_context_switch] switching site keeps account package and entitlements stable', async ({ page }) => {
-  const calls = await installPortalMocks(page, { delayInitialEntitlements: true });
+// [readiness:multi_site_context_switch]
+test('[readiness:multi_site_account_context] multi-site home keeps account service independent from site switching', async ({ page }) => {
+  await installPortalMocks(page);
 
   await page.goto('/portal');
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
-  const managementSiteSelector = page.getByRole('combobox', {
+  await expect(page.getByRole('combobox', {
     name: /Current management site|当前管理站点/i,
-  });
-  await expect(managementSiteSelector).toBeVisible();
-  await expect(page.getByText(/Switching changes the account scope|切换后，账号服务、套餐、用量和工单/i)).toBeVisible();
-  await managementSiteSelector.selectOption('site_clear');
+  })).toHaveCount(0);
+  await expect(page.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i)).toHaveCount(0);
+  await expect(page.getByText(/Switching changes the account scope|切换后，账号服务、套餐、用量和工单/i)).toHaveCount(0);
 
   await expect(page.getByText(/^Growth$/).first()).toBeVisible();
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
-  await expect(page.getByRole('row', { name: /Clear Site/i }).getByText(
-    /Current management site|当前管理站点/i
-  )).toBeVisible();
-
-  calls.releaseInitialEntitlements();
-  await expect.poll(calls.delayedEntitlementsCompleted).toBe(true);
-  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  await expect(page.getByRole('row', { name: /Attention Site/i })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Clear Site/i })).toBeVisible();
 });
 
 test('site filter scopes usage evidence without changing account package data', async ({ page }) => {

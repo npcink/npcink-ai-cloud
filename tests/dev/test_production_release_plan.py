@@ -86,14 +86,32 @@ def test_release_plan_selects_known_lane(
         assert plan[field] is value
 
 
+def test_release_policy_only_promotion_does_not_require_runtime_deploy() -> None:
+    plan = _plan(
+        ".github/workflows/production-maintenance.yml",
+        "deploy/PRODUCTION_GITHUB_DEPLOY.md",
+        "docs/README.md",
+        "docs/decisions/050-operator-initiated-certificate-readiness-refresh.md",
+        "scripts/check-release-policy.sh",
+        "tests/contract/test_production_secret_argv_contract.py",
+    )
+
+    assert plan["lane"] == "no_deploy"
+    assert plan["deployment_required"] is False
+    assert plan["backend_image_required"] is False
+    assert plan["frontend_image_required"] is False
+
+
 @pytest.mark.parametrize(
     "paths",
     [
         (),
         ("uv.lock",),
+        ("package.json",),
         ("Dockerfile",),
         ("frontend/Dockerfile",),
         ("deploy/image-lock/production-images.json",),
+        ("scripts/unclassified-release-helper.py",),
         ("deploy/remote-load-and-up.sh", "app/main.py"),
         ("app/main.py", "frontend/src/app/page.tsx"),
     ],

@@ -42,6 +42,7 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
     coerce_positive_int,
+    normalize_source_passages,
     validate_site_knowledge_runtime_contract,
 )
 from app.domain.site_knowledge.embedding import (
@@ -75,6 +76,31 @@ MAX_FALLBACK_SEARCH_CHUNKS = 5000
 DEFAULT_EVIDENCE_MIN_SCORE = 0.45
 DEFAULT_REQUIRED_EVIDENCE_SOURCES = 1
 ALLOWED_NO_HIT_POLICIES = frozenset({"abstain", "fallback_to_general", "return_empty"})
+GENERIC_INTERNAL_LINK_ANCHORS = frozenset(
+    {
+        "主题",
+        "文章",
+        "内容",
+        "这里",
+        "本文",
+        "本页",
+        "文章内容",
+        "相关内容",
+        "更多内容",
+        "相关主题",
+        "topic",
+        "article",
+        "content",
+        "here",
+        "this",
+        "post",
+        "page",
+        "link",
+        "readmore",
+        "wordpress",
+        "cloud",
+    }
+)
 ProgressCallback = Callable[[dict[str, Any]], None]
 EmbeddingUsageCallback = Callable[
     [str, ProviderExecutionRequest, ProviderExecutionResult | None, ProviderExecutionError | None],
@@ -368,13 +394,16 @@ class SiteKnowledgeService:
                 not existing_document
                 and account_document_count is not None
                 and account_document_limit > 0
-                and account_document_count >= account_document_limit
             ):
-                skipped_documents += 1
-                skipped_due_to_quota += 1
-                quota_limited = True
-                processed_documents += 1
-                continue
+                account_document_count = self.repository.lock_account_and_count_documents(
+                    self.account_id
+                )
+                if account_document_count >= account_document_limit:
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
             available_site_chunks = int(
                 self.settings.site_knowledge_max_indexed_chunks_per_site
             ) - max(0, site_chunk_count - existing_chunks)
@@ -721,6 +750,7 @@ class SiteKnowledgeService:
         else:
             source_types = [source_type for source_type in source_types if source_type != "comment"]
         current_post_id = _coerce_int(input_payload.get("current_post_id"), default=0)
+        source_passages = normalize_source_passages(input_payload.get("source_passages"))
 
         indexed_embedding_models = self.repository.list_embedding_models(
             site_id,
@@ -804,6 +834,11 @@ class SiteKnowledgeService:
                 max_results=max_results,
                 result_granularity=result_granularity,
             )
+            results = _attach_source_anchor_evidence(
+                results,
+                intent=intent,
+                source_passages=source_passages,
+            )
             workflow_support = _workflow_support_for_intent(intent)
             evidence_gate = _evidence_gate(results, evidence_policy)
             return {
@@ -870,6 +905,11 @@ class SiteKnowledgeService:
             evidence_policy=evidence_policy,
             max_results=max_results,
             result_granularity=result_granularity,
+        )
+        results = _attach_source_anchor_evidence(
+            results,
+            intent=intent,
+            source_passages=source_passages,
         )
         workflow_support = _workflow_support_for_intent(intent)
         evidence_gate = _evidence_gate(results, evidence_policy)
@@ -2118,6 +2158,7 @@ def _serialize_vector_hit(
     *,
     intent: str,
     query: str = "",
+    source_passages: list[str] | None = None,
 ) -> dict[str, object]:
     return _serialize_search_result(
         post_id=hit.post_id,
@@ -2131,6 +2172,7 @@ def _serialize_vector_hit(
         score=hit.score,
         intent=intent,
         query=query,
+        source_passages=source_passages,
     )
 
 
@@ -2147,6 +2189,7 @@ def _serialize_search_result(
     score: float,
     intent: str,
     query: str = "",
+    source_passages: list[str] | None = None,
 ) -> dict[str, object]:
     match = _query_match_info(query, chunk_text)
     result: dict[str, object] = {
@@ -2167,6 +2210,11 @@ def _serialize_search_result(
         "suggested_use": _suggested_use_for_intent(intent),
     }
     if intent == "internal_links":
+        anchor_evidence = _source_anchor_evidence(
+            source_passages or [],
+            title=title,
+            chunk_text=chunk_text,
+        )
         result.update(
             {
                 "anchor_text_candidates": _anchor_text_candidates(title, chunk_text),
@@ -2179,6 +2227,9 @@ def _serialize_search_result(
                 "insert_mode": "wordpress_local_only",
             }
         )
+        if anchor_evidence:
+            result["anchor_or_context"] = anchor_evidence["anchor_or_context"]
+            result["anchor_evidence"] = anchor_evidence
     elif intent == "writing_context":
         result.update(
             {
@@ -2504,6 +2555,143 @@ def _anchor_text_candidates(title: str, chunk_text: str) -> list[str]:
         if phrase and phrase not in candidates:
             candidates.append(phrase[:80])
     return candidates[:3]
+
+
+def _attach_source_anchor_evidence(
+    results: list[dict[str, object]],
+    *,
+    intent: str,
+    source_passages: list[str],
+) -> list[dict[str, object]]:
+    if intent != "internal_links" or not source_passages:
+        return results
+    projected: list[dict[str, object]] = []
+    for item in results:
+        result = dict(item)
+        anchor_evidence = _source_anchor_evidence(
+            source_passages,
+            title=str(result.get("title") or ""),
+            chunk_text=str(result.get("chunk") or ""),
+        )
+        if anchor_evidence:
+            result["anchor_or_context"] = anchor_evidence["anchor_or_context"]
+            result["anchor_evidence"] = anchor_evidence
+        projected.append(result)
+    return projected
+
+
+def _source_anchor_evidence(
+    source_passages: list[str],
+    *,
+    title: str,
+    chunk_text: str,
+) -> dict[str, object]:
+    candidates: list[tuple[int, int, int, str, str]] = []
+    normalized_title = _normalize_anchor_comparison(title)
+    for target_priority, target_field, target_text in (
+        (2, "title", title),
+        (1, "chunk", chunk_text),
+    ):
+        target = " ".join(str(target_text or "").split())
+        if not target:
+            continue
+        for passage_index, passage in enumerate(source_passages):
+            for phrase in _exact_shared_anchor_phrases(passage, target):
+                normalized_phrase = _normalize_anchor_comparison(phrase)
+                if (
+                    not _is_specific_anchor_phrase(phrase)
+                    or normalized_phrase == normalized_title
+                ):
+                    continue
+                candidates.append(
+                    (
+                        target_priority,
+                        len(normalized_phrase),
+                        -passage_index,
+                        phrase,
+                        target_field,
+                    )
+                )
+
+    if not candidates:
+        return {}
+    _, _, negative_passage_index, phrase, target_field = max(candidates)
+    return {
+        "anchor_or_context": phrase,
+        "basis": "exact_source_target_phrase",
+        "source_passage_index": -negative_passage_index,
+        "target_field": target_field,
+        "exact_source_passage_match": True,
+    }
+
+
+def _exact_shared_anchor_phrases(source: str, target: str) -> list[str]:
+    phrases: list[str] = []
+    source_lower = source.lower()
+    for size in range(min(48, len(target)), 3, -1):
+        seen: set[str] = set()
+        for start in range(0, len(target) - size + 1):
+            raw = target[start : start + size]
+            phrase = raw.strip(" \t\n\r,.;:!?，。；：！？、()[]{}<>\"'")
+            if len(phrase) < 4 or phrase in seen:
+                continue
+            phrase_start = start + raw.find(phrase)
+            if _splits_ascii_word(target, phrase_start, len(phrase)):
+                continue
+            seen.add(phrase)
+            offset = _exact_anchor_offset(source_lower, phrase.lower())
+            if offset < 0:
+                continue
+            exact = source[offset : offset + len(phrase)]
+            if _is_specific_anchor_phrase(exact):
+                phrases.append(exact)
+        if phrases:
+            break
+    return phrases
+
+
+def _exact_anchor_offset(source: str, phrase: str) -> int:
+    offset = source.find(phrase)
+    while offset >= 0:
+        if not _splits_ascii_word(source, offset, len(phrase)):
+            return offset
+        offset = source.find(phrase, offset + 1)
+    return -1
+
+
+def _splits_ascii_word(text: str, start: int, length: int) -> bool:
+    end = start + length
+    starts_inside_word = (
+        start > 0
+        and bool(re.match(r"[A-Za-z0-9_]", text[start : start + 1]))
+        and bool(re.match(r"[A-Za-z0-9_]", text[start - 1 : start]))
+    )
+    ends_inside_word = (
+        end < len(text)
+        and bool(re.match(r"[A-Za-z0-9_]", text[end - 1 : end]))
+        and bool(re.match(r"[A-Za-z0-9_]", text[end : end + 1]))
+    )
+    return starts_inside_word or ends_inside_word
+
+
+def _normalize_anchor_comparison(value: str) -> str:
+    return re.sub(r"[^\w\u3400-\u9fff]+", "", str(value or "").lower(), flags=re.UNICODE)
+
+
+def _is_specific_anchor_phrase(value: str) -> bool:
+    phrase = " ".join(str(value or "").split()).strip()
+    normalized = _normalize_anchor_comparison(phrase)
+    if not 4 <= len(normalized) <= 48:
+        return False
+    if normalized in GENERIC_INTERNAL_LINK_ANCHORS:
+        return False
+    if re.search(r"[。！？!?；;\n\r]", phrase):
+        return False
+    ascii_words = re.findall(r"[A-Za-z0-9]+", phrase)
+    has_cjk = bool(re.search(r"[\u3400-\u9fff]", phrase))
+    if not has_cjk and len(ascii_words) < 2 and len(normalized) < 6:
+        return False
+    return True
 
 
 def _duplicate_risk_for_score(score: float) -> str:

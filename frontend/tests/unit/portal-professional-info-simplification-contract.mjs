@@ -178,20 +178,20 @@ assert.match(
   /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc/,
   'Portal site list should explain that new site connections start from the WordPress addon'
 );
-assert.match(
+assert.doesNotMatch(
   sitesSource,
-  /const handleSelectSite = async \(siteId: string\)[\s\S]*await selectSite\(siteId\)[\s\S]*portal\.sites\.management_site_label[\s\S]*data-portal-sites="management-site-selector"/,
-  'Portal site list must expose context switching once through the clearly labeled management-site selector'
+  /management-site-selector|switch_management_site_action|handleSelectSite/,
+  'Portal account site list must not expose site-context switching controls'
 );
 assert.doesNotMatch(
   sitesSource,
   /portal\.sites\.table_context|portal\.sites\.current_context|portal\.sites\.available_context|portal\.select_site_action/,
   'Portal site rows must not expose the internal context column or repeated select-site buttons'
 );
-assert.match(
+assert.doesNotMatch(
   sitesSource,
-  /const selectedSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''/,
-  'Portal site list must read current context only from selected_context'
+  /selectedSiteId|selected_context\?\.allowed_actions\.includes\('remove_sites'\)/,
+  'Portal site actions must use each row permission projection instead of the retired selected-site context'
 );
 assert.match(
   sitesSource,
@@ -290,8 +290,8 @@ for (const expectedCopy of [
   "'portal.site_record': '查看站点'",
   "'portal.sites.connect_hint_title': 'Need to connect another site?'",
   "'portal.sites.connect_hint_title': '需要连接新站点？'",
-  "'portal.home.account_status_ok_desc': 'This account can use the hosted service normally.'",
-  "'portal.home.account_status_ok_desc': '当前账号可以正常使用托管服务。'",
+  "'portal.home.account_status_ok_desc': 'Package, usage, and tickets belong to this account. Site details are listed below.'",
+  "'portal.home.account_status_ok_desc': '套餐、用量和工单属于当前账号；站点详情请在下方查看。'",
 ]) {
   assert.ok(i18nSource.includes(expectedCopy), `${expectedCopy} must be present`);
 }

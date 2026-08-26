@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_COMPOSE_FILES = ("docker-compose.prod.yml", "docker-compose.runtime.yml")
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def published_protocol(port: object) -> str:
@@ -85,7 +86,11 @@ def normalized_compose_model(path: Path) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("compose_files", nargs="*", default=list(DEFAULT_COMPOSE_FILES))
+    parser.add_argument(
+        "compose_files",
+        nargs="*",
+        default=[str(REPOSITORY_ROOT / name) for name in DEFAULT_COMPOSE_FILES],
+    )
     return parser.parse_args()
 
 

@@ -31,6 +31,7 @@ from app.core.models import (
 from app.core.services import CloudServices
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.contracts import (
+    MAX_SOURCE_PASSAGES,
     SiteKnowledgeContractViolation,
     validate_site_knowledge_runtime_contract,
 )
@@ -55,6 +56,7 @@ from app.domain.site_knowledge.service import (
     _normalize_search_query,
     _rank_search_results_for_query,
     _resolve_evidence_policy,
+    _serialize_search_result,
 )
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -236,6 +238,7 @@ def _search_payload(
     source_types: list[str] | None = None,
     post_types: list[str] | None = None,
     result_granularity: str | None = None,
+    source_passages: list[str] | None = None,
 ) -> dict[str, object]:
     filters: dict[str, object] = {
         "post_types": post_types or ["post", "page"],
@@ -255,6 +258,8 @@ def _search_payload(
     }
     if result_granularity is not None:
         input_payload["result_granularity"] = result_granularity
+    if source_passages is not None:
+        input_payload["source_passages"] = source_passages
     return {
         "ability_name": "npcink-cloud/site-knowledge-search",
         "contract_version": "site_knowledge_search.v1",
@@ -375,6 +380,42 @@ def test_site_knowledge_contract_rejects_unknown_result_granularity() -> None:
                 "write_posture": "suggestion_only",
             },
         )
+
+
+def test_site_knowledge_contract_bounds_source_passages() -> None:
+    payload = _search_payload("internal link anchor evidence")["input"]
+    assert isinstance(payload, dict)
+
+    payload["source_passages"] = ["bounded source"] * (MAX_SOURCE_PASSAGES + 1)
+    with pytest.raises(SiteKnowledgeContractViolation) as too_many:
+        validate_site_knowledge_runtime_contract(
+            ability_name="npcink-cloud/site-knowledge-search",
+            contract_version="site_knowledge_search.v1",
+            input_payload=payload,
+        )
+    assert too_many.value.error_code == "site_knowledge.source_passages_too_many"
+
+    payload["source_passages"] = ["valid", {"text": "not allowed"}]
+    with pytest.raises(SiteKnowledgeContractViolation) as invalid_item:
+        validate_site_knowledge_runtime_contract(
+            ability_name="npcink-cloud/site-knowledge-search",
+            contract_version="site_knowledge_search.v1",
+            input_payload=payload,
+        )
+    assert invalid_item.value.error_code == "site_knowledge.source_passages_invalid"
+
+    payload["source_passages"] = ["valid source passage"]
+    payload["intent"] = "related_content"
+    with pytest.raises(SiteKnowledgeContractViolation) as wrong_intent:
+        validate_site_knowledge_runtime_contract(
+            ability_name="npcink-cloud/site-knowledge-search",
+            contract_version="site_knowledge_search.v1",
+            input_payload=payload,
+        )
+    assert (
+        wrong_intent.value.error_code
+        == "site_knowledge.source_passages_intent_not_allowed"
+    )
 
 
 def test_toolbox_exact_sync_payload_queues_without_routing_fields(tmp_path: Path) -> None:
@@ -720,7 +761,12 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
 
     search_result = _execute(
         client,
-        _search_payload("semantic search internal links"),
+        _search_payload(
+            "semantic search internal links",
+            source_passages=[
+                "Editors use Cloud managed site knowledge before applying reviewed links."
+            ],
+        ),
         idempotency_key="search-after-sync",
     )
     assert search_result["status_code"] == 200
@@ -738,6 +784,13 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert search_data["results"][0]["suggested_use"] == "internal_link"
     assert search_data["results"][0]["insert_mode"] == "wordpress_local_only"
     assert search_data["results"][0]["anchor_text_candidates"]
+    assert search_data["results"][0]["anchor_or_context"] == (
+        "Cloud managed site knowledge"
+    )
+    assert (
+        search_data["results"][0]["anchor_evidence"]["exact_source_passage_match"]
+        is True
+    )
 
     status_result = _execute(
         client,
@@ -808,6 +861,86 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert snapshots
     assert snapshots[-1].document_count == 1
     assert snapshots[-1].chunk_count >= 1
+
+
+def test_internal_link_search_returns_exact_specific_source_anchor() -> None:
+    result = _serialize_search_result(
+        post_id=456,
+        source_type="post",
+        source_id=456,
+        parent_post_id=0,
+        chunk_index=0,
+        title="WordPress 升级前的 PHP 兼容性检查",
+        url="https://example.test/php-compatibility",
+        chunk_text="升级 WordPress 前应在测试环境完成 PHP 兼容性检查和插件回归。",
+        score=0.82,
+        intent="internal_links",
+        query="WordPress 7.0 升级检查",
+        source_passages=["先处理运行环境，再完成 PHP 兼容性检查，然后逐项验证插件。"],
+    )
+
+    assert result["anchor_or_context"] == "PHP 兼容性检查"
+    assert result["anchor_evidence"] == {
+        "anchor_or_context": "PHP 兼容性检查",
+        "basis": "exact_source_target_phrase",
+        "source_passage_index": 0,
+        "target_field": "title",
+        "exact_source_passage_match": True,
+    }
+
+
+def test_internal_link_search_rejects_generic_or_full_title_anchor() -> None:
+    generic = _serialize_search_result(
+        post_id=457,
+        source_type="post",
+        source_id=457,
+        parent_post_id=0,
+        chunk_index=0,
+        title="主题",
+        url="https://example.test/topic",
+        chunk_text="文章内容",
+        score=0.75,
+        intent="internal_links",
+        source_passages=["这里是文章内容。"],
+    )
+    full_title = _serialize_search_result(
+        post_id=458,
+        source_type="post",
+        source_id=458,
+        parent_post_id=0,
+        chunk_index=0,
+        title="完整目标文章标题",
+        url="https://example.test/full-title",
+        chunk_text="没有其他共同短语。",
+        score=0.75,
+        intent="internal_links",
+        source_passages=["完整目标文章标题"],
+    )
+
+    assert "anchor_or_context" not in generic
+    assert "anchor_evidence" not in generic
+    assert "anchor_or_context" not in full_title
+    assert "anchor_evidence" not in full_title
+
+
+def test_internal_link_search_rejects_partial_ascii_word_anchor() -> None:
+    result = _serialize_search_result(
+        post_id=459,
+        source_type="post",
+        source_id=459,
+        parent_post_id=0,
+        chunk_index=0,
+        title="WordPres教程",
+        url="https://example.test/partial-word",
+        chunk_text="WordPres教程介绍主题设置。",
+        score=0.75,
+        intent="internal_links",
+        source_passages=["WordPress 主题设置需要逐项检查。"],
+    )
+
+    assert result["anchor_or_context"] == "主题设置"
+    assert "WordPres" not in result["anchor_or_context"]
+    assert result["anchor_evidence"]["exact_source_passage_match"] is True
 
 
 def test_document_search_returns_each_post_once_with_bounded_chunk_refs(

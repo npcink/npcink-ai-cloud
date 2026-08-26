@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.core.models import RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
 
 
 class SiteKnowledgeRepository:
@@ -199,6 +199,17 @@ class SiteKnowledgeRepository:
             )
             or 0
         )
+
+    def lock_account_and_count_documents(self, account_id: str) -> int:
+        normalized_account_id = str(account_id or '').strip()
+        if not normalized_account_id:
+            return 0
+        self.session.scalar(
+            select(Account.account_id)
+            .where(Account.account_id == normalized_account_id)
+            .with_for_update()
+        )
+        return self.count_documents_for_account(normalized_account_id)
 
     def list_document_counts_by_site(self, site_ids: list[str]) -> list[dict[str, object]]:
         normalized_site_ids = list(

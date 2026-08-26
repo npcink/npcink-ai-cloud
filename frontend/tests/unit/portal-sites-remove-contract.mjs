@@ -23,8 +23,18 @@ assert.match(
 
 assert.match(
   sitesPageSource,
-  /remove_sites[\s\S]*portalClient\.removeSite/,
-  'the merged service page must show a permission-gated remove action wired to the backend remove endpoint'
+  /site\.allowed_actions\?\.includes\('remove_sites'\)[\s\S]*setPendingRemoveSite\(site\)/,
+  'the merged service page must use each row permission projection to open the remove confirmation'
+);
+assert.match(
+  sitesPageSource,
+  /pendingRemoveSite[\s\S]*portalClient\.removeSite\(pendingRemoveSite\.site_id\)/,
+  'the merged service page must wire its confirmed site to the backend remove endpoint'
+);
+assert.doesNotMatch(
+  sitesPageSource,
+  /site\.site_id === selectedSiteId|selected_context\?\.allowed_actions\.includes\('remove_sites'\)/,
+  'the merged service page must not require an unrelated selected-site context before removal'
 );
 
 assert.match(

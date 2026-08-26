@@ -183,7 +183,7 @@ export default function PortalPage() {
   const contextDetail = selectedSite
     ? getPortalSiteSecondaryLabel(selectedSite)
     : hasVisibleSites
-      ? t('portal.home.account_context_detail', {}, 'Package and usage are shown for the account. Choose a site below when you need site-specific status.')
+      ? t('portal.home.account_context_detail', {}, 'Package, usage, and tickets belong to this account. Site details are listed below.')
       : t('portal.home.no_site_context_detail', {}, 'Connect a WordPress site to unlock site status and service actions.');
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
@@ -439,20 +439,12 @@ export default function PortalPage() {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-portal-home="context-summary">
               <span className="font-semibold text-slate-700 dark:text-slate-200">{contextLabel}</span>
               <span className="text-slate-500 dark:text-slate-400">{contextDetail}</span>
-              <Link
-                href="#sites"
-                className="font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              >
-                {selectedSite
-                  ? t('portal.home.change_site_action', {}, 'Change site')
-                  : t('portal.home.choose_site_action', {}, 'Choose a site')}
-              </Link>
             </div>
           )}
           contextPanel={primaryOperationFocusItem ? (
             <div
               className={cn(
-                'rounded-xl border px-4 py-3.5',
+                'flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border px-3 py-2',
                 primaryOperationFocusItem.tone === 'warn'
                   ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
                   : 'border-slate-200/80 bg-white/75 dark:border-slate-800 dark:bg-slate-950/55'
@@ -462,13 +454,13 @@ export default function PortalPage() {
               <p className="text-sm font-semibold text-gray-950 dark:text-white">
                 {primaryOperationFocusItem.label}
               </p>
-              <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+              <p className="text-xs leading-5 text-gray-600 dark:text-gray-300">
                 {primaryOperationFocusItem.detail}
               </p>
               {primaryOperationFocusItem.href && primaryOperationFocusItem.action ? (
                 <Link
                   href={primaryOperationFocusItem.href}
-                  className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                  className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                 >
                   {primaryOperationFocusItem.action}
                 </Link>

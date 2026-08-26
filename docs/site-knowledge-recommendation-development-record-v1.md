@@ -53,6 +53,31 @@ The editor may open, copy, ignore, or manually apply a candidate to the visible
 editor state. The system must not automatically insert anchors, save content,
 publish content, or create a frontend related-articles block.
 
+### 2.5 Anchor evidence must survive the Cloud boundary
+
+Internal-link retrieval may return `anchor_or_context` or
+`suggested_anchor_text` as candidate evidence. Cloud preserves only bounded
+phrase and source-chunk evidence needed by the WordPress consumer to attempt an
+exact match. It does not decide that a link is safe to apply and does not use a
+target title as an automatic final anchor.
+
+The WordPress consumer must still reject generic, missing, stale, or
+non-matching phrases. A candidate without a safe exact `source_match` remains a
+valid copy/open result but cannot become an editor Apply action.
+
+### 2.6 Recommendation observation is session metadata
+
+One random, site-scoped `recommendation_session` correlates a result-set
+impression with later open, copy, ignore, Apply, native-save, edit, and undo
+events. Cloud aggregates these events as read-only quality detail. It stores no
+article body, anchor text, source excerpt, URL, Provider output, WordPress user
+ID, or final edited content for this funnel.
+
+Impression-only events provide denominators and must not enter generic
+acceptance, quality-trend, scenario, or quality-label rates. A save event is
+valid only after WordPress reports a successful non-autosave save transition;
+Apply by itself is editing intent, not persisted adoption.
+
 ## 3. Reusable Debugging Lessons
 
 1. Trace the whole consumer path before changing the UI. A zero-result panel
@@ -83,6 +108,7 @@ For runtime-bearing changes, record evidence separately:
 | Local | focused API tests, validator regression tests, Ruff/mypy, diff check |
 | M4 candidate | source sync and focused runtime test; never call this accepted M4 |
 | WordPress consumer | coverage summary, filters, 50-row pagination, empty state, editor recommendation result |
+| Native-save acceptance | database unchanged after Apply, changed only after explicit WordPress save, correlated metadata-only save receipt, temporary fixture cleanup |
 | Merge/acceptance | only after the requested publication lane, clean master, and governed promotion |
 
 The minimum regression set for coverage changes is:
@@ -94,52 +120,20 @@ The minimum regression set for coverage changes is:
 - current article is excluded from related-article results;
 - no-result diagnostics distinguish unavailable, no evidence, and current-only hits.
 
-## 5. Current Quality Strategy
-
-The first quality slice now uses a bounded hybrid path for `internal_links`:
-vector retrieval remains the semantic base, while shared terms, synced
-taxonomy overlap, and exact source-passage anchor evidence provide capped local
-signals. Provider-rerank and vector score sources are kept separate, and the
-Toolbox/Toolkit side remains the final natural-anchor and Apply gate.
-
-The editor already emits metadata-only recommendation-session behavior for
-impression, open, copy, ignore, Apply, saved unchanged, saved edited, and Undo.
-These events are useful weak feedback, not a relevance gold set. A single
-operator may use them for local before/after diagnosis after at least 20
-impression sessions, but must not use them as universal evidence or automatic
-weight-training input.
-
-When real behavior is sparse, an offline panel of independent AI reviewers may
-check relevance, anchor naturalness, and adversarial false positives. This is
-provisional review, not mutual model training. Eval Lab must preserve
-disagreement and keep synthetic or partial data in `insufficient_real_gold`.
-
-Third-party open-source projects may be consulted for RRF, cross-encoder
-reranking, hybrid retrieval, and implicit-feedback debiasing. A new dependency
-or search service requires measured evidence of a gap, license and data-flow
-review, and an explicit architecture decision.
-
-For the current single-operator phase, the recommended next slice is smaller:
-improve `related_content` with document-level dedupe, current-document
-exclusion, and bounded title/topic evidence, then compare the old vector order
-with the hybrid order on 10–20 representative offline cases. Do not begin a
-real-time multi-AI panel, a universal vector framework, a new search service,
-an embedding-model replacement, or Learning-to-Rank in the same slice.
-
-See the [Site Knowledge Recommendation Quality Improvement
-Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md)
-for the complete single-operator progression and stop conditions.
-
-## 6. Current Limits And Open Work
+## 5. Current Limits And Open Work
 
 - A real missing-article browser case still requires an isolated test fixture;
   a site where every article is indexed cannot prove the missing-row action.
-- Formal ranking claims need a labelled set of at least 30 articles and
-  separate Precision@5 evaluation for related articles and internal links;
-  this is not a prerequisite for fixing obvious local safety defects.
-- Feedback records only bounded recommendation-session metadata; it must not
-  store article body text, raw anchor text, public URLs, WordPress post IDs,
-  provider raw output, or saved article content for this purpose.
+- Recommendation quality still needs a human-labelled set of 30 naturally
+  accumulated query articles and separate Precision@5 evaluation for related
+  articles and internal links. This is a threshold, not a one-time user
+  recruitment quota.
+- Feedback now records bounded session actions, retrieval/source status, count
+  buckets, and save outcomes. Cloud candidates and behavior events must not be
+  treated as the human gold set.
+- Aggregate funnel interpretation starts only after at least 20 impression
+  sessions per recommendation kind. One site or one operator is insufficient
+  evidence for ranking, prompt, or routing changes.
 - Cross-platform adapters remain deferred until the WordPress loop has quality
   evidence and a stable contract.
 
@@ -154,6 +148,8 @@ for the complete single-operator progression and stop conditions.
 - Editor candidate behavior and SEO/internal-link rules: repository
   `npcink-workflow-toolbox`, file
   `docs/related-article-and-internal-link-recommendation-standard-v1.md`.
+- Dated cross-repository evidence: repository `npcink-workflow-toolbox`, file
+  `docs/archive/2026-08/cloud-vector-recommendation-funnel-closeout-2026-08-24.md`.
 
 When this record conflicts with code, tests, an active boundary, or a release
 policy, those current authorities win and this record should be updated.
