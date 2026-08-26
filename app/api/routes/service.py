@@ -38,7 +38,9 @@ from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.model_capabilities.probes import (
     embedding_probe_fingerprint,
+    image_generation_probe_fingerprint,
     probe_embedding,
+    probe_image_generation,
     probe_vision,
     vision_probe_fingerprint,
 )
@@ -771,7 +773,7 @@ class HostedRuntimeProfileSettingsPayload(BaseModel):
 class HostedRuntimeCapabilityProbePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    capability: Literal["vision", "embedding"]
+    capability: Literal["vision", "embedding", "image_generation"]
     instance_id: str = Field(min_length=1, max_length=191)
     timeout_ms: int = Field(default=30000, ge=1000, le=120000)
 
@@ -5645,16 +5647,21 @@ async def probe_admin_hosted_runtime_capability(
         "trace_id": extract_trace_id(request.headers.get("traceparent", "")),
         "timeout_ms": payload.timeout_ms,
     }
+    probe_function = {
+        "vision": probe_vision,
+        "embedding": probe_embedding,
+        "image_generation": probe_image_generation,
+    }[payload.capability]
     probe_result = await run_in_threadpool(
-        probe_vision if payload.capability == "vision" else probe_embedding,
+        probe_function,
         **probe_kwargs,
     )
     checked_at = datetime.now(UTC)
-    fingerprint_builder = (
-        vision_probe_fingerprint
-        if payload.capability == "vision"
-        else embedding_probe_fingerprint
-    )
+    fingerprint_builder = {
+        "vision": vision_probe_fingerprint,
+        "embedding": embedding_probe_fingerprint,
+        "image_generation": image_generation_probe_fingerprint,
+    }[payload.capability]
     fingerprint = fingerprint_builder(
         provider_connection_id=provider_id,
         model_id=model_id,

@@ -4,11 +4,17 @@ import base64
 import math
 import re
 from dataclasses import dataclass
+from io import BytesIO
 
 from app.adapters.providers.base import (
     ProviderAdapter,
     ProviderExecutionError,
     ProviderExecutionRequest,
+)
+from app.domain.image_generation.materialization import clean_provider_image
+from app.domain.image_generation.provider_fetch import (
+    PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+    fetch_provider_image_url,
 )
 from app.domain.model_capabilities.contracts import (
     CapabilityEvidenceState,
@@ -95,7 +101,9 @@ def probe_vision(
     return CapabilityProbeResult(state="verified")
 
 
-def vision_probe_fingerprint(*, provider_connection_id: str, model_id: str, endpoint_variant: str) -> str:
+def vision_probe_fingerprint(
+    *, provider_connection_id: str, model_id: str, endpoint_variant: str
+) -> str:
     return build_route_fingerprint(
         provider_connection_id=provider_connection_id,
         model_id=model_id,
@@ -162,11 +170,116 @@ def probe_embedding(
     return CapabilityProbeResult(state="verified")
 
 
-def embedding_probe_fingerprint(*, provider_connection_id: str, model_id: str, endpoint_variant: str) -> str:
+def embedding_probe_fingerprint(
+    *, provider_connection_id: str, model_id: str, endpoint_variant: str
+) -> str:
     return build_route_fingerprint(
         provider_connection_id=provider_connection_id,
         model_id=model_id,
         capability="embedding",
         endpoint_variant=endpoint_variant,
         request_format="text",
+    ).value
+
+
+def probe_image_generation(
+    *,
+    provider: ProviderAdapter,
+    run_id: str,
+    site_id: str,
+    model_id: str,
+    instance_id: str,
+    endpoint_variant: str,
+    trace_id: str,
+    timeout_ms: int = 90_000,
+) -> CapabilityProbeResult:
+    """Check one low-cost image route and decode its transient artifact."""
+
+    request = ProviderExecutionRequest(
+        run_id=run_id,
+        site_id=site_id,
+        ability_name="npcink-cloud/capability-probe",
+        profile_id="image-generation.probe",
+        execution_kind="image_generation",
+        model_id=model_id,
+        instance_id=instance_id,
+        endpoint_variant=endpoint_variant,
+        trace_id=trace_id,
+        input_payload={
+            "prompt": "A simple solid blue square.",
+            "params": {"size": "256x256", "n": 1, "response_format": "b64_json"},
+        },
+        policy={"capability_probe": True, "paid_probe_confirmation": True},
+        timeout_ms=timeout_ms,
+    )
+    try:
+        result = provider.execute(request)
+    except ProviderExecutionError as error:
+        return CapabilityProbeResult(
+            state=(
+                "unsupported"
+                if error.error_code == "provider.unsupported_operation"
+                else "verification_failed"
+            ),
+            error_code=error.error_code,
+            detail=error.message,
+        )
+
+    candidates = result.media_candidates
+    if len(candidates) != 1:
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.image_invalid",
+            detail="Provider returned an unexpected image candidate count",
+        )
+    candidate = candidates[0]
+    try:
+        if candidate.content_bytes is not None:
+            cleaned = clean_provider_image(
+                BytesIO(candidate.content_bytes),
+                declared_mime_types=tuple(
+                    value for value in (candidate.claimed_mime_type,) if value
+                ),
+                max_output_bytes=PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+            )
+            cleaned.stream.close()
+        elif candidate.source_url:
+            fetched = fetch_provider_image_url(
+                candidate.source_url,
+                allowed_hosts=candidate.image_output_hosts,
+                timeout_seconds=max(1.0, timeout_ms / 1000),
+            )
+            try:
+                cleaned = clean_provider_image(
+                    fetched.stream,
+                    declared_mime_types=tuple(
+                        value
+                        for value in (candidate.claimed_mime_type, fetched.declared_mime_type)
+                        if value
+                    ),
+                    max_output_bytes=PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+                )
+                cleaned.stream.close()
+            finally:
+                fetched.close()
+        else:
+            raise ValueError("image candidate has no transient source")
+    except Exception as error:
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.image_invalid",
+            detail=str(error)[:500],
+        )
+    return CapabilityProbeResult(state="verified")
+
+
+def image_generation_probe_fingerprint(
+    *, provider_connection_id: str, model_id: str, endpoint_variant: str
+) -> str:
+    return build_route_fingerprint(
+        provider_connection_id=provider_connection_id,
+        model_id=model_id,
+        capability="image_generation",
+        endpoint_variant=endpoint_variant,
+        request_format="prompt:b64_json",
     ).value

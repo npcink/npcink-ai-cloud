@@ -2,12 +2,20 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionResult
+from app.adapters.providers.base import (
+    ProviderExecutionError,
+    ProviderExecutionResult,
+    ProviderMediaCandidate,
+)
 from app.domain.model_capabilities.contracts import (
     CapabilityEvidence,
     build_route_fingerprint,
 )
-from app.domain.model_capabilities.probes import probe_embedding, probe_vision
+from app.domain.model_capabilities.probes import (
+    probe_embedding,
+    probe_image_generation,
+    probe_vision,
+)
 
 
 class _ProbeProvider:
@@ -141,6 +149,43 @@ def test_embedding_probe_requires_a_finite_numeric_vector(output, expected_state
 
     assert result.state == expected_state
     assert provider.request.input_payload["input"] == "Capability probe text."
+
+
+def test_image_generation_probe_requires_a_decodable_transient_artifact() -> None:
+    class _ImageProvider:
+        def execute(self, request):
+            self.request = request
+            return ProviderExecutionResult(
+                output={"candidate_count": 1},
+                media_candidates=(
+                    ProviderMediaCandidate(
+                        index=1,
+                        content_bytes=bytes.fromhex(
+                            "89504e470d0a1a0a0000000d4948445200000001000000010804000000b51c0c02"
+                            "0000000b4944415478da6364f80f00010501012718e3660000000049454e44ae426082"
+                        ),
+                        claimed_mime_type="image/png",
+                    ),
+                ),
+                latency_ms=1,
+                tokens_in=1,
+                tokens_out=0,
+                cost=0.0,
+            )
+
+    provider = _ImageProvider()
+    result = probe_image_generation(
+        provider=provider,
+        run_id="run_probe",
+        site_id="site_probe",
+        model_id="image-model",
+        instance_id="image-instance",
+        endpoint_variant="image_generations",
+        trace_id="trace_probe",
+    )
+
+    assert result.state == "verified"
+    assert provider.request.input_payload["params"]["n"] == 1
 
 
 def test_vision_probe_only_marks_explicit_image_rejection_unsupported() -> None:
