@@ -1478,6 +1478,22 @@ def _validate_hosted_runtime_profile_payload(
                     return [], (
                         f"profile {profile_id} may only use {spec.execution_kind} instances"
                     )
+                if spec.execution_kind == "vision":
+                    fingerprint = vision_probe_fingerprint(
+                        provider_connection_id=instance.provider_id,
+                        model_id=instance.model_id,
+                        endpoint_variant=instance.endpoint_variant,
+                    )
+                    evidence = repository.get_capability_evidence(
+                        instance_id=instance.instance_id,
+                        capability="vision",
+                        route_fingerprint=fingerprint,
+                    )
+                    if evidence is None or evidence.state != "verified":
+                        return [], (
+                            f"profile {profile_id} requires verified vision evidence "
+                            f"for instance {instance.instance_id}"
+                        )
                 if not _hosted_runtime_instance_is_routing_eligible(instance, model):
                     return [], (
                         f"profile {profile_id} may only use routing-eligible "
@@ -5622,7 +5638,7 @@ async def probe_admin_hosted_runtime_capability(
         model_id=model_id,
         instance_id=payload.instance_id,
         endpoint_variant=endpoint_variant,
-        trace_id=extract_trace_id(request),
+        trace_id=extract_trace_id(request.headers.get("traceparent", "")),
         timeout_ms=payload.timeout_ms,
     )
     checked_at = datetime.now(UTC)

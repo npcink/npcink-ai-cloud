@@ -23,6 +23,7 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import (
+    CatalogCapabilityEvidence,
     CatalogInstance,
     CatalogModel,
     MediaArtifact,
@@ -36,6 +37,7 @@ from app.core.models import (
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
+from app.domain.model_capabilities.probes import vision_probe_fingerprint
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
@@ -589,6 +591,22 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
             )
         )
         session.commit()
+        session.add(
+            CatalogCapabilityEvidence(
+                instance_id="openai-wp-ai-vision-test",
+                capability="vision",
+                state="verified",
+                route_fingerprint=vision_probe_fingerprint(
+                    provider_connection_id="openai",
+                    model_id="gpt-wp-ai-vision-test",
+                    endpoint_variant="responses",
+                ),
+                source="test_probe",
+                revision="test-2026-08-26",
+                checked_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
     settings = Settings(
         _env_file=None,
         project_name="Npcink AI Cloud WordPress AI Connector Test",
@@ -1084,7 +1102,8 @@ def test_p2_text_source_contract_fails_closed_before_provider(
 
     assert response.status_code == 400
     assert response.json()["error_code"] == expected_error
-    assert provider.requests == []
+    assert len(provider.requests) == 1
+    assert provider.requests[0].execution_kind == "vision"
 
 
 def test_p2_text_task_allows_trimmed_empty_system_instruction(tmp_path: Path) -> None:
@@ -3538,6 +3557,7 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     ]
     assert data["boundary"]["direct_wordpress_write"] is False
     assert len(data["profiles"]) == 6
+
     assert all(len(profile["candidate_instance_ids"]) <= 2 for profile in data["profiles"])
     assert set(data["available_instances"]) == {
         "text",
