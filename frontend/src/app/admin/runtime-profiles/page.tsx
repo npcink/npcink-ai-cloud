@@ -314,7 +314,7 @@ function instanceMatchesExecutionKind(instance: RuntimeInstance, executionKind: 
 }
 
 function requiresCapabilityVerification(executionKind: string): boolean {
-  return executionKind === 'vision' || executionKind === 'image_generation';
+  return ['vision', 'image_generation', 'audio_generation'].includes(executionKind);
 }
 
 function capabilityEvidence(instance: RuntimeInstance, capability: string) {

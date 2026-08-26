@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import math
 import re
 from dataclasses import dataclass
@@ -10,6 +11,11 @@ from app.adapters.providers.base import (
     ProviderAdapter,
     ProviderExecutionError,
     ProviderExecutionRequest,
+)
+from app.domain.audio_generation.artifacts import (
+    AUDIO_ARTIFACT_DEFAULT_MAX_BYTES,
+    AudioArtifactMaterializationConfig,
+    _audio_bytes_for_candidate,
 )
 from app.domain.image_generation.materialization import clean_provider_image
 from app.domain.image_generation.provider_fetch import (
@@ -282,4 +288,95 @@ def image_generation_probe_fingerprint(
         capability="image_generation",
         endpoint_variant=endpoint_variant,
         request_format="prompt:b64_json",
+    ).value
+
+
+def probe_audio_generation(
+    *,
+    provider: ProviderAdapter,
+    run_id: str,
+    site_id: str,
+    model_id: str,
+    instance_id: str,
+    endpoint_variant: str,
+    trace_id: str,
+    timeout_ms: int = 90_000,
+) -> CapabilityProbeResult:
+    """Check one short audio route and validate its transient bytes."""
+
+    request = ProviderExecutionRequest(
+        run_id=run_id,
+        site_id=site_id,
+        ability_name="npcink-cloud/capability-probe",
+        profile_id="audio-generation.probe",
+        execution_kind="audio_generation",
+        model_id=model_id,
+        instance_id=instance_id,
+        endpoint_variant=endpoint_variant,
+        trace_id=trace_id,
+        input_payload={
+            "text": "This is a short capability probe.",
+            "format": "mp3",
+            "response_format": "b64_json",
+        },
+        policy={"capability_probe": True, "paid_probe_confirmation": True},
+        timeout_ms=timeout_ms,
+    )
+    try:
+        result = provider.execute(request)
+    except ProviderExecutionError as error:
+        return CapabilityProbeResult(
+            state=(
+                "unsupported"
+                if error.error_code == "provider.unsupported_operation"
+                else "verification_failed"
+            ),
+            error_code=error.error_code,
+            detail=error.message,
+        )
+
+    output = result.output
+    audios = output.get("audios") if isinstance(output, dict) else None
+    if not isinstance(audios, list) or len(audios) != 1 or not isinstance(audios[0], dict):
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.audio_invalid",
+            detail="Provider returned an invalid audio candidate envelope",
+        )
+    try:
+        audio_bytes, _, _ = _audio_bytes_for_candidate(
+            audios[0],
+            config=AudioArtifactMaterializationConfig(
+                max_bytes=AUDIO_ARTIFACT_DEFAULT_MAX_BYTES,
+                timeout_seconds=max(1.0, timeout_ms / 1000),
+                allowed_hosts=tuple(getattr(provider, "audio_output_hosts", ()) or ()),
+            ),
+        )
+        if not audio_bytes:
+            raise ValueError("audio candidate is empty")
+        audio_format = str(audios[0].get("format") or "").strip().lower()
+        if audio_format in {"mp3", "mpeg"} and not (
+            audio_bytes.startswith(b"ID3") or audio_bytes[:2] in {b"\xff\xfb", b"\xff\xf3"}
+        ):
+            raise ValueError("audio candidate is not a recognizable MP3 stream")
+        if audio_format in {"wav", "wave"} and not audio_bytes.startswith(b"RIFF"):
+            raise ValueError("audio candidate is not a recognizable WAV stream")
+    except (ValueError, binascii.Error, OSError) as error:
+        return CapabilityProbeResult(
+            state="verification_failed",
+            error_code="capability_probe.audio_invalid",
+            detail=str(error)[:500],
+        )
+    return CapabilityProbeResult(state="verified")
+
+
+def audio_generation_probe_fingerprint(
+    *, provider_connection_id: str, model_id: str, endpoint_variant: str
+) -> str:
+    return build_route_fingerprint(
+        provider_connection_id=provider_connection_id,
+        model_id=model_id,
+        capability="audio_generation",
+        endpoint_variant=endpoint_variant,
+        request_format="text:b64_json",
     ).value

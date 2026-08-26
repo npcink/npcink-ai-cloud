@@ -12,6 +12,7 @@ from app.domain.model_capabilities.contracts import (
     build_route_fingerprint,
 )
 from app.domain.model_capabilities.probes import (
+    probe_audio_generation,
     probe_embedding,
     probe_image_generation,
     probe_vision,
@@ -186,6 +187,42 @@ def test_image_generation_probe_requires_a_decodable_transient_artifact() -> Non
 
     assert result.state == "verified"
     assert provider.request.input_payload["params"]["n"] == 1
+
+
+def test_audio_generation_probe_requires_a_valid_audio_candidate() -> None:
+    class _AudioProvider:
+        def execute(self, request):
+            self.request = request
+            return ProviderExecutionResult(
+                output={
+                    "artifact_type": "audio_generation_candidates",
+                    "audios": [
+                        {
+                            "b64_json": "SUQzBAAAAAA=",
+                            "format": "mp3",
+                            "mime_type": "audio/mpeg",
+                        }
+                    ],
+                },
+                latency_ms=1,
+                tokens_in=1,
+                tokens_out=0,
+                cost=0.0,
+            )
+
+    provider = _AudioProvider()
+    result = probe_audio_generation(
+        provider=provider,
+        run_id="run_probe",
+        site_id="site_probe",
+        model_id="speech-model",
+        instance_id="audio-instance",
+        endpoint_variant="t2a_v2",
+        trace_id="trace_probe",
+    )
+
+    assert result.state == "verified"
+    assert provider.request.input_payload["response_format"] == "b64_json"
 
 
 def test_vision_probe_only_marks_explicit_image_rejection_unsupported() -> None:
