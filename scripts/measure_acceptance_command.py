@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-UTC = dt.timezone.utc
+UTC = dt.UTC
 
 
 def now() -> str:

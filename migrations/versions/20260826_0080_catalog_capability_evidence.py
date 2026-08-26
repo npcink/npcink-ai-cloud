@@ -29,7 +29,9 @@ def upgrade() -> None:
         sa.Column("checked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error_code", sa.String(length=96), nullable=True),
         sa.Column("error_detail", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["instance_id"], ["catalog_instances.instance_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["instance_id"], ["catalog_instances.instance_id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "instance_id",

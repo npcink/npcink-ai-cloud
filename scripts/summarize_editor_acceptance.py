@@ -55,8 +55,12 @@ def summarize(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "retrieval_status_counts": retrieval,
         "fallback_count": sum(bool(result.get("fallback_used")) for result in results),
         "non_200_count": sum(int(result.get("http_status", 0)) != 200 for result in results),
-        "write_boundary_failures": sum(bool(result.get("direct_wordpress_write")) for result in results),
-        "unchanged_sample_count": sum(bool(sample.get("post_snapshots_unchanged")) for sample in samples),
+        "write_boundary_failures": sum(
+            bool(result.get("direct_wordpress_write")) for result in results
+        ),
+        "unchanged_sample_count": sum(
+            bool(sample.get("post_snapshots_unchanged")) for sample in samples
+        ),
         "failed_sample_count": sum(sample.get("status") != "passed" for sample in samples),
     }
 

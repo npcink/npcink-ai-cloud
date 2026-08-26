@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501
 """Run a bounded, read-only WordPress editor recommendation acceptance check."""
 
 from __future__ import annotations
