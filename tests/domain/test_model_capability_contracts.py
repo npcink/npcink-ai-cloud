@@ -6,6 +6,26 @@ from app.domain.model_capabilities.contracts import (
     CapabilityEvidence,
     build_route_fingerprint,
 )
+from app.domain.model_capabilities.probes import probe_vision
+from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionResult
+
+
+class _ProbeProvider:
+    def __init__(self, *, error: ProviderExecutionError | None = None) -> None:
+        self.error = error
+        self.request = None
+
+    def execute(self, request):
+        self.request = request
+        if self.error:
+            raise self.error
+        return ProviderExecutionResult(
+            output={"output_text": "OK"},
+            latency_ms=1,
+            tokens_in=1,
+            tokens_out=1,
+            cost=0.0,
+        )
 
 
 def test_route_fingerprint_is_stable_and_route_specific() -> None:
@@ -47,6 +67,45 @@ def test_only_verified_evidence_is_routing_eligible() -> None:
     )
 
     assert evidence.routing_eligible is True
+
+
+def test_vision_probe_uses_image_input_and_marks_success() -> None:
+    provider = _ProbeProvider()
+
+    result = probe_vision(
+        provider=provider,
+        run_id="run_probe",
+        site_id="site_probe",
+        model_id="gpt-5.4",
+        instance_id="mqzj-gpt-5-4",
+        endpoint_variant="responses",
+        trace_id="trace_probe",
+    )
+
+    assert result.state == "verified"
+    assert provider.request is not None
+    content = provider.request.input_payload["input"][0]["content"]
+    assert content[1]["type"] == "input_image"
+    assert content[1]["image_url"].startswith("data:image/png;base64,")
+
+
+def test_vision_probe_keeps_transient_provider_failures_retryable() -> None:
+    provider = _ProbeProvider(
+        error=ProviderExecutionError("provider.timeout", "timed out")
+    )
+
+    result = probe_vision(
+        provider=provider,
+        run_id="run_probe",
+        site_id="site_probe",
+        model_id="gpt-5.4",
+        instance_id="mqzj-gpt-5-4",
+        endpoint_variant="responses",
+        trace_id="trace_probe",
+    )
+
+    assert result.state == "verification_failed"
+    assert result.error_code == "provider.timeout"
 
 
 @pytest.mark.parametrize("state", ["unsupported", "verification_failed"])
