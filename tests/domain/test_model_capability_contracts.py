@@ -108,6 +108,24 @@ def test_vision_probe_keeps_transient_provider_failures_retryable() -> None:
     assert result.error_code == "provider.timeout"
 
 
+def test_vision_probe_only_marks_explicit_image_rejection_unsupported() -> None:
+    provider = _ProbeProvider(
+        error=ProviderExecutionError("provider.invalid_request", "invalid image_url shape")
+    )
+
+    result = probe_vision(
+        provider=provider,
+        run_id="run_probe",
+        site_id="site_probe",
+        model_id="gpt-5.4",
+        instance_id="mqzj-gpt-5-4",
+        endpoint_variant="responses",
+        trace_id="trace_probe",
+    )
+
+    assert result.state == "verification_failed"
+
+
 @pytest.mark.parametrize("state", ["unsupported", "verification_failed"])
 def test_negative_evidence_requires_error_code(state: str) -> None:
     with pytest.raises(ValueError, match="requires an error code"):

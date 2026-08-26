@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from dataclasses import dataclass
 
 from app.adapters.providers.base import (
@@ -17,6 +18,10 @@ from app.domain.model_capabilities.contracts import (
 _PROBE_IMAGE = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010804000000b51c0c02"
     "0000000b4944415478da6364f80f00010501012718e3660000000049454e44ae426082"
+)
+_UNSUPPORTED_VISION_ERROR = re.compile(
+    r"(?:unsupported|not supported|does not support|cannot process).*(?:image|vision|modalit)",
+    re.IGNORECASE,
 )
 
 
@@ -70,9 +75,11 @@ def probe_vision(
     try:
         result = provider.execute(request)
     except ProviderExecutionError as error:
+        error_text = f"{error.error_code} {error.message}"
         state: CapabilityEvidenceState = (
             "unsupported"
-            if error.error_code in {"provider.invalid_request", "provider.unsupported_operation"}
+            if error.error_code == "provider.unsupported_operation"
+            or _UNSUPPORTED_VISION_ERROR.search(error_text)
             else "verification_failed"
         )
         return CapabilityProbeResult(state=state, error_code=error.error_code, detail=error.message)
