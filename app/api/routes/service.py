@@ -1509,20 +1509,30 @@ def _validate_hosted_runtime_profile_payload(
                     return [], (
                         f"profile {profile_id} may only use {spec.execution_kind} instances"
                     )
-                if spec.execution_kind == "vision":
-                    fingerprint = vision_probe_fingerprint(
+                if spec.execution_kind in {
+                    "vision",
+                    "image_generation",
+                    "audio_generation",
+                }:
+                    fingerprint_builder = {
+                        "vision": vision_probe_fingerprint,
+                        "image_generation": image_generation_probe_fingerprint,
+                        "audio_generation": audio_generation_probe_fingerprint,
+                    }[spec.execution_kind]
+                    fingerprint = fingerprint_builder(
                         provider_connection_id=instance.provider_id,
                         model_id=instance.model_id,
                         endpoint_variant=instance.endpoint_variant,
                     )
                     evidence = repository.get_capability_evidence(
                         instance_id=instance.instance_id,
-                        capability="vision",
+                        capability=spec.execution_kind,
                         route_fingerprint=fingerprint,
                     )
                     if evidence is None or evidence.state != "verified":
                         return [], (
-                            f"profile {profile_id} requires verified vision evidence "
+                            f"profile {profile_id} requires verified "
+                            f"{spec.execution_kind} evidence "
                             f"for instance {instance.instance_id}"
                         )
                 if not _hosted_runtime_instance_is_routing_eligible(instance, model):

@@ -37,8 +37,12 @@ from app.core.models import (
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
-from app.domain.model_capabilities.probes import vision_probe_fingerprint
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    vision_probe_fingerprint,
+)
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
@@ -605,6 +609,36 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
                 revision="test-2026-08-26",
                 checked_at=datetime.now(UTC),
             )
+        )
+        session.add_all(
+            [
+                CatalogCapabilityEvidence(
+                    instance_id="openai-wp-ai-image-test",
+                    capability="image_generation",
+                    state="verified",
+                    route_fingerprint=image_generation_probe_fingerprint(
+                        provider_connection_id="openai",
+                        model_id="grok-imagine-wp-ai-test",
+                        endpoint_variant="image_generations",
+                    ),
+                    source="test_probe",
+                    revision="test-2026-08-26",
+                    checked_at=datetime.now(UTC),
+                ),
+                CatalogCapabilityEvidence(
+                    instance_id="openai-wp-ai-audio-test",
+                    capability="audio_generation",
+                    state="verified",
+                    route_fingerprint=audio_generation_probe_fingerprint(
+                        provider_connection_id="openai",
+                        model_id="speech-wp-ai-connector-test",
+                        endpoint_variant="audio_generation",
+                    ),
+                    source="test_probe",
+                    revision="test-2026-08-26",
+                    checked_at=datetime.now(UTC),
+                ),
+            ]
         )
         session.commit()
     settings = Settings(
