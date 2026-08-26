@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from app.adapters.repositories.catalog_repository import CatalogRepository
@@ -124,7 +125,7 @@ class RoutingService:
     def _current_capability_evidence(
         repository: CatalogRepository,
         *,
-        instances: list[object],
+        instances: Sequence[object],
         execution_kind: str,
     ) -> dict[str, bool]:
         fingerprint_builder = {

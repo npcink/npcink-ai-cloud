@@ -2678,10 +2678,12 @@ class RuntimeService:
             account_quota = self.commercial_service.get_portal_account_quota_summary(
                 site_account_id
             )
-            for resource in account_quota.get('resource_limits', []):
-                if isinstance(resource, dict) and resource.get('key') == 'vector_documents':
-                    account_vector_document_limit = int(resource.get('limit') or 0)
-                    break
+            resource_limits = account_quota.get('resource_limits', [])
+            if isinstance(resource_limits, list):
+                for resource in resource_limits:
+                    if isinstance(resource, dict) and resource.get('key') == 'vector_documents':
+                        account_vector_document_limit = int(resource.get('limit') or 0)
+                        break
 
         def record_progress(progress: dict[str, Any]) -> None:
             run.result_json = {

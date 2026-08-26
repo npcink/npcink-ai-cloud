@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -5802,7 +5803,8 @@ async def probe_admin_hosted_runtime_capability(
                 "error_code": cached_evidence.error_code,
                 "cache_hit": True,
             }
-            if capability_evidence_is_current(
+            if cached_evidence is not None
+            and capability_evidence_is_current(
                 cached_evidence,
                 route_fingerprint=fingerprint,
             )
@@ -5828,7 +5830,7 @@ async def probe_admin_hosted_runtime_capability(
             revision="m6",
         )
 
-    probe_kwargs = {
+    probe_kwargs: dict[str, Any] = {
         "provider": provider,
         "run_id": f"capability_probe_{uuid4().hex}",
         "site_id": "admin-capability-probe",
@@ -5844,10 +5846,7 @@ async def probe_admin_hosted_runtime_capability(
         "image_generation": probe_image_generation,
         "audio_generation": probe_audio_generation,
     }[payload.capability]
-    probe_result = await run_in_threadpool(
-        probe_function,
-        **probe_kwargs,
-    )
+    probe_result = await run_in_threadpool(partial(probe_function, **probe_kwargs))
     checked_at = datetime.now(UTC)
     with get_session(services.settings.database_url) as session:
         repository = CatalogRepository(session)
