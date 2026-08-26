@@ -40,6 +40,13 @@ type RuntimeInstance = {
   capability_tags: string[];
   model_status: string;
   model_feature: string;
+  vision_evidence: {
+    state: string;
+    source: string;
+    revision: string;
+    checked_at: string;
+    error_code: string;
+  } | null;
 };
 
 type RuntimeProfile = {
@@ -105,6 +112,15 @@ function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
     capability_tags: Array.isArray(item.capability_tags) ? item.capability_tags.map(String) : [],
     model_status: String(item.model_status || ''),
     model_feature: String(item.model_feature || ''),
+    vision_evidence: item.vision_evidence && typeof item.vision_evidence === 'object'
+      ? {
+        state: String((item.vision_evidence as Record<string, unknown>).state || ''),
+        source: String((item.vision_evidence as Record<string, unknown>).source || ''),
+        revision: String((item.vision_evidence as Record<string, unknown>).revision || ''),
+        checked_at: String((item.vision_evidence as Record<string, unknown>).checked_at || ''),
+        error_code: String((item.vision_evidence as Record<string, unknown>).error_code || ''),
+      }
+      : null,
   };
 }
 
@@ -254,6 +270,7 @@ function instanceTone(instance: RuntimeInstance): 'success' | 'warning' | 'error
   const modelStatus = instance.model_status.trim().toLowerCase();
   const healthStatus = instance.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
+  if (instance.model_feature === 'vision' && instance.vision_evidence?.state !== 'verified') return 'warning';
   if (healthStatus !== 'healthy') return 'warning';
   return 'success';
 }
@@ -296,6 +313,7 @@ export default function RuntimeProfilesPage() {
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [probingInstanceId, setProbingInstanceId] = useState('');
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
@@ -453,9 +471,19 @@ export default function RuntimeProfilesPage() {
 
   async function saveProfiles() {
     if (!dirty || saving) return;
+    const needsVisionVerification = drafts.find((profile) => profile.execution_kind === 'vision' && profile.candidate_instance_ids.some((instanceId) => {
+      const instance = instancesById.get(instanceId);
+      return instance && instance.vision_evidence?.state !== 'verified';
+    }));
+    if (needsVisionVerification) {
+      setError(copy('vision_verification_required', '视觉候选尚未验证，请先点击“验证”后再保存。'));
+      return;
+    }
     const incompatible = drafts.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
       const instance = instancesById.get(instanceId);
-      return instance && !instanceMatchesExecutionKind(instance, profile.execution_kind);
+      return instance && (
+        !instanceMatchesExecutionKind(instance, profile.execution_kind)
+      );
     }));
     if (incompatible) {
       setError(copy('incompatible_candidate', '{{profile}} 只能使用 {{kind}} 类型的模型，请更换候选模型后再保存。', {
@@ -491,6 +519,28 @@ export default function RuntimeProfilesPage() {
       setError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save hosted runtime profiles.')));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function verifyInstance(instance: RuntimeInstance) {
+    if (probingInstanceId) return;
+    setProbingInstanceId(instance.instance_id);
+    setError('');
+    try {
+      await runtimeProfilesClient.request('/api/admin/runtime-profiles/capability-probe', {
+        method: 'POST',
+        body: {
+          capability: 'vision',
+          instance_id: instance.instance_id,
+          timeout_ms: 30000,
+        },
+      });
+      await loadProfiles();
+      toast.success(copy('probe_success', '视觉能力验证成功，可以保存配置。'), t('common.success'));
+    } catch (cause) {
+      setError(resolveUiErrorMessage(cause, copy('probe_failed', '视觉能力验证未通过，请检查 Provider 或稍后重试。')));
+    } finally {
+      setProbingInstanceId('');
     }
   }
 
@@ -809,6 +859,7 @@ export default function RuntimeProfilesPage() {
                       <col className="w-[22%]" />
                       <col className="w-[40%]" />
                       <col className="w-[14%]" />
+                      <col className="w-[8%]" />
                       <col className="w-[12%]" />
                       <col className="w-[12%]" />
                     </colgroup>
@@ -819,6 +870,7 @@ export default function RuntimeProfilesPage() {
                         <th className="px-3 py-1.5" scope="col">{t('common.status')}</th>
                         <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_primary', 'Primary')}</th>
                         <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_fallback', 'Fallback')}</th>
+                        <th className="px-3 py-1.5 text-center" scope="col">{copy('verify', 'Verify')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
@@ -860,6 +912,20 @@ export default function RuntimeProfilesPage() {
                                 onChange={() => setCandidate(editingProfile.profile_id, 0, instance.instance_id)}
                                 aria-label={copy('select_primary_named', 'Use {{name}} as primary', { name: instance.model_id })}
                               />
+                            </td>
+                            <td className="px-3 py-2 text-center align-middle">
+                              {editingProfile.execution_kind === 'vision' && instance.vision_evidence?.state !== 'verified' ? (
+                                <button
+                                  type="button"
+                                  className="button-secondary px-2 py-1 text-xs"
+                                  disabled={Boolean(probingInstanceId)}
+                                  onClick={() => void verifyInstance(instance)}
+                                >
+                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy('verify', '验证')}
+                                </button>
+                              ) : instance.vision_evidence?.state === 'verified' ? (
+                                <span className="text-xs text-emerald-600">{copy('verified', '已验证')}</span>
+                              ) : null}
                             </td>
                             <td className="px-3 py-2 text-center align-middle">
                               <input

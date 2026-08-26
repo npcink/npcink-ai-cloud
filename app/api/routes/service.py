@@ -1239,6 +1239,7 @@ def _serialize_hosted_runtime_instance(
     instance: Any,
     model: Any,
     provider: Any | None = None,
+    evidence: Any | None = None,
 ) -> dict[str, Any]:
     return {
         "instance_id": str(instance.instance_id or ""),
@@ -1255,6 +1256,17 @@ def _serialize_hosted_runtime_instance(
         "model_feature": str(model.feature or ""),
         "price_input": model.price_input,
         "price_output": model.price_output,
+        "vision_evidence": (
+            {
+                "state": str(evidence.state or ""),
+                "source": str(evidence.source or ""),
+                "revision": str(evidence.revision or ""),
+                "checked_at": evidence.checked_at.isoformat() if evidence.checked_at else "",
+                "error_code": str(evidence.error_code or ""),
+            }
+            if evidence is not None
+            else None
+        ),
     }
 
 
@@ -1286,6 +1298,10 @@ def _build_hosted_runtime_profile_projection(
         )
         providers_by_id = {provider.provider_id: provider for provider in providers}
         instances_by_id = {instance.instance_id: instance for instance in instances}
+        vision_evidence_by_instance = repository.list_capability_evidence_for_instances(
+            instance_ids=list(instances_by_id),
+            capability="vision",
+        )
 
         available_instances_by_kind: dict[str, list[dict[str, Any]]] = {
             "text": [],
@@ -1310,6 +1326,7 @@ def _build_hosted_runtime_profile_projection(
                     instance,
                     model,
                     providers_by_id.get(instance.provider_id),
+                    vision_evidence_by_instance.get(instance.instance_id),
                 )
             )
 

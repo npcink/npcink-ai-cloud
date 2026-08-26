@@ -46,6 +46,30 @@ class CatalogRepository:
         )
         return self.session.scalar(statement)
 
+    def list_capability_evidence_for_instances(
+        self,
+        *,
+        instance_ids: list[str],
+        capability: str,
+    ) -> dict[str, CatalogCapabilityEvidence]:
+        if not instance_ids:
+            return {}
+        statement = (
+            select(CatalogCapabilityEvidence)
+            .where(
+                CatalogCapabilityEvidence.instance_id.in_(instance_ids),
+                CatalogCapabilityEvidence.capability == capability,
+            )
+            .order_by(
+                CatalogCapabilityEvidence.checked_at.desc().nullslast(),
+                CatalogCapabilityEvidence.id.desc(),
+            )
+        )
+        result: dict[str, CatalogCapabilityEvidence] = {}
+        for evidence in self.session.scalars(statement):
+            result.setdefault(evidence.instance_id, evidence)
+        return result
+
     def upsert_capability_evidence(
         self,
         *,
