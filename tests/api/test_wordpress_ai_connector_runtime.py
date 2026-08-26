@@ -3837,6 +3837,38 @@ def test_admin_runtime_profiles_hides_evidence_for_a_changed_route(tmp_path: Pat
     assert "image_generation" not in image_instance["capability_evidence"]
 
 
+def test_capability_probe_records_metadata_only_audit_event(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    response = client.post(
+        "/internal/service/admin/runtime-profiles/capability-probe",
+        headers=merge_json_headers(
+            build_internal_headers(idempotency_key="capability-probe-audit-001")
+        ),
+        json={
+            "capability": "vision",
+            "instance_id": "openai-wp-ai-vision-test",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["state"] == "verified"
+    with get_session(database_url) as session:
+        event = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "runtime_profile.capability_probe",
+                ServiceAuditEvent.scope_id == "openai-wp-ai-vision-test",
+            )
+        )
+        assert event is not None
+        assert event.payload_json == {
+            "capability": "vision",
+            "state": "verified",
+            "route_fingerprint": event.payload_json["route_fingerprint"],
+            "error_code": "",
+            "provider_payload_retained": False,
+        }
+
+
 def test_admin_runtime_profiles_rejects_unknown_profile(tmp_path: Path) -> None:
     _, client, _ = _build_client(tmp_path)
 

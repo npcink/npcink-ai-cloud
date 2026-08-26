@@ -1001,6 +1001,36 @@ def _record_site_knowledge_vector_profile_audit(
         return None
 
 
+def _record_capability_probe_audit(
+    request: Request,
+    *,
+    instance_id: str,
+    capability: str,
+    state: str,
+    route_fingerprint: str,
+    error_code: str = "",
+) -> dict[str, Any] | None:
+    """Record probe outcome metadata without retaining provider payloads."""
+
+    try:
+        return _get_commercial_service(request).record_service_audit_event(
+            audit_context=_build_audit_context(request),
+            event_kind="runtime_profile.capability_probe",
+            outcome="succeeded" if state == "verified" else "failed",
+            scope_kind="runtime_profile",
+            scope_id=instance_id,
+            payload_json={
+                "capability": capability,
+                "state": state,
+                "route_fingerprint": route_fingerprint,
+                "error_code": error_code,
+                "provider_payload_retained": False,
+            },
+        )
+    except Exception:
+        return None
+
+
 def _record_service_setting_audit(
     request: Request,
     *,
@@ -5754,6 +5784,15 @@ async def probe_admin_hosted_runtime_capability(
         )
         session.commit()
 
+    probe_audit = _record_capability_probe_audit(
+        request,
+        instance_id=payload.instance_id,
+        capability=payload.capability,
+        state=probe_result.state,
+        route_fingerprint=fingerprint,
+        error_code=probe_result.error_code or "",
+    )
+
     status_code = 200 if probe_result.state == "verified" else 400
     return JSONResponse(
         status_code=status_code,
@@ -5773,6 +5812,7 @@ async def probe_admin_hosted_runtime_capability(
                 "revision": evidence.revision,
                 "checked_at": checked_at.isoformat(),
                 "error_code": evidence.error_code,
+                "audit_event_id": (probe_audit or {}).get("audit_event_id"),
             },
             revision="m6",
         ),
