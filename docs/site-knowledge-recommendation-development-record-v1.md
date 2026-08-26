@@ -94,15 +94,52 @@ The minimum regression set for coverage changes is:
 - current article is excluded from related-article results;
 - no-result diagnostics distinguish unavailable, no evidence, and current-only hits.
 
-## 5. Current Limits And Open Work
+## 5. Current Quality Strategy
+
+The first quality slice now uses a bounded hybrid path for `internal_links`:
+vector retrieval remains the semantic base, while shared terms, synced
+taxonomy overlap, and exact source-passage anchor evidence provide capped local
+signals. Provider-rerank and vector score sources are kept separate, and the
+Toolbox/Toolkit side remains the final natural-anchor and Apply gate.
+
+The editor already emits metadata-only recommendation-session behavior for
+impression, open, copy, ignore, Apply, saved unchanged, saved edited, and Undo.
+These events are useful weak feedback, not a relevance gold set. A single
+operator may use them for local before/after diagnosis after at least 20
+impression sessions, but must not use them as universal evidence or automatic
+weight-training input.
+
+When real behavior is sparse, an offline panel of independent AI reviewers may
+check relevance, anchor naturalness, and adversarial false positives. This is
+provisional review, not mutual model training. Eval Lab must preserve
+disagreement and keep synthetic or partial data in `insufficient_real_gold`.
+
+Third-party open-source projects may be consulted for RRF, cross-encoder
+reranking, hybrid retrieval, and implicit-feedback debiasing. A new dependency
+or search service requires measured evidence of a gap, license and data-flow
+review, and an explicit architecture decision.
+
+For the current single-operator phase, the recommended next slice is smaller:
+improve `related_content` with document-level dedupe, current-document
+exclusion, and bounded title/topic evidence, then compare the old vector order
+with the hybrid order on 10–20 representative offline cases. Do not begin a
+real-time multi-AI panel, a universal vector framework, a new search service,
+an embedding-model replacement, or Learning-to-Rank in the same slice.
+
+See the [Site Knowledge Recommendation Quality Improvement
+Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md)
+for the complete single-operator progression and stop conditions.
+
+## 6. Current Limits And Open Work
 
 - A real missing-article browser case still requires an isolated test fixture;
   a site where every article is indexed cannot prove the missing-row action.
-- Recommendation quality needs a labelled set of at least 30 articles and
-  separate Precision@5 evaluation for related articles and internal links.
-- Feedback should record only bounded recommendation metadata such as result
-  ID, score, and `useful`/`ignored`/`opened`; never store article body text or
-  provider raw output for this purpose.
+- Formal ranking claims need a labelled set of at least 30 articles and
+  separate Precision@5 evaluation for related articles and internal links;
+  this is not a prerequisite for fixing obvious local safety defects.
+- Feedback records only bounded recommendation-session metadata; it must not
+  store article body text, raw anchor text, public URLs, WordPress post IDs,
+  provider raw output, or saved article content for this purpose.
 - Cross-platform adapters remain deferred until the WordPress loop has quality
   evidence and a stable contract.
 

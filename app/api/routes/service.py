@@ -37,6 +37,10 @@ from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.model_capabilities.contracts import MODEL_CAPABILITIES
+from app.domain.model_capabilities.evidence import (
+    capability_evidence_is_current,
+    capability_evidence_is_fresh,
+)
 from app.domain.model_capabilities.probes import (
     audio_generation_probe_fingerprint,
     embedding_probe_fingerprint,
@@ -1279,6 +1283,7 @@ def _serialize_hosted_runtime_instance(
     evidence: Any | None = None,
     capability_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    model_metadata = model.raw_json if isinstance(model.raw_json, dict) else {}
     serialized_capability_evidence = {
         capability: {
             "state": str(item.state or ""),
@@ -1303,6 +1308,8 @@ def _serialize_hosted_runtime_instance(
         "capability_tags": list(instance.capability_tags or []),
         "model_status": str(model.status or ""),
         "model_feature": str(model.feature or ""),
+        "catalog_source": str(model_metadata.get("catalog_source") or ""),
+        "upstream_status": str(model_metadata.get("upstream_status") or "current"),
         "price_input": model.price_input,
         "price_output": model.price_output,
         "vision_evidence": (
@@ -1336,6 +1343,24 @@ def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | No
     )
 
 
+def _capability_evidence_is_fresh_for_route(
+    evidence: Any | None,
+    *,
+    capability: str,
+    instance: Any,
+    now: datetime,
+) -> bool:
+    fingerprint = _capability_route_fingerprint(capability=capability, instance=instance)
+    return bool(
+        fingerprint
+        and capability_evidence_is_fresh(
+            evidence,
+            route_fingerprint=fingerprint,
+            now=now,
+        )
+    )
+
+
 def _hosted_runtime_instance_is_routing_eligible(
     instance: Any,
     model: Any | None,
@@ -1354,6 +1379,7 @@ def _build_hosted_runtime_profile_projection(
     settings: Any | None = None,
 ) -> dict[str, Any]:
     provider_model_allowlist = build_provider_model_allowlist(database_url, settings=settings)
+    evidence_now = datetime.now(UTC)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         instances = repository.list_instances_for_provider()
@@ -1397,15 +1423,13 @@ def _build_hosted_runtime_profile_projection(
                     providers_by_id.get(instance.provider_id),
                     (
                         capability_evidence_by_capability["vision"].get(instance.instance_id)
-                        if (
-                            capability_evidence_by_capability["vision"].get(instance.instance_id)
-                            is not None
-                            and capability_evidence_by_capability["vision"]
-                            .get(instance.instance_id)
-                            .route_fingerprint
-                            == _capability_route_fingerprint(
-                                capability="vision", instance=instance
-                            )
+                        if _capability_evidence_is_fresh_for_route(
+                            capability_evidence_by_capability["vision"].get(
+                                instance.instance_id
+                            ),
+                            capability="vision",
+                            instance=instance,
+                            now=evidence_now,
                         )
                         else None
                     ),
@@ -1415,10 +1439,11 @@ def _build_hosted_runtime_profile_projection(
                             capability_evidence_by_capability.items()
                         )
                         for evidence in [evidence_by_instance.get(instance.instance_id)]
-                        if evidence is not None
-                        and evidence.route_fingerprint
-                        == _capability_route_fingerprint(
-                            capability=capability, instance=instance
+                        if _capability_evidence_is_fresh_for_route(
+                            evidence,
+                            capability=capability,
+                            instance=instance,
+                            now=evidence_now,
                         )
                     },
                 )
@@ -1595,9 +1620,18 @@ def _validate_hosted_runtime_profile_payload(
                         capability=spec.execution_kind,
                         route_fingerprint=fingerprint,
                     )
-                    if evidence is None or evidence.state != "verified":
+                    if (
+                        evidence is None
+                        or evidence.state != "verified"
+                        or not _capability_evidence_is_fresh_for_route(
+                            evidence,
+                            capability=spec.execution_kind,
+                            instance=instance,
+                            now=datetime.now(UTC),
+                        )
+                    ):
                         return [], (
-                            f"profile {profile_id} requires verified "
+                            f"profile {profile_id} requires current verified "
                             f"{spec.execution_kind} evidence "
                             f"for instance {instance.instance_id}"
                         )
@@ -5736,6 +5770,63 @@ async def probe_admin_hosted_runtime_capability(
         provider_id = instance.provider_id
         model_id = instance.model_id
         endpoint_variant = instance.endpoint_variant
+        fingerprint_builder = {
+            "vision": vision_probe_fingerprint,
+            "embedding": embedding_probe_fingerprint,
+            "image_generation": image_generation_probe_fingerprint,
+            "audio_generation": audio_generation_probe_fingerprint,
+        }[payload.capability]
+        fingerprint = fingerprint_builder(
+            provider_connection_id=provider_id,
+            model_id=model_id,
+            endpoint_variant=endpoint_variant,
+        )
+        cached_evidence = repository.get_capability_evidence(
+            instance_id=payload.instance_id,
+            capability=payload.capability,
+            route_fingerprint=fingerprint,
+        )
+        cached_evidence_data = (
+            {
+                "capability": cached_evidence.capability,
+                "state": cached_evidence.state,
+                "routing_eligible": True,
+                "route_fingerprint": cached_evidence.route_fingerprint,
+                "source": cached_evidence.source,
+                "revision": cached_evidence.revision,
+                "checked_at": (
+                    cached_evidence.checked_at.isoformat()
+                    if cached_evidence.checked_at
+                    else ""
+                ),
+                "error_code": cached_evidence.error_code,
+                "cache_hit": True,
+            }
+            if capability_evidence_is_current(
+                cached_evidence,
+                route_fingerprint=fingerprint,
+            )
+            else None
+        )
+
+    if cached_evidence_data is not None:
+        probe_audit = _record_capability_probe_audit(
+            request,
+            instance_id=payload.instance_id,
+            capability=payload.capability,
+            state="verified",
+            route_fingerprint=fingerprint,
+            error_code="",
+        )
+        cached_evidence_data["audit_event_id"] = (probe_audit or {}).get(
+            "audit_event_id"
+        )
+        return build_envelope(
+            status="ok",
+            message="Current capability evidence reused.",
+            data=cached_evidence_data,
+            revision="m6",
+        )
 
     probe_kwargs = {
         "provider": provider,
@@ -5758,17 +5849,6 @@ async def probe_admin_hosted_runtime_capability(
         **probe_kwargs,
     )
     checked_at = datetime.now(UTC)
-    fingerprint_builder = {
-        "vision": vision_probe_fingerprint,
-        "embedding": embedding_probe_fingerprint,
-        "image_generation": image_generation_probe_fingerprint,
-        "audio_generation": audio_generation_probe_fingerprint,
-    }[payload.capability]
-    fingerprint = fingerprint_builder(
-        provider_connection_id=provider_id,
-        model_id=model_id,
-        endpoint_variant=endpoint_variant,
-    )
     with get_session(services.settings.database_url) as session:
         repository = CatalogRepository(session)
         evidence = repository.upsert_capability_evidence(
@@ -5812,6 +5892,7 @@ async def probe_admin_hosted_runtime_capability(
                 "revision": evidence.revision,
                 "checked_at": checked_at.isoformat(),
                 "error_code": evidence.error_code,
+                "cache_hit": False,
                 "audit_event_id": (probe_audit or {}).get("audit_event_id"),
             },
             revision="m6",
@@ -6138,6 +6219,27 @@ async def summarize_service_audit_events(
     return build_envelope(
         status="ok",
         message="service audit summary loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/runtime-profiles/capability-probes/summary")
+async def summarize_admin_capability_probes(
+    request: Request,
+    window_minutes: int = Query(default=10080, ge=1, le=10080),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = _get_commercial_service(request).summarize_capability_probe_events(
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="Capability probe summary loaded",
         data=result,
         revision="m6",
     )

@@ -14,6 +14,9 @@ const primaryInstance = {
   capability_tags: ['text'],
   model_status: 'available',
   model_feature: 'text_generation',
+  catalog_source: 'provider_api',
+  upstream_status: 'current',
+  capability_evidence: {},
 };
 
 const fallbackInstance = {
@@ -34,6 +37,18 @@ const unavailableInstance = {
   health_status: 'unknown',
   model_status: 'disabled',
   weight: 0,
+};
+
+const configuredVisionCandidate = {
+  ...primaryInstance,
+  instance_id: 'text.configured-vision-candidate',
+  provider_id: 'provider_gateway',
+  provider_display_name: 'Gateway Provider',
+  model_id: 'gpt-5.6-sol',
+  health_status: 'unknown',
+  catalog_source: 'configured_selection',
+  upstream_status: 'missing_from_latest_catalog',
+  capability_tags: ['text', 'configured_candidate', 'upstream_missing'],
 };
 
 const initialProfiles = [
@@ -182,6 +197,21 @@ async function installRuntimeProfilesHarness(page: Page) {
     });
   });
 
+  await page.route('**/api/admin/runtime-profiles/capability-probes/summary**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(envelope({
+        window_minutes: 10080,
+        generated_at: '2026-08-26T00:00:00Z',
+        totals: { attempts: 0, verified: 0, failed: 0, success_rate: 0 },
+        by_capability: [],
+        by_instance: [],
+        recent_failures: [],
+      })),
+    });
+  });
+
   return writes;
 }
 
@@ -262,6 +292,161 @@ test('runtime profile readiness fails closed for unknown and unhealthy primary m
 
   const unhealthyProfile = profileRow(page, 'route.classification');
   await expect(unhealthyProfile).toContainText(/Blocked|已阻断/i);
+});
+
+test('enabled models missing from the latest upstream catalog remain visible for vision verification', async ({ page }) => {
+  await installAdminMocks(page);
+  let probeAttempts = 0;
+  const writes: Array<Record<string, unknown>> = [];
+  const visionProfiles = [
+    ...structuredClone(initialProfiles),
+    {
+      ...structuredClone(initialProfiles[0]),
+      profile_id: 'wp-ai.alt-text-vision',
+      group_id: 'media',
+      routing_intent: 'media.alt_text',
+      label: 'Image ALT vision',
+      description: 'Hosted vision route for image ALT suggestions.',
+      execution_kind: 'vision',
+      tasks: ['alt_text_generation'],
+      candidate_instance_ids: [],
+      revision: 'rev-3',
+      updated_at: '2026-08-26T08:00:00Z',
+      status: 'needs_candidates',
+    },
+  ];
+  const visionProjection = projection(visionProfiles);
+  visionProjection.available_instances.text.push(configuredVisionCandidate);
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      writes.push(body);
+      const payloadProfiles = body.profiles as Array<Record<string, unknown>>;
+      const savedProfiles = visionProfiles.map((profile) => ({
+        ...profile,
+        ...(payloadProfiles.find((item) => item.profile_id === profile.profile_id) || {}),
+        revision: 'runtime-profiles-auto-verified',
+        status: 'configured',
+      }));
+      const savedProjection = projection(savedProfiles);
+      savedProjection.available_instances.text.push({
+        ...configuredVisionCandidate,
+        capability_evidence: {
+          vision: {
+            state: 'verified',
+            source: 'provider_probe',
+            revision: 'verified-revision',
+            checked_at: '2026-08-26T09:30:00Z',
+            error_code: '',
+          },
+        },
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(envelope(savedProjection, 'Hosted runtime profiles saved')),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(envelope(visionProjection)),
+    });
+  });
+  await page.route('**/api/admin/runtime-profiles/capability-probe', async (route) => {
+    probeAttempts += 1;
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      capability: 'vision',
+      instance_id: configuredVisionCandidate.instance_id,
+      timeout_ms: 30000,
+    });
+    if (probeAttempts > 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(envelope({
+          capability: 'vision',
+          state: 'verified',
+          source: 'provider_probe',
+          revision: 'verified-revision',
+          checked_at: '2026-08-26T09:30:00Z',
+          error_code: '',
+        }, 'Capability verification succeeded.')),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        error_code: 'runtime_profiles.capability_probe_failed',
+        message: 'Capability verification did not succeed.',
+        data: {
+          capability: 'vision',
+          state: 'verification_failed',
+          source: 'provider_probe',
+          revision: 'failed-revision',
+          checked_at: '2026-08-26T09:29:00Z',
+          error_code: 'provider.access_denied',
+        },
+        meta: { trace_id: 'trace_probe_failure', revision: 'm6' },
+      }),
+    });
+  });
+  await page.goto('/admin/runtime-profiles');
+
+  await profileRow(page, 'wp-ai.alt-text-vision').getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  const dialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
+  const candidate = candidateRow(page, configuredVisionCandidate.instance_id);
+  await expect(candidate).toBeVisible();
+  await expect(candidate).toContainText(/not returned by the latest upstream catalog|上游最新目录未返回/i);
+  await expect(candidate).toContainText(/Needs verification|待验证/i);
+  const verifyButton = candidate.getByRole('button', { name: /^Verify$|^验证$/i });
+  await expect(verifyButton).toBeVisible();
+  await expect(verifyButton).toHaveCSS('white-space', 'nowrap');
+  const actionHeader = dialog.getByRole('columnheader', { name: /^Actions$|^操作$/i });
+  await expect(actionHeader).toHaveCSS('white-space', 'nowrap');
+  const [verifyButtonBox, actionHeaderBox] = await Promise.all([
+    verifyButton.boundingBox(),
+    actionHeader.boundingBox(),
+  ]);
+  expect(verifyButtonBox?.width).toBeGreaterThanOrEqual(64);
+  expect(verifyButtonBox?.height).toBeGreaterThanOrEqual(32);
+  expect(actionHeaderBox?.width).toBeGreaterThanOrEqual(96);
+  expect(actionHeaderBox?.height).toBeLessThan(40);
+  await expect(candidate.getByRole('radio', { name: /fallback|兜底/i })).toBeDisabled();
+
+  await candidate.getByRole('radio', { name: /primary|主模型/i }).check();
+  await dialog.getByRole('button', { name: /^Done$|^完成$/i }).click();
+  const verifyAndSave = page.getByRole('button', { name: /^Verify and save$|^验证并保存$/i });
+  await expect(verifyAndSave).toBeVisible();
+  await verifyAndSave.click();
+
+  const reopenedDialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
+  const probeAlert = reopenedDialog.locator('[data-ui="runtime-profile-probe-error"]');
+  await expect(probeAlert).toContainText(/gpt-5\.6-sol verification failed: the Provider denied access \(provider\.access_denied\)|gpt-5\.6-sol 验证失败：供应商拒绝访问（provider\.access_denied）/i);
+  await expect(probeAlert).toBeVisible();
+  await expect(candidateRow(page, configuredVisionCandidate.instance_id)).toContainText(/Verification failed|验证失败/i);
+  expect(writes).toHaveLength(0);
+  const [dialogBox, alertBox] = await Promise.all([reopenedDialog.boundingBox(), probeAlert.boundingBox()]);
+  expect(dialogBox).not.toBeNull();
+  expect(alertBox).not.toBeNull();
+  expect(alertBox!.x).toBeGreaterThanOrEqual(dialogBox!.x);
+  expect(alertBox!.y).toBeGreaterThanOrEqual(dialogBox!.y);
+  expect(alertBox!.x + alertBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width);
+  expect(alertBox!.y + alertBox!.height).toBeLessThanOrEqual(dialogBox!.y + dialogBox!.height);
+
+  await reopenedDialog.getByRole('button', { name: /^Done$|^完成$/i }).click();
+  await page.getByRole('button', { name: /^Verify and save$|^验证并保存$/i }).click();
+  await expect.poll(() => probeAttempts).toBe(2);
+  await expect.poll(() => writes.length).toBe(1);
+  expect((writes[0].profiles as Array<Record<string, unknown>>).find((profile) => profile.profile_id === 'wp-ai.alt-text-vision')).toMatchObject({
+    candidate_instance_ids: [configuredVisionCandidate.instance_id],
+  });
+  await expect(page.getByRole('button', { name: /^Save profiles$|^保存配置$/i })).toBeDisabled();
 });
 
 test('candidate editing is dialog-bounded and PUT saves an auditable receipt', async ({ page }) => {

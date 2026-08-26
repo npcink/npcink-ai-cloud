@@ -415,6 +415,97 @@ def test_agent_feedback_summarizes_metadata_only_media_quality(tmp_path: Path) -
     assert media["final_write_truth"] == "wordpress_local"
 
 
+def test_agent_feedback_summarizes_recommendation_quality_by_session(
+    tmp_path: Path,
+) -> None:
+    _database_url, client = _build_client(tmp_path)
+    events = [
+        (
+            "related-impression",
+            {
+                "source_action_id": "related_content_impression",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-1",
+                "source_reason_codes": ["candidate_count_1_3"],
+                "local_outcome": "ignored",
+            },
+        ),
+        (
+            "related-open",
+            {
+                "source_action_id": "related_content_open",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-1",
+                "local_outcome": "accepted",
+            },
+        ),
+        (
+            "related-open-duplicate",
+            {
+                "source_action_id": "related_content_open",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-1",
+                "local_outcome": "accepted",
+            },
+        ),
+        (
+            "internal-impression",
+            {
+                "source_action_id": "internal_link_impression",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "internal-session-1",
+                "source_reason_codes": ["candidate_count_4_8"],
+                "local_outcome": "ignored",
+            },
+        ),
+        (
+            "internal-apply",
+            {
+                "source_action_id": "internal_link_applied_to_editor",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "internal-session-1",
+                "local_outcome": "accepted",
+            },
+        ),
+        (
+            "orphan-related-open",
+            {
+                "source_action_id": "related_content_open",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-without-impression",
+                "local_outcome": "accepted",
+            },
+        ),
+    ]
+    for index, (key, overrides) in enumerate(events):
+        response = _post_feedback(
+            client,
+            _feedback_payload(
+                operator_note="",
+                evidence_ref_ids=[],
+                **overrides,
+            ),
+            idempotency_key=f"recommendation-quality-{index}-{key}",
+        )
+        assert response.status_code == 200
+
+    summary_response = _get_feedback_summary(client)
+    assert summary_response.status_code == 200
+    quality = summary_response.json()["data"]["recommendation_quality"]
+    assert quality["raw_content_stored"] is False
+    assert quality["raw_anchor_stored"] is False
+    assert quality["provider_output_stored"] is False
+    assert quality["related_articles"]["impression_sessions_total"] == 1
+    assert quality["related_articles"]["sessions_with_results_total"] == 1
+    assert quality["related_articles"]["open_total"] == 1
+    assert quality["related_articles"]["orphan_event_count"] == 1
+    assert quality["related_articles"]["open_rate"] == 1.0
+    assert quality["related_articles"]["sample_status"] == "insufficient"
+    assert quality["internal_links"]["impression_sessions_total"] == 1
+    assert quality["internal_links"]["apply_total"] == 1
+    assert quality["internal_links"]["apply_rate"] == 1.0
+
+
 def test_agent_feedback_accepts_editor_content_support_feedback(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 

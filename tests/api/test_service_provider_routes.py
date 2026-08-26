@@ -785,6 +785,106 @@ def test_admin_provider_connection_catalog_preview_returns_all_upstream_models(
     assert data["truncated"] is False
 
 
+def test_provider_catalog_sync_keeps_enabled_models_missing_from_partial_upstream_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    def fake_fetch_catalog(self: Any) -> ProviderCatalogSnapshot:
+        return ProviderCatalogSnapshot(
+            provider_id="openai",
+            display_name="Partial gateway",
+            adapter_type="openai",
+            models=[
+                CatalogModelSeed(
+                    model_id="gpt-5.5",
+                    family="gpt-5.5",
+                    feature="text",
+                    status="available",
+                    instances=[
+                        CatalogInstanceSeed(
+                            instance_id="openai-global-gpt-5-5",
+                            endpoint_variant="responses",
+                            region="global",
+                            health_status="healthy",
+                        )
+                    ],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        "app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog",
+        fake_fetch_catalog,
+    )
+    create_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="partial-catalog-create"),
+        json={
+            "connection_id": "partial_gateway",
+            "provider_id": "openai",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "Partial gateway",
+            "enabled": True,
+            "base_url": "https://partial-gateway.test/v1",
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID, "wp-ai.alt-text-vision"],
+            "config": {
+                "model_ids": ["gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"],
+                "model_id": "gpt-5.5",
+            },
+            "metadata": {
+                "model_catalog_preview": {
+                    "provider_id": "openai",
+                    "models": [
+                        {
+                            "model_id": "gpt-5.4-mini",
+                            "family": "gpt-5.4",
+                            "feature": "text",
+                            "is_deprecated": False,
+                        },
+                        {
+                            "model_id": "gpt-5.6-sol",
+                            "family": "gpt-5.6",
+                            "feature": "text",
+                            "is_deprecated": False,
+                        },
+                    ],
+                }
+            },
+            "credential": "partial-gateway-secret",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    test_response = client.post(
+        "/internal/service/admin/provider-connections/partial_gateway/test",
+        headers=build_internal_headers(idempotency_key="partial-catalog-test"),
+    )
+    assert test_response.status_code == 200, test_response.text
+    catalog = test_response.json()["data"]["catalog"]
+    assert catalog["upstream_model_count"] == 1
+    assert catalog["model_count"] == 3
+
+    runtime_response = client.get(
+        "/internal/service/admin/runtime-profiles",
+        headers=build_internal_headers(),
+    )
+    assert runtime_response.status_code == 200, runtime_response.text
+    candidates = {
+        item["model_id"]: item
+        for item in runtime_response.json()["data"]["available_instances"]["text"]
+        if item["provider_id"] == "openai"
+    }
+    assert set(candidates) == {"gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"}
+    assert candidates["gpt-5.5"]["upstream_status"] == "current"
+    assert candidates["gpt-5.4-mini"]["upstream_status"] == ("missing_from_latest_catalog")
+    assert candidates["gpt-5.4-mini"]["catalog_source"] == "configured_selection"
+    assert candidates["gpt-5.4-mini"]["health_status"] == "unknown"
+
+
 def test_admin_provider_connection_catalog_preview_uses_saved_secret_without_exposing_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

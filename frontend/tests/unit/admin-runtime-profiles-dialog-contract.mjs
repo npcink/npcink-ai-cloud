@@ -185,8 +185,14 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /contentMode="contained"[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
+  /contentMode="contained"[\s\S]*section className="flex min-h-0 flex-1 flex-col gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain \[scrollbar-gutter:stable\]"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[18%\][\s\S]*w-\[36%\][\s\S]*w-\[14%\][\s\S]*w-\[10%\][\s\S]*w-\[10%\][\s\S]*w-\[12%\][\s\S]*whitespace-nowrap/,
   'candidate context and self-labelled compact controls must share one balanced toolbar above the workbench sole vertical scroll region'
+);
+
+assert.match(
+  pageSource,
+  /<th className="min-w-24 whitespace-nowrap px-3 py-1\.5 text-center" scope="col">\{t\('common\.actions'\)\}<\/th>[\s\S]*<td className="min-w-24 whitespace-nowrap px-3 py-2 text-center align-middle">/,
+  'the candidate action column must reserve enough width for a single-line localized label and verification action'
 );
 
 assert.doesNotMatch(
@@ -207,6 +213,54 @@ assert.match(
   pageSource,
   /setReceipt\(next\.receipt \|\| null\)[\s\S]*<AdminMutationReceipt receipt=\{receipt\}/,
   'successful saves must surface the backend mutation receipt'
+);
+
+assert.match(
+  pageSource,
+  /capability-probes\/summary\?window_minutes=10080&limit=5[\s\S]*<BackofficeDisclosure summary=\{copy\('probe_summary_title'/,
+  'runtime profiles must expose the metadata-only capability probe summary behind a disclosure'
+);
+
+assert.match(
+  pageSource,
+  /async function verifyInstance[\s\S]*setProbeError\(''\)[\s\S]*requestCapabilityProbe[\s\S]*catch \(cause\)[\s\S]*setProbeError\(probeFailureMessage/,
+  'capability verification failures must use dialog-local error state'
+);
+
+assert.match(
+  pageSource,
+  /const pendingSelectedProbes = useMemo[\s\S]*requiresCapabilityVerification[\s\S]*capabilityEvidence/,
+  'the primary action must disclose when selected candidates require verification'
+);
+
+assert.match(
+  pageSource,
+  /pendingSelectedProbes\.length[\s\S]*action_verify_and_save/,
+  'the primary action must be labelled verify and save when selected evidence is pending'
+);
+
+assert.match(
+  pageSource,
+  /async function saveProfiles[\s\S]*for \(const \{ profile, instance \} of pendingSelectedProbes\)[\s\S]*requestCapabilityProbe\(instance, profile\.execution_kind, profile\.timeout_ms\)[\s\S]*setEditingProfileId\(profile\.profile_id\)[\s\S]*setProbeError\(probeFailureMessage[\s\S]*request<RuntimeProfilesData>\('\/api\/admin\/runtime-profiles'/,
+  'save must verify only selected pending candidates, stop on failure, and PUT only after verification succeeds'
+);
+
+assert.match(
+  pageSource,
+  /function applyCapabilityEvidence[\s\S]*setData[\s\S]*capability_evidence[\s\S]*async function verifyInstance[\s\S]*applyCapabilityEvidence/,
+  'row verification must update evidence without reloading and discarding the page draft'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /verifyInstance[\s\S]{0,800}await loadProfiles\(\)/,
+  'row verification must not reload and erase unsaved candidate selections'
+);
+
+assert.match(
+  pageSource,
+  /role="alert"[\s\S]*data-ui="runtime-profile-probe-error"[\s\S]*\{probeError\}[\s\S]*className="btn btn-secondary btn-sm min-w-16 whitespace-nowrap"/,
+  'capability verification errors and stable single-line actions must render inside the workbench'
 );
 
 assert.match(

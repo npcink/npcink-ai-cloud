@@ -73,6 +73,7 @@ class CommercialServiceAuditRepository:
         idempotency_key: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
+        since: datetime | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[ServiceAuditEvent]:
@@ -87,6 +88,7 @@ class CommercialServiceAuditRepository:
                 idempotency_key=idempotency_key,
                 scope_kind=scope_kind,
                 scope_id=scope_id,
+                since=since,
             )
         )
         statement = statement.order_by(

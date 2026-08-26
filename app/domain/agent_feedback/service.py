@@ -14,6 +14,8 @@ from app.domain.agent_feedback.contracts import (
     AGENT_FEEDBACK_EXECUTION_KIND,
     AGENT_FEEDBACK_METER_PREFIX,
     MEDIA_QUALITY_ACTION_IDS,
+    RECOMMENDATION_QUALITY_ACTION_FAMILIES,
+    RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE,
 )
 
 AGENT_FEEDBACK_SUMMARY_MAX_EVENTS = 5000
@@ -185,6 +187,7 @@ class AgentFeedbackService:
             "rejection_reasons": self._top_counts(rejection_reasons),
             "nightly_inspection": self._nightly_inspection_summary(events),
             "media_quality": self._media_quality_summary(events),
+            "recommendation_quality": self._recommendation_quality_summary(events),
             "rates": {
                 "accepted_rate": self._rate(
                     outcomes.get("accepted", 0) + outcomes.get("edited_before_accept", 0),
@@ -199,6 +202,120 @@ class AgentFeedbackService:
             "preflight_truth": "wordpress_local",
             "final_write_truth": "wordpress_local",
         }
+
+    def _recommendation_quality_summary(
+        self, events: list[UsageMeterEvent]
+    ) -> dict[str, Any]:
+        summaries: dict[str, dict[str, Any]] = {
+            family: {
+                "events_total": 0,
+                "impression_sessions": set(),
+                "sessions_with_results": set(),
+                "actions": {
+                    "open": set(),
+                    "copy": set(),
+                    "ignore": set(),
+                    "apply": set(),
+                    "saved_unchanged": set(),
+                    "saved_edited": set(),
+                    "undo": set(),
+                },
+                "orphan_event_count": 0,
+            }
+            for family in {"internal_links", "related_articles"}
+        }
+        action_suffixes = {
+            "open": "_open",
+            "copy": "_copy",
+            "ignore": "_ignored",
+            "apply": "_applied_to_editor",
+            "saved_unchanged": "_saved_unchanged",
+            "saved_edited": "_saved_edited",
+            "undo": "_undone",
+        }
+
+        for event in events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            action_id = str(payload.get("source_action_id") or "").strip()
+            family = RECOMMENDATION_QUALITY_ACTION_FAMILIES.get(action_id)
+            if not family:
+                continue
+            summary = summaries[family]
+            summary["events_total"] += 1
+            object_type = str(payload.get("source_object_type") or "").strip()
+            object_id = str(payload.get("source_object_id") or "").strip()
+            if object_type != "recommendation_session" or not object_id:
+                summary["orphan_event_count"] += 1
+                continue
+            if action_id.endswith("_impression"):
+                summary["impression_sessions"].add(object_id)
+                reasons = self._string_list(payload.get("source_reason_codes"))
+                if any(
+                    reason.startswith("candidate_count_") and not reason.endswith("_0")
+                    for reason in reasons
+                ):
+                    summary["sessions_with_results"].add(object_id)
+
+        for event in events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            action_id = str(payload.get("source_action_id") or "").strip()
+            family = RECOMMENDATION_QUALITY_ACTION_FAMILIES.get(action_id)
+            if not family or action_id.endswith("_impression"):
+                continue
+            summary = summaries[family]
+            object_type = str(payload.get("source_object_type") or "").strip()
+            object_id = str(payload.get("source_object_id") or "").strip()
+            if object_type != "recommendation_session" or not object_id:
+                continue
+            impression_sessions = summary["impression_sessions"]
+            if object_id not in impression_sessions:
+                summary["orphan_event_count"] += 1
+                continue
+            for action_name, action_suffix in action_suffixes.items():
+                if action_id.endswith(action_suffix):
+                    summary["actions"][action_name].add(object_id)
+                    break
+
+        output: dict[str, Any] = {
+            "minimum_sample_size": RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE,
+            "raw_content_stored": False,
+            "raw_anchor_stored": False,
+            "provider_output_stored": False,
+            "production_mutation": False,
+            "final_write_truth": "wordpress_local",
+        }
+        for family, summary in summaries.items():
+            impressions = summary["impression_sessions"]
+            denominator = len(impressions)
+            actions = summary["actions"]
+            output[family] = {
+                "events_total": summary["events_total"],
+                "impression_sessions_total": denominator,
+                "sessions_with_results_total": len(summary["sessions_with_results"]),
+                "orphan_event_count": summary["orphan_event_count"],
+                "open_total": len(actions["open"]),
+                "copy_total": len(actions["copy"]),
+                "ignore_total": len(actions["ignore"]),
+                "apply_total": len(actions["apply"]),
+                "saved_unchanged_total": len(actions["saved_unchanged"]),
+                "saved_edited_total": len(actions["saved_edited"]),
+                "undo_total": len(actions["undo"]),
+                "open_rate": self._rate(len(actions["open"]), denominator),
+                "copy_rate": self._rate(len(actions["copy"]), denominator),
+                "ignore_rate": self._rate(len(actions["ignore"]), denominator),
+                "apply_rate": self._rate(len(actions["apply"]), denominator),
+                "saved_adoption_rate": self._rate(
+                    len(actions["saved_unchanged"] | actions["saved_edited"]),
+                    denominator,
+                ),
+                "undo_rate": self._rate(len(actions["undo"]), denominator),
+                "sample_status": (
+                    "sufficient"
+                    if denominator >= RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE
+                    else "insufficient"
+                ),
+            }
+        return output
 
     def _media_quality_summary(self, events: list[UsageMeterEvent]) -> dict[str, Any]:
         search_completed: set[str] = set()

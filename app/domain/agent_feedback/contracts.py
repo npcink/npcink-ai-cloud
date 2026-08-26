@@ -6,6 +6,24 @@ AGENT_FEEDBACK_CONTRACT_VERSION = "cloud_agent_feedback.v1"
 AGENT_FEEDBACK_EVENT_KIND = "agent.feedback"
 AGENT_FEEDBACK_EXECUTION_KIND = "agent_feedback"
 AGENT_FEEDBACK_METER_PREFIX = "agent_feedback"
+RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE = 20
+
+RECOMMENDATION_QUALITY_ACTION_FAMILIES = {
+    "internal_link_impression": "internal_links",
+    "internal_link_open": "internal_links",
+    "internal_link_copy": "internal_links",
+    "internal_link_applied_to_editor": "internal_links",
+    "internal_link_rejected": "internal_links",
+    "internal_link_undone": "internal_links",
+    "internal_link_undo_rejected": "internal_links",
+    "internal_link_saved_unchanged": "internal_links",
+    "internal_link_saved_edited": "internal_links",
+    "related_content_impression": "related_articles",
+    "related_content_open": "related_articles",
+    "related_content_copy": "related_articles",
+    "related_content_ignored": "related_articles",
+    "related_content_applied": "related_articles",
+}
 
 ALLOWED_AGENT_FEEDBACK_OUTCOMES = frozenset(
     {

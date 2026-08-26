@@ -40,6 +40,8 @@ deleting the old decision history.
 ## Product Boundaries
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
+- [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
+- [Site Knowledge Recommendation History Synthesis — 2026-08-26](site-knowledge-recommendation-history-synthesis-2026-08-26.md) — dated plain-language summary of the internal-link/related-content distinction, UI simplification lessons, bounded vector-quality improvements, phased evidence gates, and deferred model expansion; not runtime or release authority.
 - [WordPress AI Recommendation Development Standard](wordpress-ai-recommendation-development-standard-v1.md) — consolidated WordPress-first product boundary, phased delivery, editor UX, validation, observation, and single-operator rules.
 - [WordPress Editor Readiness Runbook](wordpress-editor-readiness-runbook-v1.md) — read-only prerequisites for local editor acceptance; Cloud-unavailable results are blocked, not recommendation evidence.
 - [WordPress Editor Acceptance Observation — 2026-08-24](wordpress-editor-acceptance-observation-2026-08-24.md) — five-sample latency and evidence baseline; observation only, not a performance SLA.
@@ -50,6 +52,7 @@ deleting the old decision history.
 - [Cloud AI Data Handling Standard](cloud-ai-data-handling-standard-v1.md)
 - [Cloud Media Delivery Boundary](cloud-media-delivery-boundary-v1.md)
 - [Media Runtime Boundary](media-runtime-boundary-v1.md)
+- [Cloud Media Governance Standard](cloud-media-governance-standard-v1.md)
 - [Cloud Open Callback Boundary](cloud-open-callback-boundary-v1.md)
 - [Multi-platform Connector Boundary](multi-platform-connector-boundary-v1.md)
 - [Cloud Agent Positioning](cloud-agent-positioning-v1.md)
@@ -135,6 +138,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Admin, Portal, Identity, and Commercial
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
+- [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则
 - [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](history/portal/2026/portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
@@ -157,6 +161,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 ## Providers, Media, and Quality
 
+- [Cloud Model Capability Discovery and Verification Standard](cloud-model-capability-discovery-and-verification-standard-v1.md) — external metadata discovery, capability-specific configuration probes, evidence states, route-fingerprint caching, and rollout rules for text, vision, embeddings, image, audio, and video generation
+- [Model Capability Verification Development Retrospective — 2026-08-26](model-capability-verification-development-retrospective-2026-08-26.md) — dated synthesis of the model/Provider/route distinction, capability reliability versus output quality, low-cost single-operator observation, 30-day evidence freshness, runtime fail-closed behavior, and deferred video integration; not merge, M4 acceptance, production, or quality authority
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
 - [Cloud Web Search Provider Integration Standard](cloud-web-search-provider-integration-standard-v1.md) — active investigation, adapter, secret-handling, verification, M4, merge, and rollout rules for managed search providers
 - [AnySearch Web Search Provider Integration Closeout — 2026-08-18](anysearch-web-search-provider-integration-closeout-2026-08-18.md) — dated evidence for PR `#793`, the stale-branch migration correction, M4 acceptance, bounded real-upstream validation, and extracted development lessons; not production or human acceptance authority
