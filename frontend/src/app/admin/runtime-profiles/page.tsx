@@ -239,6 +239,10 @@ function profileSnapshot(profiles: RuntimeProfile[]): string {
 function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInstance>): 'success' | 'warning' | 'error' {
   const primary = instances.get(profile.candidate_instance_ids[0] || '');
   if (!primary) return 'warning';
+  if (profile.candidate_instance_ids.some((instanceId) => {
+    const instance = instances.get(instanceId);
+    return instance && !instanceMatchesExecutionKind(instance, profile.execution_kind);
+  })) return 'error';
   const modelStatus = primary.model_status.trim().toLowerCase();
   const healthStatus = primary.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
@@ -254,6 +258,23 @@ function instanceTone(instance: RuntimeInstance): 'success' | 'warning' | 'error
   return 'success';
 }
 
+function profileLabelKey(profile: RuntimeProfile): string {
+  const keys: Record<string, string> = {
+    'wp-ai.short-text': 'profile_short_text',
+    'wp-ai.editorial': 'profile_editorial',
+    'wp-ai.classification': 'profile_classification',
+    'wp-ai.alt-text-vision': 'profile_alt_text_vision',
+    'wp-ai.image-generation': 'profile_image_generation',
+    'wp-ai.audio-generation': 'profile_audio_generation',
+  };
+  return keys[profile.profile_id] || '';
+}
+
+function instanceMatchesExecutionKind(instance: RuntimeInstance, executionKind: string): boolean {
+  const feature = instance.model_feature === 'text_generation' ? 'text' : instance.model_feature;
+  return feature === executionKind;
+}
+
 export default function RuntimeProfilesPage() {
   const { t } = useLocale();
   const toast = useToast();
@@ -262,6 +283,10 @@ export default function RuntimeProfilesPage() {
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.runtime_profiles.${key}`, params, fallback),
     [t]
   );
+  const profileName = useCallback((profile: RuntimeProfile) => {
+    const key = profileLabelKey(profile);
+    return key ? copy(key, profile.label || profile.profile_id) : (profile.label || profile.routing_intent || profile.profile_id);
+  }, [copy]);
   const [data, setData] = useState<RuntimeProfilesData | null>(null);
   const [drafts, setDrafts] = useState<RuntimeProfile[]>([]);
   const [baseline, setBaseline] = useState('[]');
@@ -428,6 +453,17 @@ export default function RuntimeProfilesPage() {
 
   async function saveProfiles() {
     if (!dirty || saving) return;
+    const incompatible = drafts.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
+      const instance = instancesById.get(instanceId);
+      return instance && !instanceMatchesExecutionKind(instance, profile.execution_kind);
+    }));
+    if (incompatible) {
+      setError(copy('incompatible_candidate', '{{profile}} 只能使用 {{kind}} 类型的模型，请更换候选模型后再保存。', {
+        profile: profileName(incompatible),
+        kind: incompatible.execution_kind === 'vision' ? copy('execution_kind_vision', '视觉') : incompatible.execution_kind === 'image_generation' ? copy('execution_kind_image_generation', '图片生成') : incompatible.execution_kind,
+      }));
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -560,7 +596,7 @@ export default function RuntimeProfilesPage() {
                   >
                     <th className="px-3 py-2 align-middle" scope="row">
                       <span className="truncate font-semibold text-slate-950 dark:text-white">
-                        {profile.label || profile.routing_intent || profile.profile_id}
+                        {profileName(profile)}
                       </span>
                       <span className="ml-2 truncate text-xs font-normal text-slate-500 dark:text-slate-400">
                         {profile.tasks.length} {copy('task_count_suffix', 'tasks')}
@@ -622,7 +658,7 @@ export default function RuntimeProfilesPage() {
         titleId="runtime-profile-dialog-title"
         headerAccessory={editingProfile ? (
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            {editingProfile.label || editingProfile.profile_id}
+            {profileName(editingProfile)}
           </span>
         ) : null}
         saving={saving}
@@ -646,7 +682,7 @@ export default function RuntimeProfilesPage() {
             <div className="shrink-0">
               <AdminConfigurationTable
               ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
-                name: editingProfile.label || editingProfile.profile_id,
+                name: profileName(editingProfile),
               })}
               itemHeading={copy('configuration_item_heading', 'Setting')}
               valueHeading={copy('configuration_value_heading', 'Current value')}
