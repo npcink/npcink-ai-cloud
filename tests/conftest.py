@@ -56,6 +56,8 @@ from app.api.auth import build_portal_session_token
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
+    CatalogCapabilityEvidence,
+    CatalogInstance,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_ACTIVE,
@@ -68,6 +70,12 @@ from app.core.models import (
     SiteApiKey,
 )
 from app.core.secrets import encrypt_site_api_signing_secret
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    embedding_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    vision_probe_fingerprint,
+)
 from app.core.security import (
     build_body_digest,
     build_canonical_request,
@@ -316,6 +324,47 @@ def seed_provider_model_allowlist(
             row.status = "ready"
             row.source_role = row.source_role or "execution_source"
             row.metadata_json = row.metadata_json or {}
+        session.commit()
+
+
+def seed_verified_capability_evidence_for_catalog(database_url: str) -> None:
+    """Seed current route evidence for tests exercising runtime execution."""
+    fingerprint_builders = {
+        "vision": vision_probe_fingerprint,
+        "embedding": embedding_probe_fingerprint,
+        "image_generation": image_generation_probe_fingerprint,
+        "audio_generation": audio_generation_probe_fingerprint,
+    }
+    checked_at = datetime.now(UTC)
+    with get_session(database_url) as session:
+        for instance in session.query(CatalogInstance).all():
+            for capability, build_fingerprint in fingerprint_builders.items():
+                route_fingerprint = build_fingerprint(
+                    provider_connection_id=instance.provider_id,
+                    model_id=instance.model_id,
+                    endpoint_variant=instance.endpoint_variant,
+                )
+                evidence = session.scalar(
+                    select(CatalogCapabilityEvidence).where(
+                        CatalogCapabilityEvidence.instance_id == instance.instance_id,
+                        CatalogCapabilityEvidence.capability == capability,
+                        CatalogCapabilityEvidence.route_fingerprint == route_fingerprint,
+                    )
+                )
+                if evidence is None:
+                    evidence = CatalogCapabilityEvidence(
+                        instance_id=instance.instance_id,
+                        capability=capability,
+                        state="verified",
+                        route_fingerprint=route_fingerprint,
+                        source="test_fixture",
+                        revision="test-fixture",
+                        checked_at=checked_at,
+                    )
+                    session.add(evidence)
+                else:
+                    evidence.state = "verified"
+                    evidence.checked_at = checked_at
         session.commit()
 
 

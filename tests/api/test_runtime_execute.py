@@ -82,6 +82,7 @@ from tests.conftest import (
     merge_json_headers,
     seed_provider_model_allowlist,
     seed_site_auth,
+    seed_verified_capability_evidence_for_catalog,
 )
 
 
@@ -102,6 +103,7 @@ def _build_client(
     init_schema(database_url)
     if bootstrap_catalog:
         CatalogService(database_url, providers=providers).refresh_catalog()
+        seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -238,6 +240,7 @@ def test_runtime_auto_web_search_enriches_provider_input(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -366,6 +369,7 @@ def test_runtime_auto_web_search_preserves_zhihu_deepsearch_credit_lane(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -471,6 +475,7 @@ def test_runtime_auto_web_search_is_included_in_budget_preflight(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -516,6 +521,7 @@ def test_runtime_auto_web_search_provider_failure_is_metered_explicitly(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -592,6 +598,7 @@ def test_runtime_auto_web_search_dry_run_does_not_call_search(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -648,6 +655,7 @@ def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
