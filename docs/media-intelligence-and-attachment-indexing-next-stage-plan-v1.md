@@ -21,6 +21,15 @@ repository. It is not a runtime contract, implementation approval, production
 release, pricing policy, AI-credit tariff, or authorization for automatic media
 writes or deletion.
 
+For any implementation reopened after this dated plan, the active
+[Site Media Recommendation Engineering Standard](site-media-recommendation-engineering-standard-v1.md)
+governs the ordinary user journey, image-proxy preparation, cross-modal versus
+text retrieval evaluation, structured visual evidence, deduplication,
+abstention, incremental lifecycle, background/off-peak scheduling, and quality
+gates. This plan remains the investigation and milestone history; it must not
+be used to restore manual index maintenance or caption-only retrieval as the
+target product architecture.
+
 The current product focus remains the real WordPress hosted text loop described
 in [README](../README.md) and the
 [system-refactor handoff](system-refactor-phase-closeout-and-feature-iteration-handoff-2026-07-26.md).
