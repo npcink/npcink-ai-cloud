@@ -77,6 +77,7 @@ from app.core.security import (
     build_secret_hash,
 )
 from app.domain.commercial.service import CommercialService
+from app.domain.model_capabilities.contracts import build_provider_connection_route_identity
 from app.domain.model_capabilities.probes import (
     audio_generation_probe_fingerprint,
     embedding_probe_fingerprint,
@@ -344,7 +345,19 @@ def seed_verified_capability_evidence_for_catalog(database_url: str) -> None:
             config = connection.config_json if isinstance(connection.config_json, dict) else {}
             provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
             if provider_id:
-                connection_ids_by_provider.setdefault(provider_id, connection.connection_id)
+                identity = (
+                    build_provider_connection_route_identity(
+                        connection_id=connection.connection_id,
+                        base_url=str(connection.base_url or ""),
+                        config=config,
+                    )
+                    if connection.connection_id != provider_id
+                    else provider_id
+                )
+                connection_ids_by_provider.setdefault(
+                    provider_id,
+                    identity,
+                )
         for instance in session.query(CatalogInstance).all():
             for capability, build_fingerprint in fingerprint_builders.items():
                 route_fingerprint = build_fingerprint(

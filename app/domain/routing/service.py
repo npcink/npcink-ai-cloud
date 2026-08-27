@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings
 from app.core.db import get_session
+from app.domain.model_capabilities.contracts import build_provider_connection_route_identity
 from app.domain.model_capabilities.evidence import capability_evidence_is_current
 from app.domain.model_capabilities.probes import (
     audio_generation_probe_fingerprint,
@@ -142,7 +143,19 @@ class RoutingService:
             config = connection.config_json if isinstance(connection.config_json, dict) else {}
             provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
             if provider_id:
-                connection_ids_by_provider.setdefault(provider_id, connection.connection_id)
+                identity = (
+                    build_provider_connection_route_identity(
+                        connection_id=connection.connection_id,
+                        base_url=str(connection.base_url or ""),
+                        config=config,
+                    )
+                    if connection.connection_id != provider_id
+                    else provider_id
+                )
+                connection_ids_by_provider.setdefault(
+                    provider_id,
+                    identity,
+                )
         for raw_instance in instances:
             instance = raw_instance
             instance_id = str(getattr(instance, "instance_id", "") or "")

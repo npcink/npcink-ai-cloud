@@ -106,3 +106,34 @@ def build_route_fingerprint(
         endpoint_variant=endpoint_variant,
         request_format=request_format,
     )
+
+
+def build_provider_connection_route_identity(
+    *,
+    connection_id: str,
+    base_url: str = "",
+    config: dict[str, object] | None = None,
+) -> str:
+    """Return a stable, non-secret identity for one configured Provider route."""
+
+    def sanitize(value: object) -> object:
+        if isinstance(value, dict):
+            return {
+                str(key): sanitize(item)
+                for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+                if not any(
+                    token in str(key).lower()
+                    for token in ("secret", "token", "password", "credential", "api_key")
+                )
+            }
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        return value
+
+    payload = {
+        "connection_id": connection_id.strip(),
+        "base_url": base_url.strip(),
+        "config": sanitize(config or {}),
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
