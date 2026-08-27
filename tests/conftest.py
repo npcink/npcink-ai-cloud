@@ -337,10 +337,20 @@ def seed_verified_capability_evidence_for_catalog(database_url: str) -> None:
     }
     checked_at = datetime.now(UTC)
     with get_session(database_url) as session:
+        connection_ids_by_provider: dict[str, str] = {}
+        for connection in session.query(ProviderConnection).filter(
+            ProviderConnection.enabled.is_(True)
+        ):
+            config = connection.config_json if isinstance(connection.config_json, dict) else {}
+            provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+            if provider_id:
+                connection_ids_by_provider.setdefault(provider_id, connection.connection_id)
         for instance in session.query(CatalogInstance).all():
             for capability, build_fingerprint in fingerprint_builders.items():
                 route_fingerprint = build_fingerprint(
-                    provider_connection_id=instance.provider_id,
+                    provider_connection_id=connection_ids_by_provider.get(
+                        instance.provider_id, instance.provider_id
+                    ),
                     model_id=instance.model_id,
                     endpoint_variant=instance.endpoint_variant,
                 )

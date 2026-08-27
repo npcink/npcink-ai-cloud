@@ -137,11 +137,18 @@ class RoutingService:
             return {}
         current: dict[str, bool] = {}
         now = datetime.now(UTC)
+        connection_ids_by_provider: dict[str, str] = {}
+        for connection in repository.list_enabled_provider_connections():
+            config = connection.config_json if isinstance(connection.config_json, dict) else {}
+            provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+            if provider_id:
+                connection_ids_by_provider.setdefault(provider_id, connection.connection_id)
         for raw_instance in instances:
             instance = raw_instance
             instance_id = str(getattr(instance, "instance_id", "") or "")
+            provider_id = str(getattr(instance, "provider_id", "") or "")
             fingerprint = fingerprint_builder(
-                provider_connection_id=str(getattr(instance, "provider_id", "") or ""),
+                provider_connection_id=connection_ids_by_provider.get(provider_id, provider_id),
                 model_id=str(getattr(instance, "model_id", "") or ""),
                 endpoint_variant=str(getattr(instance, "endpoint_variant", "") or ""),
             )
