@@ -247,14 +247,15 @@ class AgentFeedbackService:
             if object_type != "recommendation_session" or not object_id:
                 summary["orphan_event_count"] += 1
                 continue
+            session_key = f"{event.site_id}|{object_id}"
             if action_id.endswith("_impression"):
-                summary["impression_sessions"].add(object_id)
+                summary["impression_sessions"].add(session_key)
                 reasons = self._string_list(payload.get("source_reason_codes"))
                 if any(
                     reason.startswith("candidate_count_") and not reason.endswith("_0")
                     for reason in reasons
                 ):
-                    summary["sessions_with_results"].add(object_id)
+                    summary["sessions_with_results"].add(session_key)
 
         for event in events:
             payload = event.payload_json if isinstance(event.payload_json, dict) else {}
@@ -267,13 +268,17 @@ class AgentFeedbackService:
             object_id = str(payload.get("source_object_id") or "").strip()
             if object_type != "recommendation_session" or not object_id:
                 continue
+            session_key = f"{event.site_id}|{object_id}"
             impression_sessions = summary["impression_sessions"]
-            if object_id not in impression_sessions:
+            if session_key not in impression_sessions:
                 summary["orphan_event_count"] += 1
                 continue
             for action_name, action_suffix in action_suffixes.items():
+                if action_id == "related_content_applied" and action_name == "apply":
+                    summary["actions"][action_name].add(session_key)
+                    break
                 if action_id.endswith(action_suffix):
-                    summary["actions"][action_name].add(object_id)
+                    summary["actions"][action_name].add(session_key)
                     break
 
         output: dict[str, Any] = {
