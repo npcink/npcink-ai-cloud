@@ -483,6 +483,88 @@ class CommercialServiceAuditMixin:
                 "groups": items,
             }
 
+    def summarize_capability_probe_events(
+        self,
+        *,
+        window_minutes: int = 10080,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        """Project bounded, metadata-only capability probe trends for Admin."""
+
+        resolved_since = self.now_factory() - timedelta(minutes=window_minutes)
+        with get_session(self.database_url) as session:
+            repository = CommercialServiceAuditRepository(session)
+            events = repository.list_service_audit_events(
+                event_kind="runtime_profile.capability_probe",
+                scope_kind="runtime_profile",
+                since=resolved_since,
+                limit=5000,
+            )
+
+        def bucket() -> dict[str, int]:
+            return {"attempts": 0, "verified": 0, "failed": 0}
+
+        by_capability: dict[str, dict[str, int]] = {}
+        by_instance: dict[str, dict[str, int]] = {}
+        recent_failures: list[dict[str, object]] = []
+        for event in events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            capability = str(payload.get("capability") or "unknown")
+            instance_id = str(event.scope_id or "unknown")
+            state = str(payload.get("state") or "unknown")
+            outcome = "verified" if state == "verified" else "failed"
+            for target in (by_capability, by_instance):
+                key = capability if target is by_capability else instance_id
+                counts = target.setdefault(key, bucket())
+                counts["attempts"] += 1
+                counts[outcome] += 1
+            if outcome == "failed" and len(recent_failures) < max(1, limit):
+                recent_failures.append(
+                    {
+                        "instance_id": instance_id,
+                        "capability": capability,
+                        "state": state,
+                        "error_code": str(payload.get("error_code") or ""),
+                        "checked_at": self._serialize_datetime(event.created_at),
+                    }
+                )
+
+        def serialize_groups(
+            groups: dict[str, dict[str, int]], key: str
+        ) -> list[dict[str, object]]:
+            return [
+                {
+                    key: name,
+                    **counts,
+                    "success_rate": round(counts["verified"] / counts["attempts"], 4)
+                    if counts["attempts"]
+                    else 0,
+                }
+                for name, counts in sorted(groups.items())
+            ]
+
+        totals: dict[str, int | float] = {
+            "attempts": 0,
+            "verified": 0,
+            "failed": 0,
+        }
+        for counts in by_capability.values():
+            for key in totals:
+                totals[key] += counts[key]
+        totals["success_rate"] = (
+            round(totals["verified"] / totals["attempts"], 4)
+            if totals["attempts"]
+            else 0
+        )
+        return {
+            "window_minutes": window_minutes,
+            "generated_at": self._serialize_datetime(self.now_factory()),
+            "totals": totals,
+            "by_capability": serialize_groups(by_capability, "capability"),
+            "by_instance": serialize_groups(by_instance, "instance_id"),
+            "recent_failures": recent_failures,
+        }
+
     def list_commercial_decision_events(
         self,
         *,

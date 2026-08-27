@@ -128,6 +128,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
+    pattern: /^runtime-profiles\/capability-probes\/summary$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['GET'],
     pattern: /^provider-connections\/[^/]+$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
@@ -272,6 +278,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   {
     methods: ['PUT'],
     pattern: /^runtime-profiles$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^runtime-profiles\/capability-probe$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },

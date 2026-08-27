@@ -415,178 +415,95 @@ def test_agent_feedback_summarizes_metadata_only_media_quality(tmp_path: Path) -
     assert media["final_write_truth"] == "wordpress_local"
 
 
-def test_agent_feedback_summarizes_recommendation_session_funnel(tmp_path: Path) -> None:
-    database_url, client = _build_client(tmp_path)
-    seed_site_auth(
-        database_url,
-        site_id="site_beta",
-        key_id="key_beta",
-        scopes=["runtime:execute", "runtime:read", "stats:read"],
-    )
+def test_agent_feedback_summarizes_recommendation_quality_by_session(
+    tmp_path: Path,
+) -> None:
+    _database_url, client = _build_client(tmp_path)
     events = [
         (
-            "internal-1-impression",
-            "internal_session_1",
-            "internal_link_impression",
-            "ignored",
-            ["impression_only", "candidate_count_4_8", "applicable_count_1_3"],
-        ),
-        ("internal-1-copy", "internal_session_1", "internal_link_copy", "accepted", []),
-        (
-            "internal-1-apply",
-            "internal_session_1",
-            "internal_link_applied_to_editor",
-            "accepted",
-            ["applied_count_1_3"],
+            "related-impression",
+            {
+                "source_action_id": "related_content_impression",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-1",
+                "source_reason_codes": ["candidate_count_1_3"],
+                "local_outcome": "ignored",
+            },
         ),
         (
-            "internal-1-save",
-            "internal_session_1",
-            "internal_link_saved_edited",
-            "edited_before_accept",
-            ["saved_after_editor_changes"],
+            "related-open",
+            {
+                "source_action_id": "related_content_open",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-1",
+                "local_outcome": "accepted",
+            },
         ),
         (
-            "internal-2-impression",
-            "internal_session_2",
-            "internal_link_impression",
-            "ignored",
-            ["impression_only", "candidate_count_0", "applicable_count_0"],
+            "related-open-duplicate",
+            {
+                "source_action_id": "related_content_open",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-1",
+                "local_outcome": "accepted",
+            },
         ),
-        ("internal-2-ignore", "internal_session_2", "internal_link_ignored", "rejected", []),
-        ("internal-orphan-open", "internal_session_orphan", "internal_link_open", "accepted", []),
         (
-            "related-1-impression",
-            "related_session_1",
-            "related_article_impression",
-            "ignored",
-            ["impression_only", "candidate_count_1_3"],
+            "internal-impression",
+            {
+                "source_action_id": "internal_link_impression",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "internal-session-1",
+                "source_reason_codes": ["candidate_count_4_8"],
+                "local_outcome": "ignored",
+            },
         ),
-        ("related-1-open", "related_session_1", "related_article_open", "accepted", []),
-        ("related-1-copy", "related_session_1", "related_article_copy", "accepted", []),
+        (
+            "internal-apply",
+            {
+                "source_action_id": "internal_link_applied_to_editor",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "internal-session-1",
+                "local_outcome": "accepted",
+            },
+        ),
+        (
+            "orphan-related-open",
+            {
+                "source_action_id": "related_content_open",
+                "source_object_type": "recommendation_session",
+                "source_object_id": "related-session-without-impression",
+                "local_outcome": "accepted",
+            },
+        ),
     ]
-
-    for key, session_id, action_id, outcome, reason_codes in events:
+    for index, (key, overrides) in enumerate(events):
         response = _post_feedback(
             client,
             _feedback_payload(
-                agent_id="editor_content_support_agent",
-                source_runtime="editor_content_support",
-                handoff_id=key,
-                handoff_type=f"editor_content_support_{action_id}",
-                local_surface="editor_content_support_sidebar_implicit",
-                local_outcome=outcome,
-                feedback_labels=(
-                    ["evidence_useful"] if "impression" in action_id else []
-                ),
                 operator_note="",
-                local_proposal_id="",
                 evidence_ref_ids=[],
-                source_action_id=action_id,
-                source_object_type="recommendation_session",
-                source_object_id=session_id,
-                source_reason_codes=reason_codes,
-                redaction_status="metadata_only",
-                retention_class="quality_eval",
+                **overrides,
             ),
-            idempotency_key=f"recommendation-quality-{key}",
+            idempotency_key=f"recommendation-quality-{index}-{key}",
         )
         assert response.status_code == 200
 
-    beta_impression = _post_feedback(
-        client,
-        _feedback_payload(
-            agent_id="editor_content_support_agent",
-            source_runtime="editor_content_support",
-            handoff_id="internal-beta-impression",
-            handoff_type="editor_content_support_internal_link_impression",
-            local_surface="editor_content_support_sidebar_implicit",
-            local_outcome="ignored",
-            feedback_labels=["evidence_useful"],
-            operator_note="",
-            local_proposal_id="",
-            evidence_ref_ids=[],
-            source_action_id="internal_link_impression",
-            source_object_type="recommendation_session",
-            source_object_id="internal_session_1",
-            source_reason_codes=[
-                "impression_only",
-                "candidate_count_1_3",
-                "applicable_count_0",
-            ],
-            redaction_status="metadata_only",
-            retention_class="quality_eval",
-        ),
-        idempotency_key="recommendation-quality-internal-beta-impression",
-        site_id="site_beta",
-        key_id="key_beta",
-    )
-    assert beta_impression.status_code == 200
-
-    site_summary_response = _get_feedback_summary(client)
-    summary_response = client.get(
-        "/internal/service/admin/agent-feedback?window_hours=24",
-        headers=build_internal_headers(),
-    )
-
-    assert site_summary_response.status_code == 200
-    assert site_summary_response.json()["data"]["events_total"] == 10
+    summary_response = _get_feedback_summary(client)
     assert summary_response.status_code == 200
-    summary = summary_response.json()["data"]
-    assert summary["events_total"] == 11
-    assert summary["quality_events_total"] == 7
-    assert summary["rates"]["accepted_rate"] == 0.8571
-    assert summary["rates"]["evidence_useful_rate"] == 0.0
-    assert summary["quality_trend"][0]["events_total"] == 7
-    recommendation = summary["recommendation_quality"]
-    assert recommendation["events_total"] == 11
-    assert recommendation["minimum_sample_size"] == 20
-    assert recommendation["truth_scope"] == "wordpress_recommendation_session_metadata"
-    assert recommendation["raw_content_stored"] is False
-    assert recommendation["raw_anchor_stored"] is False
-    assert recommendation["provider_output_stored"] is False
-    assert recommendation["production_mutation"] is False
-    assert recommendation["final_write_truth"] == "wordpress_local"
-
-    internal_links = recommendation["internal_links"]
-    assert internal_links["sessions_total"] == 4
-    assert internal_links["impression_sessions_total"] == 3
-    assert internal_links["orphan_action_sessions_total"] == 1
-    assert internal_links["copied_sessions_total"] == 1
-    assert internal_links["ignored_sessions_total"] == 1
-    assert internal_links["applied_sessions_total"] == 1
-    assert internal_links["save_confirmed_sessions_total"] == 1
-    assert internal_links["saved_edited_sessions_total"] == 1
-    assert internal_links["candidate_count_buckets"] == {
-        "candidate_count_0": 1,
-        "candidate_count_1_3": 1,
-        "candidate_count_4_8": 1,
-    }
-    assert internal_links["applicable_count_buckets"] == {
-        "applicable_count_0": 2,
-        "applicable_count_1_3": 1,
-    }
-    assert internal_links["rates"] == {
-        "engagement_rate": 0.3333,
-        "open_rate": 0.0,
-        "copy_rate": 0.3333,
-        "apply_rate": 0.3333,
-        "saved_adoption_rate": 0.3333,
-        "save_confirmation_rate": 1.0,
-        "saved_edit_rate": 1.0,
-        "undo_rate": 0.0,
-    }
-    assert internal_links["sample_status"] == "insufficient"
-
-    related_articles = recommendation["related_articles"]
-    assert related_articles["sessions_total"] == 1
-    assert related_articles["impression_sessions_total"] == 1
-    assert related_articles["opened_sessions_total"] == 1
-    assert related_articles["copied_sessions_total"] == 1
-    assert related_articles["rates"]["engagement_rate"] == 1.0
-    assert related_articles["rates"]["open_rate"] == 1.0
-    assert related_articles["rates"]["copy_rate"] == 1.0
-    assert related_articles["sample_status"] == "insufficient"
+    quality = summary_response.json()["data"]["recommendation_quality"]
+    assert quality["raw_content_stored"] is False
+    assert quality["raw_anchor_stored"] is False
+    assert quality["provider_output_stored"] is False
+    assert quality["related_articles"]["impression_sessions_total"] == 1
+    assert quality["related_articles"]["sessions_with_results_total"] == 1
+    assert quality["related_articles"]["open_total"] == 1
+    assert quality["related_articles"]["orphan_event_count"] == 1
+    assert quality["related_articles"]["open_rate"] == 1.0
+    assert quality["related_articles"]["sample_status"] == "insufficient"
+    assert quality["internal_links"]["impression_sessions_total"] == 1
+    assert quality["internal_links"]["apply_total"] == 1
+    assert quality["internal_links"]["apply_rate"] == 1.0
 
 
 def test_agent_feedback_accepts_editor_content_support_feedback(tmp_path: Path) -> None:

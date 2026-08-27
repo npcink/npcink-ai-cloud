@@ -14,6 +14,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
 
 from app.adapters.providers.base import (
+    CatalogInstanceSeed,
+    CatalogModelSeed,
     ProviderCatalogSnapshot,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -789,8 +791,8 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
-        models = list(snapshot.models or [])
-        if not models:
+        upstream_models = list(snapshot.models or [])
+        if not upstream_models:
             return _test_result(
                 connection=serialized,
                 status="catalog_empty",
@@ -800,6 +802,8 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
+        snapshot = _merge_configured_catalog_candidates(row, snapshot)
+        models = list(snapshot.models or [])
         catalog_sync = self._store_model_provider_catalog(row, snapshot)
         if catalog_sync.get("status") != "synced":
             return _test_result(
@@ -823,6 +827,7 @@ class ProviderConnectionAdminService:
                 "display_name": str(snapshot.display_name or ""),
                 "adapter_type": str(snapshot.adapter_type or ""),
                 "model_count": len(models),
+                "upstream_model_count": len(upstream_models),
                 "sample_model_ids": [str(model.model_id) for model in models[:5]],
                 "sync": catalog_sync,
             },
@@ -1223,6 +1228,170 @@ def _provider_model_identity_keys(model_id: str, provider_id: str) -> set[str]:
     if normalized_provider_id and not normalized_model_id.startswith(f"{normalized_provider_id}/"):
         keys.add(f"{normalized_provider_id}/{normalized_model_id}")
     return keys
+
+
+def _merge_configured_catalog_candidates(
+    row: ProviderConnection,
+    snapshot: ProviderCatalogSnapshot,
+) -> ProviderCatalogSnapshot:
+    """Keep enabled models visible when an upstream catalog response is partial."""
+
+    config = _dict(row.config_json)
+    metadata = _dict(row.metadata_json)
+    selected_model_ids = _normalize_id_list(config.get("model_ids"))
+    if not selected_model_ids:
+        selected_model_ids = _normalize_id_list(metadata.get("model_ids"))
+    if not selected_model_ids:
+        return snapshot
+
+    provider_id = _string(snapshot.provider_id or config.get("provider_id") or row.connection_id)
+    upstream_models = list(snapshot.models or [])
+    upstream_keys = {
+        key
+        for model in upstream_models
+        for key in _provider_model_identity_keys(model.model_id, provider_id)
+    }
+    preview = _dict(metadata.get("model_catalog_preview"))
+    preview_models = (
+        {
+            _string(item.get("model_id")): item
+            for item in preview.get("models", [])
+            if isinstance(item, dict) and _string(item.get("model_id"))
+        }
+        if isinstance(preview.get("models"), list)
+        else {}
+    )
+
+    configured_candidates: list[CatalogModelSeed] = []
+    for selected_model_id in selected_model_ids:
+        identity_keys = _provider_model_identity_keys(selected_model_id, provider_id)
+        if identity_keys.intersection(upstream_keys):
+            continue
+        catalog_model_id = _configured_catalog_model_id(
+            selected_model_id,
+            provider_id=provider_id,
+            config=config,
+        )
+        preview_model = next(
+            (
+                item
+                for preview_model_id, item in preview_models.items()
+                if _provider_model_identity_keys(preview_model_id, provider_id).intersection(
+                    identity_keys
+                )
+            ),
+            {},
+        )
+        feature = _configured_candidate_feature(selected_model_id, preview_model)
+        configured_candidates.append(
+            CatalogModelSeed(
+                model_id=catalog_model_id,
+                family=_string(preview_model.get("family"))
+                or selected_model_id.split("/", 1)[-1].split("-", 1)[0],
+                feature=feature,
+                status="available",
+                context_window=_optional_int(preview_model.get("context_window")),
+                price_input=None,
+                price_output=None,
+                is_deprecated=bool(preview_model.get("is_deprecated")),
+                fallback_candidate=False,
+                raw_json={
+                    "catalog_source": "configured_selection",
+                    "upstream_status": "missing_from_latest_catalog",
+                    "upstream_model_id": selected_model_id,
+                    "reference_source": "saved_provider_catalog_preview"
+                    if preview_model
+                    else "configured_model_id",
+                },
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id=(
+                            f"{_catalog_slug(provider_id)}-global-{_catalog_slug(catalog_model_id)}"
+                        ),
+                        endpoint_variant=_configured_candidate_endpoint(feature),
+                        region="global",
+                        capability_tags=[
+                            feature,
+                            "configured_candidate",
+                            "upstream_missing",
+                        ],
+                        health_status="unknown",
+                        is_default=False,
+                        weight=50,
+                    )
+                ],
+            )
+        )
+
+    if not configured_candidates:
+        return snapshot
+    return ProviderCatalogSnapshot(
+        provider_id=snapshot.provider_id,
+        display_name=snapshot.display_name,
+        adapter_type=snapshot.adapter_type,
+        models=[*upstream_models, *configured_candidates],
+    )
+
+
+def _configured_catalog_model_id(
+    model_id: str,
+    *,
+    provider_id: str,
+    config: dict[str, Any],
+) -> str:
+    kind = _string(config.get("kind")).lower()
+    if "model_namespace_prefix" in config:
+        prefix = _string(config.get("model_namespace_prefix")).strip("/")
+    elif kind in {"openai", "openai_compatible", "openai-compatible"} and provider_id != "openai":
+        prefix = provider_id
+    else:
+        prefix = ""
+    return model_id if not prefix or model_id.startswith(f"{prefix}/") else f"{prefix}/{model_id}"
+
+
+def _configured_candidate_feature(model_id: str, preview_model: dict[str, Any]) -> str:
+    preview_feature = _string(preview_model.get("feature")).lower()
+    if preview_feature in {"text", "vision", "embedding", "image_generation", "audio_generation"}:
+        return preview_feature
+    model_key = model_id.lower()
+    if any(
+        keyword in model_key
+        for keyword in (
+            "grok-imagine",
+            "gpt-image",
+            "image-quality",
+            "kolors",
+            "qwen-image",
+            "image-generation",
+        )
+    ):
+        return "image_generation"
+    return "text"
+
+
+def _configured_candidate_endpoint(feature: str) -> str:
+    if feature == "image_generation":
+        return "image_generations"
+    if feature == "embedding":
+        return "embeddings"
+    if feature == "audio_generation":
+        return "audio_speech"
+    return "responses"
+
+
+def _catalog_slug(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return normalized or "model"
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
 
 
 def _image_delivery_probe_input(provider_id: str) -> dict[str, Any]:

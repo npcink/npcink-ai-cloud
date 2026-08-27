@@ -32,6 +32,7 @@ from tests.conftest import (
     build_auth_headers,
     merge_json_headers,
     seed_site_auth,
+    seed_verified_capability_evidence_for_catalog,
 )
 
 SOURCE_ARTIFACT_ID = "art_0123456789abcdef0123456789abcdef"
@@ -126,6 +127,7 @@ def _build_client(
     selected_provider = provider or FakeVisionProvider()
     providers = {selected_provider.provider_id: selected_provider}
     CatalogService(database_url, providers=providers).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",

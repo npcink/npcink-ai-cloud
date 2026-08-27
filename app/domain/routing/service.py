@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings
 from app.core.db import get_session
+from app.domain.model_capabilities.contracts import build_provider_connection_route_identity
+from app.domain.model_capabilities.evidence import capability_evidence_is_current
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    vision_probe_fingerprint,
+)
 from app.domain.provider_connections.model_allowlist import build_provider_model_allowlist
 from app.domain.routing.errors import (
     RoutingExecutionKindMismatchError,
@@ -57,6 +66,11 @@ class RoutingService:
             instances = repository.list_instances_by_ids(binding.candidate_instance_ids)
             models = repository.list_models_by_ids([instance.model_id for instance in instances])
             models_by_id = {model.model_id: model for model in models}
+            evidence_by_instance = self._current_capability_evidence(
+                repository,
+                instances=instances,
+                execution_kind=execution_kind,
+            )
 
         candidates = [
             RoutingCandidate(
@@ -90,6 +104,10 @@ class RoutingService:
                 model_id=instance.model_id,
             )
             and self._provider_is_executable(instance.provider_id)
+            and (
+                execution_kind not in {"vision", "image_generation", "audio_generation"}
+                or evidence_by_instance.get(instance.instance_id, False)
+            )
         ]
 
         if not candidates:
@@ -103,6 +121,61 @@ class RoutingService:
             selection_policy=binding.selection_policy_json or {},
             candidates=candidates,
         )
+
+    @staticmethod
+    def _current_capability_evidence(
+        repository: CatalogRepository,
+        *,
+        instances: Sequence[object],
+        execution_kind: str,
+    ) -> dict[str, bool]:
+        fingerprint_builder = {
+            "vision": vision_probe_fingerprint,
+            "image_generation": image_generation_probe_fingerprint,
+            "audio_generation": audio_generation_probe_fingerprint,
+        }.get(execution_kind)
+        if fingerprint_builder is None:
+            return {}
+        current: dict[str, bool] = {}
+        now = datetime.now(UTC)
+        connection_ids_by_provider: dict[str, str] = {}
+        for connection in repository.list_enabled_provider_connections():
+            config = connection.config_json if isinstance(connection.config_json, dict) else {}
+            provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+            if provider_id:
+                identity = (
+                    build_provider_connection_route_identity(
+                        connection_id=connection.connection_id,
+                        base_url=str(connection.base_url or ""),
+                        config=config,
+                    )
+                    if connection.connection_id != provider_id
+                    else provider_id
+                )
+                connection_ids_by_provider.setdefault(
+                    provider_id,
+                    identity,
+                )
+        for raw_instance in instances:
+            instance = raw_instance
+            instance_id = str(getattr(instance, "instance_id", "") or "")
+            provider_id = str(getattr(instance, "provider_id", "") or "")
+            fingerprint = fingerprint_builder(
+                provider_connection_id=connection_ids_by_provider.get(provider_id, provider_id),
+                model_id=str(getattr(instance, "model_id", "") or ""),
+                endpoint_variant=str(getattr(instance, "endpoint_variant", "") or ""),
+            )
+            evidence = repository.get_capability_evidence(
+                instance_id=instance_id,
+                capability=execution_kind,
+                route_fingerprint=fingerprint,
+            )
+            current[instance_id] = capability_evidence_is_current(
+                evidence,
+                route_fingerprint=fingerprint,
+                now=now,
+            )
+        return current
 
     def _provider_is_executable(self, provider_id: str) -> bool:
         if not self.execution_provider_ids:

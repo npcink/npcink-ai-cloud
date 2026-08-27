@@ -2081,7 +2081,7 @@ function AiResourcesContent() {
                                       <div className="text-slate-500 dark:text-slate-400">
                                         {row.family}
                                         {row.sourceKind === 'manual' ? ` · ${row.sourceLabel}` : ''}
-                                        {row.verified ? ` · ${aiText('catalog_model_status_upstream_available', 'Upstream available')}` : ''}
+                                        {row.verified ? ` · ${aiText('catalog_model_status_upstream_available', 'Seen in last upstream catalog')}` : ''}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
                                       {row.deprecated && row.selected ? (

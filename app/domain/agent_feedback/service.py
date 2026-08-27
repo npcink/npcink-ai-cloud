@@ -14,11 +14,12 @@ from app.domain.agent_feedback.contracts import (
     AGENT_FEEDBACK_EXECUTION_KIND,
     AGENT_FEEDBACK_METER_PREFIX,
     MEDIA_QUALITY_ACTION_IDS,
+    RECOMMENDATION_QUALITY_ACTION_FAMILIES,
+    RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE,
 )
 
 AGENT_FEEDBACK_SUMMARY_MAX_EVENTS = 5000
 MEDIA_QUALITY_MINIMUM_SAMPLE_SIZE = 20
-RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE = 20
 
 
 class AgentFeedbackService:
@@ -120,40 +121,32 @@ class AgentFeedbackService:
 
         outcomes: dict[str, int] = {}
         labels: dict[str, int] = {}
-        quality_labels: dict[str, int] = {}
         source_runtimes: dict[str, int] = {}
         local_surfaces: dict[str, int] = {}
         trend: dict[str, dict[str, int]] = {}
         scenarios: dict[str, dict[str, Any]] = {}
         rejection_reasons: dict[str, int] = {}
-        quality_events_total = 0
         for event in events:
             payload = event.payload_json if isinstance(event.payload_json, dict) else {}
             outcome = str(payload.get("local_outcome") or "unknown").strip() or "unknown"
             source_runtime = str(payload.get("source_runtime") or "unknown").strip() or "unknown"
             local_surface = str(payload.get("local_surface") or "unknown").strip() or "unknown"
             feedback_labels = self._string_list(payload.get("feedback_labels"))
-            source_reason_codes = self._string_list(payload.get("source_reason_codes"))
-            impression_only = "impression_only" in source_reason_codes
             self._increment(outcomes, outcome)
             self._increment(source_runtimes, source_runtime)
             self._increment(local_surfaces, local_surface)
-            if not impression_only:
-                quality_events_total += 1
-                self._increment_trend_bucket(trend, event.created_at, outcome, feedback_labels)
-                self._increment_scenario(
-                    scenarios,
-                    local_surface,
-                    source_runtime,
-                    outcome,
-                    feedback_labels,
-                )
+            self._increment_trend_bucket(trend, event.created_at, outcome, feedback_labels)
+            self._increment_scenario(
+                scenarios,
+                local_surface,
+                source_runtime,
+                outcome,
+                feedback_labels,
+            )
             for label in feedback_labels:
                 self._increment(labels, label)
-                if not impression_only:
-                    self._increment(quality_labels, label)
-                    if self._is_rejected_outcome(outcome):
-                        self._increment(rejection_reasons, label)
+                if self._is_rejected_outcome(outcome):
+                    self._increment(rejection_reasons, label)
 
         total = len(events)
         last_event_at = events[0].created_at if events else None
@@ -167,7 +160,6 @@ class AgentFeedbackService:
             "window_start_at": self._format_datetime(since),
             "last_event_at": self._format_datetime(last_event_at) if last_event_at else "",
             "events_total": total,
-            "quality_events_total": quality_events_total,
             "limited": limited,
             "max_events": AGENT_FEEDBACK_SUMMARY_MAX_EVENTS,
             "outcomes": outcomes,
@@ -177,7 +169,7 @@ class AgentFeedbackService:
             "scenarios": self._scenario_summary(scenarios),
             "quality_trend": self._trend_summary(trend),
             "low_quality_labels": self._top_counts(
-                quality_labels,
+                labels,
                 allowed={
                     "evidence_weak",
                     "wrong_intent",
@@ -199,17 +191,11 @@ class AgentFeedbackService:
             "rates": {
                 "accepted_rate": self._rate(
                     outcomes.get("accepted", 0) + outcomes.get("edited_before_accept", 0),
-                    quality_events_total,
+                    total,
                 ),
-                "evidence_useful_rate": self._rate(
-                    quality_labels.get("evidence_useful", 0), quality_events_total
-                ),
-                "evidence_weak_rate": self._rate(
-                    quality_labels.get("evidence_weak", 0), quality_events_total
-                ),
-                "wrong_next_step_rate": self._rate(
-                    quality_labels.get("wrong_next_step", 0), quality_events_total
-                ),
+                "evidence_useful_rate": self._rate(labels.get("evidence_useful", 0), total),
+                "evidence_weak_rate": self._rate(labels.get("evidence_weak", 0), total),
+                "wrong_next_step_rate": self._rate(labels.get("wrong_next_step", 0), total),
             },
             "production_mutation": False,
             "approval_truth": "wordpress_local",
@@ -220,149 +206,121 @@ class AgentFeedbackService:
     def _recommendation_quality_summary(
         self, events: list[UsageMeterEvent]
     ) -> dict[str, Any]:
-        action_sets: dict[str, dict[str, set[str]]] = {
-            kind: {
-                action: set()
-                for action in (
-                    "impression",
-                    "open",
-                    "copy",
-                    "ignored",
-                    "applied",
-                    "saved_unchanged",
-                    "saved_edited",
-                    "undone",
-                )
+        summaries: dict[str, dict[str, Any]] = {
+            family: {
+                "events_total": 0,
+                "impression_sessions": set(),
+                "sessions_with_results": set(),
+                "actions": {
+                    "open": set(),
+                    "copy": set(),
+                    "ignore": set(),
+                    "apply": set(),
+                    "saved_unchanged": set(),
+                    "saved_edited": set(),
+                    "undo": set(),
+                },
+                "orphan_event_count": 0,
             }
-            for kind in ("internal_links", "related_articles")
+            for family in {"internal_links", "related_articles"}
         }
-        candidate_buckets: dict[str, dict[str, set[str]]] = {
-            kind: {} for kind in action_sets
+        action_suffixes = {
+            "open": "_open",
+            "copy": "_copy",
+            "ignore": "_ignored",
+            "apply": "_applied_to_editor",
+            "saved_unchanged": "_saved_unchanged",
+            "saved_edited": "_saved_edited",
+            "undo": "_undone",
         }
-        applicable_buckets: dict[str, dict[str, set[str]]] = {
-            kind: {} for kind in action_sets
-        }
-        all_sessions: dict[str, set[str]] = {kind: set() for kind in action_sets}
-        relevant_events = 0
 
         for event in events:
             payload = event.payload_json if isinstance(event.payload_json, dict) else {}
-            if str(payload.get("source_object_type") or "") != "recommendation_session":
-                continue
-            session_id = str(payload.get("source_object_id") or "").strip()
             action_id = str(payload.get("source_action_id") or "").strip()
-            kind = self._recommendation_kind(action_id)
-            if not session_id or not kind:
+            family = RECOMMENDATION_QUALITY_ACTION_FAMILIES.get(action_id)
+            if not family:
                 continue
-            session_key = f"{event.site_id}|{session_id}"
-            all_sessions[kind].add(session_key)
-            relevant_events += 1
-            action = self._recommendation_action(action_id)
-            if action:
-                action_sets[kind][action].add(session_key)
-            for reason in self._string_list(payload.get("source_reason_codes")):
-                if reason.startswith("candidate_count_"):
-                    candidate_buckets[kind].setdefault(reason, set()).add(session_key)
-                elif reason.startswith("applicable_count_"):
-                    applicable_buckets[kind].setdefault(reason, set()).add(session_key)
+            summary = summaries[family]
+            summary["events_total"] += 1
+            object_type = str(payload.get("source_object_type") or "").strip()
+            object_id = str(payload.get("source_object_id") or "").strip()
+            if object_type != "recommendation_session" or not object_id:
+                summary["orphan_event_count"] += 1
+                continue
+            session_key = f"{event.site_id}|{object_id}"
+            if action_id.endswith("_impression"):
+                summary["impression_sessions"].add(session_key)
+                reasons = self._string_list(payload.get("source_reason_codes"))
+                if any(
+                    reason.startswith("candidate_count_") and not reason.endswith("_0")
+                    for reason in reasons
+                ):
+                    summary["sessions_with_results"].add(session_key)
 
-        return {
-            "events_total": relevant_events,
+        for event in events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            action_id = str(payload.get("source_action_id") or "").strip()
+            family = RECOMMENDATION_QUALITY_ACTION_FAMILIES.get(action_id)
+            if not family or action_id.endswith("_impression"):
+                continue
+            summary = summaries[family]
+            object_type = str(payload.get("source_object_type") or "").strip()
+            object_id = str(payload.get("source_object_id") or "").strip()
+            if object_type != "recommendation_session" or not object_id:
+                continue
+            session_key = f"{event.site_id}|{object_id}"
+            impression_sessions = summary["impression_sessions"]
+            if session_key not in impression_sessions:
+                summary["orphan_event_count"] += 1
+                continue
+            for action_name, action_suffix in action_suffixes.items():
+                if action_id == "related_content_applied" and action_name == "apply":
+                    summary["actions"][action_name].add(session_key)
+                    break
+                if action_id.endswith(action_suffix):
+                    summary["actions"][action_name].add(session_key)
+                    break
+
+        output: dict[str, Any] = {
             "minimum_sample_size": RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE,
-            "internal_links": self._recommendation_kind_summary(
-                all_sessions["internal_links"],
-                action_sets["internal_links"],
-                candidate_buckets["internal_links"],
-                applicable_buckets["internal_links"],
-            ),
-            "related_articles": self._recommendation_kind_summary(
-                all_sessions["related_articles"],
-                action_sets["related_articles"],
-                candidate_buckets["related_articles"],
-                applicable_buckets["related_articles"],
-            ),
-            "truth_scope": "wordpress_recommendation_session_metadata",
             "raw_content_stored": False,
             "raw_anchor_stored": False,
             "provider_output_stored": False,
             "production_mutation": False,
             "final_write_truth": "wordpress_local",
         }
-
-    def _recommendation_kind_summary(
-        self,
-        all_sessions: set[str],
-        actions: dict[str, set[str]],
-        candidate_buckets: dict[str, set[str]],
-        applicable_buckets: dict[str, set[str]],
-    ) -> dict[str, Any]:
-        impressions = actions["impression"]
-        engaged = (actions["open"] | actions["copy"] | actions["applied"]) & impressions
-        saved = (actions["saved_unchanged"] | actions["saved_edited"]) & impressions
-        applied = actions["applied"] & impressions
-        return {
-            "sessions_total": len(all_sessions),
-            "impression_sessions_total": len(impressions),
-            "orphan_action_sessions_total": len(all_sessions - impressions),
-            "opened_sessions_total": len(actions["open"] & impressions),
-            "copied_sessions_total": len(actions["copy"] & impressions),
-            "ignored_sessions_total": len(actions["ignored"] & impressions),
-            "applied_sessions_total": len(applied),
-            "save_confirmed_sessions_total": len(saved),
-            "saved_unchanged_sessions_total": len(actions["saved_unchanged"] & impressions),
-            "saved_edited_sessions_total": len(actions["saved_edited"] & impressions),
-            "undone_sessions_total": len(actions["undone"] & impressions),
-            "candidate_count_buckets": {
-                key: len(value & impressions)
-                for key, value in sorted(candidate_buckets.items())
-            },
-            "applicable_count_buckets": {
-                key: len(value & impressions)
-                for key, value in sorted(applicable_buckets.items())
-            },
-            "rates": {
-                "engagement_rate": self._rate(len(engaged), len(impressions)),
-                "open_rate": self._rate(len(actions["open"] & impressions), len(impressions)),
-                "copy_rate": self._rate(len(actions["copy"] & impressions), len(impressions)),
-                "apply_rate": self._rate(len(applied), len(impressions)),
-                "saved_adoption_rate": self._rate(len(saved), len(impressions)),
-                "save_confirmation_rate": self._rate(len(saved & applied), len(applied)),
-                "saved_edit_rate": self._rate(
-                    len(actions["saved_edited"] & impressions), len(saved)
+        for family, summary in summaries.items():
+            impressions = summary["impression_sessions"]
+            denominator = len(impressions)
+            actions = summary["actions"]
+            output[family] = {
+                "events_total": summary["events_total"],
+                "impression_sessions_total": denominator,
+                "sessions_with_results_total": len(summary["sessions_with_results"]),
+                "orphan_event_count": summary["orphan_event_count"],
+                "open_total": len(actions["open"]),
+                "copy_total": len(actions["copy"]),
+                "ignore_total": len(actions["ignore"]),
+                "apply_total": len(actions["apply"]),
+                "saved_unchanged_total": len(actions["saved_unchanged"]),
+                "saved_edited_total": len(actions["saved_edited"]),
+                "undo_total": len(actions["undo"]),
+                "open_rate": self._rate(len(actions["open"]), denominator),
+                "copy_rate": self._rate(len(actions["copy"]), denominator),
+                "ignore_rate": self._rate(len(actions["ignore"]), denominator),
+                "apply_rate": self._rate(len(actions["apply"]), denominator),
+                "saved_adoption_rate": self._rate(
+                    len(actions["saved_unchanged"] | actions["saved_edited"]),
+                    denominator,
                 ),
-                "undo_rate": self._rate(len(actions["undone"] & impressions), len(applied)),
-            },
-            "sample_status": (
-                "sufficient"
-                if len(impressions) >= RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE
-                else "insufficient"
-            ),
-        }
-
-    @staticmethod
-    def _recommendation_kind(action_id: str) -> str:
-        if action_id.startswith("internal_link_"):
-            return "internal_links"
-        if action_id.startswith("related_article_"):
-            return "related_articles"
-        return ""
-
-    @staticmethod
-    def _recommendation_action(action_id: str) -> str:
-        suffixes = {
-            "_impression": "impression",
-            "_open": "open",
-            "_copy": "copy",
-            "_ignored": "ignored",
-            "_applied_to_editor": "applied",
-            "_saved_unchanged": "saved_unchanged",
-            "_saved_edited": "saved_edited",
-            "_undone": "undone",
-        }
-        for suffix, action in suffixes.items():
-            if action_id.endswith(suffix):
-                return action
-        return ""
+                "undo_rate": self._rate(len(actions["undo"]), denominator),
+                "sample_status": (
+                    "sufficient"
+                    if denominator >= RECOMMENDATION_QUALITY_MINIMUM_SAMPLE_SIZE
+                    else "insufficient"
+                ),
+            }
+        return output
 
     def _media_quality_summary(self, events: list[UsageMeterEvent]) -> dict[str, Any]:
         search_completed: set[str] = set()

@@ -61,6 +61,8 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_ACTIVE,
     AccountEntitlementSnapshot,
     AccountSubscription,
+    CatalogCapabilityEvidence,
+    CatalogInstance,
     Plan,
     PlanVersion,
     ProviderConnection,
@@ -75,6 +77,13 @@ from app.core.security import (
     build_secret_hash,
 )
 from app.domain.commercial.service import CommercialService
+from app.domain.model_capabilities.contracts import build_provider_connection_route_identity
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    embedding_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    vision_probe_fingerprint,
+)
 
 TEST_SECRET = "npcink-cloud-test-secret-for-hmac-sha256-32b"
 TEST_KEY_ID = "key_default"
@@ -316,6 +325,69 @@ def seed_provider_model_allowlist(
             row.status = "ready"
             row.source_role = row.source_role or "execution_source"
             row.metadata_json = row.metadata_json or {}
+        session.commit()
+
+
+def seed_verified_capability_evidence_for_catalog(database_url: str) -> None:
+    """Seed current route evidence for tests exercising runtime execution."""
+    fingerprint_builders = {
+        "vision": vision_probe_fingerprint,
+        "embedding": embedding_probe_fingerprint,
+        "image_generation": image_generation_probe_fingerprint,
+        "audio_generation": audio_generation_probe_fingerprint,
+    }
+    checked_at = datetime.now(UTC)
+    with get_session(database_url) as session:
+        connection_ids_by_provider: dict[str, str] = {}
+        for connection in session.query(ProviderConnection).filter(
+            ProviderConnection.enabled.is_(True)
+        ):
+            config = connection.config_json if isinstance(connection.config_json, dict) else {}
+            provider_id = str(config.get("provider_id") or connection.connection_id or "").strip()
+            if provider_id:
+                identity = (
+                    build_provider_connection_route_identity(
+                        connection_id=connection.connection_id,
+                        base_url=str(connection.base_url or ""),
+                        config=config,
+                    )
+                    if connection.connection_id != provider_id
+                    else provider_id
+                )
+                connection_ids_by_provider.setdefault(
+                    provider_id,
+                    identity,
+                )
+        for instance in session.query(CatalogInstance).all():
+            for capability, build_fingerprint in fingerprint_builders.items():
+                route_fingerprint = build_fingerprint(
+                    provider_connection_id=connection_ids_by_provider.get(
+                        instance.provider_id, instance.provider_id
+                    ),
+                    model_id=instance.model_id,
+                    endpoint_variant=instance.endpoint_variant,
+                )
+                evidence = session.scalar(
+                    select(CatalogCapabilityEvidence).where(
+                        CatalogCapabilityEvidence.instance_id == instance.instance_id,
+                        CatalogCapabilityEvidence.capability == capability,
+                        CatalogCapabilityEvidence.route_fingerprint == route_fingerprint,
+                    )
+                )
+                if evidence is None:
+                    evidence = CatalogCapabilityEvidence(
+                        instance_id=instance.instance_id,
+                        capability=capability,
+                        state="verified",
+                        route_fingerprint=route_fingerprint,
+                        source="test_fixture",
+                        revision="test-fixture",
+                        checked_at=checked_at,
+                    )
+                    session.add(evidence)
+                else:
+                    evidence.state = "verified"
+                    evidence.checked_at = checked_at
         session.commit()
 
 

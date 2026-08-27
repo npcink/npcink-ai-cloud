@@ -38,6 +38,7 @@ from tests.conftest import (
     build_internal_headers,
     seed_provider_model_allowlist,
     seed_site_auth,
+    seed_verified_capability_evidence_for_catalog,
 )
 
 
@@ -280,6 +281,7 @@ def test_admin_audio_workbench_uses_saved_minimax_execution_connection(
         database_url,
         providers={"minimax": MiniMaxProviderAdapter(allow_sample_catalog=True)},
     ).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     services = client.app.state.services
     ProviderConnectionAdminService(database_url, services.settings).save_connection(
         {
@@ -353,6 +355,7 @@ def test_admin_audio_workbench_rejects_minimax_route_without_execution_connectio
         database_url,
         providers={"minimax": MiniMaxProviderAdapter(allow_sample_catalog=True)},
     ).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     _seed_minimax_audio_model_allowlist(database_url)
     seed_site_auth(
         database_url,

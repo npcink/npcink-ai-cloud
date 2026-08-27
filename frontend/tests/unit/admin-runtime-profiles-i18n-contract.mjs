@@ -20,6 +20,9 @@ for (const key of new Set(pageKeys)) {
   assert.match(zhSource, pattern, `admin.runtime_profiles.${key} must exist in Simplified Chinese translations`);
 }
 
+assert.match(zhSource, /'admin\.runtime_profiles\.candidate_status_pending': '待验证'/);
+assert.doesNotMatch(zhSource, /'admin\.runtime_profiles\.candidate_status_pending': '待确认'/);
+
 assert.doesNotMatch(
   i18nSource,
   /admin\.nav_ability_models|admin\.ai_resources\.ability_model_|配置能力模型路由|Configure ability-model route/,

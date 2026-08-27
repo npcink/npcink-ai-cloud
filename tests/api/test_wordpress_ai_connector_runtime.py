@@ -23,6 +23,7 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import (
+    CatalogCapabilityEvidence,
     CatalogInstance,
     CatalogModel,
     MediaArtifact,
@@ -37,6 +38,11 @@ from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    vision_probe_fingerprint,
+)
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
@@ -587,6 +593,52 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
                 source_role="execution_source",
                 metadata_json={},
             )
+        )
+        session.commit()
+        session.add(
+            CatalogCapabilityEvidence(
+                instance_id="openai-wp-ai-vision-test",
+                capability="vision",
+                state="verified",
+                route_fingerprint=vision_probe_fingerprint(
+                    provider_connection_id="openai",
+                    model_id="gpt-wp-ai-vision-test",
+                    endpoint_variant="responses",
+                ),
+                source="test_probe",
+                revision="test-2026-08-26",
+                checked_at=datetime.now(UTC),
+            )
+        )
+        session.add_all(
+            [
+                CatalogCapabilityEvidence(
+                    instance_id="openai-wp-ai-image-test",
+                    capability="image_generation",
+                    state="verified",
+                    route_fingerprint=image_generation_probe_fingerprint(
+                        provider_connection_id="openai",
+                        model_id="grok-imagine-wp-ai-test",
+                        endpoint_variant="image_generations",
+                    ),
+                    source="test_probe",
+                    revision="test-2026-08-26",
+                    checked_at=datetime.now(UTC),
+                ),
+                CatalogCapabilityEvidence(
+                    instance_id="openai-wp-ai-audio-test",
+                    capability="audio_generation",
+                    state="verified",
+                    route_fingerprint=audio_generation_probe_fingerprint(
+                        provider_connection_id="openai",
+                        model_id="speech-wp-ai-connector-test",
+                        endpoint_variant="audio_generation",
+                    ),
+                    source="test_probe",
+                    revision="test-2026-08-26",
+                    checked_at=datetime.now(UTC),
+                ),
+            ]
         )
         session.commit()
     settings = Settings(
@@ -3538,6 +3590,7 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     ]
     assert data["boundary"]["direct_wordpress_write"] is False
     assert len(data["profiles"]) == 6
+
     assert all(len(profile["candidate_instance_ids"]) <= 2 for profile in data["profiles"])
     assert set(data["available_instances"]) == {
         "text",
@@ -3758,6 +3811,224 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
         assert audit_payload["platform_kind"] == "wordpress"
         assert audit_payload["connector_id"] == "wordpress_ai_connector"
         assert audit_payload["operation_contract_version"] == ("wordpress_operation.v1")
+
+
+def test_admin_runtime_profiles_hides_evidence_for_a_changed_route(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        evidence = session.scalar(
+            select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id == "openai-wp-ai-image-test",
+                CatalogCapabilityEvidence.capability == "image_generation",
+            )
+        )
+        assert evidence is not None
+        evidence.route_fingerprint = "stale-route"
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/runtime-profiles",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    image_instance = response.json()["data"]["available_instances"]["image_generation"][0]
+    assert "image_generation" not in image_instance["capability_evidence"]
+
+
+def test_admin_runtime_profiles_rejects_expired_capability_evidence(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        evidence = session.scalar(
+            select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id == "openai-wp-ai-image-test",
+                CatalogCapabilityEvidence.capability == "image_generation",
+            )
+        )
+        assert evidence is not None
+        evidence.checked_at = datetime.now(UTC) - timedelta(days=31)
+        session.commit()
+
+    projection_response = client.get(
+        "/internal/service/admin/runtime-profiles",
+        headers=build_internal_headers(),
+    )
+    assert projection_response.status_code == 200
+    projection = projection_response.json()["data"]
+    image_instance = projection["available_instances"]["image_generation"][0]
+    assert "image_generation" not in image_instance["capability_evidence"]
+
+    response = client.put(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(
+            build_internal_headers(idempotency_key="runtime-profiles-expired-evidence")
+        ),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
+            "profiles": _runtime_profile_replacement_from_projection(projection["profiles"]),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "requires current verified image_generation evidence" in response.json()["message"]
+
+
+def test_admin_runtime_profiles_keeps_fresh_failed_evidence_visible(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        evidence = session.scalar(
+            select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id == "openai-wp-ai-image-test",
+                CatalogCapabilityEvidence.capability == "image_generation",
+            )
+        )
+        assert evidence is not None
+        evidence.state = "verification_failed"
+        evidence.error_code = "capability_probe.timeout"
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/runtime-profiles",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    image_instance = response.json()["data"]["available_instances"]["image_generation"][0]
+    assert image_instance["capability_evidence"]["image_generation"] == {
+        "state": "verification_failed",
+        "source": "test_probe",
+        "revision": "test-2026-08-26",
+        "checked_at": image_instance["capability_evidence"]["image_generation"][
+            "checked_at"
+        ],
+        "error_code": "capability_probe.timeout",
+    }
+
+
+def test_capability_probe_records_metadata_only_audit_event(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    response = client.post(
+        "/internal/service/admin/runtime-profiles/capability-probe",
+        headers=merge_json_headers(
+            build_internal_headers(idempotency_key="capability-probe-audit-001")
+        ),
+        json={
+            "capability": "vision",
+            "instance_id": "openai-wp-ai-vision-test",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["state"] == "verified"
+    assert response.json()["data"]["cache_hit"] is True
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        event = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "runtime_profile.capability_probe",
+                ServiceAuditEvent.scope_id == "openai-wp-ai-vision-test",
+            )
+        )
+        assert event is not None
+        assert event.payload_json == {
+            "capability": "vision",
+            "state": "verified",
+            "route_fingerprint": event.payload_json["route_fingerprint"],
+            "error_code": "",
+            "provider_payload_retained": False,
+        }
+
+
+def test_capability_probe_refreshes_expired_evidence(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        evidence = session.scalar(
+            select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id == "openai-wp-ai-vision-test",
+                CatalogCapabilityEvidence.capability == "vision",
+            )
+        )
+        assert evidence is not None
+        evidence.checked_at = datetime.now(UTC) - timedelta(days=31)
+        session.commit()
+
+    response = client.post(
+        "/internal/service/admin/runtime-profiles/capability-probe",
+        headers=merge_json_headers(
+            build_internal_headers(idempotency_key="capability-probe-refresh-001")
+        ),
+        json={
+            "capability": "vision",
+            "instance_id": "openai-wp-ai-vision-test",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["cache_hit"] is False
+    assert len(provider.requests) == 1
+
+
+def test_capability_probe_summary_aggregates_metadata_only_events(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        session.add_all(
+            [
+                ServiceAuditEvent(
+                    event_kind="runtime_profile.capability_probe",
+                    outcome="succeeded",
+                    scope_kind="runtime_profile",
+                    scope_id="vision-instance",
+                    actor_kind="internal",
+                    payload_json={
+                        "capability": "vision",
+                        "state": "verified",
+                        "route_fingerprint": "fp-v",
+                        "error_code": "",
+                        "provider_payload_retained": False,
+                    },
+                    created_at=now,
+                ),
+                ServiceAuditEvent(
+                    event_kind="runtime_profile.capability_probe",
+                    outcome="failed",
+                    scope_kind="runtime_profile",
+                    scope_id="embedding-instance",
+                    actor_kind="internal",
+                    payload_json={
+                        "capability": "embedding",
+                        "state": "verification_failed",
+                        "route_fingerprint": "fp-e",
+                        "error_code": "capability_probe.timeout",
+                        "provider_payload_retained": False,
+                    },
+                    created_at=now,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/runtime-profiles/capability-probes/summary?window_minutes=60",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["totals"] == {
+        "attempts": 2,
+        "verified": 1,
+        "failed": 1,
+        "success_rate": 0.5,
+    }
+    assert {item["capability"] for item in data["by_capability"]} == {
+        "vision",
+        "embedding",
+    }
+    assert data["recent_failures"][0]["error_code"] == "capability_probe.timeout"
 
 
 def test_admin_runtime_profiles_rejects_unknown_profile(tmp_path: Path) -> None:

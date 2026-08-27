@@ -1337,6 +1337,34 @@ class CatalogInstance(Base):
     )
 
 
+class CatalogCapabilityEvidence(Base):
+    """Per-route capability verification evidence; never replace catalog truth."""
+
+    __tablename__ = "catalog_capability_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "instance_id",
+            "capability",
+            "route_fingerprint",
+            name="uq_catalog_capability_evidence_route",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        ForeignKey("catalog_instances.instance_id", ondelete="CASCADE"),
+        index=True,
+    )
+    capability: Mapped[str] = mapped_column(String(32), index=True)
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    route_fingerprint: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(191))
+    revision: Mapped[str] = mapped_column(String(191))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(96))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+
+
 class ModelReferenceSource(Base):
     __tablename__ = "model_reference_sources"
 

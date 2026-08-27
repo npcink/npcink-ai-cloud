@@ -19,13 +19,21 @@ import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
-import { resolveUiErrorMessage } from '@/lib/errors';
+import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
 
 const runtimeProfilesClient = createApiClient({ idempotencyPrefix: 'runtime_profiles' });
 const MAX_VISIBLE_CANDIDATES = 80;
 const SUPPORTED_EXECUTION_KINDS = new Set(['text', 'vision', 'image_generation', 'audio_generation']);
 const SUPERSEDED_CONNECTOR_CONTRACT_FIELD = ['connector', 'contract', 'version'].join('_');
+
+type CapabilityEvidence = {
+  state: string;
+  source: string;
+  revision: string;
+  checked_at: string;
+  error_code: string;
+};
 
 type RuntimeInstance = {
   instance_id: string;
@@ -40,6 +48,10 @@ type RuntimeInstance = {
   capability_tags: string[];
   model_status: string;
   model_feature: string;
+  catalog_source: string;
+  upstream_status: string;
+  vision_evidence: CapabilityEvidence | null;
+  capability_evidence: Record<string, CapabilityEvidence>;
 };
 
 type RuntimeProfile = {
@@ -81,6 +93,32 @@ type RuntimeProfilesData = {
   receipt?: AdminMutationReceiptPayload | null;
 };
 
+type CapabilityProbeGroup = {
+  attempts: number;
+  verified: number;
+  failed: number;
+  success_rate: number;
+};
+
+type CapabilityProbeSummary = {
+  window_minutes: number;
+  generated_at: string;
+  totals: CapabilityProbeGroup;
+  by_capability: Array<CapabilityProbeGroup & { capability: string }>;
+  by_instance: Array<CapabilityProbeGroup & { instance_id: string }>;
+  recent_failures: Array<{
+    instance_id: string;
+    capability: string;
+    state: string;
+    error_code: string;
+    checked_at: string;
+  }>;
+};
+
+type CapabilityProbeEvidence = CapabilityEvidence & {
+  capability: string;
+};
+
 function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Hosted runtime instance must be an object.');
@@ -105,6 +143,30 @@ function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
     capability_tags: Array.isArray(item.capability_tags) ? item.capability_tags.map(String) : [],
     model_status: String(item.model_status || ''),
     model_feature: String(item.model_feature || ''),
+    catalog_source: String(item.catalog_source || ''),
+    upstream_status: String(item.upstream_status || 'current'),
+    vision_evidence: item.vision_evidence && typeof item.vision_evidence === 'object'
+      ? {
+        state: String((item.vision_evidence as Record<string, unknown>).state || ''),
+        source: String((item.vision_evidence as Record<string, unknown>).source || ''),
+        revision: String((item.vision_evidence as Record<string, unknown>).revision || ''),
+        checked_at: String((item.vision_evidence as Record<string, unknown>).checked_at || ''),
+        error_code: String((item.vision_evidence as Record<string, unknown>).error_code || ''),
+      }
+      : null,
+    capability_evidence: item.capability_evidence && typeof item.capability_evidence === 'object'
+      ? Object.fromEntries(Object.entries(item.capability_evidence as Record<string, unknown>).flatMap(([capability, raw]) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+        const evidence = raw as Record<string, unknown>;
+        return [[capability, {
+          state: String(evidence.state || ''),
+          source: String(evidence.source || ''),
+          revision: String(evidence.revision || ''),
+          checked_at: String(evidence.checked_at || ''),
+          error_code: String(evidence.error_code || ''),
+        }]];
+      }))
+      : {},
   };
 }
 
@@ -225,6 +287,51 @@ function normalizeRuntimeProfilesData(value: unknown): RuntimeProfilesData {
   };
 }
 
+function normalizeCapabilityProbeSummary(value: unknown): CapabilityProbeSummary {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Capability probe summary response is not an object.');
+  }
+  const data = value as Record<string, unknown>;
+  const normalizeGroup = (raw: unknown): CapabilityProbeGroup => {
+    const item = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : Object.create(null) as Record<string, unknown>;
+    return {
+      attempts: Number(item.attempts || 0),
+      verified: Number(item.verified || 0),
+      failed: Number(item.failed || 0),
+      success_rate: Number(item.success_rate || 0),
+    };
+  };
+  const normalizeList = (raw: unknown, key: 'capability' | 'instance_id') => (
+    Array.isArray(raw) ? raw.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+      const item = entry as Record<string, unknown>;
+      const name = String(item[key] || '').trim();
+      return name ? [{ [key]: name, ...normalizeGroup(item) }] : [];
+    }) : []
+  );
+  const failures = Array.isArray(data.recent_failures) ? data.recent_failures.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const item = entry as Record<string, unknown>;
+    return [{
+      instance_id: String(item.instance_id || ''),
+      capability: String(item.capability || ''),
+      state: String(item.state || ''),
+      error_code: String(item.error_code || ''),
+      checked_at: String(item.checked_at || ''),
+    }];
+  }) : [];
+  return {
+    window_minutes: Number(data.window_minutes || 0),
+    generated_at: String(data.generated_at || ''),
+    totals: normalizeGroup(data.totals),
+    by_capability: normalizeList(data.by_capability, 'capability') as CapabilityProbeSummary['by_capability'],
+    by_instance: normalizeList(data.by_instance, 'instance_id') as CapabilityProbeSummary['by_instance'],
+    recent_failures: failures,
+  };
+}
+
 function profileSnapshot(profiles: RuntimeProfile[]): string {
   return JSON.stringify(profiles.map((profile) => ({
     profile_id: profile.profile_id,
@@ -239,6 +346,10 @@ function profileSnapshot(profiles: RuntimeProfile[]): string {
 function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInstance>): 'success' | 'warning' | 'error' {
   const primary = instances.get(profile.candidate_instance_ids[0] || '');
   if (!primary) return 'warning';
+  if (profile.candidate_instance_ids.some((instanceId) => {
+    const instance = instances.get(instanceId);
+    return instance && !instanceMatchesExecutionKind(instance, profile.execution_kind);
+  })) return 'error';
   const modelStatus = primary.model_status.trim().toLowerCase();
   const healthStatus = primary.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
@@ -246,12 +357,72 @@ function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInst
   return 'success';
 }
 
-function instanceTone(instance: RuntimeInstance): 'success' | 'warning' | 'error' {
+function instanceTone(instance: RuntimeInstance, executionKind = ''): 'success' | 'warning' | 'error' {
   const modelStatus = instance.model_status.trim().toLowerCase();
   const healthStatus = instance.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
+  if (requiresCapabilityVerification(executionKind)) {
+    return capabilityEvidence(instance, executionKind)?.state === 'verified'
+      ? 'success'
+      : 'warning';
+  }
   if (healthStatus !== 'healthy') return 'warning';
   return 'success';
+}
+
+function profileLabelKey(profile: RuntimeProfile): string {
+  const keys: Record<string, string> = {
+    'wp-ai.short-text': 'profile_short_text',
+    'wp-ai.editorial': 'profile_editorial',
+    'wp-ai.classification': 'profile_classification',
+    'wp-ai.alt-text-vision': 'profile_alt_text_vision',
+    'wp-ai.image-generation': 'profile_image_generation',
+    'wp-ai.audio-generation': 'profile_audio_generation',
+  };
+  return keys[profile.profile_id] || '';
+}
+
+function instanceMatchesExecutionKind(instance: RuntimeInstance, executionKind: string): boolean {
+  const feature = instance.model_feature === 'text_generation' ? 'text' : instance.model_feature;
+  return feature === executionKind || (executionKind === 'vision' && feature === 'text');
+}
+
+function requiresCapabilityVerification(executionKind: string): boolean {
+  return ['vision', 'image_generation', 'audio_generation'].includes(executionKind);
+}
+
+function capabilityEvidence(instance: RuntimeInstance, capability: string) {
+  return instance.capability_evidence[capability]
+    || (capability === 'vision' ? instance.vision_evidence : null);
+}
+
+function normalizeCapabilityProbeEvidence(value: unknown): CapabilityProbeEvidence {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Capability probe evidence response is not an object.');
+  }
+  const item = value as Record<string, unknown>;
+  const capability = String(item.capability || '').trim();
+  const state = String(item.state || '').trim();
+  if (!capability || !state) {
+    throw new TypeError('Capability probe evidence requires capability and state.');
+  }
+  return {
+    capability,
+    state,
+    source: String(item.source || ''),
+    revision: String(item.revision || ''),
+    checked_at: String(item.checked_at || ''),
+    error_code: String(item.error_code || ''),
+  };
+}
+
+function capabilityProbeEvidenceFromError(cause: unknown): CapabilityProbeEvidence | null {
+  if (!(cause instanceof ApiError)) return null;
+  try {
+    return normalizeCapabilityProbeEvidence(cause.details);
+  } catch {
+    return null;
+  }
 }
 
 export default function RuntimeProfilesPage() {
@@ -262,6 +433,10 @@ export default function RuntimeProfilesPage() {
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.runtime_profiles.${key}`, params, fallback),
     [t]
   );
+  const profileName = useCallback((profile: RuntimeProfile) => {
+    const key = profileLabelKey(profile);
+    return key ? copy(key, profile.label || profile.profile_id) : (profile.label || profile.routing_intent || profile.profile_id);
+  }, [copy]);
   const [data, setData] = useState<RuntimeProfilesData | null>(null);
   const [drafts, setDrafts] = useState<RuntimeProfile[]>([]);
   const [baseline, setBaseline] = useState('[]');
@@ -271,8 +446,13 @@ export default function RuntimeProfilesPage() {
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [verifyingBeforeSave, setVerifyingBeforeSave] = useState(false);
+  const [probingInstanceId, setProbingInstanceId] = useState('');
+  const [probeError, setProbeError] = useState('');
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState<AdminMutationReceiptPayload | null>(null);
+  const [probeSummary, setProbeSummary] = useState<CapabilityProbeSummary | null>(null);
+  const [probeSummaryError, setProbeSummaryError] = useState('');
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
 
   const applyData = useCallback((next: RuntimeProfilesData) => {
@@ -298,6 +478,8 @@ export default function RuntimeProfilesPage() {
     setBaseline('[]');
     setActiveProfileId('');
     setEditingProfileId('');
+    setProbeSummary(null);
+    setProbeSummaryError('');
     try {
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles');
       applyData(normalizeRuntimeProfilesData(response.data));
@@ -312,6 +494,22 @@ export default function RuntimeProfilesPage() {
     void loadProfiles();
   }, [loadProfiles]);
 
+  const loadProbeSummary = useCallback(async () => {
+    setProbeSummaryError('');
+    try {
+      const response = await runtimeProfilesClient.request<CapabilityProbeSummary>(
+        '/api/admin/runtime-profiles/capability-probes/summary?window_minutes=10080&limit=5'
+      );
+      setProbeSummary(normalizeCapabilityProbeSummary(response.data));
+    } catch (cause) {
+      setProbeSummaryError(resolveUiErrorMessage(cause, copy('probe_summary_load_error', 'Capability verification history is unavailable.')));
+    }
+  }, [copy]);
+
+  useEffect(() => {
+    void loadProbeSummary();
+  }, [loadProbeSummary]);
+
   const allInstances = useMemo(() => {
     if (!data) return [];
     const seen = new Set<string>();
@@ -325,6 +523,20 @@ export default function RuntimeProfilesPage() {
     () => new Map(allInstances.map((instance) => [instance.instance_id, instance])),
     [allInstances]
   );
+  const pendingSelectedProbes = useMemo(() => {
+    const seen = new Set<string>();
+    return drafts.flatMap((profile) => {
+      if (!requiresCapabilityVerification(profile.execution_kind)) return [];
+      return profile.candidate_instance_ids.flatMap((instanceId) => {
+        const instance = instancesById.get(instanceId);
+        if (!instance || capabilityEvidence(instance, profile.execution_kind)?.state === 'verified') return [];
+        const key = `${instanceId}:${profile.execution_kind}`;
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [{ profile, instance }];
+      });
+    });
+  }, [drafts, instancesById]);
   const editingProfile = drafts.find((profile) => profile.profile_id === editingProfileId) || null;
   const dirty = profileSnapshot(drafts) !== baseline;
   const configuredCount = drafts.filter((profile) => profile.candidate_instance_ids.length > 0).length;
@@ -356,7 +568,7 @@ export default function RuntimeProfilesPage() {
   const candidatePool = useMemo(() => {
     if (!editingProfile || !data) return [];
     const available = editingProfile.execution_kind === 'vision'
-      ? data.available_instances.vision
+      ? [...data.available_instances.vision, ...data.available_instances.text]
       : editingProfile.execution_kind === 'image_generation'
         ? data.available_instances.image_generation
         : editingProfile.execution_kind === 'audio_generation'
@@ -426,11 +638,105 @@ export default function RuntimeProfilesPage() {
     });
   }
 
+  function applyCapabilityEvidence(instanceId: string, evidence: CapabilityProbeEvidence) {
+    setData((current) => {
+      if (!current || !evidence.capability) return current;
+      const update = (instances: RuntimeInstance[]) => instances.map((instance) => instance.instance_id === instanceId
+        ? {
+          ...instance,
+          vision_evidence: evidence.capability === 'vision' ? evidence : instance.vision_evidence,
+          capability_evidence: {
+            ...instance.capability_evidence,
+            [evidence.capability]: evidence,
+          },
+        }
+        : instance);
+      return {
+        ...current,
+        available_instances: {
+          text: update(current.available_instances.text),
+          vision: update(current.available_instances.vision),
+          image_generation: update(current.available_instances.image_generation),
+          audio_generation: update(current.available_instances.audio_generation),
+        },
+      };
+    });
+  }
+
+  function probeFailureMessage(cause: unknown, instance: RuntimeInstance): string {
+    const details = cause instanceof ApiError && cause.details && typeof cause.details === 'object' && !Array.isArray(cause.details)
+      ? cause.details as Record<string, unknown>
+      : Object.create(null) as Record<string, unknown>;
+    const errorCode = String(details.error_code || (cause instanceof ApiError ? cause.errorCode : '')).trim();
+    if (errorCode === 'provider.access_denied') {
+      return copy('probe_failed_access_denied', '{{model}} 验证失败：供应商拒绝访问（{{code}}）。请检查 API 密钥、模型权限、额度或网关策略。', {
+        model: instance.model_id,
+        code: errorCode,
+      });
+    }
+    if (errorCode) {
+      return copy('probe_failed_detail', '{{model}} 验证失败（{{code}}）。请检查 Provider 配置后重试。', {
+        model: instance.model_id,
+        code: errorCode,
+      });
+    }
+    return resolveUiErrorMessage(cause, copy('probe_failed', '能力验证未通过，请检查 Provider 或稍后重试。'));
+  }
+
+  async function requestCapabilityProbe(instance: RuntimeInstance, capability: string, timeoutMs: number) {
+    return runtimeProfilesClient.request<CapabilityProbeEvidence>('/api/admin/runtime-profiles/capability-probe', {
+      method: 'POST',
+      body: {
+        capability,
+        instance_id: instance.instance_id,
+        timeout_ms: timeoutMs,
+      },
+      timeoutMs: timeoutMs + 5000,
+    });
+  }
+
   async function saveProfiles() {
     if (!dirty || saving) return;
+    const incompatible = drafts.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
+      const instance = instancesById.get(instanceId);
+      return instance && (
+        !instanceMatchesExecutionKind(instance, profile.execution_kind)
+      );
+    }));
+    if (incompatible) {
+      setError(copy('incompatible_candidate', '{{profile}} 只能使用 {{kind}} 类型的模型，请更换候选模型后再保存。', {
+        profile: profileName(incompatible),
+        kind: incompatible.execution_kind === 'vision' ? copy('execution_kind_vision', '视觉') : incompatible.execution_kind === 'image_generation' ? copy('execution_kind_image_generation', '图片生成') : incompatible.execution_kind,
+      }));
+      return;
+    }
     setSaving(true);
     setError('');
+    setProbeError('');
     try {
+      if (pendingSelectedProbes.length) {
+        setVerifyingBeforeSave(true);
+        for (const { profile, instance } of pendingSelectedProbes) {
+          setProbingInstanceId(instance.instance_id);
+          try {
+            const probeResponse = await requestCapabilityProbe(instance, profile.execution_kind, profile.timeout_ms);
+            applyCapabilityEvidence(instance.instance_id, normalizeCapabilityProbeEvidence(probeResponse.data));
+          } catch (cause) {
+            const failedEvidence = capabilityProbeEvidenceFromError(cause);
+            if (failedEvidence?.capability) {
+              applyCapabilityEvidence(instance.instance_id, failedEvidence);
+            }
+            selectProfile(profile.profile_id);
+            setEditingProfileId(profile.profile_id);
+            setProbeError(probeFailureMessage(cause, instance));
+            await loadProbeSummary();
+            return;
+          } finally {
+            setProbingInstanceId('');
+          }
+        }
+      }
+      setVerifyingBeforeSave(false);
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles', {
         method: 'PUT',
         body: {
@@ -454,7 +760,29 @@ export default function RuntimeProfilesPage() {
     } catch (cause) {
       setError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save hosted runtime profiles.')));
     } finally {
+      setVerifyingBeforeSave(false);
+      setProbingInstanceId('');
       setSaving(false);
+    }
+  }
+
+  async function verifyInstance(instance: RuntimeInstance, capability: string, timeoutMs: number) {
+    if (probingInstanceId) return;
+    setProbingInstanceId(instance.instance_id);
+    setProbeError('');
+    try {
+      const response = await requestCapabilityProbe(instance, capability, timeoutMs);
+      applyCapabilityEvidence(instance.instance_id, normalizeCapabilityProbeEvidence(response.data));
+      await loadProbeSummary();
+      toast.success(copy('probe_success', '能力验证成功，可以保存配置。'), t('common.success'));
+    } catch (cause) {
+      const failedEvidence = capabilityProbeEvidenceFromError(cause);
+      if (failedEvidence?.capability) {
+        applyCapabilityEvidence(instance.instance_id, failedEvidence);
+      }
+      setProbeError(probeFailureMessage(cause, instance));
+    } finally {
+      setProbingInstanceId('');
     }
   }
 
@@ -485,7 +813,13 @@ export default function RuntimeProfilesPage() {
             disabled={!dirty || saving}
             onClick={() => void saveProfiles()}
           >
-            {saving ? copy('action_saving', 'Saving...') : copy('action_save', 'Save profiles')}
+            {saving
+              ? verifyingBeforeSave
+                ? copy('action_verifying_and_saving', 'Verifying and saving...')
+                : copy('action_saving', 'Saving...')
+              : pendingSelectedProbes.length
+                ? copy('action_verify_and_save', 'Verify and save')
+                : copy('action_save', 'Save profiles')}
           </button>
         )}
         summaryItems={[
@@ -513,6 +847,58 @@ export default function RuntimeProfilesPage() {
         </div>
       ) : null}
       {data ? <AdminMutationReceipt receipt={receipt} title={copy('receipt_title', 'Latest profile change')} /> : null}
+
+      {data ? (
+        <BackofficeDisclosure summary={copy('probe_summary_title', 'Capability verification history')}>
+          {probeSummaryError ? (
+            <p className="text-sm text-rose-700 dark:text-rose-300">{probeSummaryError}</p>
+          ) : probeSummary ? (
+            <div className="space-y-3 text-sm">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-slate-600 dark:text-slate-300">
+                <span>{copy('probe_summary_window', 'Last {{days}} days', { days: String(Math.max(1, Math.round(probeSummary.window_minutes / 1440))) })}</span>
+                <span>{copy('probe_summary_attempts', '{{count}} attempts', { count: String(probeSummary.totals.attempts) })}</span>
+                <span>{copy('probe_summary_success_rate', '{{rate}}% verified', { rate: String(Math.round(probeSummary.totals.success_rate * 100)) })}</span>
+              </div>
+              {probeSummary.totals.attempts === 0 ? (
+                <p className="text-slate-500 dark:text-slate-400">{copy('probe_summary_empty', 'No capability probes have been recorded yet. Verify a selected candidate to start collecting evidence.')}</p>
+              ) : (
+                <>
+                  <table className="w-full max-w-3xl text-left text-xs">
+                    <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                      <tr>
+                        <th className="py-1.5 pr-3" scope="col">{copy('probe_summary_capability', 'Capability')}</th>
+                        <th className="py-1.5 pr-3" scope="col">{copy('probe_summary_attempts_column', 'Attempts')}</th>
+                        <th className="py-1.5 pr-3" scope="col">{copy('probe_summary_verified', 'Verified')}</th>
+                        <th className="py-1.5" scope="col">{copy('probe_summary_failed', 'Failed')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                      {probeSummary.by_capability.map((item) => (
+                        <tr key={item.capability}>
+                          <th className="py-1.5 pr-3 font-medium text-slate-800 dark:text-slate-200" scope="row">{item.capability}</th>
+                          <td className="py-1.5 pr-3 tabular-nums">{item.attempts}</td>
+                          <td className="py-1.5 pr-3 tabular-nums">{item.verified}</td>
+                          <td className="py-1.5 tabular-nums">{item.failed}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {probeSummary.recent_failures.length ? (
+                    <p className="text-xs text-rose-700 dark:text-rose-300">
+                      {copy('probe_summary_recent_failure', 'Latest failure: {{capability}} / {{code}}', {
+                        capability: probeSummary.recent_failures[0].capability,
+                        code: probeSummary.recent_failures[0].error_code || probeSummary.recent_failures[0].state,
+                      })}
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">{copy('probe_summary_loading', 'Loading capability verification history...')}</p>
+          )}
+        </BackofficeDisclosure>
+      ) : null}
 
       {data ? drafts.length === 0 ? (
         <BackofficeEmptyState
@@ -560,7 +946,7 @@ export default function RuntimeProfilesPage() {
                   >
                     <th className="px-3 py-2 align-middle" scope="row">
                       <span className="truncate font-semibold text-slate-950 dark:text-white">
-                        {profile.label || profile.routing_intent || profile.profile_id}
+                        {profileName(profile)}
                       </span>
                       <span className="ml-2 truncate text-xs font-normal text-slate-500 dark:text-slate-400">
                         {profile.tasks.length} {copy('task_count_suffix', 'tasks')}
@@ -593,6 +979,7 @@ export default function RuntimeProfilesPage() {
                           selectProfile(profile.profile_id);
                           setProviderFilter('');
                           setModelSearch('');
+                          setProbeError('');
                           setEditingProfileId(profile.profile_id);
                         }}
                       >
@@ -622,7 +1009,7 @@ export default function RuntimeProfilesPage() {
         titleId="runtime-profile-dialog-title"
         headerAccessory={editingProfile ? (
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            {editingProfile.label || editingProfile.profile_id}
+            {profileName(editingProfile)}
           </span>
         ) : null}
         saving={saving}
@@ -646,7 +1033,7 @@ export default function RuntimeProfilesPage() {
             <div className="shrink-0">
               <AdminConfigurationTable
               ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
-                name: editingProfile.label || editingProfile.profile_id,
+                name: profileName(editingProfile),
               })}
               itemHeading={copy('configuration_item_heading', 'Setting')}
               valueHeading={copy('configuration_value_heading', 'Current value')}
@@ -766,14 +1153,24 @@ export default function RuntimeProfilesPage() {
                   />
                 </div>
               </div>
+              {probeError ? (
+                <div
+                  role="alert"
+                  data-ui="runtime-profile-probe-error"
+                  className="shrink-0 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"
+                >
+                  {probeError}
+                </div>
+              ) : null}
               {candidates.length ? (
                 <div data-ui="runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
                   <table className="w-full min-w-[960px] table-auto text-left text-sm">
                     <colgroup>
-                      <col className="w-[22%]" />
-                      <col className="w-[40%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[36%]" />
                       <col className="w-[14%]" />
-                      <col className="w-[12%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[10%]" />
                       <col className="w-[12%]" />
                     </colgroup>
                     <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
@@ -781,15 +1178,20 @@ export default function RuntimeProfilesPage() {
                         <th className="px-3 py-1.5" scope="col">{copy('column_supplier', 'Supplier')}</th>
                         <th className="px-3 py-1.5" scope="col">{copy('column_model', 'Model')}</th>
                         <th className="px-3 py-1.5" scope="col">{t('common.status')}</th>
-                        <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_primary', 'Primary')}</th>
-                        <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_fallback', 'Fallback')}</th>
+                        <th className="whitespace-nowrap px-3 py-1.5 text-center" scope="col">{copy('selected_primary', 'Primary')}</th>
+                        <th className="whitespace-nowrap px-3 py-1.5 text-center" scope="col">{copy('selected_fallback', 'Fallback')}</th>
+                        <th className="min-w-24 whitespace-nowrap px-3 py-1.5 text-center" scope="col">{t('common.actions')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
                       {candidates.map((instance) => {
                         const primary = editingProfile.candidate_instance_ids[0] === instance.instance_id;
                         const fallback = editingProfile.candidate_instance_ids[1] === instance.instance_id;
-                        const tone = instanceTone(instance);
+                        const evidence = capabilityEvidence(instance, editingProfile.execution_kind);
+                        const verificationFailed = requiresCapabilityVerification(editingProfile.execution_kind)
+                          && evidence?.state !== 'verified'
+                          && Boolean(evidence?.error_code);
+                        const tone = verificationFailed ? 'error' : instanceTone(instance, editingProfile.execution_kind);
                         return (
                           <tr key={instance.instance_id} data-instance-id={instance.instance_id} className="bg-white dark:bg-slate-950">
                             <td className="px-3 py-2 align-middle">
@@ -804,18 +1206,25 @@ export default function RuntimeProfilesPage() {
                             </td>
                             <th className="px-3 py-2 align-middle" scope="row" title={instance.instance_id}>
                               <span className="block whitespace-nowrap font-semibold text-slate-950 dark:text-white">{instance.model_id}</span>
+                              {instance.upstream_status === 'missing_from_latest_catalog' ? (
+                                <span className="mt-0.5 block text-xs font-normal text-amber-700 dark:text-amber-300">
+                                  {copy('candidate_upstream_missing', 'Enabled, but not returned by the latest upstream catalog. Verify before use.')}
+                                </span>
+                              ) : null}
                             </th>
                             <td className="px-3 py-2 align-middle">
                               <BackofficeStatusBadge
-                                label={tone === 'success'
-                                  ? copy('candidate_status_ready', 'Ready')
-                                  : tone === 'error'
-                                    ? copy('candidate_status_unavailable', 'Unavailable')
-                                    : copy('candidate_status_pending', 'Needs verification')}
+                                label={verificationFailed
+                                  ? copy('candidate_status_failed', 'Verification failed')
+                                  : tone === 'success'
+                                    ? copy('candidate_status_ready', 'Ready')
+                                    : tone === 'error'
+                                      ? copy('candidate_status_unavailable', 'Unavailable')
+                                      : copy('candidate_status_pending', 'Needs verification')}
                                 status={tone}
                               />
                             </td>
-                            <td className="px-3 py-2 text-center align-middle">
+                            <td className="min-w-24 whitespace-nowrap px-3 py-2 text-center align-middle">
                               <input
                                 type="radio"
                                 name={`runtime-primary-${editingProfile.profile_id}`}
@@ -834,6 +1243,21 @@ export default function RuntimeProfilesPage() {
                                 onChange={() => setCandidate(editingProfile.profile_id, 1, instance.instance_id)}
                                 aria-label={copy('select_fallback_named', 'Use {{name}} as fallback', { name: instance.model_id })}
                               />
+                            </td>
+                            <td className="px-3 py-2 text-center align-middle">
+                              {requiresCapabilityVerification(editingProfile.execution_kind)
+                                && capabilityEvidence(instance, editingProfile.execution_kind)?.state !== 'verified' ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm min-w-16 whitespace-nowrap"
+                                  disabled={Boolean(probingInstanceId)}
+                                  onClick={() => void verifyInstance(instance, editingProfile.execution_kind, editingProfile.timeout_ms)}
+                                >
+                                  {probingInstanceId === instance.instance_id ? copy('verifying', '验证中...') : copy('verify', '验证')}
+                                </button>
+                              ) : capabilityEvidence(instance, editingProfile.execution_kind)?.state === 'verified' ? (
+                                <span className="whitespace-nowrap text-xs text-emerald-600">{copy('verified', '已验证')}</span>
+                              ) : null}
                             </td>
                           </tr>
                         );

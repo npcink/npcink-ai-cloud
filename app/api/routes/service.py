@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from functools import partial
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.db import get_session
 from app.core.logging import get_logger
+from app.core.models import CatalogInstance, CatalogModel
 from app.core.security import extract_trace_id
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_feedback.service import AgentFeedbackService
@@ -35,6 +37,21 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
+from app.domain.model_capabilities.contracts import MODEL_CAPABILITIES
+from app.domain.model_capabilities.evidence import (
+    capability_evidence_is_current,
+    capability_evidence_is_fresh,
+)
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    embedding_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    probe_audio_generation,
+    probe_embedding,
+    probe_image_generation,
+    probe_vision,
+    vision_probe_fingerprint,
+)
 from app.domain.model_references import ModelReferenceError, ModelReferenceService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
@@ -761,6 +778,14 @@ class HostedRuntimeProfileSettingsPayload(BaseModel):
     profiles: list[HostedRuntimeProfilePayload]
 
 
+class HostedRuntimeCapabilityProbePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability: Literal["vision", "embedding", "image_generation", "audio_generation"]
+    instance_id: str = Field(min_length=1, max_length=191)
+    timeout_ms: int = Field(default=30000, ge=1000, le=120000)
+
+
 class OpsSummaryDisclosureReviewPayload(BaseModel):
     cache_key: str = Field(min_length=16, max_length=128)
     review_status: str = Field(max_length=32)
@@ -975,6 +1000,36 @@ def _record_site_knowledge_vector_profile_audit(
                 "message": message,
                 "content_exposed": False,
                 "direct_wordpress_write": False,
+            },
+        )
+    except Exception:
+        return None
+
+
+def _record_capability_probe_audit(
+    request: Request,
+    *,
+    instance_id: str,
+    capability: str,
+    state: str,
+    route_fingerprint: str,
+    error_code: str = "",
+) -> dict[str, Any] | None:
+    """Record probe outcome metadata without retaining provider payloads."""
+
+    try:
+        return _get_commercial_service(request).record_service_audit_event(
+            audit_context=_build_audit_context(request),
+            event_kind="runtime_profile.capability_probe",
+            outcome="succeeded" if state == "verified" else "failed",
+            scope_kind="runtime_profile",
+            scope_id=instance_id,
+            payload_json={
+                "capability": capability,
+                "state": state,
+                "route_fingerprint": route_fingerprint,
+                "error_code": error_code,
+                "provider_payload_retained": False,
             },
         )
     except Exception:
@@ -1226,7 +1281,21 @@ def _serialize_hosted_runtime_instance(
     instance: Any,
     model: Any,
     provider: Any | None = None,
+    evidence: Any | None = None,
+    capability_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    model_metadata = model.raw_json if isinstance(model.raw_json, dict) else {}
+    serialized_capability_evidence = {
+        capability: {
+            "state": str(item.state or ""),
+            "source": str(item.source or ""),
+            "revision": str(item.revision or ""),
+            "checked_at": item.checked_at.isoformat() if item.checked_at else "",
+            "error_code": str(item.error_code or ""),
+        }
+        for capability, item in (capability_evidence or {}).items()
+        if item is not None
+    }
     return {
         "instance_id": str(instance.instance_id or ""),
         "provider_id": str(instance.provider_id or ""),
@@ -1240,9 +1309,57 @@ def _serialize_hosted_runtime_instance(
         "capability_tags": list(instance.capability_tags or []),
         "model_status": str(model.status or ""),
         "model_feature": str(model.feature or ""),
+        "catalog_source": str(model_metadata.get("catalog_source") or ""),
+        "upstream_status": str(model_metadata.get("upstream_status") or "current"),
         "price_input": model.price_input,
         "price_output": model.price_output,
+        "vision_evidence": (
+            {
+                "state": str(evidence.state or ""),
+                "source": str(evidence.source or ""),
+                "revision": str(evidence.revision or ""),
+                "checked_at": evidence.checked_at.isoformat() if evidence.checked_at else "",
+                "error_code": str(evidence.error_code or ""),
+            }
+            if evidence is not None
+            else None
+        ),
+        "capability_evidence": serialized_capability_evidence,
     }
+
+
+def _capability_route_fingerprint(*, capability: str, instance: Any) -> str | None:
+    fingerprint_builder = {
+        "vision": vision_probe_fingerprint,
+        "embedding": embedding_probe_fingerprint,
+        "image_generation": image_generation_probe_fingerprint,
+        "audio_generation": audio_generation_probe_fingerprint,
+    }.get(capability)
+    if fingerprint_builder is None:
+        return None
+    return fingerprint_builder(
+        provider_connection_id=str(instance.provider_id or ""),
+        model_id=str(instance.model_id or ""),
+        endpoint_variant=str(instance.endpoint_variant or ""),
+    )
+
+
+def _capability_evidence_is_fresh_for_route(
+    evidence: Any | None,
+    *,
+    capability: str,
+    instance: Any,
+    now: datetime,
+) -> bool:
+    fingerprint = _capability_route_fingerprint(capability=capability, instance=instance)
+    return bool(
+        fingerprint
+        and capability_evidence_is_fresh(
+            evidence,
+            route_fingerprint=fingerprint,
+            now=now,
+        )
+    )
 
 
 def _hosted_runtime_instance_is_routing_eligible(
@@ -1263,6 +1380,7 @@ def _build_hosted_runtime_profile_projection(
     settings: Any | None = None,
 ) -> dict[str, Any]:
     provider_model_allowlist = build_provider_model_allowlist(database_url, settings=settings)
+    evidence_now = datetime.now(UTC)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         instances = repository.list_instances_for_provider()
@@ -1273,6 +1391,12 @@ def _build_hosted_runtime_profile_projection(
         )
         providers_by_id = {provider.provider_id: provider for provider in providers}
         instances_by_id = {instance.instance_id: instance for instance in instances}
+        capability_evidence_by_capability = {
+            capability: repository.list_capability_evidence_for_instances(
+                instance_ids=list(instances_by_id), capability=capability
+            )
+            for capability in MODEL_CAPABILITIES
+        }
 
         available_instances_by_kind: dict[str, list[dict[str, Any]]] = {
             "text": [],
@@ -1293,10 +1417,36 @@ def _build_hosted_runtime_profile_projection(
             if model.feature not in available_instances_by_kind:
                 continue
             available_instances_by_kind[model.feature].append(
+                # Evidence is only shown when it belongs to this exact route.
                 _serialize_hosted_runtime_instance(
                     instance,
                     model,
                     providers_by_id.get(instance.provider_id),
+                    (
+                        capability_evidence_by_capability["vision"].get(instance.instance_id)
+                        if _capability_evidence_is_fresh_for_route(
+                            capability_evidence_by_capability["vision"].get(
+                                instance.instance_id
+                            ),
+                            capability="vision",
+                            instance=instance,
+                            now=evidence_now,
+                        )
+                        else None
+                    ),
+                    capability_evidence={
+                        capability: evidence
+                        for capability, evidence_by_instance in (
+                            capability_evidence_by_capability.items()
+                        )
+                        for evidence in [evidence_by_instance.get(instance.instance_id)]
+                        if _capability_evidence_is_fresh_for_route(
+                            evidence,
+                            capability=capability,
+                            instance=instance,
+                            now=evidence_now,
+                        )
+                    },
                 )
             )
 
@@ -1444,10 +1594,48 @@ def _validate_hosted_runtime_profile_payload(
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
                 spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
-                if model.feature != spec.execution_kind:
+                feature_compatible = model.feature == spec.execution_kind or (
+                    spec.execution_kind == "vision" and model.feature == "text"
+                )
+                if not feature_compatible:
                     return [], (
                         f"profile {profile_id} may only use {spec.execution_kind} instances"
                     )
+                if spec.execution_kind in {
+                    "vision",
+                    "image_generation",
+                    "audio_generation",
+                }:
+                    fingerprint_builder = {
+                        "vision": vision_probe_fingerprint,
+                        "image_generation": image_generation_probe_fingerprint,
+                        "audio_generation": audio_generation_probe_fingerprint,
+                    }[spec.execution_kind]
+                    fingerprint = fingerprint_builder(
+                        provider_connection_id=instance.provider_id,
+                        model_id=instance.model_id,
+                        endpoint_variant=instance.endpoint_variant,
+                    )
+                    evidence = repository.get_capability_evidence(
+                        instance_id=instance.instance_id,
+                        capability=spec.execution_kind,
+                        route_fingerprint=fingerprint,
+                    )
+                    if (
+                        evidence is None
+                        or evidence.state != "verified"
+                        or not _capability_evidence_is_fresh_for_route(
+                            evidence,
+                            capability=spec.execution_kind,
+                            instance=instance,
+                            now=datetime.now(UTC),
+                        )
+                    ):
+                        return [], (
+                            f"profile {profile_id} requires current verified "
+                            f"{spec.execution_kind} evidence "
+                            f"for instance {instance.instance_id}"
+                        )
                 if not _hosted_runtime_instance_is_routing_eligible(instance, model):
                     return [], (
                         f"profile {profile_id} may only use routing-eligible "
@@ -5506,6 +5694,211 @@ async def get_admin_hosted_runtime_profiles(request: Request) -> Any:
     )
 
 
+@router.post("/admin/runtime-profiles/capability-probe")
+async def probe_admin_hosted_runtime_capability(
+    request: Request,
+    payload: HostedRuntimeCapabilityProbePayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    provider_allowlist = build_provider_model_allowlist(
+        services.settings.database_url,
+        settings=services.settings,
+    )
+    with get_session(services.settings.database_url) as session:
+        repository = CatalogRepository(session)
+        instance = session.get(CatalogInstance, payload.instance_id)
+        if instance is None:
+            return JSONResponse(
+                status_code=404,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.instance_not_found",
+                    message="The selected runtime instance was not found.",
+                    revision="m6",
+                ),
+            )
+        model = session.get(CatalogModel, instance.model_id)
+        if model is None or (
+            model.feature != payload.capability
+            and not (payload.capability == "vision" and model.feature == "text")
+        ):
+            return JSONResponse(
+                status_code=400,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.capability_mismatch",
+                    message="The selected instance is not eligible for this capability.",
+                    revision="m6",
+                ),
+            )
+        if not _hosted_runtime_instance_is_routing_eligible(instance, model):
+            return JSONResponse(
+                status_code=400,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.instance_not_eligible",
+                    message="The selected instance is not routing eligible.",
+                    revision="m6",
+                ),
+            )
+        if not provider_allowlist.allows(
+            provider_id=instance.provider_id,
+            model_id=instance.model_id,
+        ):
+            return JSONResponse(
+                status_code=400,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.model_not_enabled",
+                    message="The selected model is not enabled for its Provider.",
+                    revision="m6",
+                ),
+            )
+        provider = _get_catalog_service(request).providers.get(instance.provider_id)
+        if provider is None:
+            return JSONResponse(
+                status_code=503,
+                content=build_envelope(
+                    status="error",
+                    error_code="runtime_profiles.provider_unavailable",
+                    message="The Provider is unavailable for capability verification.",
+                    revision="m6",
+                ),
+            )
+        provider_id = instance.provider_id
+        model_id = instance.model_id
+        endpoint_variant = instance.endpoint_variant
+        fingerprint_builder = {
+            "vision": vision_probe_fingerprint,
+            "embedding": embedding_probe_fingerprint,
+            "image_generation": image_generation_probe_fingerprint,
+            "audio_generation": audio_generation_probe_fingerprint,
+        }[payload.capability]
+        fingerprint = fingerprint_builder(
+            provider_connection_id=provider_id,
+            model_id=model_id,
+            endpoint_variant=endpoint_variant,
+        )
+        cached_evidence = repository.get_capability_evidence(
+            instance_id=payload.instance_id,
+            capability=payload.capability,
+            route_fingerprint=fingerprint,
+        )
+        cached_evidence_data = (
+            {
+                "capability": cached_evidence.capability,
+                "state": cached_evidence.state,
+                "routing_eligible": True,
+                "route_fingerprint": cached_evidence.route_fingerprint,
+                "source": cached_evidence.source,
+                "revision": cached_evidence.revision,
+                "checked_at": (
+                    cached_evidence.checked_at.isoformat()
+                    if cached_evidence.checked_at
+                    else ""
+                ),
+                "error_code": cached_evidence.error_code,
+                "cache_hit": True,
+            }
+            if cached_evidence is not None
+            and capability_evidence_is_current(
+                cached_evidence,
+                route_fingerprint=fingerprint,
+            )
+            else None
+        )
+
+    if cached_evidence_data is not None:
+        probe_audit = _record_capability_probe_audit(
+            request,
+            instance_id=payload.instance_id,
+            capability=payload.capability,
+            state="verified",
+            route_fingerprint=fingerprint,
+            error_code="",
+        )
+        cached_evidence_data["audit_event_id"] = (probe_audit or {}).get(
+            "audit_event_id"
+        )
+        return build_envelope(
+            status="ok",
+            message="Current capability evidence reused.",
+            data=cached_evidence_data,
+            revision="m6",
+        )
+
+    probe_kwargs: dict[str, Any] = {
+        "provider": provider,
+        "run_id": f"capability_probe_{uuid4().hex}",
+        "site_id": "admin-capability-probe",
+        "model_id": model_id,
+        "instance_id": payload.instance_id,
+        "endpoint_variant": endpoint_variant,
+        "trace_id": extract_trace_id(request.headers.get("traceparent", "")),
+        "timeout_ms": payload.timeout_ms,
+    }
+    probe_function = {
+        "vision": probe_vision,
+        "embedding": probe_embedding,
+        "image_generation": probe_image_generation,
+        "audio_generation": probe_audio_generation,
+    }[payload.capability]
+    probe_result = await run_in_threadpool(partial(probe_function, **probe_kwargs))
+    checked_at = datetime.now(UTC)
+    with get_session(services.settings.database_url) as session:
+        repository = CatalogRepository(session)
+        evidence = repository.upsert_capability_evidence(
+            instance_id=payload.instance_id,
+            capability=payload.capability,
+            state=probe_result.state,
+            route_fingerprint=fingerprint,
+            source="provider_probe",
+            revision=checked_at.isoformat(),
+            checked_at=checked_at,
+            error_code=probe_result.error_code,
+            error_detail=probe_result.detail[:500] if probe_result.detail else None,
+        )
+        session.commit()
+
+    probe_audit = _record_capability_probe_audit(
+        request,
+        instance_id=payload.instance_id,
+        capability=payload.capability,
+        state=probe_result.state,
+        route_fingerprint=fingerprint,
+        error_code=probe_result.error_code or "",
+    )
+
+    status_code = 200 if probe_result.state == "verified" else 400
+    return JSONResponse(
+        status_code=status_code,
+        content=build_envelope(
+            status="ok" if probe_result.state == "verified" else "error",
+            message=(
+                "Capability verification succeeded."
+                if probe_result.state == "verified"
+                else "Capability verification did not succeed."
+            ),
+            data={
+                "capability": evidence.capability,
+                "state": evidence.state,
+                "routing_eligible": evidence.state == "verified",
+                "route_fingerprint": evidence.route_fingerprint,
+                "source": evidence.source,
+                "revision": evidence.revision,
+                "checked_at": checked_at.isoformat(),
+                "error_code": evidence.error_code,
+                "cache_hit": False,
+                "audit_event_id": (probe_audit or {}).get("audit_event_id"),
+            },
+            revision="m6",
+        ),
+    )
+
+
 @router.put("/admin/runtime-profiles")
 async def update_admin_hosted_runtime_profiles(
     request: Request,
@@ -5825,6 +6218,27 @@ async def summarize_service_audit_events(
     return build_envelope(
         status="ok",
         message="service audit summary loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/runtime-profiles/capability-probes/summary")
+async def summarize_admin_capability_probes(
+    request: Request,
+    window_minutes: int = Query(default=10080, ge=1, le=10080),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = _get_commercial_service(request).summarize_capability_probe_events(
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="Capability probe summary loaded",
         data=result,
         revision="m6",
     )

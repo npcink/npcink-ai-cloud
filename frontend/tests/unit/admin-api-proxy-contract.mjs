@@ -121,16 +121,28 @@ assert.match(
   'hosted runtime profiles must expose one exact can_manage_catalog PUT route'
 );
 
+assert.match(
+  source,
+  /methods: \['GET'\],[\s\S]*?pattern: \/\^runtime-profiles\\\/capability-probes\\\/summary\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
+  'capability probe summaries must expose one exact can_manage_catalog GET route'
+);
+
+assert.match(
+  source,
+  /methods: \['POST'\],[\s\S]*?pattern: \/\^runtime-profiles\\\/capability-probe\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
+  'runtime capability verification must expose one exact can_manage_catalog POST route'
+);
+
+assert.doesNotMatch(
+  source,
+  /runtime-profiles\\\/\[\^\/\]\+|runtime-profiles\.\*|runtime-profiles\\\/capability-probes\(\?:/,
+  'runtime profile diagnostic routes must stay exact instead of opening a dynamic pass-through'
+);
+
 assert.doesNotMatch(
   source,
   /ability-models/,
   'admin proxy must fail closed for every retired ability-model endpoint'
-);
-
-assert.equal(
-  source.match(/runtime-profiles/g)?.length,
-  2,
-  'hosted runtime profiles must only appear in the exact GET and PUT rules so every other method fails closed'
 );
 
 assert.match(
