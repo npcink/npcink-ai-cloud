@@ -56,13 +56,13 @@ from app.api.auth import build_portal_session_token
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
-    CatalogCapabilityEvidence,
-    CatalogInstance,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_ACTIVE,
     AccountEntitlementSnapshot,
     AccountSubscription,
+    CatalogCapabilityEvidence,
+    CatalogInstance,
     Plan,
     PlanVersion,
     ProviderConnection,
@@ -70,12 +70,6 @@ from app.core.models import (
     SiteApiKey,
 )
 from app.core.secrets import encrypt_site_api_signing_secret
-from app.domain.model_capabilities.probes import (
-    audio_generation_probe_fingerprint,
-    embedding_probe_fingerprint,
-    image_generation_probe_fingerprint,
-    vision_probe_fingerprint,
-)
 from app.core.security import (
     build_body_digest,
     build_canonical_request,
@@ -83,6 +77,12 @@ from app.core.security import (
     build_secret_hash,
 )
 from app.domain.commercial.service import CommercialService
+from app.domain.model_capabilities.probes import (
+    audio_generation_probe_fingerprint,
+    embedding_probe_fingerprint,
+    image_generation_probe_fingerprint,
+    vision_probe_fingerprint,
+)
 
 TEST_SECRET = "npcink-cloud-test-secret-for-hmac-sha256-32b"
 TEST_KEY_ID = "key_default"
