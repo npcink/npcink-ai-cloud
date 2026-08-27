@@ -227,6 +227,25 @@ class CatalogService:
             for provider_id in selected_ids:
                 adapter = self.providers[provider_id]
                 snapshot = adapter.fetch_catalog()
+                # Preserve explicitly configured models when an upstream catalog is partial.
+                # Keep the merger in provider-connections until it is extracted to a shared
+                # catalog utility; this local import avoids the module's existing import cycle.
+                from app.domain.provider_connections.service import (  # noqa: PLC0415
+                    _merge_configured_catalog_candidates,
+                )
+
+                for connection in repository.list_enabled_provider_connections():
+                    config = (
+                        connection.config_json
+                        if isinstance(connection.config_json, dict)
+                        else {}
+                    )
+                    configured_provider_id = str(
+                        config.get("provider_id") or connection.connection_id or ""
+                    ).strip()
+                    if configured_provider_id == provider_id:
+                        snapshot = _merge_configured_catalog_candidates(connection, snapshot)
+                        break
                 repository.upsert_provider_snapshot(snapshot, revision)
                 refreshed.append(provider_id)
 
