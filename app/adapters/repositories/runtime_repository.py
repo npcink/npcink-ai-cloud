@@ -249,7 +249,7 @@ class RuntimeRepository:
             return None
 
         self.session.flush()
-        return self.get_run(claimed_run_id)
+        return self.session.get(RunRecord, claimed_run_id, populate_existing=True)
 
     def count_running_media_derivative_runs(self, site_id: str) -> int:
         return int(

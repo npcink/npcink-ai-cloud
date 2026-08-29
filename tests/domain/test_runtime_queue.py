@@ -389,6 +389,52 @@ def test_claim_next_queued_run_uses_atomic_update_returning(tmp_path: Path) -> N
     dispose_engine(database_url)
 
 
+def test_claim_run_refreshes_preloaded_identity_map_record(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    queued = _runtime_service(database_url).execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            skill_id="media_nightly_optimize",
+            workflow_id="media_nightly_image_optimize",
+            contract_version="v1",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            execution_tier="cloud",
+            execution_pattern="whole_run_offload",
+            data_classification="internal",
+            timeout_seconds=1800,
+            retry_max=2,
+            retention_ttl=86400,
+            task_backend={"enabled": True},
+            input_payload={"messages": [{"role": "user", "content": "refresh claim"}]},
+            idempotency_key="queue-domain-refresh-claim-001",
+            trace_id="trace-queue-domain-refresh-claim-001",
+        )
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        preloaded = repository.get_run(queued.run_id)
+        assert preloaded is not None
+        assert preloaded.status == "queued"
+        assert preloaded.processing_started_at is None
+
+        claimed = repository.claim_run_if_queued(queued.run_id)
+
+        assert claimed is preloaded
+        assert claimed.status == "running"
+        assert claimed.processing_started_at is not None
+
+    dispose_engine(database_url)
+
+
 def test_process_queued_runs_drains_signaled_and_unsignaled_runs_in_one_cycle(
     tmp_path: Path,
 ) -> None:
@@ -1288,14 +1334,35 @@ def test_http_callback_dispatcher_reuses_one_client_across_dispatches(
             self.kwargs = kwargs
             self.closed = False
 
-        def post(self, url: str, *, content: bytes, headers: dict[str, str]) -> httpx.Response:
-            assert url == "https://example.com/reuse"
-            assert headers["X-Npcink-Run-Id"] in {"run-1", "run-2"}
-            assert cast(dict[str, object], json.loads(content.decode("utf-8")))["run_id"] in {
+        def build_request(
+            self,
+            method: str,
+            url: str,
+            *,
+            content: bytes,
+            headers: dict[str, str],
+        ) -> httpx.Request:
+            return httpx.Request(method, url, content=content, headers=headers)
+
+        def send(
+            self,
+            request: httpx.Request,
+            *,
+            follow_redirects: bool,
+        ) -> httpx.Response:
+            assert str(request.url) == "https://93.184.216.34/reuse"
+            assert request.headers["host"] == "example.com"
+            assert request.headers["connection"] == "close"
+            assert request.extensions["sni_hostname"] == "example.com"
+            assert follow_redirects is False
+            assert request.headers["X-Npcink-Run-Id"] in {"run-1", "run-2"}
+            assert cast(dict[str, object], json.loads(request.content.decode("utf-8")))[
+                "run_id"
+            ] in {
                 "run-1",
                 "run-2",
             }
-            return httpx.Response(204)
+            return httpx.Response(204, request=request)
 
         def close(self) -> None:
             self.closed = True

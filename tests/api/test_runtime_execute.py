@@ -3522,7 +3522,8 @@ def test_callback_delivery_worker_dispatches_terminal_run_payload(
         }
     ]
     assert len(callback_requests) == 1
-    assert callback_requests[0]["url"] == "https://example.com/runtime"
+    assert callback_requests[0]["url"] == "https://93.184.216.34/runtime"
+    assert callback_requests[0]["headers"]["host"] == "example.com"
     assert callback_requests[0]["headers"]["x-npcink-cloud-event"] == "runtime.run.terminal"
     expected_callback_id = "runtime_delivery_" + hashlib.sha256(
         f"runtime-terminal-dispatch|{run_id}|runtime.run.terminal".encode()

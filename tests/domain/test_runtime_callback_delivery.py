@@ -331,6 +331,16 @@ def test_registered_target_resolution_rejects_override_plaintext_and_bad_ciphert
         "registered": True,
     }
     assert callback_secret not in json.dumps(target)
+
+    legacy_site = _site(settings, secret=callback_secret)
+    legacy_registration = legacy_site.metadata_json["runtime_callbacks"]["terminal"]
+    legacy_registration["callback_id"] = legacy_registration.pop("registration_id")
+    legacy_target = service.resolve_callback_target(
+        site=legacy_site,
+        request=_request(),
+        callback_mode="polling_preferred",
+    )
+    assert legacy_target["registration_id"] == "runtime_terminal_test"
     with pytest.raises(RuntimeCallbackConfigurationError, match="overrides are not accepted"):
         service.resolve_callback_target(
             site=site,

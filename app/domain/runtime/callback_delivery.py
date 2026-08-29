@@ -160,7 +160,9 @@ class RuntimeCallbackDeliveryService:
             "secret_error": secret_error.strip(),
             "registration_id": str(
                 callback.get("registration_id")
+                or callback.get("callback_id")
                 or metadata.get("runtime_terminal_callback_registration_id")
+                or metadata.get("runtime_terminal_callback_id")
                 or ""
             ).strip(),
         }

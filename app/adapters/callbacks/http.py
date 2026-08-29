@@ -13,8 +13,9 @@ from app.adapters.callbacks.base import (
     RuntimeCallbackDispatchResult,
 )
 from app.core.callback_security import (
+    ResolvedRuntimeCallbackTarget,
     RuntimeCallbackTargetValidationError,
-    validate_runtime_callback_target,
+    resolve_runtime_callback_target,
 )
 from app.core.security import build_hmac_signature, build_secret_hash
 
@@ -46,7 +47,7 @@ class HttpRuntimeCallbackDispatcher:
         request: RuntimeCallbackDispatchRequest,
     ) -> RuntimeCallbackDispatchResult:
         try:
-            validate_runtime_callback_target(request.callback_url)
+            resolved_target = resolve_runtime_callback_target(request.callback_url)
         except RuntimeCallbackTargetValidationError as error:
             raise RuntimeCallbackDispatchError(
                 "runtime.callback_target_invalid",
@@ -60,11 +61,15 @@ class HttpRuntimeCallbackDispatcher:
         ).encode("utf-8")
         headers = self._build_headers(request, body=body)
         try:
-            response = self._get_client().post(
+            client = self._get_client()
+            outbound_request = client.build_request(
+                "POST",
                 request.callback_url,
                 content=body,
                 headers=headers,
             )
+            self._pin_outbound_target(outbound_request, resolved_target=resolved_target)
+            response = client.send(outbound_request, follow_redirects=False)
         except httpx.TimeoutException as error:
             raise RuntimeCallbackDispatchError(
                 "runtime.callback_timeout",
@@ -87,6 +92,18 @@ class HttpRuntimeCallbackDispatcher:
             retryable=response.status_code >= 500 or response.status_code in {408, 409, 429},
             status_code=response.status_code,
         )
+
+    @staticmethod
+    def _pin_outbound_target(
+        request: httpx.Request,
+        *,
+        resolved_target: ResolvedRuntimeCallbackTarget,
+    ) -> None:
+        original_authority = request.url.netloc.decode("ascii")
+        request.headers["Host"] = original_authority
+        request.headers["Connection"] = "close"
+        request.extensions["sni_hostname"] = resolved_target.host
+        request.url = request.url.copy_with(host=str(resolved_target.ip_address))
 
     def close(self) -> None:
         if self._client is None or not self._owns_client:
