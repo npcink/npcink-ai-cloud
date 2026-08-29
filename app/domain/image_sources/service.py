@@ -1301,6 +1301,12 @@ def _build_prompt_candidates(
                 "visual_strategy": visual_strategy,
                 "reason": reason,
                 "prompt": _normalize_text(prompt, limit=1200),
+                "localized_prompt": _localized_generation_prompt(
+                    direction_type=direction_type,
+                    subject=subject,
+                    primary_query=primary_query,
+                    aspect_ratio=aspect_ratio,
+                ),
                 "source": "cloud_visual_brief",
                 "evidence_refs": _site_context_evidence_refs(
                     _dict(options.get("site_knowledge_context"))
@@ -1313,6 +1319,28 @@ def _build_prompt_candidates(
         )
         for prompt_id, label, direction_type, visual_strategy, reason, prompt in prompts
     ]
+
+
+def _localized_generation_prompt(
+    *, direction_type: str,
+    subject: str,
+    primary_query: str,
+    aspect_ratio: str,
+) -> str:
+    direction = {
+        "editorial_scene": "自然、具体的编辑场景",
+        "conceptual_metaphor": "通过物件和空间关系表达概念的编辑画面",
+        "workflow_detail": "安静、真实的工作流程细节",
+    }.get(direction_type, "原创编辑配图")
+    return _normalize_text(
+        (
+            f"为 WordPress 文章生成一张{direction}。主题：{subject}。"
+            f"视觉方向：{primary_query}。构图比例：{aspect_ratio}。"
+            "画面自然、专业、光线真实，不出现可读文字、字母、数字、标签、"
+            "Logo、水印、截图、界面面板或照搬文章原句。"
+        ),
+        limit=1200,
+    )
 
 
 def _build_batch_generation_plan(options: dict[str, Any]) -> dict[str, Any]:
@@ -1546,13 +1574,15 @@ def _normalize_llm_prompt_plan(value: Any) -> dict[str, Any]:
     for index, item in enumerate(_list(source.get("prompt_candidates"))[:3], start=1):
         candidate = _dict(item)
         prompt = _normalize_text(candidate.get("prompt"), limit=1200)
-        if not prompt:
+        localized_prompt = _normalize_text(candidate.get("localized_prompt"), limit=1200)
+        if not prompt or not _contains_cjk(localized_prompt):
             continue
         candidates.append(
             {
                 "id": _normalize_token(candidate.get("id"), limit=80) or f"llm_prompt_{index}",
                 "label": _normalize_text(candidate.get("label"), limit=80) or f"LLM prompt {index}",
                 "prompt": prompt,
+                "localized_prompt": localized_prompt,
                 "direction_type": _normalize_token(
                     candidate.get("direction_type"),
                     limit=80,
@@ -1646,7 +1676,8 @@ def _prompt_candidates_from_llm_plan(
     for item in _list(llm_prompt_plan.get("prompt_candidates"))[:3]:
         candidate = _dict(item)
         prompt = _normalize_text(candidate.get("prompt"), limit=1200)
-        if not prompt:
+        localized_prompt = _normalize_text(candidate.get("localized_prompt"), limit=1200)
+        if not prompt or not _contains_cjk(localized_prompt):
             continue
         candidates.append(
             _localize_prompt_candidate(
@@ -1656,6 +1687,7 @@ def _prompt_candidates_from_llm_plan(
                     "label": _normalize_text(candidate.get("label"), limit=80)
                     or "LLM visual prompt",
                     "prompt": prompt,
+                    "localized_prompt": localized_prompt,
                     "direction_type": _normalize_token(
                         candidate.get("direction_type"),
                         limit=80,
@@ -1678,6 +1710,10 @@ def _prompt_candidates_from_llm_plan(
             )
         )
     return candidates
+
+
+def _contains_cjk(value: str) -> bool:
+    return any("\u3400" <= character <= "\u9fff" for character in value)
 
 
 def _site_context_evidence_refs(site_context: dict[str, Any]) -> list[dict[str, Any]]:
