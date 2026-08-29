@@ -302,7 +302,7 @@ test('enabled models missing from the latest upstream catalog remain visible for
     ...structuredClone(initialProfiles),
     {
       ...structuredClone(initialProfiles[0]),
-      profile_id: 'wp-ai.alt-text-vision',
+      profile_id: 'vision.ai',
       group_id: 'media',
       routing_intent: 'media.alt_text',
       label: 'Image ALT vision',
@@ -398,7 +398,7 @@ test('enabled models missing from the latest upstream catalog remain visible for
   });
   await page.goto('/admin/runtime-profiles');
 
-  await profileRow(page, 'wp-ai.alt-text-vision').getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  await profileRow(page, 'vision.ai').getByRole('button', { name: /^Configure$|^配置$/i }).click();
   const dialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
   const candidate = candidateRow(page, configuredVisionCandidate.instance_id);
   await expect(candidate).toBeVisible();
@@ -427,7 +427,7 @@ test('enabled models missing from the latest upstream catalog remain visible for
 
   const reopenedDialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
   const probeAlert = reopenedDialog.locator('[data-ui="runtime-profile-probe-error"]');
-  await expect(probeAlert).toContainText(/gpt-5\.6-sol verification failed: the Provider denied access \(provider\.access_denied\)|gpt-5\.6-sol 验证失败：供应商拒绝访问（provider\.access_denied）/i);
+  await expect(probeAlert).toContainText(/The provider denied this capability probe\.|提供方拒绝了这次能力验证。/i);
   await expect(probeAlert).toBeVisible();
   await expect(candidateRow(page, configuredVisionCandidate.instance_id)).toContainText(/Verification failed|验证失败/i);
   expect(writes).toHaveLength(0);
@@ -443,7 +443,7 @@ test('enabled models missing from the latest upstream catalog remain visible for
   await page.getByRole('button', { name: /^Verify and save$|^验证并保存$/i }).click();
   await expect.poll(() => probeAttempts).toBe(2);
   await expect.poll(() => writes.length).toBe(1);
-  expect((writes[0].profiles as Array<Record<string, unknown>>).find((profile) => profile.profile_id === 'wp-ai.alt-text-vision')).toMatchObject({
+  expect((writes[0].profiles as Array<Record<string, unknown>>).find((profile) => profile.profile_id === 'vision.ai')).toMatchObject({
     candidate_instance_ids: [configuredVisionCandidate.instance_id],
   });
   await expect(page.getByRole('button', { name: /^Save profiles$|^保存配置$/i })).toBeDisabled();

@@ -466,7 +466,7 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
         "`npcink-cloud/connector-runtime`",
         "`cloud_connector_runtime.v1`",
         "`wordpress_operation.v1`",
-        "`wp-ai.alt-text-vision`",
+        "`vision.ai`",
         "`cloud_connector_result.v1`",
         "`source_artifact_id`",
         "There is no compatibility request shape.",

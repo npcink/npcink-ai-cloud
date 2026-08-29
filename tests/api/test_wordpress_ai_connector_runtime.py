@@ -36,6 +36,7 @@ from app.core.models import (
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
 from app.domain.model_capabilities.probes import (
@@ -53,7 +54,6 @@ from app.domain.wordpress_ai_connector.contracts import (
     validate_wordpress_operation_contract,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
-    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
@@ -167,9 +167,7 @@ def _seed_alt_text_artifact(
 def test_wordpress_ai_connector_text_profiles_prefer_gpt55_with_fallbacks() -> None:
     short_text_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID]
     editorial_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID]
-    alt_text_vision_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[
-        WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
-    ]
+    alt_text_vision_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[VISION_AI_PROFILE_ID]
     classification_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[
         WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
     ]
@@ -576,7 +574,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
                     ],
                     "runtime_profile_ids": [
                         WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
-                        WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
+                        VISION_AI_PROFILE_ID,
                         WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
                         WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
                     ],
@@ -2125,7 +2123,7 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
     assert data["execution_context"]["ability_family"] == "vision"
     assert data["execution_context"]["data_classification"] == "internal"
     assert provider.requests[0].execution_kind == "vision"
-    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+    assert provider.requests[0].profile_id == VISION_AI_PROFILE_ID
     provider_input = provider.requests[0].input_payload
     assert provider_input["metadata"]["task"] == "alt_text_suggest"
     assert provider_input["max_tokens"] == 48
@@ -2146,7 +2144,7 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
         assert run.channel == "editor"
         assert run.execution_kind == "vision"
         assert run.ability_family == "vision"
-        assert run.profile_id == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+        assert run.profile_id == VISION_AI_PROFILE_ID
         assert run.policy_json["task_group"] == "alt_text_vision"
         assert run.policy_json["routing_intent"] == "media.alt_text_vision"
         assert run.policy_json["execution_contract"]["task_group"] == "alt_text_vision"
@@ -3627,7 +3625,7 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     alt_text_vision = next(
         profile
         for profile in data["profiles"]
-        if profile["profile_id"] == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+        if profile["profile_id"] == VISION_AI_PROFILE_ID
     )
     assert alt_text_vision["execution_kind"] == "vision"
     assert alt_text_vision["routing_intent"] == "media.alt_text_vision"
@@ -4369,7 +4367,7 @@ def test_admin_runtime_profiles_matches_routing_readiness_for_projection_and_put
     assert (
         profiles_by_id[WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID]["candidate_instance_ids"] == []
     )
-    assert profiles_by_id[WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID]["candidate_instance_ids"] == [
+    assert profiles_by_id[VISION_AI_PROFILE_ID]["candidate_instance_ids"] == [
         "openai-wp-ai-vision-test"
     ]
     assert profiles_by_id[WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID][
