@@ -849,7 +849,7 @@ def test_provider_execution_module_and_service_keep_the_extraction_boundary() ->
 
     assert direct_repository_calls == 0
     assert direct_commercial_calls == 0
-    assert extracted_calls == 12
+    assert extracted_calls == 14
     assert {"_execute_existing_run", "_execute_candidate_chain"} <= service_function_names
     assert service_provider_execute_calls == 0
     assert any(

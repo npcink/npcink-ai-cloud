@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, cast
@@ -22,6 +23,7 @@ from app.adapters.queue.base import RuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
+from app.core.error_taxonomy import get_error_taxonomy
 from app.core.logging import get_logger
 from app.core.models import (
     RUN_CALLBACK_STATUS_FAILED,
@@ -2417,12 +2419,181 @@ class RuntimeService:
         input_payload: dict[str, Any],
         policy: dict[str, object],
     ) -> dict[str, Any]:
+        input_payload = self._translate_reviewed_image_prompt(
+            run,
+            repository=repository,
+            input_payload=input_payload,
+        )
+        if run.status == "failed":
+            return input_payload
         return self._apply_automatic_web_search(
             run,
             repository=repository,
             input_payload=input_payload,
             policy=policy,
         )
+
+    def _translate_reviewed_image_prompt(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self._is_image_generation_run(run):
+            return input_payload
+        review = self._dict_or_empty(input_payload.get("review"))
+        if str(review.get("prompt_translation_mode") or "") != "required":
+            return input_payload
+        if review.get("source_prompt_reviewed_by_operator") is not True:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_review_invalid",
+                error_message="image prompt translation requires a reviewed source prompt",
+            )
+            return input_payload
+        source_prompt = str(input_payload.get("prompt") or "").strip()
+        if not source_prompt:
+            return input_payload
+
+        try:
+            candidate, profile_id, default_policy = self._resolve_image_prompt_planner_candidate()
+        except RoutingError:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_unavailable",
+                error_message="image prompt translation is unavailable",
+            )
+            return input_payload
+        provider = self.providers.get(candidate.provider_id)
+        if provider is None:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_unavailable",
+                error_message="image prompt translation is unavailable",
+            )
+            return input_payload
+
+        timeout_ms = max(1, self._coerce_int(default_policy.get("timeout_ms"), default=12_000))
+        request = ProviderExecutionRequest(
+            run_id=run.run_id,
+            site_id=run.site_id,
+            ability_name="npcink-cloud/image-prompt-translation",
+            profile_id=profile_id,
+            execution_kind="text",
+            model_id=candidate.model_id,
+            instance_id=candidate.instance_id,
+            endpoint_variant=candidate.endpoint_variant,
+            trace_id=run.trace_id or run.run_id,
+            input_payload={
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Translate the user-reviewed image brief into concise English "
+                            "for an image-generation model. Preserve every visual constraint "
+                            "and do not add facts, visible text, logos, or WordPress actions. "
+                            "Return only the translated English prompt."
+                        ),
+                    },
+                    {"role": "user", "content": source_prompt},
+                ],
+                "params": {"temperature": 0.0, "max_tokens": 700, "max_output_tokens": 700},
+            },
+            policy={"storage_mode": "result_only"},
+            timeout_ms=timeout_ms,
+            price_input=candidate.price_input,
+            price_output=candidate.price_output,
+        )
+        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        max_retries = max(0, self._coerce_int(policy.get("max_retries"), default=0))
+        result: ProviderExecutionResult | None = None
+        successful_retry_count = 0
+        for retry_count in range(max_retries + 1):
+            try:
+                result = self.provider_execution_service.execute_provider(
+                    provider,
+                    replace(request, retry_count=retry_count),
+                )
+                successful_retry_count = retry_count
+                break
+            except ProviderExecutionError as error:
+                self.provider_execution_service.record_provider_call(
+                    repository=repository,
+                    run=run,
+                    command=ProviderCallEvidenceCommand(
+                        provider_id=candidate.provider_id,
+                        model_id=candidate.model_id,
+                        instance_id=candidate.instance_id,
+                        region=candidate.region,
+                        latency_ms=(
+                            timeout_ms if error.error_code == "provider.timeout" else 0
+                        ),
+                        tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
+                        tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
+                        cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
+                        retry_count=retry_count,
+                        fallback_used=False,
+                        error_code=error.error_code,
+                    ),
+                    usage_context={"source_type": "image_prompt_translation"},
+                )
+                taxonomy = get_error_taxonomy(error.error_code)
+                if retry_count < max_retries and error.retryable and taxonomy.retryable:
+                    continue
+                self.run_lifecycle_service.fail_run(
+                    repository,
+                    run,
+                    error_code="image_generation.prompt_translation_failed",
+                    error_message="image prompt translation failed before generation",
+                )
+                return input_payload
+
+        if result is None:
+            return input_payload
+
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
+            run=run,
+            command=ProviderCallEvidenceCommand(
+                provider_id=candidate.provider_id,
+                model_id=candidate.model_id,
+                instance_id=candidate.instance_id,
+                region=candidate.region,
+                latency_ms=result.latency_ms,
+                tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out,
+                cost=result.cost,
+                retry_count=successful_retry_count,
+                fallback_used=False,
+                error_code=None,
+            ),
+            usage_context={"source_type": "image_prompt_translation"},
+        )
+        translated_prompt = " ".join(str(result.output.get("output_text") or "").split())[:4000]
+        if not translated_prompt or self._contains_cjk(translated_prompt):
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_invalid",
+                error_message="image prompt translation returned no usable English prompt",
+            )
+            return input_payload
+        translated = dict(input_payload)
+        translated["prompt"] = translated_prompt
+        translated["review"] = {
+            **review,
+            "provider_prompt_translation_status": "translated",
+            "provider_prompt_reviewed_by_operator": False,
+        }
+        return translated
+
+    @staticmethod
+    def _contains_cjk(value: str) -> bool:
+        return any("\u3400" <= character <= "\u9fff" for character in value)
 
     def _prepare_provider_output(
         self,
@@ -4957,7 +5128,10 @@ class RuntimeService:
                     "content": (
                         "Return JSON with key prompt_candidates, an array of 1 to 3 "
                         "objects. Each object must include id, label, direction_type, "
-                        "visual_strategy, reason, and prompt. Use direction_type values "
+                        "visual_strategy, reason, localized_prompt, and prompt. "
+                        "localized_prompt must be concise Simplified Chinese for operator "
+                        "review; prompt must be the faithful English image-model version. "
+                        "Use direction_type values "
                         "like editorial_scene, conceptual_metaphor, workflow_detail, "
                         "or article_cover so the editor can show distinct visual choices. "
                         "reason must briefly explain why the direction fits the selected "
@@ -5002,7 +5176,10 @@ class RuntimeService:
             if not isinstance(item, dict):
                 continue
             prompt = " ".join(str(item.get("prompt") or "").split())[:1200]
-            if not prompt:
+            localized_prompt = " ".join(
+                str(item.get("localized_prompt") or "").split()
+            )[:1200]
+            if not prompt or not self._contains_cjk(localized_prompt):
                 continue
             candidates.append(
                 {
@@ -5013,6 +5190,7 @@ class RuntimeService:
                     "reason": str(item.get("reason") or "")[:220],
                     "image_use": str(item.get("image_use") or "")[:80],
                     "prompt": prompt,
+                    "localized_prompt": localized_prompt,
                 }
             )
         return candidates

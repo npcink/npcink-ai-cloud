@@ -110,6 +110,40 @@ def _payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def test_image_source_prompt_plan_requires_localized_chinese_prompt() -> None:
+    base_candidate = {
+        "id": "candidate-1",
+        "label": "Editorial workspace",
+        "prompt": "Create a quiet editorial workspace.",
+    }
+
+    missing = image_source_service._normalize_llm_prompt_plan(
+        {"status": "ready", "prompt_candidates": [base_candidate]}
+    )
+    english_only = image_source_service._normalize_llm_prompt_plan(
+        {
+            "status": "ready",
+            "prompt_candidates": [
+                {**base_candidate, "localized_prompt": "Create a quiet workspace."}
+            ],
+        }
+    )
+    localized = image_source_service._normalize_llm_prompt_plan(
+        {
+            "status": "ready",
+            "prompt_candidates": [
+                {**base_candidate, "localized_prompt": "生成一张安静的编辑工作空间配图。"}
+            ],
+        }
+    )
+
+    assert missing["prompt_candidates"] == []
+    assert english_only["prompt_candidates"] == []
+    assert localized["prompt_candidates"][0]["localized_prompt"] == (
+        "生成一张安静的编辑工作空间配图。"
+    )
+
+
 def _execute(
     client: TestClient,
     payload: dict[str, Any],
@@ -156,6 +190,10 @@ class PromptPlannerProvider(OpenAIProviderAdapter):
                                     "and decision paths. No visible text, letters, "
                                     "numbers, logos, watermarks, screenshots, UI panels, "
                                     "or copied article wording."
+                                ),
+                                "localized_prompt": (
+                                    "生成一张关于回答质量规划的原创编辑配图，使用带有研究笔记和决策路径的书桌场景，"
+                                    "不出现可读文字、Logo、水印、截图或界面面板。"
                                 ),
                             }
                         ]
@@ -1151,6 +1189,7 @@ def test_image_source_runtime_uses_llm_prompt_planner_when_text_profile_is_avail
     assert result["prompt_candidates"][0]["direction_type"] == "editorial_scene"
     assert "selected paragraph" in result["prompt_candidates"][0]["reason"]
     assert "answer quality planning" in result["prompt_candidates"][0]["prompt"]
+    assert "回答质量规划" in result["prompt_candidates"][0]["localized_prompt"]
     assert result["prompt_candidates"][0]["localized_label"] == "特色图方向"
     assert result["prompt_candidates"][0]["localized_reason"] == (
         "适合需要一张可作为特色图的文章配图。"

@@ -138,6 +138,15 @@ def test_ai_credit_estimates_match_declared_provider_components() -> None:
             },
         )
     )["source_type"] == "zhihu_direct_answer_deepsearch"
+    assert usage_meter_credit_component(
+        SimpleNamespace(
+            meter_key="provider_calls",
+            quantity=1,
+            execution_kind="image_generation",
+            ability_family="vision",
+            payload_json={"source_type": "image_prompt_translation"},
+        )
+    )["source_type"] == "provider_calls_other"
     assert estimate_runtime_request_ai_credits(
         ability_family="vision",
         execution_kind="image_source",

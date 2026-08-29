@@ -408,6 +408,8 @@ def classify_provider_credit_component(
     payload = payload_json if isinstance(payload_json, dict) else {}
     managed_source = str(payload.get("managed_source") or "").strip().lower()
     source_type = str(payload.get("source_type") or "").strip().lower()
+    if source_type == "image_prompt_translation":
+        return dict(AI_CREDIT_COMPONENT_POLICY_REGISTRY["provider_calls_other"])
     if managed_source == "web_search" or source_type == "web_search":
         return dict(AI_CREDIT_COMPONENT_POLICY_REGISTRY["web_search"])
     if "search" in normalized_execution_kind:
