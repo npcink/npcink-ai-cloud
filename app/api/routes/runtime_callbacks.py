@@ -72,7 +72,7 @@ async def put_terminal_callback_registration(
         return auth
 
     secret = payload.secret.get_secret_value() if payload.secret is not None else ""
-    terminal_callback = (
+    terminal_callback: dict[str, object] = (
         {
             "enabled": True,
             "callback_url": payload.callback_url.strip(),
