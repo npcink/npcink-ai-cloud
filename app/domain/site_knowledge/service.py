@@ -49,6 +49,9 @@ from app.domain.site_knowledge.embedding import (
     cosine_similarity,
     embed_text_deterministic,
 )
+from app.domain.site_knowledge.internal_link_search_quality import (
+    rank_internal_link_search_results,
+)
 from app.domain.site_knowledge.maintenance import (
     project_site_maintenance,
     record_maintenance_batch,
@@ -57,6 +60,9 @@ from app.domain.site_knowledge.maintenance import (
 from app.domain.site_knowledge.media_search_quality import (
     collapse_media_search_duplicates,
     rank_media_search_results,
+)
+from app.domain.site_knowledge.related_content_search_quality import (
+    rank_related_content_search_results,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.rerankers import (
@@ -734,9 +740,9 @@ class SiteKnowledgeService:
             default=8,
             maximum=20,
         )
-        result_granularity = _normalize_result_granularity(
-            input_payload.get("result_granularity")
-        )
+        result_granularity = _normalize_result_granularity(input_payload.get("result_granularity"))
+        if intent == "related_content":
+            result_granularity = "document"
         evidence_policy = _resolve_evidence_policy(input_payload.get("evidence_policy"))
         filters = input_payload.get("filters")
         filters = filters if isinstance(filters, dict) else {}
@@ -797,11 +803,7 @@ class SiteKnowledgeService:
                     "returned_count": 0,
                     "duplicate_chunks_collapsed": 0,
                     "duplicate_media_collapsed": 0,
-                    "ranking_strategy": (
-                        "semantic_plus_bounded_lexical"
-                        if intent == "media_library_search"
-                        else "semantic"
-                    ),
+                    "ranking_strategy": _ranking_strategy_for_intent(intent),
                 },
                 "results": [],
                 "write_posture": "suggestion_only",
@@ -826,6 +828,12 @@ class SiteKnowledgeService:
             query=query,
         )
         if results is not None:
+            results = self._enrich_search_reference_metadata(
+                site_id=site_id,
+                intent=intent,
+                results=results,
+                source_passages=source_passages,
+            )
             results, rerank, result_grouping = self._prepare_search_results(
                 intent=intent,
                 query=query,
@@ -833,11 +841,6 @@ class SiteKnowledgeService:
                 evidence_policy=evidence_policy,
                 max_results=max_results,
                 result_granularity=result_granularity,
-            )
-            results = _attach_source_anchor_evidence(
-                results,
-                intent=intent,
-                source_passages=source_passages,
             )
             workflow_support = _workflow_support_for_intent(intent)
             evidence_gate = _evidence_gate(results, evidence_policy)
@@ -876,7 +879,12 @@ class SiteKnowledgeService:
             score = cosine_similarity(query_embedding, [float(value) for value in embedding])
             lexical_bonus = (
                 0.0
-                if intent == "media_library_search"
+                if intent
+                in {
+                    "media_library_search",
+                    "internal_links",
+                    "related_content",
+                }
                 else _lexical_bonus(query, chunk.chunk_text, chunk.title)
             )
             scored.append((min(1.0, score + lexical_bonus), chunk))
@@ -898,6 +906,12 @@ class SiteKnowledgeService:
             )
             for score, chunk in scored
         ]
+        results = self._enrich_search_reference_metadata(
+            site_id=site_id,
+            intent=intent,
+            results=results,
+            source_passages=source_passages,
+        )
         results, rerank, result_grouping = self._prepare_search_results(
             intent=intent,
             query=query,
@@ -905,11 +919,6 @@ class SiteKnowledgeService:
             evidence_policy=evidence_policy,
             max_results=max_results,
             result_granularity=result_granularity,
-        )
-        results = _attach_source_anchor_evidence(
-            results,
-            intent=intent,
-            source_passages=source_passages,
         )
         workflow_support = _workflow_support_for_intent(intent)
         evidence_gate = _evidence_gate(results, evidence_policy)
@@ -1114,6 +1123,10 @@ class SiteKnowledgeService:
         if intent == "media_library_search":
             ranked = rank_media_search_results(query, ranked)
         reranked, rerank = self._maybe_rerank_results(query=query, results=ranked)
+        if intent == "internal_links":
+            reranked = rank_internal_link_search_results(query, reranked)
+        if intent == "related_content":
+            reranked = rank_related_content_search_results(query, reranked)
         candidate_count = len(reranked)
         collapsed_count = 0
         duplicate_media_count = 0
@@ -1122,22 +1135,56 @@ class SiteKnowledgeService:
         if intent == "media_library_search":
             reranked, duplicate_media_count = collapse_media_search_duplicates(reranked)
         returned = reranked[:max_results]
-        return returned, rerank, {
-            "strategy": (
-                "best_ranked_chunk_per_document"
-                if result_granularity == "document"
-                else "ranked_chunks"
-            ),
-            "candidate_count": candidate_count,
-            "returned_count": len(returned),
-            "duplicate_chunks_collapsed": collapsed_count,
-            "duplicate_media_collapsed": duplicate_media_count,
-            "ranking_strategy": (
-                "semantic_plus_bounded_lexical"
-                if intent == "media_library_search"
-                else "semantic"
-            ),
-        }
+        return (
+            returned,
+            rerank,
+            {
+                "strategy": (
+                    "best_ranked_chunk_per_document"
+                    if result_granularity == "document"
+                    else "ranked_chunks"
+                ),
+                "candidate_count": candidate_count,
+                "returned_count": len(returned),
+                "duplicate_chunks_collapsed": collapsed_count,
+                "duplicate_media_collapsed": duplicate_media_count,
+                "ranking_strategy": _ranking_strategy_for_intent(intent),
+            },
+        )
+
+    def _enrich_search_reference_metadata(
+        self,
+        *,
+        site_id: str,
+        intent: str,
+        results: list[dict[str, object]],
+        source_passages: list[str],
+    ) -> list[dict[str, object]]:
+        if intent not in {"internal_links", "related_content"}:
+            return results
+        metadata_by_post_id = self.repository.reference_metadata_for_post_ids(
+            site_id=site_id,
+            post_ids=[_coerce_int(result.get("post_id"), default=0) for result in results],
+        )
+        enriched: list[dict[str, object]] = []
+        candidates = (
+            _attach_source_anchor_evidence(
+                results,
+                intent=intent,
+                source_passages=source_passages,
+            )
+            if intent == "internal_links"
+            else results
+        )
+        for result in candidates:
+            candidate = dict(result)
+            post_id = _coerce_int(candidate.get("post_id"), default=0)
+            metadata = metadata_by_post_id.get(post_id, {})
+            candidate["taxonomies"] = _normalize_public_taxonomies(
+                metadata.get("taxonomies") if isinstance(metadata, dict) else None
+            )
+            enriched.append(candidate)
+        return enriched
 
     def _maybe_rerank_results(
         self,
@@ -1334,6 +1381,7 @@ class SiteKnowledgeService:
         backend: SiteKnowledgeVectorBackend | None = self.vector_backend
         if backend is None:
             return None
+        initial_limit = min(max(1, max_results * 4), 80)
         hits = backend.search(
             site_id=site_id,
             query_embedding=query_embedding,
@@ -1341,8 +1389,33 @@ class SiteKnowledgeService:
             statuses=statuses,
             source_types=source_types,
             current_post_id=current_post_id,
-            limit=min(max(1, max_results * 4), 80),
+            limit=initial_limit,
         )
+        initial_document_count = len(
+            {(hit.source_type, hit.post_id) for hit in hits}
+        )
+        if (
+            intent == "related_content"
+            and initial_limit < 80
+            and initial_document_count < max_results
+        ):
+            try:
+                expanded_hits = backend.search(
+                    site_id=site_id,
+                    query_embedding=query_embedding,
+                    post_types=post_types,
+                    statuses=statuses,
+                    source_types=source_types,
+                    current_post_id=current_post_id,
+                    limit=80,
+                )
+            except SiteKnowledgeBackendError:
+                expanded_hits = []
+            if (
+                len({(hit.source_type, hit.post_id) for hit in expanded_hits})
+                > initial_document_count
+            ):
+                hits = expanded_hits
         return [_serialize_vector_hit(hit, intent=intent, query=query) for hit in hits]
 
     def _sync_response(
@@ -1942,6 +2015,16 @@ def _lexical_bonus(query: str, chunk_text: str, title: str) -> float:
 def _normalize_result_granularity(value: Any) -> str:
     normalized = str(value or "chunk").strip()
     return normalized if normalized in ALLOWED_RESULT_GRANULARITIES else "chunk"
+
+
+def _ranking_strategy_for_intent(intent: str) -> str:
+    if intent == "media_library_search":
+        return "semantic_plus_bounded_lexical"
+    if intent == "internal_links":
+        return "semantic_plus_bounded_lexical_topic_anchor"
+    if intent == "related_content":
+        return "semantic_plus_bounded_title_topic"
+    return "semantic"
 
 
 def _embedding_space_readiness(
@@ -2598,10 +2681,7 @@ def _source_anchor_evidence(
         for passage_index, passage in enumerate(source_passages):
             for phrase in _exact_shared_anchor_phrases(passage, target):
                 normalized_phrase = _normalize_anchor_comparison(phrase)
-                if (
-                    not _is_specific_anchor_phrase(phrase)
-                    or normalized_phrase == normalized_title
-                ):
+                if not _is_specific_anchor_phrase(phrase) or normalized_phrase == normalized_title:
                     continue
                 candidates.append(
                     (

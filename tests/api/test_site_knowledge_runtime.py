@@ -35,6 +35,7 @@ from app.domain.site_knowledge.contracts import (
     SiteKnowledgeContractViolation,
     validate_site_knowledge_runtime_contract,
 )
+from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.rerankers import (
     MAX_RERANK_DOCUMENT_CHARS,
     JinaSiteKnowledgeReranker,
@@ -84,6 +85,56 @@ def test_public_taxonomy_metadata_is_bounded_and_allowlisted() -> None:
     assert normalized["category"][0] == "Cloud AI"
     assert len(normalized["category"]) == 20
     assert normalized["post_tag"] == ["x" * 80]
+
+
+def test_reference_metadata_uses_post_document_when_comment_shares_post_id(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    with get_session(database_url) as session:
+        repository = SiteKnowledgeRepository(session)
+        repository.upsert_document_with_chunks(
+            site_id="site_alpha",
+            post_id=123,
+            source_type="post",
+            source_id=123,
+            parent_post_id=None,
+            post_type="post",
+            post_status="publish",
+            title="WordPress vector search",
+            url="https://example.test/post",
+            modified_gmt="2026-08-29 00:00:00",
+            content_hash="post-hash",
+            run_id="run-post",
+            metadata={"taxonomies": {"category": ["Search"]}},
+            chunks=[],
+        )
+        repository.upsert_document_with_chunks(
+            site_id="site_alpha",
+            post_id=123,
+            source_type="comment",
+            source_id=999,
+            parent_post_id=123,
+            post_type="comment",
+            post_status="publish",
+            title="Comment",
+            url="https://example.test/post#comment-999",
+            modified_gmt="2026-08-29 00:01:00",
+            content_hash="comment-hash",
+            run_id="run-comment",
+            metadata={},
+            chunks=[],
+        )
+        session.commit()
+
+        metadata = repository.reference_metadata_for_post_ids(
+            site_id="site_alpha",
+            post_ids=[123],
+        )
+
+    assert metadata[123]["title"] == "WordPress vector search"
+    assert metadata[123]["taxonomies"] == {"category": ["Search"]}
 
 
 def _sqlite_url(tmp_path: Path) -> str:
@@ -412,10 +463,7 @@ def test_site_knowledge_contract_bounds_source_passages() -> None:
             contract_version="site_knowledge_search.v1",
             input_payload=payload,
         )
-    assert (
-        wrong_intent.value.error_code
-        == "site_knowledge.source_passages_intent_not_allowed"
-    )
+    assert wrong_intent.value.error_code == "site_knowledge.source_passages_intent_not_allowed"
 
 
 def test_toolbox_exact_sync_payload_queues_without_routing_fields(tmp_path: Path) -> None:
@@ -495,9 +543,7 @@ def test_status_remains_evidence_only_after_ai_credits_are_exhausted(
     status_run_id = status_result["json"]["data"]["run_id"]
     with get_session(database_url) as session:
         status_meter_events = list(
-            session.scalars(
-                select(UsageMeterEvent).where(UsageMeterEvent.run_id == status_run_id)
-            )
+            session.scalars(select(UsageMeterEvent).where(UsageMeterEvent.run_id == status_run_id))
         )
         status_credit_entries = list(
             session.scalars(
@@ -777,6 +823,9 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert search_data["rerank"]["status"] == "disabled"
     assert search_data["result_granularity"] == "chunk"
     assert search_data["result_grouping"]["strategy"] == "ranked_chunks"
+    assert search_data["result_grouping"]["ranking_strategy"] == (
+        "semantic_plus_bounded_lexical_topic_anchor"
+    )
     assert search_data["result_grouping"]["duplicate_chunks_collapsed"] == 0
     assert search_data["evidence_gate"]["status"] == "passed"
     assert search_data["evidence_gate"]["allows_site_grounded_assertion"] is True
@@ -784,13 +833,16 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert search_data["results"][0]["suggested_use"] == "internal_link"
     assert search_data["results"][0]["insert_mode"] == "wordpress_local_only"
     assert search_data["results"][0]["anchor_text_candidates"]
-    assert search_data["results"][0]["anchor_or_context"] == (
-        "Cloud managed site knowledge"
+    assert search_data["results"][0]["anchor_or_context"] == ("Cloud managed site knowledge")
+    assert search_data["results"][0]["taxonomies"] == {
+        "category": ["Cloud Runtime", "WordPress AI"],
+        "post_tag": ["Site Knowledge", "Writing"],
+    }
+    assert search_data["results"][0]["internal_link_ranking"]["strategy"] == (
+        "semantic_plus_bounded_lexical_topic_anchor"
     )
-    assert (
-        search_data["results"][0]["anchor_evidence"]["exact_source_passage_match"]
-        is True
-    )
+    assert search_data["results"][0]["internal_link_ranking"]["anchor_bonus"] == 0.06
+    assert search_data["results"][0]["anchor_evidence"]["exact_source_passage_match"] is True
 
     status_result = _execute(
         client,
@@ -861,6 +913,71 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert snapshots
     assert snapshots[-1].document_count == 1
     assert snapshots[-1].chunk_count >= 1
+
+
+def test_related_content_defaults_to_unique_documents_and_excludes_current_post(
+    tmp_path: Path,
+) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    payload = _sync_payload()
+    sync_input = payload["input"]
+    assert isinstance(sync_input, dict)
+    documents = sync_input["documents"]
+    assert isinstance(documents, list)
+    documents.append(
+        {
+            "post_id": 456,
+            "post_type": "post",
+            "post_status": "publish",
+            "title": "WordPress vector search guide",
+            "url": "https://example.test/wordpress-vector-search",
+            "modified_gmt": "2026-06-03 03:00:00",
+            "excerpt": "A practical vector search guide.",
+            "content_excerpt": (
+                "WordPress vector search improves related article discovery. " * 80
+            ),
+            "content_hash": "hash-wordpress-vector-search",
+            "taxonomies": {
+                "category": ["Vector Search"],
+                "post_tag": ["WordPress"],
+            },
+        }
+    )
+    sync_input["post_ids"] = [123, 456]
+
+    sync_result = _execute(client, payload, idempotency_key="sync-related-content")
+    run_id = sync_result["json"]["data"]["run_id"]
+    worker = RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    )
+    assert worker.process_next_queued_run(timeout_seconds=0) is not None
+
+    result = _execute(
+        client,
+        _search_payload(
+            "WordPress vector search",
+            current_post_id=123,
+            intent="related_content",
+        ),
+        idempotency_key=f"related-content-{run_id}",
+    )["json"]["data"]["result"]
+
+    assert result["result_granularity"] == "document"
+    assert result["result_grouping"]["strategy"] == ("best_ranked_chunk_per_document")
+    assert result["result_grouping"]["ranking_strategy"] == ("semantic_plus_bounded_title_topic")
+    assert result["results"]
+    assert {candidate["post_id"] for candidate in result["results"]} == {456}
+    assert len({candidate["post_id"] for candidate in result["results"]}) == len(result["results"])
+    assert result["results"][0]["taxonomies"] == {
+        "category": ["Vector Search"],
+        "post_tag": ["WordPress"],
+    }
+    assert result["results"][0]["related_content_ranking"]["strategy"] == (
+        "semantic_plus_bounded_title_topic"
+    )
 
 
 def test_internal_link_search_returns_exact_specific_source_anchor() -> None:
@@ -1101,10 +1218,7 @@ def test_media_search_rejects_deterministic_placeholder_embeddings(
     }
     assert result["result_grouping"]["returned_count"] == 0
     assert result["result_grouping"]["duplicate_media_collapsed"] == 0
-    assert (
-        result["result_grouping"]["ranking_strategy"]
-        == "semantic_plus_bounded_lexical"
-    )
+    assert result["result_grouping"]["ranking_strategy"] == "semantic_plus_bounded_lexical"
 
 
 def test_site_knowledge_postgres_fallback_search_uses_chunk_limit(

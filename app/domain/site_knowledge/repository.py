@@ -391,6 +391,7 @@ class SiteKnowledgeRepository:
                 SiteKnowledgeDocument.site_id == site_id,
                 SiteKnowledgeDocument.post_id.in_(normalized_ids),
                 SiteKnowledgeDocument.post_status == "publish",
+                SiteKnowledgeDocument.source_type.in_(("post", "page")),
             )
         ).all()
         metadata_by_post_id = {
