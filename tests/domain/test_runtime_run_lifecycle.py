@@ -687,8 +687,8 @@ def test_lifecycle_dependency_boundary_and_runtime_service_facades() -> None:
     assert service_media_fingerprint_calls + artifact_media_fingerprint_calls == 2
     service_publish_queue_calls = service_source.count(".publish_queue_signal(")
     artifact_publish_queue_calls = artifact_coordination_source.count(".publish_queue_signal(")
-    assert (service_publish_queue_calls, artifact_publish_queue_calls) == (5, 1)
-    assert service_publish_queue_calls + artifact_publish_queue_calls == 6
+    assert (service_publish_queue_calls, artifact_publish_queue_calls) == (6, 1)
+    assert service_publish_queue_calls + artifact_publish_queue_calls == 7
     for forbidden_repository_transition in (
         ".create_run(",
         ".mark_run_succeeded(",

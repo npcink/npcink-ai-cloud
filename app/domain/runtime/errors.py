@@ -107,6 +107,11 @@ class RuntimeBatchLimitExceededError(RuntimeErrorBase):
         )
 
 
+class RuntimeMediaRecognitionPolicyError(RuntimeErrorBase):
+    def __init__(self, error_code: str, message: str, *, status_code: int = 429) -> None:
+        super().__init__(status_code, error_code, message)
+
+
 class RuntimeRunNotFoundError(RuntimeErrorBase):
     def __init__(self, run_id: str) -> None:
         super().__init__(404, "runtime.run_not_found", f"run '{run_id}' was not found")

@@ -725,6 +725,21 @@ class SiteRelinkPolicyServiceSettingsPayload(BaseModel):
     cooldown_days: int = Field(default=90, ge=90, le=365)
 
 
+class MediaRecognitionPolicyServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    window_start: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    window_end: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    daily_limit: int | None = Field(default=None, ge=1, le=10000)
+
+
+class PlatformPreferencesServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timezone: str = Field(min_length=1, max_length=64)
+
+
 class AccountingFxServiceSettingsPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -4578,6 +4593,100 @@ async def update_admin_site_relink_policy_settings(
         message="site relink policy settings saved",
         data=result,
         revision="site-relink-v1",
+    )
+
+
+@router.patch("/admin/service-settings/media-recognition-policy")
+async def update_admin_media_recognition_policy_settings(
+    request: Request,
+    payload: MediaRecognitionPolicyServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_media_recognition_policy(payload.model_dump(mode="json", exclude_none=True))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="media_recognition_policy",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="media-recognition-policy-v1",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="media_recognition_policy",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="media recognition policy settings saved",
+        data=result,
+        revision="media-recognition-policy-v1",
+    )
+
+
+@router.patch("/admin/service-settings/platform-preferences")
+async def update_admin_platform_preferences_settings(
+    request: Request,
+    payload: PlatformPreferencesServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_platform_preferences(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="platform_preferences",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="platform-preferences-v1",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="platform_preferences",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="platform preferences saved",
+        data=result,
+        revision="platform-preferences-v1",
     )
 
 

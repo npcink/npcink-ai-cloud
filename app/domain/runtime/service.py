@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.adapters.callbacks.base import RuntimeCallbackDispatcher
@@ -27,8 +27,10 @@ from app.core.models import (
     RUN_CALLBACK_STATUS_FAILED,
     RUN_CALLBACK_STATUS_PENDING,
     SITE_STATUS_ACTIVE,
+    MediaArtifact,
     ProviderCallRecord,
     RunRecord,
+    ServiceSetting,
     Site,
     UsageMeterEvent,
 )
@@ -59,13 +61,19 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
 )
-from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
+from app.domain.hosted_model_defaults import (
+    FREE_GPT55_TEXT_PROFILE_ID,
+    VISION_AI_PROFILE_ID,
+)
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_ABILITIES,
+    IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND,
     IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
     MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES,
     ImageContextEvidenceContractViolation,
+    extract_image_context_evidence_request,
     image_context_evidence_artifact_ids,
+    image_context_evidence_dispatch_mode,
 )
 from app.domain.image_context_evidence.service import (
     ImageContextEvidenceProviderError,
@@ -111,6 +119,7 @@ from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
     RuntimeErrorBase,
     RuntimeExecutionContractError,
+    RuntimeMediaRecognitionPolicyError,
     RuntimeResultExpiredError,
     RuntimeResultNotReadyError,
     RuntimeRunNotFoundError,
@@ -148,6 +157,13 @@ from app.domain.runtime.run_lifecycle import (
     RuntimeRunLifecycleService,
 )
 from app.domain.runtime.run_projection import RuntimeRunProjector
+from app.domain.service_settings import (
+    SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+    media_recognition_local_day_bounds,
+    media_recognition_next_window_start,
+    media_recognition_window_is_open,
+    resolve_media_recognition_policy,
+)
 from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_ABILITIES,
@@ -2667,23 +2683,16 @@ class RuntimeService:
             else self._get_execution_input_payload(run)
         )
         execution_started_at = datetime.now(UTC)
-        site_account_id = str(
-            repository.session.scalar(
-                select(Site.account_id).where(Site.site_id == run.site_id)
-            )
-            or ''
-        )
+        site_account_id = ""
         account_vector_document_limit: int | None = None
-        if site_account_id and run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY:
-            account_quota = self.commercial_service.get_portal_account_quota_summary(
-                site_account_id
+        if run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY:
+            (
+                site_account_id,
+                account_vector_document_limit,
+            ) = self._resolve_site_knowledge_account_limit(
+                repository=repository,
+                site_id=run.site_id,
             )
-            resource_limits = account_quota.get('resource_limits', [])
-            if isinstance(resource_limits, list):
-                for resource in resource_limits:
-                    if isinstance(resource, dict) and resource.get('key') == 'vector_documents':
-                        account_vector_document_limit = int(resource.get('limit') or 0)
-                        break
 
         def record_progress(progress: dict[str, Any]) -> None:
             run.result_json = {
@@ -2770,6 +2779,31 @@ class RuntimeService:
             execution_started_at=execution_started_at,
             settings=self.settings,
         )
+
+    def _resolve_site_knowledge_account_limit(
+        self,
+        *,
+        repository: RuntimeRepository,
+        site_id: str,
+    ) -> tuple[str, int | None]:
+        account_id = str(
+            repository.session.scalar(select(Site.account_id).where(Site.site_id == site_id))
+            or ""
+        )
+        if not account_id:
+            return "", None
+        account_quota = self.commercial_service.get_portal_account_quota_summary(account_id)
+        resource_limits = account_quota.get("resource_limits", [])
+        limits_by_key = (
+            {
+                str(resource.get("key") or ""): int(resource.get("limit") or 0)
+                for resource in resource_limits
+                if isinstance(resource, dict)
+            }
+            if isinstance(resource_limits, list)
+            else {}
+        )
+        return account_id, limits_by_key.get("vector_documents")
 
     def _record_site_knowledge_embedding_provider_call(
         self,
@@ -3454,19 +3488,45 @@ class RuntimeService:
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
         self.contract_validator.validate_image_context_evidence_contract(request)
+        dispatch_mode = image_context_evidence_dispatch_mode(request.input_payload)
+        background_policy = (
+            resolve_media_recognition_policy(self.database_url)
+            if dispatch_mode == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+            else {}
+        )
+        if background_policy and not bool(background_policy.get("enabled")):
+            raise RuntimeMediaRecognitionPolicyError(
+                "media_recognition.background_disabled",
+                "background media recognition is disabled by the platform policy",
+                status_code=409,
+            )
         resolution = self.routing_service.resolve(
-            profile_id=request.profile_id,
+            profile_id=(
+                VISION_AI_PROFILE_ID
+                if background_policy
+                else request.profile_id
+            ),
             execution_kind="vision",
         )
+        selected_candidate = resolution.selected_candidate
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_image_context_evidence_policy(request, resolution)
+        if background_policy:
+            merged_policy["media_recognition_policy"] = {
+                "dispatch_mode": dispatch_mode,
+                "model_id": selected_candidate.model_id,
+                "model_source_profile_id": resolution.profile_id,
+                "timezone": str(background_policy.get("timezone") or ""),
+                "window_start": str(background_policy.get("window_start") or ""),
+                "window_end": str(background_policy.get("window_end") or ""),
+                "daily_limit": int(background_policy.get("daily_limit") or 0),
+                "item_count": self._image_context_evidence_item_count(request.input_payload),
+            }
         request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
             request,
             merged_policy,
         )
-        selected_candidate = resolution.selected_candidate
-
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
@@ -3485,10 +3545,26 @@ class RuntimeService:
                     idempotent_replay=True,
                 )
 
+            worker_eligible_at: datetime | None = None
+            if background_policy:
+                worker_eligible_at = self._media_recognition_worker_eligible_at(
+                    session,
+                    policy=background_policy,
+                    requested_items=self._image_context_evidence_item_count(
+                        request.input_payload
+                    ),
+                    lock_quota_reservations=True,
+                )
+
             self._admit_image_context_evidence_artifact_inputs(
                 repository,
                 site_id=request.site_id,
                 input_payload=request.input_payload,
+                retain_until=(
+                    worker_eligible_at + timedelta(hours=30)
+                    if worker_eligible_at is not None
+                    else None
+                ),
             )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
@@ -3498,7 +3574,7 @@ class RuntimeService:
                 channel=request.channel,
                 execution_kind=request.execution_kind,
                 execution_tier=request.execution_tier,
-                execution_pattern=request.execution_pattern,
+                execution_pattern=("inline" if background_policy else request.execution_pattern),
                 data_classification=request.data_classification,
                 trace_id=trace_id,
                 idempotency_key=request.idempotency_key,
@@ -3515,6 +3591,7 @@ class RuntimeService:
                 commercial_decision=commercial_decision,
             )
             storage_mode = self._get_storage_mode(merged_policy)
+            should_enqueue = bool(background_policy)
             run = self.run_lifecycle_service.create_durable_run(
                 repository=repository,
                 command=RuntimeRunCreationCommand(
@@ -3531,11 +3608,13 @@ class RuntimeService:
                     channel=request.channel,
                     execution_kind=request.execution_kind,
                     execution_tier=request.execution_tier,
-                    execution_pattern=request.execution_pattern,
+                    execution_pattern=(
+                        "whole_run_offload" if background_policy else request.execution_pattern
+                    ),
                     data_classification=request.data_classification,
                     profile_id=request.profile_id or IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
                     canonical_run_id=request.canonical_run_id or None,
-                    status="running",
+                    status="queued" if should_enqueue else "running",
                     idempotency_key=request.idempotency_key,
                     request_fingerprint=request_fingerprint,
                     trace_id=trace_id,
@@ -3543,14 +3622,52 @@ class RuntimeService:
                         request.input_payload,
                         storage_mode=storage_mode,
                     ),
-                    execution_input_ciphertext=None,
+                    execution_input_ciphertext=(
+                        encrypt_runtime_execution_input(
+                            request.input_payload,
+                            settings=self.settings,
+                        )
+                        if should_enqueue
+                        else None
+                    ),
                     policy_json=merged_policy,
                     selected_provider_id=selected_candidate.provider_id,
                     selected_model_id=selected_candidate.model_id,
                     selected_instance_id=selected_candidate.instance_id,
+                    worker_eligible_at=worker_eligible_at,
                 ),
             )
+            if should_enqueue:
+                requested_count = self._image_context_evidence_item_count(request.input_payload)
+                run.result_json = {
+                    "artifact_type": "image_context_evidence_progress",
+                    "composition_role": "image_context_evidence_progress",
+                    "status": "queued",
+                    "run_id": run.run_id,
+                    "progress": {
+                        "status": "queued",
+                        "stage": "queued",
+                        "processed_items": 0,
+                        "successful_items": 0,
+                        "failed_items": 0,
+                        "total_items": requested_count,
+                        "percent": 0,
+                    },
+                    "write_posture": "suggestion_only",
+                    "direct_wordpress_write": False,
+                }
+                flag_modified(run, "result_json")
             self.commercial_service.record_run_acceptance(session=session, run=run)
+            if should_enqueue:
+                session.commit()
+                response = self._build_execution_response(
+                    run,
+                    repository=repository,
+                    idempotent_replay=False,
+                )
+                if worker_eligible_at is None or worker_eligible_at <= datetime.now(UTC):
+                    self.run_lifecycle_service.publish_queue_signal(run.run_id)
+                return response
             self._execute_image_context_evidence_run(
                 run,
                 repository=repository,
@@ -3563,6 +3680,88 @@ class RuntimeService:
                 repository=repository,
                 idempotent_replay=False,
             )
+
+    @staticmethod
+    def _image_context_evidence_item_count(input_payload: dict[str, Any]) -> int:
+        items = extract_image_context_evidence_request(input_payload).get("items")
+        return len(items) if isinstance(items, list) else 0
+
+    @staticmethod
+    def _media_recognition_worker_eligible_at(
+        session: Any,
+        *,
+        policy: dict[str, Any],
+        requested_items: int,
+        now: datetime | None = None,
+        exclude_run_id: str = "",
+        lock_quota_reservations: bool = False,
+    ) -> datetime:
+        if not bool(policy.get("enabled")):
+            raise RuntimeMediaRecognitionPolicyError(
+                "media_recognition.background_disabled",
+                "background media recognition is disabled by the platform policy",
+                status_code=409,
+            )
+        observed_at = now or datetime.now(UTC)
+        daily_limit = max(1, int(policy.get("daily_limit") or 1))
+        if requested_items > daily_limit:
+            raise RuntimeMediaRecognitionPolicyError(
+                "media_recognition.batch_exceeds_daily_limit",
+                "background media recognition batch exceeds the configured daily image limit",
+                status_code=422,
+            )
+        if not media_recognition_window_is_open(policy, now=observed_at):
+            return media_recognition_next_window_start(policy, now=observed_at)
+        if lock_quota_reservations:
+            # Serialize the count-and-create reservation transaction across sites.
+            session.execute(
+                select(ServiceSetting.setting_id)
+                .where(
+                    ServiceSetting.setting_id
+                    == SERVICE_SETTING_MEDIA_RECOGNITION_POLICY
+                )
+                .with_for_update()
+            )
+        day_start, day_end = media_recognition_local_day_bounds(policy, now=observed_at)
+        runs = list(
+            session.scalars(
+                select(RunRecord).where(
+                    RunRecord.ability_name.in_(IMAGE_CONTEXT_EVIDENCE_ABILITIES),
+                    or_(
+                        and_(
+                            RunRecord.status == "queued",
+                            RunRecord.worker_eligible_at >= day_start,
+                            RunRecord.worker_eligible_at < day_end,
+                        ),
+                        and_(
+                            RunRecord.status.in_(("running", "succeeded")),
+                            RunRecord.processing_started_at >= day_start,
+                            RunRecord.processing_started_at < day_end,
+                        ),
+                    ),
+                )
+            )
+        )
+        used_items = 0
+        for run in runs:
+            if exclude_run_id and run.run_id == exclude_run_id:
+                continue
+            run_policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+            recognition_policy = run_policy.get("media_recognition_policy")
+            if not isinstance(recognition_policy, dict):
+                continue
+            if (
+                recognition_policy.get("dispatch_mode")
+                != IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+            ):
+                continue
+            try:
+                used_items += max(0, int(recognition_policy.get("item_count") or 0))
+            except (TypeError, ValueError):
+                continue
+        if used_items + requested_items > daily_limit:
+            return media_recognition_next_window_start(policy, now=observed_at)
+        return observed_at
 
     def _execute_media_batch_plan_run(
         self,
@@ -3693,6 +3892,11 @@ class RuntimeService:
             run=run,
         ):
             return
+        if self._defer_background_image_context_evidence_run(
+            run,
+            repository=repository,
+        ):
+            return
 
         payload = (
             input_payload
@@ -3718,6 +3922,36 @@ class RuntimeService:
 
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
         timeout_ms = max(1, self._coerce_int(policy.get("timeout_ms"), default=30_000))
+        requested_count = self._image_context_evidence_item_count(payload)
+        progress_started_at = datetime.now(UTC)
+        progress_estimate = self._media_recognition_progress_estimate(
+            repository.session,
+            site_id=run.site_id,
+            requested_items=requested_count,
+        )
+        if self._is_background_image_context_evidence_policy(policy):
+            run.result_json = {
+                "artifact_type": "image_context_evidence_progress",
+                "composition_role": "image_context_evidence_progress",
+                "status": "running",
+                "run_id": run.run_id,
+                "progress": {
+                    "status": "running",
+                    "stage": "recognizing",
+                    "processed_items": 0,
+                    "successful_items": 0,
+                    "failed_items": 0,
+                    "total_items": requested_count,
+                    "percent": 0,
+                    "started_at": progress_started_at.isoformat(),
+                    "updated_at": progress_started_at.isoformat(),
+                    **progress_estimate,
+                },
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            }
+            flag_modified(run, "result_json")
+            repository.session.commit()
         try:
             artifact_inputs = self._load_image_context_evidence_artifact_inputs(
                 repository,
@@ -3804,15 +4038,286 @@ class RuntimeService:
                 error_code=execution.usage.error_code,
             ),
         )
+        result_json = execution.result_json
+        evidence_items = result_json.get("items") if isinstance(result_json, dict) else []
+        successful_count = len(evidence_items) if isinstance(evidence_items, list) else 0
+        progress_finished_at = datetime.now(UTC)
+        duration_seconds = max(
+            0.001,
+            (progress_finished_at - progress_started_at).total_seconds(),
+        )
+        result_json = {
+            **result_json,
+            "progress": {
+                "status": "completed",
+                "stage": (
+                    "projection"
+                    if self._is_background_image_context_evidence_policy(policy)
+                    else "completed"
+                ),
+                "processed_items": requested_count,
+                "successful_items": successful_count,
+                "failed_items": max(0, requested_count - successful_count),
+                "total_items": requested_count,
+                "percent": 100,
+                "started_at": progress_started_at.isoformat(),
+                "updated_at": progress_finished_at.isoformat(),
+                "duration_seconds": round(duration_seconds, 3),
+                "items_per_minute": round(successful_count / duration_seconds * 60, 1),
+                "eta_at": progress_finished_at.isoformat(),
+            },
+        }
+        if self._is_background_image_context_evidence_policy(policy):
+            try:
+                projection = self._project_background_media_evidence(
+                    run,
+                    repository=repository,
+                    input_payload=payload,
+                    result_json=execution.result_json,
+                )
+            except (SiteKnowledgeContractViolation, SiteKnowledgeBackendError) as error:
+                self.run_lifecycle_service.fail_run(
+                    repository,
+                    run,
+                    error_code=error.error_code,
+                    error_message=error.message,
+                    provider_id=execution.usage.provider_id,
+                    model_id=execution.usage.model_id,
+                    instance_id=execution.usage.instance_id,
+                    fallback_used=False,
+                )
+                return
+            result_json = {
+                **result_json,
+                "site_knowledge_projection": projection,
+            }
         self.run_lifecycle_service.succeed_run(
             repository,
             run,
-            result_json=execution.result_json,
+            result_json=result_json,
             provider_id=execution.usage.provider_id,
             model_id=execution.usage.model_id,
             instance_id=execution.usage.instance_id,
             fallback_used=False,
         )
+
+    @staticmethod
+    def _media_recognition_progress_estimate(
+        session: Any,
+        *,
+        site_id: str,
+        requested_items: int,
+    ) -> dict[str, Any]:
+        recent_runs = list(
+            session.scalars(
+                select(RunRecord)
+                .where(
+                    RunRecord.site_id == site_id,
+                    RunRecord.ability_name == "npcink-cloud/image-context-evidence",
+                    RunRecord.status == "succeeded",
+                )
+                .order_by(RunRecord.finished_at.desc())
+                .limit(10)
+            )
+        )
+        completed_items = 0
+        duration_seconds = 0.0
+        for recent in recent_runs:
+            result = recent.result_json if isinstance(recent.result_json, dict) else {}
+            progress_value = result.get("progress")
+            progress: dict[str, Any] = (
+                progress_value if isinstance(progress_value, dict) else {}
+            )
+            item_count = int(progress.get("successful_items") or 0)
+            duration = float(progress.get("duration_seconds") or 0)
+            if item_count > 0 and duration > 0:
+                completed_items += item_count
+                duration_seconds += duration
+        if completed_items <= 0 or duration_seconds <= 0:
+            return {"items_per_minute": 0, "estimated_duration_seconds": 0, "eta_at": ""}
+        items_per_second = completed_items / duration_seconds
+        estimated_duration = max(1, int(round(requested_items / items_per_second)))
+        return {
+            "items_per_minute": round(items_per_second * 60, 1),
+            "estimated_duration_seconds": estimated_duration,
+            "eta_at": (datetime.now(UTC) + timedelta(seconds=estimated_duration)).isoformat(),
+        }
+
+    @staticmethod
+    def _is_background_image_context_evidence_policy(policy: dict[str, Any]) -> bool:
+        snapshot = policy.get("media_recognition_policy")
+        return isinstance(snapshot, dict) and (
+            snapshot.get("dispatch_mode") == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+        )
+
+    def _project_background_media_evidence(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any],
+        result_json: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = extract_image_context_evidence_request(input_payload)
+        requested_by_id = {
+            str(item.get("attachment_id") or ""): item
+            for item in request.get("items", [])
+            if isinstance(item, dict) and str(item.get("attachment_id") or "")
+        }
+        source = result_json.get("source")
+        source = source if isinstance(source, dict) else {}
+        media_items: list[dict[str, Any]] = []
+        evidence_items = result_json.get("items")
+        for evidence in evidence_items if isinstance(evidence_items, list) else []:
+            if not isinstance(evidence, dict):
+                continue
+            attachment_key = str(evidence.get("attachment_id") or "")
+            if not attachment_key.isdigit() or int(attachment_key) <= 0:
+                continue
+            request_item = requested_by_id.get(attachment_key)
+            if not isinstance(request_item, dict):
+                continue
+            media_items.append(
+                {
+                    "attachment_id": int(attachment_key),
+                    "mime_type": str(request_item.get("mime_type") or "")[:120],
+                    "title": str(request_item.get("title") or "")[:500],
+                    "url": str(request_item.get("attachment_url") or "")[:2000],
+                    "modified_gmt": str(request_item.get("modified_gmt") or "")[:64],
+                    "media_fingerprint": str(
+                        request_item.get("media_fingerprint") or ""
+                    )[:128],
+                    "alt": str(request_item.get("alt") or "")[:1000],
+                    "caption": str(request_item.get("caption") or "")[:2000],
+                    "description": str(request_item.get("description") or "")[:4000],
+                    "visual_summary": str(evidence.get("visual_summary") or "")[:2000],
+                    "visible_text": evidence.get("visible_text") or [],
+                    "subject_tags": evidence.get("subject_tags") or [],
+                    "alt_text_basis": str(evidence.get("alt_text_basis") or "")[:1500],
+                    "vision_contract_version": "image_context_evidence.v1",
+                    "vision_source": "cloud_vision_model",
+                    "vision_model_id": str(source.get("model_id") or run.selected_model_id or ""),
+                    "vision_run_id": run.run_id,
+                    "confidence": evidence.get("confidence") or 0,
+                    "uncertainty_flags": evidence.get("uncertainty_flags") or [],
+                }
+            )
+        if not media_items:
+            raise SiteKnowledgeContractViolation(
+                "media_recognition.empty_projection",
+                "background media recognition produced no projectable evidence",
+            )
+
+        def record_embedding_usage(
+            provider_id: str,
+            provider_request: ProviderExecutionRequest,
+            provider_result: ProviderExecutionResult | None,
+            provider_error: ProviderExecutionError | None,
+        ) -> None:
+            self._record_site_knowledge_embedding_provider_call(
+                run,
+                repository=repository,
+                provider_id=provider_id,
+                provider_request=provider_request,
+                provider_result=provider_result,
+                provider_error=provider_error,
+            )
+
+        account_id, account_vector_document_limit = self._resolve_site_knowledge_account_limit(
+            repository=repository,
+            site_id=run.site_id,
+        )
+        projection = SiteKnowledgeService(
+            repository.session,
+            settings=self.settings,
+            providers=self.providers,
+            embedding_usage_callback=record_embedding_usage,
+            account_id=account_id,
+            account_vector_document_limit=account_vector_document_limit,
+        ).sync(
+            site_id=run.site_id,
+            input_payload={
+                "contract_version": SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SYNC_ABILITY],
+                "sync_mode": "refresh",
+                "post_ids": [item["attachment_id"] for item in media_items],
+                "media_items": media_items,
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            run_id=run.run_id,
+        )
+        sync = projection.get("sync")
+        sync = sync if isinstance(sync, dict) else {}
+        return {
+            "status": str(projection.get("status") or "completed"),
+            "indexed_documents": int(sync.get("indexed_documents") or 0),
+            "indexed_chunks": int(sync.get("indexed_chunks") or 0),
+            "unchanged_documents": int(sync.get("unchanged_documents") or 0),
+        }
+
+    def _defer_background_image_context_evidence_run(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+    ) -> bool:
+        run_policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        snapshot = run_policy.get("media_recognition_policy")
+        if not isinstance(snapshot, dict) or (
+            snapshot.get("dispatch_mode") != IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+        ):
+            return False
+
+        current_policy = resolve_media_recognition_policy(self.database_url)
+        requested_items = max(1, int(snapshot.get("item_count") or 1))
+        selected_provider_id = str(run.selected_provider_id or "")
+        selected_model_id = str(run.selected_model_id or "")
+        selected_instance_id = str(run.selected_instance_id or "")
+        observed_at = datetime.now(UTC)
+        try:
+            eligible_at = self._media_recognition_worker_eligible_at(
+                repository.session,
+                policy=current_policy,
+                requested_items=requested_items,
+                now=observed_at,
+                exclude_run_id=run.run_id,
+            )
+        except RuntimeMediaRecognitionPolicyError as error:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+                provider_id=selected_provider_id,
+                model_id=selected_model_id,
+                instance_id=selected_instance_id,
+                fallback_used=False,
+            )
+            return True
+
+        updated_snapshot = {
+            **snapshot,
+            "timezone": str(current_policy.get("timezone") or ""),
+            "window_start": str(current_policy.get("window_start") or ""),
+            "window_end": str(current_policy.get("window_end") or ""),
+            "daily_limit": int(current_policy.get("daily_limit") or 0),
+            "worker_eligible_at": eligible_at.isoformat(),
+        }
+        run.policy_json = {**run_policy, "media_recognition_policy": updated_snapshot}
+        flag_modified(run, "policy_json")
+        if eligible_at <= observed_at:
+            run.worker_eligible_at = eligible_at
+            return False
+
+        payload = self._get_execution_input_payload(run)
+        self._admit_image_context_evidence_artifact_inputs(
+            repository,
+            site_id=run.site_id,
+            input_payload=payload,
+            retain_until=eligible_at + timedelta(hours=30),
+        )
+        repository.defer_run_until(run, eligible_at=eligible_at)
+        return True
 
     def _admit_image_context_evidence_artifact_inputs(
         self,
@@ -3820,6 +4325,7 @@ class RuntimeService:
         *,
         site_id: str,
         input_payload: dict[str, Any],
+        retain_until: datetime | None = None,
     ) -> None:
         total_bytes = 0
         for artifact_id in image_context_evidence_artifact_ids(input_payload):
@@ -3835,6 +4341,14 @@ class RuntimeService:
                     "image context evidence source artifact is unavailable",
                 ) from error
             total_bytes += reference.byte_size
+            if retain_until is not None:
+                artifact = repository.session.get(MediaArtifact, artifact_id)
+                if artifact is not None:
+                    artifact_expires_at = artifact.expires_at
+                    if artifact_expires_at.tzinfo is None:
+                        artifact_expires_at = artifact_expires_at.replace(tzinfo=UTC)
+                    if artifact_expires_at < retain_until:
+                        artifact.expires_at = retain_until
             if total_bytes > MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES:
                 raise RuntimeExecutionContractError(
                     "image_context_evidence.source_artifacts_too_large",
@@ -4826,11 +5340,21 @@ class RuntimeService:
         policy = self._apply_runtime_controls(policy, request)
         policy = self._apply_routing_snapshot(policy, resolution)
         policy["allow_fallback"] = False
+        dispatch_mode = image_context_evidence_dispatch_mode(request.input_payload)
+        execution_pattern = request.execution_pattern
+        if dispatch_mode == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND:
+            execution_pattern = "whole_run_offload"
+            policy["task_backend"] = {
+                "enabled": True,
+                "mode": "queue",
+                "callback_mode": "polling_preferred",
+                "polling_interval_sec": 10,
+            }
         policy["execution_contract"] = {
             "ability_name": request.ability_name,
             "contract_version": request.contract_version,
             "profile_id": request.profile_id or IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
-            "execution_pattern": request.execution_pattern,
+            "execution_pattern": execution_pattern,
             "data_classification": request.data_classification,
             "storage_mode": request.storage_mode,
             "timeout_seconds": max(0, request.timeout_seconds),
@@ -4841,6 +5365,11 @@ class RuntimeService:
             "final_writes": "core_proposal_required",
             "direct_wordpress_write": False,
             "requires_human_visual_check": True,
+            "task_backend": (
+                policy.get("task_backend")
+                if isinstance(policy.get("task_backend"), dict)
+                else {}
+            ),
         }
         return policy
 

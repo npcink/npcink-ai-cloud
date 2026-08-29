@@ -16,6 +16,14 @@ IMAGE_CONTEXT_EVIDENCE_ARTIFACT_DATA_CLASSIFICATION = "internal"
 MAX_IMAGE_CONTEXT_EVIDENCE_ITEMS = 10
 MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES = 24 * 1024 * 1024
 IMAGE_CONTEXT_EVIDENCE_ARTIFACT_ID_PATTERN = re.compile(r"^art_[0-9a-f]{32}$")
+IMAGE_CONTEXT_EVIDENCE_DISPATCH_INTERACTIVE = "interactive"
+IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND = "background_completion"
+IMAGE_CONTEXT_EVIDENCE_DISPATCH_MODES = frozenset(
+    {
+        IMAGE_CONTEXT_EVIDENCE_DISPATCH_INTERACTIVE,
+        IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND,
+    }
+)
 
 FORBIDDEN_IMAGE_CONTEXT_EVIDENCE_KEYS = frozenset(
     {
@@ -86,6 +94,12 @@ def validate_image_context_evidence_runtime_contract(
             "image_context_evidence.input_contract_mismatch",
             "image context evidence input contract_version does not match runtime contract",
         )
+    dispatch_mode = image_context_evidence_dispatch_mode(input_payload)
+    if dispatch_mode not in IMAGE_CONTEXT_EVIDENCE_DISPATCH_MODES:
+        raise ImageContextEvidenceContractViolation(
+            "image_context_evidence.dispatch_mode_invalid",
+            "image context evidence dispatch_mode must be interactive or background_completion",
+        )
     forbidden_path = find_forbidden_image_context_evidence_field(input_payload)
     if forbidden_path:
         raise ImageContextEvidenceContractViolation(
@@ -142,6 +156,30 @@ def validate_image_context_evidence_runtime_contract(
         for field_name, url in (("source_url", source_url), ("thumbnail_url", thumbnail_url)):
             if url:
                 _validate_public_image_url(url, field_name=field_name, item_index=index)
+        if dispatch_mode == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND:
+            attachment_url = str(item.get("attachment_url") or "").strip()
+            media_fingerprint = str(item.get("media_fingerprint") or "").strip()
+            mime_type = str(item.get("mime_type") or "").strip().lower()
+            if not attachment_url:
+                raise ImageContextEvidenceContractViolation(
+                    "image_context_evidence.background_attachment_url_required",
+                    f"background image context evidence item {index} requires attachment_url",
+                )
+            _validate_public_image_url(
+                attachment_url,
+                field_name="attachment_url",
+                item_index=index,
+            )
+            if not media_fingerprint or len(media_fingerprint) > 128:
+                raise ImageContextEvidenceContractViolation(
+                    "image_context_evidence.background_media_fingerprint_required",
+                    f"background image context evidence item {index} requires media_fingerprint",
+                )
+            if not mime_type.startswith("image/"):
+                raise ImageContextEvidenceContractViolation(
+                    "image_context_evidence.background_mime_type_required",
+                    f"background image context evidence item {index} requires image mime_type",
+                )
 
 
 def extract_image_context_evidence_request(input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -164,6 +202,13 @@ def image_context_evidence_artifact_ids(input_payload: dict[str, Any]) -> list[s
         if artifact_id:
             artifact_ids.append(artifact_id)
     return artifact_ids
+
+
+def image_context_evidence_dispatch_mode(input_payload: dict[str, Any]) -> str:
+    evidence_request = extract_image_context_evidence_request(input_payload)
+    return str(
+        evidence_request.get("dispatch_mode") or IMAGE_CONTEXT_EVIDENCE_DISPATCH_INTERACTIVE
+    ).strip()
 
 
 def find_forbidden_image_context_evidence_field(value: Any, *, path: str = "") -> str:

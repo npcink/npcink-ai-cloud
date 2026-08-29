@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 
@@ -20,15 +21,21 @@ from app.domain.commercial.currency import (
     build_accounting_fx_config,
     resolve_accounting_fx_rate,
 )
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+from app.domain.routing.errors import RoutingError
+from app.domain.routing.service import RoutingService
 
 SERVICE_SETTING_PORTAL_PUBLIC = "portal_public"
 SERVICE_SETTING_QQ_LOGIN = "portal_qq_login"
 SERVICE_SETTING_PORTAL_EMAIL = "portal_email"
 SERVICE_SETTING_PAYMENT_ALIPAY = "payment_alipay"
 SERVICE_SETTING_SITE_RELINK_POLICY = "site_relink_policy"
+SERVICE_SETTING_PLATFORM_PREFERENCES = "platform_preferences"
+SERVICE_SETTING_MEDIA_RECOGNITION_POLICY = "media_recognition_policy"
 
 SERVICE_SETTING_KIND_PORTAL = "portal"
 SERVICE_SETTING_KIND_COMMERCIAL = "commercial"
+SERVICE_SETTING_KIND_RUNTIME = "runtime"
 SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH = "/open/auth/qq/callback"
 SERVICE_SETTING_ALIPAY_NOTIFY_PATH = "/open/payments/alipay/notify"
 SERVICE_SETTING_ALIPAY_RETURN_PATH = "/open/payments/alipay/return"
@@ -36,6 +43,10 @@ ALIPAY_PAGE_PAY_GATEWAY_URL = "https://openapi.alipay.com/gateway.do"
 DEFAULT_SITE_RELINK_COOLDOWN_DAYS = 90
 MIN_SITE_RELINK_COOLDOWN_DAYS = 90
 MAX_SITE_RELINK_COOLDOWN_DAYS = 365
+DEFAULT_PLATFORM_TIMEZONE = "Asia/Shanghai"
+DEFAULT_MEDIA_RECOGNITION_WINDOW_START = "01:00"
+DEFAULT_MEDIA_RECOGNITION_WINDOW_END = "06:00"
+DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT = 100
 
 STATUS_READY = "ready"
 STATUS_DISABLED = "disabled"
@@ -70,6 +81,8 @@ class ServiceSettingsAdminService:
                                 SERVICE_SETTING_PAYMENT_ALIPAY,
                                 SERVICE_SETTING_SITE_RELINK_POLICY,
                                 SERVICE_SETTING_ACCOUNTING_FX,
+                                SERVICE_SETTING_PLATFORM_PREFERENCES,
+                                SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
                             ]
                         )
                     )
@@ -99,6 +112,12 @@ class ServiceSettingsAdminService:
                 ),
                 "accounting_fx": self._serialize_accounting_fx(
                     rows.get(SERVICE_SETTING_ACCOUNTING_FX),
+                ),
+                "platform_preferences": self._serialize_platform_preferences(
+                    rows.get(SERVICE_SETTING_PLATFORM_PREFERENCES),
+                ),
+                "media_recognition_policy": self._serialize_media_recognition_policy(
+                    rows.get(SERVICE_SETTING_MEDIA_RECOGNITION_POLICY),
                 ),
             },
             "env_fallback": "disabled",
@@ -151,6 +170,77 @@ class ServiceSettingsAdminService:
             required_secret_keys=[],
         )
         return self._serialize_site_relink_policy(row)
+
+    def save_media_recognition_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        current = resolve_media_recognition_policy(self.database_url)
+        enabled = bool(payload.get("enabled", current["enabled"]))
+        window_start = _normalize_clock(
+            payload.get("window_start", current["window_start"])
+        )
+        window_end = _normalize_clock(payload.get("window_end", current["window_end"]))
+        try:
+            daily_limit = int(
+                _string(payload.get("daily_limit", current["daily_limit"]))
+            )
+        except (TypeError, ValueError):
+            daily_limit = 0
+        if enabled:
+            try:
+                RoutingService(
+                    self.database_url,
+                    settings=self.settings,
+                ).resolve(
+                    profile_id=VISION_AI_PROFILE_ID,
+                    execution_kind="vision",
+                )
+            except RoutingError as error:
+                raise ServiceSettingsAdminError(
+                    "service_settings.media_recognition_profile_unavailable",
+                    "the vision understanding runtime profile has no verified candidate",
+                    status_code=409,
+                ) from error
+        if not window_start or not window_end or window_start == window_end:
+            raise ServiceSettingsAdminError(
+                "service_settings.media_recognition_window_invalid",
+                "media recognition execution window requires distinct HH:MM start and end",
+            )
+        if not 1 <= daily_limit <= 10000:
+            raise ServiceSettingsAdminError(
+                "service_settings.media_recognition_daily_limit_invalid",
+                "media recognition daily limit must be between 1 and 10000",
+            )
+        row = self._save(
+            setting_id=SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+            setting_kind=SERVICE_SETTING_KIND_RUNTIME,
+            config={
+                "window_start": window_start,
+                "window_end": window_end,
+                "daily_limit": daily_limit,
+            },
+            secrets={},
+            enabled=enabled,
+            required_secret_keys=[],
+        )
+        return self._serialize_media_recognition_policy(row)
+
+    def save_platform_preferences(self, payload: dict[str, Any]) -> dict[str, Any]:
+        timezone_name = _string(payload.get("timezone"))
+        try:
+            ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.platform_timezone_invalid",
+                "platform timezone must be a valid IANA timezone",
+            ) from error
+        row = self._save(
+            setting_id=SERVICE_SETTING_PLATFORM_PREFERENCES,
+            setting_kind=SERVICE_SETTING_KIND_RUNTIME,
+            config={"timezone": timezone_name},
+            secrets={},
+            enabled=True,
+            required_secret_keys=[],
+        )
+        return self._serialize_platform_preferences(row)
 
     def save_accounting_fx(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -686,6 +776,64 @@ class ServiceSettingsAdminService:
             "credential_value_exposure": "none",
         }
 
+    def _serialize_media_recognition_policy(
+        self,
+        row: ServiceSetting | None,
+    ) -> dict[str, Any]:
+        if row is not None:
+            serialized = self._serialize(row)
+            config = _dict(row.config_json)
+            serialized["config"] = {
+                "window_start": _normalize_clock(config.get("window_start"))
+                or DEFAULT_MEDIA_RECOGNITION_WINDOW_START,
+                "window_end": _normalize_clock(config.get("window_end"))
+                or DEFAULT_MEDIA_RECOGNITION_WINDOW_END,
+                "daily_limit": _positive_int(
+                    config.get("daily_limit"),
+                    default=DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
+                ),
+            }
+            return serialized
+        return {
+            "setting_id": SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+            "setting_kind": SERVICE_SETTING_KIND_RUNTIME,
+            "enabled": False,
+            "configured": False,
+            "status": STATUS_DISABLED,
+            "config": {
+                "window_start": DEFAULT_MEDIA_RECOGNITION_WINDOW_START,
+                "window_end": DEFAULT_MEDIA_RECOGNITION_WINDOW_END,
+                "daily_limit": DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
+            },
+            "secrets": {},
+            "last_tested_at": "",
+            "last_error_code": "",
+            "last_error_message": "",
+            "credential_value_exposure": "none",
+        }
+
+    def _serialize_platform_preferences(
+        self,
+        row: ServiceSetting | None,
+    ) -> dict[str, Any]:
+        timezone_name = (
+            _string(_dict(row.config_json).get("timezone"))
+            if row is not None
+            else ""
+        ) or DEFAULT_PLATFORM_TIMEZONE
+        return {
+            "setting_id": SERVICE_SETTING_PLATFORM_PREFERENCES,
+            "setting_kind": SERVICE_SETTING_KIND_RUNTIME,
+            "enabled": True,
+            "configured": row is not None and row.status == STATUS_READY,
+            "status": STATUS_READY if row is not None else STATUS_MISSING_CONFIG,
+            "config": {"timezone": timezone_name},
+            "secrets": {},
+            "last_tested_at": "",
+            "last_error_code": "",
+            "last_error_message": "",
+            "credential_value_exposure": "none",
+        }
 
 def resolve_portal_public_base_url(database_url: str, settings: Settings) -> str:
     row = _load_service_setting(database_url, SERVICE_SETTING_PORTAL_PUBLIC)
@@ -802,6 +950,79 @@ def resolve_site_relink_policy(database_url: str) -> dict[str, Any]:
     }
 
 
+def resolve_media_recognition_policy(database_url: str) -> dict[str, Any]:
+    row = _load_service_setting(database_url, SERVICE_SETTING_MEDIA_RECOGNITION_POLICY)
+    config = _dict(row.config_json) if row is not None else {}
+    return {
+        "enabled": bool(row is not None and row.enabled and row.status == STATUS_READY),
+        "timezone": resolve_platform_timezone(database_url),
+        "window_start": _normalize_clock(config.get("window_start"))
+        or DEFAULT_MEDIA_RECOGNITION_WINDOW_START,
+        "window_end": _normalize_clock(config.get("window_end"))
+        or DEFAULT_MEDIA_RECOGNITION_WINDOW_END,
+        "daily_limit": _positive_int(
+            config.get("daily_limit"),
+            default=DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
+        ),
+    }
+
+
+def resolve_platform_timezone(database_url: str) -> str:
+    row = _load_service_setting(database_url, SERVICE_SETTING_PLATFORM_PREFERENCES)
+    timezone_name = _string(_dict(row.config_json).get("timezone")) if row is not None else ""
+    return timezone_name or DEFAULT_PLATFORM_TIMEZONE
+
+
+def media_recognition_local_day_bounds(
+    policy: dict[str, Any],
+    *,
+    now: datetime,
+) -> tuple[datetime, datetime]:
+    timezone = ZoneInfo(_string(policy.get("timezone")) or DEFAULT_PLATFORM_TIMEZONE)
+    local_now = now.astimezone(timezone)
+    local_start = datetime.combine(local_now.date(), time.min, tzinfo=timezone)
+    return local_start.astimezone(UTC), (local_start + timedelta(days=1)).astimezone(UTC)
+
+
+def media_recognition_window_is_open(
+    policy: dict[str, Any],
+    *,
+    now: datetime,
+) -> bool:
+    timezone = ZoneInfo(_string(policy.get("timezone")) or DEFAULT_PLATFORM_TIMEZONE)
+    local_now = now.astimezone(timezone)
+    current_minutes = local_now.hour * 60 + local_now.minute
+    start_minutes = _clock_minutes(
+        _normalize_clock(policy.get("window_start")) or DEFAULT_MEDIA_RECOGNITION_WINDOW_START
+    )
+    end_minutes = _clock_minutes(
+        _normalize_clock(policy.get("window_end")) or DEFAULT_MEDIA_RECOGNITION_WINDOW_END
+    )
+    if start_minutes < end_minutes:
+        return start_minutes <= current_minutes < end_minutes
+    return current_minutes >= start_minutes or current_minutes < end_minutes
+
+
+def media_recognition_next_window_start(
+    policy: dict[str, Any],
+    *,
+    now: datetime,
+) -> datetime:
+    timezone = ZoneInfo(_string(policy.get("timezone")) or DEFAULT_PLATFORM_TIMEZONE)
+    local_now = now.astimezone(timezone)
+    start_minutes = _clock_minutes(
+        _normalize_clock(policy.get("window_start")) or DEFAULT_MEDIA_RECOGNITION_WINDOW_START
+    )
+    local_start = datetime.combine(
+        local_now.date(),
+        time(hour=start_minutes // 60, minute=start_minutes % 60),
+        tzinfo=timezone,
+    )
+    if local_start <= local_now:
+        local_start += timedelta(days=1)
+    return local_start.astimezone(UTC)
+
+
 def _load_service_setting(database_url: str, setting_id: str) -> ServiceSetting | None:
     with get_session(database_url) as session:
         return session.get(ServiceSetting, setting_id)
@@ -848,6 +1069,8 @@ def _boundary() -> dict[str, Any]:
             "portal_email_delivery_config",
             "payment_gateway_config",
             "site_account_relink_policy",
+            "platform_runtime_preferences",
+            "media_recognition_runtime_policy",
         ],
         "wordpress_control_plane": False,
         "ability_registry_truth": "wordpress_local",
@@ -935,6 +1158,22 @@ def _normalize_url(value: str) -> str:
 
 def _dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _normalize_clock(value: object) -> str:
+    text = _string(value)
+    parts = text.split(":")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        return ""
+    hour, minute = (int(part) for part in parts)
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return ""
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _clock_minutes(value: str) -> int:
+    hour, minute = (int(part) for part in value.split(":"))
+    return hour * 60 + minute
 
 
 def _string(value: object) -> str:

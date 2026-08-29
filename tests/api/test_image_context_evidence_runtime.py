@@ -20,11 +20,18 @@ from app.adapters.providers.base import (
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
-from app.core.models import MediaArtifact, ProviderCallRecord, RunRecord
+from app.core.models import (
+    MediaArtifact,
+    ProviderCallRecord,
+    RunRecord,
+    ServiceSetting,
+    SiteKnowledgeDocument,
+)
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
 from app.domain.media_artifacts.store import LocalVolumeArtifactStore
+from app.domain.runtime.service import RuntimeService
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_INTERNAL_AUTH_TOKEN,
@@ -47,8 +54,9 @@ class FakeVisionProvider:
     display_name = "Fake Vision"
     adapter_type = "openai"
 
-    def __init__(self, *, invalid_response: bool = False) -> None:
+    def __init__(self, *, invalid_response: bool = False, attachment_id: str = "101") -> None:
         self.invalid_response = invalid_response
+        self.attachment_id = attachment_id
         self.requests: list[ProviderExecutionRequest] = []
 
     def fetch_catalog(self) -> ProviderCatalogSnapshot:
@@ -89,7 +97,7 @@ class FakeVisionProvider:
                     "artifact_type": "image_context_evidence",
                     "items": [
                         {
-                            "attachment_id": "101",
+                            "attachment_id": self.attachment_id,
                             "visual_summary": "A red notebook beside a coffee mug.",
                             "visible_text": ["NPCINK"],
                             "subject_tags": ["notebook", "coffee mug"],
@@ -133,7 +141,13 @@ def _build_client(
         site_id="site_alpha",
         scopes=["runtime:execute", "runtime:read"],
     )
-    settings = Settings(
+    settings = _settings(tmp_path, database_url)
+    client = TestClient(create_app(CloudServices(settings=settings, providers=providers)))
+    return database_url, client, selected_provider
+
+
+def _settings(tmp_path: Path, database_url: str) -> Settings:
+    return Settings(
         _env_file=None,
         project_name="Npcink AI Cloud Image Context Evidence Test",
         environment="test",
@@ -144,8 +158,6 @@ def _build_client(
         portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
         artifact_store_root=str(tmp_path / "artifacts"),
     )
-    client = TestClient(create_app(CloudServices(settings=settings, providers=providers)))
-    return database_url, client, selected_provider
 
 
 def _seed_image_artifact(
@@ -197,6 +209,12 @@ def _payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
                 "title": "Notebook product shot",
                 "filename": "notebook.jpg",
                 "mime_type": "image/jpeg",
+                "attachment_url": "https://example.com/uploads/notebook.jpg",
+                "media_fingerprint": "sha256:notebook-fixture",
+                "modified_gmt": "2026-08-27T00:00:00Z",
+                "alt": "",
+                "caption": "",
+                "description": "",
                 "existing_alt": "",
                 "existing_caption": "",
             }
@@ -239,6 +257,49 @@ def _execute(
         )
     )
     return client.post("/v1/runtime/execute", content=body, headers=headers)
+
+
+def _clock_offset(minutes: int) -> str:
+    value = datetime.now(UTC) + timedelta(minutes=minutes)
+    return f"{value.hour:02d}:{value.minute:02d}"
+
+
+def _set_media_recognition_policy(
+    database_url: str,
+    *,
+    enabled: bool,
+    window_start: str,
+    window_end: str,
+    daily_limit: int,
+) -> None:
+    with get_session(database_url) as session:
+        session.merge(
+            ServiceSetting(
+                setting_id="media_recognition_policy",
+                setting_kind="runtime",
+                enabled=enabled,
+                config_json={
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "daily_limit": daily_limit,
+                },
+                secret_ciphertext_json={},
+                status="ready" if enabled else "disabled",
+                metadata_json={},
+            )
+        )
+        session.merge(
+            ServiceSetting(
+                setting_id="platform_preferences",
+                setting_kind="runtime",
+                enabled=True,
+                config_json={"timezone": "UTC"},
+                secret_ciphertext_json={},
+                status="ready",
+                metadata_json={},
+            )
+        )
+        session.commit()
 
 
 def test_image_context_evidence_runtime_calls_vision_provider(tmp_path: Path) -> None:
@@ -292,6 +353,189 @@ def test_image_context_evidence_runtime_calls_vision_provider(tmp_path: Path) ->
         assert provider_calls[0].provider_id == "fakevision"
         assert provider_calls[0].tokens_in == 123
         assert provider_calls[0].tokens_out == 45
+
+
+def test_background_media_recognition_requires_enabled_policy(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+
+    response = _execute(
+        client,
+        _payload({"dispatch_mode": "background_completion"}),
+        idempotency_key="image-context-background-disabled",
+    )
+
+    assert response.status_code == 409, response.json()
+    assert response.json()["error_code"] == "media_recognition.background_disabled"
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        assert session.scalar(
+            select(RunRecord).where(
+                RunRecord.idempotency_key == "image-context-background-disabled"
+            )
+        ) is None
+
+
+def test_background_media_recognition_enforces_window_model_and_daily_item_limit(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    window_start = _clock_offset(-1)
+    window_end = _clock_offset(1)
+    _set_media_recognition_policy(
+        database_url,
+        enabled=True,
+        window_start=window_start,
+        window_end=window_end,
+        daily_limit=1,
+    )
+
+    first = _execute(
+        client,
+        _payload({"dispatch_mode": "background_completion"}),
+        idempotency_key="image-context-background-first",
+    )
+    assert first.status_code == 200, first.json()
+    first_data = first.json()["data"]
+    assert first_data["status"] == "queued"
+    assert first_data["model_id"] == "fake-vision-model"
+    assert first_data["provider_call_count"] == 0
+    assert provider.requests == []
+
+    worker = RuntimeService(
+        database_url,
+        settings=_settings(tmp_path, database_url),
+        providers={provider.provider_id: provider},
+    )
+    processed = worker.process_next_queued_run(timeout_seconds=0)
+    assert processed == {
+        "run_id": first_data["run_id"],
+        "status": "succeeded",
+        "trace_id": "imagecontextevidence000000000000",
+    }
+    assert len(provider.requests) == 1
+
+    with get_session(database_url) as session:
+        completed_run = session.get(RunRecord, first_data["run_id"])
+        assert completed_run is not None
+        assert completed_run.execution_input_ciphertext is None
+        assert completed_run.result_json["progress"]["status"] == "completed"
+        assert completed_run.result_json["progress"]["processed_items"] == 1
+        assert completed_run.result_json["site_knowledge_projection"]["status"] == (
+            "completed"
+        )
+        media_document = session.scalar(
+            select(SiteKnowledgeDocument).where(
+                SiteKnowledgeDocument.site_id == "site_alpha",
+                SiteKnowledgeDocument.source_type == "media",
+                SiteKnowledgeDocument.source_id == 101,
+            )
+        )
+        assert media_document is not None
+        assert media_document.url == "https://example.com/uploads/notebook.jpg"
+        assert media_document.metadata_json["media_fingerprint"] == (
+            "sha256:notebook-fixture"
+        )
+
+    second = _execute(
+        client,
+        _payload({"dispatch_mode": "background_completion"}),
+        idempotency_key="image-context-background-second",
+    )
+    assert second.status_code == 200, second.json()
+    second_data = second.json()["data"]
+    assert second_data["status"] == "queued"
+    assert second_data["provider_call_count"] == 0
+
+    interactive = _execute(
+        client,
+        _payload(),
+        idempotency_key="image-context-interactive-after-background-limit",
+    )
+    assert interactive.status_code == 200, interactive.json()
+    assert len(provider.requests) == 2
+
+    with get_session(database_url) as session:
+        background_run = session.scalar(
+            select(RunRecord).where(
+                RunRecord.idempotency_key == "image-context-background-first"
+            )
+        )
+        deferred_run = session.scalar(
+            select(RunRecord).where(
+                RunRecord.idempotency_key == "image-context-background-second"
+            )
+        )
+    assert background_run is not None
+    recognition_policy = background_run.policy_json["media_recognition_policy"]
+    assert recognition_policy["dispatch_mode"] == "background_completion"
+    assert recognition_policy["model_id"] == "fake-vision-model"
+    assert recognition_policy["model_source_profile_id"] == "vision.ai"
+    assert recognition_policy["timezone"] == "UTC"
+    assert recognition_policy["window_start"] == window_start
+    assert recognition_policy["window_end"] == window_end
+    assert recognition_policy["daily_limit"] == 1
+    assert recognition_policy["item_count"] == 1
+    assert deferred_run is not None
+    assert deferred_run.status == "queued"
+    assert deferred_run.worker_eligible_at is not None
+    assert worker.run_projector.normalize_timestamp(
+        deferred_run.worker_eligible_at
+    ) > datetime.now(UTC)
+    assert deferred_run.execution_input_ciphertext
+    assert worker.process_next_queued_run(timeout_seconds=0) is None
+
+
+def test_background_media_recognition_queues_outside_window(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _set_media_recognition_policy(
+        database_url,
+        enabled=True,
+        window_start=_clock_offset(2),
+        window_end=_clock_offset(3),
+        daily_limit=100,
+    )
+
+    response = _execute(
+        client,
+        _payload({"dispatch_mode": "background_completion"}),
+        idempotency_key="image-context-background-outside-window",
+    )
+
+    assert response.status_code == 200, response.json()
+    data = response.json()["data"]
+    assert data["status"] == "queued"
+    assert data["provider_call_count"] == 0
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, data["run_id"])
+        assert run is not None
+        assert run.worker_eligible_at is not None
+        assert RuntimeService(
+            database_url,
+            settings=_settings(tmp_path, database_url),
+            providers={provider.provider_id: provider},
+        ).run_projector.normalize_timestamp(run.worker_eligible_at) > datetime.now(UTC)
+        assert run.execution_input_ciphertext
+    worker = RuntimeService(
+        database_url,
+        settings=_settings(tmp_path, database_url),
+        providers={provider.provider_id: provider},
+    )
+    assert worker.process_next_queued_run(timeout_seconds=0) is None
+
+
+def test_image_context_evidence_rejects_unknown_dispatch_mode(tmp_path: Path) -> None:
+    _, client, provider = _build_client(tmp_path)
+
+    response = _execute(
+        client,
+        _payload({"dispatch_mode": "price_prediction"}),
+        idempotency_key="image-context-invalid-dispatch-mode",
+    )
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["error_code"] == "image_context_evidence.dispatch_mode_invalid"
+    assert provider.requests == []
 
 
 def test_image_context_evidence_accepts_same_site_artifact_without_persisting_bytes(
