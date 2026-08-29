@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -147,7 +148,7 @@ def _runtime_service_settings(database_url: str) -> Settings:
 def _runtime_callback_metadata(
     callback_url: str,
     *,
-    callback_id: str = "runtime_terminal",
+    registration_id: str = "runtime_terminal",
 ) -> dict[str, object]:
     settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
     return {
@@ -160,7 +161,7 @@ def _runtime_callback_metadata(
                     "runtime-callback-secret-for-tests-32b",
                     settings=settings,
                 ),
-                "callback_id": callback_id,
+                "registration_id": registration_id,
             }
         }
     }
@@ -1261,7 +1262,7 @@ def test_image_generation_provider_errors_never_publish_upstream_bodies(
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
         site_metadata=_runtime_callback_metadata(
             "https://example.com/runtime",
-            callback_id=f"image-generation-error-{status_code}",
+            registration_id=f"image-generation-error-{status_code}",
         ),
     )
     payload = {
@@ -3459,7 +3460,7 @@ def test_callback_delivery_worker_dispatches_terminal_run_payload(
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
         site_metadata=_runtime_callback_metadata(
             "https://example.com/runtime",
-            callback_id="runtime-terminal-dispatch",
+            registration_id="runtime-terminal-dispatch",
         ),
     )
     payload = {
@@ -3521,9 +3522,13 @@ def test_callback_delivery_worker_dispatches_terminal_run_payload(
         }
     ]
     assert len(callback_requests) == 1
-    assert callback_requests[0]["url"] == "https://example.com/runtime"
+    assert callback_requests[0]["url"] == "https://93.184.216.34/runtime"
+    assert callback_requests[0]["headers"]["host"] == "example.com"
     assert callback_requests[0]["headers"]["x-npcink-cloud-event"] == "runtime.run.terminal"
-    assert callback_requests[0]["headers"]["x-npcink-callback-id"] == "runtime-terminal-dispatch"
+    expected_callback_id = "runtime_delivery_" + hashlib.sha256(
+        f"runtime-terminal-dispatch|{run_id}|runtime.run.terminal".encode()
+    ).hexdigest()
+    assert callback_requests[0]["headers"]["x-npcink-callback-id"] == expected_callback_id
     assert callback_requests[0]["headers"]["x-npcink-signature"] != ""
     assert callback_requests[0]["headers"]["x-npcink-timestamp"] != ""
     assert callback_requests[0]["payload"]["run_id"] == run_id
@@ -3580,7 +3585,7 @@ def test_callback_delivery_worker_retries_retryable_failures(
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
         site_metadata=_runtime_callback_metadata(
             "https://example.com/retry",
-            callback_id="runtime-terminal-retry",
+            registration_id="runtime-terminal-retry",
         ),
     )
     payload = {
@@ -4073,7 +4078,7 @@ def test_execute_route_rejects_plaintext_registered_callback_secret_without_ciph
                     "callback_url": "https://example.com/runtime",
                     "key_id": "runtime_callback_key",
                     "secret": "legacy-plaintext-secret",
-                    "callback_id": "runtime_terminal",
+                    "registration_id": "runtime_terminal",
                 }
             }
         },

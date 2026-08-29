@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -91,7 +92,7 @@ class RuntimeCallbackDeliveryService:
             "source": "site_registered",
             "callback_url": callback_url,
             "key_id": key_id,
-            "callback_id": str(registered.get("callback_id") or "runtime_terminal"),
+            "registration_id": str(registered.get("registration_id") or ""),
             "registered": True,
         }
 
@@ -157,12 +158,13 @@ class RuntimeCallbackDeliveryService:
             ).strip(),
             "secret": secret.strip(),
             "secret_error": secret_error.strip(),
-            "callback_id": str(
-                callback.get("callback_id")
+            "registration_id": str(
+                callback.get("registration_id")
+                or callback.get("callback_id")
+                or metadata.get("runtime_terminal_callback_registration_id")
                 or metadata.get("runtime_terminal_callback_id")
-                or "runtime_terminal"
-            ).strip()
-            or "runtime_terminal",
+                or ""
+            ).strip(),
         }
 
     def _dispatch_single_pending_callback(self) -> dict[str, object] | None:
@@ -257,14 +259,14 @@ class RuntimeCallbackDeliveryService:
             registered_callback_url = str(registered.get("callback_url") or "")
             registered_key_id = str(registered.get("key_id") or "")
             registered_secret = str(registered.get("secret") or "")
-            registered_callback_id = str(registered.get("callback_id") or "")
+            registered_registration_id = str(registered.get("registration_id") or "")
             if (
                 not bool(registered.get("enabled"))
                 or bool(str(registered.get("secret_error") or ""))
                 or not registered_callback_url
                 or not registered_key_id
                 or not registered_secret
-                or not registered_callback_id
+                or not registered_registration_id
             ):
                 self._mark_callback_config_invalid(
                     repository,
@@ -278,8 +280,8 @@ class RuntimeCallbackDeliveryService:
                 str(callback_target.get("callback_url") or "")
                 != registered_callback_url
                 or str(callback_target.get("key_id") or "") != registered_key_id
-                or str(callback_target.get("callback_id") or "")
-                != registered_callback_id
+                or str(callback_target.get("registration_id") or "")
+                != registered_registration_id
             ):
                 self._mark_callback_config_invalid(
                     repository,
@@ -302,8 +304,18 @@ class RuntimeCallbackDeliveryService:
                 event=RUNTIME_CALLBACK_EVENT,
                 key_id=str(callback_target.get("key_id") or ""),
                 secret=registered_secret,
-                callback_id=str(callback_target.get("callback_id") or run.run_id),
+                callback_id=self._delivery_callback_id(
+                    registration_id=registered_registration_id,
+                    run_id=run.run_id,
+                ),
             )
+
+    @staticmethod
+    def _delivery_callback_id(*, registration_id: str, run_id: str) -> str:
+        digest = hashlib.sha256(
+            f"{registration_id}|{run_id}|{RUNTIME_CALLBACK_EVENT}".encode()
+        ).hexdigest()
+        return f"runtime_delivery_{digest}"
 
     @staticmethod
     def _mark_callback_config_invalid(

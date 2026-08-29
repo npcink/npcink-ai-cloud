@@ -1110,13 +1110,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         callback_url = str(raw.get("callback_url") or raw.get("url") or "").strip()
         key_id = str(raw.get("key_id") or "").strip()
         secret = str(raw.get("secret") or "").strip()
-        callback_id = (
-            str(raw.get("callback_id") or "runtime_terminal").strip() or "runtime_terminal"
-        )
+        registration_id = str(raw.get("registration_id") or "").strip()
         return {
             "enabled": bool(raw.get("enabled")),
             "callback_url": callback_url,
             "key_id": key_id,
             "secret": secret,
-            "callback_id": callback_id,
+            "registration_id": registration_id,
         }

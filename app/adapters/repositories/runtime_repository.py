@@ -93,6 +93,7 @@ class RuntimeRepository:
         selected_provider_id: str | None = None,
         selected_model_id: str | None = None,
         selected_instance_id: str | None = None,
+        worker_eligible_at: datetime | None = None,
     ) -> RunRecord:
         processing_started_at = datetime.now(UTC) if status == "running" else None
         run = RunRecord(
@@ -124,6 +125,7 @@ class RuntimeRepository:
             selected_model_id=selected_model_id,
             selected_instance_id=selected_instance_id,
             processing_started_at=processing_started_at,
+            worker_eligible_at=worker_eligible_at,
         )
         self.session.add(run)
         self.session.flush()
@@ -159,10 +161,13 @@ class RuntimeRepository:
         return run
 
     def claim_run_if_queued(self, run_id: str) -> RunRecord | None:
+        now = datetime.now(UTC)
         return self._claim_queued_run(
             update(RunRecord).where(
                 RunRecord.run_id == run_id,
                 RunRecord.status == "queued",
+                (RunRecord.worker_eligible_at.is_(None))
+                | (RunRecord.worker_eligible_at <= now),
             )
         )
 
@@ -171,11 +176,15 @@ class RuntimeRepository:
         *,
         media_derivative_site_running_limit: int | None = None,
     ) -> RunRecord | None:
+        now = datetime.now(UTC)
+        eligible_filter = (RunRecord.worker_eligible_at.is_(None)) | (
+            RunRecord.worker_eligible_at <= now
+        )
         if media_derivative_site_running_limit and media_derivative_site_running_limit > 0:
             candidate_run_ids = list(
                 self.session.scalars(
                     select(RunRecord.run_id)
-                    .where(RunRecord.status == "queued")
+                    .where(RunRecord.status == "queued", eligible_filter)
                     .order_by(RunRecord.started_at.asc(), RunRecord.run_id.asc())
                     .limit(50)
                 )
@@ -194,6 +203,7 @@ class RuntimeRepository:
                     update(RunRecord).where(
                         RunRecord.run_id == candidate.run_id,
                         RunRecord.status == "queued",
+                        eligible_filter,
                     )
                 )
             self.session.flush()
@@ -201,7 +211,7 @@ class RuntimeRepository:
 
         oldest_queued_run_id = (
             select(RunRecord.run_id)
-            .where(RunRecord.status == "queued")
+            .where(RunRecord.status == "queued", eligible_filter)
             .order_by(RunRecord.started_at.asc(), RunRecord.run_id.asc())
             .limit(1)
             .scalar_subquery()
@@ -210,15 +220,24 @@ class RuntimeRepository:
             update(RunRecord).where(
                 RunRecord.run_id == oldest_queued_run_id,
                 RunRecord.status == "queued",
+                eligible_filter,
             )
         )
+
+    def defer_run_until(self, run: RunRecord, *, eligible_at: datetime) -> None:
+        run.status = "queued"
+        run.processing_started_at = None
+        run.worker_eligible_at = eligible_at
+        self.session.flush()
 
     def _claim_queued_run(self, statement: Any) -> RunRecord | None:
         claimed_row = self.session.execute(
             statement.values(
                 status="running",
                 processing_started_at=datetime.now(UTC),
-            ).returning(RunRecord.run_id)
+            )
+            .returning(RunRecord.run_id)
+            .execution_options(synchronize_session=False)
         ).first()
         if claimed_row is None:
             self.session.flush()
@@ -230,7 +249,7 @@ class RuntimeRepository:
             return None
 
         self.session.flush()
-        return self.get_run(claimed_run_id)
+        return self.session.get(RunRecord, claimed_run_id, populate_existing=True)
 
     def count_running_media_derivative_runs(self, site_id: str) -> int:
         return int(

@@ -1596,6 +1596,9 @@ class RunRecord(Base):
         server_default=func.now(),
     )
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    worker_eligible_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retention_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -105,7 +105,7 @@ def _runtime_callback_metadata(callback_url: str) -> dict[str, object]:
                     "runtime-callback-secret-for-tests-32b",
                     settings=settings,
                 ),
-                "callback_id": "runtime_terminal_contract",
+                "registration_id": "runtime_terminal_contract",
             }
         }
     }
@@ -247,6 +247,7 @@ def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
         "phase",
         "queue_mode",
         "requested_at",
+        "worker_eligible_at",
         "processing_started_at",
         "terminal_at",
         "terminal_status",
@@ -363,6 +364,7 @@ def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
         "phase",
         "queue_mode",
         "requested_at",
+        "worker_eligible_at",
         "processing_started_at",
         "terminal_at",
         "terminal_status",

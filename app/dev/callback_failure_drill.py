@@ -142,7 +142,7 @@ def _register_runtime_callback(
                     "runtime-callback-secret-for-drill-32b",
                     settings=settings,
                 ),
-                "callback_id": "runtime-terminal-callback-failure-drill",
+                "registration_id": "runtime-terminal-callback-failure-drill",
             }
         },
     }

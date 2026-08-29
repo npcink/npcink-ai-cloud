@@ -234,17 +234,23 @@
 
 - public runtime terminal callback 不再把 request-level `callback_url` 当长期真源。
 - 当前固定语义是：callback endpoint 必须来自 site 预登记 metadata，Cloud callback dispatch 按注册信息做签名投递。
+- 当前 public 注册入口固定为 `POST /v1/runtime/callbacks/terminal`，使用 site HMAC、`runtime:execute` scope 与 `Idempotency-Key`；Addon 接收入口固定为 `POST /wp-json/npcink-cloud-addon/v1/runtime-callbacks/terminal`。
+- `registration_id` 是稳定的站点注册身份；`callback_id` 是按 `registration_id + run_id + event` 派生的稳定单次运行投递身份，不得跨 run 复用。
 - signed runtime callback 至少固定带：
-  - `X-Magick-Cloud-Event`
-  - `X-Magick-Run-Id`
-  - `X-Magick-Trace-Id`
-  - `X-Magick-Timestamp`
-  - `X-Magick-Callback-Id`
-  - `X-Magick-Signature`
+  - `X-Npcink-Cloud-Event`
+  - `X-Npcink-Run-Id`
+  - `X-Npcink-Trace-Id`
+  - `X-Npcink-Site-Id`
+  - `X-Npcink-Key-Id`
+  - `X-Npcink-Timestamp`
+  - `X-Npcink-Callback-Id`
+  - `X-Npcink-Signature`
+  - `traceparent`
 - canonical pull truth 继续固定为：
   - `GET /v1/runs/{run_id}`
   - `GET /v1/runs/{run_id}/result`
-- callback failure / retry / stale reclaim 仍然只属于 bounded delivery semantics，不构成第二 scheduler 或第二 run truth。
+- callback receiver 只允许唤醒既有本地 continuation Cron；不得应用 callback body 结果、推进本地游标或执行 WordPress 写入。
+- callback failure / retry / stale reclaim 仍然只属于 bounded delivery semantics，不构成第二 scheduler 或第二 run truth；Cron/polling 继续作为 callback 延迟、失败及不可达站点的兜底。
 
 ### 3.2D.3 Storage Policy Contract
 

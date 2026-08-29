@@ -192,7 +192,7 @@ def _run(*, run_id: str = "run_callback") -> RunRecord:
                 "source": "site_registered",
                 "callback_url": "https://callback.example.test/runtime",
                 "key_id": "callback_key",
-                "callback_id": "runtime_terminal_test",
+                "registration_id": "runtime_terminal_test",
                 "registered": True,
             },
             "task_backend": {
@@ -235,7 +235,7 @@ def _site(settings: Settings, *, secret: str) -> SimpleNamespace:
                         secret,
                         settings=settings,
                     ),
-                    "callback_id": "runtime_terminal_test",
+                    "registration_id": "runtime_terminal_test",
                 }
             }
         }
@@ -288,6 +288,25 @@ def test_disabled_callback_and_missing_dispatcher_do_not_deliver(
         )
 
 
+def test_delivery_callback_id_is_stable_per_run_and_unique_between_runs() -> None:
+    first = RuntimeCallbackDeliveryService._delivery_callback_id(
+        registration_id="registration_alpha",
+        run_id="run_alpha",
+    )
+    repeated = RuntimeCallbackDeliveryService._delivery_callback_id(
+        registration_id="registration_alpha",
+        run_id="run_alpha",
+    )
+    second = RuntimeCallbackDeliveryService._delivery_callback_id(
+        registration_id="registration_alpha",
+        run_id="run_beta",
+    )
+
+    assert first == repeated
+    assert first != second
+    assert first.startswith("runtime_delivery_")
+
+
 def test_registered_target_resolution_rejects_override_plaintext_and_bad_ciphertext() -> None:
     settings = _settings()
     callback_secret = "callback-secret-used-only-for-signing"
@@ -308,10 +327,20 @@ def test_registered_target_resolution_rejects_override_plaintext_and_bad_ciphert
         "source": "site_registered",
         "callback_url": "https://callback.example.test/runtime",
         "key_id": "callback_key",
-        "callback_id": "runtime_terminal_test",
+        "registration_id": "runtime_terminal_test",
         "registered": True,
     }
     assert callback_secret not in json.dumps(target)
+
+    legacy_site = _site(settings, secret=callback_secret)
+    legacy_registration = legacy_site.metadata_json["runtime_callbacks"]["terminal"]
+    legacy_registration["callback_id"] = legacy_registration.pop("registration_id")
+    legacy_target = service.resolve_callback_target(
+        site=legacy_site,
+        request=_request(),
+        callback_mode="polling_preferred",
+    )
+    assert legacy_target["registration_id"] == "runtime_terminal_test"
     with pytest.raises(RuntimeCallbackConfigurationError, match="overrides are not accepted"):
         service.resolve_callback_target(
             site=site,
@@ -390,7 +419,8 @@ def test_successful_delivery_preserves_signing_fields_and_excludes_secret_from_p
     assert callback_request.site_id == "site_alpha"
     assert callback_request.callback_url == "https://callback.example.test/runtime"
     assert callback_request.key_id == "callback_key"
-    assert callback_request.callback_id == "runtime_terminal_test"
+    assert callback_request.callback_id.startswith("runtime_delivery_")
+    assert len(callback_request.callback_id) == len("runtime_delivery_") + 64
     assert callback_request.secret
     callback_request_repr = repr(callback_request)
     assert callback_secret not in callback_request_repr
@@ -414,7 +444,7 @@ def test_successful_delivery_preserves_signing_fields_and_excludes_secret_from_p
         "missing_site",
         "missing_registration",
         "disabled_registration",
-        "changed_callback_id",
+        "changed_registration_id",
         "callback_url_mismatch",
         "key_id_mismatch",
     ],
@@ -442,8 +472,8 @@ def test_claim_fails_closed_when_persisted_target_is_not_current_registration(
         site = SimpleNamespace(metadata_json={})
     elif scenario == "disabled_registration":
         registration["enabled"] = False
-    elif scenario == "changed_callback_id":
-        registration["callback_id"] = "runtime_terminal_changed"
+    elif scenario == "changed_registration_id":
+        registration["registration_id"] = "runtime_terminal_changed"
     elif scenario == "callback_url_mismatch":
         registration["callback_url"] = "https://changed.example.test/runtime"
     elif scenario == "key_id_mismatch":
