@@ -5288,6 +5288,17 @@ def test_image_generation_translates_reviewed_chinese_prompt_before_provider_cal
     generated_prompt = provider.requests[1].input_payload["prompt"]
     assert generated_prompt.startswith("Create a quiet editorial workspace")
     assert "自然光" not in provider.requests[1].input_payload["prompt"]
+    with get_session(database_url) as session:
+        provider_call_events = list(
+            session.scalars(
+                select(UsageMeterEvent)
+                .where(UsageMeterEvent.meter_key == "provider_calls")
+                .order_by(UsageMeterEvent.id)
+            )
+        )
+    assert len(provider_call_events) == 2
+    assert provider_call_events[0].payload_json["source_type"] == "image_prompt_translation"
+    assert "source_type" not in provider_call_events[1].payload_json
 
     dispose_engine(database_url)
 

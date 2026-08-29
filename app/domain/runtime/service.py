@@ -2539,6 +2539,7 @@ class RuntimeService:
                         fallback_used=False,
                         error_code=error.error_code,
                     ),
+                    usage_context={"source_type": "image_prompt_translation"},
                 )
                 taxonomy = get_error_taxonomy(error.error_code)
                 if retry_count < max_retries and error.retryable and taxonomy.retryable:
@@ -2570,6 +2571,7 @@ class RuntimeService:
                 fallback_used=False,
                 error_code=None,
             ),
+            usage_context={"source_type": "image_prompt_translation"},
         )
         translated_prompt = " ".join(str(result.output.get("output_text") or "").split())[:4000]
         if not translated_prompt or self._contains_cjk(translated_prompt):
