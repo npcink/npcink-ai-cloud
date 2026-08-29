@@ -83,7 +83,7 @@ def test_0082_moves_legacy_vision_configuration_to_canonical_profile() -> None:
             [
                 {
                     "profile_id": "vision.ai",
-                    "candidate_instance_ids": [],
+                    "candidate_instance_ids": ["catalog.default"],
                     "selection_policy_json": {"strategy": "ordered"},
                     "revision": "catalog-seed",
                 },
@@ -135,6 +135,56 @@ def test_0082_moves_legacy_vision_configuration_to_canonical_profile() -> None:
     ]
     assert canonical_binding["selection_policy_json"]["operator_note"] == "keep this note"
     assert provider["config_json"]["runtime_profile_ids"] == ["vision.ai", "text.ai"]
+
+
+def test_0082_preserves_an_explicitly_empty_legacy_admin_chain() -> None:
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+    profiles, bindings, _connections = _tables(engine)
+    migration = _load()
+
+    with engine.begin() as connection:
+        connection.execute(
+            profiles.insert(),
+            [
+                {
+                    "profile_id": "vision.ai",
+                    "execution_kind": "vision",
+                    "default_policy_json": {"timeout_ms": 30000},
+                },
+                {
+                    "profile_id": "wp-ai.alt-text-vision",
+                    "execution_kind": "vision",
+                    "default_policy_json": {"timeout_ms": 45000},
+                },
+            ],
+        )
+        connection.execute(
+            bindings.insert(),
+            [
+                {
+                    "profile_id": "vision.ai",
+                    "candidate_instance_ids": ["catalog.default"],
+                    "selection_policy_json": {"strategy": "ordered"},
+                    "revision": "catalog-seed",
+                },
+                {
+                    "profile_id": "wp-ai.alt-text-vision",
+                    "candidate_instance_ids": [],
+                    "selection_policy_json": {"strategy": "ordered"},
+                    "revision": "runtime-profiles-admin-legacy-empty",
+                },
+            ],
+        )
+
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+
+        canonical_binding = connection.execute(
+            sa.select(bindings).where(bindings.c.profile_id == "vision.ai")
+        ).mappings().one()
+
+    assert canonical_binding["candidate_instance_ids"] == []
+    assert canonical_binding["revision"] == "runtime-profiles-admin-legacy-empty"
 
 
 def test_0082_keeps_existing_admin_managed_canonical_profile() -> None:

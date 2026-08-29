@@ -75,18 +75,31 @@ def upgrade() -> None:
         str(canonical_binding.get("revision") or "").startswith("runtime-profiles-admin-")
         if canonical_binding
         else False
-    ) or bool(
-        _list(
-            canonical_binding.get("candidate_instance_ids")
-            if canonical_binding
-            else None
-        )
+    )
+    legacy_is_admin_managed = (
+        str(legacy_binding.get("revision") or "").startswith("runtime-profiles-admin-")
+        if legacy_binding
+        else False
+    )
+    canonical_candidates = _list(
+        canonical_binding.get("candidate_instance_ids") if canonical_binding else None
     )
     legacy_candidates = _list(
         legacy_binding.get("candidate_instance_ids") if legacy_binding else None
     )
+    should_migrate_legacy = bool(
+        legacy_profile
+        and legacy_binding
+        and not canonical_is_admin_managed
+        and (
+            legacy_is_admin_managed
+            or not canonical_profile
+            or not canonical_binding
+            or (legacy_candidates and not canonical_candidates)
+        )
+    )
 
-    if legacy_profile and legacy_binding and legacy_candidates and not canonical_is_admin_managed:
+    if should_migrate_legacy:
         migrated_policy = {
             **_dict(legacy_profile.get("default_policy_json")),
             "managed_surface": "hosted_runtime_profiles",
