@@ -142,6 +142,7 @@ def test_run_projection_covers_public_status_states(
     task_backend = projector.build_task_backend_payload(run)
 
     assert lifecycle["phase"] == phase
+    assert lifecycle["worker_eligible_at"] is None
     assert lifecycle["terminal_status"] == terminal_status
     assert lifecycle["queue_mode"] == "queue_backed"
     assert run_state["phase"] == phase

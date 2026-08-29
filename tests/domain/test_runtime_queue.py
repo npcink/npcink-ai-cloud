@@ -78,7 +78,7 @@ def _register_runtime_callback(database_url: str, callback_url: str) -> None:
                         "runtime-callback-test-secret-32b",
                         settings=settings,
                     ),
-                    "callback_id": "runtime_terminal",
+                    "registration_id": "runtime_terminal",
                 }
             }
         }
@@ -354,6 +354,23 @@ def test_claim_next_queued_run_uses_atomic_update_returning(tmp_path: Path) -> N
         )
     )
     assert queued.status == "queued"
+
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.worker_eligible_at = datetime.now(UTC) + timedelta(hours=1)
+        session.commit()
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        assert repository.claim_run_if_queued(queued.run_id) is None
+        assert repository.claim_next_queued_run() is None
+
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.worker_eligible_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
 
     with get_session(database_url) as session:
         repository = RuntimeRepository(session)

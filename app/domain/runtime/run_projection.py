@@ -102,6 +102,7 @@ class RuntimeRunProjector:
             "phase": phase_map.get(run.status, "requested"),
             "queue_mode": self.get_queue_mode(run.execution_pattern, policy),
             "requested_at": self.serialize_timestamp(run.started_at),
+            "worker_eligible_at": self.serialize_timestamp(run.worker_eligible_at),
             "processing_started_at": self.serialize_timestamp(run.processing_started_at),
             "terminal_at": self.serialize_timestamp(run.finished_at),
             "terminal_status": terminal_status,

@@ -338,7 +338,7 @@ def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
             "callback_url": "https://example.com/diag",
             "key_id": "runtime_callback_key",
             "secret": RUNTIME_CALLBACK_TEST_SECRET,
-            "callback_id": "runtime_terminal",
+            "registration_id": "runtime_terminal",
         },
     )
 
@@ -784,7 +784,7 @@ def test_service_routes_runtime_callback_dispatch_recovery_is_operator_visible(
             "callback_url": "https://example.com/recover",
             "key_id": "runtime_callback_key",
             "secret": RUNTIME_CALLBACK_TEST_SECRET,
-            "callback_id": "runtime_terminal",
+            "registration_id": "runtime_terminal",
         },
     )
 
