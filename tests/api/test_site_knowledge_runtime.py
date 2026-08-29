@@ -35,6 +35,7 @@ from app.domain.site_knowledge.contracts import (
     SiteKnowledgeContractViolation,
     validate_site_knowledge_runtime_contract,
 )
+from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.rerankers import (
     MAX_RERANK_DOCUMENT_CHARS,
     JinaSiteKnowledgeReranker,
@@ -84,6 +85,56 @@ def test_public_taxonomy_metadata_is_bounded_and_allowlisted() -> None:
     assert normalized["category"][0] == "Cloud AI"
     assert len(normalized["category"]) == 20
     assert normalized["post_tag"] == ["x" * 80]
+
+
+def test_reference_metadata_uses_post_document_when_comment_shares_post_id(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    with get_session(database_url) as session:
+        repository = SiteKnowledgeRepository(session)
+        repository.upsert_document_with_chunks(
+            site_id="site_alpha",
+            post_id=123,
+            source_type="post",
+            source_id=123,
+            parent_post_id=None,
+            post_type="post",
+            post_status="publish",
+            title="WordPress vector search",
+            url="https://example.test/post",
+            modified_gmt="2026-08-29 00:00:00",
+            content_hash="post-hash",
+            run_id="run-post",
+            metadata={"taxonomies": {"category": ["Search"]}},
+            chunks=[],
+        )
+        repository.upsert_document_with_chunks(
+            site_id="site_alpha",
+            post_id=123,
+            source_type="comment",
+            source_id=999,
+            parent_post_id=123,
+            post_type="comment",
+            post_status="publish",
+            title="Comment",
+            url="https://example.test/post#comment-999",
+            modified_gmt="2026-08-29 00:01:00",
+            content_hash="comment-hash",
+            run_id="run-comment",
+            metadata={},
+            chunks=[],
+        )
+        session.commit()
+
+        metadata = repository.reference_metadata_for_post_ids(
+            site_id="site_alpha",
+            post_ids=[123],
+        )
+
+    assert metadata[123]["title"] == "WordPress vector search"
+    assert metadata[123]["taxonomies"] == {"category": ["Search"]}
 
 
 def _sqlite_url(tmp_path: Path) -> str:

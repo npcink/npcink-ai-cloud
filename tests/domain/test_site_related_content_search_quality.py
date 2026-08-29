@@ -1,6 +1,97 @@
+from app.domain.site_knowledge.backends import SiteKnowledgeBackendError, VectorSearchHit
 from app.domain.site_knowledge.related_content_search_quality import (
     rank_related_content_search_results,
 )
+from app.domain.site_knowledge.service import SiteKnowledgeService
+
+
+def _vector_hit(post_id: int, chunk_index: int) -> VectorSearchHit:
+    return VectorSearchHit(
+        post_id=post_id,
+        source_type="post",
+        source_id=post_id,
+        parent_post_id=0,
+        chunk_index=chunk_index,
+        post_type="post",
+        post_status="publish",
+        title=f"Post {post_id}",
+        url=f"https://example.test/{post_id}",
+        chunk_text=f"Chunk {chunk_index}",
+        score=0.9 - (chunk_index / 1000),
+    )
+
+
+def test_related_content_expands_vector_window_when_chunks_hide_unique_documents() -> None:
+    class FakeBackend:
+        def __init__(self) -> None:
+            self.limits: list[int] = []
+
+        def search(self, **kwargs: object) -> list[VectorSearchHit]:
+            limit = int(kwargs["limit"])
+            self.limits.append(limit)
+            if limit < 80:
+                return [_vector_hit(1, index) for index in range(limit)]
+            return [
+                *[_vector_hit(1, index) for index in range(32)],
+                *[_vector_hit(post_id, 0) for post_id in range(2, 10)],
+            ]
+
+    service = SiteKnowledgeService.__new__(SiteKnowledgeService)
+    backend = FakeBackend()
+    service.vector_backend = backend
+
+    results = service._search_vector_backend(
+        site_id="site_alpha",
+        query_embedding=[0.1, 0.2],
+        post_types=["post"],
+        statuses=["publish"],
+        source_types=["post"],
+        current_post_id=0,
+        max_results=8,
+        intent="related_content",
+        query="WordPress vector search",
+    )
+
+    assert backend.limits == [32, 80]
+    assert results is not None
+    assert len({result["post_id"] for result in results}) == 9
+
+
+def test_related_content_keeps_initial_hits_when_window_expansion_fails() -> None:
+    class FakeBackend:
+        def __init__(self) -> None:
+            self.limits: list[int] = []
+
+        def search(self, **kwargs: object) -> list[VectorSearchHit]:
+            limit = int(kwargs["limit"])
+            self.limits.append(limit)
+            if limit == 80:
+                raise SiteKnowledgeBackendError(
+                    "site_knowledge.search_failed",
+                    "Expanded search failed",
+                )
+            return [_vector_hit(1, index) for index in range(limit)]
+
+    service = SiteKnowledgeService.__new__(SiteKnowledgeService)
+    backend = FakeBackend()
+    service.vector_backend = backend
+
+    results = service._search_vector_backend(
+        site_id="site_alpha",
+        query_embedding=[0.1, 0.2],
+        post_types=["post"],
+        statuses=["publish"],
+        source_types=["post"],
+        current_post_id=0,
+        max_results=8,
+        intent="related_content",
+        query="WordPress vector search",
+    )
+
+    assert backend.limits == [32, 80]
+    assert results is not None
+    assert len(results) == 32
+    assert {result["post_id"] for result in results} == {1}
 
 
 def test_bounded_title_and_topic_evidence_can_break_a_close_semantic_tie() -> None:

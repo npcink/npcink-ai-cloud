@@ -1381,6 +1381,7 @@ class SiteKnowledgeService:
         backend: SiteKnowledgeVectorBackend | None = self.vector_backend
         if backend is None:
             return None
+        initial_limit = min(max(1, max_results * 4), 80)
         hits = backend.search(
             site_id=site_id,
             query_embedding=query_embedding,
@@ -1388,8 +1389,33 @@ class SiteKnowledgeService:
             statuses=statuses,
             source_types=source_types,
             current_post_id=current_post_id,
-            limit=min(max(1, max_results * 4), 80),
+            limit=initial_limit,
         )
+        initial_document_count = len(
+            {(hit.source_type, hit.post_id) for hit in hits}
+        )
+        if (
+            intent == "related_content"
+            and initial_limit < 80
+            and initial_document_count < max_results
+        ):
+            try:
+                expanded_hits = backend.search(
+                    site_id=site_id,
+                    query_embedding=query_embedding,
+                    post_types=post_types,
+                    statuses=statuses,
+                    source_types=source_types,
+                    current_post_id=current_post_id,
+                    limit=80,
+                )
+            except SiteKnowledgeBackendError:
+                expanded_hits = []
+            if (
+                len({(hit.source_type, hit.post_id) for hit in expanded_hits})
+                > initial_document_count
+            ):
+                hits = expanded_hits
         return [_serialize_vector_hit(hit, intent=intent, query=query) for hit in hits]
 
     def _sync_response(

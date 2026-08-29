@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 _ASCII_TERM = re.compile(r"[a-z0-9][a-z0-9._+-]{1,31}")
-_CJK_SEQUENCE = re.compile(r"[\u3400-\u9fff]{3,64}")
+_CJK_SEQUENCE = re.compile(r"[\u3400-\u9fff]{2,64}")
 _GENERIC_TERMS = frozenset(
     {
         "article",
@@ -24,14 +24,19 @@ def shared_text_terms(query: str, candidate_text: str, *, limit: int) -> list[st
     normalized_query = str(query or "").lower()
     normalized_candidate = str(candidate_text or "").lower()
     shared: list[str] = []
+    candidate_ascii_terms = set(_ASCII_TERM.findall(normalized_candidate))
     for term in _ASCII_TERM.findall(normalized_query):
-        if term not in _GENERIC_TERMS and term in normalized_candidate and term not in shared:
+        if (
+            term not in _GENERIC_TERMS
+            and term in candidate_ascii_terms
+            and term not in shared
+        ):
             shared.append(term)
 
     cjk_matches: list[tuple[int, int, str]] = []
     for sequence_match in _CJK_SEQUENCE.finditer(normalized_query):
         sequence = sequence_match.group(0)
-        for size in range(min(8, len(sequence)), 2, -1):
+        for size in range(min(8, len(sequence)), 1, -1):
             for offset in range(0, len(sequence) - size + 1):
                 term = sequence[offset : offset + size]
                 if term in _GENERIC_TERMS or term not in normalized_candidate:
