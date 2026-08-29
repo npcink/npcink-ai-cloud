@@ -45,6 +45,12 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   let publicBaseUrl = 'https://cloud.example.test';
   let settingsReadCount = 0;
   let failNextPortalSave = false;
+  let platformTimezone = 'Asia/Shanghai';
+  let mediaRecognitionConfig = {
+    window_start: '01:00',
+    window_end: '06:00',
+    daily_limit: 100,
+  };
 
   await page.context().addCookies([
     { name: 'npcink_admin_session_token', value: 'e2e-admin-session', url: BASE_URL },
@@ -100,6 +106,14 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
             site_relink_policy: setting('site_relink_policy', 'ready', {
               cooldown_days: 90,
             }),
+            platform_preferences: setting('platform_preferences', 'ready', {
+              timezone: platformTimezone,
+            }),
+            media_recognition_policy: setting(
+              'media_recognition_policy',
+              'disabled',
+              mediaRecognitionConfig
+            ),
           },
         })),
       });
@@ -124,12 +138,26 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
       });
       return;
     }
+    if (url.pathname === '/api/admin/service-settings/platform-preferences' && route.request().method() === 'PATCH') {
+      const payload = route.request().postDataJSON() as { timezone?: string };
+      platformTimezone = String(payload.timezone || platformTimezone);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildAdminApiEnvelope(setting(
+          'platform_preferences',
+          'ready',
+          { timezone: platformTimezone }
+        ))),
+      });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({})) });
   });
 
   await page.goto('/admin/service-settings');
   await expect(page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(6);
+  await expect(page.getByRole('tab')).toHaveCount(7);
   await expect(page.locator('form:visible')).toHaveCount(1);
   expect(settingsReadCount).toBe(1);
   const compactGeometry = await page.evaluate(() => {
@@ -214,6 +242,17 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await expect(page.locator('#service-settings-payment [data-ui="service-settings-high-risk"]')).toContainText(/High-risk payment configuration|高风险支付配置/i);
   await page.getByRole('tab', { name: /QQ login|QQ 登录/i }).click();
 
+  await page.getByRole('tab', { name: /System settings|系统设置/i }).click();
+  const timezoneSelect = page.locator('[data-configuration-row="platform-timezone"] select');
+  await expect(timezoneSelect).toHaveValue('Asia/Shanghai');
+  await timezoneSelect.selectOption('UTC');
+  const saveSystemSettings = page.getByRole('button', { name: /Save system settings|保存系统设置/i });
+  await expect(saveSystemSettings).toBeEnabled();
+  await saveSystemSettings.click();
+  await expect(page.getByText(/Service setting updated|服务配置已更新/i)).toBeVisible();
+  await expect(timezoneSelect).toHaveValue('UTC');
+  await page.getByRole('button', { name: 'Close notification' }).click();
+
   await page.getByRole('tab', { name: /Email settings|邮件配置/i }).click();
   const previewButton = page.getByRole('button', { name: /Preview email templates|预览邮件模板/i });
   await previewButton.click();
@@ -268,14 +307,32 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await expect(previewDialog).toHaveCount(0);
   await expect(previewButton).toBeFocused();
 
-  await page.getByRole('tab', { name: /QQ login|QQ 登录/i }).click();
+  mediaRecognitionConfig = {
+    window_start: '01:00',
+    window_end: '06:00',
+    daily_limit: 100,
+  };
+  platformTimezone = 'Asia/Shanghai';
+  await page.reload();
+  await page.getByRole('tab', { name: /System settings|系统设置/i }).click();
+  await expect(page.locator('[data-configuration-row="platform-timezone"]')).toContainText(/UTC/i);
+  await expect(page.locator('[data-configuration-row="platform-timezone"] select')).toHaveValue('Asia/Shanghai');
+  const systemSettingsScreenshotPath = testInfo.outputPath('admin-system-settings-pc.png');
+  await page.locator('#service-settings-system').screenshot({
+    path: systemSettingsScreenshotPath,
+    animations: 'disabled',
+  });
+  await testInfo.attach('admin-system-settings-pc', {
+    path: systemSettingsScreenshotPath,
+    contentType: 'image/png',
+  });
 
   await writeAdminVisualReceipt({
     page,
     testInfo,
     route: '/admin/service-settings',
     pageModel: 'configuration',
-    testedStates: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog'],
+    testedStates: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog', 'empty'],
     humanAcceptance: 'not_required',
     pageTitle: page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i }),
     workingSurface: page.locator('[data-ui="admin-settings-workbench"]'),
@@ -293,6 +350,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
       { id: 'validation-and-dirty-state', status: 'pass', evidence: 'invalid and dirty values produce distinct feedback and action state' },
       { id: 'save-failure-recovery', status: 'pass', evidence: 'failed save retains the draft before a successful retry' },
       { id: 'preview-dialog-keyboard-recovery', status: 'pass', evidence: 'Escape closes preview and restores focus' },
+      { id: 'platform-timezone-ownership', status: 'pass', evidence: 'system settings owns the global timezone and explains that timestamps remain in UTC' },
     ],
   });
 

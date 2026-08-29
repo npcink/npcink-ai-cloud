@@ -26,6 +26,7 @@ import {
   type AccountingFxForm,
   type AlipayForm,
   type EmailForm,
+  type PlatformPreferencesForm,
   type NormalizedServiceSettingsData,
   type PortalPublicForm,
   type QQForm,
@@ -35,7 +36,7 @@ import {
   type SiteRelinkPolicyForm,
 } from '@/features/admin/service-settings/service-settings-model';
 
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'site-relink';
+type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'site-relink' | 'system';
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
 type Translator = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -244,7 +245,12 @@ export default function AdminServiceSettingsPage() {
   const { t } = useLocale();
   const router = useRouter();
   const { success: showSuccessToast } = useToast();
-  const [activeTab, setActiveTab] = useState<ServiceSettingsTab>('portal');
+  const [activeTab, setActiveTab] = useState<ServiceSettingsTab>(() => {
+    if (typeof window === 'undefined') return 'portal';
+    return new URLSearchParams(window.location.search).get('tab') === 'system'
+      ? 'system'
+      : 'portal';
+  });
   const [pendingTab, setPendingTab] = useState<ServiceSettingsTab | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
   const [data, setData] = useState<NormalizedServiceSettingsData | null>(null);
@@ -305,6 +311,9 @@ export default function AdminServiceSettingsPage() {
     source: 'operator_approved',
     note: '',
   });
+  const [platformPreferencesForm, setPlatformPreferencesForm] = useState<PlatformPreferencesForm>({
+    timezone: 'Asia/Shanghai',
+  });
   const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
   const settingsMountedRef = useRef(false);
@@ -353,6 +362,7 @@ export default function AdminServiceSettingsPage() {
       setAlipayForm(nextSavedForms.payment);
       setAccountingFxForm(nextSavedForms.accounting);
       setSiteRelinkPolicyForm(nextSavedForms.siteRelink);
+      setPlatformPreferencesForm(nextSavedForms.platformPreferences);
       setQqCredentialRevealed(false);
       setEmailCredentialRevealed(false);
       setAlipayPrivateKeyRevealed(false);
@@ -604,6 +614,20 @@ export default function AdminServiceSettingsPage() {
     );
   }
 
+  function submitPlatformPreferences(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setError(activeValidationIssues[0]);
+      return;
+    }
+    void saveJson(
+      '/api/admin/service-settings/platform-preferences',
+      { timezone: platformPreferencesForm.timezone },
+      'platform-preferences',
+      t('admin.service_settings.platform_preferences_saved', {}, 'Platform preferences saved.')
+    );
+  }
+
   function submitAccountingFx(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
@@ -751,6 +775,9 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'accounting') {
       return JSON.stringify(accountingFxForm) !== JSON.stringify(savedForms.accounting);
     }
+    if (activeTab === 'system') {
+      return platformPreferencesForm.timezone !== savedForms.platformPreferences.timezone;
+    }
     return JSON.stringify(alipayForm) !== JSON.stringify(savedForms.payment);
   })();
 
@@ -865,6 +892,11 @@ export default function AdminServiceSettingsPage() {
         );
       }
     }
+    if (activeTab === 'system') {
+      if (!platformPreferencesForm.timezone) {
+        issues.push(t('admin.service_settings.validation_platform_timezone', {}, 'Select a platform timezone.'));
+      }
+    }
     return issues;
   })();
 
@@ -877,6 +909,7 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'payment') setAlipayForm(saved.payment);
     if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
     if (activeTab === 'accounting') setAccountingFxForm(saved.accounting);
+    if (activeTab === 'system') setPlatformPreferencesForm(saved.platformPreferences);
     if (activeTab === 'qq') setQqCredentialRevealed(false);
     if (activeTab === 'email') setEmailCredentialRevealed(false);
     if (activeTab === 'payment') {
@@ -935,7 +968,6 @@ export default function AdminServiceSettingsPage() {
   const emailLastTestedSummary = emailSetting?.last_tested_at
     ? emailSetting.last_tested_at
     : t('admin.service_settings.email_summary_never_tested', {}, 'Never tested');
-
   const tabs: Array<{
     id: ServiceSettingsTab;
     label: string;
@@ -1005,6 +1037,16 @@ export default function AdminServiceSettingsPage() {
         : data?.settings.site_relink_policy.enabled
           ? 'ready'
           : 'neutral',
+    },
+    {
+      id: 'system',
+      label: t('admin.service_settings.tab_system', {}, 'System settings'),
+      description: activeTab === 'system' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : t('admin.service_settings.platform_timezone_configured', {}, 'Set'),
+      tone: activeTab === 'system' && activeGroupDirty
+        ? 'attention'
+        : 'neutral',
     },
   ];
 
@@ -1430,6 +1472,51 @@ export default function AdminServiceSettingsPage() {
                 </div>
               </form>
           </div>
+      ) : null}
+
+      {activeTab === 'system' ? (
+        <div id="service-settings-system" className="grid gap-3" role="tabpanel">
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
+              {t('admin.service_settings.system_title', {}, 'Platform preferences')}
+            </h2>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+              {t('admin.service_settings.system_desc', {}, 'Configure shared platform behavior used by background services.')}
+            </p>
+          </div>
+          {activeStateNotice}
+          <form className="grid gap-3" onSubmit={submitPlatformPreferences}>
+            <AdminConfigurationTable
+              ariaLabel={t('admin.service_settings.system_title', {}, 'Platform preferences')}
+              itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
+              valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
+              detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
+              density="compact"
+            >
+              <AdminConfigurationRow
+                rowId="platform-timezone"
+                label={t('admin.service_settings.platform_timezone', {}, 'Platform timezone')}
+                value={<select
+                  className="input w-full"
+                  value={platformPreferencesForm.timezone}
+                  onChange={(event) => setPlatformPreferencesForm((current) => ({ ...current, timezone: event.target.value }))}
+                >
+                  {['Asia/Shanghai', 'UTC', 'Asia/Hong_Kong', 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/London'].map((timezone) => (
+                    <option key={timezone} value={timezone}>{timezone}</option>
+                  ))}
+                </select>}
+                detail={t('admin.service_settings.platform_timezone_note', {}, 'Background execution windows and daily boundaries use this timezone. Timestamps remain stored in UTC.')}
+              />
+            </AdminConfigurationTable>
+            <div className="flex justify-end">
+              <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'platform-preferences' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                {saving === 'platform-preferences'
+                  ? t('admin.service_settings.saving', {}, 'Saving')
+                  : t('admin.service_settings.save_platform_preferences', {}, 'Save system settings')}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       {activeTab === 'qq' ? (

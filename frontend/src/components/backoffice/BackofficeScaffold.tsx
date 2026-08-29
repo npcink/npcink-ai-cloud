@@ -92,11 +92,11 @@ type BackofficeDiagnosticNoticeProps = {
   className?: string;
 };
 
-type BackofficeDisclosureProps = {
-  summary: string;
+type BackofficeDisclosureProps = React.DetailsHTMLAttributes<HTMLDetailsElement> & {
+  summary: React.ReactNode;
   children: React.ReactNode;
-  className?: string;
   contentClassName?: string;
+  summaryClassName?: string;
 };
 
 export function BackofficePageStack({ children, className, ...props }: BackofficeFrameProps) {
@@ -449,10 +449,15 @@ export function BackofficeDisclosure({
   children,
   className,
   contentClassName,
+  summaryClassName,
+  ...props
 }: BackofficeDisclosureProps) {
   return (
-    <details className={cn('rounded-[1.35rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950', className)}>
-      <summary className="cursor-pointer select-none px-5 py-4 text-sm font-semibold text-slate-900 dark:text-white md:px-6">
+    <details
+      className={cn('rounded-[1.35rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950', className)}
+      {...props}
+    >
+      <summary className={cn('cursor-pointer select-none px-5 py-4 text-sm font-semibold text-slate-900 dark:text-white md:px-6', summaryClassName)}>
         {summary}
       </summary>
       <div className={cn('border-t border-slate-200 p-5 dark:border-slate-800 md:p-6', contentClassName)}>

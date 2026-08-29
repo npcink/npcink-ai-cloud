@@ -52,6 +52,15 @@ function response(overrides: Partial<ServiceSettingsData['settings']> = {}): Ser
         note: 'August rate',
       }),
       site_relink_policy: setting('site_relink_policy', { cooldown_days: 120 }),
+      platform_preferences: setting('platform_preferences', {
+        timezone: 'Asia/Shanghai',
+      }),
+      media_recognition_policy: setting('media_recognition_policy', {
+        model_id: 'vision-model',
+        window_start: '23:30',
+        window_end: '05:15',
+        daily_limit: 250,
+      }),
       ...overrides,
     },
   };
@@ -93,6 +102,7 @@ describe('service settings response projection', () => {
         note: 'August rate',
       },
       siteRelink: { enabled: true, cooldown_days: '120' },
+      platformPreferences: { timezone: 'Asia/Shanghai' },
     });
     expect(projection.emailConfigExpanded).toBe(false);
   });
@@ -144,5 +154,17 @@ describe('service settings response projection', () => {
       from_email: 'sender@example.com',
     });
     expect(projection.emailConfigExpanded).toBe(true);
+  });
+
+  it('uses the platform timezone default when the preference is empty', () => {
+    const projection = projectServiceSettingsForms(
+      response({
+        platform_preferences: setting('platform_preferences', { timezone: '' }),
+      })
+    );
+
+    expect(projection.savedForms.platformPreferences).toEqual({
+      timezone: 'Asia/Shanghai',
+    });
   });
 });

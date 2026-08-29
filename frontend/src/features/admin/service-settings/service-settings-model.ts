@@ -20,6 +20,8 @@ export type ServiceSettingsData = {
     alipay_payment: ServiceSetting;
     accounting_fx?: ServiceSetting;
     site_relink_policy: ServiceSetting;
+    platform_preferences: ServiceSetting;
+    media_recognition_policy: ServiceSetting;
   };
 };
 
@@ -76,6 +78,10 @@ export type AccountingFxForm = {
   note: string;
 };
 
+export type PlatformPreferencesForm = {
+  timezone: string;
+};
+
 export type SavedServiceSettingsForms = {
   portal: PortalPublicForm;
   qq: QQForm;
@@ -83,6 +89,7 @@ export type SavedServiceSettingsForms = {
   payment: AlipayForm;
   accounting: AccountingFxForm;
   siteRelink: SiteRelinkPolicyForm;
+  platformPreferences: PlatformPreferencesForm;
 };
 
 export type ServiceSettingsProjection = {
@@ -129,6 +136,7 @@ export function projectServiceSettingsForms(
   const alipay = source.settings.alipay_payment;
   const accountingFx = source.settings.accounting_fx || fallbackAccountingFx();
   const siteRelinkPolicy = source.settings.site_relink_policy;
+  const platformPreferences = source.settings.platform_preferences;
   const emailSmtpUsername = stringValue(email.config.smtp_username);
   const emailFromAddress = stringValue(email.config.from_email);
   const emailUsernameSameAsFromEmail =
@@ -177,6 +185,9 @@ export function projectServiceSettingsForms(
     siteRelink: {
       enabled: siteRelinkPolicy.enabled,
       cooldown_days: stringValue(siteRelinkPolicy.config.cooldown_days) || '90',
+    },
+    platformPreferences: {
+      timezone: stringValue(platformPreferences.config.timezone) || 'Asia/Shanghai',
     },
   };
 

@@ -40,6 +40,24 @@ assert.match(
 
 assert.doesNotMatch(pageSource, /\bfetch\s*\(/, 'hosted runtime profiles must not use raw fetch');
 
+assert.match(
+  pageSource,
+  /mediaRecognitionExpanded[\s\S]*mediaRecognitionError \|\| mediaRecognitionDirty \|\| mediaRecognitionBlocked[\s\S]*setMediaRecognitionExpanded\(true\)/,
+  'media recognition settings must default closed and expand when blocked, dirty, or failed'
+);
+
+assert.match(
+  pageSource,
+  /BackofficeDisclosure[\s\S]*data-ui="media-recognition-policy"[\s\S]*open=\{mediaRecognitionExpanded\}[\s\S]*mediaRecognitionStatusLabel[\s\S]*media_recognition_daily_limit_summary/,
+  'collapsed media recognition settings must retain status, model, window, and daily-limit context'
+);
+
+assert.match(
+  pageSource,
+  /service_settings\.media_recognition_profile_unavailable[\s\S]*media_recognition_profile_unavailable_error/,
+  'media recognition profile failures must map the backend error code to localized operator copy'
+);
+
 for (const contractLiteral of [
   'cloud-hosted-runtime-profiles.v1',
   'admin_hosted_runtime_profiles',

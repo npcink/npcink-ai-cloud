@@ -139,6 +139,33 @@ async function installRuntimeProfilesHarness(page: Page) {
   const writes: CapturedWrite[] = [];
   let profiles = structuredClone(initialProfiles);
 
+  await page.route('**/api/admin/service-settings**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(envelope({
+        settings: {
+          media_recognition_policy: {
+            setting_id: 'media_recognition_policy',
+            enabled: false,
+            status: 'disabled',
+            config: {
+              window_start: '01:00',
+              window_end: '06:00',
+              daily_limit: 100,
+            },
+          },
+          platform_preferences: {
+            setting_id: 'platform_preferences',
+            enabled: true,
+            status: 'ready',
+            config: { timezone: 'Asia/Shanghai' },
+          },
+        },
+      })),
+    });
+  });
+
   await page.route('**/api/admin/runtime-profiles', async (route) => {
     const request = route.request();
     if (request.method() === 'GET') {
@@ -231,13 +258,23 @@ test('hosted runtime profiles are URL-backed, boundary-focused, and mobile safe'
   await expect(page.getByRole('heading', { name: /Runtime Profiles|运行配置/i })).toBeVisible();
   await expect(profileRow(page, 'route.short_text')).toBeVisible();
   await expect(page.getByText('Text Provider / text-model-v1').first()).toBeVisible();
-  await expect(page.locator('main input')).toHaveCount(0);
+  await expect(page.locator('main input')).toHaveCount(3);
+  const mediaRecognitionDisclosure = page.locator('[data-ui="media-recognition-policy"]');
+  await expect(mediaRecognitionDisclosure).not.toHaveAttribute('open', '');
+  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/Site media recognition|站内媒体识别/i);
+  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/01:00-06:00/i);
+  await expect(page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i })).not.toBeVisible();
   const pageScreenshotPath = testInfo.outputPath('admin-runtime-profiles-page-pc.png');
   await page.screenshot({ path: pageScreenshotPath, fullPage: true, animations: 'disabled' });
   await testInfo.attach('admin-runtime-profiles-page-pc', {
     path: pageScreenshotPath,
     contentType: 'image/png',
   });
+  await mediaRecognitionDisclosure.locator('summary').click();
+  await expect(mediaRecognitionDisclosure).toHaveAttribute('open', '');
+  await expect(page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i })).toHaveValue('100');
+  await expect(page.getByRole('switch', { name: /Enable background media recognition|启用后台媒体识别/i })).toBeDisabled();
+  await expect(page.getByText(/Configure and verify the Vision understanding profile|请先配置并验证“视觉理解”模型/i)).toBeVisible();
   await page.getByText(/Hosted runtime contract details|托管运行合同详情/i).click();
   await expect(page.getByText(/Operation contract|操作合同/i)).toBeVisible();
   await expect(page.getByText('wordpress_operation.v1')).toBeVisible();
@@ -298,6 +335,8 @@ test('enabled models missing from the latest upstream catalog remain visible for
   await installAdminMocks(page);
   let probeAttempts = 0;
   const writes: Array<Record<string, unknown>> = [];
+  const policyWrites: Array<Record<string, unknown>> = [];
+  let failNextPolicySave = false;
   const visionProfiles = [
     ...structuredClone(initialProfiles),
     {
@@ -317,6 +356,71 @@ test('enabled models missing from the latest upstream catalog remain visible for
   ];
   const visionProjection = projection(visionProfiles);
   visionProjection.available_instances.text.push(configuredVisionCandidate);
+  await page.route('**/api/admin/service-settings**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/admin/service-settings' && route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(envelope({
+          settings: {
+            media_recognition_policy: {
+              setting_id: 'media_recognition_policy',
+              enabled: false,
+              status: 'disabled',
+              config: {
+                window_start: '01:00',
+                window_end: '06:00',
+                daily_limit: 100,
+              },
+            },
+            platform_preferences: {
+              setting_id: 'platform_preferences',
+              enabled: true,
+              status: 'ready',
+              config: { timezone: 'Asia/Shanghai' },
+            },
+          },
+        })),
+      });
+      return;
+    }
+    if (url.pathname === '/api/admin/service-settings/media-recognition-policy' && route.request().method() === 'PATCH') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      policyWrites.push(body);
+      if (failNextPolicySave) {
+        failNextPolicySave = false;
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'error',
+            error_code: 'service_settings.media_recognition_profile_unavailable',
+            message: 'Vision understanding profile is unavailable.',
+            data: {},
+            meta: { trace_id: 'trace_policy_error', revision: 'test' },
+          }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(envelope({
+          setting_id: 'media_recognition_policy',
+          enabled: Boolean(body.enabled),
+          status: body.enabled ? 'ready' : 'disabled',
+          config: {
+            window_start: String(body.window_start || '01:00'),
+            window_end: String(body.window_end || '06:00'),
+            daily_limit: Number(body.daily_limit || 100),
+          },
+        })),
+      });
+      return;
+    }
+    await route.fallback();
+  });
   await page.route('**/api/admin/runtime-profiles', async (route) => {
     if (route.request().method() === 'PUT') {
       const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -447,6 +551,37 @@ test('enabled models missing from the latest upstream catalog remain visible for
     candidate_instance_ids: [configuredVisionCandidate.instance_id],
   });
   await expect(page.getByRole('button', { name: /^Save profiles$|^保存配置$/i })).toBeDisabled();
+
+  const mediaRecognitionDisclosure = page.locator('[data-ui="media-recognition-policy"]');
+  await expect(mediaRecognitionDisclosure).not.toHaveAttribute('open', '');
+  await mediaRecognitionDisclosure.locator('summary').click();
+  const recognitionSwitch = page.getByRole('switch', { name: /Enable background media recognition|启用后台媒体识别/i });
+  await expect(recognitionSwitch).toBeEnabled();
+  await expect(page.locator('[data-configuration-row="media-recognition-timezone"]')).toContainText(/Platform timezone|平台时区/i);
+  await expect(page.locator('[data-configuration-row="media-recognition-timezone"] a')).toHaveAttribute('href', '/admin/service-settings?tab=system');
+  await recognitionSwitch.click();
+  await page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i }).fill('25');
+  const savePolicy = page.getByRole('button', { name: /Save recognition policy|保存识别策略/i });
+  failNextPolicySave = true;
+  await savePolicy.click();
+  await expect(mediaRecognitionDisclosure).toHaveAttribute('open', '');
+  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/Needs verification|需验证/i);
+  await expect(page.getByText(/has not passed vision capability verification|尚未通过识图能力验证/i)).toBeVisible();
+  await expect(page.getByRole('link', { name: /Configure and verify model|配置并验证模型/i }).first()).toBeVisible();
+  await expect(page.getByRole('spinbutton', { name: /Daily image limit|每日图片上限/i })).toHaveValue('25');
+  await savePolicy.click();
+  await expect.poll(() => policyWrites.length).toBe(2);
+  expect(policyWrites[1]).toEqual({
+    enabled: true,
+    window_start: '01:00',
+    window_end: '06:00',
+    daily_limit: 25,
+  });
+  expect(policyWrites[1]).not.toHaveProperty('model_id');
+  expect(policyWrites[1]).not.toHaveProperty('timezone');
+  await expect(mediaRecognitionDisclosure).not.toHaveAttribute('open', '');
+  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/Enabled|已启用/i);
+  await expect(mediaRecognitionDisclosure.locator('summary')).toContainText(/25 images\/day|每日 25 张/i);
 });
 
 test('candidate editing is dialog-bounded and PUT saves an auditable receipt', async ({ page }) => {

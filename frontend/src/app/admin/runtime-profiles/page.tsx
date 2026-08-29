@@ -26,6 +26,7 @@ const runtimeProfilesClient = createApiClient({ idempotencyPrefix: 'runtime_prof
 const MAX_VISIBLE_CANDIDATES = 80;
 const SUPPORTED_EXECUTION_KINDS = new Set(['text', 'vision', 'image_generation', 'audio_generation']);
 const SUPERSEDED_CONNECTOR_CONTRACT_FIELD = ['connector', 'contract', 'version'].join('_');
+const MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR = 'service_settings.media_recognition_profile_unavailable';
 
 type CapabilityEvidence = {
   state: string;
@@ -117,6 +118,35 @@ type CapabilityProbeSummary = {
 
 type CapabilityProbeEvidence = CapabilityEvidence & {
   capability: string;
+};
+
+type MediaRecognitionPolicyForm = {
+  enabled: boolean;
+  timezone: string;
+  window_start: string;
+  window_end: string;
+  daily_limit: string;
+};
+
+type MediaRecognitionPolicySetting = {
+  enabled: boolean;
+  status: string;
+  config: Record<string, unknown>;
+};
+
+type ServiceSettingsProjection = {
+  settings: {
+    media_recognition_policy: MediaRecognitionPolicySetting;
+    platform_preferences: MediaRecognitionPolicySetting;
+  };
+};
+
+const DEFAULT_MEDIA_RECOGNITION_POLICY: MediaRecognitionPolicyForm = {
+  enabled: false,
+  timezone: 'Asia/Shanghai',
+  window_start: '01:00',
+  window_end: '06:00',
+  daily_limit: '100',
 };
 
 function normalizeRuntimeInstance(value: unknown): RuntimeInstance {
@@ -343,6 +373,41 @@ function profileSnapshot(profiles: RuntimeProfile[]): string {
   })));
 }
 
+function normalizeMediaRecognitionPolicy(
+  value: unknown,
+  platformPreferences: unknown
+): MediaRecognitionPolicyForm {
+  const setting = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : Object.create(null) as Record<string, unknown>;
+  const config = setting.config && typeof setting.config === 'object' && !Array.isArray(setting.config)
+    ? setting.config as Record<string, unknown>
+    : Object.create(null) as Record<string, unknown>;
+  const preferences = platformPreferences && typeof platformPreferences === 'object' && !Array.isArray(platformPreferences)
+    ? platformPreferences as Record<string, unknown>
+    : Object.create(null) as Record<string, unknown>;
+  const preferenceConfig = preferences.config && typeof preferences.config === 'object' && !Array.isArray(preferences.config)
+    ? preferences.config as Record<string, unknown>
+    : Object.create(null) as Record<string, unknown>;
+  return {
+    enabled: Boolean(setting.enabled),
+    timezone: String(preferenceConfig.timezone || DEFAULT_MEDIA_RECOGNITION_POLICY.timezone),
+    window_start: String(config.window_start || DEFAULT_MEDIA_RECOGNITION_POLICY.window_start),
+    window_end: String(config.window_end || DEFAULT_MEDIA_RECOGNITION_POLICY.window_end),
+    daily_limit: String(config.daily_limit || DEFAULT_MEDIA_RECOGNITION_POLICY.daily_limit),
+  };
+}
+
+function mediaRecognitionPolicySnapshot(policy: MediaRecognitionPolicyForm): string {
+  return JSON.stringify(policy);
+}
+
+function mediaRecognitionSwitchClassName(checked: boolean): string {
+  return `relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-blue-950 ${checked
+    ? 'border-blue-600 bg-blue-600'
+    : 'border-slate-300 bg-slate-200 dark:border-slate-700 dark:bg-slate-800'}`;
+}
+
 function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInstance>): 'success' | 'warning' | 'error' {
   const primary = instances.get(profile.candidate_instance_ids[0] || '');
   if (!primary) return 'warning';
@@ -454,6 +519,13 @@ export default function RuntimeProfilesPage() {
   const [probeSummary, setProbeSummary] = useState<CapabilityProbeSummary | null>(null);
   const [probeSummaryError, setProbeSummaryError] = useState('');
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
+  const [mediaRecognitionForm, setMediaRecognitionForm] = useState<MediaRecognitionPolicyForm>(DEFAULT_MEDIA_RECOGNITION_POLICY);
+  const [mediaRecognitionBaseline, setMediaRecognitionBaseline] = useState(mediaRecognitionPolicySnapshot(DEFAULT_MEDIA_RECOGNITION_POLICY));
+  const [mediaRecognitionLoading, setMediaRecognitionLoading] = useState(true);
+  const [mediaRecognitionSaving, setMediaRecognitionSaving] = useState(false);
+  const [mediaRecognitionError, setMediaRecognitionError] = useState('');
+  const [mediaRecognitionErrorCode, setMediaRecognitionErrorCode] = useState('');
+  const [mediaRecognitionExpanded, setMediaRecognitionExpanded] = useState(false);
 
   const applyData = useCallback((next: RuntimeProfilesData) => {
     setData(next);
@@ -493,6 +565,32 @@ export default function RuntimeProfilesPage() {
   useEffect(() => {
     void loadProfiles();
   }, [loadProfiles]);
+
+  const applyMediaRecognitionPolicy = useCallback((value: unknown, platformPreferences: unknown) => {
+    const next = normalizeMediaRecognitionPolicy(value, platformPreferences);
+    setMediaRecognitionForm(next);
+    setMediaRecognitionBaseline(mediaRecognitionPolicySnapshot(next));
+  }, []);
+
+  const loadMediaRecognitionPolicy = useCallback(async () => {
+    setMediaRecognitionLoading(true);
+    setMediaRecognitionError('');
+    try {
+      const response = await runtimeProfilesClient.request<ServiceSettingsProjection>('/api/admin/service-settings');
+      applyMediaRecognitionPolicy(
+        response.data.settings.media_recognition_policy,
+        response.data.settings.platform_preferences
+      );
+    } catch (cause) {
+      setMediaRecognitionError(resolveUiErrorMessage(cause, copy('media_recognition_load_error', 'Failed to load the media recognition policy.')));
+    } finally {
+      setMediaRecognitionLoading(false);
+    }
+  }, [applyMediaRecognitionPolicy, copy]);
+
+  useEffect(() => {
+    void loadMediaRecognitionPolicy();
+  }, [loadMediaRecognitionPolicy]);
 
   const loadProbeSummary = useCallback(async () => {
     setProbeSummaryError('');
@@ -538,9 +636,61 @@ export default function RuntimeProfilesPage() {
     });
   }, [drafts, instancesById]);
   const editingProfile = drafts.find((profile) => profile.profile_id === editingProfileId) || null;
-  const dirty = profileSnapshot(drafts) !== baseline;
+  const profileDirty = profileSnapshot(drafts) !== baseline;
+  const mediaRecognitionDirty = mediaRecognitionPolicySnapshot(mediaRecognitionForm) !== mediaRecognitionBaseline;
+  const dirty = profileDirty || mediaRecognitionDirty;
   const configuredCount = drafts.filter((profile) => profile.candidate_instance_ids.length > 0).length;
   const attentionCount = drafts.filter((profile) => profileTone(profile, instancesById) !== 'success').length;
+  const mediaRecognitionProfile = data?.profiles.find((profile) => profile.profile_id === 'vision.ai') || null;
+  const mediaRecognitionPrimary = mediaRecognitionProfile
+    ? instancesById.get(mediaRecognitionProfile.candidate_instance_ids[0] || '')
+    : undefined;
+  const mediaRecognitionModelReady = Boolean(
+    mediaRecognitionProfile
+      && mediaRecognitionPrimary
+      && instanceTone(mediaRecognitionPrimary, mediaRecognitionProfile.execution_kind) === 'success'
+  );
+  const mediaRecognitionFallback = mediaRecognitionProfile
+    ? instancesById.get(mediaRecognitionProfile.candidate_instance_ids[1] || '')
+    : undefined;
+  const mediaRecognitionDailyLimit = Number(mediaRecognitionForm.daily_limit);
+  const mediaRecognitionValidationError = mediaRecognitionForm.enabled && !mediaRecognitionModelReady
+    ? copy('media_recognition_profile_required', 'Configure and verify the Vision understanding profile before enabling background recognition.')
+    : mediaRecognitionForm.window_start === mediaRecognitionForm.window_end
+      ? copy('media_recognition_window_invalid', 'Choose different start and end times.')
+      : !Number.isInteger(mediaRecognitionDailyLimit) || mediaRecognitionDailyLimit < 1 || mediaRecognitionDailyLimit > 10000
+        ? copy('media_recognition_daily_limit_invalid', 'Enter a daily limit from 1 to 10000.')
+        : '';
+  const savedMediaRecognitionPolicy = useMemo(() => {
+    try {
+      return JSON.parse(mediaRecognitionBaseline) as MediaRecognitionPolicyForm;
+    } catch {
+      return DEFAULT_MEDIA_RECOGNITION_POLICY;
+    }
+  }, [mediaRecognitionBaseline]);
+  const mediaRecognitionBlocked = savedMediaRecognitionPolicy.enabled && !mediaRecognitionModelReady;
+  const mediaRecognitionNeedsVerification = mediaRecognitionBlocked
+    || mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR;
+  const mediaRecognitionStatusLabel = mediaRecognitionNeedsVerification
+    ? copy('media_recognition_needs_verification', 'Needs verification')
+    : mediaRecognitionDirty
+      ? copy('media_recognition_unsaved', 'Unsaved')
+      : savedMediaRecognitionPolicy.enabled
+        ? copy('media_recognition_enabled', 'Enabled')
+        : copy('media_recognition_disabled', 'Disabled');
+  const mediaRecognitionStatusTone = mediaRecognitionNeedsVerification
+    ? 'warning'
+    : mediaRecognitionDirty
+      ? 'warning'
+      : savedMediaRecognitionPolicy.enabled
+        ? 'success'
+        : 'disabled';
+
+  useEffect(() => {
+    if (mediaRecognitionError || mediaRecognitionDirty || mediaRecognitionBlocked) {
+      setMediaRecognitionExpanded(true);
+    }
+  }, [mediaRecognitionBlocked, mediaRecognitionDirty, mediaRecognitionError]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -696,7 +846,7 @@ export default function RuntimeProfilesPage() {
   }
 
   async function saveProfiles() {
-    if (!dirty || saving) return;
+    if (!profileDirty || saving) return;
     const incompatible = drafts.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
       const instance = instancesById.get(instanceId);
       return instance && (
@@ -756,6 +906,8 @@ export default function RuntimeProfilesPage() {
       });
       const next = normalizeRuntimeProfilesData(response.data);
       applyData(next);
+      setMediaRecognitionError('');
+      setMediaRecognitionErrorCode('');
       toast.success(copy('message_saved', 'Hosted runtime profiles saved.'), t('common.success'));
     } catch (cause) {
       setError(resolveUiErrorMessage(cause, copy('error_save', 'Failed to save hosted runtime profiles.')));
@@ -763,6 +915,42 @@ export default function RuntimeProfilesPage() {
       setVerifyingBeforeSave(false);
       setProbingInstanceId('');
       setSaving(false);
+    }
+  }
+
+  async function saveMediaRecognitionPolicy() {
+    if (!mediaRecognitionDirty || mediaRecognitionSaving || mediaRecognitionValidationError) return;
+    setMediaRecognitionSaving(true);
+    setMediaRecognitionError('');
+    try {
+      const response = await runtimeProfilesClient.request<MediaRecognitionPolicySetting>(
+        '/api/admin/service-settings/media-recognition-policy',
+        {
+          method: 'PATCH',
+          body: {
+            enabled: mediaRecognitionForm.enabled,
+            window_start: mediaRecognitionForm.window_start,
+            window_end: mediaRecognitionForm.window_end,
+            daily_limit: mediaRecognitionDailyLimit,
+          },
+        }
+      );
+      applyMediaRecognitionPolicy(response.data, {
+        config: { timezone: mediaRecognitionForm.timezone },
+      });
+      setMediaRecognitionErrorCode('');
+      setMediaRecognitionExpanded(false);
+      toast.success(copy('media_recognition_saved', 'Media recognition policy saved.'), t('common.success'));
+    } catch (cause) {
+      const errorCode = cause instanceof ApiError ? cause.errorCode : '';
+      setMediaRecognitionErrorCode(errorCode);
+      setMediaRecognitionError(
+        errorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR
+          ? copy('media_recognition_profile_unavailable_error', 'Background recognition cannot be enabled because the Vision understanding profile has no verified model. Configure and verify a vision-capable model first.')
+          : resolveUiErrorMessage(cause, copy('media_recognition_save_error', 'Failed to save the media recognition policy.'))
+      );
+    } finally {
+      setMediaRecognitionSaving(false);
     }
   }
 
@@ -810,7 +998,7 @@ export default function RuntimeProfilesPage() {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!dirty || saving}
+            disabled={!profileDirty || saving}
             onClick={() => void saveProfiles()}
           >
             {saving
@@ -992,6 +1180,168 @@ export default function RuntimeProfilesPage() {
             </tbody>
           </table>
         </AdminDataTableFrame>
+      ) : null}
+
+      {data ? (
+        <BackofficeDisclosure
+          data-ui="media-recognition-policy"
+          open={mediaRecognitionExpanded}
+          onToggle={(event) => setMediaRecognitionExpanded(event.currentTarget.open)}
+          summary={<div className="ml-2 inline-flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-3 gap-y-1 align-middle">
+            <span className="text-base font-semibold text-slate-950 dark:text-white">
+              {copy('media_recognition_title', 'Site media recognition')}
+            </span>
+            <BackofficeStatusBadge label={mediaRecognitionStatusLabel} status={mediaRecognitionStatusTone} />
+            <span className="min-w-0 text-xs font-normal text-slate-500 dark:text-slate-400">
+              {mediaRecognitionPrimary ? instanceLabel(mediaRecognitionPrimary) : copy('model_unassigned', 'Not assigned')}
+              {' / '}{mediaRecognitionForm.window_start}-{mediaRecognitionForm.window_end}
+              {' / '}{copy('media_recognition_daily_limit_summary', '{{count}} images/day', { count: mediaRecognitionForm.daily_limit })}
+            </span>
+          </div>}
+          contentClassName="pt-4"
+        >
+          <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
+            <p className="min-w-0 text-sm text-slate-600 dark:text-slate-300">
+              {copy('media_recognition_description', 'Background recognition inherits the Vision understanding candidate chain. Configure only its schedule and daily limit here.')}
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm shrink-0"
+              disabled={mediaRecognitionLoading || mediaRecognitionSaving || !mediaRecognitionDirty || Boolean(mediaRecognitionValidationError)}
+              onClick={() => void saveMediaRecognitionPolicy()}
+            >
+              {mediaRecognitionSaving
+                ? copy('media_recognition_saving', 'Saving...')
+                : copy('media_recognition_save', 'Save recognition policy')}
+            </button>
+          </div>
+
+          {mediaRecognitionError ? (
+            <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-rose-700 dark:text-rose-300">
+              <span>{mediaRecognitionError}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {mediaRecognitionErrorCode === MEDIA_RECOGNITION_PROFILE_UNAVAILABLE_ERROR ? (
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai">
+                    {copy('media_recognition_configure_profile', 'Configure and verify model')}
+                  </Link>
+                ) : null}
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void saveMediaRecognitionPolicy()}>
+                  {t('common.retry')}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-3">
+            <AdminConfigurationTable
+              ariaLabel={copy('media_recognition_table_label', 'Site media recognition policy')}
+              itemHeading={copy('configuration_item_heading', 'Setting')}
+              valueHeading={copy('configuration_value_heading', 'Current value')}
+              detailHeading={copy('configuration_detail_heading', 'Action / note')}
+              density="compact"
+            >
+              <AdminConfigurationRow
+                rowId="media-recognition-model"
+                label={copy('media_recognition_model', 'Recognition model')}
+                value={mediaRecognitionLoading
+                  ? t('common.loading')
+                  : mediaRecognitionPrimary
+                    ? <div className="space-y-1">
+                        <div className="font-medium">{instanceLabel(mediaRecognitionPrimary)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {mediaRecognitionFallback
+                            ? copy('media_recognition_fallback_named', 'Fallback: {{model}}', { model: instanceLabel(mediaRecognitionFallback) })
+                            : copy('media_recognition_no_fallback', 'No fallback model')}
+                        </div>
+                      </div>
+                    : copy('model_unassigned', 'Not assigned')}
+                detail={<div className="flex flex-wrap items-center gap-2">
+                  <span>{copy('media_recognition_model_inherited', 'Inherited from Vision understanding; this policy does not store another model selection.')}</span>
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/runtime-profiles?profile=vision.ai">
+                    {copy('media_recognition_configure_profile', 'Configure and verify model')}
+                  </Link>
+                </div>}
+              />
+              <AdminConfigurationRow
+                rowId="media-recognition-enabled"
+                label={copy('media_recognition_background', 'Background recognition')}
+                value={mediaRecognitionForm.enabled
+                  ? copy('media_recognition_enabled', 'Enabled')
+                  : copy('media_recognition_disabled', 'Disabled')}
+                detail={<div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-label={copy('media_recognition_toggle', 'Enable background media recognition')}
+                    aria-checked={mediaRecognitionForm.enabled}
+                    className={mediaRecognitionSwitchClassName(mediaRecognitionForm.enabled)}
+                    disabled={mediaRecognitionLoading || (!mediaRecognitionForm.enabled && !mediaRecognitionModelReady)}
+                    onClick={() => setMediaRecognitionForm((current) => ({ ...current, enabled: !current.enabled }))}
+                  >
+                    <span className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${mediaRecognitionForm.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                  {!mediaRecognitionModelReady ? (
+                    <span className="text-amber-700 dark:text-amber-300">
+                      {copy('media_recognition_profile_required', 'Configure and verify the Vision understanding profile before enabling background recognition.')}
+                    </span>
+                  ) : null}
+                </div>}
+              />
+              <AdminConfigurationRow
+                rowId="media-recognition-window"
+                label={copy('media_recognition_window', 'Background execution window')}
+                value={<div className="grid max-w-sm grid-cols-2 gap-2">
+                  <input
+                    aria-label={copy('media_recognition_window_start', 'Window start')}
+                    className="input w-full"
+                    type="time"
+                    value={mediaRecognitionForm.window_start}
+                    onChange={(event) => setMediaRecognitionForm((current) => ({ ...current, window_start: event.target.value }))}
+                  />
+                  <input
+                    aria-label={copy('media_recognition_window_end', 'Window end')}
+                    className="input w-full"
+                    type="time"
+                    value={mediaRecognitionForm.window_end}
+                    onChange={(event) => setMediaRecognitionForm((current) => ({ ...current, window_end: event.target.value }))}
+                  />
+                </div>}
+                detail={copy('media_recognition_window_note', 'Interactive recognition is not delayed by this window.')}
+              />
+              <AdminConfigurationRow
+                rowId="media-recognition-daily-limit"
+                label={copy('media_recognition_daily_limit', 'Daily image limit')}
+                value={<input
+                  aria-label={copy('media_recognition_daily_limit', 'Daily image limit')}
+                  className="input w-40"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  step={1}
+                  value={mediaRecognitionForm.daily_limit}
+                  onChange={(event) => setMediaRecognitionForm((current) => ({ ...current, daily_limit: event.target.value }))}
+                />}
+                detail={copy('media_recognition_daily_limit_note', 'New background work is deferred after this daily limit; queued images are not dropped.')}
+              />
+              <AdminConfigurationRow
+                rowId="media-recognition-timezone"
+                label={copy('media_recognition_timezone', 'Platform timezone')}
+                value={<span className="font-mono text-xs">{mediaRecognitionForm.timezone}</span>}
+                detail={<div className="flex flex-wrap items-center gap-2">
+                  <span>{copy('media_recognition_timezone_note', 'The execution window is interpreted in this platform timezone.')}</span>
+                  <Link className="font-semibold text-blue-700 hover:underline dark:text-blue-300" href="/admin/service-settings?tab=system">
+                    {copy('media_recognition_change_timezone', 'Change system timezone')}
+                  </Link>
+                </div>}
+              />
+            </AdminConfigurationTable>
+          </div>
+          {mediaRecognitionValidationError && mediaRecognitionDirty ? (
+            <p className="mt-3 text-sm text-rose-700 dark:text-rose-300" role="alert">
+              {mediaRecognitionValidationError}
+            </p>
+          ) : null}
+        </BackofficeDisclosure>
       ) : null}
 
       {data ? <BackofficeDisclosure summary={copy('contract_details', 'Hosted runtime contract details')}>
@@ -1287,6 +1637,7 @@ export default function RuntimeProfilesPage() {
             setDrafts(data.profiles);
             setBaseline(profileSnapshot(data.profiles));
           }
+          setMediaRecognitionForm(JSON.parse(mediaRecognitionBaseline) as MediaRecognitionPolicyForm);
           setEditingProfileId('');
           setProviderFilter('');
           setModelSearch('');

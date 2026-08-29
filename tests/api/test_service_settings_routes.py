@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,11 @@ from sqlalchemy import select
 from app.api.routes import service as service_routes
 from app.core.db import dispose_engine, get_session
 from app.core.models import (
+    CatalogCapabilityEvidence,
+    CatalogInstance,
+    CatalogModel,
+    CatalogProvider,
+    RoutingBinding,
     ServiceAuditEvent,
     ServiceSetting,
 )
@@ -19,12 +25,15 @@ from app.core.secrets import (
     decrypt_service_setting_secret,
     encrypt_service_setting_secret,
 )
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+from app.domain.model_capabilities.probes import vision_probe_fingerprint
 from tests.api.service_routes_test_support import (
     _build_client,
     _runtime_service_settings,
 )
 from tests.conftest import (
     build_internal_headers,
+    seed_provider_model_allowlist,
 )
 
 OLD_SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"O" * 32).decode("ascii")
@@ -52,6 +61,271 @@ def _alipay_test_keys() -> tuple[str, str]:
         .decode("utf-8")
     )
     return private_pem, public_pem
+
+
+def _seed_verified_vision_model(database_url: str) -> None:
+    seed_provider_model_allowlist(
+        database_url,
+        provider_id="vision-provider",
+        kind="test_provider",
+        model_ids=["vision-model"],
+        capability_ids=["vision"],
+        runtime_profile_ids=[VISION_AI_PROFILE_ID],
+    )
+    with get_session(database_url) as session:
+        session.add(
+            CatalogProvider(
+                provider_id="vision-provider",
+                display_name="Vision Provider",
+                adapter_type="openai_compatible",
+                status="active",
+            )
+        )
+        session.add(
+            CatalogModel(
+                model_id="vision-model",
+                provider_id="vision-provider",
+                family="vision-model",
+                feature="text",
+                status="available",
+                revision="test",
+            )
+        )
+        session.add(
+            CatalogInstance(
+                instance_id="vision-provider-global-vision-model",
+                model_id="vision-model",
+                provider_id="vision-provider",
+                endpoint_variant="responses",
+                region="global",
+                capability_tags=["text", "vision"],
+                health_status="healthy",
+            )
+        )
+        session.add(
+            CatalogCapabilityEvidence(
+                instance_id="vision-provider-global-vision-model",
+                capability="vision",
+                state="verified",
+                route_fingerprint=vision_probe_fingerprint(
+                    provider_connection_id="vision-provider",
+                    model_id="vision-model",
+                    endpoint_variant="responses",
+                ),
+                source="test_fixture",
+                revision="test",
+                checked_at=datetime.now(UTC),
+            )
+        )
+        binding = session.get(
+            RoutingBinding,
+            VISION_AI_PROFILE_ID,
+        )
+        assert binding is not None
+        binding.candidate_instance_ids = ["vision-provider-global-vision-model"]
+        binding.selection_policy_json = {}
+        binding.revision = "test"
+        session.commit()
+
+
+def test_admin_media_recognition_policy_inherits_alt_text_profile_and_updates_partially(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    _seed_verified_vision_model(database_url)
+
+    initial = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    data = initial.json()["data"]
+    assert data["settings"]["platform_preferences"] == {
+        "setting_id": "platform_preferences",
+        "setting_kind": "runtime",
+        "enabled": True,
+        "configured": False,
+        "status": "missing_config",
+        "config": {"timezone": "Asia/Shanghai"},
+        "secrets": {},
+        "last_tested_at": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "credential_value_exposure": "none",
+    }
+    assert data["settings"]["media_recognition_policy"] == {
+        "setting_id": "media_recognition_policy",
+        "setting_kind": "runtime",
+        "enabled": False,
+        "configured": False,
+        "status": "disabled",
+        "config": {
+            "window_start": "01:00",
+            "window_end": "06:00",
+            "daily_limit": 100,
+        },
+        "secrets": {},
+        "last_tested_at": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "credential_value_exposure": "none",
+    }
+    assert "options" not in data
+
+    platform_preferences = client.patch(
+        "/internal/service/admin/service-settings/platform-preferences",
+        json={"timezone": "UTC"},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-platform-preferences-001"
+        ),
+    )
+    assert platform_preferences.status_code == 200, platform_preferences.text
+    assert platform_preferences.json()["data"]["config"] == {"timezone": "UTC"}
+
+    disabled = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={
+            "enabled": False,
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-disabled"
+        ),
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["data"]["status"] == "disabled"
+
+    saved = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={
+            "enabled": True,
+            "window_start": "23:30",
+            "window_end": "05:15",
+            "daily_limit": 250,
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-001"
+        ),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["setting_kind"] == "runtime"
+    assert saved.json()["data"]["status"] == "ready"
+    assert saved.json()["data"]["config"] == {
+        "window_start": "23:30",
+        "window_end": "05:15",
+        "daily_limit": 250,
+    }
+
+    invalid_cases = (
+        (
+            "service-settings-media-recognition-window-invalid",
+            {"window_end": "23:30"},
+            "service_settings.media_recognition_window_invalid",
+        ),
+        (
+            "service-settings-media-recognition-clock-invalid",
+            {"window_start": "25:00"},
+            "service_settings.media_recognition_window_invalid",
+        ),
+    )
+    valid_payload = {
+        "enabled": True,
+        "window_start": "23:30",
+        "window_end": "05:15",
+        "daily_limit": 250,
+    }
+    for idempotency_key, override, error_code in invalid_cases:
+        response = client.patch(
+            "/internal/service/admin/service-settings/media-recognition-policy",
+            json={**valid_payload, **override},
+            headers=build_internal_headers(idempotency_key=idempotency_key),
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["error_code"] == error_code
+
+    legacy_timezone = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={**valid_payload, "timezone": "Asia/Shanghai"},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-timezone-rejected"
+        ),
+    )
+    assert legacy_timezone.status_code == 422, legacy_timezone.text
+
+    invalid_timezone = client.patch(
+        "/internal/service/admin/service-settings/platform-preferences",
+        json={"timezone": "Mars/Olympus"},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-platform-timezone-invalid"
+        ),
+    )
+    assert invalid_timezone.status_code == 400, invalid_timezone.text
+    assert invalid_timezone.json()["error_code"] == (
+        "service_settings.platform_timezone_invalid"
+    )
+
+    reloaded = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert reloaded.status_code == 200, reloaded.text
+    assert reloaded.json()["data"]["settings"]["platform_preferences"]["config"] == {
+        "timezone": "UTC"
+    }
+
+    invalid_limit = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={**valid_payload, "daily_limit": 0},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-limit-invalid"
+        ),
+    )
+    assert invalid_limit.status_code == 422, invalid_limit.text
+
+    with get_session(database_url) as session:
+        events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "media_recognition_policy"
+                )
+            )
+        )
+        platform_events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "platform_preferences"
+                )
+            )
+        )
+    assert {event.outcome for event in events} == {"succeeded", "error"}
+    assert all(event.event_kind == "service_setting.save" for event in events)
+    assert all(
+        "model_id" not in json.dumps(event.payload_json or {}) for event in events
+    )
+    assert {event.outcome for event in platform_events} == {"succeeded", "error"}
+    assert all(
+        event.event_kind == "service_setting.save" for event in platform_events
+    )
+
+    dispose_engine(database_url)
+
+
+def test_admin_media_recognition_policy_rejects_enable_without_alt_text_profile(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(tmp_path)
+
+    response = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={"enabled": True},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-profile-missing"
+        ),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == (
+        "service_settings.media_recognition_profile_unavailable"
+    )
 
 
 def test_admin_operational_readiness_projection_is_bounded_and_fail_closed() -> None:
@@ -312,6 +586,7 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert data["settings"]["alipay_payment"]["configured"] is True
     assert data["settings"]["site_relink_policy"]["config"]["cooldown_days"] == 180
     assert data["boundary"]["wordpress_control_plane"] is False
+    assert "media_recognition_runtime_policy" in data["boundary"]["cloud_owns"]
     assert "smtp-password" not in json.dumps(data)
     assert alipay_private_key not in json.dumps(data)
     assert alipay_public_key not in json.dumps(data)

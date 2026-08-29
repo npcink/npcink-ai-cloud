@@ -6,16 +6,17 @@ const pagePath = fromFrontendRoot('src/app/admin/service-settings/page.tsx');
 const source = readFileSync(pagePath, 'utf8');
 const modelPath = fromFrontendRoot('src/features/admin/service-settings/service-settings-model.ts');
 const modelSource = readFileSync(modelPath, 'utf8');
+const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 
 assert.match(
   source,
-  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment' \| 'accounting' \| 'site-relink';/,
+  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment' \| 'accounting' \| 'site-relink' \| 'system';/,
   'service settings page must expose one independent configuration group per tab'
 );
 
 assert.match(
   source,
-  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_accounting', \{\}, '成本核算'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)/,
+  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_accounting', \{\}, '成本核算'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)[\s\S]*label: t\('admin\.service_settings\.tab_system', \{\}, 'System settings'\)/,
   'service settings group navigation must use task-specific Chinese operator labels'
 );
 
@@ -30,6 +31,27 @@ assert.match(
   /\/api\/admin\/service-settings\/accounting-fx[\s\S]*usd_cny_rate: Number\(accountingFxForm\.usd_cny_rate\)[\s\S]*effective_at:/,
   'accounting settings must save the versioned USD/CNY rate through the Cloud admin API'
 );
+
+assert.match(
+  source,
+  /\/api\/admin\/service-settings\/platform-preferences[\s\S]*\{ timezone: platformPreferencesForm\.timezone \}/,
+  'service settings must save the global platform timezone through the Cloud admin API'
+);
+
+assert.match(
+  source,
+  /activeTab === 'system'[\s\S]*AdminConfigurationTable[\s\S]*platform-timezone[\s\S]*platform_timezone_note/,
+  'service settings must expose one compact platform preferences table'
+);
+
+for (const chineseSystemCopy of [
+  "'admin.service_settings.tab_system': '系统设置'",
+  "'admin.service_settings.system_title': '平台设置'",
+  "'admin.service_settings.save_platform_preferences': '保存系统设置'",
+  "'admin.service_settings.platform_timezone_configured': '已设置'",
+]) {
+  assert.ok(i18nSource.includes(chineseSystemCopy), `Chinese system-settings copy is registered: ${chineseSystemCopy}`);
+}
 
 assert.match(
   source,
