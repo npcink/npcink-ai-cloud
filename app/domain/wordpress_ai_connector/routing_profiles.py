@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+
 WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID = "wp-ai.short-text"
 WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID = "wp-ai.editorial"
 WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID = "wp-ai.classification"
-WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID = "wp-ai.alt-text-vision"
 WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID = "wp-ai.image-generation"
 WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID = "wp-ai.audio-generation"
 
@@ -14,7 +15,7 @@ WP_AI_CONNECTOR_PROFILE_IDS = (
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
-    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
+    VISION_AI_PROFILE_ID,
     WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
 )
@@ -98,10 +99,10 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         description="Structured taxonomy and moderation suggestions for WordPress AI tasks.",
     ),
     WordPressAIConnectorProfileSpec(
-        profile_id=WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
+        profile_id=VISION_AI_PROFILE_ID,
         group_id="alt_text_vision",
         routing_intent="media.alt_text_vision",
-        label="Alt text vision",
+        label="Vision understanding",
         execution_kind="vision",
         tasks=("alt_text_suggest",),
         ordered_tiers=("default", "quality"),
@@ -110,8 +111,8 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         allow_fallback=True,
         max_retries=0,
         description=(
-            "Vision model used to generate reviewable WordPress media alt text "
-            "suggestions from a bounded image reference."
+            "Understands image subjects, scenes, and visible text for WordPress alt text, "
+            "site media recognition, and image semantic search."
         ),
     ),
     WordPressAIConnectorProfileSpec(

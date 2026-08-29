@@ -31,7 +31,7 @@ The neutral `input` envelope contains:
 
 The request-time `text.balanced` profile is an admitted connector alias, not
 the execution truth for the operation. Managed routing projects the durable
-run and provider request to `wp-ai.alt-text-vision`, with routing intent
+run and provider request to `vision.ai`, with routing intent
 `media.alt_text_vision` and vision execution semantics.
 
 ## Ownership Boundary
@@ -118,7 +118,7 @@ write occurs in Cloud.
 
 Current Cloud tests prove:
 
-- `alt_text_suggest` resolves to `wp-ai.alt-text-vision`;
+- `alt_text_suggest` resolves to `vision.ai`;
 - missing, cross-site, expired, unavailable, oversized, or invalid image
   artifacts fail closed before a provider call;
 - verified artifact bytes reach typed provider image input only through the

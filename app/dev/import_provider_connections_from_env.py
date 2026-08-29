@@ -13,9 +13,6 @@ from app.domain.provider_connections.service import (
     ProviderConnectionAdminError,
     ProviderConnectionAdminService,
 )
-from app.domain.wordpress_ai_connector.routing_profiles import (
-    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
-)
 
 DEFAULT_ENV_FILES = (".env", ".env.local", ".env.deploy")
 
@@ -183,7 +180,6 @@ def _add_model_provider_specs(
                     "text.ai",
                     "text.free-gpt55",
                     VISION_AI_PROFILE_ID,
-                    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
                     "grok-imagine-image-quality",
                     "embed.default",
                 ],
@@ -227,7 +223,6 @@ def _add_model_provider_specs(
                 runtime_profile_ids=[
                     "text.ai",
                     VISION_AI_PROFILE_ID,
-                    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
                     "embed.default",
                 ],
                 credential=siliconflow_key,

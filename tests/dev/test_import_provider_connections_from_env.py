@@ -181,7 +181,7 @@ def test_import_provider_connections_from_env_imports_siliconflow_as_model_provi
         assert connection.config_json["provider_id"] == "siliconflow"
         assert "vision" in connection.config_json["capability_ids"]
         assert "vision.ai" in connection.config_json["runtime_profile_ids"]
-        assert "wp-ai.alt-text-vision" in connection.config_json["runtime_profile_ids"]
+        assert connection.config_json["runtime_profile_ids"].count("vision.ai") == 1
         assert connection.config_json["model_ids"] == [
             "siliconflow/Qwen/Qwen3-Omni-30B-A3B-Captioner",
             "BAAI/bge-m3",
@@ -220,7 +220,7 @@ def test_import_provider_connections_from_env_imports_openai_vision_runtime_prof
         assert connection.provider_type == "openai_compatible"
         assert "vision" in connection.config_json["capability_ids"]
         assert "vision.ai" in connection.config_json["runtime_profile_ids"]
-        assert "wp-ai.alt-text-vision" in connection.config_json["runtime_profile_ids"]
+        assert connection.config_json["runtime_profile_ids"].count("vision.ai") == 1
         assert connection.config_json["model_ids"] == [
             "Qwen/Qwen3-Omni-30B-A3B-Captioner",
             "gpt-5.5",

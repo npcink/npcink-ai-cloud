@@ -375,7 +375,7 @@ function profileLabelKey(profile: RuntimeProfile): string {
     'wp-ai.short-text': 'profile_short_text',
     'wp-ai.editorial': 'profile_editorial',
     'wp-ai.classification': 'profile_classification',
-    'wp-ai.alt-text-vision': 'profile_alt_text_vision',
+    'vision.ai': 'profile_vision_understanding',
     'wp-ai.image-generation': 'profile_image_generation',
     'wp-ai.audio-generation': 'profile_audio_generation',
   };

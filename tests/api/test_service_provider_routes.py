@@ -31,6 +31,7 @@ from app.domain.catalog.service import CatalogService
 from app.domain.hosted_model_defaults import (
     AUDIO_NARRATION_PROFILE_ID,
     TEXT_AI_PROFILE_ID,
+    VISION_AI_PROFILE_ID,
 )
 from app.domain.model_references import MODELS_DEV_API_URL
 from app.domain.provider_connections.service import ProviderConnectionAdminService
@@ -830,7 +831,7 @@ def test_provider_catalog_sync_keeps_enabled_models_missing_from_partial_upstrea
             "enabled": True,
             "base_url": "https://partial-gateway.test/v1",
             "capability_ids": ["text_generation"],
-            "runtime_profile_ids": [TEXT_AI_PROFILE_ID, "wp-ai.alt-text-vision"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID, VISION_AI_PROFILE_ID],
             "config": {
                 "model_ids": ["gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol"],
                 "model_id": "gpt-5.5",
