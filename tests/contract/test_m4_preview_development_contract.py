@@ -1354,10 +1354,57 @@ def test_m4_deploy_allows_recovery_when_primary_frontend_is_absent(
     not (ROOT / ".git").exists(),
     reason="source transfer dry-run requires Git worktree metadata",
 )
-def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -> None:
+def test_m4_source_transfer_requires_explicit_dirty_candidate() -> None:
+    dirty_candidate_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "1",
+        "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "0",
+    }
+    dirty_marker = (
+        ROOT / f".m4-preview-dirty-contract-{os.getpid()}-{time.time_ns()}"
+    )
+    dirty_marker.write_text("dirty candidate contract\n", encoding="utf-8")
+    try:
+        blocked = subprocess.run(
+            ["bash", str(SCRIPT), "sync", "--dry-run"],
+            cwd=ROOT,
+            env=dirty_candidate_env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        dirty_marker.unlink(missing_ok=True)
+
+    assert blocked.returncode != 0
+    assert "candidate source worktree is dirty" in blocked.stderr
+    assert "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1" in blocked.stderr
+
+
+@pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="source transfer dry-run requires Git worktree metadata",
+)
+def test_m4_source_transfer_requires_explicit_non_master_candidate() -> None:
+    source_branch = subprocess.run(
+        ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    ).stdout.strip() or "detached"
+    if source_branch == "master":
+        pytest.skip("non-master candidate guard requires a non-master checkout")
+
+    blocked_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "0",
+        "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "1",
+    }
     blocked = subprocess.run(
         ["bash", str(SCRIPT), "sync", "--dry-run"],
         cwd=ROOT,
+        env=blocked_env,
         text=True,
         capture_output=True,
         check=False,
@@ -1365,6 +1412,12 @@ def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -
     assert blocked.returncode != 0
     assert "explicit feature-branch preview" in blocked.stderr
 
+
+@pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="source transfer dry-run requires Git worktree metadata",
+)
+def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -> None:
     candidate_env = {
         **os.environ,
         "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "1",
