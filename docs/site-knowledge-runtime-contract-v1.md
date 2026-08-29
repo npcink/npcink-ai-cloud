@@ -374,9 +374,16 @@ workflow should use comments, such as FAQ or user-feedback analysis.
 `site_knowledge_search.v1` accepts the optional additive input
 `result_granularity`:
 
-- `chunk` is the compatibility default and preserves ranked chunk results;
+- `chunk` is the default for intents other than `related_content` and preserves
+  ranked chunk results;
 - `document` returns each public source document once after evidence filtering
   and reranking, then applies `max_results`.
+
+`related_content` always returns document-level results, even when a caller
+omits the field or requests `chunk`. A related-article surface recommends
+articles rather than repeated chunks from the same article. When
+`current_post_id` is present, Cloud excludes that document in both the vector
+backend and PostgreSQL fallback paths.
 
 Document results keep the best-ranked chunk as the primary evidence and add a
 bounded `matched_chunks` list containing only `source_type`, `source_id`,
@@ -417,7 +424,15 @@ Supported first workflows:
   `suggested_action`, and `faq_mode=wordpress_local_only`.
 - `related_content`: topic cluster planning. Results include
   `cluster_candidate`, `cluster_role`, `planning_action`, and
-  `planning_mode=wordpress_local_only`.
+  `planning_mode=wordpress_local_only`. Cloud ranks vector retrieval and any
+  optional provider reranking with bounded local evidence: shared title terms
+  add at most `0.04`, and synced category/tag overlap adds at most `0.04`.
+  The additive `related_content_ranking` object reports the semantic score
+  source, component bonuses, and final ranking score. Provider-rerank and
+  vector scores are not compared across their score-source groups, and exact
+  query matches remain a separate higher-priority group. These fields explain
+  the strategy; synthetic fixtures and passing tests do not prove real-world
+  recommendation quality.
 - `content_gap_analysis`: content coverage review. Results include
   `gap_signal`, `suggested_action`, and `planning_mode=wordpress_local_only`
   so editors can decide whether to expand existing content or create new
@@ -444,7 +459,18 @@ Supported first workflows:
   the result adds `anchor_or_context` plus bounded `anchor_evidence`; generic
   phrases and the complete target title are rejected. Results continue to
   include `anchor_text_candidates`, `link_target`, `suggested_action`, and
-  `insert_mode=wordpress_local_only`. WordPress must independently match the
+  `insert_mode=wordpress_local_only`.
+  Cloud ranks this intent with vector retrieval, optional provider reranking,
+  and then bounded local evidence: shared query terms add at most `0.05`,
+  synced category/tag overlap adds at most `0.04`, and exact anchor evidence
+  adds at most `0.06`. The additive `internal_link_ranking` object reports the
+  score source, component bonuses, and final ranking score. Provider-rerank and
+  vector scores are not compared across their score-source groups, and exact
+  query matches remain a separate higher-priority group. Other intents keep
+  their existing ranking behavior.
+  These fields explain the active ranking strategy; they are not a claim that
+  recommendation quality has improved. That conclusion requires a separately
+  labeled, complete human gold set. WordPress must independently match the
   returned phrase against current visible editor state before enabling Apply.
 - `refresh_suggestions`: stale/overlapping content review. Results include
   `refresh_action`, `refresh_signals`, `suggested_action`, and
