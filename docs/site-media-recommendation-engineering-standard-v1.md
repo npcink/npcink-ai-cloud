@@ -411,6 +411,60 @@ cron expressions, per-user scheduling rules, or a second queue truth. The
 minimum useful states are `disabled`, `enabled_window`, `running`, and
 `paused_after_limit`.
 
+### 12.4 Long-running plan and capacity semantics
+
+One user action may express a long-running intent, but it must not create one
+unbounded request or one oversized Cloud run. WordPress persists the plan and
+advances it through small sequential batches. The browser may start, pause, or
+inspect that plan; closing the browser must not stop it.
+
+The minimum plan behavior is:
+
+- one active recognition plan per site and one active Cloud run per plan;
+- repeated starts resume the same plan instead of creating duplicate work;
+- the next batch is created only after the preceding run reaches a terminal
+  state and its result is projected exactly once;
+- the media cursor and processed counters advance atomically and idempotently;
+- unchanged file fingerprints and recognition revisions reuse existing
+  evidence;
+- a failed batch retries with a stable idempotency key and does not skip media;
+- reaching a daily execution limit moves the plan to a dated waiting state;
+- the plan resumes inside the next eligible window using the system timezone;
+- pause, cancellation, terminal error, and completion prevent new batches.
+
+Cloud run records, Provider call evidence, metering, and capacity admission are
+the execution truth. WordPress owns inventory, the plan cursor, local screening,
+and the read-only progress projection. The Addon must not reproduce Cloud
+metering or build a browser-driven submission loop.
+
+Package capacity and daily execution limits answer different questions:
+
+- `media_images` is the maximum number of recognized image projections the
+  current account package may retain across its sites;
+- the daily image limit is a pacing and cost ceiling for new Provider work in
+  one system-timezone day;
+- the per-batch limit protects request, worker, and Provider reliability.
+
+Before a paid Provider call, Cloud admits only the portion that fits remaining
+package capacity, remaining daily allowance, the per-batch limit, and current
+Provider capacity. Existing recognized images may be refreshed at package
+capacity when the operation replaces their current projection rather than
+increasing the recognized-image count. Partial admission is preferable to
+rejecting a whole mixed batch, provided per-item outcomes remain explicit and
+idempotent.
+
+User-facing progress keeps these quantities separate:
+
+```text
+Recognition completion = processed eligible images / eligible inventory
+Package capacity = recognized image projections / media_images limit
+Today's execution = images admitted today / daily image limit
+```
+
+The first two may be prominent when they answer the current user job. Daily
+execution belongs in the plan detail or waiting explanation. None of these
+metrics may reuse one progress bar or label when their denominators differ.
+
 ## 13. Incremental Lifecycle
 
 Ordinary users should not need a recurring Refresh media index action.
