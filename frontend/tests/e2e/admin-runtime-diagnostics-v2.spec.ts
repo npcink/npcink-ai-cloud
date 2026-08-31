@@ -94,7 +94,8 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(page.locator('#runtime-diagnostic-inspector a')).toHaveAttribute('href', '#runtime-evidence');
   const queueBox = await page.locator('[data-ui="runtime-diagnostic-table-frame"]').boundingBox();
   const inspectorBox = await page.locator('#runtime-diagnostic-inspector').boundingBox();
-  expect(queueBox?.height || 0).toBeLessThan(inspectorBox?.height || 0);
+  expect(inspectorBox?.y || 0).toBeGreaterThan((queueBox?.y || 0) + (queueBox?.height || 0));
+  expect(Math.abs((queueBox?.width || 0) - (inspectorBox?.width || 0))).toBeLessThan(8);
   await expect(page.locator('main input')).toHaveCount(0);
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
   await expect(qualityPanel).not.toHaveAttribute('open', '');
