@@ -42,6 +42,7 @@ type TierSummary = {
   monthly_included_points: number;
   site_limit: number;
   max_vector_documents: number;
+  max_media_images: number;
   budgets_template: Record<string, unknown>;
   concurrency_template: Record<string, unknown>;
   max_batch_items: number;
@@ -79,6 +80,7 @@ type PlanVersionFormState = {
   monthly_included_points: string;
   site_limit: string;
   max_vector_documents: string;
+  max_media_images: string;
   max_cost_cny_per_period: string;
   sales_price_cny: string;
   max_active_runs: string;
@@ -131,6 +133,7 @@ function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormStat
     ),
     site_limit: numberField(metadata.site_limit ?? tierSummary?.site_limit),
     max_vector_documents: numberField(metadata.max_vector_documents ?? tierSummary?.max_vector_documents),
+    max_media_images: numberField(metadata.max_media_images ?? tierSummary?.max_media_images),
     max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     sales_price_cny: numberField(detail?.sales_offer?.amount),
     max_active_runs: numberField(concurrency.max_active_runs),
@@ -147,6 +150,7 @@ function buildBaselineFieldPatch(tierSummary: TierSummary): Partial<PlanVersionF
     monthly_included_points: numberField(tierSummary.monthly_included_points),
     site_limit: numberField(tierSummary.site_limit),
     max_vector_documents: numberField(tierSummary.max_vector_documents),
+    max_media_images: numberField(tierSummary.max_media_images),
     max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     max_active_runs: numberField(concurrency.max_active_runs),
     max_batch_items: numberField(tierSummary.max_batch_items),
@@ -303,6 +307,7 @@ export function PlanManagementWorkbench({
         monthly_included_points: Number(form.monthly_included_points || 0),
         site_limit: Number(form.site_limit || 0),
         max_vector_documents: Number(form.max_vector_documents || 0),
+        max_media_images: Number(form.max_media_images || 0),
         max_cost_cny_per_period: Number(form.max_cost_cny_per_period || 0),
         sales_price_cny: Number(form.sales_price_cny || 0),
         max_active_runs: Number(form.max_active_runs || 0),
@@ -490,6 +495,13 @@ export function PlanManagementWorkbench({
                       unit={t('admin.plans.unit_articles', {}, 'articles')}
                       value={form.max_vector_documents}
                       onChange={(value) => updateField('max_vector_documents', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.media_images_limit', {}, 'Image recognition limit')}
+                      detail={t('admin.media_images_limit_detail', {}, 'Maximum images this account plan can recognize and retain in the image index.')}
+                      unit={t('admin.plans.unit_images', {}, 'images')}
+                      value={form.max_media_images}
+                      onChange={(value) => updateField('max_media_images', value)}
                     />
                   </div>
                 </section>

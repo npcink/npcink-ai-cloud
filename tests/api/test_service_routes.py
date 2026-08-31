@@ -15,6 +15,7 @@ from app.core.models import (
     AccountSubscription,
     BillingSnapshot,
     Site,
+    SiteKnowledgeDocument,
     UsageMeterEvent,
 )
 from app.domain.commercial.errors import CommercialValidationError
@@ -1800,6 +1801,42 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
                 created_at=now,
             ),
         ]
+        session.add_all(
+            [
+                SiteKnowledgeDocument(
+                    site_id="site_quota",
+                    post_id=1,
+                    source_type="post",
+                    source_id=1,
+                    parent_post_id=None,
+                    post_type="post",
+                    post_status="publish",
+                    title="Quota article",
+                    url="https://example.test/quota-article",
+                    modified_gmt="2026-08-31 00:00:00",
+                    content_hash="quota-article-hash",
+                    last_sync_run_id="run-quota-article",
+                    metadata_json={},
+                    last_indexed_at=now,
+                ),
+                SiteKnowledgeDocument(
+                    site_id="site_quota",
+                    post_id=2,
+                    source_type="media",
+                    source_id=2,
+                    parent_post_id=None,
+                    post_type="attachment",
+                    post_status="publish",
+                    title="Quota image",
+                    url="https://example.test/quota-image.jpg",
+                    modified_gmt="2026-08-31 00:00:00",
+                    content_hash="quota-image-hash",
+                    last_sync_run_id="run-quota-image",
+                    metadata_json={},
+                    last_indexed_at=now,
+                ),
+            ]
+        )
         session.add_all(events)
         session.commit()
 
@@ -1843,7 +1880,10 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
         ("step_offload", "whole_run_offload"),
     ]
     assert resource_limits["vector_documents"]["unit"] == "document"
+    assert resource_limits["vector_documents"]["used"] == 1.0
     assert resource_limits["vector_documents"]["limit"] == 100.0
+    assert resource_limits["media_images"]["used"] == 1.0
+    assert resource_limits["media_images"]["limit"] == 100.0
     assert data["coverage"]["active_key_site_count"] == 1
 
 

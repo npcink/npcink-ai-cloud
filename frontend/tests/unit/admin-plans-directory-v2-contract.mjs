@@ -58,7 +58,7 @@ assert.match(
 assert.match(source, /admin\.plans\.open_advanced_setup/, 'missing packages must open the bounded advanced-maintenance path');
 assert.match(
   workbench,
-  /admin\.plans\.customer_package_section[\s\S]*admin\.sales_price_cny[\s\S]*admin\.included_points[\s\S]*admin\.site_limit[\s\S]*admin\.vector_documents_limit[\s\S]*admin\.plans\.runtime_limits_section[\s\S]*admin\.concurrency[\s\S]*admin\.batch_ceiling[\s\S]*admin\.model_cost_budget_cny[\s\S]*admin\.grace_period_label/,
+  /admin\.plans\.customer_package_section[\s\S]*admin\.sales_price_cny[\s\S]*admin\.included_points[\s\S]*admin\.site_limit[\s\S]*admin\.vector_documents_limit[\s\S]*admin\.media_images_limit[\s\S]*admin\.plans\.runtime_limits_section[\s\S]*admin\.concurrency[\s\S]*admin\.batch_ceiling[\s\S]*admin\.model_cost_budget_cny[\s\S]*admin\.grace_period_label/,
   'the workbench must order customer-facing package values before runtime limits'
 );
 assert.match(
@@ -94,6 +94,7 @@ for (const unitKey of [
   'admin.plans.unit_credits',
   'admin.plans.unit_sites',
   'admin.plans.unit_articles',
+  'admin.plans.unit_images',
   'admin.plans.unit_runs',
   'admin.plans.unit_items',
   'admin.plans.unit_cny_period',

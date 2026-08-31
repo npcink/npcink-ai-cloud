@@ -259,7 +259,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(packageEditor.getByText(/^CNY \/ 30d$|^元 \/ 30天$/i)).toBeVisible();
   await expect(packageEditor.getByText(/^credits$|^积分$/i)).toBeVisible();
   await expect(packageEditor.getByText(/^days$|^天$/i)).toBeVisible();
-  await expect(packageEditor.locator('input[type="number"]')).toHaveCount(8);
+  await expect(packageEditor.locator('input[type="number"]')).toHaveCount(9);
   await packageEditor.getByRole('spinbutton', { name: /^(Sales price|销售价格)/i }).fill('1');
   await expect(packageEditor.getByText(subscriptionImpactText)).toBeVisible();
   const parameterGrid = packageEditor.locator('[data-ui="plan-parameter-grid"]').first();

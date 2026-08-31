@@ -2856,10 +2856,12 @@ class RuntimeService:
         execution_started_at = datetime.now(UTC)
         site_account_id = ""
         account_vector_document_limit: int | None = None
+        account_media_image_limit: int | None = None
         if run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY:
             (
                 site_account_id,
                 account_vector_document_limit,
+                account_media_image_limit,
             ) = self._resolve_site_knowledge_account_limit(
                 repository=repository,
                 site_id=run.site_id,
@@ -2905,6 +2907,7 @@ class RuntimeService:
                 embedding_usage_callback=record_embedding_usage,
                 account_id=site_account_id,
                 account_vector_document_limit=account_vector_document_limit,
+                account_media_image_limit=account_media_image_limit,
             ).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,
@@ -2956,13 +2959,13 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
         site_id: str,
-    ) -> tuple[str, int | None]:
+    ) -> tuple[str, int | None, int | None]:
         account_id = str(
             repository.session.scalar(select(Site.account_id).where(Site.site_id == site_id))
             or ""
         )
         if not account_id:
-            return "", None
+            return "", None, None
         account_quota = self.commercial_service.get_portal_account_quota_summary(account_id)
         resource_limits = account_quota.get("resource_limits", [])
         limits_by_key = (
@@ -2974,7 +2977,11 @@ class RuntimeService:
             if isinstance(resource_limits, list)
             else {}
         )
-        return account_id, limits_by_key.get("vector_documents")
+        return (
+            account_id,
+            limits_by_key.get("vector_documents"),
+            limits_by_key.get("media_images"),
+        )
 
     def _record_site_knowledge_embedding_provider_call(
         self,
@@ -4394,7 +4401,11 @@ class RuntimeService:
                 provider_error=provider_error,
             )
 
-        account_id, account_vector_document_limit = self._resolve_site_knowledge_account_limit(
+        (
+            account_id,
+            account_vector_document_limit,
+            account_media_image_limit,
+        ) = self._resolve_site_knowledge_account_limit(
             repository=repository,
             site_id=run.site_id,
         )
@@ -4405,6 +4416,7 @@ class RuntimeService:
             embedding_usage_callback=record_embedding_usage,
             account_id=account_id,
             account_vector_document_limit=account_vector_document_limit,
+            account_media_image_limit=account_media_image_limit,
         ).sync(
             site_id=run.site_id,
             input_payload={

@@ -186,21 +186,37 @@ class SiteKnowledgeRepository:
             or 0
         )
 
-    def count_documents_for_account(self, account_id: str) -> int:
+    def count_documents_for_account(
+        self,
+        account_id: str,
+        *,
+        source_type: str | None = None,
+        exclude_source_type: str | None = None,
+    ) -> int:
         normalized_account_id = str(account_id or '').strip()
         if not normalized_account_id:
             return 0
-        return int(
-            self.session.scalar(
-                select(func.count())
-                .select_from(SiteKnowledgeDocument)
-                .join(Site, Site.site_id == SiteKnowledgeDocument.site_id)
-                .where(Site.account_id == normalized_account_id)
-            )
-            or 0
+        statement = (
+            select(func.count())
+            .select_from(SiteKnowledgeDocument)
+            .join(Site, Site.site_id == SiteKnowledgeDocument.site_id)
+            .where(Site.account_id == normalized_account_id)
         )
+        if source_type is not None:
+            statement = statement.where(SiteKnowledgeDocument.source_type == source_type)
+        if exclude_source_type is not None:
+            statement = statement.where(
+                SiteKnowledgeDocument.source_type != exclude_source_type
+            )
+        return int(self.session.scalar(statement) or 0)
 
-    def lock_account_and_count_documents(self, account_id: str) -> int:
+    def lock_account_and_count_documents(
+        self,
+        account_id: str,
+        *,
+        source_type: str | None = None,
+        exclude_source_type: str | None = None,
+    ) -> int:
         normalized_account_id = str(account_id or '').strip()
         if not normalized_account_id:
             return 0
@@ -209,7 +225,11 @@ class SiteKnowledgeRepository:
             .where(Account.account_id == normalized_account_id)
             .with_for_update()
         )
-        return self.count_documents_for_account(normalized_account_id)
+        return self.count_documents_for_account(
+            normalized_account_id,
+            source_type=source_type,
+            exclude_source_type=exclude_source_type,
+        )
 
     def list_document_counts_by_site(self, site_ids: list[str]) -> list[dict[str, object]]:
         normalized_site_ids = list(

@@ -6967,6 +6967,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             "version_label": "v1",
             "metadata": {
                 "max_vector_documents": 100,
+                "max_media_images": 100,
             },
             "policy": {
                 "reconciliation": {
@@ -7036,6 +7037,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             **(plan_version.metadata_json or {}),
             "max_batch_items": 5,
             "max_vector_documents": 100,
+            "max_media_images": 100,
             "site_limit": 1,
         }
         repository = CommercialRepository(session)
@@ -7366,6 +7368,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "bound_sites",
         "active_sites",
         "vector_documents",
+        "media_images",
     }
     bound_sites = next(
         item for item in quota_summary["resource_limits"] if item["key"] == "bound_sites"
@@ -7375,6 +7378,14 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         item for item in quota_summary["resource_limits"] if item["key"] == "vector_documents"
     )
     assert vector_documents["limit"] == 100.0
+    media_images = next(
+        item for item in quota_summary["resource_limits"] if item["key"] == "media_images"
+    )
+    assert media_images["used"] == 0.0
+    assert media_images["limit"] == 100.0
+    assert media_images["remaining"] == 100.0
+    assert media_images["status"] == "ok"
+    assert media_images["unit"] == "image"
 
     account_entitlements_response = client.get(
         "/portal/v1/account/entitlements",

@@ -22,6 +22,7 @@ async function installPlanDirectoryHarness(page: Page) {
 }
 
 test('package directory keeps modal focus while retaining the catalog on refresh failure', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 1050 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const harness = await installPlanDirectoryHarness(page);
   await page.goto('/admin/plans');
@@ -55,7 +56,7 @@ test('package directory keeps modal focus while retaining the catalog on refresh
   const workbench = page.locator('[data-ui="admin-workbench-dialog"]');
   await expect(workbench).toContainText('Free');
   await expect(workbench.getByRole('tab', { name: /^Package parameters$|^套餐参数$/i })).toHaveAttribute('aria-selected', 'true');
-  await expect(workbench.locator('input[type="number"]')).toHaveCount(8);
+  await expect(workbench.locator('input[type="number"]')).toHaveCount(9);
   await expect(workbench.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
   await workbench.locator('[data-ui="admin-workbench-close"]').click();
   await expect(page).toHaveURL(/\/admin\/plans$/);
@@ -72,6 +73,7 @@ test('package directory keeps modal focus while retaining the catalog on refresh
 });
 
 test('package management combines readable limits, descriptions, and editing while creation stays in advanced maintenance', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 1050 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installPlanDirectoryHarness(page);
   await page.goto('/admin/plans');
@@ -88,8 +90,9 @@ test('package management combines readable limits, descriptions, and editing whi
   await expect(page).toHaveURL(/focus=free/);
   await expect(inspector.getByRole('heading', { name: /Manage Free|管理 Free/i })).toBeVisible();
   await expect(inspector.getByText(/Current package parameters|当前套餐参数/i)).toBeVisible();
-  await expect(inspector.locator('input[type="number"]')).toHaveCount(8);
+  await expect(inspector.locator('input[type="number"]')).toHaveCount(9);
   await expect(inspector.getByText(/Knowledge articles|知识库文章上限/i).first()).toBeVisible();
+  await expect(inspector.getByText(/Image recognition limit|图片识别上限/i).first()).toBeVisible();
   await expect(inspector.getByText(/Customer-facing 30-day price|用户端展示并用于新支付宝订单/i)).toBeVisible();
   await expect(inspector.getByText(/Internal provider-cost monitoring threshold|Provider 成本监控阈值/i)).toBeVisible();
   await expect(inspector.getByRole('button', { name: /^Save$|^保存$/i })).toBeVisible();

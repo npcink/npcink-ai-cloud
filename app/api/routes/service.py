@@ -501,6 +501,7 @@ class AdminPlanParametersPayload(BaseModel):
     monthly_included_points: float = Field(ge=0)
     site_limit: int = Field(ge=1)
     max_vector_documents: int = Field(ge=0)
+    max_media_images: int = Field(ge=0)
     max_cost_cny_per_period: float = Field(ge=0)
     sales_price_cny: float = Field(ge=0)
     max_active_runs: int = Field(ge=0)
@@ -4200,6 +4201,7 @@ async def update_admin_plan_parameters(
             monthly_included_points=payload.monthly_included_points,
             site_limit=payload.site_limit,
             max_vector_documents=payload.max_vector_documents,
+            max_media_images=payload.max_media_images,
             max_cost_cny_per_period=payload.max_cost_cny_per_period,
             sales_price_cny=payload.sales_price_cny,
             max_active_runs=payload.max_active_runs,
