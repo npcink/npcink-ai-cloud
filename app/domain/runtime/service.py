@@ -105,6 +105,13 @@ from app.domain.media_batch_plans.contracts import (
     MediaBatchPlanContractViolation,
 )
 from app.domain.media_batch_plans.service import MediaBatchPlanService
+from app.domain.media_governance.contracts import (
+    MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+    MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+    MEDIA_GOVERNANCE_AUDIT_RESULT_CONTRACT,
+    MediaGovernanceAuditContractViolation,
+)
+from app.domain.media_governance.service import MediaGovernanceAuditService
 from app.domain.routing.errors import RoutingError
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
@@ -423,6 +430,8 @@ class RuntimeService:
             return self._execute_site_ops_analysis_request(request)
         if self._is_media_batch_plan_request(request):
             return self._execute_media_batch_plan_request(request)
+        if self._is_media_governance_audit_request(request):
+            return self._execute_media_governance_audit_request(request)
         if self._is_image_context_evidence_request(request):
             return self._execute_image_context_evidence_request(request)
         if self._is_image_source_request(request):
@@ -2323,6 +2332,9 @@ class RuntimeService:
         if self._is_media_batch_plan_run(run):
             self._execute_media_batch_plan_run(run, repository=repository)
             return
+        if self._is_media_governance_audit_run(run):
+            self._execute_media_governance_audit_run(run, repository=repository)
+            return
         if self._is_image_context_evidence_run(run):
             self._execute_image_context_evidence_run(run, repository=repository)
             return
@@ -3559,6 +3571,109 @@ class RuntimeService:
                 idempotent_replay=False,
             )
 
+    def _execute_media_governance_audit_request(
+        self,
+        request: RuntimeRequest,
+    ) -> RuntimeExecutionResponse:
+        self.contract_validator.validate_media_governance_audit_contract(request)
+        trace_id = request.trace_id or uuid4().hex
+        run_id = f"run_{uuid4().hex}"
+        merged_policy = self._build_media_governance_audit_policy(request)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
+
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            self._require_active_site(repository, request.site_id)
+
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
+                )
+
+            commercial_decision = self.commercial_service.authorize_runtime_request(
+                session=session,
+                site_id=request.site_id,
+                ability_family=request.ability_family,
+                channel=request.channel,
+                execution_kind=request.execution_kind,
+                execution_tier=request.execution_tier,
+                execution_pattern=request.execution_pattern,
+                data_classification=request.data_classification,
+                trace_id=trace_id,
+                idempotency_key=request.idempotency_key,
+                request_kind="execute",
+                run_id=run_id,
+                estimated_ai_credits=self._estimate_runtime_request_ai_credits(request),
+            )
+            self._enforce_batch_limits(
+                request=request,
+                commercial_decision=commercial_decision,
+            )
+            merged_policy = self._apply_commercial_policy_overrides(
+                merged_policy,
+                commercial_decision=commercial_decision,
+            )
+            storage_mode = self._get_storage_mode(merged_policy)
+            run = self.run_lifecycle_service.create_durable_run(
+                repository=repository,
+                command=RuntimeRunCreationCommand(
+                    run_id=run_id,
+                    site_id=request.site_id,
+                    account_id=str(commercial_decision.get("account_id") or "") or None,
+                    subscription_id=str(commercial_decision.get("subscription_id") or "") or None,
+                    plan_version_id=str(commercial_decision.get("plan_version_id") or "") or None,
+                    ability_name=request.ability_name,
+                    ability_family=request.ability_family,
+                    skill_id=request.skill_id,
+                    workflow_id=request.workflow_id,
+                    contract_version=request.contract_version,
+                    channel=request.channel,
+                    execution_kind=request.execution_kind,
+                    execution_tier=request.execution_tier,
+                    execution_pattern=request.execution_pattern,
+                    data_classification=request.data_classification,
+                    profile_id=request.profile_id or MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+                    canonical_run_id=request.canonical_run_id or None,
+                    status="running",
+                    idempotency_key=request.idempotency_key,
+                    request_fingerprint=request_fingerprint,
+                    trace_id=trace_id,
+                    input_json=self._prepare_input_for_storage(
+                        request.input_payload,
+                        storage_mode=storage_mode,
+                    ),
+                    execution_input_ciphertext=None,
+                    policy_json=merged_policy,
+                    selected_provider_id="media_governance_audit",
+                    selected_model_id="deterministic-auditor",
+                    selected_instance_id="cloud-runtime",
+                ),
+            )
+            self.commercial_service.record_run_acceptance(session=session, run=run)
+            self._execute_media_governance_audit_run(
+                run,
+                repository=repository,
+                input_payload=request.input_payload,
+            )
+            session.commit()
+            return self._build_execution_response(
+                run,
+                repository=repository,
+                idempotent_replay=False,
+            )
+
     def _execute_site_ops_analysis_request(
         self,
         request: RuntimeRequest,
@@ -3987,6 +4102,55 @@ class RuntimeService:
             result_json=execution.result_json,
             provider_id="media_batch_plan",
             model_id="deterministic-intent-parser",
+            instance_id="cloud-runtime",
+            fallback_used=False,
+        )
+
+    def _execute_media_governance_audit_run(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any] | None = None,
+    ) -> None:
+        if self.run_lifecycle_service.cancel_if_requested(
+            repository=repository,
+            run=run,
+        ):
+            return
+
+        payload = (
+            input_payload
+            if isinstance(input_payload, dict)
+            else self._get_execution_input_payload(run)
+        )
+        try:
+            execution = MediaGovernanceAuditService().execute(
+                site_id=run.site_id,
+                ability_name=run.ability_name,
+                contract_version=run.contract_version or "",
+                input_payload=payload,
+                run_id=run.run_id,
+            )
+        except MediaGovernanceAuditContractViolation as error:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+                provider_id="media_governance_audit",
+                model_id="deterministic-auditor",
+                instance_id="cloud-runtime",
+                fallback_used=False,
+            )
+            return
+
+        self.run_lifecycle_service.succeed_run(
+            repository,
+            run,
+            result_json=execution.result_json,
+            provider_id="media_governance_audit",
+            model_id="deterministic-auditor",
             instance_id="cloud-runtime",
             fallback_used=False,
         )
@@ -5322,6 +5486,9 @@ class RuntimeService:
     def _is_media_batch_plan_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in MEDIA_BATCH_PLAN_ABILITIES
 
+    def _is_media_governance_audit_request(self, request: RuntimeRequest) -> bool:
+        return request.ability_name in MEDIA_GOVERNANCE_AUDIT_ABILITIES
+
     def _is_site_ops_analysis_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in SITE_OPS_ANALYSIS_ABILITIES
 
@@ -5391,6 +5558,9 @@ class RuntimeService:
 
     def _is_media_batch_plan_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in MEDIA_BATCH_PLAN_ABILITIES
+
+    def _is_media_governance_audit_run(self, run: RunRecord) -> bool:
+        return str(run.ability_name or "") in MEDIA_GOVERNANCE_AUDIT_ABILITIES
 
     def _is_image_context_evidence_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in IMAGE_CONTEXT_EVIDENCE_ABILITIES
@@ -5573,6 +5743,29 @@ class RuntimeService:
             "retention_ttl": max(0, request.retention_ttl),
             "plan_contract": "media_derivative_batch_plan.v1",
             "final_writes": "core_proposal_required",
+            "direct_wordpress_write": False,
+        }
+        return policy
+
+    def _build_media_governance_audit_policy(self, request: RuntimeRequest) -> dict[str, object]:
+        policy = self._apply_runtime_controls(dict(request.policy), request)
+        policy["allow_fallback"] = False
+        policy["execution_contract"] = {
+            "ability_name": request.ability_name,
+            "contract_version": request.contract_version,
+            "profile_id": request.profile_id or MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+            "execution_pattern": request.execution_pattern,
+            "data_classification": request.data_classification,
+            "storage_mode": request.storage_mode,
+            "timeout_seconds": max(0, request.timeout_seconds),
+            "retry_max": max(0, request.retry_max),
+            "retention_ttl": max(0, request.retention_ttl),
+            "result_contract": MEDIA_GOVERNANCE_AUDIT_RESULT_CONTRACT,
+            "cloud_role": "runtime_detail",
+            "inventory_owner": "local_wordpress_host",
+            "wordpress_write_owner": "npcink-abilities-toolkit",
+            "write_posture": "read_only",
+            "cloud_scan": False,
             "direct_wordpress_write": False,
         }
         return policy

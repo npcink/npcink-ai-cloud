@@ -376,6 +376,7 @@ def process_media_derivative(
     target_format: str,
     max_width: int,
     quality: int,
+    resize_mode: str = "fit",
     watermark_bytes: bytes | None = None,
     watermark_options: dict[str, Any] | None = None,
     crop_options: dict[str, Any] | None = None,
@@ -422,7 +423,7 @@ def process_media_derivative(
                 warnings=warnings,
             )
 
-        if img.width > max_width:
+        if resize_mode != "preserve" and img.width > max_width:
             source_format = img.format
             ratio = max_width / img.width
             new_height = int(img.height * ratio)

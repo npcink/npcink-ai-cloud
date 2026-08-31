@@ -38,6 +38,11 @@ from app.domain.media_batch_plans.contracts import (
     MediaBatchPlanContractViolation,
     validate_media_batch_plan_runtime_contract,
 )
+from app.domain.media_governance.contracts import (
+    MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+    MediaGovernanceAuditContractViolation,
+    validate_media_governance_audit_runtime_contract,
+)
 from app.domain.routing.models import RoutingResolution
 from app.domain.runtime.data_guard import find_runtime_data_guard_finding
 from app.domain.runtime.errors import RuntimeExecutionContractError
@@ -236,6 +241,27 @@ class RuntimeContractValidator:
             raise RuntimeExecutionContractError(
                 "media_batch_plan.inline_required",
                 "media batch plan currently supports inline execution only",
+            )
+        self._validate_common_limits(request)
+
+    def validate_media_governance_audit_contract(self, request: RuntimeRequest) -> None:
+        try:
+            validate_media_governance_audit_runtime_contract(
+                ability_name=request.ability_name,
+                contract_version=request.contract_version,
+                input_payload=request.input_payload,
+            )
+        except MediaGovernanceAuditContractViolation as error:
+            raise RuntimeExecutionContractError(error.error_code, error.message) from error
+        if request.ability_name not in MEDIA_GOVERNANCE_AUDIT_ABILITIES:
+            raise RuntimeExecutionContractError(
+                "media_governance_audit.unknown_ability",
+                "media governance audit ability_name is not supported",
+            )
+        if request.execution_pattern != "inline":
+            raise RuntimeExecutionContractError(
+                "media_governance_audit.inline_required",
+                "media governance audit currently supports inline execution only",
             )
         self._validate_common_limits(request)
 

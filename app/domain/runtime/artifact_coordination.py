@@ -57,6 +57,7 @@ from app.domain.media_derivatives.errors import (
     MediaDerivativeProcessingFailedError,
     MediaDerivativeSourceDecodeFailedError,
     MediaDerivativeSourceTooLargeError,
+    MediaGovernanceStaleSourceError,
     MediaJobArtifactExpiredError,
     MediaJobArtifactNotFoundError,
     MediaJobArtifactUnavailableError,
@@ -65,6 +66,7 @@ from app.domain.media_derivatives.errors import (
 )
 from app.domain.media_derivatives.metrics import record_media_derivative_job_metric
 from app.domain.media_derivatives.processor import process_media_derivative
+from app.domain.media_governance.service import build_media_governance_canary_result
 from app.domain.runtime.models import RuntimeExecutionResponse
 from app.domain.runtime.run_lifecycle import RuntimeRunCreationCommand
 
@@ -524,6 +526,11 @@ class RuntimeArtifactCoordinationService:
                 artifact_id=str(input_payload["source_artifact_id"]),
                 role="source",
             )
+            governance = self._dict_or_empty(input_payload.get("governance"))
+            if governance and self._normalize_sha256(
+                governance.get("source_sha256")
+            ) != self._normalize_sha256(source.checksum):
+                raise MediaGovernanceStaleSourceError()
             watermark_id = str(input_payload.get("watermark_artifact_id") or "")
             watermark = (
                 self._find_job_artifact(
@@ -532,15 +539,20 @@ class RuntimeArtifactCoordinationService:
                 if watermark_id
                 else None
             )
+            fingerprint_params = dict(input_payload["params"])
+            if fingerprint_params.get("resize_mode") == "fit":
+                fingerprint_params.pop("resize_mode", None)
             fingerprint_input = {
                 "request_contract_version": input_payload["request_contract_version"],
                 "operation": input_payload["operation"],
                 "source_artifact_id": input_payload["source_artifact_id"],
                 "watermark_artifact_id": input_payload.get("watermark_artifact_id"),
-                "params": input_payload["params"],
+                "params": fingerprint_params,
                 "batch_context": input_payload.get("batch_context"),
                 "result_ttl_minutes": input_payload["result_ttl_minutes"],
             }
+            if governance:
+                fingerprint_input["governance"] = governance
             request_fingerprint = self.run_controller.build_media_derivative_request_fingerprint(
                 site_id,
                 fingerprint_input,
@@ -699,6 +711,7 @@ class RuntimeArtifactCoordinationService:
     ) -> dict[str, object]:
         transform_params = self._dict_or_empty(input_payload.get("params"))
         batch_context = self._dict_or_empty(input_payload.get("batch_context"))
+        governance = self._dict_or_empty(input_payload.get("governance"))
         return {
             "target_format": str(transform_params.get("target_format") or "webp"),
             "source_media_type": str(transform_params.get("source_media_type") or "image"),
@@ -713,6 +726,19 @@ class RuntimeArtifactCoordinationService:
                 "explicit_avif": bool(batch_context.get("explicit_avif")),
             }
             if batch_context
+            else {},
+            "governance": {
+                "contract_version": str(governance.get("contract_version") or ""),
+                "candidate_id": str(governance.get("candidate_id") or ""),
+                "snapshot_id": str(governance.get("snapshot_id") or ""),
+                "evidence_revision": str(governance.get("evidence_revision") or ""),
+                "minimum_savings_basis_points": self._coerce_int(
+                    governance.get("minimum_savings_basis_points"), default=0
+                ),
+                "preview_only": True,
+                "retain_originals": True,
+            }
+            if governance
             else {},
             "limits": {
                 "site_queued": int(self.config.media_derivative_site_queued_limit),
@@ -742,6 +768,11 @@ class RuntimeArtifactCoordinationService:
                 return default
         return default
 
+    @staticmethod
+    def _normalize_sha256(value: object | None) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized.startswith("sha256:") else f"sha256:{normalized}"
+
     def execute_media_derivative_run(
         self,
         run: RunRecord,
@@ -753,7 +784,9 @@ class RuntimeArtifactCoordinationService:
         source_media_type = transform_params.get("source_media_type", "image")
         target_format = transform_params.get("target_format", "webp")
         max_width = int(transform_params.get("max_width", 1200))
+        resize_mode = str(transform_params.get("resize_mode") or "fit")
         quality = int(transform_params.get("quality", 82))
+        governance = self._dict_or_empty(media_input.get("governance"))
         crop_options = transform_params.get("crop")
         crop_options = crop_options if isinstance(crop_options, dict) else None
         watermark_options = transform_params.get("watermark")
@@ -786,6 +819,16 @@ class RuntimeArtifactCoordinationService:
                 repository,
                 run,
                 MediaJobArtifactUnavailableError("source"),
+                media_input=media_input,
+            )
+            return
+        if governance and self._normalize_sha256(
+            governance.get("source_sha256")
+        ) != self._normalize_sha256(source_artifact.checksum):
+            self._fail_media_job_input(
+                repository,
+                run,
+                MediaGovernanceStaleSourceError(),
                 media_input=media_input,
             )
             return
@@ -830,6 +873,7 @@ class RuntimeArtifactCoordinationService:
                 target_format=target_format,
                 max_width=max_width,
                 quality=quality,
+                resize_mode=resize_mode,
                 crop_options=crop_options,
                 watermark_bytes=watermark_bytes,
                 watermark_options=watermark_options,
@@ -865,6 +909,44 @@ class RuntimeArtifactCoordinationService:
             )
             return
 
+        source_facts = {
+            "artifact_id": source_artifact.artifact_id,
+            "format": source_artifact.format,
+            "mime_type": source_artifact.content_type,
+            "width": source_artifact.width,
+            "height": source_artifact.height,
+            "filesize_bytes": source_artifact.byte_size,
+            "checksum": source_artifact.checksum,
+        }
+        if governance:
+            canary_result = build_media_governance_canary_result(
+                governance=governance,
+                source=source_facts,
+                derivative_result=result,
+                derivative_artifact=None,
+            )
+            if not bool(canary_result["validation"]["qualified"]):
+                self.run_controller.succeed_run(
+                    repository,
+                    run,
+                    result_json=canary_result,
+                    provider_id="media_derivative",
+                    model_id="pillow",
+                    instance_id="cloud-worker",
+                    fallback_used=False,
+                )
+                record_media_derivative_job_metric(
+                    session=repository.session,
+                    run=run,
+                    target_format=target_format,
+                    source_media_type=source_media_type,
+                    source_bytes=len(source_bytes),
+                    processing_started_at=processing_started_at,
+                    result=result,
+                    watermark_applied=False,
+                )
+                return
+
         artifact = create_artifact(
             session=repository.session,
             artifact_store=self.dependencies.artifact_store,
@@ -875,6 +957,13 @@ class RuntimeArtifactCoordinationService:
             ttl_minutes=ttl_minutes,
         )
         result_json = build_artifact_result_json(artifact)
+        if governance:
+            result_json = build_media_governance_canary_result(
+                governance=governance,
+                source=source_facts,
+                derivative_result=result,
+                derivative_artifact=result_json,
+            )
         self.run_controller.succeed_run(
             repository,
             run,
