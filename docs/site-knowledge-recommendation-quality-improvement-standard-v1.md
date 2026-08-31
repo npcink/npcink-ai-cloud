@@ -118,12 +118,18 @@ provider output, public URLs, WordPress post IDs, user IDs, prompts, or saved
 article content. The summary is a read-only quality projection; it is not a
 training corpus and it does not own final adoption truth.
 
-Behavior is best treated as a weak signal:
+Behavior is best treated as a weak signal, with an explicit denominator:
+
+- `impression` is the session denominator; an action without an impression is
+  an orphan and is excluded from impression-based rates;
+- the current Toolbox contract records only explicit actions. Closing a panel,
+  refreshing, or leaving the editor is not an `ignore` event;
+- `ignore` means that the operator skipped this displayed recommendation. It
+  is not deletion, permanent suppression, or a relevance label.
 
 - Apply and Save are stronger than Open or Copy, but can still reflect button
   placement or convenience;
 - Undo is a useful negative signal, but may reflect later editorial changes;
-- Ignore is ambiguous unless repeated across comparable sessions;
 - no click is not proof that a candidate was wrong.
 
 The first operational threshold is 20 impression sessions for a recommendation
@@ -139,7 +145,7 @@ should not use one person's behavior as universal truth. Use three stages:
 
 - keep vector retrieval as the semantic base;
 - run synthetic and adversarial cases to catch obvious ranking and anchor bugs;
-- use two or three independent AI reviewers offline to identify clear false
+- use the default GPT + Grok cross-judge offline to identify clear false
   positives, unsafe anchors, duplicates, and abstention cases;
 - compare the current and proposed orders in Eval Lab;
 - change safety rules and explanations before changing global weights;
@@ -186,7 +192,7 @@ contracts, so it has a smaller operational and rollback surface.
 
 Do not start the following work in the same slice:
 
-- real-time multi-AI voting or model-to-model training;
+- real-time multi-AI voting, model-to-model training, or a third model;
 - a universal vector-quality abstraction shared by every intent;
 - a new vector database or search service;
 - embedding-model replacement or Learning-to-Rank;
@@ -202,21 +208,23 @@ Multiple models can improve the review process, but “models agreeing with each
 other” is not the same as training. Use them as an offline review panel:
 
 1. Cloud produces a bounded top-five or top-ten candidate list.
-2. Reviewer A independently scores target relevance.
-3. Reviewer B independently checks source match and anchor naturalness.
-4. Reviewer C acts as an adversarial critic for duplication, overreach, and
-   false positives.
-5. A deterministic aggregator records pass, reject, or abstain.
+2. GPT and Grok independently review relevance and the intent-specific safety
+   checks. Each returns explicit labels, not an opaque numeric score.
+3. A deterministic aggregator records pass, reject, abstain, provider error,
+   invalid output, and disagreement.
+4. Disagreement, ties, and boundary failures go to human review. They are not
+   silently resolved by averaging the two providers.
 
 Do not average provider scores from different models. Normalize to explicit
 labels and preserve disagreement. A candidate should be promoted only when it
 passes the relevant checks; disagreement should remain visible for human
 review.
 
-AI reviewers may generate provisional labels and adversarial cases. They must
-not silently rewrite runtime weights, prompt ownership, router truth, or
-WordPress content. Their output is especially weak when all reviewers share the
-same model family or see one another's prior answer.
+GPT/Grok output is silver evidence only. AI reviewers may generate provisional
+labels and adversarial cases. They must not silently rewrite runtime weights,
+prompt ownership, router truth, or WordPress content. Their output is
+especially weak when all reviewers share the same model family or see one
+another's prior answer.
 
 ## 10. Third-Party Open-Source References
 
@@ -271,13 +279,36 @@ When this standard conflicts with active code, tests, runtime contracts,
 security policy, or release policy, the active authority wins and this standard
 must be updated.
 
-## 13. Historical Outcome
+## 13. Delivery Reconciliation (2026-08-31)
+
+The bounded delivery is now present in `master`:
+
+- PR #875 (`b8640927`) separated `internal_links` and `related_content`
+  ranking, added document-level dedupe/current-document exclusion, bounded
+  evidence, and fail-closed anchor safeguards. Its review fixes covered
+  multi-chunk uniqueness, post-over-comment taxonomy precedence, two-character
+  CJK evidence, and ASCII token boundaries.
+- PR #876 (`00860609`) is the separate image-prompt translation line. It keeps
+  the reviewed Chinese prompt distinct from the Provider execution prompt and
+  fails closed before image generation when translation fails. It is not part
+  of recommendation ranking quality.
+- Toolbox PR #120 (`4aadcb7694bbc987c0a6ccd0fad4fd0f50ba0fab`) supplies
+  metadata-only recommendation impressions and explicit actions. Eval Lab PR
+  #58 (`c7f1160e60b871d44a35b951459e8ab8dffb72aa`) supplies the GPT + Grok
+  cross-judge and keeps AI results as silver evidence.
+
+These merges establish implementation and observability contracts, not a
+production quality claim. Real usage must still reach the impression threshold,
+and a formal claim still requires independently reviewed human gold.
+
+## 14. Historical Outcome
 
 The first quality slice completed the bounded lexical/topic/anchor ranking,
-natural-anchor safety gate, and three-strategy offline comparison. The next
-recommended implementation is the small `related_content` quality slice,
-followed by 10–20 offline comparison cases. The behavior-feedback loop,
-multi-AI review panel, model replacement, and learning-to-rank remain deferred
-until a measured gap and sufficient real evidence exist. No synthetic fixture
-is evidence of production quality, and no single-user behavior window is a
-universal ranking proof.
+natural-anchor safety gate, related-content document dedupe, separated
+feedback rollups, and three-strategy offline comparison. The next action is
+observation: collect explicit impression sessions, inspect a small sample of
+adoption and undo outcomes, and use GPT/Grok disagreements to prioritize human
+review. Model replacement, a third reviewer, and learning-to-rank remain
+deferred until a measured gap and sufficient real evidence exist. No synthetic
+fixture is evidence of production quality, and no single-user behavior window
+is a universal ranking proof.
