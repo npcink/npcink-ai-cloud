@@ -1584,9 +1584,13 @@ def test_m4_tunnel_reports_ready_only_after_local_health_is_usable(
     _write_fake_lsof(fake_bin, port_is_occupied=False)
     event_log = tmp_path / "events.log"
     health_attempts = tmp_path / "health-attempts"
+    ssh_release = tmp_path / "ssh-release"
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         """#!/bin/sh
+while [ ! -f "${FAKE_SSH_RELEASE}" ]; do
+  sleep 0.01
+done
 printf 'tunnel-started\n' >> "${FAKE_EVENT_LOG}"
 sleep 3
 """,
@@ -1603,6 +1607,9 @@ fi
 attempts=$((attempts + 1))
 printf '%s\n' "${attempts}" > "${FAKE_HEALTH_ATTEMPTS}"
 printf 'health-attempt-%s\n' "${attempts}" >> "${FAKE_EVENT_LOG}"
+if [ "${attempts}" -eq 1 ]; then
+  : > "${FAKE_SSH_RELEASE}"
+fi
 test "${attempts}" -ge 2
 """,
         encoding="utf-8",
@@ -1613,6 +1620,7 @@ test "${attempts}" -ge 2
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "FAKE_EVENT_LOG": str(event_log),
         "FAKE_HEALTH_ATTEMPTS": str(health_attempts),
+        "FAKE_SSH_RELEASE": str(ssh_release),
         "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
     }
 
@@ -1628,11 +1636,16 @@ test "${attempts}" -ge 2
 
     assert "tunnel_ready=true" in completed.stdout
     assert "local_health_url=http://127.0.0.1:18042/health/live" in completed.stdout
-    assert event_log.read_text(encoding="utf-8").splitlines()[:3] == [
-        "tunnel-started",
-        "health-attempt-1",
-        "health-attempt-2",
-    ]
+    events = event_log.read_text(encoding="utf-8").splitlines()
+    assert events[0] == "health-attempt-1"
+    assert sorted(events) == sorted(
+        [
+            "tunnel-started",
+            "health-attempt-1",
+            "health-attempt-2",
+        ]
+    )
+    assert events.index("health-attempt-1") < events.index("health-attempt-2")
 
 
 def test_m4_tunnel_does_not_count_an_unowned_existing_health_listener(
