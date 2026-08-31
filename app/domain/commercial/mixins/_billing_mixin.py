@@ -858,6 +858,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         monthly_included_points: float,
         site_limit: int,
         max_vector_documents: int,
+        max_media_images: int,
         max_cost_cny_per_period: float,
         sales_price_cny: float,
         max_active_runs: int,
@@ -895,6 +896,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "monthly_included_points": monthly_included_points,
                 "site_limit": site_limit,
                 "max_vector_documents": max_vector_documents,
+                "max_media_images": max_media_images,
                 "max_batch_items": max_batch_items,
             }
         )
@@ -1358,6 +1360,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "plan_kind": DEFAULT_FREE_PLAN_KIND,
                 "site_limit": self._coerce_int(baseline.get("site_limit")),
                 "max_vector_documents": self._coerce_int(baseline.get("max_vector_documents")),
+                "max_media_images": self._coerce_int(baseline.get("max_media_images")),
                 "monthly_included_points": self._coerce_int(
                     baseline.get("monthly_included_points")
                 ),
@@ -1447,6 +1450,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 ),
                 "site_limit": self._coerce_int(baseline.get("site_limit")),
                 "max_vector_documents": self._coerce_int(baseline.get("max_vector_documents")),
+                "max_media_images": self._coerce_int(baseline.get("max_media_images")),
                 "max_batch_items": self._coerce_int(baseline.get("max_batch_items")),
                 "nightly_inspection_runs_per_period": self._coerce_int(
                     baseline.get("nightly_inspection_runs_per_period")
@@ -2320,6 +2324,43 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             metadata.update(snapshot_metadata)
         return max(0, self._coerce_int(metadata.get("max_vector_documents")))
 
+    def _resolve_account_media_images_limit(
+        self,
+        *,
+        snapshot: object | None,
+        plan_version: object | None,
+    ) -> int | None:
+        metadata: dict[str, object] = {}
+        plan_metadata = getattr(plan_version, "metadata_json", None)
+        if isinstance(plan_metadata, dict):
+            metadata.update(plan_metadata)
+        snapshot_metadata = getattr(snapshot, "metadata_json", None)
+        if isinstance(snapshot_metadata, dict):
+            metadata.update(snapshot_metadata)
+        if "max_media_images" in metadata:
+            return max(0, self._coerce_int(metadata.get("max_media_images")))
+
+        tier_id = str(metadata.get("tier_id") or "").strip().lower()
+        if tier_id not in PLAN_TIER_REGISTRY:
+            plan_id = str(getattr(plan_version, "plan_id", "") or "").strip()
+            plan_version_id = str(
+                getattr(plan_version, "plan_version_id", "") or ""
+            ).strip()
+            tier_id = next(
+                (
+                    candidate
+                    for candidate, canonical_ids in CANONICAL_TIER_PLAN_IDS.items()
+                    if plan_id == canonical_ids[0] or plan_version_id == canonical_ids[1]
+                ),
+                "",
+            )
+        if tier_id not in PLAN_TIER_REGISTRY:
+            return None
+        return max(
+            0,
+            self._coerce_int(PLAN_TIER_REGISTRY[tier_id].get("max_media_images")),
+        )
+
     def _resolve_effective_subscription_budgets(
         self,
         *,
@@ -2467,6 +2508,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "monthly_included_points": self._coerce_int(baseline.get("monthly_included_points")),
             "site_limit": self._coerce_int(baseline.get("site_limit")),
             "max_vector_documents": self._coerce_int(baseline.get("max_vector_documents")),
+            "max_media_images": self._coerce_int(baseline.get("max_media_images")),
             "budgets_template": budgets_template,
             "concurrency_template": concurrency_template,
             "max_batch_items": self._coerce_int(baseline.get("max_batch_items")),
@@ -2501,6 +2543,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                     ),
                     "site_limit": self._coerce_int(baseline.get("site_limit")),
                     "max_vector_documents": self._coerce_int(baseline.get("max_vector_documents")),
+                    "max_media_images": self._coerce_int(baseline.get("max_media_images")),
                     "max_batch_items": self._coerce_int(baseline.get("max_batch_items")),
                     "nightly_inspection_runs_per_period": self._coerce_int(
                         baseline.get("nightly_inspection_runs_per_period")

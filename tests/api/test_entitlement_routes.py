@@ -146,6 +146,17 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
         "ai_credit_ledger": "/portal/usage/credits",
     }
     assert "recent_items" not in ai_credit_usage_detail
+    assert data["quota_summary"]["resource_limits"] == [
+        {
+            "key": "media_images",
+            "label": "Media images",
+            "used": 0.0,
+            "limit": 5000.0,
+            "remaining": 5000.0,
+            "status": "ok",
+            "unit": "image",
+        }
+    ]
 
     dispose_engine(database_url)
 

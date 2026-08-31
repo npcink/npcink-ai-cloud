@@ -93,6 +93,7 @@ def test_admin_plan_management_is_structured_and_preserves_hidden_policy(
             "monthly_included_points": 900,
             "site_limit": 4,
             "max_vector_documents": 1200,
+            "max_media_images": 6000,
             "max_cost_cny_per_period": 25,
             "sales_price_cny": 39,
             "max_active_runs": 6,
@@ -142,6 +143,7 @@ def test_admin_plan_management_is_structured_and_preserves_hidden_policy(
         assert version.metadata_json["custom_metadata"] == "keep"
         assert version.metadata_json["site_limit"] == 4
         assert version.metadata_json["max_vector_documents"] == 1200
+        assert version.metadata_json["max_media_images"] == 6000
         assert version.metadata_json["max_batch_items"] == 40
 
     rejected_raw_override = client.patch(
@@ -150,6 +152,7 @@ def test_admin_plan_management_is_structured_and_preserves_hidden_policy(
             "monthly_included_points": 900,
             "site_limit": 4,
             "max_vector_documents": 1200,
+            "max_media_images": 6000,
             "max_cost_cny_per_period": 25,
             "sales_price_cny": 39,
             "max_active_runs": 6,

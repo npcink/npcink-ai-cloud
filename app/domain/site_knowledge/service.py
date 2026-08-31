@@ -135,6 +135,7 @@ class SiteKnowledgeService:
         embedding_usage_callback: EmbeddingUsageCallback | None = None,
         account_id: str = '',
         account_vector_document_limit: int | None = None,
+        account_media_image_limit: int | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.providers = providers or {}
@@ -142,6 +143,7 @@ class SiteKnowledgeService:
         self.embedding_usage_callback = embedding_usage_callback
         self.account_id = str(account_id or '').strip()
         self.account_vector_document_limit = account_vector_document_limit
+        self.account_media_image_limit = account_media_image_limit
         self.repository = SiteKnowledgeRepository(session)
         self.vector_backend = build_vector_backend(self.settings)
         self.reranker = build_site_knowledge_reranker(self.settings)
@@ -311,11 +313,23 @@ class SiteKnowledgeService:
         processed_documents = 0
         site_document_count = self.repository.count_documents(site_id)
         account_document_count = (
-            self.repository.count_documents_for_account(self.account_id)
+            self.repository.count_documents_for_account(
+                self.account_id,
+                exclude_source_type="media",
+            )
             if self.account_id and self.account_vector_document_limit is not None
             else None
         )
         account_document_limit = int(self.account_vector_document_limit or 0)
+        account_media_image_count = (
+            self.repository.count_documents_for_account(
+                self.account_id,
+                source_type="media",
+            )
+            if self.account_id and self.account_media_image_limit is not None
+            else None
+        )
+        account_media_image_limit = int(self.account_media_image_limit or 0)
         site_chunk_count = self.repository.count_chunks(site_id)
         remaining_run_documents = int(self.settings.site_knowledge_max_sync_documents_per_run)
         remaining_run_chunks = int(self.settings.site_knowledge_max_sync_chunks_per_run)
@@ -398,13 +412,31 @@ class SiteKnowledgeService:
                 continue
             if (
                 not existing_document
+                and source_type != "media"
                 and account_document_count is not None
                 and account_document_limit > 0
             ):
                 account_document_count = self.repository.lock_account_and_count_documents(
-                    self.account_id
+                    self.account_id,
+                    exclude_source_type="media",
                 )
                 if account_document_count >= account_document_limit:
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
+            if (
+                not existing_document
+                and source_type == "media"
+                and account_media_image_count is not None
+                and account_media_image_limit > 0
+            ):
+                account_media_image_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    source_type="media",
+                )
+                if account_media_image_count >= account_media_image_limit:
                     skipped_documents += 1
                     skipped_due_to_quota += 1
                     quota_limited = True
@@ -468,6 +500,47 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
+            if not existing_document and source_type != "media" and (
+                account_document_count is not None and account_document_limit > 0
+            ):
+                account_document_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    exclude_source_type="media",
+                )
+                existing_document = self.repository.document_exists(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                if not existing_document and account_document_count >= account_document_limit:
+                    accepted_documents -= 1
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
+            if not existing_document and source_type == "media" and (
+                account_media_image_count is not None and account_media_image_limit > 0
+            ):
+                account_media_image_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    source_type="media",
+                )
+                existing_document = self.repository.document_exists(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                if (
+                    not existing_document
+                    and account_media_image_count >= account_media_image_limit
+                ):
+                    accepted_documents -= 1
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
@@ -538,8 +611,10 @@ class SiteKnowledgeService:
             remaining_run_chunks = max(0, remaining_run_chunks - len(chunks))
             if not existing_document:
                 site_document_count += 1
-                if account_document_count is not None:
+                if source_type != "media" and account_document_count is not None:
                     account_document_count += 1
+                if source_type == "media" and account_media_image_count is not None:
+                    account_media_image_count += 1
             site_chunk_count = max(0, site_chunk_count - existing_chunks) + len(chunks)
             processed_documents += 1
             self._emit_sync_progress(

@@ -189,22 +189,37 @@ def _resolve_pro_cloud_runtime(policy: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _resolve_ai_credit_usage_detail(request: Request, account_id: str) -> dict[str, object]:
+def _resolve_quota_summary(request: Request, account_id: str) -> dict[str, object]:
     if not account_id:
-        return {}
+        return {"ai_credit_usage_detail": {}, "resource_limits": []}
     try:
         quota_summary = _get_commercial_service(request).get_portal_account_quota_summary(
             account_id
         )
     except CommercialServiceError:
-        return {}
+        return {"ai_credit_usage_detail": {}, "resource_limits": []}
     ai_credit_usage_detail = quota_summary.get("ai_credit_usage_detail")
-    if not isinstance(ai_credit_usage_detail, dict):
-        return {}
+    public_ai_credit_usage_detail = (
+        {
+            key: value
+            for key, value in ai_credit_usage_detail.items()
+            if key != "recent_items"
+        }
+        if isinstance(ai_credit_usage_detail, dict)
+        else {}
+    )
+    resource_limits = quota_summary.get("resource_limits")
+    public_media_limits = [
+        {
+            key: item.get(key)
+            for key in ("key", "label", "used", "limit", "remaining", "status", "unit")
+        }
+        for item in resource_limits
+        if isinstance(item, dict) and str(item.get("key") or "") == "media_images"
+    ] if isinstance(resource_limits, list) else []
     return {
-        key: value
-        for key, value in ai_credit_usage_detail.items()
-        if key != "recent_items"
+        "ai_credit_usage_detail": public_ai_credit_usage_detail,
+        "resource_limits": public_media_limits,
     }
 
 
@@ -242,9 +257,7 @@ def _build_entitlement_payload(
             "hosted_runtime_quota": _resolve_runtime_quota(policy),
             "pro_cloud_runtime": _resolve_pro_cloud_runtime(policy),
         },
-        "quota_summary": {
-            "ai_credit_usage_detail": _resolve_ai_credit_usage_detail(request, account_id),
-        },
+        "quota_summary": _resolve_quota_summary(request, account_id),
     }
 
 
