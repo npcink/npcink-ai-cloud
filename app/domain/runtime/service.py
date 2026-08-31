@@ -179,6 +179,7 @@ from app.domain.site_knowledge.metrics import (
     record_site_knowledge_failure_metric,
     record_site_knowledge_run_metric,
 )
+from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.site_ops_analysis.contracts import (
     SITE_OPS_ANALYSIS_ABILITIES,
@@ -4130,6 +4131,26 @@ class RuntimeService:
             }
             flag_modified(run, "result_json")
             repository.session.commit()
+        if self._is_background_image_context_evidence_policy(policy):
+            try:
+                payload = self._admit_background_media_image_capacity(
+                    repository=repository,
+                    site_id=run.site_id,
+                    input_payload=payload,
+                )
+            except SiteKnowledgeContractViolation as error:
+                self.run_lifecycle_service.fail_run(
+                    repository,
+                    run,
+                    error_code=error.error_code,
+                    error_message=error.message,
+                    provider_id=selected_candidate.provider_id,
+                    model_id=selected_candidate.model_id,
+                    instance_id=selected_candidate.instance_id,
+                    fallback_used=False,
+                )
+                return
+            requested_count = self._image_context_evidence_item_count(payload)
         try:
             artifact_inputs = self._load_image_context_evidence_artifact_inputs(
                 repository,
@@ -4278,6 +4299,63 @@ class RuntimeService:
             instance_id=execution.usage.instance_id,
             fallback_used=False,
         )
+
+    def _admit_background_media_image_capacity(
+        self,
+        *,
+        repository: RuntimeRepository,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        account_id, _, media_image_limit = self._resolve_site_knowledge_account_limit(
+            repository=repository,
+            site_id=site_id,
+        )
+        if not account_id or media_image_limit is None or media_image_limit <= 0:
+            return input_payload
+
+        knowledge_repository = SiteKnowledgeRepository(repository.session)
+        current_count = knowledge_repository.lock_account_and_count_documents(
+            account_id,
+            source_type="media",
+        )
+        remaining_capacity = max(0, int(media_image_limit) - current_count)
+        request = extract_image_context_evidence_request(input_payload)
+        raw_items = request.get("items")
+        items = raw_items if isinstance(raw_items, list) else []
+        admitted_items: list[dict[str, Any]] = []
+        for raw_item in items:
+            if not isinstance(raw_item, dict):
+                continue
+            attachment_id = self._coerce_int(raw_item.get("attachment_id"), default=0)
+            is_refresh = attachment_id > 0 and knowledge_repository.document_exists(
+                site_id=site_id,
+                source_type="media",
+                source_id=attachment_id,
+            )
+            if is_refresh:
+                admitted_items.append(raw_item)
+                continue
+            if remaining_capacity <= 0:
+                continue
+            admitted_items.append(raw_item)
+            remaining_capacity -= 1
+
+        if not admitted_items:
+            raise SiteKnowledgeContractViolation(
+                "media_recognition.media_capacity_exhausted",
+                "the account image recognition capacity has been reached",
+            )
+        if len(admitted_items) == len(items):
+            return input_payload
+
+        admitted_request = {**request, "items": admitted_items}
+        if request is input_payload:
+            return admitted_request
+        return {
+            **input_payload,
+            "image_context_evidence_request": admitted_request,
+        }
 
     @staticmethod
     def _media_recognition_progress_estimate(

@@ -21,11 +21,15 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import (
+    AccountSubscription,
     MediaArtifact,
+    PlanVersion,
     ProviderCallRecord,
     RunRecord,
     ServiceSetting,
+    Site,
     SiteKnowledgeDocument,
+    UsageMeterEvent,
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
@@ -300,6 +304,175 @@ def _set_media_recognition_policy(
             )
         )
         session.commit()
+
+
+def _set_media_image_limit(database_url: str, limit: int) -> None:
+    with get_session(database_url) as session:
+        site = session.get(Site, "site_alpha")
+        assert site is not None
+        subscription = session.scalar(
+            select(AccountSubscription)
+            .where(AccountSubscription.account_id == site.account_id)
+            .order_by(AccountSubscription.created_at.desc())
+        )
+        assert subscription is not None
+        plan_version = session.get(PlanVersion, subscription.plan_version_id)
+        assert plan_version is not None
+        plan_version.metadata_json = {
+            **(plan_version.metadata_json or {}),
+            "max_media_images": limit,
+        }
+        session.commit()
+
+
+def _seed_media_document(
+    database_url: str,
+    *,
+    attachment_id: int,
+    title: str = "Existing image",
+) -> None:
+    with get_session(database_url) as session:
+        session.add(
+            SiteKnowledgeDocument(
+                site_id="site_alpha",
+                post_id=attachment_id,
+                source_type="media",
+                source_id=attachment_id,
+                parent_post_id=None,
+                post_type="attachment",
+                post_status="publish",
+                title=title,
+                url=f"https://example.com/uploads/{attachment_id}.jpg",
+                modified_gmt="2026-08-27T00:00:00Z",
+                content_hash=f"existing-{attachment_id}",
+                last_sync_run_id="run-existing-media",
+                metadata_json={},
+                last_indexed_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+
+def test_background_media_capacity_blocks_provider_call_and_usage(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _set_media_image_limit(database_url, 1)
+    _seed_media_document(database_url, attachment_id=999)
+    _set_media_recognition_policy(
+        database_url,
+        enabled=True,
+        window_start=_clock_offset(-1),
+        window_end=_clock_offset(1),
+        daily_limit=100,
+    )
+
+    response = _execute(
+        client,
+        _payload({"dispatch_mode": "background_completion"}),
+        idempotency_key="image-context-capacity-full",
+    )
+    assert response.status_code == 200, response.json()
+    run_id = response.json()["data"]["run_id"]
+    worker = RuntimeService(
+        database_url,
+        settings=_settings(tmp_path, database_url),
+        providers={provider.provider_id: provider},
+    )
+
+    assert worker.process_next_queued_run(timeout_seconds=0) == {
+        "run_id": run_id,
+        "status": "failed",
+        "trace_id": "imagecontextevidence000000000000",
+    }
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, run_id)
+        assert run is not None
+        assert run.error_code == "media_recognition.media_capacity_exhausted"
+        assert list(
+            session.scalars(select(ProviderCallRecord).where(ProviderCallRecord.run_id == run_id))
+        ) == []
+        usage_events = list(
+            session.scalars(select(UsageMeterEvent).where(UsageMeterEvent.run_id == run_id))
+        )
+        assert [event.meter_key for event in usage_events] == ["runs"]
+
+
+def test_background_media_capacity_allows_existing_image_refresh(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _set_media_image_limit(database_url, 1)
+    _seed_media_document(database_url, attachment_id=101)
+    _set_media_recognition_policy(
+        database_url,
+        enabled=True,
+        window_start=_clock_offset(-1),
+        window_end=_clock_offset(1),
+        daily_limit=100,
+    )
+
+    response = _execute(
+        client,
+        _payload({"dispatch_mode": "background_completion"}),
+        idempotency_key="image-context-capacity-refresh",
+    )
+    run_id = response.json()["data"]["run_id"]
+    worker = RuntimeService(
+        database_url,
+        settings=_settings(tmp_path, database_url),
+        providers={provider.provider_id: provider},
+    )
+
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    assert len(provider.requests) == 1
+    with get_session(database_url) as session:
+        assert session.scalar(
+            select(SiteKnowledgeDocument).where(
+                SiteKnowledgeDocument.site_id == "site_alpha",
+                SiteKnowledgeDocument.source_type == "media",
+                SiteKnowledgeDocument.source_id == 101,
+            )
+        ).last_sync_run_id == run_id
+
+
+def test_background_media_capacity_filters_batch_before_provider(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _set_media_image_limit(database_url, 2)
+    _seed_media_document(database_url, attachment_id=999)
+    _set_media_recognition_policy(
+        database_url,
+        enabled=True,
+        window_start=_clock_offset(-1),
+        window_end=_clock_offset(1),
+        daily_limit=100,
+    )
+    second_item = {
+        **_payload()["input"]["items"][0],
+        "attachment_id": "102",
+        "source_url": "https://example.com/uploads/second.jpg",
+        "thumbnail_url": "https://example.com/uploads/second-300x200.jpg",
+        "attachment_url": "https://example.com/uploads/second.jpg",
+        "media_fingerprint": "sha256:second-fixture",
+    }
+    response = _execute(
+        client,
+        _payload(
+            {
+                "dispatch_mode": "background_completion",
+                "items": [*_payload()["input"]["items"], second_item],
+            }
+        ),
+        idempotency_key="image-context-capacity-partial-batch",
+    )
+    assert response.status_code == 200, response.json()
+    worker = RuntimeService(
+        database_url,
+        settings=_settings(tmp_path, database_url),
+        providers={provider.provider_id: provider},
+    )
+
+    assert worker.process_next_queued_run(timeout_seconds=0)["status"] == "succeeded"
+    prompt = str(provider.requests[0].input_payload["input"][0]["content"])
+    assert "attachment_id=101" in prompt
+    assert "attachment_id=102" not in prompt
 
 
 def test_image_context_evidence_runtime_calls_vision_provider(tmp_path: Path) -> None:

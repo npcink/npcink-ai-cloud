@@ -500,6 +500,47 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
+            if not existing_document and source_type != "media" and (
+                account_document_count is not None and account_document_limit > 0
+            ):
+                account_document_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    exclude_source_type="media",
+                )
+                existing_document = self.repository.document_exists(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                if not existing_document and account_document_count >= account_document_limit:
+                    accepted_documents -= 1
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
+            if not existing_document and source_type == "media" and (
+                account_media_image_count is not None and account_media_image_limit > 0
+            ):
+                account_media_image_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    source_type="media",
+                )
+                existing_document = self.repository.document_exists(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                if (
+                    not existing_document
+                    and account_media_image_count >= account_media_image_limit
+                ):
+                    accepted_documents -= 1
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
