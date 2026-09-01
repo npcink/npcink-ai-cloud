@@ -429,9 +429,23 @@ export default function AdminTroubleshootingPage() {
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200" role="alert">
-          <div className="font-semibold">{error}</div>
+        <div
+          data-ui="runtime-diagnostic-source-error"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"
+          role="alert"
+        >
+          <div className="font-semibold">
+            {data
+              ? t('admin.troubleshooting.refresh_error_summary', {}, 'Runtime telemetry could not refresh. Continue with the retained evidence or retry shortly.')
+              : t('admin.troubleshooting.unavailable_error_summary', {}, 'Runtime telemetry is temporarily unavailable. Retry shortly.')}
+          </div>
           {data ? <div className="mt-1 text-xs">{t('admin.troubleshooting.stale_notice', {}, 'The last successfully loaded diagnostic snapshot remains visible.')}</div> : null}
+          <details className="mt-2 text-xs text-rose-700/85 dark:text-rose-300/85">
+            <summary className="cursor-pointer font-medium">
+              {t('admin.troubleshooting.technical_error_details', {}, 'Technical error details')}
+            </summary>
+            <p className="mt-1 break-words font-mono">{error}</p>
+          </details>
         </div>
       ) : null}
 
@@ -516,7 +530,15 @@ export default function AdminTroubleshootingPage() {
                 </tbody>
               </table>
             ) : (
-              <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')} description={t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')} />
+              <BackofficeEmptyState
+                className="m-5 md:m-6"
+                title={error && !data
+                  ? t('admin.troubleshooting.queue_unavailable_title', {}, 'Runtime anomaly data unavailable')
+                  : t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')}
+                description={error && !data
+                  ? t('admin.troubleshooting.queue_unavailable_desc', {}, 'Cloud could not load runtime telemetry, so the current anomaly state cannot be determined. Retry before treating this window as healthy.')
+                  : t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')}
+              />
             )}
           </AdminDataTableFrame>
 
