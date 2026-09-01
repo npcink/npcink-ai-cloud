@@ -56,6 +56,14 @@ ability registry.
 - Long `site-knowledge-sync` runs use the existing runtime worker path and
   `run_records`; no second queue, scheduler, or workflow engine is introduced.
 
+Related Content and Internal Links expose additive, deterministic review
+metadata without changing ranking order or authorizing a write. Both intents
+declare `candidate_relevance` as `strong`, `review`, or `weak`. Internal Links
+continues to expose source-passage anchor evidence, but Cloud does not declare
+placement eligibility because it cannot validate the current editor structure
+or detect edits made after search. WordPress owns current-state preflight,
+placement eligibility, editor adoption, proposal approval, and final writes.
+
 ## Rebuildable Image-Attachment Projection
 
 `site_knowledge_sync.v1` additively accepts a bounded `media_items` list. Each

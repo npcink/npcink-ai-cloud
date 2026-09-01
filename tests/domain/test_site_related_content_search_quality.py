@@ -117,6 +117,8 @@ def test_bounded_title_and_topic_evidence_can_break_a_close_semantic_tie() -> No
 
     assert [candidate["post_id"] for candidate in ranked] == [2, 1]
     assert ranked[0]["related_content_ranking"]["title_bonus"] == 0.04
+    assert ranked[0]["candidate_relevance"] == "review"
+    assert "placement_eligibility" not in ranked[0]
 
 
 def test_bounded_evidence_does_not_overturn_a_large_semantic_gap() -> None:
