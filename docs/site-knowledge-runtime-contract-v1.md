@@ -59,11 +59,10 @@ ability registry.
 Related Content and Internal Links expose additive, deterministic review
 metadata without changing ranking order or authorizing a write. Both intents
 declare `candidate_relevance` as `strong`, `review`, or `weak`. Internal Links
-also declare `placement_eligibility` as `ready`, `manual_only`, or
-`not_eligible`, plus `placement_reason_codes`. Only an exact source-passage
-anchor can produce `ready`; a relevant target without that evidence remains
-`manual_only`. Related Content never exposes placement fields. WordPress still
-owns local preflight, editor adoption, proposal approval, and final writes.
+continues to expose source-passage anchor evidence, but Cloud does not declare
+placement eligibility because it cannot validate the current editor structure
+or detect edits made after search. WordPress owns current-state preflight,
+placement eligibility, editor adoption, proposal approval, and final writes.
 
 ## Rebuildable Image-Attachment Projection
 

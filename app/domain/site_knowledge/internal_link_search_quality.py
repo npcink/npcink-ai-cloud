@@ -1,6 +1,5 @@
 from app.domain.site_knowledge.recommendation_eligibility import (
     candidate_relevance,
-    internal_link_placement,
 )
 from app.domain.site_knowledge.text_evidence import (
     coerce_float,
@@ -52,13 +51,7 @@ def rank_internal_link_search_results(
             ),
             has_direct_evidence=anchor_bonus > 0,
         )
-        placement, placement_reason_codes = internal_link_placement(
-            relevance=relevance,
-            exact_anchor_match=anchor_bonus > 0,
-        )
         candidate["candidate_relevance"] = relevance
-        candidate["placement_eligibility"] = placement
-        candidate["placement_reason_codes"] = placement_reason_codes
         ranked.append(candidate)
 
     return sorted(

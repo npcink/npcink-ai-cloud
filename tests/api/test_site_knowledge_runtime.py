@@ -844,10 +844,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert search_data["results"][0]["internal_link_ranking"]["anchor_bonus"] == 0.06
     assert search_data["results"][0]["anchor_evidence"]["exact_source_passage_match"] is True
     assert search_data["results"][0]["candidate_relevance"] in {"strong", "review"}
-    assert search_data["results"][0]["placement_eligibility"] == "ready"
-    assert search_data["results"][0]["placement_reason_codes"] == [
-        "exact_anchor_match"
-    ]
+    assert "placement_eligibility" not in search_data["results"][0]
 
     status_result = _execute(
         client,

@@ -1,9 +1,6 @@
 from app.domain.site_knowledge.internal_link_search_quality import (
     rank_internal_link_search_results,
 )
-from app.domain.site_knowledge.recommendation_eligibility import (
-    internal_link_placement,
-)
 
 
 def test_bounded_lexical_topic_and_anchor_evidence_can_promote_a_close_candidate() -> None:
@@ -40,8 +37,7 @@ def test_bounded_lexical_topic_and_anchor_evidence_can_promote_a_close_candidate
         "shared_topic_terms": ["wordpress", "向量检索"],
     }
     assert ranked[0]["candidate_relevance"] == "review"
-    assert ranked[0]["placement_eligibility"] == "ready"
-    assert ranked[0]["placement_reason_codes"] == ["exact_anchor_match"]
+    assert "placement_eligibility" not in ranked[0]
 
 
 def test_provider_rerank_and_vector_scores_are_not_compared_across_sources() -> None:
@@ -110,7 +106,7 @@ def test_bounded_evidence_does_not_overturn_a_large_semantic_gap() -> None:
     assert ranked[1]["internal_link_ranking"]["ranking_score"] == 0.83
 
 
-def test_relevance_is_independent_from_placement_eligibility() -> None:
+def test_relevance_is_independent_from_local_placement_eligibility() -> None:
     ranked = rank_internal_link_search_results(
         "在网页上添加一个效果",
         [
@@ -138,23 +134,6 @@ def test_relevance_is_independent_from_placement_eligibility() -> None:
     by_post_id = {candidate["post_id"]: candidate for candidate in ranked}
     for post_id in (7112, 18890):
         assert by_post_id[post_id]["candidate_relevance"] == "review"
-        assert by_post_id[post_id]["placement_eligibility"] == "manual_only"
-        assert by_post_id[post_id]["placement_reason_codes"] == [
-            "no_natural_anchor"
-        ]
+        assert "placement_eligibility" not in by_post_id[post_id]
     assert by_post_id[6949]["candidate_relevance"] == "weak"
-    assert by_post_id[6949]["placement_eligibility"] == "not_eligible"
-    assert by_post_id[6949]["placement_reason_codes"] == [
-        "weak_evidence",
-        "no_natural_anchor",
-    ]
-
-
-def test_weak_candidate_with_exact_anchor_reports_only_weak_evidence() -> None:
-    eligibility, reason_codes = internal_link_placement(
-        relevance="weak",
-        exact_anchor_match=True,
-    )
-
-    assert eligibility == "not_eligible"
-    assert reason_codes == ["weak_evidence"]
+    assert "placement_eligibility" not in by_post_id[6949]
