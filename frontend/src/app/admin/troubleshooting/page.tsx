@@ -429,9 +429,23 @@ export default function AdminTroubleshootingPage() {
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200" role="alert">
-          <div className="font-semibold">{error}</div>
+        <div
+          data-ui="runtime-diagnostic-source-error"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"
+          role="alert"
+        >
+          <div className="font-semibold">
+            {data
+              ? t('admin.troubleshooting.refresh_error_summary', {}, 'Runtime telemetry could not refresh. Continue with the retained evidence or retry shortly.')
+              : t('admin.troubleshooting.unavailable_error_summary', {}, 'Runtime telemetry is temporarily unavailable. Retry shortly.')}
+          </div>
           {data ? <div className="mt-1 text-xs">{t('admin.troubleshooting.stale_notice', {}, 'The last successfully loaded diagnostic snapshot remains visible.')}</div> : null}
+          <details className="mt-2 text-xs text-rose-700/85 dark:text-rose-300/85">
+            <summary className="cursor-pointer font-medium">
+              {t('admin.troubleshooting.technical_error_details', {}, 'Technical error details')}
+            </summary>
+            <p className="mt-1 break-words font-mono">{error}</p>
+          </details>
         </div>
       ) : null}
 
@@ -442,7 +456,7 @@ export default function AdminTroubleshootingPage() {
           <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
         </BackofficeSectionPanel>
       ) : (
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="space-y-4">
           <AdminDataTableFrame
             dataUi="runtime-diagnostic-table-frame"
             density="compact"
@@ -459,9 +473,11 @@ export default function AdminTroubleshootingPage() {
                 <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                   <tr>
                     <th className="w-[7rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_severity', {}, 'Severity')}</th>
+                    <th className="w-[6.5rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_status', {}, 'Status')}</th>
                     <th className="px-3 py-2" scope="col">{t('admin.troubleshooting.column_issue', {}, 'Anomaly')}</th>
                     <th className="w-[10rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
                     <th className="w-[5rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_occurrences', {}, 'Count')}</th>
+                    <th className="w-[9rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_recent', {}, 'Latest snapshot')}</th>
                     <th className="w-[4.5rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_action', {}, 'Action')}</th>
                   </tr>
                 </thead>
@@ -478,6 +494,9 @@ export default function AdminTroubleshootingPage() {
                         <td className="px-3 py-2.5 align-top">
                           <BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} />
                         </td>
+                        <td className="px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300">
+                          {t('admin.troubleshooting.status_open', {}, 'Open')}
+                        </td>
                         <td className="px-3 py-2.5 align-top">
                           <span className="font-semibold text-slate-950 dark:text-white">
                             {issueTitle(issue, t)}
@@ -489,6 +508,9 @@ export default function AdminTroubleshootingPage() {
                         </td>
                         <td className="px-3 py-2.5 text-right align-top font-semibold text-slate-700 dark:text-slate-200">
                           {formatNumber(issue.count)}
+                        </td>
+                        <td className="px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300">
+                          {data?.generatedAt ? formatDate(data.generatedAt) : t('admin.troubleshooting.not_available', {}, 'Not available')}
                         </td>
                         <td className="px-3 py-2.5 text-right align-top">
                           <button
@@ -508,26 +530,37 @@ export default function AdminTroubleshootingPage() {
                 </tbody>
               </table>
             ) : (
-              <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')} description={t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')} />
+              <BackofficeEmptyState
+                className="m-5 md:m-6"
+                title={error && !data
+                  ? t('admin.troubleshooting.queue_unavailable_title', {}, 'Runtime anomaly data unavailable')
+                  : t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')}
+                description={error && !data
+                  ? t('admin.troubleshooting.queue_unavailable_desc', {}, 'Cloud could not load runtime telemetry, so the current anomaly state cannot be determined. Retry before treating this window as healthy.')
+                  : t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')}
+              />
             )}
           </AdminDataTableFrame>
 
-          <BackofficeSectionPanel id="runtime-diagnostic-inspector" className="h-fit xl:sticky xl:top-4">
+          <section
+            id="runtime-diagnostic-inspector"
+            className="border-y border-slate-200 px-1 py-4 dark:border-slate-800"
+          >
             {selectedIssue ? (
-              <div className="space-y-5">
-                <div>
+              <div className="grid gap-4 lg:grid-cols-[minmax(16rem,1.2fr)_minmax(0,2fr)_auto] lg:items-start">
+                <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.inspector_eyebrow', {}, 'Selected anomaly')}</p>
-                  <div className="mt-2 flex items-start justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)}</h2><BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} /></div>
+                  <div className="mt-2 flex items-start gap-2"><h2 className="text-base font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)}</h2><BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} /></div>
                   <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{issueSummary(selectedIssue, t)}</p>
                 </div>
-                <dl className="grid gap-3 text-sm">
+                <dl className="grid gap-x-5 gap-y-3 text-sm sm:grid-cols-3">
                   <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_code', {}, 'Evidence code')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-100">{selectedIssue.code}</dd></div>
                   <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_runs', {}, 'Affected runs')}</dt><dd className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{formatNumber(selectedIssue.count)}</dd></div>
                   <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_scope', {}, 'Affected scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedIssue.capabilities.join(', ') || t('admin.troubleshooting.runtime_scope', {}, 'Cloud runtime')}</dd></div>
-                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.suggested_action', {}, 'Suggested diagnostic step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{issueAction(selectedIssue, t) || data?.governanceGaps.reviewGuidance || data?.alertSummary.nextAction}</dd></div>
+                  <div className="sm:col-span-3"><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.suggested_action', {}, 'Suggested diagnostic step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{issueAction(selectedIssue, t) || data?.governanceGaps.reviewGuidance || data?.alertSummary.nextAction}</dd></div>
                 </dl>
-                <Link href={issueDestination(selectedIssue)} className="btn btn-primary w-full justify-center">{t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}</Link>
-                <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.troubleshooting.boundary', {}, 'Diagnostics are read-only Cloud runtime evidence. They do not change providers, model routing, local abilities, prompts, approval state, or WordPress content.')}</p>
+                <Link href={issueDestination(selectedIssue)} className="btn btn-primary btn-sm justify-center whitespace-nowrap">{t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}</Link>
+                <p className="text-xs leading-5 text-slate-500 dark:text-slate-400 lg:col-span-3">{t('admin.troubleshooting.boundary', {}, 'Diagnostics are read-only Cloud runtime evidence. They do not change providers, model routing, local abilities, prompts, approval state, or WordPress content.')}</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -535,7 +568,7 @@ export default function AdminTroubleshootingPage() {
                 <Link href="#evidence-lanes" className="btn btn-secondary w-full justify-center">{t('admin.troubleshooting.review_lanes', {}, 'Review evidence lanes')}</Link>
               </div>
             )}
-          </BackofficeSectionPanel>
+          </section>
         </div>
       )}
 

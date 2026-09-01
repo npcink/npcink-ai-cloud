@@ -94,7 +94,8 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(page.locator('#runtime-diagnostic-inspector a')).toHaveAttribute('href', '#runtime-evidence');
   const queueBox = await page.locator('[data-ui="runtime-diagnostic-table-frame"]').boundingBox();
   const inspectorBox = await page.locator('#runtime-diagnostic-inspector').boundingBox();
-  expect(queueBox?.height || 0).toBeLessThan(inspectorBox?.height || 0);
+  expect(inspectorBox?.y || 0).toBeGreaterThan((queueBox?.y || 0) + (queueBox?.height || 0));
+  expect(Math.abs((queueBox?.width || 0) - (inspectorBox?.width || 0))).toBeLessThan(8);
   await expect(page.locator('main input')).toHaveCount(0);
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
   await expect(qualityPanel).not.toHaveAttribute('open', '');
@@ -160,7 +161,12 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
 
   failNextTelemetry = true;
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
-  await expect(page.getByText(/last successfully loaded diagnostic snapshot|最近一次成功加载的诊断快照/i)).toBeVisible();
+  const sourceError = page.locator('[data-ui="runtime-diagnostic-source-error"]');
+  await expect(sourceError).toContainText(/could not refresh|刷新失败/i);
+  await expect(sourceError.getByText(/last successfully loaded diagnostic snapshot|最近一次成功加载的诊断快照/i)).toBeVisible();
+  await expect(sourceError.getByText('temporary diagnostic failure')).not.toBeVisible();
+  await sourceError.locator('summary').click();
+  await expect(sourceError.getByText('temporary diagnostic failure')).toBeVisible();
   await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Partial data|部分数据可用/i);
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
 
@@ -201,6 +207,35 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+});
+
+test('runtime diagnostics keeps total source failure actionable without exposing raw errors by default', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/runtime-telemetry*', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('runtime source unavailable')),
+    });
+  });
+  await page.route('**/api/admin/editor-assist-quality*', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('quality source unavailable')),
+    });
+  });
+
+  await page.goto('/admin/troubleshooting');
+  const sourceError = page.locator('[data-ui="runtime-diagnostic-source-error"]');
+  await expect(sourceError).toContainText(/temporarily unavailable|暂时不可用/i);
+  await expect(sourceError.getByText('runtime source unavailable')).not.toBeVisible();
+  await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Both sources failed|两个数据源均失败/i);
+  const tableFrame = page.locator('[data-ui="runtime-diagnostic-table-frame"]');
+  await expect(tableFrame).toContainText(/Runtime anomaly data unavailable|运行异常数据不可用/i);
+  await expect(tableFrame).not.toContainText(/No active runtime anomalies|当前没有运行异常/i);
+  await sourceError.locator('summary').click();
+  await expect(sourceError.getByText('runtime source unavailable')).toBeVisible();
 });
 
 test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', async ({ page }) => {
