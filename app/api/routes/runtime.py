@@ -58,6 +58,14 @@ from app.domain.media_batch_plans.contracts import (
     MEDIA_BATCH_PLAN_EXECUTION_KIND,
     MEDIA_BATCH_PLAN_PROFILE_ID,
 )
+from app.domain.media_governance.contracts import (
+    MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+    MEDIA_GOVERNANCE_AUDIT_ABILITY_FAMILY,
+    MEDIA_GOVERNANCE_AUDIT_DATA_CLASSIFICATION,
+    MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND,
+    MEDIA_GOVERNANCE_AUDIT_MAX_ITEMS,
+    MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+)
 from app.domain.routing.errors import RoutingError
 from app.domain.runtime.errors import RuntimeErrorBase, RuntimeUnsupportedExecutionPatternError
 from app.domain.runtime.models import (
@@ -206,7 +214,11 @@ class RuntimePayload(BaseModel):
             list_item_limits=(
                 {("post_ids",): MAX_SITE_KNOWLEDGE_STATUS_POST_IDS}
                 if self.ability_name == SITE_KNOWLEDGE_STATUS_ABILITY
-                else None
+                else (
+                    {("snapshot", "items"): MEDIA_GOVERNANCE_AUDIT_MAX_ITEMS}
+                    if self.ability_name in MEDIA_GOVERNANCE_AUDIT_ABILITIES
+                    else None
+                )
             ),
             allow_wordpress_ai_output_schema=(
                 self.ability_name in CONNECTOR_RUNTIME_ABILITIES
@@ -388,6 +400,10 @@ def _is_media_batch_plan_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in MEDIA_BATCH_PLAN_ABILITIES
 
 
+def _is_media_governance_audit_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in MEDIA_GOVERNANCE_AUDIT_ABILITIES
+
+
 def _is_cloud_batch_runtime_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in CLOUD_BATCH_RUNTIME_ABILITIES
 
@@ -403,6 +419,8 @@ def _resolve_ability_family(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_ABILITY_FAMILY
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_ABILITY_FAMILY
+    if _is_media_governance_audit_payload(payload):
+        return MEDIA_GOVERNANCE_AUDIT_ABILITY_FAMILY
     if _is_image_context_evidence_payload(payload):
         return IMAGE_CONTEXT_EVIDENCE_ABILITY_FAMILY
     if _is_audio_generation_payload(payload):
@@ -429,6 +447,8 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_EXECUTION_KIND
     if _is_media_batch_plan_payload(payload) and not payload.execution_kind:
         return MEDIA_BATCH_PLAN_EXECUTION_KIND
+    if _is_media_governance_audit_payload(payload) and not payload.execution_kind:
+        return MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND
     if _is_image_context_evidence_payload(payload) and not payload.execution_kind:
         return IMAGE_CONTEXT_EVIDENCE_EXECUTION_KIND
     if _is_audio_generation_payload(payload) and not payload.execution_kind:
@@ -455,6 +475,8 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_PROFILE_ID
     if _is_media_batch_plan_payload(payload) and not payload.profile_id:
         return MEDIA_BATCH_PLAN_PROFILE_ID
+    if _is_media_governance_audit_payload(payload) and not payload.profile_id:
+        return MEDIA_GOVERNANCE_AUDIT_PROFILE_ID
     if _is_image_context_evidence_payload(payload) and not payload.profile_id:
         return IMAGE_CONTEXT_EVIDENCE_PROFILE_ID
     if _is_audio_generation_payload(payload) and not payload.profile_id:
@@ -494,6 +516,8 @@ def _resolve_data_classification(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_DATA_CLASSIFICATION
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_DATA_CLASSIFICATION
+    if _is_media_governance_audit_payload(payload):
+        return MEDIA_GOVERNANCE_AUDIT_DATA_CLASSIFICATION
     if _is_image_context_evidence_payload(payload):
         input_payload = payload.input if isinstance(payload.input, dict) else {}
         if image_context_evidence_artifact_ids(input_payload):

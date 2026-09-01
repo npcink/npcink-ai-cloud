@@ -45,6 +45,7 @@ from app.domain.media_artifacts.publication import (
 )
 from app.domain.media_artifacts.store import ArtifactStorageMetadata
 from app.domain.media_derivatives.contracts import BLOCKED_RESPONSE_FIELDS, MediaJobRequest
+from app.domain.media_derivatives.processor import MediaDerivativeResult
 from app.domain.runtime.service import RuntimeService
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -115,6 +116,13 @@ def _ack_headers(
 
 def _png(width: int = 32, height: int = 24, color: str = "red") -> bytes:
     image = Image.new("RGB", (width, height), color=color)
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _noise_png(width: int = 1024, height: int = 1024) -> bytes:
+    image = Image.effect_noise((width, height), 100).convert("RGB")
     output = io.BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
@@ -243,6 +251,36 @@ def _job_payload(source_artifact_id: str) -> dict[str, object]:
         },
         "result_ttl_minutes": 30,
     }
+
+
+def _governance_job_payload(
+    source_artifact_id: str,
+    *,
+    source_sha256: str,
+    item_count: int = 1,
+) -> dict[str, object]:
+    payload = _job_payload(source_artifact_id)
+    params = payload["params"]
+    assert isinstance(params, dict)
+    params["resize_mode"] = "preserve"
+    payload["batch_context"] = {
+        "batch_id": "media-governance-canary",
+        "item_index": 1,
+        "item_count": item_count,
+        "chunk_size": min(item_count, 10),
+    }
+    payload["governance"] = {
+        "contract_version": "media_governance_canary.v1",
+        "candidate_id": "mgc_0123456789abcdef01234567",
+        "snapshot_id": "scan_20260831",
+        "source_sha256": source_sha256,
+        "evidence_revision": "refs_20260831",
+        "minimum_savings_basis_points": 1500,
+        "require_dimensions_unchanged": True,
+        "skip_if_not_beneficial": True,
+        "retain_originals": True,
+    }
+    return payload
 
 
 def _post_job(
@@ -2637,6 +2675,25 @@ def test_job_persists_only_refs_and_worker_reads_artifact(tmp_path: Path) -> Non
         dispose_engine(database_url)
 
 
+def test_ordinary_job_fingerprint_omits_additive_governance_defaults(tmp_path: Path) -> None:
+    database_url, _, _, client = _client(tmp_path)
+    try:
+        upload = _upload(client, _png(), key="compat-source", nonce="compat-source")
+        source_id = upload.json()["data"]["result"]["artifact"]["artifact_id"]
+        payload = _job_payload(source_id)
+        job = _post_job(client, payload, key="compat-job", nonce="compat-job")
+        assert job.status_code == 200, job.json()
+
+        with get_session(database_url) as session:
+            run = session.get(RunRecord, job.json()["data"]["run_id"])
+            assert run is not None
+            assert run.policy_json["media_derivative"]["governance"] == {}
+            assert run.input_json["governance"] is None
+            assert run.input_json["params"]["resize_mode"] == "fit"
+    finally:
+        dispose_engine(database_url)
+
+
 def test_job_replay_survives_source_expiry_but_new_job_fails_closed(tmp_path: Path) -> None:
     database_url, _, _, client = _client(tmp_path)
     try:
@@ -3013,5 +3070,178 @@ def test_job_results_exclude_wordpress_write_fields_and_provider_calls(tmp_path:
             assert field not in serialized
         with get_session(database_url) as session:
             assert session.scalar(select(ProviderCallRecord)) is None
+    finally:
+        dispose_engine(database_url)
+
+
+def test_media_governance_canary_creates_qualified_preview_artifact(tmp_path: Path) -> None:
+    database_url, settings, queue, client = _client(tmp_path)
+    try:
+        source_bytes = _noise_png()
+        assert len(source_bytes) > 500 * 1024
+        upload = _upload(
+            client,
+            source_bytes,
+            key="governance-qualified-source",
+            nonce="governance-qualified-source",
+        )
+        assert upload.status_code == 200, upload.json()
+        source = upload.json()["data"]["result"]["artifact"]
+        job = _post_job(
+            client,
+            _governance_job_payload(
+                source["artifact_id"],
+                source_sha256=source["checksum"],
+            ),
+            key="governance-qualified-job",
+            nonce="governance-qualified-job",
+        )
+        assert job.status_code == 200, job.json()
+        run_id = job.json()["data"]["run_id"]
+
+        _process_jobs(database_url, settings, queue, max_runs=1)
+        with get_session(database_url) as session:
+            run = session.get(RunRecord, run_id)
+            assert run is not None and run.status == "succeeded"
+            result = run.result_json
+            assert result["contract_version"] == "media_governance_canary_result.v1"
+            assert result["status"] == "ready"
+            assert result["validation"]["qualified"] is True
+            assert result["validation"]["savings_basis_points"] >= 1500
+            assert result["source"]["width"] == result["derivative"]["artifact"]["width"]
+            assert result["source"]["height"] == result["derivative"]["artifact"]["height"]
+            assert result["derivative"]["contract_version"] == "media_derivative_result.v1"
+            artifact = session.scalar(
+                select(MediaArtifact).where(MediaArtifact.run_id == run_id)
+            )
+            assert artifact is not None
+            assert artifact.format == "webp"
+            assert artifact.width == source["width"]
+            assert artifact.height == source["height"]
+    finally:
+        dispose_engine(database_url)
+
+
+def test_media_governance_canary_skips_without_creating_artifact(tmp_path: Path) -> None:
+    database_url, settings, queue, client = _client(tmp_path)
+    try:
+        upload = _upload(
+            client,
+            _png(32, 24),
+            key="governance-skipped-source",
+            nonce="governance-skipped-source",
+        )
+        source = upload.json()["data"]["result"]["artifact"]
+        job = _post_job(
+            client,
+            _governance_job_payload(
+                source["artifact_id"],
+                source_sha256=source["checksum"],
+            ),
+            key="governance-skipped-job",
+            nonce="governance-skipped-job",
+        )
+        assert job.status_code == 200, job.json()
+        run_id = job.json()["data"]["run_id"]
+
+        _process_jobs(database_url, settings, queue, max_runs=1)
+        with get_session(database_url) as session:
+            run = session.get(RunRecord, run_id)
+            assert run is not None and run.status == "succeeded"
+            assert run.result_json["status"] == "skipped"
+            assert run.result_json["derivative"] is None
+            assert "below_minimum_source_bytes" in run.result_json["validation"]["reasons"]
+            assert (
+                session.scalar(select(MediaArtifact).where(MediaArtifact.run_id == run_id))
+                is None
+            )
+    finally:
+        dispose_engine(database_url)
+
+
+def test_media_governance_canary_skips_below_savings_gate_at_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, settings, queue, client = _client(tmp_path)
+    try:
+        source_bytes = _noise_png()
+        upload = _upload(
+            client,
+            source_bytes,
+            key="governance-low-savings-source",
+            nonce="governance-low-savings-source",
+        )
+        source = upload.json()["data"]["result"]["artifact"]
+
+        def low_savings_result(**kwargs: object) -> MediaDerivativeResult:
+            source_size = len(kwargs["source_bytes"])
+            output_size = source_size * 90 // 100
+            return MediaDerivativeResult(
+                output_bytes=b"w" * output_size,
+                width=int(source["width"]),
+                height=int(source["height"]),
+                filesize_bytes=output_size,
+                checksum=f"sha256:{'e' * 64}",
+                mime_type="image/webp",
+                format="webp",
+                source_width=int(source["width"]),
+                source_height=int(source["height"]),
+            )
+
+        monkeypatch.setattr(
+            "app.domain.runtime.artifact_coordination.process_media_derivative",
+            low_savings_result,
+        )
+        job = _post_job(
+            client,
+            _governance_job_payload(
+                source["artifact_id"],
+                source_sha256=source["checksum"],
+            ),
+            key="governance-low-savings-job",
+            nonce="governance-low-savings-job",
+        )
+        assert job.status_code == 200, job.json()
+        run_id = job.json()["data"]["run_id"]
+
+        _process_jobs(database_url, settings, queue, max_runs=1)
+        with get_session(database_url) as session:
+            run = session.get(RunRecord, run_id)
+            assert run is not None and run.status == "succeeded"
+            assert run.result_json["status"] == "skipped"
+            assert run.result_json["validation"]["savings_basis_points"] == 1000
+            assert "minimum_savings_not_met" in run.result_json["validation"]["reasons"]
+            assert (
+                session.scalar(select(MediaArtifact).where(MediaArtifact.run_id == run_id))
+                is None
+            )
+    finally:
+        dispose_engine(database_url)
+
+
+def test_media_governance_canary_rejects_stale_source_before_queue(tmp_path: Path) -> None:
+    database_url, _, queue, client = _client(tmp_path)
+    try:
+        upload = _upload(
+            client,
+            _png(),
+            key="governance-stale-source",
+            nonce="governance-stale-source",
+        )
+        source = upload.json()["data"]["result"]["artifact"]
+        response = _post_job(
+            client,
+            _governance_job_payload(
+                source["artifact_id"],
+                source_sha256=f"sha256:{'f' * 64}",
+            ),
+            key="governance-stale-job",
+            nonce="governance-stale-job",
+        )
+
+        assert response.status_code == 409, response.json()
+        assert response.json()["error_code"] == "media_governance_canary.stale_source"
+        assert queue.consume(timeout_seconds=0) is None
     finally:
         dispose_engine(database_url)

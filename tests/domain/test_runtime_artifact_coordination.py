@@ -488,6 +488,7 @@ def test_enqueue_media_job_run_uses_injected_dependencies_and_exact_command(
                 "chunk_size": 6,
                 "explicit_avif": True,
             },
+            "governance": {},
             "limits": {
                 "site_queued": 20,
                 "site_running": 2,
@@ -788,6 +789,7 @@ def test_execute_media_derivative_success_records_artifact_metric_and_terminal_e
             "target_format": "png",
             "max_width": 320,
             "quality": 77,
+            "resize_mode": "fit",
             "crop_options": None,
             "watermark_bytes": None,
             "watermark_options": None,

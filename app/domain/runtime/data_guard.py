@@ -50,7 +50,12 @@ PII_VALUE_PATTERNS = (
         r"(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b"
     ),
 )
-OPAQUE_MEDIA_ARTIFACT_ID_PATTERN = re.compile(r"^art_[0-9a-f]{32}$")
+OPAQUE_RUNTIME_VALUE_PATTERNS = (
+    re.compile(r"^art_[0-9a-f]{32}$"),
+    re.compile(r"^mgs_[0-9a-f]{24}$"),
+    re.compile(r"^rev_[0-9a-f]{24}$"),
+    re.compile(r"^sha256:[0-9a-f]{64}$"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +116,6 @@ def _contains_secret_value(value: str) -> bool:
 def _contains_pii_value(value: str) -> bool:
     if not value:
         return False
-    if OPAQUE_MEDIA_ARTIFACT_ID_PATTERN.fullmatch(value):
+    if any(pattern.fullmatch(value) for pattern in OPAQUE_RUNTIME_VALUE_PATTERNS):
         return False
     return any(pattern.search(value) for pattern in PII_VALUE_PATTERNS)
