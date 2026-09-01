@@ -41,6 +41,31 @@ Addon PHP transport seams plus Adapter generic read and Core proposal paths so
 it can freeze the cross-layer contract. It does not recreate an Adapter-owned
 media run, result, preview, or proposal-payload facade.
 
+### 1.1 Media Governance MVP
+
+The bounded media-governance runtime adds two contracts without changing that
+ownership boundary:
+
+- `media_governance_audit_request.v1` accepts a metadata-only inventory and
+  reference-evidence snapshot through `npcink-toolbox/audit-media-governance`.
+  Cloud classifies evidence gaps and low-risk static JPG/PNG candidates, then
+  returns a read-only `media_governance_audit.v1` result.
+- `media_governance_canary.v1` extends `image.transform.v1` for at most 10
+  preview candidates. It requires preserve-size WebP output, a 15 percent
+  minimum saving, unchanged dimensions, retained originals, and exact
+  snapshot/checksum/revision binding. A non-beneficial result is skipped and
+  exposes no derivative artifact.
+
+Audit snapshots and canary results are runtime evidence, not WordPress media
+truth. Cloud does not scan a customer host, infer that an unmatched file is
+safe to delete, update attachment metadata, replace files, or approve cleanup.
+The local connector must revalidate the current source and evidence revision;
+WordPress retains proposal review, final writes, rollback, and any separately
+authorized cleanup.
+
+The MVP intentionally excludes animated GIF conversion, video, log or backup
+governance, automatic source deletion, and a second task engine.
+
 ## 2. Stable Markers
 
 - `TEMPORARY_MEDIA_RUNTIME`: Cloud artifacts are temporary runtime outputs, not

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.domain.media_derivatives.contracts import MediaJobRequest
 from app.domain.media_governance.contracts import (
     MediaGovernanceAuditContractViolation,
 )
@@ -133,11 +134,36 @@ def test_media_governance_audit_classifies_candidates_and_evidence() -> None:
                 "snapshot_id": "scan_20260831_001",
                 "source_sha256": f"sha256:{'a' * 64}",
                 "evidence_revision": "refs_101_v1",
+                "source_artifact_id_binding": "uploaded_source_artifact.artifact_id",
+                "job_request_template": {
+                    "request_contract_version": "media_job_request.v1",
+                    "operation": "image.transform.v1",
+                    "params": {
+                        "target_format": "webp",
+                        "max_width": 10_000,
+                        "resize_mode": "preserve",
+                        "quality": 82,
+                        "source_media_type": "image",
+                    },
+                    "governance": {
+                        "contract_version": "media_governance_canary.v1",
+                        "candidate_id": result["candidates"][0]["candidate_id"],
+                        "snapshot_id": "scan_20260831_001",
+                        "source_sha256": f"sha256:{'a' * 64}",
+                        "evidence_revision": "refs_101_v1",
+                        "minimum_savings_basis_points": 1500,
+                        "require_dimensions_unchanged": True,
+                        "skip_if_not_beneficial": True,
+                        "retain_originals": True,
+                    },
+                    "result_ttl_minutes": 30,
+                },
             }
         ],
         "operation": "image.transform.v1",
         "params": {
             "target_format": "webp",
+            "max_width": 10_000,
             "resize_mode": "preserve",
             "quality": 82,
             "source_media_type": "image",
@@ -166,6 +192,29 @@ def test_media_governance_audit_classifies_candidates_and_evidence() -> None:
         {"code": "reference_evidence.sources_missing", "item_count": 1},
         {"code": "media.dimensions_missing", "item_count": 1},
     ]
+
+
+def test_media_governance_canary_plan_builds_valid_job_without_transform_guesswork() -> None:
+    result = _execute(_payload())
+    plan_item = result["canary_plan"]["items"][0]
+
+    request = MediaJobRequest.model_validate(
+        {
+            **plan_item["job_request_template"],
+            "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+        }
+    )
+
+    assert plan_item["source_artifact_id_binding"] == "uploaded_source_artifact.artifact_id"
+    assert request.params.resize_mode == "preserve"
+    assert request.params.max_width == 10_000
+    assert request.params.crop is None
+    assert request.params.watermark is None
+    assert request.governance is not None
+    assert request.governance.candidate_id == plan_item["candidate_id"]
+    assert request.governance.source_sha256 == plan_item["source_sha256"]
+    assert request.governance.require_dimensions_unchanged is True
+    assert request.governance.minimum_savings_basis_points == 1500
 
 
 def test_media_governance_audit_snapshot_change_invalidates_candidate_binding() -> None:

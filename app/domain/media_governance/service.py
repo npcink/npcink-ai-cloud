@@ -5,7 +5,11 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from app.domain.media_derivatives.contracts import MEDIA_GOVERNANCE_CANARY_RESULT_CONTRACT
+from app.domain.media_derivatives.contracts import (
+    ARTIFACT_DEFAULT_TTL_MINUTES,
+    MEDIA_GOVERNANCE_CANARY_REQUEST_CONTRACT,
+    MEDIA_GOVERNANCE_CANARY_RESULT_CONTRACT,
+)
 from app.domain.media_derivatives.processor import MediaDerivativeResult
 from app.domain.media_governance.contracts import (
     MEDIA_GOVERNANCE_AUDIT_RESULT_CONTRACT,
@@ -118,12 +122,37 @@ class MediaGovernanceAuditService:
                         "snapshot_id": item["snapshot_id"],
                         "source_sha256": item["source_sha256"],
                         "evidence_revision": item["evidence_revision"],
+                        "source_artifact_id_binding": "uploaded_source_artifact.artifact_id",
+                        "job_request_template": {
+                            "request_contract_version": "media_job_request.v1",
+                            "operation": "image.transform.v1",
+                            "params": {
+                                "target_format": "webp",
+                                "max_width": 10_000,
+                                "resize_mode": "preserve",
+                                "quality": 82,
+                                "source_media_type": "image",
+                            },
+                            "governance": {
+                                "contract_version": MEDIA_GOVERNANCE_CANARY_REQUEST_CONTRACT,
+                                "candidate_id": item["candidate_id"],
+                                "snapshot_id": item["snapshot_id"],
+                                "source_sha256": item["source_sha256"],
+                                "evidence_revision": item["evidence_revision"],
+                                "minimum_savings_basis_points": MIN_SAVINGS_BASIS_POINTS,
+                                "require_dimensions_unchanged": True,
+                                "skip_if_not_beneficial": True,
+                                "retain_originals": True,
+                            },
+                            "result_ttl_minutes": ARTIFACT_DEFAULT_TTL_MINUTES,
+                        },
                     }
                     for item in canary_candidates
                 ],
                 "operation": "image.transform.v1",
                 "params": {
                     "target_format": "webp",
+                    "max_width": 10_000,
                     "resize_mode": "preserve",
                     "quality": 82,
                     "source_media_type": "image",
