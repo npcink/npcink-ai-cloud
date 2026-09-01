@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.domain.site_knowledge.recommendation_eligibility import candidate_relevance
 from app.domain.site_knowledge.text_evidence import (
     coerce_float,
     coerce_int,
@@ -33,6 +34,12 @@ def rank_related_content_search_results(
             "shared_title_terms": title_terms,
             "shared_topic_terms": topic_terms,
         }
+        candidate["candidate_relevance"] = candidate_relevance(
+            semantic_score=base_score,
+            has_supporting_evidence=bool(title_terms or topic_terms),
+            has_direct_evidence=bool(candidate.get("exact_query_match"))
+            or len(title_terms) >= 2,
+        )
         ranked.append(candidate)
 
     return sorted(

@@ -1,3 +1,7 @@
+from app.domain.site_knowledge.recommendation_eligibility import (
+    candidate_relevance,
+    internal_link_placement,
+)
 from app.domain.site_knowledge.text_evidence import (
     coerce_float,
     coerce_int,
@@ -41,6 +45,20 @@ def rank_internal_link_search_results(
             "shared_terms": shared_terms,
             "shared_topic_terms": topic_terms,
         }
+        relevance = candidate_relevance(
+            semantic_score=base_score,
+            has_supporting_evidence=bool(
+                shared_terms or topic_terms or anchor_bonus > 0
+            ),
+            has_direct_evidence=anchor_bonus > 0,
+        )
+        placement, placement_reason_codes = internal_link_placement(
+            relevance=relevance,
+            exact_anchor_match=anchor_bonus > 0,
+        )
+        candidate["candidate_relevance"] = relevance
+        candidate["placement_eligibility"] = placement
+        candidate["placement_reason_codes"] = placement_reason_codes
         ranked.append(candidate)
 
     return sorted(

@@ -843,6 +843,11 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     )
     assert search_data["results"][0]["internal_link_ranking"]["anchor_bonus"] == 0.06
     assert search_data["results"][0]["anchor_evidence"]["exact_source_passage_match"] is True
+    assert search_data["results"][0]["candidate_relevance"] in {"strong", "review"}
+    assert search_data["results"][0]["placement_eligibility"] == "ready"
+    assert search_data["results"][0]["placement_reason_codes"] == [
+        "exact_anchor_match"
+    ]
 
     status_result = _execute(
         client,
@@ -978,6 +983,8 @@ def test_related_content_defaults_to_unique_documents_and_excludes_current_post(
     assert result["results"][0]["related_content_ranking"]["strategy"] == (
         "semantic_plus_bounded_title_topic"
     )
+    assert result["results"][0]["candidate_relevance"] in {"strong", "review"}
+    assert "placement_eligibility" not in result["results"][0]
 
 
 def test_internal_link_search_returns_exact_specific_source_anchor() -> None:
