@@ -379,7 +379,7 @@ def _build_options(
         "provider": provider,
         "per_page": coerce_positive_int(
             input_payload.get("per_page"),
-            default=8,
+            default=9,
             maximum=MAX_PROVIDER_RESULTS,
         ),
         "orientation": orientation,
@@ -630,7 +630,9 @@ def _search_parallel_providers(
                 if strategy == "fast_first" and candidates:
                     stop_collecting = True
                     break
-                if _merged_candidate_count(provider_results, per_page=per_page) >= per_page:
+                if strategy == "fast_first" and _merged_candidate_count(
+                    provider_results, per_page=per_page
+                ) >= per_page:
                     stop_collecting = True
                     break
             if stop_collecting:
@@ -782,36 +784,70 @@ def _merge_provider_candidates(
     merged: list[dict[str, Any]] = []
     active_sources: list[dict[str, Any]] = []
     seen: set[str] = set()
+    provider_queues: list[tuple[str, list[dict[str, Any]]]] = []
+    provider_counts: dict[str, int] = {}
     for provider_id, execution in provider_results:
-        provider_candidates: list[dict[str, Any]] = []
+        queue: list[dict[str, Any]] = []
         for item in _rank_provider_candidates(_list(execution.result_json.get("images"))):
             candidate = _dict(item)
             if not candidate.get("download_url") and not candidate.get("source_url"):
+                continue
+            if not _candidate_meets_minimum_size(candidate):
                 continue
             duplicate_keys = _candidate_duplicate_keys(candidate)
             if duplicate_keys & seen:
                 continue
             seen.update(duplicate_keys)
-            provider_candidates.append(candidate)
-            merged.append(candidate)
-            if len(merged) >= per_page:
-                break
-        active_sources.append({"provider": provider_id, "count": len(provider_candidates)})
-        if len(merged) >= per_page:
-            break
+            queue.append(candidate)
+        provider_queues.append((provider_id, queue))
+        provider_counts[provider_id] = 0
+
+    # Round-robin preserves each Provider's own order while preventing the
+    # first response from consuming the whole result set.
+    while provider_queues and len(merged) < per_page:
+        next_round: list[tuple[str, list[dict[str, Any]]]] = []
+        for provider_id, queue in provider_queues:
+            if queue:
+                merged.append(queue.pop(0))
+                provider_counts[provider_id] += 1
+                if len(merged) >= per_page:
+                    break
+            if queue:
+                next_round.append((provider_id, queue))
+        provider_queues = next_round
+    active_sources = [
+        {"provider": provider_id, "count": provider_counts.get(provider_id, 0)}
+        for provider_id, _ in provider_results
+        if provider_id in provider_counts
+    ]
     return merged[:per_page], active_sources
 
 
 def _rank_provider_candidates(candidates: list[Any]) -> list[dict[str, Any]]:
     normalized = [_dict(item) for item in candidates]
-    return sorted(
-        normalized,
-        key=lambda item: (
-            -_candidate_quality_score(item),
-            str(item.get("provider") or ""),
-            str(item.get("id") or ""),
-        ),
+    # Provider order is its relevance signal. Only move obvious risky assets
+    # behind safer candidates, retaining stable order within both groups.
+    return sorted(normalized, key=lambda item: _candidate_risk_score(item))
+
+
+def _candidate_meets_minimum_size(candidate: dict[str, Any]) -> bool:
+    width = _coerce_int(candidate.get("width") or candidate.get("image_width"), default=0)
+    height = _coerce_int(candidate.get("height") or candidate.get("image_height"), default=0)
+    if not width or not height:
+        return True
+    return width >= 1200 and height >= 675
+
+
+def _candidate_risk_score(candidate: dict[str, Any]) -> int:
+    text = " ".join(
+        str(candidate.get(field) or "").lower()
+        for field in ("description", "alt_description", "title", "tags", "filename")
     )
+    high_risk_terms = (
+        "logo", "screenshot", "template", "poster", "banner text", "watermark",
+        "icon", "favicon", "app interface", "ui mockup", "文字海报", "截图", "模板", "标志",
+    )
+    return 1 if any(term in text for term in high_risk_terms) else 0
 
 
 def _candidate_quality_score(candidate: dict[str, Any]) -> int:
@@ -1040,7 +1076,6 @@ def _build_result(
         ],
         "visual_brief": visual_brief,
         "optimized_query": visual_brief["primary_query"],
-        "alternate_queries": visual_brief["alternate_queries"],
         "query_suggestions": visual_brief["query_suggestions"],
         "prompt_candidates": prompt_candidates,
         "images": candidates,
@@ -1127,15 +1162,13 @@ def _build_visual_brief(*, query: str, options: dict[str, Any]) -> dict[str, Any
     excerpt = _normalize_text(context.get("excerpt"), limit=240)
     image_mode = _normalize_token(context.get("image_mode"), limit=40) or "featured_image"
     subject = selected_context or article_title or excerpt
-    primary_query = _visual_query_from_context(subject or "editorial article illustration")
-    alternate_queries = _dedupe_texts(
-        [
-            primary_query,
-            _visual_query_from_context(article_title),
-            _visual_query_from_context(excerpt),
-        ],
-        limit=4,
+    query_suggestions = _build_query_suggestions(
+        subject=subject,
+        title=article_title,
+        excerpt=excerpt,
+        locale=str(options.get("locale") or ""),
     )
+    primary_query = str(query_suggestions[0].get("search_query") or "editorial article illustration")
     visual_intent = (
         "Use the selected paragraph and public site context as semantic guidance; "
         "translate the idea into an editorial image instead of rendering the paragraph text."
@@ -1148,8 +1181,7 @@ def _build_visual_brief(*, query: str, options: dict[str, Any]) -> dict[str, Any
         "composition_role": "paragraph_image_prompt_planning",
         "visual_intent": visual_intent,
         "primary_query": primary_query,
-        "alternate_queries": alternate_queries,
-        "query_suggestions": alternate_queries[:3],
+        "query_suggestions": query_suggestions,
         "source_context": {
             "image_mode": image_mode,
             "selected_paragraph_used": bool(selected_context),
@@ -1531,6 +1563,7 @@ def _normalize_visual_context(value: Any) -> dict[str, Any]:
             "rewrite_abstract_terms": bool(query_intent.get("rewrite_abstract_terms")),
             "prefer_concrete_visual_scene": bool(query_intent.get("prefer_concrete_visual_scene")),
             "return_alternate_queries": bool(query_intent.get("return_alternate_queries")),
+            "generate_keywords": bool(query_intent.get("generate_keywords")),
         }
     return context
 
@@ -1768,11 +1801,62 @@ def _visual_query_from_context(value: Any) -> str:
         ("读者", "reader journey research"),
         ("搜索", "search discovery analysis"),
         ("答案", "answer-focused content planning"),
+        ("社区带货", "social commerce community shopping"),
+        ("社交电商", "social commerce community shopping"),
+        ("带货", "social commerce product discovery"),
+        ("电商", "online shopping product discovery"),
+        ("商品", "product showcase and shopping"),
+        ("营销", "digital marketing team workspace"),
+        ("会员", "membership community mobile experience"),
+        ("积分", "loyalty rewards shopping experience"),
+        ("专栏", "online publishing editorial workspace"),
+        ("博客", "modern editorial publishing workspace"),
+        ("社区", "online community people interaction"),
+        ("移动端", "mobile app user experience"),
+        ("工作流", "workflow planning team workspace"),
     )
     terms = [visual for needle, visual in term_map if needle in lower]
     if terms:
         return _normalize_text(" ".join(_dedupe_texts(terms, limit=5)), limit=180)
     return _normalize_text(text, limit=180)
+
+
+def _build_query_suggestions(
+    *,
+    subject: str,
+    title: str,
+    excerpt: str,
+    locale: str,
+) -> list[dict[str, str]]:
+    """Turn article language into distinct, concrete stock-photo angles."""
+    combined = " ".join(part for part in (subject, title, excerpt) if part)
+    base = _visual_query_from_context(combined or "editorial article illustration")
+    lower = combined.lower()
+    if any(term in lower for term in ("社区", "带货", "电商", "商品", "commerce", "shopping")):
+        queries = [
+            ("社交电商社区中的商品互动", "social commerce community shopping"),
+            ("用户发现和分享商品", "people discovering and sharing products online"),
+            ("移动端社交购物体验", "mobile social shopping app experience"),
+            ("社区带货运营工作场景", "social commerce marketing workspace"),
+        ]
+    elif any(term in lower for term in ("seo", "aeo", "geo", "搜索", "答案")):
+        queries = [
+            ("搜索策略与内容规划", "search strategy content planning workspace"),
+            ("读者查找答案的数字体验", "people searching for answers online"),
+            ("内容团队分析搜索数据", "content team analyzing search data"),
+            ("面向 AI 搜索的内容工作流", "ai search content workflow workspace"),
+        ]
+    else:
+        queries = [
+            ("文章主题的具体编辑场景", f"{base} editorial scene"),
+            ("与文章主题相关的人物活动", f"{base} people activity"),
+            ("文章主题的工作流程细节", f"{base} workflow detail"),
+            ("适合作为文章首图的干净画面", f"{base} clean editorial hero"),
+        ]
+    # Locale controls presentation; provider queries stay searchable English.
+    if not _is_zh_cn_locale(locale):
+        queries = [(label, query) for label, query in queries]
+    return [{"display_label": label, "search_query": _normalize_text(query, limit=180)} for label, query in queries]
 
 
 def _dedupe_texts(values: list[str], *, limit: int) -> list[str]:
