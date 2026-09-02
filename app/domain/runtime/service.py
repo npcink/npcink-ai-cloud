@@ -4695,12 +4695,19 @@ class RuntimeService:
                 repository=repository,
                 input_payload=payload,
             )
-            llm_prompt_plan = self._build_image_source_llm_prompt_plan(
-                run,
-                repository=repository,
-                input_payload=payload,
-                site_knowledge_context=site_knowledge_context,
-            )
+            # Ordinary image-source searches use deterministic query angles.
+            # The paid text planner is reserved for an explicit user action.
+            if self._image_source_manual_keyword_generation(payload):
+                llm_prompt_plan = self._build_image_source_llm_prompt_plan(
+                    run,
+                    repository=repository,
+                    input_payload=payload,
+                    site_knowledge_context=site_knowledge_context,
+                )
+            else:
+                llm_prompt_plan = self._skipped_image_source_llm_prompt_plan(
+                    reason="manual_keyword_generation_required"
+                )
         try:
             execution = ImageSourceService(self.settings).execute(
                 site_id=run.site_id,
@@ -4791,6 +4798,8 @@ class RuntimeService:
         enhancement_mode = str(input_payload.get("enhancement_mode") or "").strip().lower()
         if latency_mode == "fast_first" or enhancement_mode == "deferred":
             return True
+        if latency_mode == "complete":
+            return False
 
         cloud_steps = visual_context.get("cloud_ai_steps")
         if isinstance(cloud_steps, list) and cloud_steps:
@@ -4800,6 +4809,15 @@ class RuntimeService:
                 and "candidate_rerank" not in normalized_steps
             )
         return False
+
+    def _image_source_manual_keyword_generation(self, input_payload: dict[str, Any]) -> bool:
+        visual_context = self._dict_or_empty(input_payload.get("visual_context"))
+        query_intent = self._dict_or_empty(visual_context.get("query_intent"))
+        return bool(
+            input_payload.get("generate_keywords")
+            or visual_context.get("generate_keywords")
+            or query_intent.get("generate_keywords")
+        )
 
     def _skipped_image_source_site_knowledge_context(self, *, reason: str) -> dict[str, Any]:
         return {

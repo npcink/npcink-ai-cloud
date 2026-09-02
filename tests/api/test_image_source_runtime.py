@@ -698,7 +698,7 @@ def test_image_source_preserves_sensitive_request_classification(
 
     payload = _payload(
         {
-            "visual_context": {
+                    "visual_context": {
                 "contract_version": "image_visual_brief_request.v1",
                 "image_use": "featured_image",
                 "selected_text": "Contact editor@example.com",
@@ -914,8 +914,8 @@ def test_image_source_zh_cn_returns_localized_display_fields(
                     "post_id": 99,
                     "image_use": "paragraph_image",
                     "selected_text": "AEO focuses on answer quality planning.",
-                    "title": "SEO, AEO, and GEO for AI search",
-                },
+                        "title": "SEO, AEO, and GEO for AI search",
+                    },
             }
         ),
         idempotency_key="image-source-zh-cn-display",
@@ -1077,7 +1077,7 @@ def test_image_source_fast_first_skips_heavy_enrichment_and_uses_short_query(
                 .order_by(ProviderCallRecord.id.asc())
             )
         )
-        assert [call.provider_id for call in provider_calls] == ["unsplash"]
+    assert [call.provider_id for call in provider_calls] == ["unsplash"]
 
 
 def test_image_source_runtime_uses_llm_prompt_planner_when_text_profile_is_available(
@@ -1166,13 +1166,14 @@ def test_image_source_runtime_uses_llm_prompt_planner_when_text_profile_is_avail
         _payload(
             {
                 "locale": "zh_CN",
-                "visual_context": {
-                    "contract_version": "image_visual_brief_request.v1",
-                    "post_id": 99,
-                    "image_use": "paragraph_image",
-                    "selected_text": "AEO focuses on answer quality planning.",
-                    "title": "SEO, AEO, and GEO for AI search",
-                },
+                    "visual_context": {
+                        "contract_version": "image_visual_brief_request.v1",
+                        "post_id": 99,
+                        "image_use": "paragraph_image",
+                        "selected_text": "AEO focuses on answer quality planning.",
+                        "title": "SEO, AEO, and GEO for AI search",
+                        "query_intent": {"generate_keywords": True},
+                    },
             }
         ),
         idempotency_key="image-source-llm-planner",
@@ -1209,6 +1210,53 @@ def test_image_source_runtime_uses_llm_prompt_planner_when_text_profile_is_avail
         )
         assert [call.provider_id for call in provider_calls] == ["openai", "unsplash"]
         assert provider_calls[0].model_id == "gpt-5.5"
+
+
+def test_image_source_query_suggestions_turn_abstract_topic_into_distinct_bilingual_angles() -> None:
+    options = image_source_service._build_options(
+        {
+            "query": "MiniSNS 专注于社区带货",
+            "locale": "zh_CN",
+            "visual_context": {
+                "title": "MiniSNS 专注于社区带货",
+                "selected_text": "用户在社区中发现和分享商品",
+            },
+        }
+    )
+    brief = image_source_service._build_visual_brief(
+        query="MiniSNS 专注于社区带货",
+        options=options,
+    )
+    suggestions = brief["query_suggestions"]
+    assert len(suggestions) == 4
+    assert all(set(item) == {"display_label", "search_query"} for item in suggestions)
+    assert all(image_source_service._contains_cjk(item["display_label"]) for item in suggestions)
+    assert len({item["search_query"] for item in suggestions}) == 4
+    assert suggestions[0]["search_query"] == "social commerce community shopping"
+
+
+def test_image_source_merge_round_robins_providers_and_preserves_safe_order() -> None:
+    def execution(provider: str, candidates: list[dict[str, Any]]) -> ImageSourceExecutionResult:
+        return ImageSourceExecutionResult(
+            result_json={"images": candidates},
+            usage=ImageSourceProviderUsage(
+                provider_id=provider,
+                model_id="image-source-search",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=1,
+            ),
+        )
+
+    unsplash = [_stock_candidate("unsplash", 1), _stock_candidate("unsplash", 2)]
+    pixabay = [_stock_candidate("pixabay", 1), _stock_candidate("pixabay", 2)]
+    merged, sources = image_source_service._merge_provider_candidates(
+        [("unsplash", execution("unsplash", unsplash)), ("pixabay", execution("pixabay", pixabay))],
+        per_page=4,
+    )
+    assert [item["provider"] for item in merged] == ["unsplash", "pixabay", "unsplash", "pixabay"]
+    assert [item["id"] for item in merged] == ["unsplash-photo-1", "pixabay-photo-1", "unsplash-photo-2", "pixabay-photo-2"]
+    assert sources == [{"provider": "unsplash", "count": 2}, {"provider": "pixabay", "count": 2}]
 
 
 def test_image_source_candidate_suggested_filename_is_safe(monkeypatch: Any) -> None:
