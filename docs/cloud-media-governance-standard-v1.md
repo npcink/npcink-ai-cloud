@@ -145,6 +145,50 @@ proven. The 2026-08-25 exercise stopped after the qualified GIF population
 collapsed to zero and later static savings became marginal. Lowering the gate
 to manufacture more successes is a defect, not progress.
 
+### Develop through evidence states, not feature breadth
+
+Implementation must preserve these states as different facts:
+
+```text
+audited -> conversion-qualified -> converted -> delivered
+        -> locally approved -> locally adopted -> observed
+        -> cleanup-eligible -> separately cleaned
+```
+
+Success in an earlier state must never imply a later state. In particular,
+Cloud conversion success, artifact delivery and delivery ACK do not prove that
+WordPress adopted a replacement. Observation does not authorize cleanup.
+
+Before adding a new service, inventory the existing Media Runtime, batch-plan,
+artifact, Addon proposal and local-write seams. Extend their structured
+contracts when they fit; do not introduce a second task engine, media library
+or Cloud-owned WordPress mutation path to make the workflow appear simpler.
+
+The first implementation increment must be one reversible vertical slice:
+
+```text
+one site -> read-only audit -> 5-10 static canaries
+         -> temporary Cloud artifacts -> local review handoff
+         -> measured benefit/stop decision
+```
+
+Broader dashboards, automatic publication, Recovery Vault, cleanup, GIF,
+video and multi-site operations require evidence from that slice. A one-click
+operator experience may hide orchestration detail, but it must not collapse
+permissions, ownership or rollback boundaries.
+
+### Treat recovery as a staged capability
+
+Same-host retention is useful for quick rollback but does not provide disaster
+recovery and does not release space when it remains on the pressured
+filesystem. Therefore the MVP may retain originals and a bounded local
+recovery record, while off-host Recovery Vault work waits for positive product
+evidence. Source deletion remains disabled until off-host restore is proven.
+
+The development sequence is deliberately asymmetric: audit and preview may
+ship before cleanup because they are reversible and produce evidence; cleanup
+must not ship merely to make the capacity result look complete.
+
 ## 5. Candidate Risk Classes
 
 | Class | Evidence | Default action |
