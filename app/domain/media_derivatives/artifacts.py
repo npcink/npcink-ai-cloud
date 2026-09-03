@@ -235,7 +235,7 @@ def create_artifact(
         width=result.width,
         height=result.height,
         checksum=stored.checksum,
-        processing_warnings_json={"warnings": result.processing_warnings},
+        processing_warnings_json={"warnings": result.processing_warnings, "transform_facts": result.transform_facts},
         expires_at=now + timedelta(minutes=ttl_minutes),
     )
     session.add(artifact)
@@ -295,6 +295,11 @@ def build_artifact_result_json(artifact: MediaArtifact) -> dict[str, object]:
             "filesize_bytes": artifact.byte_size,
             "checksum": artifact.checksum,
             "processing_warnings": warnings,
+            "transform_facts": (
+                artifact.processing_warnings_json.get("transform_facts", {})
+                if isinstance(artifact.processing_warnings_json, dict)
+                else {}
+            ),
         },
     }
 

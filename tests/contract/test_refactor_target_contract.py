@@ -336,7 +336,7 @@ def test_media_contract_tracks_p3_b4d_real_completion_and_remaining_b5_work() ->
         "delayed terminal callback payloads",
         "The durable creation-time snapshot is never rewritten by projection.",
         "`media_upload_artifact` / `media_upload_result.v1`",
-        "`media_derivative_artifact` / `media_derivative_result.v1`",
+        "`media_derivative_artifact` / `media_derivative_result.v2`",
         "`image_generation_artifacts` / `image_generation_result.v1`",
         "`audio_generation_candidates` / `audio_generation_result.v1`",
     ):

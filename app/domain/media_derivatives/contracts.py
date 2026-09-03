@@ -57,7 +57,7 @@ MEDIA_GOVERNANCE_MINIMUM_SAVINGS_BASIS_POINTS = 1500
 MEDIA_UPLOAD_ARTIFACT_TYPE = "media_upload_artifact"
 MEDIA_UPLOAD_RESULT_CONTRACT = "media_upload_result.v1"
 MEDIA_DERIVATIVE_ARTIFACT_TYPE = "media_derivative_artifact"
-MEDIA_DERIVATIVE_RESULT_CONTRACT = "media_derivative_result.v1"
+MEDIA_DERIVATIVE_RESULT_CONTRACT = "media_derivative_result.v2"
 
 BLOCKED_RESPONSE_FIELDS = frozenset(
     {
