@@ -776,7 +776,7 @@ try {
 		$cloud_projection
 	);
 	$artifact = is_array($cloud_projection["artifact"] ?? null) ? (array) $cloud_projection["artifact"] : array();
-	$expected_artifact_fields = array("artifact_id", "artifact_reference", "checksum", "expires_at", "filename_basis", "filesize_bytes", "format", "height", "mime_type", "processing_warnings", "suggested_filename", "width");
+	$expected_artifact_fields = array("artifact_id", "artifact_reference", "checksum", "expires_at", "filename_basis", "filesize_bytes", "format", "height", "mime_type", "processing_warnings", "suggested_filename", "transform_facts", "width");
 	$actual_artifact_fields = array_keys($artifact);
 	sort($actual_artifact_fields);
 	mde2e_assert($expected_artifact_fields === $actual_artifact_fields, "cloud_artifact_fields_invalid", array("expected" => $expected_artifact_fields, "actual" => $actual_artifact_fields));
@@ -801,6 +801,7 @@ try {
 		$artifact
 	);
 	mde2e_assert(is_array($artifact["processing_warnings"] ?? null), "artifact_processing_warnings_invalid", $artifact);
+	mde2e_assert(is_array($artifact["transform_facts"] ?? null), "artifact_transform_facts_invalid", $artifact);
 	mde2e_assert_no_remote_artifact_material($cloud_projection);
 
 	$local_proposal = npcink_cloud_addon_build_media_derivative_proposal_payload(
@@ -810,7 +811,7 @@ try {
 	);
 	mde2e_assert(!is_wp_error($local_proposal) && is_array($local_proposal), "build_local_proposal", $local_proposal);
 	$local_artifact = is_array($local_proposal["artifact"] ?? null) ? $local_proposal["artifact"] : array();
-	$expected_local_artifact_fields = array("artifact_id", "expires_at", "filename_basis", "filesize_bytes", "format", "height", "mime_type", "processing_warnings", "sha256", "suggested_filename", "width");
+	$expected_local_artifact_fields = array("artifact_id", "expires_at", "filename_basis", "filesize_bytes", "format", "height", "mime_type", "processing_warnings", "sha256", "suggested_filename", "transform_facts", "width");
 	$actual_local_artifact_fields = array_keys($local_artifact);
 	sort($actual_local_artifact_fields);
 	mde2e_assert($expected_local_artifact_fields === $actual_local_artifact_fields, "local_proposal_artifact_fields_invalid", array("expected" => $expected_local_artifact_fields, "actual" => $actual_local_artifact_fields));
@@ -821,6 +822,7 @@ try {
 		&& (string) ($local_artifact["suggested_filename"] ?? "") === (string) $artifact["suggested_filename"]
 		&& ($local_artifact["filename_basis"] ?? null) === ($artifact["filename_basis"] ?? null)
 		&& ($local_artifact["processing_warnings"] ?? null) === ($artifact["processing_warnings"] ?? null)
+		&& ($local_artifact["transform_facts"] ?? null) === ($artifact["transform_facts"] ?? null)
 		&& !isset($local_artifact["artifact_reference"], $local_artifact["checksum"]),
 		"local_proposal_artifact_projection_invalid",
 		$local_artifact
@@ -935,7 +937,7 @@ try {
 		}
 	}
 	$adopt_artifact = is_array($adopt_input["derivative_artifact"] ?? null) ? $adopt_input["derivative_artifact"] : array();
-	$expected_adopt_artifact_fields = array("artifact_id", "expires_at", "filename_basis", "filesize_bytes", "format", "height", "mime_type", "processing_warnings", "sha256", "suggested_filename", "width");
+	$expected_adopt_artifact_fields = array("artifact_id", "expires_at", "filename_basis", "filesize_bytes", "format", "height", "mime_type", "processing_warnings", "sha256", "suggested_filename", "transform_facts", "width");
 	$actual_adopt_artifact_fields = array_keys($adopt_artifact);
 	sort($actual_adopt_artifact_fields);
 	mde2e_assert($expected_adopt_artifact_fields === $actual_adopt_artifact_fields, "adopt_artifact_fields_invalid", array("expected" => $expected_adopt_artifact_fields, "actual" => $actual_adopt_artifact_fields));
@@ -945,6 +947,7 @@ try {
 		&& (string) ($adopt_artifact["suggested_filename"] ?? "") === (string) $artifact["suggested_filename"]
 		&& ($adopt_artifact["filename_basis"] ?? null) === ($artifact["filename_basis"] ?? null)
 		&& ($adopt_artifact["processing_warnings"] ?? null) === ($artifact["processing_warnings"] ?? null)
+		&& ($adopt_artifact["transform_facts"] ?? null) === ($artifact["transform_facts"] ?? null)
 		&& !isset($adopt_input["file_name"])
 		&& !isset($adopt_input["workflow_metadata"])
 		&& !isset($adopt_input["transfer_evidence"])
