@@ -297,7 +297,7 @@ transient, and idempotent execution responses; and delayed terminal callback
 payloads. The durable creation-time snapshot is never rewritten by projection.
 Projection recognizes only four exact type/version marker pairs:
 `media_upload_artifact` / `media_upload_result.v1`,
-`media_derivative_artifact` / `media_derivative_result.v1`,
+`media_derivative_artifact` / `media_derivative_result.v2`,
 `image_generation_artifacts` / `image_generation_result.v1`, and
 `audio_generation_candidates` / `audio_generation_result.v1`. Missing or
 unknown markers are unrelated result JSON and remain untouched.
@@ -692,7 +692,7 @@ capability.
   transient, and absent from public and durable contracts. Addon upload handoff
   and real WordPress evidence completed through P3-B4D and P3-B5.
 - **P3-B4A/B4B1/B4B2/B4C1/B4C2a/B4C2b/B4C3:** Current lifecycle is projected
-  at public media envelopes except `media_derivative_result.v1`, whose artifact
+  at public media envelopes except `media_derivative_result.v2`, whose artifact
   remains the immutable exact 12-field WordPress descriptor. Signed pull and
   ACK enforce its live availability without adding `status` or `purged_at` to
   that descriptor. Signed pull, verified stream completion,
@@ -706,7 +706,7 @@ capability.
   proof is complete without enabling production cleanup.
 - **P3-B4D:** Complete on 2026-07-16. The fail-closed smoke passed against the
   npcink local site and live development Cloud with artifact-only
-  `media_derivative_result.v1`, Addon upload/job/signed-pull/ACK evidence, Core
+  `media_derivative_result.v2`, Addon upload/job/signed-pull/ACK evidence, Core
   proposal/audit, exact local adopt/reference/HTTP/restore facts, and complete
   WordPress fixture cleanup. This is acceptance evidence, not production
   cleanup authorization.

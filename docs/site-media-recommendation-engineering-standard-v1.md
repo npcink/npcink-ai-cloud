@@ -9,6 +9,8 @@ lessons, and relevant open-source patterns reviewed through 2026-08-27.
 
 This document does not approve implementation, Provider spend, production
 deployment, automatic WordPress writes, or a permanent Cloud media library.
+It also records the evidence-reuse rules for image compression, format
+conversion, third-party media mutation, and article-image ALT generation.
 The canonical runtime and data-handling contracts remain authoritative. When
 this standard conflicts with an accepted ADR or runtime contract, the newest
 accepted contract takes precedence.
@@ -221,6 +223,10 @@ The accepted schema must be bounded, versioned, validated, and suggestion-only.
 Free-form captions alone are insufficient because they often omit style,
 composition, secondary subjects, visible text, and intended editorial use.
 
+The structured evidence is the reusable factual layer for downstream features.
+It may support media retrieval, media review, and article-image ALT drafting,
+but it is never final WordPress metadata and never grants write authority.
+
 ### 6.4 OCR
 
 OCR is a separate signal. It is useful for screenshots, posters, slides, and
@@ -253,7 +259,8 @@ recognition_status / indexed_at
 
 `attachment_id + site_id` identifies the local object. `media_fingerprint`
 identifies the current file revision. A URL is a replaceable display or
-transport projection, not attachment identity.
+transport projection, not attachment identity. The attachment ID must therefore
+never be used as the sole freshness key for visual evidence.
 
 A matching file fingerprint and recognition revision allow visual evidence to
 be reused. Metadata-only changes rebuild the text-derived projection without
@@ -481,6 +488,75 @@ Ordinary users should not need a recurring Refresh media index action.
 
 Manual refresh remains a diagnostics and recovery action, not the ordinary
 product workflow.
+
+### 13.1 Media transformation and external mutation policy
+
+Compression and format conversion commonly change file bytes even when the
+editorial scene is unchanged. A new byte fingerprint is therefore expected
+after an applied derivative replacement, but it does not by itself prove that a
+new visual recognition call is necessary.
+
+The compression path should preserve lineage when it is known:
+
+```text
+new_media_fingerprint
+derived_from_media_fingerprint
+transform_type
+visual_reuse_policy
+```
+
+Use the following conservative policy:
+
+| Transformation | Visual evidence policy |
+| --- | --- |
+| Preview only; current attachment not replaced | Existing evidence remains unchanged |
+| EXIF/encoding-only or explicitly lossless compression | Reuse evidence; rebuild text-derived search projection only when metadata changed |
+| Ordinary lossy compression or small resize | Reuse only when the transform is declared semantic-preserving; retain human-check or uncertainty evidence |
+| Crop, watermark, background removal, substantial resize, animation flattening, or unknown transform | Invalidate and re-recognize |
+| Replacement with another image | Invalidate and re-recognize |
+
+The default for an unclassified transform is invalidation. A perceptual hash or
+similarity score may assist review, but it is not sufficient proof for
+automatic evidence reuse.
+
+Third-party plugins may bypass WordPress attachment-change hooks and overwrite
+the file behind an unchanged attachment ID. The system must therefore combine:
+
+1. attachment events as a fast invalidation hint;
+2. a full inventory scan as a reconciliation fallback; and
+3. a current fingerprint check immediately before visual evidence is reused by
+   ALT generation, media retrieval, or recommendation ranking.
+
+When the current fingerprint does not match the stored evidence, the evidence
+is stale even if the attachment ID, filename, and URL are unchanged. The
+consumer must not silently use it. ALT may temporarily fall back to article
+context while recognition is scheduled; visual media recommendations should
+abstain or expose that evidence is pending.
+
+### 13.2 Article-image ALT evidence reuse
+
+Article-image ALT is a contextual suggestion, not a media-library metadata
+writer. The generator combines:
+
+- the current image block occurrence;
+- the nearest heading and adjacent article text;
+- caption and current block ALT; and
+- matching structured visual evidence, when available.
+
+The exact current attachment fingerprint must match the visual evidence before
+the evidence is used. Vector similarity to another attachment is retrieval
+evidence only and must never be copied as the current image's description.
+
+Existing non-empty ALT is preserved by default. Missing ALT may be applied to
+the current Gutenberg editor state, but WordPress Save/Update remains the
+persistence action. The flow must not write attachment-global ALT, create a
+second approval path, or treat the Cloud visual result as final content truth.
+
+The ordinary editor should surface this as a section of “SEO and
+discoverability”, with image counts and a compact review/apply action. The
+underlying `image_alt_suggestions` intent and versioned artifact may remain for
+compatibility; a separate first-level button is not required for the normal
+writing workflow.
 
 ## 14. Feedback and Quality Evidence
 

@@ -40,6 +40,7 @@ class MediaDerivativeResult:
     source_width: int = 0
     source_height: int = 0
     processing_warnings: list[str] = field(default_factory=list)
+    transform_facts: dict[str, Any] = field(default_factory=dict)
 
 
 def _check_format_available(target_format: str) -> None:
@@ -95,6 +96,28 @@ def _open_static_image(image_bytes: bytes) -> Image.Image:
         raise MediaDerivativeAnimatedSourceUnavailableError()
     img.load()
     return img
+
+
+def _has_alpha(image: Image.Image) -> bool:
+    return image.mode in {"RGBA", "LA"} or "transparency" in image.info
+
+
+def _decoded_facts(image_bytes: bytes) -> dict[str, Any]:
+    image = _open_static_image(image_bytes)
+    try:
+        return {
+            "checksum": f"sha256:{hashlib.sha256(image_bytes).hexdigest()}",
+            "format": str(image.format or "").lower(),
+            "mime_type": MIME_TYPE_BY_FORMAT.get(str(image.format or "").lower(), ""),
+            "width": int(image.width),
+            "height": int(image.height),
+            "filesize_bytes": len(image_bytes),
+            "frame_count": int(getattr(image, "n_frames", 1)),
+            "has_alpha": _has_alpha(image),
+            "decodable": True,
+        }
+    finally:
+        image.close()
 
 
 def _resolve_watermark_position(
@@ -386,6 +409,7 @@ def process_media_derivative(
 
     img: Image.Image | None = None
     try:
+        source_facts = _decoded_facts(source_bytes)
         img = _open_static_image(source_bytes)
         source_width = img.width
         source_height = img.height
@@ -457,6 +481,32 @@ def process_media_derivative(
         result_height = img.height
 
         checksum = hashlib.sha256(output_bytes).hexdigest()
+        output_facts = _decoded_facts(output_bytes)
+        transform_facts = {
+            "source_checksum": source_facts["checksum"],
+            "output_checksum": f"sha256:{checksum}",
+            "source_format": source_facts["format"],
+            "output_format": output_facts["format"],
+            "source_mime_type": source_facts["mime_type"],
+            "output_mime_type": output_facts["mime_type"],
+            "source_width": source_facts["width"],
+            "source_height": source_facts["height"],
+            "output_width": output_facts["width"],
+            "output_height": output_facts["height"],
+            "source_filesize_bytes": source_facts["filesize_bytes"],
+            "output_filesize_bytes": output_facts["filesize_bytes"],
+            "source_frame_count": source_facts["frame_count"],
+            "output_frame_count": output_facts["frame_count"],
+            "source_has_alpha": source_facts["has_alpha"],
+            "output_has_alpha": output_facts["has_alpha"],
+            "alpha_preserved": source_facts["has_alpha"] == output_facts["has_alpha"],
+            "decodable": bool(output_facts["decodable"]),
+            "crop_applied": bool(warnings and any(item.startswith("source_cropped_") for item in warnings)),
+            "watermark_applied": watermark_applied,
+            "resize_applied": output_facts["width"] != source_facts["width"] or output_facts["height"] != source_facts["height"],
+            "encoding_mode": "lossless" if fmt == "png" else ("lossy" if fmt in {"jpeg", "webp", "avif"} else "unknown"),
+            "savings_basis_points": max(0, int((source_facts["filesize_bytes"] - output_facts["filesize_bytes"]) * 10000 / max(1, source_facts["filesize_bytes"]))),
+        }
         return MediaDerivativeResult(
             output_bytes=output_bytes,
             width=result_width,
@@ -468,6 +518,7 @@ def process_media_derivative(
             source_width=source_width,
             source_height=source_height,
             processing_warnings=warnings,
+            transform_facts=transform_facts,
         )
     except (
         MediaDerivativeSourceDecodeFailedError,
