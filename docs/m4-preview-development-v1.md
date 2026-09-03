@@ -71,9 +71,40 @@ The normal environment defaults are:
 ```text
 NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay
 NPCINK_CLOUD_M4_RELAY_SSH_HOST=root@100.90.87.36
+NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE=
 NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP=100.90.87.36
 NPCINK_CLOUD_M4_RELAY_HTTP_PORT=18080
+NPCINK_CLOUD_M4_RELAY_HTTP_MODE=transient
+NPCINK_CLOUD_M4_RELAY_HTTP_GROUP=nginx
 ```
+
+`NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE` is an optional absolute path to a
+regular, non-symlinked private key on the authoring Mac. It is passed only to
+the relay SSH/SCP commands and is never packaged, copied to M4, or written to
+deployment evidence. Leave it empty when the normal SSH agent or config owns
+relay authentication.
+
+The default `transient` mode keeps the existing per-operation Python service.
+An operator-managed relay with an older system Python may instead use
+`NPCINK_CLOUD_M4_RELAY_HTTP_MODE=nginx` after installing the reviewed
+`deploy/m4-source-relay-nginx.conf`. In that mode the script requires the
+dedicated Nginx listener to be active, stores each bundle under its unique run
+path below `/var/lib/npcink-ai-cloud-m4-source-relay` with `root:<http-group>`
+ownership and mode `0640`, and leaves the base directory and Nginx service in
+place while still deleting every run directory, bundle, and lock after the
+operation. The managed mode avoids `/var/tmp` because the host Nginx service
+uses systemd `PrivateTmp`; transient mode continues using the original
+`/var/tmp` path. Each run directory stays private (`0700 root:root`) during
+upload and becomes Nginx-traversable only after the size and SHA-256 checks
+succeed. Existing symlinked base or run paths are rejected.
+
+The managed listener does not change the evidence boundary. It binds only the
+configured Tailscale IP, disables directory listing, accepts only GET/HEAD,
+and never becomes source, Git, deployment, or accepted-revision truth. The M4
+download is the end-to-end HTTP readiness proof, and the downloaded bytes must
+pass the existing size and SHA-256 checks. Relay downloads have a bounded
+15-minute budget and resume partial transfers so the accepted Peer Relay route
+can tolerate lower throughput without weakening integrity validation.
 
 The script fails visibly when the relay is unavailable. For a bounded
 operator-selected recovery, use the explicit direct fallback:
