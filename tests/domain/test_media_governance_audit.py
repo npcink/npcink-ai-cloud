@@ -139,10 +139,11 @@ def test_media_governance_audit_classifies_candidates_and_evidence() -> None:
                     "request_contract_version": "media_job_request.v1",
                     "operation": "image.transform.v1",
                     "params": {
+                        "mode": "auto_safe",
+                        "optimization_profile": "auto_safe.v1",
                         "target_format": "webp",
-                        "max_width": 10_000,
+                        "max_width": 1920,
                         "resize_mode": "preserve",
-                        "quality": 82,
                         "source_media_type": "image",
                     },
                     "governance": {
@@ -162,10 +163,11 @@ def test_media_governance_audit_classifies_candidates_and_evidence() -> None:
         ],
         "operation": "image.transform.v1",
         "params": {
+            "mode": "auto_safe",
+            "optimization_profile": "auto_safe.v1",
             "target_format": "webp",
-            "max_width": 10_000,
+            "max_width": 1920,
             "resize_mode": "preserve",
-            "quality": 82,
             "source_media_type": "image",
         },
         "validation": {
@@ -206,10 +208,10 @@ def test_media_governance_canary_plan_builds_valid_job_without_transform_guesswo
     )
 
     assert plan_item["source_artifact_id_binding"] == "uploaded_source_artifact.artifact_id"
+    assert request.params.mode == "auto_safe"
+    assert request.params.optimization_profile == "auto_safe.v1"
     assert request.params.resize_mode == "preserve"
-    assert request.params.max_width == 10_000
-    assert request.params.crop is None
-    assert request.params.watermark is None
+    assert request.params.max_width == 1920
     assert request.governance is not None
     assert request.governance.candidate_id == plan_item["candidate_id"]
     assert request.governance.source_sha256 == plan_item["source_sha256"]

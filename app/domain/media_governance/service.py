@@ -7,6 +7,7 @@ from typing import Any
 
 from app.domain.media_derivatives.contracts import (
     ARTIFACT_DEFAULT_TTL_MINUTES,
+    AUTO_SAFE_OPTIMIZATION_PROFILE,
     MEDIA_GOVERNANCE_CANARY_REQUEST_CONTRACT,
     MEDIA_GOVERNANCE_CANARY_RESULT_CONTRACT,
 )
@@ -27,6 +28,14 @@ EXPECTED_CAPACITY_FIELDS = (
     "filesystem_used_bytes",
     "filesystem_available_bytes",
 )
+AUTO_SAFE_CANARY_PARAMS = {
+    "mode": "auto_safe",
+    "optimization_profile": AUTO_SAFE_OPTIMIZATION_PROFILE,
+    "target_format": "webp",
+    "max_width": 1920,
+    "resize_mode": "preserve",
+    "source_media_type": "image",
+}
 
 
 @dataclass(slots=True)
@@ -126,13 +135,7 @@ class MediaGovernanceAuditService:
                         "job_request_template": {
                             "request_contract_version": "media_job_request.v1",
                             "operation": "image.transform.v1",
-                            "params": {
-                                "target_format": "webp",
-                                "max_width": 10_000,
-                                "resize_mode": "preserve",
-                                "quality": 82,
-                                "source_media_type": "image",
-                            },
+                            "params": dict(AUTO_SAFE_CANARY_PARAMS),
                             "governance": {
                                 "contract_version": MEDIA_GOVERNANCE_CANARY_REQUEST_CONTRACT,
                                 "candidate_id": item["candidate_id"],
@@ -150,13 +153,7 @@ class MediaGovernanceAuditService:
                     for item in canary_candidates
                 ],
                 "operation": "image.transform.v1",
-                "params": {
-                    "target_format": "webp",
-                    "max_width": 10_000,
-                    "resize_mode": "preserve",
-                    "quality": 82,
-                    "source_media_type": "image",
-                },
+                "params": dict(AUTO_SAFE_CANARY_PARAMS),
                 "validation": {
                     "minimum_savings_basis_points": MIN_SAVINGS_BASIS_POINTS,
                     "require_dimensions_unchanged": True,
