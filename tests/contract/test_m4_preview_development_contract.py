@@ -718,8 +718,9 @@ def test_m4_source_sync_refreshes_identity_and_skips_unrelated_runtime_mutations
     assert "stack_touched=1" in worker_guard
     assert "--force-recreate frontend" in frontend_guard
     assert "stack_touched=1" in frontend_guard
-    assert "nginx -s reload" in proxy_guard
-    assert "restart proxy" in proxy_guard
+    assert "--force-recreate proxy" in proxy_guard
+    assert "nginx -s reload" not in proxy_guard
+    assert "restart proxy" not in proxy_guard
     assert "proxy config is unchanged; proxy reload skipped" in sync_block
 
 
@@ -918,6 +919,12 @@ def test_m4_atomic_nginx_commit_preserves_old_config_until_rsync_succeeds(
             remote_dir={remote}
             run_id=fault-injection
             nginx_config_incoming=""
+            nginx_config_changed=0
+            if ! cmp -s \
+                "${{staging}}/deploy/nginx.m4-preview.conf" \
+                "${{remote_dir}}/deploy/nginx.m4-preview.conf"; then
+                nginx_config_changed=1
+            fi
             {commit_block}
             """
         ),
@@ -970,6 +977,25 @@ def test_m4_atomic_nginx_commit_preserves_old_config_until_rsync_succeeds(
 
     assert completed.returncode == 0
     assert live_config.read_text(encoding="utf-8") == candidate
+    assert not incoming.exists()
+
+    live_inode = live_config.stat().st_ino
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "LIVE_CONFIG": str(live_config),
+            "EXPECTED_OLD": candidate.rstrip("\n"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert live_config.stat().st_ino == live_inode
     assert not incoming.exists()
 
 

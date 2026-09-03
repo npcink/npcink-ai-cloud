@@ -2405,16 +2405,18 @@ else
 		--exclude 'frontend/test-results' \
 		--exclude 'deploy/nginx.m4-preview.conf' \
 		"${staging}/" "${remote_dir}/"
-	nginx_config_incoming="${remote_dir}/deploy/.nginx.m4-preview.conf.${run_id}.incoming"
-	test ! -e "${nginx_config_incoming}"
-	install -m 644 \
-		"${staging}/deploy/nginx.m4-preview.conf" \
-		"${nginx_config_incoming}"
-	test "$(shasum -a 256 "${nginx_config_incoming}" | awk '{print $1}')" = \
-		"$(shasum -a 256 "${staging}/deploy/nginx.m4-preview.conf" | awk '{print $1}')"
-	mv -f "${nginx_config_incoming}" \
-		"${remote_dir}/deploy/nginx.m4-preview.conf"
-	nginx_config_incoming=""
+	if [ "${nginx_config_changed}" = "1" ]; then
+		nginx_config_incoming="${remote_dir}/deploy/.nginx.m4-preview.conf.${run_id}.incoming"
+		test ! -e "${nginx_config_incoming}"
+		install -m 644 \
+			"${staging}/deploy/nginx.m4-preview.conf" \
+			"${nginx_config_incoming}"
+		test "$(shasum -a 256 "${nginx_config_incoming}" | awk '{print $1}')" = \
+			"$(shasum -a 256 "${staging}/deploy/nginx.m4-preview.conf" | awk '{print $1}')"
+		mv -f "${nginx_config_incoming}" \
+			"${remote_dir}/deploy/nginx.m4-preview.conf"
+		nginx_config_incoming=""
+	fi
 	# END atomic M4 source commit
 	work_dir="${remote_dir}"
 fi
@@ -2433,6 +2435,16 @@ compose=(
 )
 
 "${compose[@]}" config --quiet
+
+proxy_id="$("${compose[@]}" ps -a -q proxy)"
+if [ -n "${proxy_id}" ]; then
+	proxy_state="$(docker inspect -f '{{.State.Status}}' "${proxy_id}")"
+	if [ "${proxy_state}" != "running" ] ||
+		! docker exec "${proxy_id}" test -f /etc/nginx/conf.d/default.conf; then
+		nginx_config_changed=1
+		echo '[m4-preview] proxy config mount is unavailable; recreate required'
+	fi
+fi
 frontend_resolved_config_sha="$(
 	"${compose[@]}" config --format json |
 		python3 -c '
@@ -2834,11 +2846,7 @@ else
 	fi
 	if [ "${nginx_config_changed}" = "1" ]; then
 		stack_touched=1
-		proxy_id="$("${compose[@]}" ps -q proxy)"
-		if [ -n "${proxy_id}" ]; then
-			"${compose[@]}" exec --interactive=false -T proxy nginx -s reload >/dev/null 2>&1 ||
-				"${compose[@]}" restart proxy
-		fi
+		"${compose[@]}" up -d --no-build --pull never --force-recreate proxy
 	else
 		echo '[m4-preview] proxy config is unchanged; proxy reload skipped'
 	fi
