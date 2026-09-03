@@ -22,6 +22,7 @@ from app.core.secrets import encrypt_runtime_terminal_callback_secret
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.errors import (
     RuntimeCallbackConfigurationError,
+    RuntimeExecutionContractError,
     RuntimeResultExpiredError,
     RuntimeSiteInactiveError,
     RuntimeSiteNotProvisionedError,
@@ -852,6 +853,84 @@ def test_bounded_auto_repairs_requeue_stale_queued_runs_and_audit_worker_actor(
         assert audit_event.actor_kind == "system_worker"
         assert audit_event.actor_ref == "runtime_queue"
         assert audit_event.scope_id == queued.run_id
+
+    dispose_engine(database_url)
+
+
+def test_bounded_auto_repairs_ignore_stale_queued_runs_deferred_until_future(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    service = _runtime_service(database_url)
+    queued = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            execution_pattern="whole_run_offload",
+            task_backend={"enabled": True, "mode": "polling"},
+            idempotency_key="queue-domain-auto-repair-future-001",
+            trace_id="trace-queue-domain-auto-repair-future-001",
+            input_payload={"messages": [{"role": "user", "content": "future run"}]},
+        )
+    )
+
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.status = "queued"
+        run.started_at = datetime.now(UTC) - timedelta(minutes=12)
+        run.processing_started_at = None
+        run.finished_at = None
+        run.worker_eligible_at = datetime.now(UTC) + timedelta(hours=1)
+        session.commit()
+
+    repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=5,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=0,
+    )
+
+    assert repair["requeued_stale_queued_total"] == 0
+    assert repair["requeued_stale_queued"] == []
+    with pytest.raises(RuntimeExecutionContractError) as caught:
+        service.repair_run(
+            run_id=queued.run_id,
+            action="requeue_stale_queued",
+            audit_context=None,
+        )
+    assert caught.value.error_code == "runtime.repair_not_allowed"
+
+    with get_session(database_url) as session:
+        audit_event = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "runtime.repair.requeue_stale_queued",
+                ServiceAuditEvent.scope_id == queued.run_id,
+            )
+        )
+        assert audit_event is None
+
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.worker_eligible_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+    due_repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=5,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=0,
+    )
+    assert due_repair["requeued_stale_queued_total"] == 1
+    assert due_repair["requeued_stale_queued"][0]["run_id"] == queued.run_id
 
     dispose_engine(database_url)
 

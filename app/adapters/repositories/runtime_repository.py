@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -785,6 +785,10 @@ class RuntimeRepository:
             statement = statement.where(
                 RunRecord.status == "queued",
                 RunRecord.started_at <= queued_stale_before,
+                or_(
+                    RunRecord.worker_eligible_at.is_(None),
+                    RunRecord.worker_eligible_at <= current_time,
+                ),
                 *self._site_filters(site_id),
             )
             order_by = (RunRecord.started_at.asc(),)

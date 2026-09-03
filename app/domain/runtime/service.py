@@ -6303,8 +6303,17 @@ class RuntimeService:
 
     def _is_queued_run_stale(self, run: RunRecord, current_time: datetime) -> bool:
         started_at = self.run_projector.normalize_timestamp(run.started_at)
-        return run.status == "queued" and started_at <= (
-            current_time - timedelta(seconds=RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS)
+        worker_eligible_at = (
+            self.run_projector.normalize_timestamp(run.worker_eligible_at)
+            if run.worker_eligible_at is not None
+            else None
+        )
+        return (
+            run.status == "queued"
+            and (worker_eligible_at is None or worker_eligible_at <= current_time)
+            and started_at
+            <= current_time
+            - timedelta(seconds=RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS)
         )
 
     def _is_running_run_stale(self, run: RunRecord, current_time: datetime) -> bool:
