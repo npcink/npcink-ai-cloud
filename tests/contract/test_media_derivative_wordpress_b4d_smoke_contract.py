@@ -76,8 +76,9 @@ def test_b4d_smoke_accepts_only_the_addon_projection_of_the_artifact_result() ->
             '$expected_artifact_fields = array("artifact_id", "artifact_reference", '
             '"checksum", "expires_at", "filename_basis", "filesize_bytes", '
             '"format", "height", "mime_type", "processing_warnings", '
-            '"suggested_filename", "width")'
+            '"suggested_filename", "transform_facts", "width")'
         ),
+        'is_array($artifact["transform_facts"] ?? null)',
         '"/^art_[0-9a-f]{32}$/"',
         '"/^sha256:[0-9a-f]{64}$/"',
         'array("http://", "https://", "data:", "storage_key", "base64", "token")',
@@ -119,8 +120,19 @@ def test_b4d_smoke_uses_a_real_admin_and_the_exact_local_artifact_seam() -> None
         (
             '$expected_local_artifact_fields = array("artifact_id", "expires_at", '
             '"filename_basis", "filesize_bytes", "format", "height", "mime_type", '
-            '"processing_warnings", "sha256", "suggested_filename", "width")'
+            '"processing_warnings", "sha256", "suggested_filename", '
+            '"transform_facts", "width")'
         ),
+        '($local_artifact["transform_facts"] ?? null) === '
+        '($artifact["transform_facts"] ?? null)',
+        (
+            '$expected_adopt_artifact_fields = array("artifact_id", "expires_at", '
+            '"filename_basis", "filesize_bytes", "format", "height", "mime_type", '
+            '"processing_warnings", "sha256", "suggested_filename", '
+            '"transform_facts", "width")'
+        ),
+        '($adopt_artifact["transform_facts"] ?? null) === '
+        '($artifact["transform_facts"] ?? null)',
         '!isset($local_artifact["artifact_reference"], $local_artifact["checksum"])',
     ):
         assert required in smoke
