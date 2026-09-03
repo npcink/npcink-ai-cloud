@@ -235,7 +235,10 @@ def create_artifact(
         width=result.width,
         height=result.height,
         checksum=stored.checksum,
-        processing_warnings_json={"warnings": result.processing_warnings, "transform_facts": result.transform_facts},
+        processing_warnings_json={
+            "warnings": result.processing_warnings,
+            "transform_facts": result.transform_facts,
+        },
         expires_at=now + timedelta(minutes=ttl_minutes),
     )
     session.add(artifact)
@@ -277,6 +280,7 @@ def build_artifact_result_json(artifact: MediaArtifact) -> dict[str, object]:
     return {
         "artifact_type": MEDIA_DERIVATIVE_ARTIFACT_TYPE,
         "contract_version": MEDIA_DERIVATIVE_RESULT_CONTRACT,
+        "status": "qualified",
         "workflow_metadata": _media_derivative_workflow_metadata(),
         "artifact": {
             "artifact_id": artifact.artifact_id,
@@ -300,6 +304,22 @@ def build_artifact_result_json(artifact: MediaArtifact) -> dict[str, object]:
                 if isinstance(artifact.processing_warnings_json, dict)
                 else {}
             ),
+        },
+    }
+
+
+def build_skipped_result_json(result: MediaDerivativeResult) -> dict[str, object]:
+    facts = dict(result.transform_facts)
+    return {
+        "artifact_type": MEDIA_DERIVATIVE_ARTIFACT_TYPE,
+        "contract_version": MEDIA_DERIVATIVE_RESULT_CONTRACT,
+        "status": "skipped",
+        "workflow_metadata": _media_derivative_workflow_metadata(),
+        "artifact": None,
+        "decision": {
+            "qualified": False,
+            "decision_reasons": list(facts.get("decision_reasons") or []),
+            "transform_facts": facts,
         },
     }
 

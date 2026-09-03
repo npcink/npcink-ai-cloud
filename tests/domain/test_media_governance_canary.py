@@ -31,6 +31,7 @@ def _job_payload() -> dict[str, object]:
         "operation": "image.transform.v1",
         "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
         "params": {
+            "mode": "manual",
             "target_format": "webp",
             "max_width": 16,
             "resize_mode": "preserve",

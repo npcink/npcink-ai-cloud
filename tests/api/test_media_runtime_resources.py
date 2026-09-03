@@ -244,6 +244,7 @@ def _job_payload(source_artifact_id: str) -> dict[str, object]:
         "operation": "image.transform.v1",
         "source_artifact_id": source_artifact_id,
         "params": {
+            "mode": "manual",
             "target_format": "webp",
             "max_width": 16,
             "quality": 80,
@@ -3060,9 +3061,10 @@ def test_job_results_exclude_wordpress_write_fields_and_provider_calls(tmp_path:
             "width",
             "height",
             "filesize_bytes",
-            "checksum",
-            "processing_warnings",
-        }
+                "checksum",
+                "processing_warnings",
+                "transform_facts",
+            }
         assert "status" not in artifact
         assert "purged_at" not in artifact
         serialized = json.dumps({"job": job.json(), "result": result.json()})
@@ -3110,7 +3112,7 @@ def test_media_governance_canary_creates_qualified_preview_artifact(tmp_path: Pa
             assert result["validation"]["savings_basis_points"] >= 1500
             assert result["source"]["width"] == result["derivative"]["artifact"]["width"]
             assert result["source"]["height"] == result["derivative"]["artifact"]["height"]
-            assert result["derivative"]["contract_version"] == "media_derivative_result.v1"
+            assert result["derivative"]["contract_version"] == "media_derivative_result.v3"
             artifact = session.scalar(
                 select(MediaArtifact).where(MediaArtifact.run_id == run_id)
             )
