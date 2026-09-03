@@ -66,7 +66,7 @@ def test_b4d_smoke_accepts_only_the_addon_projection_of_the_artifact_result() ->
     routes = _read("app/api/routes/media_derivatives.py")
 
     for required in (
-        'result_json->>\'contract_version\'=\'media_derivative_result.v2\'',
+        'result_json->>\'contract_version\'=\'media_derivative_result.v3\'',
         '$cloud_projection["artifact"]',
         (
             '$expected_result_fields = array("artifact", "created_at", "error", '

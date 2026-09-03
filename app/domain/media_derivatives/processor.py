@@ -4,9 +4,9 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageCms, ImageColor, ImageDraw, ImageFont, ImageStat
 
 from app.domain.media_derivatives.contracts import (
     MAX_DELIVERABLE_ARTIFACT_BYTES,
@@ -26,6 +26,10 @@ from app.domain.media_derivatives.errors import (
 
 DEFAULT_ORIGINAL_FORMAT = "png"
 RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
+AUTO_SAFE_PROFILE = "auto_safe.v1"
+AUTO_SAFE_QUALITY_CANDIDATES = (88, 82)
+AUTO_SAFE_QUALITY_THRESHOLD = 0.985
+AUTO_SAFE_MINIMUM_SAVINGS_BASIS_POINTS = 1500
 
 
 @dataclass(slots=True)
@@ -118,6 +122,82 @@ def _decoded_facts(image_bytes: bytes) -> dict[str, Any]:
         }
     finally:
         image.close()
+
+
+def _normalize_embedded_profile(image: Image.Image) -> tuple[Image.Image, bool, bool]:
+    profile = image.info.get("icc_profile")
+    if not profile:
+        return image, False, False
+    try:
+        source_profile = ImageCms.ImageCmsProfile(BytesIO(profile))
+        srgb_profile = ImageCms.createProfile("sRGB")
+        if _has_alpha(image):
+            alpha = image.convert("RGBA").getchannel("A")
+            converted_rgb = ImageCms.profileToProfile(
+                image.convert("RGB"), source_profile, srgb_profile, outputMode="RGB"
+            )
+            if converted_rgb is None:
+                raise ValueError("ICC profile conversion returned no image")
+            converted = converted_rgb.convert("RGBA")
+            converted.putalpha(alpha)
+        else:
+            converted_candidate = ImageCms.profileToProfile(
+                image.convert("RGB"), source_profile, srgb_profile, outputMode="RGB"
+            )
+            if converted_candidate is None:
+                raise ValueError("ICC profile conversion returned no image")
+            converted = converted_candidate
+        converted.format = image.format
+        image.close()
+        return converted, True, False
+    except Exception:
+        return image, False, True
+
+
+def _ssim_score(reference: Image.Image, candidate_bytes: bytes) -> float:
+    candidate = _open_static_image(candidate_bytes)
+    try:
+        reference_gray = reference.convert("L")
+        candidate_gray = candidate.convert("L")
+        if candidate_gray.size != reference_gray.size:
+            return 0.0
+        count = max(1, reference_gray.width * reference_gray.height)
+        reference_mean = float(ImageStat.Stat(reference_gray).mean[0])
+        candidate_mean = float(ImageStat.Stat(candidate_gray).mean[0])
+        reference_variance = float(ImageStat.Stat(reference_gray).var[0])
+        candidate_variance = float(ImageStat.Stat(candidate_gray).var[0])
+        covariance_total = 0.0
+        for reference_value, candidate_value in zip(
+            reference_gray.get_flattened_data(),
+            candidate_gray.get_flattened_data(),
+            strict=True,
+        ):
+            covariance_total += (
+                cast(int, reference_value) - reference_mean
+            ) * (cast(int, candidate_value) - candidate_mean)
+        covariance = covariance_total / count
+        c1 = (0.01 * 255) ** 2
+        c2 = (0.03 * 255) ** 2
+        numerator = (2 * reference_mean * candidate_mean + c1) * (2 * covariance + c2)
+        denominator = (
+            (reference_mean**2 + candidate_mean**2 + c1)
+            * (reference_variance + candidate_variance + c2)
+        )
+        return max(0.0, min(1.0, numerator / denominator if denominator else 1.0))
+    finally:
+        candidate.close()
+
+
+def _pixels_match(reference: Image.Image, candidate_bytes: bytes) -> bool:
+    candidate = _open_static_image(candidate_bytes)
+    try:
+        if candidate.size != reference.size:
+            return False
+        return ImageChops.difference(
+            candidate.convert("RGBA"), reference.convert("RGBA")
+        ).getbbox() is None
+    finally:
+        candidate.close()
 
 
 def _resolve_watermark_position(
@@ -343,6 +423,7 @@ def _save_image(
     quality: int,
     warnings: list[str],
     watermark_applied: bool,
+    lossless: bool = False,
 ) -> tuple[bytes, str, str]:
     if target_format == "original":
         source_format = str(image.format or "").lower()
@@ -375,7 +456,9 @@ def _save_image(
         if output_image.mode not in ("RGB", "RGBA"):
             warnings.append("source_color_mode_converted_for_webp")
             output_image = output_image.convert("RGB")
-        save_kwargs["quality"] = quality
+        save_kwargs["lossless"] = lossless
+        if not lossless:
+            save_kwargs["quality"] = quality
     elif resolved_format == "avif":
         if output_image.mode not in ("RGB", "RGBA"):
             warnings.append("source_color_mode_converted_for_avif")
@@ -403,6 +486,8 @@ def process_media_derivative(
     watermark_bytes: bytes | None = None,
     watermark_options: dict[str, Any] | None = None,
     crop_options: dict[str, Any] | None = None,
+    optimization_mode: str = "manual",
+    optimization_profile: str = "",
 ) -> MediaDerivativeResult:
     if target_format != "original":
         _check_format_available(target_format)
@@ -432,6 +517,12 @@ def process_media_derivative(
             pass
 
         warnings: list[str] = []
+        color_profile_normalized = False
+        color_profile_normalization_failed = False
+        if optimization_mode == "auto_safe":
+            img, color_profile_normalized, color_profile_normalization_failed = (
+                _normalize_embedded_profile(img)
+            )
         watermark_applied = False
         crop_requested = bool(crop_options and crop_options.get("type") == "aspect_ratio")
 
@@ -468,13 +559,73 @@ def process_media_derivative(
             )
             watermark_applied = True
 
-        output_bytes, mime_type, fmt = _save_image(
-            img,
-            target_format=target_format,
-            quality=quality,
-            warnings=warnings,
-            watermark_applied=watermark_applied,
-        )
+        effective_quality: int | None = quality
+        quality_metric = "not_evaluated"
+        quality_score: float | None = None
+        decision_reasons: list[str] = []
+        qualified = True
+        source_class = "transparent" if _has_alpha(img) else "opaque"
+        if optimization_mode == "auto_safe":
+            if optimization_profile != AUTO_SAFE_PROFILE:
+                raise MediaDerivativeProcessingFailedError("unsupported auto-safe profile")
+            if target_format != "webp" or crop_requested or watermark_applied:
+                raise MediaDerivativeProcessingFailedError(
+                    "auto-safe transforms require plain WebP output"
+                )
+            if source_class == "transparent":
+                effective_quality = None
+                quality_metric = "pixel_equality"
+                output_bytes, mime_type, fmt = _save_image(
+                    img,
+                    target_format="webp",
+                    quality=100,
+                    warnings=warnings,
+                    watermark_applied=False,
+                    lossless=True,
+                )
+                quality_score = 1.0 if _pixels_match(img, output_bytes) else 0.0
+                qualified = quality_score == 1.0
+                if not qualified:
+                    decision_reasons.append("transparent_pixels_changed")
+            else:
+                quality_metric = "ssim"
+                candidates: list[tuple[int, bytes, float]] = []
+                for candidate_quality in AUTO_SAFE_QUALITY_CANDIDATES:
+                    candidate_bytes, candidate_mime, candidate_format = _save_image(
+                        img,
+                        target_format="webp",
+                        quality=candidate_quality,
+                        warnings=warnings,
+                        watermark_applied=False,
+                    )
+                    candidate_score = _ssim_score(img, candidate_bytes)
+                    if candidate_score >= AUTO_SAFE_QUALITY_THRESHOLD:
+                        candidates.append((candidate_quality, candidate_bytes, candidate_score))
+                if candidates:
+                    effective_quality, output_bytes, quality_score = min(
+                        candidates, key=lambda candidate: len(candidate[1])
+                    )
+                    mime_type, fmt = candidate_mime, candidate_format
+                else:
+                    effective_quality = AUTO_SAFE_QUALITY_CANDIDATES[0]
+                    output_bytes, mime_type, fmt = _save_image(
+                        img,
+                        target_format="webp",
+                        quality=effective_quality,
+                        warnings=warnings,
+                        watermark_applied=False,
+                    )
+                    quality_score = _ssim_score(img, output_bytes)
+                    qualified = False
+                    decision_reasons.append("quality_threshold_not_met")
+        else:
+            output_bytes, mime_type, fmt = _save_image(
+                img,
+                target_format=target_format,
+                quality=quality,
+                warnings=warnings,
+                watermark_applied=watermark_applied,
+            )
         if len(output_bytes) > MAX_DELIVERABLE_ARTIFACT_BYTES:
             raise MediaDerivativeOutputTooLargeError()
         result_width = img.width
@@ -482,6 +633,29 @@ def process_media_derivative(
 
         checksum = hashlib.sha256(output_bytes).hexdigest()
         output_facts = _decoded_facts(output_bytes)
+        savings_basis_points = max(
+            0,
+            int(
+                (source_facts["filesize_bytes"] - output_facts["filesize_bytes"])
+                * 10000
+                / max(1, source_facts["filesize_bytes"])
+            ),
+        )
+        if (
+            optimization_mode == "auto_safe"
+            and savings_basis_points < AUTO_SAFE_MINIMUM_SAVINGS_BASIS_POINTS
+        ):
+            qualified = False
+            decision_reasons.append("minimum_savings_not_met")
+        if len(output_bytes) >= len(source_bytes):
+            qualified = False if optimization_mode == "auto_safe" else qualified
+            if optimization_mode == "auto_safe":
+                decision_reasons.append("output_not_smaller")
+        if optimization_mode == "auto_safe" and color_profile_normalization_failed:
+            qualified = False
+            decision_reasons.append("color_profile_normalization_failed")
+        if qualified:
+            decision_reasons.append("qualified")
         transform_facts = {
             "source_checksum": source_facts["checksum"],
             "output_checksum": f"sha256:{checksum}",
@@ -501,11 +675,31 @@ def process_media_derivative(
             "output_has_alpha": output_facts["has_alpha"],
             "alpha_preserved": source_facts["has_alpha"] == output_facts["has_alpha"],
             "decodable": bool(output_facts["decodable"]),
-            "crop_applied": bool(warnings and any(item.startswith("source_cropped_") for item in warnings)),
+            "crop_applied": bool(
+                warnings
+                and any(item.startswith("source_cropped_") for item in warnings)
+            ),
             "watermark_applied": watermark_applied,
-            "resize_applied": output_facts["width"] != source_facts["width"] or output_facts["height"] != source_facts["height"],
-            "encoding_mode": "lossless" if fmt == "png" else ("lossy" if fmt in {"jpeg", "webp", "avif"} else "unknown"),
-            "savings_basis_points": max(0, int((source_facts["filesize_bytes"] - output_facts["filesize_bytes"]) * 10000 / max(1, source_facts["filesize_bytes"]))),
+            "resize_applied": output_facts["width"] != source_facts["width"]
+            or output_facts["height"] != source_facts["height"],
+            "encoding_mode": "lossless"
+            if fmt == "png"
+            or (optimization_mode == "auto_safe" and source_class == "transparent")
+            else ("lossy" if fmt in {"jpeg", "webp", "avif"} else "unknown"),
+            "savings_basis_points": savings_basis_points,
+            "optimization_profile": optimization_profile
+            if optimization_mode == "auto_safe"
+            else "manual",
+            "source_class": source_class,
+            "effective_quality": effective_quality,
+            "quality_metric": quality_metric,
+            "quality_score": quality_score,
+            "quality_threshold": AUTO_SAFE_QUALITY_THRESHOLD
+            if optimization_mode == "auto_safe"
+            else None,
+            "color_profile_normalized": color_profile_normalized,
+            "qualified": qualified,
+            "decision_reasons": list(dict.fromkeys(decision_reasons)),
         }
         return MediaDerivativeResult(
             output_bytes=output_bytes,

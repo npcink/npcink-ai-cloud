@@ -40,6 +40,7 @@ from app.domain.media_artifacts.publication import publish_and_track_artifact
 from app.domain.media_derivatives.artifacts import (
     ValidatedImageUpload,
     build_artifact_result_json,
+    build_skipped_result_json,
     build_upload_artifact_result_json,
     create_artifact,
     create_uploaded_artifact,
@@ -786,6 +787,8 @@ class RuntimeArtifactCoordinationService:
         max_width = int(transform_params.get("max_width", 1200))
         resize_mode = str(transform_params.get("resize_mode") or "fit")
         quality = int(transform_params.get("quality", 82))
+        optimization_mode = str(transform_params.get("mode") or "")
+        optimization_profile = str(transform_params.get("optimization_profile") or "")
         governance = self._dict_or_empty(media_input.get("governance"))
         crop_options = transform_params.get("crop")
         crop_options = crop_options if isinstance(crop_options, dict) else None
@@ -877,6 +880,8 @@ class RuntimeArtifactCoordinationService:
                 crop_options=crop_options,
                 watermark_bytes=watermark_bytes,
                 watermark_options=watermark_options,
+                optimization_mode=optimization_mode,
+                optimization_profile=optimization_profile,
             )
         except (
             MediaDerivativeSourceDecodeFailedError,
@@ -906,6 +911,31 @@ class RuntimeArtifactCoordinationService:
                 processing_started_at=processing_started_at,
                 error_code=error.error_code,
                 watermark_applied=watermark_applied,
+            )
+            return
+
+        if optimization_mode == "auto_safe" and not bool(
+            result.transform_facts.get("qualified")
+        ):
+            skipped_result = build_skipped_result_json(result)
+            self.run_controller.succeed_run(
+                repository,
+                run,
+                result_json=skipped_result,
+                provider_id="media_derivative",
+                model_id="pillow",
+                instance_id="cloud-worker",
+                fallback_used=False,
+            )
+            record_media_derivative_job_metric(
+                session=repository.session,
+                run=run,
+                target_format=target_format,
+                source_media_type=source_media_type,
+                source_bytes=len(source_bytes),
+                processing_started_at=processing_started_at,
+                result=result,
+                watermark_applied=False,
             )
             return
 

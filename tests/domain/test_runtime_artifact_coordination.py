@@ -793,6 +793,8 @@ def test_execute_media_derivative_success_records_artifact_metric_and_terminal_e
             "crop_options": None,
             "watermark_bytes": None,
             "watermark_options": None,
+            "optimization_mode": "",
+            "optimization_profile": "",
         }
         return MediaDerivativeResult(
             output_bytes=b"processed-image-bytes",

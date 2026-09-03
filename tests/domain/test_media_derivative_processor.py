@@ -17,6 +17,14 @@ def _png_bytes() -> bytes:
     return output.getvalue()
 
 
+def _large_image_bytes(*, mode: str = "RGB", icc_profile: bytes | None = None) -> bytes:
+    color = (24, 96, 160, 128) if mode == "RGBA" else (24, 96, 160)
+    image = Image.new(mode, (320, 240), color=color)
+    output = io.BytesIO()
+    image.save(output, format="PNG", icc_profile=icc_profile)
+    return output.getvalue()
+
+
 def test_derivative_output_over_delivery_envelope_fails_before_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -94,3 +102,113 @@ def test_derivative_records_semantic_transform_risk_facts() -> None:
     assert facts["watermark_applied"] is True
     assert facts["resize_applied"] is True
     assert facts["encoding_mode"] == "lossy"
+
+
+def test_auto_safe_opaque_chooses_smallest_qualified_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        processor,
+        "_ssim_score",
+        lambda _reference, candidate: 0.99 if len(candidate) > 0 else 0.0,
+    )
+
+    result = processor.process_media_derivative(
+        source_bytes=_large_image_bytes(),
+        source_media_type="image",
+        target_format="webp",
+        max_width=1920,
+        quality=82,
+        resize_mode="preserve",
+        optimization_mode="auto_safe",
+        optimization_profile="auto_safe.v1",
+    )
+
+    facts = result.transform_facts
+    assert facts["optimization_profile"] == "auto_safe.v1"
+    assert facts["source_class"] == "opaque"
+    assert facts["effective_quality"] in (82, 88)
+    assert facts["quality_metric"] == "ssim"
+    assert facts["quality_score"] >= 0.985
+    assert facts["quality_threshold"] == 0.985
+    assert facts["qualified"] is True
+    assert facts["decision_reasons"] == ["qualified"]
+
+
+def test_auto_safe_transparent_requires_lossless_pixel_equality() -> None:
+    result = processor.process_media_derivative(
+        source_bytes=_large_image_bytes(mode="RGBA"),
+        source_media_type="image",
+        target_format="webp",
+        max_width=1920,
+        quality=82,
+        resize_mode="preserve",
+        optimization_mode="auto_safe",
+        optimization_profile="auto_safe.v1",
+    )
+
+    facts = result.transform_facts
+    assert facts["source_class"] == "transparent"
+    assert facts["effective_quality"] is None
+    assert facts["quality_metric"] == "pixel_equality"
+    assert facts["quality_score"] == 1.0
+    assert facts["encoding_mode"] == "lossless"
+    assert facts["qualified"] is True
+
+
+def test_auto_safe_rejects_quality_and_savings_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(processor, "_ssim_score", lambda _reference, _candidate: 0.9)
+
+    result = processor.process_media_derivative(
+        source_bytes=_png_bytes(),
+        source_media_type="image",
+        target_format="webp",
+        max_width=1920,
+        quality=82,
+        resize_mode="preserve",
+        optimization_mode="auto_safe",
+        optimization_profile="auto_safe.v1",
+    )
+
+    facts = result.transform_facts
+    assert facts["qualified"] is False
+    assert "quality_threshold_not_met" in facts["decision_reasons"]
+    assert "minimum_savings_not_met" in facts["decision_reasons"]
+
+
+def test_auto_safe_resizes_only_when_requested() -> None:
+    source = Image.new("RGB", (2000, 1000), color="navy")
+    output = io.BytesIO()
+    source.save(output, format="PNG")
+
+    result = processor.process_media_derivative(
+        source_bytes=output.getvalue(),
+        source_media_type="image",
+        target_format="webp",
+        max_width=1920,
+        quality=82,
+        resize_mode="fit",
+        optimization_mode="auto_safe",
+        optimization_profile="auto_safe.v1",
+    )
+
+    assert (result.width, result.height) == (1920, 960)
+    assert result.transform_facts["resize_applied"] is True
+
+
+def test_auto_safe_marks_invalid_embedded_profile_unqualified() -> None:
+    result = processor.process_media_derivative(
+        source_bytes=_large_image_bytes(icc_profile=b"not-an-icc-profile"),
+        source_media_type="image",
+        target_format="webp",
+        max_width=1920,
+        quality=82,
+        resize_mode="preserve",
+        optimization_mode="auto_safe",
+        optimization_profile="auto_safe.v1",
+    )
+
+    assert result.transform_facts["qualified"] is False
+    assert "color_profile_normalization_failed" in result.transform_facts["decision_reasons"]
