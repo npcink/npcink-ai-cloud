@@ -90,6 +90,8 @@ deleting the old decision history.
 - [Production Release Efficiency Phase 1-2 Closeout and Development Retrospective — 2026-08-23](history/production/2026/production-release-efficiency-phase1-closeout-and-development-retrospective-2026-08-23.md) — PR #851 merge, clean-master M4 acceptance, root causes of delay, reusable evidence rules, and deferred next steps; not production authorization
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
+- [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
+- [Managed Source Relay Closeout and Development Retrospective — 2026-09-04](history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md) — dated evidence for PRs `#891` and `#892`, relay failure diagnosis, bounded retry corrections, M4 promotion, and reusable development lessons; not current runtime or release authority
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
 - [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)

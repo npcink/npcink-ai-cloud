@@ -225,6 +225,8 @@ Key M4 decisions and measurements remain directly discoverable:
 - [ADR-025 checkpoint dispatch](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
 - [ADR-026 private source relay](docs/decisions/026-private-source-relay-transfer.md)
 - [ADR-027 package proxy cache](docs/decisions/027-m4-package-proxy-streaming-cache.md)
+- [ADR-051 managed private source relay](docs/decisions/051-managed-private-source-relay-service.md)
+- [Managed source relay closeout and retrospective](docs/history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md)
 - [Package proxy validation](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 
 ## Target Refactor Contracts

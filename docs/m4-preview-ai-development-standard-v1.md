@@ -22,6 +22,9 @@ The documents have separate responsibilities:
 - [ADR-026](decisions/026-private-source-relay-transfer.md) records why source
   bundles use a transient Tailscale-only file relay instead of one
   endpoint-to-endpoint SFTP session.
+- [ADR-051](decisions/051-managed-private-source-relay-service.md) records why
+  a relay HTTP service may remain available while every source bundle remains
+  per-operation, integrity-checked, and transient.
 - [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) records why
   public package artifacts stream through a bounded disposable M4 cache.
 - [ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md) records why

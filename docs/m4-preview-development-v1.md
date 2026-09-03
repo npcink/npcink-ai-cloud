@@ -115,14 +115,53 @@ NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct pnpm run m4:preview:sync
 
 Do not turn that override into a silent fallback. A degraded endpoint-to-
 endpoint transfer must remain observable. If the relay lock is stale, inspect
-`/var/tmp/npcink-ai-cloud-m4-source-relay/operation.lock/owner.txt` on the
-relay and verify that no transfer service is active before removing only that
-exact lock.
+the applicable `operation.lock/owner.txt` on the relay: transient mode uses
+`/var/tmp/npcink-ai-cloud-m4-source-relay`, while managed Nginx mode uses
+`/var/lib/npcink-ai-cloud-m4-source-relay`. Verify that no transfer service or
+M4 download is active before removing only that exact lock.
 
 SSH and SCP allow up to three bounded connection attempts because the observed
 Peer Relay path can lose an initial handshake. This retries connection
 establishment only; it does not hide a failed transfer, switch transport mode,
 or extend an operation without limit.
+
+### Managed Relay Restart Check
+
+The managed relay host enables both `tailscaled` and `nginx` at boot, but the
+system Nginx unit does not declare an explicit dependency on `tailscaled`.
+After the relay host's first reboot, or whenever source transfer fails after a
+reboot, verify the private listener before changing transfer settings:
+
+```bash
+systemctl is-enabled tailscaled nginx
+systemctl is-active tailscaled nginx
+tailscale ip -4
+nginx -t
+ss -lnt | grep '100.86.14.81:18080'
+```
+
+Expected results are both services `enabled` and `active`, Tailscale address
+`100.86.14.81`, a successful Nginx configuration check, and a listener bound
+to exactly `100.86.14.81:18080`. From M4, an empty relay root returning `403`
+proves the listener is reachable without enabling directory listing:
+
+```bash
+curl -sS --max-time 20 -o /dev/null -w '%{http_code}\n' \
+  http://100.86.14.81:18080/
+```
+
+If the Tailscale address is absent, diagnose `tailscaled` before touching
+Nginx. If the address exists but the listener is absent, inspect
+`journalctl -u nginx --since '-10 minutes'`, run `nginx -t`, and only then
+reload an already active Nginx service or start an inactive one. Nginx also
+serves the host's existing sites, so do not replace its main configuration,
+restart it before `nginx -t` succeeds, or modify unrelated files under
+`/etc/nginx/conf.d/`.
+
+Do not change the relay listener to `0.0.0.0`, expose port `18080` through the
+public security group, or use a public HTTP address as a fallback. A successful
+check must still leave `/var/lib/npcink-ai-cloud-m4-source-relay` empty when no
+M4 operation is active.
 
 ## Safety Boundary
 
