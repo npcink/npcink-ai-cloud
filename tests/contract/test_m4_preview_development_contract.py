@@ -20,6 +20,7 @@ REDACTOR = ROOT / "scripts" / "redact-m4-preview-logs.py"
 PACKAGE_PROXY = ROOT / "scripts" / "m4-package-proxy.py"
 OVERLAY = ROOT / "docker-compose.m4-preview.yml"
 PREVIEW_PROXY = ROOT / "deploy" / "nginx.m4-preview.conf"
+SOURCE_RELAY_NGINX = ROOT / "deploy" / "m4-source-relay-nginx.conf"
 RUNBOOK = ROOT / "docs" / "m4-preview-development-v1.md"
 AI_STANDARD = ROOT / "docs" / "m4-preview-ai-development-standard-v1.md"
 VALIDATION_ADR = (
@@ -281,6 +282,7 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "source_transfer_mode" in source
     assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE" in source
     assert "NPCINK_CLOUD_M4_RELAY_SSH_HOST" in source
+    assert "NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE" in source
     assert "ConnectionAttempts=3" in source
     assert "root@100.90.87.36" in source
     assert "74.82.195.160" not in source
@@ -290,9 +292,17 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "M4 relay SSH host contains unsupported characters" in source
     assert "source transfer holds" in source
     assert "systemd-run --quiet --collect" in source
+    assert "M4_RELAY_HTTP_MODE" in source
+    assert 'transient|nginx)' in source
     assert '--bind "${bind_ip}"' in source
+    assert "managed relay Nginx service is not active" in source
+    assert 'SOURCE_RELAY_UNIT="none"' in source
+    assert 'install -d -m 700 -o root -g root "${run_dir}"' in source
+    assert 'chmod 640 "${bundle}"' in source
+    assert 'chmod 710 "${run_dir}"' in source
     assert "--retry-all-errors" in source
-    assert "--max-time 120" in source
+    assert "--continue-at -" in source
+    assert "--max-time 900" in source
     assert "--speed-time 20" in source
     assert "source_dirty_paths" in source
     assert "frontend_source_fingerprint" in source
@@ -399,6 +409,19 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert source.index("wait_for_http") < source.index(
         '> "${deployed_frontend_source_marker}"'
     )
+
+
+def test_m4_source_relay_nginx_is_tailscale_only_and_read_only() -> None:
+    source = SOURCE_RELAY_NGINX.read_text(encoding="utf-8")
+
+    assert "listen 100.86.14.81:18080;" in source
+    assert "root /var/lib/npcink-ai-cloud-m4-source-relay;" in source
+    assert "autoindex off;" in source
+    assert "limit_except GET HEAD" in source
+    assert "deny all;" in source
+    assert "disable_symlinks on;" in source
+    assert "listen 0.0.0.0" not in source
+    assert "listen 120.24.237.214" not in source
 
 
 def test_m4_frontend_recreate_is_selected_only_for_frontend_relevant_change() -> None:
@@ -1507,6 +1530,51 @@ def test_m4_source_transfer_validation_fails_closed_without_git_metadata() -> No
     )
     assert invalid_host.returncode != 0
     assert "SSH host contains unsupported characters" in invalid_host.stderr
+
+    relative_identity_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE": "relay-key.pem",
+    }
+    relative_identity = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=relative_identity_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert relative_identity.returncode != 0
+    assert "identity file must be an absolute path" in relative_identity.stderr
+
+    missing_identity_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE": "/missing/relay-key.pem",
+    }
+    missing_identity = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=missing_identity_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert missing_identity.returncode != 0
+    assert "identity file must be a regular file" in missing_identity.stderr
+
+    invalid_http_mode_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_HTTP_MODE": "automatic",
+    }
+    invalid_http_mode = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=invalid_http_mode_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert invalid_http_mode.returncode != 0
+    assert "HTTP mode must be transient or nginx" in invalid_http_mode.stderr
 
 
 def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
