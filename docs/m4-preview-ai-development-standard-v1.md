@@ -25,6 +25,9 @@ The documents have separate responsibilities:
 - [ADR-051](decisions/051-managed-private-source-relay-service.md) records why
   a relay HTTP service may remain available while every source bundle remains
   per-operation, integrity-checked, and transient.
+- [ADR-052](decisions/052-pgy-primary-m4-access.md) records why Pgy is the
+  default M4 SSH and direct source-transfer path, with LAN and Tailscale
+  fallback for the automatic tunnel and explicit relay recovery.
 - [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) records why
   public package artifacts stream through a bounded disposable M4 cache.
 - [ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md) records why
@@ -330,7 +333,7 @@ exposure, or recovery behavior, also verify the applicable items:
 - API, frontend, proxy, PostgreSQL, Redis, and required workers are healthy;
 - restart policy is `unless-stopped`;
 - published ports remain loopback-only;
-- LAN and Tailscale direct access to published ports fails;
+- LAN, Pgy, and Tailscale direct access to published ports fails;
 - logs contain no secrets;
 - restart or recovery behavior is proved;
 - failure containment touches only the named M4 Compose project.
