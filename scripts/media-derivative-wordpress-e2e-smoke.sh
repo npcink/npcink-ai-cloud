@@ -603,6 +603,7 @@ mde2e_assert_wordpress_identity();
 $stale_cleanup = $cleanup ? mde2e_cleanup_stale_smoke_media() : array("attachments" => 0, "files" => 0);
 $created_pages = array();
 $created_attachment_id = 0;
+$created_attachment_ids = array();
 $created_option_names = array();
 $created_theme_mod_names = array();
 $created_relative_files = array();
@@ -625,14 +626,19 @@ try {
 	$filename = "npcink-e2e-media-derivative-" . $stamp . "-pending.png";
 	$path = $dir . $filename;
 	$image = imagecreatetruecolor(800, 450);
-	$bg = imagecolorallocate($image, 60, 70, 85);
-	$panel = imagecolorallocate($image, 250, 250, 250);
-	$accent = imagecolorallocate($image, 96, 165, 250);
+	for ($y = 0; $y < 450; $y++) {
+		for ($x = 0; $x < 800; $x++) {
+			$texture = (($x * 17 + $y * 31) % 17) - 8;
+			$red = max(0, min(255, 36 + (int) (($x / 799) * 168) + $texture));
+			$green = max(0, min(255, 54 + (int) (($y / 449) * 142) + $texture));
+			$blue = max(0, min(255, 92 + (int) ((($x + $y) / 1248) * 118) + $texture));
+			imagesetpixel($image, $x, $y, ($red << 16) | ($green << 8) | $blue);
+		}
+	}
+	$panel = imagecolorallocate($image, 245, 247, 250);
 	$text = imagecolorallocate($image, 20, 30, 45);
-	imagefilledrectangle($image, 0, 0, 799, 449, $bg);
-	imagefilledrectangle($image, 70, 80, 730, 370, $panel);
-	imagefilledellipse($image, 400, 225, 260, 170, $accent);
-	imagestring($image, 5, 265, 212, "Npcink AI Media Smoke", $text);
+	imagefilledrectangle($image, 220, 185, 580, 265, $panel);
+	imagestring($image, 5, 285, 217, "Npcink AI Media Smoke", $text);
 	imagepng($image, $path);
 	imagedestroy($image);
 	$file_hash = substr(md5_file($path), 0, 8);
@@ -651,6 +657,7 @@ try {
 	), $path);
 	mde2e_assert(!is_wp_error($attachment_id) && (int) $attachment_id > 0, "source_attachment_insert_failed", $attachment_id);
 	$created_attachment_id = (int) $attachment_id;
+	$created_attachment_ids[] = (int) $attachment_id;
 	update_post_meta($created_attachment_id, "_npcink_ai_cloud_media_derivative_e2e_marker", "media_derivative_wordpress_e2e_smoke.v1");
 	update_post_meta($created_attachment_id, "_npcink_ai_cloud_media_derivative_e2e_run_id", $stamp);
 	require_once ABSPATH . "wp-admin/includes/image.php";
@@ -678,12 +685,10 @@ try {
 		"npcink-abilities-toolkit/build-media-derivative-batch-plan",
 		array(
 			"attachment_ids" => array($attachment_id),
-			"target_format" => "webp",
-			"exclude_formats" => array("gif", "svg"),
+			"optimization_mode" => "auto_safe",
+			"optimization_profile" => "auto_safe.v1",
+			"image_types" => array("jpeg", "png", "webp"),
 			"target_max_width" => 320,
-			"quality" => 80,
-			"min_width" => 0,
-			"min_height" => 0,
 			"max_items" => 5,
 		),
 		"Build the bounded media derivative batch plan for this smoke attachment."
@@ -802,7 +807,106 @@ try {
 	);
 	mde2e_assert(is_array($artifact["processing_warnings"] ?? null), "artifact_processing_warnings_invalid", $artifact);
 	mde2e_assert(is_array($artifact["transform_facts"] ?? null), "artifact_transform_facts_invalid", $artifact);
+	$qualified_transform_facts = (array) $artifact["transform_facts"];
+	mde2e_assert(
+		true === ($qualified_transform_facts["qualified"] ?? null)
+		&& array("qualified") === array_values((array) ($qualified_transform_facts["decision_reasons"] ?? array()))
+		&& "auto_safe.v1" === (string) ($qualified_transform_facts["optimization_profile"] ?? "")
+		&& (int) ($qualified_transform_facts["savings_basis_points"] ?? -1) >= 1500
+		&& (float) ($qualified_transform_facts["quality_score"] ?? -1) >= (float) ($qualified_transform_facts["quality_threshold"] ?? 2)
+		&& (int) ($qualified_transform_facts["source_filesize_bytes"] ?? 0) === (int) filesize($before_path)
+		&& (int) ($qualified_transform_facts["output_filesize_bytes"] ?? 0) === (int) ($artifact["filesize_bytes"] ?? 0),
+		"qualified_transform_facts_invalid",
+		$qualified_transform_facts
+	);
 	mde2e_assert_no_remote_artifact_material($cloud_projection);
+
+	$skip_filename = "npcink-e2e-media-derivative-" . $stamp . "-skip.webp";
+	$skip_path = $dir . $skip_filename;
+	$skip_image = imagecreatetruecolor(800, 450);
+	$skip_background = imagecolorallocate($skip_image, 60, 70, 85);
+	$skip_panel = imagecolorallocate($skip_image, 250, 250, 250);
+	imagefilledrectangle($skip_image, 0, 0, 799, 449, $skip_background);
+	imagefilledrectangle($skip_image, 70, 80, 730, 370, $skip_panel);
+	imagewebp($skip_image, $skip_path, 82);
+	imagedestroy($skip_image);
+	$skip_attachment_id = wp_insert_attachment(array(
+		"post_mime_type" => "image/webp",
+		"post_title" => "Npcink AI media derivative skipped smoke " . $stamp,
+		"post_status" => "inherit",
+	), $skip_path);
+	mde2e_assert(!is_wp_error($skip_attachment_id) && (int) $skip_attachment_id > 0, "skip_attachment_insert_failed", $skip_attachment_id);
+	$skip_attachment_id = (int) $skip_attachment_id;
+	$created_attachment_ids[] = $skip_attachment_id;
+	update_post_meta($skip_attachment_id, "_npcink_ai_cloud_media_derivative_e2e_marker", "media_derivative_wordpress_e2e_smoke.v1");
+	update_post_meta($skip_attachment_id, "_npcink_ai_cloud_media_derivative_e2e_run_id", $stamp);
+	wp_update_attachment_metadata($skip_attachment_id, wp_generate_attachment_metadata($skip_attachment_id, $skip_path));
+	$skip_ability_envelope = mde2e_run_governed_read_ability(
+		"npcink-abilities-toolkit/build-media-derivative-cloud-request",
+		array(
+			"attachment_id" => $skip_attachment_id,
+			"optimization_mode" => "auto_safe",
+			"optimization_profile" => "auto_safe.v1",
+			"preferred_format" => "webp",
+		),
+		"Build the bounded auto-safe Cloud request for the skipped smoke attachment."
+	);
+	$skip_ability_response = is_array($skip_ability_envelope["data"]["result"] ?? null) ? $skip_ability_envelope["data"]["result"] : array();
+	mde2e_assert($skip_ability_envelope["ok"] && 200 === (int) ($skip_ability_envelope["status"] ?? 0), "skip_derivative_ability_build", $skip_ability_envelope);
+	$skip_trace_id = "wp-media-derivative-e2e-skip-" . $skip_attachment_id;
+	$skip_create = npcink_cloud_addon_dispatch_media_derivative_cloud_request(
+		$skip_ability_response,
+		array(
+			"path" => $skip_path,
+			"filename" => basename($skip_path),
+			"mime_type" => "image/webp",
+		),
+		$skip_trace_id,
+		"wp-media-derivative-e2e-skip-" . $skip_attachment_id . "-" . time()
+	);
+	mde2e_assert(!is_wp_error($skip_create) && is_array($skip_create), "create_skipped_derivative_run", $skip_create);
+	$skip_run_id = npcink_cloud_addon_media_derivative_run_id($skip_create);
+	mde2e_assert("" !== $skip_run_id, "create_skipped_derivative_run_missing_run_id", $skip_create);
+	$skip_status = array();
+	$skip_state = "";
+	for ($i = 0; $i < 40; $i++) {
+		usleep(0 === $i ? 250000 : 750000);
+		$skip_status = npcink_cloud_addon_get_media_derivative_run($skip_run_id, $skip_trace_id);
+		mde2e_assert(!is_wp_error($skip_status) && is_array($skip_status), "poll_skipped_run", $skip_status);
+		$skip_status_data = is_array($skip_status["data"] ?? null) ? $skip_status["data"] : $skip_status;
+		$skip_state = (string) ($skip_status_data["status"] ?? "");
+		if (in_array($skip_state, array("succeeded", "completed", "failed"), true)) {
+			break;
+		}
+	}
+	mde2e_assert(in_array($skip_state, array("succeeded", "completed"), true), "skipped_cloud_run_not_success", $skip_status);
+	$skip_projection = npcink_cloud_addon_get_media_derivative_run_result($skip_run_id, $skip_trace_id);
+	mde2e_assert(!is_wp_error($skip_projection) && is_array($skip_projection), "poll_skipped_result", $skip_projection);
+	$skip_expected_fields = array("artifact", "created_at", "error", "job_type", "optimization", "run_id", "status", "updated_at", "warnings");
+	$skip_actual_fields = array_keys($skip_projection);
+	sort($skip_actual_fields);
+	mde2e_assert($skip_expected_fields === $skip_actual_fields, "skipped_result_fields_invalid", array("expected" => $skip_expected_fields, "actual" => $skip_actual_fields));
+	$skip_optimization = is_array($skip_projection["optimization"] ?? null) ? $skip_projection["optimization"] : array();
+	$skip_optimization_fields = array_keys($skip_optimization);
+	sort($skip_optimization_fields);
+	$skip_decision_reasons = array_values((array) ($skip_optimization["decision_reasons"] ?? array()));
+	$skip_transform_facts = is_array($skip_optimization["transform_facts"] ?? null) ? $skip_optimization["transform_facts"] : array();
+	mde2e_assert(
+		array("decision_reasons", "qualified", "status", "transform_facts") === $skip_optimization_fields
+		&& "skipped" === (string) ($skip_optimization["status"] ?? "")
+		&& false === ($skip_optimization["qualified"] ?? null)
+		&& false === ($skip_transform_facts["qualified"] ?? null)
+		&& "auto_safe.v1" === (string) ($skip_transform_facts["optimization_profile"] ?? "")
+		&& $skip_decision_reasons === array_values((array) ($skip_transform_facts["decision_reasons"] ?? array()))
+		&& in_array("minimum_savings_not_met", $skip_decision_reasons, true)
+		&& (int) ($skip_transform_facts["savings_basis_points"] ?? 10000) < 1500
+		&& (int) ($skip_transform_facts["source_filesize_bytes"] ?? 0) > 0
+		&& (int) ($skip_transform_facts["output_filesize_bytes"] ?? 0) > 0
+		&& array() === ($skip_projection["artifact"] ?? null),
+		"skipped_decision_envelope_invalid",
+		$skip_projection
+	);
+	mde2e_assert_no_remote_artifact_material($skip_projection);
 
 	$local_proposal = npcink_cloud_addon_build_media_derivative_proposal_payload(
 		$ability_response,
@@ -1098,6 +1202,7 @@ try {
 			"attachment_id" => (int) $attachment_id,
 			"page_id" => (int) $page_id,
 			"run_id" => $run_id,
+			"skipped_run_id" => $skip_run_id,
 			"artifact_id" => (string) ($artifact["artifact_id"] ?? ""),
 			"receive_delivery_id" => (string) ($delivery_ack["delivery_id"] ?? ""),
 			"optimization_proposal_id" => $optimization_proposal_id,
@@ -1141,8 +1246,8 @@ try {
 		foreach ($created_pages as $page_id) {
 			wp_delete_post((int) $page_id, true);
 		}
-		if ($created_attachment_id > 0) {
-			wp_delete_attachment($created_attachment_id, true);
+		foreach ($created_attachment_ids as $attachment_id_to_delete) {
+			wp_delete_attachment((int) $attachment_id_to_delete, true);
 		}
 		foreach ($created_option_names as $option_name) {
 			delete_option($option_name);
@@ -1243,6 +1348,13 @@ import os
 print(json.loads(os.environ["NPCINK_MEDIA_DERIVATIVE_E2E_SMOKE_JSON"])["run_id"])
 PY
 )"
+SKIPPED_RUN_ID="$(NPCINK_MEDIA_DERIVATIVE_E2E_SMOKE_JSON="${SMOKE_JSON}" python3 - <<'PY'
+import json
+import os
+
+print(json.loads(os.environ["NPCINK_MEDIA_DERIVATIVE_E2E_SMOKE_JSON"])["skipped_run_id"])
+PY
+)"
 ARTIFACT_ID="$(NPCINK_MEDIA_DERIVATIVE_E2E_SMOKE_JSON="${SMOKE_JSON}" python3 - <<'PY'
 import json
 import os
@@ -1260,6 +1372,9 @@ PY
 if [ "${#RUN_ID}" -gt 191 ] || [[ ! "${RUN_ID}" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*$ ]]; then
 	fail "Refusing Cloud SQL with invalid run id"
 fi
+if [ "${#SKIPPED_RUN_ID}" -gt 191 ] || [[ ! "${SKIPPED_RUN_ID}" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*$ ]]; then
+	fail "Refusing Cloud SQL with invalid skipped run id"
+fi
 if [[ ! "${ARTIFACT_ID}" =~ ^art_[0-9a-f]{32}$ ]]; then
 	fail "Refusing Cloud SQL with invalid artifact id"
 fi
@@ -1270,7 +1385,8 @@ fi
 echo "== Cloud media derivative telemetry =="
 METRIC_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from media_derivative_job_metrics m join media_artifacts a on a.artifact_id=m.artifact_id and a.run_id=m.run_id where m.run_id='${RUN_ID}' and m.status='succeeded' and m.artifact_id='${ARTIFACT_ID}' and m.output_bytes=a.byte_size and m.output_width=a.width and m.output_height=a.height and m.output_format=a.format;")"
 ARTIFACT_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from media_artifacts where run_id='${RUN_ID}' and artifact_id='${ARTIFACT_ID}' and operation='image.transform.v1' and status='available' and purged_at is null and expires_at > now() and expires_at <= now() + interval '60 minutes' and byte_size > 0 and width > 0 and height > 0 and content_type='image/webp' and checksum ~ '^sha256:[0-9a-f]{64}$';")"
-RUN_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from run_records where run_id='${RUN_ID}' and status='succeeded' and execution_kind='media_derivative' and result_json->>'contract_version'='media_derivative_result.v3' and result_json->'artifact'->>'artifact_id'='${ARTIFACT_ID}';")"
+RUN_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from run_records where run_id='${RUN_ID}' and status='succeeded' and execution_kind='media_derivative' and result_json->>'contract_version'='media_derivative_result.v3' and result_json->>'status'='qualified' and result_json->'artifact'->>'artifact_id'='${ARTIFACT_ID}' and result_json->'artifact'->'transform_facts'->>'qualified'='true' and json_array_length(result_json->'artifact'->'transform_facts'->'decision_reasons')=1 and result_json->'artifact'->'transform_facts'->'decision_reasons'->>0='qualified' and (result_json->'artifact'->'transform_facts'->>'savings_basis_points')::integer >= 1500 and (result_json->'artifact'->'transform_facts'->>'quality_score')::double precision >= (result_json->'artifact'->'transform_facts'->>'quality_threshold')::double precision;")"
+SKIPPED_RUN_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from run_records where run_id='${SKIPPED_RUN_ID}' and status='succeeded' and execution_kind='media_derivative' and result_json->>'contract_version'='media_derivative_result.v3' and result_json->>'status'='skipped' and json_typeof(result_json->'artifact')='null' and result_json->'decision'->>'qualified'='false' and result_json->'decision'->'transform_facts'->>'qualified'='false' and result_json->'decision'->'transform_facts'->>'optimization_profile'='auto_safe.v1' and (result_json->'decision'->'decision_reasons')::text=(result_json->'decision'->'transform_facts'->'decision_reasons')::text and exists (select 1 from json_array_elements_text(result_json->'decision'->'decision_reasons') reason where reason='minimum_savings_not_met') and (result_json->'decision'->'transform_facts'->>'savings_basis_points')::integer < 1500;")"
 UPLOAD_JOB_CHAIN_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from run_records job join media_derivative_job_metrics metric on metric.run_id=job.run_id and metric.site_id=job.site_id join run_records upload on upload.trace_id=job.trace_id and upload.site_id=job.site_id join media_artifacts source on source.run_id=upload.run_id and source.site_id=upload.site_id where job.run_id='${RUN_ID}' and job.contract_version='media_job_request.v1' and job.execution_kind='media_derivative' and job.status='succeeded' and upload.contract_version='media_upload_request.v1' and upload.execution_kind='media_upload' and upload.status='succeeded' and upload.input_json->'request'->>'request_contract_version'='media_upload_request.v1' and source.operation='image.upload.v1' and source.status='available' and metric.source_bytes=source.byte_size and metric.source_width=source.width and metric.source_height=source.height;")"
 USAGE_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from usage_meter_events where run_id='${RUN_ID}' and event_kind='run' and meter_key='runs' and quantity=1;")"
 DELIVERY_COUNT="$(docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -At -c "select count(*) from media_artifact_deliveries d join media_artifacts a on a.artifact_id=d.artifact_id and a.site_id=d.site_id where a.run_id='${RUN_ID}' and d.artifact_id='${ARTIFACT_ID}';")"
@@ -1284,6 +1400,9 @@ if [ "${ARTIFACT_COUNT}" != "1" ]; then
 fi
 if [ "${RUN_COUNT}" != "1" ]; then
 	fail "Expected one succeeded artifact-only run row for ${RUN_ID}/${ARTIFACT_ID}; got ${RUN_COUNT}"
+fi
+if [ "${SKIPPED_RUN_COUNT}" != "1" ]; then
+	fail "Expected one succeeded v3 skipped decision row for ${SKIPPED_RUN_ID}; got ${SKIPPED_RUN_COUNT}"
 fi
 if [ "${UPLOAD_JOB_CHAIN_COUNT}" != "1" ]; then
 	fail "Expected one media_upload_request.v1 to media_job_request.v1 chain for ${RUN_ID}; got ${UPLOAD_JOB_CHAIN_COUNT}"
@@ -1302,6 +1421,7 @@ if [ "${RECEIVE_DELIVERY_COUNT}" != "1" ]; then
 fi
 echo "[ok] Addon upload to media job Cloud evidence is present"
 echo "[ok] Cloud run, artifact, metric, and usage evidence rows are present"
+echo "[ok] Cloud v3 qualified artifact and skipped decision envelopes are both present"
 echo "[ok] Artifact TTL is short and still live"
 echo "[ok] Explicit receive and governed adoption deliveries are started, completed, ACKed before deadline, exact-integrity verified, and transfer-only"
 echo "[info] Runbook: docs/media-derivative-operations-runbook-v1.md"

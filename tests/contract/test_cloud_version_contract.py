@@ -17,6 +17,7 @@ EXPECTED_VERSION = "0.2.0"
 
 def test_cloud_release_version_is_consistent_across_runtime_and_packages(tmp_path: Path) -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
     frontend_package = json.loads(
         (ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
     )
@@ -29,6 +30,11 @@ def test_cloud_release_version_is_consistent_across_runtime_and_packages(tmp_pat
 
     assert __version__ == EXPECTED_VERSION
     assert pyproject["project"]["version"] == EXPECTED_VERSION
+    assert next(
+        package["version"]
+        for package in uv_lock["package"]
+        if package["name"] == "npcink-ai-cloud"
+    ) == EXPECTED_VERSION
     assert frontend_package["version"] == EXPECTED_VERSION
     assert create_app(CloudServices(settings=settings)).version == EXPECTED_VERSION
     assert _create_setup_app(cast(SetupService, object())).version == EXPECTED_VERSION
