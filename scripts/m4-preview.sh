@@ -3,8 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
-M4_SSH_HOST="${NPCINK_CLOUD_M4_SSH_HOST:-muze@100.102.170.79}"
+M4_SSH_HOST="${NPCINK_CLOUD_M4_SSH_HOST:-muze@172.16.3.35}"
 M4_LAN_SSH_HOST="${NPCINK_CLOUD_M4_LAN_SSH_HOST:-muze@192.168.10.200}"
+M4_TAILSCALE_SSH_HOST="${NPCINK_CLOUD_M4_TAILSCALE_SSH_HOST:-muze@100.102.170.79}"
 M4_REMOTE_DIR="${NPCINK_CLOUD_M4_REMOTE_DIR:-/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev}"
 M4_PROJECT_NAME="${NPCINK_CLOUD_M4_PROJECT_NAME:-npcink-ai-cloud-m4-dev}"
 M4_PORT="${NPCINK_CLOUD_M4_PORT:-8010}"
@@ -14,7 +15,7 @@ M4_TUNNEL_LOCAL_PORT="${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18010}"
 M4_OLLAMA_PORT="${NPCINK_CLOUD_M4_OLLAMA_PORT:-11434}"
 M4_OLLAMA_LABEL="top.mqzj.npcink-ollama-preview"
 M4_OLLAMA_PLIST="${ROOT_DIR}/deploy/${M4_OLLAMA_LABEL}.plist"
-M4_SOURCE_TRANSFER_MODE="${NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE:-relay}"
+M4_SOURCE_TRANSFER_MODE="${NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE:-direct}"
 M4_RELAY_SSH_HOST="${NPCINK_CLOUD_M4_RELAY_SSH_HOST:-root@100.90.87.36}"
 M4_RELAY_SSH_IDENTITY_FILE="${NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE:-}"
 M4_RELAY_TAILSCALE_IP="${NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP:-100.90.87.36}"
@@ -78,6 +79,7 @@ local machine, synchronized to the M4, and built/run only by M4 Docker.
 Environment overrides:
   NPCINK_CLOUD_M4_SSH_HOST
   NPCINK_CLOUD_M4_LAN_SSH_HOST
+  NPCINK_CLOUD_M4_TAILSCALE_SSH_HOST
   NPCINK_CLOUD_M4_REMOTE_DIR
   NPCINK_CLOUD_M4_PROJECT_NAME
   NPCINK_CLOUD_M4_PORT
@@ -168,6 +170,7 @@ validate_target() {
 	validate_port "M4 Ollama port" "${M4_OLLAMA_PORT}"
 	validate_ssh_host "M4 SSH host" "${M4_SSH_HOST}"
 	validate_ssh_host "M4 LAN SSH host" "${M4_LAN_SSH_HOST}"
+	validate_ssh_host "M4 Tailscale SSH host" "${M4_TAILSCALE_SSH_HOST}"
 	case "${M4_SOURCE_TRANSFER_MODE}" in
 		relay|direct)
 			;;
@@ -444,14 +447,21 @@ select_auto_tunnel_host() {
 		return 0
 	fi
 
-	log "LAN preview route unavailable; checking Tailscale (${M4_SSH_HOST})"
+	log "LAN preview route unavailable; checking Pgy (${M4_SSH_HOST})"
 	if probe_tunnel_host "${M4_SSH_HOST}" 5 3; then
-		TUNNEL_SELECTED_ROUTE="tailscale"
+		TUNNEL_SELECTED_ROUTE="pgy"
 		TUNNEL_SELECTED_HOST="${M4_SSH_HOST}"
 		return 0
 	fi
 
-	fail "M4 preview is unavailable through both LAN and Tailscale; verify M4 power, SSH, Docker, and Tailscale"
+	log "Pgy preview route unavailable; checking Tailscale (${M4_TAILSCALE_SSH_HOST})"
+	if probe_tunnel_host "${M4_TAILSCALE_SSH_HOST}" 5 3; then
+		TUNNEL_SELECTED_ROUTE="tailscale"
+		TUNNEL_SELECTED_HOST="${M4_TAILSCALE_SSH_HOST}"
+		return 0
+	fi
+
+	fail "M4 preview is unavailable through LAN, Pgy, and Tailscale; verify M4 power, SSH, Docker, Pgy, and Tailscale"
 }
 
 ensure_local_tunnel_port_available() {
@@ -517,7 +527,7 @@ classify_tailscale_path() {
 	local ping_output=""
 
 	if [ "${selected_route}" != "tailscale" ] &&
-		{ [ "${selected_route}" != "configured" ] || [ "${ssh_host}" != "${M4_SSH_HOST}" ]; }; then
+		[ "${ssh_host}" != "${M4_TAILSCALE_SSH_HOST}" ]; then
 		printf 'not-applicable\n'
 		return 0
 	fi
@@ -652,7 +662,7 @@ open_tunnel() {
 
 	log "local_url=http://127.0.0.1:${local_port}"
 	if [ "${auto_route}" = "1" ]; then
-		log "route_order=lan:${M4_LAN_SSH_HOST},tailscale:${M4_SSH_HOST}"
+		log "route_order=lan:${M4_LAN_SSH_HOST},pgy:${M4_SSH_HOST},tailscale:${M4_TAILSCALE_SSH_HOST}"
 		if [ "${tunnel_dry_run}" = "1" ]; then
 			ssh_host="${M4_LAN_SSH_HOST}"
 			log "dry-run uses the first candidate; no network probe is performed"
@@ -1678,7 +1688,7 @@ upload_and_apply() {
 	if [ "${M4_SOURCE_TRANSFER_MODE}" = "relay" ]; then
 		prepare_source_relay "${source_bundle}" "${source_sha}"
 	else
-		log "uploading source bundle directly to M4 by explicit fallback"
+		log "uploading source bundle directly to M4 via primary direct path"
 		scp "${SCP_ARGS[@]}" "${source_bundle}" "${M4_SSH_HOST}:${REMOTE_SOURCE_BUNDLE}"
 		SOURCE_RELAY_URL="none"
 	fi

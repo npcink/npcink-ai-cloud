@@ -22,6 +22,9 @@ OVERLAY = ROOT / "docker-compose.m4-preview.yml"
 PREVIEW_PROXY = ROOT / "deploy" / "nginx.m4-preview.conf"
 SOURCE_RELAY_NGINX = ROOT / "deploy" / "m4-source-relay-nginx.conf"
 RUNBOOK = ROOT / "docs" / "m4-preview-development-v1.md"
+REMOTE_DEV_STANDARD = (
+    ROOT / "docs" / "m4-remote-development-and-overlay-network-standard-v1.md"
+)
 AI_STANDARD = ROOT / "docs" / "m4-preview-ai-development-standard-v1.md"
 VALIDATION_ADR = (
     ROOT / "docs" / "decisions" / "024-risk-tiered-development-validation-authority.md"
@@ -35,6 +38,7 @@ CHECKPOINT_ADR = (
 SOURCE_RELAY_ADR = (
     ROOT / "docs" / "decisions" / "026-private-source-relay-transfer.md"
 )
+PGY_ACCESS_ADR = ROOT / "docs" / "decisions" / "052-pgy-primary-m4-access.md"
 SOURCE_RELAY_VALIDATION = (
     ROOT / "docs" / "m4-source-relay-transfer-validation-2026-07-24.md"
 )
@@ -1466,13 +1470,13 @@ def test_m4_source_transfer_requires_explicit_non_master_candidate() -> None:
     not (ROOT / ".git").exists(),
     reason="source transfer dry-run requires Git worktree metadata",
 )
-def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -> None:
+def test_m4_source_transfer_defaults_to_direct_and_relay_is_explicit() -> None:
     candidate_env = {
         **os.environ,
         "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "1",
         "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "1",
     }
-    relayed = subprocess.run(
+    direct = subprocess.run(
         ["bash", str(SCRIPT), "sync", "--dry-run"],
         cwd=ROOT,
         env=candidate_env,
@@ -1480,24 +1484,25 @@ def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -
         capture_output=True,
         check=True,
     )
-    assert "source transfer mode: relay" in relayed.stdout
-    assert "root@100.90.87.36" in relayed.stdout
-    assert "100.90.87.36:18080" in relayed.stdout
+    assert "source transfer mode: direct" in direct.stdout
+    assert "would upload source directly to M4" in direct.stdout
+    assert "172.16.3.35" in direct.stdout
 
-    direct_env = {
+    relay_env = {
         **candidate_env,
-        "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "direct",
+        "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "relay",
     }
-    direct = subprocess.run(
+    relayed = subprocess.run(
         ["bash", str(SCRIPT), "sync", "--dry-run"],
         cwd=ROOT,
-        env=direct_env,
+        env=relay_env,
         text=True,
         capture_output=True,
         check=True,
     )
-    assert "source transfer mode: direct" in direct.stdout
-    assert "would upload source directly to M4" in direct.stdout
+    assert "source transfer mode: relay" in relayed.stdout
+    assert "root@100.90.87.36" in relayed.stdout
+    assert "100.90.87.36:18080" in relayed.stdout
 
 
 def test_m4_source_transfer_validation_fails_closed_without_git_metadata() -> None:
@@ -1595,7 +1600,7 @@ def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
     assert "rsync" not in completed.stdout
 
 
-def test_m4_auto_tunnel_prefers_lan_and_falls_back_to_tailscale(
+def test_m4_auto_tunnel_prefers_lan_then_pgy_then_tailscale(
     tmp_path: Path,
 ) -> None:
     fake_bin = tmp_path / "bin"
@@ -1607,6 +1612,7 @@ def test_m4_auto_tunnel_prefers_lan_and_falls_back_to_tailscale(
 printf '%s\n' "$*" >> "${FAKE_SSH_LOG}"
 case "$*" in
   *192.168.10.200*health/live*) exit "${FAKE_LAN_STATUS:-0}" ;;
+  *172.16.3.35*health/live*) exit "${FAKE_PGY_STATUS:-0}" ;;
   *100.102.170.79*health/live*) exit "${FAKE_TAILSCALE_STATUS:-0}" ;;
 esac
 sleep 1
@@ -1618,9 +1624,10 @@ sleep 1
     fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_curl.chmod(0o755)
 
-    for lan_status, expected_route, expected_host in (
-        ("0", "lan", "muze@192.168.10.200"),
-        ("1", "tailscale", "muze@100.102.170.79"),
+    for lan_status, pgy_status, expected_route, expected_host in (
+        ("0", "0", "lan", "muze@192.168.10.200"),
+        ("1", "0", "pgy", "muze@172.16.3.35"),
+        ("1", "1", "tailscale", "muze@100.102.170.79"),
     ):
         ssh_log = tmp_path / f"{expected_route}.log"
         runtime_env = {
@@ -1628,6 +1635,7 @@ sleep 1
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "FAKE_SSH_LOG": str(ssh_log),
             "FAKE_LAN_STATUS": lan_status,
+            "FAKE_PGY_STATUS": pgy_status,
         }
         completed = subprocess.run(
             ["bash", str(SCRIPT), "tunnel", "--auto"],
@@ -1646,7 +1654,7 @@ sleep 1
         ).splitlines()[-1]
 
 
-def test_m4_auto_tunnel_fails_when_both_routes_are_unhealthy(tmp_path: Path) -> None:
+def test_m4_auto_tunnel_fails_when_all_routes_are_unhealthy(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_ssh = fake_bin / "ssh"
@@ -1667,7 +1675,7 @@ def test_m4_auto_tunnel_fails_when_both_routes_are_unhealthy(tmp_path: Path) -> 
     )
 
     assert completed.returncode != 0
-    assert "both LAN and Tailscale" in completed.stderr
+    assert "LAN, Pgy, and Tailscale" in completed.stderr
 
 
 def test_m4_tunnel_reports_ready_only_after_local_health_is_usable(
@@ -1792,6 +1800,7 @@ def test_m4_browser_preflight_marks_peer_relay_and_low_throughput_not_counted(
         """#!/bin/sh
 case "$*" in
   *192.168.10.200*health/live*) exit 1 ;;
+  *172.16.3.35*health/live*) exit 1 ;;
   *100.102.170.79*health/live*) exit 0 ;;
 esac
 sleep 2
@@ -1899,6 +1908,7 @@ printf 'pong from preview via 100.102.170.79:41641 in 45ms\n'
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
+        "NPCINK_CLOUD_M4_SSH_HOST": "muze@100.102.170.79",
     }
 
     completed = subprocess.run(
@@ -2749,3 +2759,41 @@ def test_m4_private_source_relay_decision_and_validation_are_linked() -> None:
     assert "4,823,040" in validation
     assert "18 seconds" in validation
     assert "SHA-256" in validation
+
+
+def test_m4_pgy_primary_access_decision_is_linked_and_explicit() -> None:
+    decision = PGY_ACCESS_ADR.read_text(encoding="utf-8")
+    standard = AI_STANDARD.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "ADR-052" in standard
+    assert "ADR-052" in runbook
+    assert "ADR-052" in readme
+    assert "052-pgy-primary-m4-access.md" in docs_index
+    assert "172.16.3.35" in decision
+    assert "direct source" in decision
+    assert "LAN" in decision
+    assert "Tailscale" in decision
+    assert "do not silently" in decision
+
+
+def test_m4_remote_development_standard_is_linked_and_operational() -> None:
+    standard = REMOTE_DEV_STANDARD.read_text(encoding="utf-8")
+    ai_standard = AI_STANDARD.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "Status: active." in standard
+    assert "172.16.3.35" in standard
+    assert "LAN -> Pgy -> Tailscale" in standard
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct" in standard
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay" in standard
+    assert "phone -> Pgy or Tailscale -> SSH to M5" in standard
+    assert "silently switch" in standard
+    assert "M4 Remote Development and Overlay Network Standard" in ai_standard
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in runbook
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in readme
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in docs_index
