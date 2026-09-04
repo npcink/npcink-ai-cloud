@@ -10,6 +10,11 @@ The source-only authoring and agent checkpoint-dispatch decision is recorded in
 [ADR-025](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md).
 The private source-transfer decision is recorded in
 [ADR-026](decisions/026-private-source-relay-transfer.md).
+[ADR-052](decisions/052-pgy-primary-m4-access.md) supersedes the default M4
+access and source-transfer path while preserving the relay contract for
+explicit recovery.
+The consolidated operator guidance is in
+[M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md).
 
 ## Decision
 
@@ -25,7 +30,8 @@ keeping two Cloud stacks in parallel. The current defaults are:
 
 | Boundary | Value |
 | --- | --- |
-| SSH transport | `muze@100.102.170.79` |
+| SSH transport | `muze@172.16.3.35` (Pgy primary) |
+| Tailscale fallback | `muze@100.102.170.79` |
 | Private source relay | `root@100.90.87.36` |
 | M4 source mirror | `/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev` |
 | Compose project | `npcink-ai-cloud-m4-dev` |
@@ -41,9 +47,9 @@ Cloudflare DNS, Access, or Tunnel change. The existing tunnel continues to use
 
 ## Private Source Relay Contract
 
-Ordinary source bundles default to a transient private relay because the
-authoring Mac and M4 can each connect directly to the relay even when they
-cannot establish a direct path to each other.
+The ordinary source-transfer default is direct SSH to the Pgy M4 address.
+The transient private relay remains available for an explicit operator
+recovery when the primary direct path is unavailable or degraded.
 
 The fixed flow is:
 
@@ -69,7 +75,7 @@ flow.
 The normal environment defaults are:
 
 ```text
-NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay
+NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct
 NPCINK_CLOUD_M4_RELAY_SSH_HOST=root@100.90.87.36
 NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE=
 NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP=100.90.87.36
@@ -106,11 +112,12 @@ pass the existing size and SHA-256 checks. Relay downloads have a bounded
 15-minute budget and resume partial transfers so the accepted Peer Relay route
 can tolerate lower throughput without weakening integrity validation.
 
-The script fails visibly when the relay is unavailable. For a bounded
-operator-selected recovery, use the explicit direct fallback:
+The script fails visibly when the primary Pgy path is unavailable. For a
+bounded operator-selected recovery, use the explicit Tailscale relay mode:
 
 ```bash
-NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct pnpm run m4:preview:sync
+NPCINK_CLOUD_M4_SSH_HOST=muze@100.102.170.79 \
+NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay pnpm run m4:preview:sync
 ```
 
 Do not turn that override into a silent fallback. A degraded endpoint-to-
@@ -176,8 +183,8 @@ volume deletion, or deletion by a partial name. Other M4 Docker workloads are
 outside this workflow.
 
 All published ports bind to `127.0.0.1`. They are intentionally unreachable
-through the M4 LAN or Tailscale address. For the single operator's browser and
-WordPress-to-Cloud integration, use the automatic SSH tunnel:
+through the M4 LAN, Pgy, or Tailscale address. For the single operator's
+browser and WordPress-to-Cloud integration, use the automatic SSH tunnel:
 
 ```bash
 pnpm run m4:preview:auto
@@ -186,10 +193,12 @@ open http://127.0.0.1:18010
 
 The automatic command first verifies the M4 loopback health endpoint over the
 office LAN SSH target `muze@192.168.10.200`. When that path is unavailable, it
-verifies and uses the existing Tailscale target `muze@100.102.170.79`. The
-browser address remains `http://127.0.0.1:18010` in both locations. Override
-the LAN target with `NPCINK_CLOUD_M4_LAN_SSH_HOST` only when the office address
-changes; `NPCINK_CLOUD_M4_SSH_HOST` remains the Tailscale/deployment target.
+verifies the Pgy target `muze@172.16.3.35`, then the Tailscale fallback
+`muze@100.102.170.79`. The browser address remains
+`http://127.0.0.1:18010` in both locations. Override the LAN target with
+`NPCINK_CLOUD_M4_LAN_SSH_HOST`, the primary target with
+`NPCINK_CLOUD_M4_SSH_HOST`, or the fallback with
+`NPCINK_CLOUD_M4_TAILSCALE_SSH_HOST` when addresses change.
 
 The tunnel binds only the authoring Mac's `127.0.0.1:18010`, stays in the
 foreground, and closes with `Ctrl+C`. It does not update source, use the source
@@ -227,7 +236,7 @@ evidence; do not silently treat either as an automatic substitute. A
 attempt real browser assertions.
 
 The implementation reasoning, rejected alternatives, timeout correction,
-measured LAN/Tailscale evidence, and troubleshooting lessons are recorded in
+measured LAN/Pgy/Tailscale evidence, and troubleshooting lessons are recorded in
 [the 2026-07-25 single-operator preview retrospective](m4-personal-preview-auto-route-retrospective-2026-07-25.md).
 
 `https://cloud.mqzjmax.top` remains the protected browser-preview entry. Do not
@@ -374,7 +383,7 @@ local Docker substitute.
 Run commands from the local repository worktree:
 
 ```bash
-# Open the single-operator preview; office LAN first, Tailscale fallback
+# Open the single-operator preview; office LAN, Pgy, then Tailscale fallback
 pnpm run m4:preview:auto
 
 # Offsite read-only transport classification before browser assertions
@@ -659,7 +668,7 @@ revision and full source-bundle equality.
 
 Slots 1 and 2 map M4 loopback ports `8021` and `8022` to authoring-Mac
 foreground tunnel ports `18021` and `18022`. Slot 3 maps `8023` to `18023` and
-requires `--allow-third`. No slot port is published to LAN or Tailscale.
+requires `--allow-third`. No slot port is published to LAN, Pgy, or Tailscale.
 Product mutations are blocked at the slot NGINX edge; only session login,
 verification, and logout are allowed so authenticated pages can be inspected.
 Release removes only the exact slot; an expired lease is reclaimed by the next
@@ -675,7 +684,7 @@ primary is accepted again and the owner performs an explicit slot sync.
 Ollama stays native on M4 rather than becoming another Docker service. The
 checked-in LaunchAgent runs `/usr/local/bin/ollama serve` with `RunAtLoad` and
 `KeepAlive`, and fixes `OLLAMA_HOST` to `127.0.0.1:11434`. It does not publish
-Ollama to LAN, Tailscale, Cloudflare, or a container port.
+Ollama to LAN, Pgy, Tailscale, Cloudflare, or a container port.
 
 Install the managed service once:
 
