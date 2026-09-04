@@ -226,31 +226,18 @@
   - `callback_mode`
   - `data_classification`
   - `storage_mode`
-- `callback_url` 不属于 execution contract artifact truth；它只能留在 bounded transport / callback registration seam。
+- `callback_url` 不属于 execution contract artifact truth，也不再由 public WordPress runtime 注册；既有字段只能留在内部兼容数据与 bounded delivery implementation。
 - execution contract artifact 对 customer-facing intake 只表达 `inline / whole_run_offload`；`step_offload` 只能留在本地/internal seam，不得重新长成 public artifact 语义。
 - commercial policy override 继续允许收紧执行面，例如 downgrade / disable queue / disable fallback；但不得扩大合同允许范围。
 
-### 3.2D.2 Runtime Callback Registration Contract
+### 3.2D.2 WordPress Runtime Continuation Contract
 
-- public runtime terminal callback 不再把 request-level `callback_url` 当长期真源。
-- 当前固定语义是：callback endpoint 必须来自 site 预登记 metadata，Cloud callback dispatch 按注册信息做签名投递。
-- 当前 public 注册入口固定为 `POST /v1/runtime/callbacks/terminal`，使用 site HMAC、`runtime:execute` scope 与 `Idempotency-Key`；Addon 接收入口固定为 `POST /wp-json/npcink-cloud-addon/v1/runtime-callbacks/terminal`。
-- `registration_id` 是稳定的站点注册身份；`callback_id` 是按 `registration_id + run_id + event` 派生的稳定单次运行投递身份，不得跨 run 复用。
-- signed runtime callback 至少固定带：
-  - `X-Npcink-Cloud-Event`
-  - `X-Npcink-Run-Id`
-  - `X-Npcink-Trace-Id`
-  - `X-Npcink-Site-Id`
-  - `X-Npcink-Key-Id`
-  - `X-Npcink-Timestamp`
-  - `X-Npcink-Callback-Id`
-  - `X-Npcink-Signature`
-  - `traceparent`
-- canonical pull truth 继续固定为：
+- public WordPress runtime 不再提供 terminal callback 注册入口，也不接受 request-level `callback_url` 作为 continuation 配置。
+- WordPress continuation 统一采用 pull-based polling；canonical pull truth 固定为：
   - `GET /v1/runs/{run_id}`
   - `GET /v1/runs/{run_id}/result`
-- callback receiver 只允许唤醒既有本地 continuation Cron；不得应用 callback body 结果、推进本地游标或执行 WordPress 写入。
-- callback failure / retry / stale reclaim 仍然只属于 bounded delivery semantics，不构成第二 scheduler 或第二 run truth；Cron/polling 继续作为 callback 延迟、失败及不可达站点的兜底。
+- Addon 不再需要 WordPress terminal callback receiver 来推进 continuation；本地 Cron 只轮询上述 canonical read surface，不根据 callback body 推进游标或执行 WordPress 写入。
+- 既有 Cloud callback delivery、加密 metadata、worker 与 retry/reclaim 代码仅作为内部运行兼容基础设施保留，不构成 public registration、WordPress continuation、第二 scheduler 或第二 run truth。
 
 ### 3.2D.3 Storage Policy Contract
 

@@ -49,6 +49,7 @@ def test_removed_public_control_plane_surfaces_are_absent_from_openapi(tmp_path)
         "/internal/service/admin/wordpress-ai-routing",
         "/v1/runtime/audio-assets",
         "/v1/runtime/artifacts",
+        "/v1/runtime/callbacks",
     )
 
     for path in paths:
@@ -122,6 +123,7 @@ def test_removed_urls_return_404(tmp_path) -> None:
         == 404
     )
     assert client.post("/portal/v1/sites", json={}).status_code == 404
+    assert client.post("/v1/runtime/callbacks/terminal", json={}).status_code == 404
     for url in (
         "/portal/v1/sites/site_alpha/activate",
         "/portal/v1/sites/site_alpha/deactivate",
