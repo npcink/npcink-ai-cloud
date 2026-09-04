@@ -92,6 +92,7 @@ deleting the old decision history.
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
 - [Pgy Primary M4 Access](decisions/052-pgy-primary-m4-access.md) — accepted default-path decision for Pgy SSH/direct transfer with LAN and Tailscale fallback
+- [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery
 - [Managed Source Relay Closeout and Development Retrospective — 2026-09-04](history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md) — dated evidence for PRs `#891` and `#892`, relay failure diagnosis, bounded retry corrections, M4 promotion, and reusable development lessons; not current runtime or release authority
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
 - [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action

@@ -22,6 +22,9 @@ OVERLAY = ROOT / "docker-compose.m4-preview.yml"
 PREVIEW_PROXY = ROOT / "deploy" / "nginx.m4-preview.conf"
 SOURCE_RELAY_NGINX = ROOT / "deploy" / "m4-source-relay-nginx.conf"
 RUNBOOK = ROOT / "docs" / "m4-preview-development-v1.md"
+REMOTE_DEV_STANDARD = (
+    ROOT / "docs" / "m4-remote-development-and-overlay-network-standard-v1.md"
+)
 AI_STANDARD = ROOT / "docs" / "m4-preview-ai-development-standard-v1.md"
 VALIDATION_ADR = (
     ROOT / "docs" / "decisions" / "024-risk-tiered-development-validation-authority.md"
@@ -2774,3 +2777,23 @@ def test_m4_pgy_primary_access_decision_is_linked_and_explicit() -> None:
     assert "LAN" in decision
     assert "Tailscale" in decision
     assert "do not silently" in decision
+
+
+def test_m4_remote_development_standard_is_linked_and_operational() -> None:
+    standard = REMOTE_DEV_STANDARD.read_text(encoding="utf-8")
+    ai_standard = AI_STANDARD.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "Status: active." in standard
+    assert "172.16.3.35" in standard
+    assert "LAN -> Pgy -> Tailscale" in standard
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct" in standard
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay" in standard
+    assert "phone -> Pgy or Tailscale -> SSH to M5" in standard
+    assert "silently switch" in standard
+    assert "M4 Remote Development and Overlay Network Standard" in ai_standard
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in runbook
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in readme
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in docs_index

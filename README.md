@@ -227,6 +227,7 @@ Key M4 decisions and measurements remain directly discoverable:
 - [ADR-027 package proxy cache](docs/decisions/027-m4-package-proxy-streaming-cache.md)
 - [ADR-051 managed private source relay](docs/decisions/051-managed-private-source-relay-service.md)
 - [ADR-052 Pgy primary M4 access](docs/decisions/052-pgy-primary-m4-access.md)
+- [M4 remote development and overlay network standard](docs/m4-remote-development-and-overlay-network-standard-v1.md)
 - [Managed source relay closeout and retrospective](docs/history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md)
 - [Package proxy validation](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 

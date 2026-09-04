@@ -13,6 +13,8 @@ The private source-transfer decision is recorded in
 [ADR-052](decisions/052-pgy-primary-m4-access.md) supersedes the default M4
 access and source-transfer path while preserving the relay contract for
 explicit recovery.
+The consolidated operator guidance is in
+[M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md).
 
 ## Decision
 

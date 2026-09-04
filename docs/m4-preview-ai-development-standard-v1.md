@@ -36,6 +36,9 @@ The documents have separate responsibilities:
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.
+- [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md)
+  consolidates the M5/M4/Ollama topology, Pgy route, mobile SSH workflow, and
+  measured network lessons.
 - This standard tells an AI agent which path to select, what evidence to
   collect, and when it may report the work complete.
 
