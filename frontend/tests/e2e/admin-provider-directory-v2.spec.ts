@@ -793,6 +793,58 @@ test('large model directories render one bounded page and reset pagination when 
   await expect(directory.locator('tbody tr').first()).toContainText(/Not enabled|未启用/i);
 });
 
+test('model reference loading continues past the API page limit', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  const referenceItems = Array.from({ length: 1001 }, (_, index) => ({
+    source_id: 'models.dev',
+    source_label: 'models.dev',
+    provider_id: 'openai',
+    provider_label: 'OpenAI',
+    model_id: `catalog-model-${String(index + 1).padStart(4, '0')}`,
+    display_name: `Catalog model ${index + 1}`,
+    family: 'catalog',
+    feature: 'text',
+    status: 'active',
+    modalities: { input: ['text'], output: ['text'] },
+    capability_flags: {},
+    context_window: 128000,
+    output_limit: 8192,
+    price: { input: 1, output: 2, unit: 'USD', billing_truth: false },
+    source_updated_at: '2026-07-12T00:00:00Z',
+    synced_at: '2026-07-12T00:00:00Z',
+    is_deprecated: false,
+    override_present: false,
+  }));
+  const requestedOffsets: number[] = [];
+  await page.route('**/api/admin/model-references?**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const offset = Number(requestUrl.searchParams.get('offset') || 0);
+    const limit = Number(requestUrl.searchParams.get('limit') || 500);
+    requestedOffsets.push(offset);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        items: referenceItems.slice(offset, offset + limit),
+        total: referenceItems.length,
+        source_summary: [],
+      })),
+    });
+  });
+
+  await page.goto('/admin/ai-resources?focus=model_ready');
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toHaveCount(25);
+  await expect.poll(() => requestedOffsets).toEqual([0, 500, 1000]);
+
+  await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-1001');
+  await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toHaveCount(1);
+  await expect(dialog.locator('[data-ui="model-visibility-directory"] tbody tr')).toContainText('catalog-model-1001');
+});
+
 test('save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
