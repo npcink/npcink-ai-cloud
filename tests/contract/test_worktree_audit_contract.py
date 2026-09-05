@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "audit_worktrees.py"
 
@@ -141,6 +143,10 @@ def test_select_pull_request_prefers_open_over_merged() -> None:
     assert selected["number"] == 11
 
 
+@pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="worktree audit integration requires repository Git metadata",
+)
 def test_audit_accepts_pnpm_separator() -> None:
     completed = subprocess.run(
         [sys.executable, str(SCRIPT), "--", "--format", "json"],
