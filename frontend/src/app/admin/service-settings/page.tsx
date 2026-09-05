@@ -445,15 +445,14 @@ export default function AdminServiceSettingsPage() {
 
   const savedPortalPublicBaseUrl = portalPublicForm.public_base_url.trim();
   const effectivePortalPublicBaseUrl = savedPortalPublicBaseUrl || browserPublicBaseUrl;
-  const portalPublicAutosavePending = !savedPortalPublicBaseUrl && Boolean(browserPublicBaseUrl);
 
   const defaultAlipayNotifyUrl = useMemo(() => {
-    return buildAlipayNotifyUrl(effectivePortalPublicBaseUrl);
-  }, [effectivePortalPublicBaseUrl]);
+    return buildAlipayNotifyUrl(savedPortalPublicBaseUrl);
+  }, [savedPortalPublicBaseUrl]);
 
   const defaultAlipayReturnUrl = useMemo(() => {
-    return buildAlipayReturnUrl(effectivePortalPublicBaseUrl);
-  }, [effectivePortalPublicBaseUrl]);
+    return buildAlipayReturnUrl(savedPortalPublicBaseUrl);
+  }, [savedPortalPublicBaseUrl]);
 
   const resolvedAlipayNotifyUrl = alipayForm.notify_url || defaultAlipayNotifyUrl;
   const resolvedAlipayReturnUrl = alipayForm.return_url || defaultAlipayReturnUrl;
@@ -708,12 +707,12 @@ export default function AdminServiceSettingsPage() {
       setError(activeValidationIssues[0]);
       return;
     }
-    const alipayPublicBaseUrl = savedPortalPublicBaseUrl || browserPublicBaseUrl;
+    const alipayPublicBaseUrl = savedPortalPublicBaseUrl;
     const nextAlipayNotifyUrl = alipayForm.notify_url || buildAlipayNotifyUrl(alipayPublicBaseUrl);
     const nextAlipayReturnUrl = alipayForm.return_url || buildAlipayReturnUrl(alipayPublicBaseUrl);
-    if (alipayForm.enabled && (!nextAlipayNotifyUrl || !nextAlipayReturnUrl)) {
+    if (alipayForm.enabled && !savedPortalPublicBaseUrl) {
       setNotice('');
-      setError(t('admin.service_settings.alipay_requires_public_url', {}, '支付宝回调地址需要先确定公开访问域名。请先保存门户基础地址，系统会自动生成 notify_url 和 return_url。'));
+      setError(t('admin.service_settings.alipay_requires_saved_public_url', {}, '请先显式保存门户公网基础地址，再启用支付宝支付。系统不会使用当前浏览器地址作为支付回调地址。'));
       return;
     }
     const payload: Record<string, unknown> = {
@@ -733,23 +732,8 @@ export default function AdminServiceSettingsPage() {
     setNotice('');
     const fallbackMessage = t('admin.service_settings.save_failed', {}, '保存服务配置失败。');
     try {
-      if (alipayForm.enabled && !savedPortalPublicBaseUrl && browserPublicBaseUrl) {
-        await writeJson(
-          '/api/admin/service-settings/portal-public',
-          'PATCH',
-          {
-            ...portalPublicForm,
-            enabled: true,
-            public_base_url: browserPublicBaseUrl,
-          }
-        );
-      }
       await writeJson('/api/admin/service-settings/alipay-payment', 'PATCH', payload);
-      setNotice(
-        !savedPortalPublicBaseUrl && browserPublicBaseUrl
-          ? t('admin.service_settings.alipay_saved_with_public_url', { baseUrl: browserPublicBaseUrl }, '已先保存门户基础地址 {{baseUrl}}，并保存支付宝支付配置。')
-          : t('admin.service_settings.alipay_saved', {}, '支付宝支付配置已保存。')
-      );
+      setNotice(t('admin.service_settings.alipay_saved', {}, '支付宝支付配置已保存。'));
       await loadSettings();
     } catch (saveError) {
       setError(serviceSettingsRequestErrorMessage(saveError, fallbackMessage, t));
@@ -833,7 +817,7 @@ export default function AdminServiceSettingsPage() {
       }
     }
     if (activeTab === 'payment' && alipayForm.enabled) {
-      if (!effectivePortalPublicBaseUrl) {
+      if (!savedPortalPublicBaseUrl) {
         issues.push(t('admin.service_settings.validation_payment_public_url', {}, 'Save a public URL before enabling Alipay.'));
       }
       if (!alipayForm.app_id.trim()) {
@@ -2054,7 +2038,7 @@ export default function AdminServiceSettingsPage() {
                       {t('admin.service_settings.alipay_callback_urls_title', {}, '支付宝支付回调地址')}
                     </h3>
                     <p className="font-mono text-xs text-slate-600 dark:text-slate-300">
-                      {t('admin.service_settings.alipay_callback_base_label', {}, '回调基础地址')}: {effectivePortalPublicBaseUrl || t('admin.service_settings.alipay_callback_base_missing', {}, '尚未设置')}
+                      {t('admin.service_settings.alipay_callback_base_label', {}, '回调基础地址')}: {savedPortalPublicBaseUrl || t('admin.service_settings.alipay_callback_base_missing', {}, '尚未设置')}
                     </p>
                   </div>
                   <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
@@ -2062,9 +2046,9 @@ export default function AdminServiceSettingsPage() {
                       {t('admin.service_settings.alipay_callback_console_guidance', {}, '这两个地址会随每笔网页支付请求发送给支付宝，不需要填写支付宝开放平台的“授权回调地址”。如控制台单独要求“异步通知地址”，请填左侧地址；“同步跳转地址”才填右侧地址。')}
                     </p>
                     <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      {portalPublicAutosavePending
-                        ? t('admin.service_settings.alipay_public_url_autosave_notice', { baseUrl: browserPublicBaseUrl }, '保存支付宝配置时会先保存当前访问地址 {{baseUrl}}，再自动生成 notify_url 和 return_url。')
-                        : t('admin.service_settings.alipay_callback_base_ready', {}, 'notify_url 和 return_url 会从这个地址自动生成。')}
+                      {savedPortalPublicBaseUrl
+                        ? t('admin.service_settings.alipay_callback_base_ready', {}, 'notify_url 和 return_url 会从已保存的公网基础地址自动生成。')
+                        : t('admin.service_settings.alipay_callback_base_required', {}, '请先在“门户地址”中显式保存公网基础地址；不会使用当前浏览器地址。')}
                     </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div className={labelClassName()}>

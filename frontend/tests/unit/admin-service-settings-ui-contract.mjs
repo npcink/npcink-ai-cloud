@@ -260,20 +260,20 @@ assert.match(
 
 assert.match(
   source,
-  /const effectivePortalPublicBaseUrl = savedPortalPublicBaseUrl \|\| browserPublicBaseUrl;[\s\S]*const portalPublicAutosavePending = !savedPortalPublicBaseUrl && Boolean\(browserPublicBaseUrl\);/,
-  'Alipay callback URLs must fall back to the current admin origin when no portal base URL has been saved yet'
+  /const defaultAlipayNotifyUrl = useMemo\(\(\) => \{[\s\S]*buildAlipayNotifyUrl\(savedPortalPublicBaseUrl\)[\s\S]*const defaultAlipayReturnUrl = useMemo\(\(\) => \{[\s\S]*buildAlipayReturnUrl\(savedPortalPublicBaseUrl\)/,
+  'Alipay callback URLs must use the explicitly saved public base URL'
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /\/api\/admin\/service-settings\/portal-public[\s\S]*enabled: true,[\s\S]*public_base_url: browserPublicBaseUrl,[\s\S]*\/api\/admin\/service-settings\/alipay-payment/,
-  'saving enabled Alipay settings must autosave the portal base URL before saving Alipay settings when it is missing'
+  'saving Alipay settings must not autosave the portal base URL from the current browser origin'
 );
 
 assert.match(
   source,
-  /alipay_callback_base_label[\s\S]*alipay_public_url_autosave_notice/,
-  'Alipay settings must show the callback base URL and explain autosave behavior'
+  /alipay_callback_base_label[\s\S]*alipay_callback_base_required[\s\S]*不会使用当前浏览器地址/,
+  'Alipay settings must explain that an explicitly saved public base URL is required'
 );
 
 assert.match(
