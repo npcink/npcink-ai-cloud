@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BackofficeConfigurationHeader,
@@ -1149,7 +1150,8 @@ export default function AdminSiteCompliancePage() {
                     <col className="w-[18%]" />
                     <col className="w-[20%]" />
                     <col className="w-[34%]" />
-                    <col className="w-[28%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[10%]" />
                   </colgroup>
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
                     <tr>
@@ -1157,6 +1159,7 @@ export default function AdminSiteCompliancePage() {
                       <th className="px-3 py-1.5" scope="col">{copy('状态', 'Status')}</th>
                       <th className="px-3 py-1.5" scope="col">{copy('生效 / 更新时间', 'Effective / updated')}</th>
                       <th className="px-3 py-1.5" scope="col">{copy('发布检查', 'Publish checks')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('审计', 'Audit')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -1185,10 +1188,18 @@ export default function AdminSiteCompliancePage() {
                                 : copy(`${version.validation.blockers.length} 个阻塞项`, `${version.validation.blockers.length} blockers`)}
                             </span>
                           </td>
+                          <td className="px-3 py-2 align-top">
+                            <Link
+                              className="font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
+                              href="/admin/audit?scope_kind=service_setting&scope_id=site_compliance"
+                            >
+                              {copy('查看操作者', 'View actor')}
+                            </Link>
+                          </td>
                         </tr>
                       );
                     }) : (
-                      <tr><td className="px-3 py-3 text-slate-500" colSpan={4}>{copy('尚无版本记录。', 'No versions yet.')}</td></tr>
+                      <tr><td className="px-3 py-3 text-slate-500" colSpan={5}>{copy('尚无版本记录。', 'No versions yet.')}</td></tr>
                     )}
                   </tbody>
                 </table>

@@ -181,6 +181,9 @@ test('site compliance keeps one active editor, preserves draft state, and separa
 
   await page.getByRole('button', { name: /版本记录|Version history/i }).click();
   await expect(page.locator('[data-ui="site-compliance-version-table"]')).toContainText('v1');
+  await expect(
+    page.locator('[data-ui="site-compliance-version-table"] a').first()
+  ).toHaveAttribute('href', '/admin/audit?scope_kind=service_setting&scope_id=site_compliance');
 
   await page.getByRole('button', { name: /发布检查|Publish checks/i }).click();
   await page.getByRole('button', { name: /发布到公开页面|Publish/i }).click();
