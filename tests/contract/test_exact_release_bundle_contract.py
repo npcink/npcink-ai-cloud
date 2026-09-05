@@ -24,6 +24,10 @@ pytestmark = pytest.mark.skipif(
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "verify-release-bundle-manifest.py"
 IMAGE_INPUT_HELPER = ROOT / "scripts" / "production-application-image-inputs.py"
+requires_repository_git = pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="production image-input contracts require repository Git metadata",
+)
 
 
 def load_helper_module():
@@ -800,6 +804,7 @@ def update_manifest_checksum(bundle: Path) -> None:
     checksum_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+@requires_repository_git
 def test_v2_bundle_binds_exact_production_release_plan(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -906,6 +911,7 @@ def test_v2_bundle_binds_exact_production_release_plan(
     assert "release-plan manifest hash mismatch" in rejected.stderr
 
 
+@requires_repository_git
 def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -998,6 +1004,7 @@ def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
     assert not (bundle / "scripts/__pycache__").exists()
 
 
+@requires_repository_git
 def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
