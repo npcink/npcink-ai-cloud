@@ -107,6 +107,19 @@ export async function GET() {
     backendRelease = backendDeployment.release;
     backendRevision = backendDeployment.sourceRevision;
     backendSourceDirty = backendDeployment.sourceDirty;
+    const publicChecks = await Promise.all([
+      fetch(buildBackendUrl('/open/plan-catalog'), {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(3_000),
+      }),
+      fetch(buildBackendUrl('/open/compliance'), {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(3_000),
+      }),
+    ]);
+    if (publicChecks.some((response) => !response.ok)) {
+      throw new Error('Public service dependency check failed');
+    }
     return buildHealthResponse({
       backendRelease,
       backendRevision,
