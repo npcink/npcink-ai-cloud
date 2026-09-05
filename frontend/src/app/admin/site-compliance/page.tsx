@@ -206,6 +206,7 @@ export default function AdminSiteCompliancePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
+  const [publishConfirmationOpen, setPublishConfirmationOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<ComplianceSection>('operator');
 
   const loadWorkspace = useCallback(async () => {
@@ -1123,7 +1124,7 @@ export default function AdminSiteCompliancePage() {
                   type="button"
                   className={secondaryButtonClassName}
                   disabled={dirty || Boolean(action) || !validation?.ready_to_publish}
-                  onClick={() => void publish()}
+                  onClick={() => setPublishConfirmationOpen(true)}
                 >
                   {action === 'publish' ? copy('发布中…', 'Publishing…') : copy('发布到公开页面', 'Publish')}
                 </button>
@@ -1215,6 +1216,23 @@ export default function AdminSiteCompliancePage() {
         </div>
       </div>
       </section>
+
+      <ConfirmModal
+        isOpen={publishConfirmationOpen}
+        title={copy('确认发布合规版本？', 'Publish this compliance version?')}
+        message={copy(
+          `当前公开版本 v${published?.version_number || '—'} 将替换为 v${workspace?.draft.version_number || '—'}。受影响页面：隐私政策、服务条款和帮助页。确认前不会写入。`,
+          `The current public version v${published?.version_number || '—'} will be replaced by v${workspace?.draft.version_number || '—'}. Affected pages: privacy policy, terms, and help. No write occurs until you confirm.`
+        )}
+        confirmLabel={copy('确认发布', 'Publish version')}
+        cancelLabel={copy('取消', 'Cancel')}
+        variant="danger"
+        onClose={() => setPublishConfirmationOpen(false)}
+        onConfirm={() => {
+          setPublishConfirmationOpen(false);
+          void publish();
+        }}
+      />
 
       <ConfirmModal
         isOpen={Boolean(pendingNavigationHref)}
