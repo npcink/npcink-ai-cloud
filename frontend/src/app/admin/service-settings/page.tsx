@@ -52,6 +52,13 @@ function serviceSettingsTabFromQuery(value: string | null): ServiceSettingsTab {
     ? value as ServiceSettingsTab
     : 'portal';
 }
+
+function persistServiceSettingsTab(pathname: string, nextTab: ServiceSettingsTab): void {
+  const params = new URLSearchParams(window.location.search);
+  params.set('tab', nextTab);
+  const query = params.toString();
+  window.history.replaceState(window.history.state, '', `${pathname}?${query}`);
+}
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
 type Translator = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -925,10 +932,8 @@ export default function AdminServiceSettingsPage() {
     }
     setError('');
     setActiveTab(nextTab);
-    const params = new URLSearchParams(window.location.search);
-    params.set('tab', nextTab);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [activeGroupDirty, activeTab, pathname, router]);
+    persistServiceSettingsTab(pathname, nextTab);
+  }, [activeGroupDirty, activeTab, pathname]);
 
   useEffect(() => {
     if (!activeGroupDirty) return;
@@ -2217,9 +2222,7 @@ export default function AdminServiceSettingsPage() {
           setPendingTab(null);
           if (nextTab) {
             setActiveTab(nextTab);
-            const params = new URLSearchParams(window.location.search);
-            params.set('tab', nextTab);
-            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            persistServiceSettingsTab(pathname, nextTab);
           }
         }}
       />
