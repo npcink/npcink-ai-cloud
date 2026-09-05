@@ -52,6 +52,7 @@ PII_VALUE_PATTERNS = (
 )
 OPAQUE_RUNTIME_VALUE_PATTERNS = (
     re.compile(r"^art_[0-9a-f]{32}$"),
+    re.compile(r"^run_[0-9a-f]{32}$"),
     re.compile(r"^mgs_[0-9a-f]{24}$"),
     re.compile(r"^rev_[0-9a-f]{24}$"),
     re.compile(r"^sha256:[0-9a-f]{64}$"),
