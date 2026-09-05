@@ -315,6 +315,9 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   platformTimezone = 'Asia/Shanghai';
   await page.reload();
   await page.getByRole('tab', { name: /System settings|系统设置/i }).click();
+  await expect(page).toHaveURL(/\/admin\/service-settings\?tab=system$/);
+  await page.reload();
+  await expect(page.getByRole('tab', { name: /System settings|系统设置/i })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('[data-configuration-row="platform-timezone"]')).toContainText(/UTC/i);
   await expect(page.locator('[data-configuration-row="platform-timezone"] select')).toHaveValue('Asia/Shanghai');
   const systemSettingsScreenshotPath = testInfo.outputPath('admin-system-settings-pc.png');
@@ -450,6 +453,7 @@ test('payment configuration stays disabled until the operator saves a public bas
 
   await page.goto('/admin/service-settings');
   await page.getByRole('tab', { name: /Payment settings|支付配置/i }).click();
+  await expect(page).toHaveURL(/\/admin\/service-settings\?tab=payment$/);
   await expect(page.locator('#service-settings-payment')).toContainText(
     /will not use the current browser address|不会使用当前浏览器地址/i
   );

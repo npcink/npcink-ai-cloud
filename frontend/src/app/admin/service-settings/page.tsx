@@ -1,7 +1,7 @@
 'use client';
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
@@ -37,6 +37,21 @@ import {
 } from '@/features/admin/service-settings/service-settings-model';
 
 type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'site-relink' | 'system';
+const SERVICE_SETTINGS_TAB_IDS: readonly ServiceSettingsTab[] = [
+  'portal',
+  'qq',
+  'email',
+  'payment',
+  'accounting',
+  'site-relink',
+  'system',
+];
+
+function serviceSettingsTabFromQuery(value: string | null): ServiceSettingsTab {
+  return value && SERVICE_SETTINGS_TAB_IDS.includes(value as ServiceSettingsTab)
+    ? value as ServiceSettingsTab
+    : 'portal';
+}
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
 type Translator = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -243,13 +258,12 @@ function settingTone(status: SettingStatus): 'ready' | 'attention' | 'neutral' |
 
 export default function AdminServiceSettingsPage() {
   const { t } = useLocale();
+  const pathname = usePathname();
   const router = useRouter();
   const { success: showSuccessToast } = useToast();
   const [activeTab, setActiveTab] = useState<ServiceSettingsTab>(() => {
     if (typeof window === 'undefined') return 'portal';
-    return new URLSearchParams(window.location.search).get('tab') === 'system'
-      ? 'system'
-      : 'portal';
+    return serviceSettingsTabFromQuery(new URLSearchParams(window.location.search).get('tab'));
   });
   const [pendingTab, setPendingTab] = useState<ServiceSettingsTab | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
@@ -911,7 +925,10 @@ export default function AdminServiceSettingsPage() {
     }
     setError('');
     setActiveTab(nextTab);
-  }, [activeGroupDirty, activeTab]);
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', nextTab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [activeGroupDirty, activeTab, pathname, router]);
 
   useEffect(() => {
     if (!activeGroupDirty) return;
@@ -2200,6 +2217,9 @@ export default function AdminServiceSettingsPage() {
           setPendingTab(null);
           if (nextTab) {
             setActiveTab(nextTab);
+            const params = new URLSearchParams(window.location.search);
+            params.set('tab', nextTab);
+            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
           }
         }}
       />
