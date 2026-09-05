@@ -168,10 +168,13 @@ function PortalSiteRecordContent() {
   }
 
   const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
+  const recovery = error ? getPortalSiteRecovery(error.code, siteId, t) : null;
 
-  if (error && !sessionSite) {
-    const recovery = getPortalSiteRecovery(error.code, siteId, t);
-
+  if (error) {
+    if (sessionSite) {
+      // Keep the owned site snapshot visible while exposing the error-specific
+      // recovery action below. The session record remains useful context.
+    } else {
     return (
       <PortalPageStack>
         <PortalErrorState
@@ -184,6 +187,7 @@ function PortalSiteRecordContent() {
         />
       </PortalPageStack>
     );
+    }
   }
 
   const site: Site = {
@@ -359,9 +363,14 @@ function PortalSiteRecordContent() {
       />
 
       {error ? (
-        <PortalSection className="py-3 md:py-3" variant="portal">
-          <p className="text-sm text-amber-800 dark:text-amber-200">{error.message}</p>
-        </PortalSection>
+        <PortalErrorState
+          title={t('common.error')}
+          description={error.message}
+          retryLabel={t('common.retry')}
+          onRetry={() => window.location.reload()}
+          recoveryLabel={recovery?.label}
+          recoveryHref={recovery?.href}
+        />
       ) : null}
 
       <PortalSiteServiceStatus

@@ -445,7 +445,11 @@ function PortalSupportContent() {
               <p className="min-h-10 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200">
                 {selectedContextSite
                   ? getPortalSiteDisplayName(selectedContextSite)
-                  : t('portal.select_site_placeholder', {}, 'Select a site')}
+                  : t(
+                    'portal.support_account_scope_label',
+                    {},
+                    'Account-level support (all sites)'
+                  )}
               </p>
             )}
           </div>
