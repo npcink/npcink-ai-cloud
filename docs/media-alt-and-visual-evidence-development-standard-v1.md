@@ -45,16 +45,20 @@ The Toolbox owns:
 - composing contextual ALT candidates;
 - rendering review controls and applying confirmed changes to native block
   attributes;
-- preserving the `image_alt_suggestions` intent for compatibility while
-  exposing the user-facing action through SEO/Discoverability.
+- the internal article-ALT flow used by the SEO/Discoverability surface;
+- the single local media-recognition continuation, including changed-file
+  confirmation, locking, retry, and recovery state.
 
 The Cloud Addon owns:
 
 - authenticated transport to Cloud;
-- current local media fingerprint calculation and source preparation;
-- reuse of matching Site Knowledge visual evidence;
-- queuing bounded recognition after a controlled media version change or a
-  scheduled scan.
+- read-only projection of verified-connection and Site Knowledge delivery
+  readiness;
+- bounded artifact and runtime transport after Toolbox has obtained explicit
+  operator consent.
+
+The Cloud Addon does not own the weekly scan, recognition continuation,
+confirmation state, locks, retry cursor, or changed-attachment list.
 
 Cloud owns:
 
@@ -130,7 +134,8 @@ Locate attachment by ID
   -> calculate current exact fingerprint
   -> query Site Knowledge evidence for ID + fingerprint
   -> reuse only an eligible matching record
-  -> otherwise recognize the current bytes
+  -> otherwise mark recognition as required
+  -> recognize the current bytes only after explicit operator consent
   -> store suggestion-only evidence with the current fingerprint
 ```
 
@@ -155,8 +160,10 @@ The required fallback is:
    recommendation, or recognition use.
 2. If it differs from the stored evidence fingerprint, mark the evidence
    stale and require a new recognition decision.
-3. Run a bounded periodic media scan to discover changes for attachments that
-   have not been used recently.
+3. Run a bounded weekly media scan across recently referenced, recently used,
+   or already evidenced attachments.
+4. Put changed attachment IDs into the existing Toolbox continuation's
+   `awaiting_confirmation` state; scanning and Hooks do not call Provider.
 
 Real-time filesystem monitoring is not required for the WordPress product
 surface. It is cross-host and operationally fragile, and it would create a
@@ -177,7 +184,7 @@ The article ALT workflow follows these rules:
 - Mark decorative images explicitly and persist that state on the image block;
   a confirmed decorative image is valid with an empty ALT.
 - Apply changes only after review and explicit user confirmation.
-- Automatically apply only to supported native `core/image` occurrences.
+- Apply only confirmed values on supported native `core/image` occurrences.
 - Show non-`core/image` occurrences as review-only unless a separate governed
   write path exists.
 - Do not include featured-image metadata or media-library global ALT in the
@@ -187,9 +194,9 @@ The article ALT workflow follows these rules:
 - Process all occurrences through pagination; a fixed page size must never
   silently discard images after the first page.
 
-The independent `image_alt_suggestions` intent remains as a compatibility
-contract. The ordinary user entry belongs under SEO/Discoverability so that
-the operator does not have to learn a separate ALT subsystem.
+Article ALT has no independent user entry. The internal flow is invoked from
+SEO/Discoverability so that the operator does not have to learn a separate ALT
+subsystem.
 
 ## 8. Complexity Boundary
 
@@ -198,7 +205,8 @@ The ALT MVP needs only these capabilities:
 1. collect current article occurrences;
 2. generate local contextual candidates;
 3. check current fingerprint and reuse matching evidence;
-4. recognize only cache misses when the fallback is permitted;
+4. mark cache misses without Provider work, then recognize at most ten current
+   misses only after explicit consent;
 5. let the user review and apply empty ALT values.
 
 The following are deliberately deferred unless measured evidence justifies
@@ -223,13 +231,13 @@ Deliver the smallest measurable loop:
   derivatives;
 - reuse only evidence whose attachment and exact fingerprint still match;
 - use a temporary, bounded recognition proxy and process cache misses in the
-  background where the owning Addon/Toolbox workflow supports it;
+  background through the Toolbox-owned continuation after confirmation;
 - measure cache hits, avoided Provider calls, stale-evidence rejections, and
   recommendation latency.
 
-Cloud owns the typed derivative facts and temporary artifacts. The Addon or
-Toolbox remains responsible for local attachment freshness checks and the
-recommendation/ALT consumer path.
+Cloud owns the typed derivative facts and temporary artifacts. Toolbox remains
+responsible for local attachment freshness checks, confirmation, and the
+recommendation/ALT consumer path; Addon remains transport/readiness only.
 
 ### Stage 2: explicit transformation lineage
 
@@ -261,25 +269,34 @@ Digital Asset Management system.
 
 ## 9. Current Implementation Status
 
-The following is confirmed by the current repositories:
+The following foundation is confirmed by the current repositories:
 
 - Cloud derivative processing emits source/output checksums and transformation
   facts.
 - Addon transport validates derivative artifact integrity.
-- Toolkit-controlled media replacement and restore emit a media-version event;
-  Addon queues durable recognition work instead of calling Cloud inline.
+- Toolkit-controlled media replacement and restore emit a media-version event.
 - Site-media recommendation code has a current-fingerprint cache-first path.
 
-The following remain implementation follow-ups and must not be described as
-already complete:
+The accepted completion contract for the corresponding Toolbox and Addon
+changes is:
 
-- article ALT's visual fallback must use the same cache-first path;
-- third-party direct file replacement needs use-before validation and a
-  periodic scan path;
-- ALT must be changed from automatic editor-state application to review-first
-  application;
-- pagination, decorative marker persistence, and the final SEO/Discoverability
-  entry consolidation need end-to-end proof.
+- article ALT uses the same current-fingerprint cache-first resolver and does
+  not call Provider for an unconfirmed miss;
+- Toolbox performs a weekly bounded fingerprint scan when Addon readiness is
+  true; `DISABLE_WP_CRON` is not treated as proof that server cron is absent;
+- scan and replacement Hooks merge IDs into one Toolbox
+  `awaiting_confirmation` continuation state;
+- ALT uses ten-occurrence pages, retains edits and decorative markers across
+  pages, and applies all reviewed empty `core/image` values only after final
+  confirmation;
+- external `core/image` occurrences may use local article context, but their
+  remote image bytes or URL are never sent for visual recognition;
+- the user-facing entry exists only in SEO/Discoverability.
+
+These bullets describe implemented behavior only after the corresponding
+Toolbox and Addon revisions have passed their repository gates and merged.
+Before that acceptance point they are requirements, not evidence about
+`master`.
 
 ## 10. Development and Verification Checklist
 
