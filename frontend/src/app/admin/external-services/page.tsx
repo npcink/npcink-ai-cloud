@@ -40,6 +40,9 @@ type ProviderConnection = {
   runtime_profile_ids: string[];
   config?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+  runtime_effective?: boolean;
+  runtime_effective_reason?: string;
+  runtime_selection_slot?: string;
 };
 
 type ServiceOption = {
@@ -332,7 +335,20 @@ export default function ExternalServicesPage() {
                               : copy('admin.external_services.credential_missing', '未配置', 'Missing')}
                         </td>
                         <td className="px-3 py-3 align-top text-slate-600 dark:text-slate-300">
-                          {enabled ? copy('common.enabled', '已启用', 'Enabled') : copy('common.disabled', '已停用', 'Disabled')}
+                          <span>{enabled ? copy('common.enabled', '已启用', 'Enabled') : copy('common.disabled', '已停用', 'Disabled')}</span>
+                          {connection?.runtime_effective ? (
+                            <span className="mt-1 block text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                              {connection.runtime_effective_reason === 'parallel'
+                                ? copy('admin.external_services.runtime_parallel', '实际运行：并行来源', 'Runtime: parallel source')
+                                : connection.runtime_effective_reason === 'enhancer'
+                                  ? copy('admin.external_services.runtime_enhancer', '实际运行：Reader 增强', 'Runtime: Reader enhancement')
+                                  : copy('admin.external_services.runtime_primary', '实际运行：当前生效', 'Runtime: effective')}
+                            </span>
+                          ) : connection?.runtime_effective_reason === 'secondary' ? (
+                            <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                              {copy('admin.external_services.runtime_secondary', '已启用：备用', 'Enabled: secondary')}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3 align-top">
                           <div className="flex justify-end gap-2">

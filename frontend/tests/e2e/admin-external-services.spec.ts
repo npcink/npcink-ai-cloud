@@ -17,6 +17,9 @@ const connections = [
     runtime_profile_ids: ['web-search.managed'],
     config: {},
     metadata: {},
+    runtime_effective: true,
+    runtime_effective_reason: 'primary',
+    runtime_selection_slot: 'web_search_primary',
   },
 ];
 
@@ -96,6 +99,7 @@ test('fixed service directory uses a table and one configuration workbench', asy
 
   await expect(page.locator('[data-ui="external-service-table"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="tavily"]')).toBeVisible();
+  await expect(page.locator('[data-external-service-id="tavily"]')).toContainText(/Runtime: effective|实际运行：当前生效/i);
   await expect(page.locator('[data-external-service-id="doubao_search"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="jina_reader"]')).toBeVisible();
   await expect(page.getByRole('button', { name: /Add|添加/i })).toHaveCount(0);
