@@ -107,6 +107,41 @@ def test_b4d_smoke_accepts_only_the_addon_projection_of_the_artifact_result() ->
     assert '@router.post("/media-derivatives")' not in routes
 
 
+def test_b4d_smoke_freezes_v3_qualified_and_skipped_decision_evidence() -> None:
+    smoke = SMOKE_PATH.read_text(encoding="utf-8")
+
+    for required in (
+        'true === ($qualified_transform_facts["qualified"] ?? null)',
+        'array("qualified") === array_values',
+        '$qualified_transform_facts["optimization_profile"]',
+        '$qualified_transform_facts["savings_basis_points"]',
+        '$qualified_transform_facts["quality_score"]',
+        '$qualified_transform_facts["quality_threshold"]',
+        '$skip_expected_fields = array("artifact", "created_at", "error", '
+        '"job_type", "optimization", "run_id", "status", "updated_at", "warnings")',
+        'array("decision_reasons", "qualified", "status", "transform_facts")',
+        '$skip_decision_reasons === array_values',
+        'in_array("minimum_savings_not_met", $skip_decision_reasons, true)',
+        '$skip_transform_facts["optimization_profile"]',
+        '$skip_transform_facts["savings_basis_points"]',
+        'array() === ($skip_projection["artifact"] ?? null)',
+        'result_json->>\'status\'=\'qualified\'',
+        'result_json->>\'status\'=\'skipped\'',
+        "json_array_elements_text",
+        "SKIPPED_RUN_ID",
+        "Refusing Cloud SQL with invalid skipped run id",
+        "$created_attachment_ids",
+        "$attachment_id_to_delete",
+    ):
+        assert required in smoke
+
+    run_id_guard = smoke.index("invalid run id")
+    skipped_run_id_guard = smoke.index("invalid skipped run id")
+    first_sql = smoke.index('psql -U "${POSTGRES_USER}"')
+    assert run_id_guard < first_sql
+    assert skipped_run_id_guard < first_sql
+
+
 def test_b4d_smoke_uses_a_real_admin_and_the_exact_local_artifact_seam() -> None:
     smoke = SMOKE_PATH.read_text(encoding="utf-8")
 

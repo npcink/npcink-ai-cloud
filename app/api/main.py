@@ -11,6 +11,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Receive, Scope, Send
 
+from app import __version__
 from app.api.envelope import build_envelope
 from app.api.portal_idempotency_middleware import PortalIdempotencyMiddleware
 from app.api.routes.agent_feedback import router as agent_feedback_router
@@ -26,7 +27,6 @@ from app.api.routes.open import router as open_router
 from app.api.routes.portal import router as portal_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.runtime import router as runtime_router
-from app.api.routes.runtime_callbacks import router as runtime_callbacks_router
 from app.api.routes.service import router as service_router
 from app.api.routes.setup import router as setup_router
 from app.api.routes.stats import router as stats_router
@@ -59,7 +59,7 @@ def create_app(
 
     app = FastAPI(
         title=settings.project_name,
-        version="0.1.0",
+        version=__version__,
         docs_url="/docs" if settings.environment != "production" else None,
         redoc_url="/redoc" if settings.environment != "production" else None,
     )
@@ -186,7 +186,6 @@ def create_app(
     app.include_router(observability_router)
     app.include_router(customer_journey_router)
     app.include_router(runtime_router)
-    app.include_router(runtime_callbacks_router)
     app.include_router(agent_feedback_router)
     app.include_router(media_derivatives_router)
     app.include_router(runs_router)
@@ -199,7 +198,7 @@ def create_app(
 def _create_setup_app(setup_service: SetupService) -> FastAPI:
     setup_app = FastAPI(
         title="Npcink AI Cloud Setup",
-        version="0.1.0",
+        version=__version__,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

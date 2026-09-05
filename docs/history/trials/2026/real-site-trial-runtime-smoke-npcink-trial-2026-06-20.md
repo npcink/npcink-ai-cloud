@@ -47,9 +47,12 @@ was empty:
 
 ## Runtime Request
 
-The request was sent through the verified addon PHP runtime client:
+At the time of this historical trial, the request was sent through the
+addon's verified PHP runtime client, which was retired as a public integration
+surface in 0.2.0. Current WordPress consumers use the addon's bounded,
+operation-specific facades instead:
 
-- helper: `npcink_cloud_addon_verified_runtime_client()`
+- historical helper: verified runtime client facade (retired in 0.2.0)
 - method: `execute_runtime(...)`
 - ability: `npcink.runtime_smoke`
 - ability family: `text`

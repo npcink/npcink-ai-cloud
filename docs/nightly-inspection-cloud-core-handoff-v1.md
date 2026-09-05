@@ -16,8 +16,8 @@ The intended chain is:
    Pro runtime request to Cloud.
 2. Cloud executes `npcink-toolbox/analyze-nightly-content-batch` through the
    existing hosted runtime queue and worker.
-3. Cloud stores canonical run state in `run_records` and returns polling or
-   callback-compatible results.
+3. Cloud stores canonical run state in `run_records`; WordPress polls
+   `GET /v1/runs/{run_id}` and `GET /v1/runs/{run_id}/result` for continuation.
 4. Cloud includes `nightly_site_inspection_result.v1` and, when reviewable
    issues exist, a `nightly_site_inspection_core_review_plan.v1` candidate.
 5. Toolbox submits that plan to Core's existing `/proposals/from-plan` route

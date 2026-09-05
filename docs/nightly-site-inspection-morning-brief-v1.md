@@ -164,7 +164,8 @@ Pro keeps local schedule truth but offloads expensive analysis:
 - WordPress chooses the nightly run and batches;
 - local jobs submit approved runtime requests to Cloud;
 - Cloud executes `whole_run_offload` or bounded `inline` analysis;
-- results return by polling or registered terminal callback;
+- WordPress continues by polling `GET /v1/runs/{run_id}` and
+  `GET /v1/runs/{run_id}/result`;
 - local stores the Morning Brief and review queue;
 - local Core/Abilities handle any later apply action.
 
@@ -214,8 +215,8 @@ Runtime requests should use:
   larger hosted jobs;
 - `storage_mode`: default `result_only`;
 - `data_classification`: at least `internal`;
-- `task_backend.callback_mode`: `polling_preferred` or
-  `terminal_callback_required` only when the site has a registered callback.
+- `task_backend.callback_mode`: `polling_preferred`; WordPress continuation
+  reads status and result from the canonical polling endpoints.
 
 Public runtime `policy` must remain limited to runtime-plane allowlisted fields.
 Do not pass approval policy, write policy, final write target, or WordPress

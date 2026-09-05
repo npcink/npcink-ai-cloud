@@ -36,7 +36,8 @@ Npcink AI Cloud owns:
 - queue-backed execution through the existing hosted runtime worker;
 - PostgreSQL run evidence through existing `run_records`;
 - provider-call/usage evidence for the runtime action;
-- polling or callback-compatible terminal result delivery;
+- polling through `GET /v1/runs/{run_id}` and
+  `GET /v1/runs/{run_id}/result` for WordPress continuation;
 - read-only diagnostics.
 
 Cloud must not own:

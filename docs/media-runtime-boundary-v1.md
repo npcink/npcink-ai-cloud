@@ -279,7 +279,7 @@ suggestion-only visual evidence and never stores the transient data URL.
 
 Historical run-result metadata remains a creation-time snapshot. P3-B4A now
 projects current `expired`/`purged` state across run-result reads, execution
-responses, idempotent replay, and delayed callbacks without rewriting that
+responses, and idempotent replay without rewriting that
 snapshot. P3-B4B1 adds nonce-protected same-site HMAC pull, dedicated
 `public_pull_*` replay/rate/rejection scopes, exact metadata preflight,
 non-buffered verified streaming, independent `MediaArtifactDelivery` evidence,
@@ -292,9 +292,10 @@ purge and delivery coordination. P3-B4C2a adds the independent read-only
 inventory scanner and aggregate cadence evidence. Persistent orphan deletion
 and broader media kinds remain later work.
 
-The three B4A public projection outlets are run-result reads; initial,
-transient, and idempotent execution responses; and delayed terminal callback
-payloads. The durable creation-time snapshot is never rewritten by projection.
+The B4A public projection outlets are run-result reads and initial, transient,
+and idempotent execution responses. The durable creation-time snapshot is never
+rewritten by projection. WordPress continuation polls `GET /v1/runs/{run_id}`
+and `GET /v1/runs/{run_id}/result`.
 Projection recognizes only four exact type/version marker pairs:
 `media_upload_artifact` / `media_upload_result.v1`,
 `media_derivative_artifact` / `media_derivative_result.v3`,

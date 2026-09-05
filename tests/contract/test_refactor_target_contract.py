@@ -333,7 +333,8 @@ def test_media_contract_tracks_p3_b4d_real_completion_and_remaining_b5_work() ->
     for required in (
         "run-result reads",
         "initial, transient, and idempotent execution responses",
-        "delayed terminal callback payloads",
+        "WordPress continuation polls `GET /v1/runs/{run_id}`",
+        "`GET /v1/runs/{run_id}/result`",
         "The durable creation-time snapshot is never rewritten by projection.",
         "`media_upload_artifact` / `media_upload_result.v1`",
         "`media_derivative_artifact` / `media_derivative_result.v3`",
