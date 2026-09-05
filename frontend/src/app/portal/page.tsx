@@ -225,10 +225,18 @@ export default function PortalPage() {
     {
       key: 'site',
       done: isSelectedSiteConnected,
-      title: !selectedSite && hasVisibleSites
+      title: !hasVisibleSites
+        ? t('portal.home.onboarding_first_site_title', {}, 'Connect your first WordPress site')
+        : !selectedSite && hasVisibleSites
         ? t('portal.home.choose_site_record_title', {}, 'Choose a site record')
         : t('portal.home.onboarding_site_title', {}, 'Confirm site connection'),
-      detail: !selectedSite && hasVisibleSites
+      detail: !hasVisibleSites
+        ? t(
+            'portal.home.onboarding_first_site_desc',
+            {},
+            '1. Open npcink-cloud-addon in WordPress. 2. Start the connection from the addon. 3. Return here to confirm the connected site and activate Free service.'
+          )
+        : !selectedSite && hasVisibleSites
         ? t(
             'portal.home.choose_site_record_desc',
             {},
@@ -237,8 +245,10 @@ export default function PortalPage() {
         : isSelectedSiteConnected
         ? t('portal.home.onboarding_site_ready', {}, 'The WordPress site is connected and can use the service.')
         : t('portal.home.onboarding_site_needed', {}, 'Open the WordPress plugin to reconnect the site if the address or service connection is not ready.'),
-      href: selectedSiteRecordHref,
-      action: t('portal.home.onboarding_site_action', {}, 'View site'),
+      href: !hasVisibleSites ? '#sites' : selectedSiteRecordHref,
+      action: !hasVisibleSites
+        ? t('portal.home.onboarding_first_site_action', {}, 'Open connection guide')
+        : t('portal.home.onboarding_site_action', {}, 'View site'),
     },
     ...(isSelectedSiteConnected
       ? [{

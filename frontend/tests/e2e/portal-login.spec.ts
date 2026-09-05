@@ -378,12 +378,12 @@ test('an authenticated user is redirected from the login page to the Portal defa
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
 });
 
-test('an authenticated user is redirected from registration to the Portal default', async ({ page }) => {
+test('an authenticated user is redirected from registration to the Portal connection guide', async ({ page }) => {
   await installLoginFlowMocks(page, { initiallyLoggedIn: true });
 
   await page.goto('/portal/register');
 
-  await expect(page).toHaveURL(`${BASE_URL}/portal`);
+  await expect(page).toHaveURL(`${BASE_URL}/portal#sites`);
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
 });
 
@@ -397,8 +397,12 @@ test('a new account offers site connection before package review', async ({ page
   await expect(setupChecklist.getByRole('link')).toHaveCount(1);
   await expect(setupChecklist.locator('a[href="/portal/billing"]')).toHaveCount(0);
   await expect(setupChecklist).toContainText(
-    /Confirm site connection|确认站点连接|Site setup still needs attention|站点设置仍需处理/i
+    /Connect your first WordPress site|连接第一个 WordPress 站点|Site setup still needs attention|站点设置仍需处理/i
   );
+  await expect(setupChecklist).toContainText(
+    /Open npcink-cloud-addon|在 WordPress 中打开 npcink-cloud-addon/i
+  );
+  await expect(setupChecklist.locator('a[href="#sites"]')).toHaveCount(1);
 });
 
 test('a stale Portal cookie returns to login without exposing protected navigation', async ({ page }) => {
