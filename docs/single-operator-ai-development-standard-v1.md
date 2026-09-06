@@ -144,6 +144,32 @@ Cloud 仍是 hosted runtime enhancement layer，不得变成第二套 WordPress 
 
 ## 5. 证据与复盘
 
+### 5.1 四类历史审查的统一入口
+
+单人 AI 开发中，用户体验、平台管理、正式发布和仓库治理问题经常在
+同一会话中同时出现。不要把它们合并成一个“大修复”或用一个绿色检查
+代替所有结论。先分别回答：
+
+1. 用户在异常状态下是否知道下一步；
+2. 操作者是否能看见实际生效对象、影响范围和审计身份；
+3. 当前 revision 是否有完整、冻结、可回滚的发布证据；
+4. 当前任务是否有清晰 owner、边界、worktree 和独立审查。
+
+四类问题的历史综合、已完成项和明确延期项见
+[AI Assisted Development Four Perspective Synthesis — 2026-09-07](ai-assisted-development-four-perspective-synthesis-2026-09-07.md)。
+该文档是 dated synthesis，不替代当前代码、M4、生产和用户价值证据。
+
+统一执行顺序固定为：
+
+```text
+事实基线 -> 状态/所有权建模 -> 一个问题切片 -> 行为/消费者证据
+  -> 独立复审 -> PR/运行时验收 -> 精确收尾 -> 记录延期项
+```
+
+如果同一任务同时触及用户路径、Admin 状态、release 输入或结构债务，
+按最高风险重新分级并拆成独立 PR；不要因为它们来自同一历史会话就共用
+一个提交或一个验收结论。
+
 最终报告至少包含：任务 worktree、分支、HEAD、锁状态、clean 状态、changed files、风险层级、精确 gates 及结果、省略 gates 及原因、最高证据状态、M4/生产/Provider 是否涉及、rollback，以及未收尾时的缺失证据、owner 和释放条件。
 
 复盘回答三件事：哪个事实与初始假设不同？哪个门禁捕获或未捕获差异？下一次只改变哪个最小环节？
