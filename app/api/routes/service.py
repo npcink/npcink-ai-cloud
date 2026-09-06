@@ -17,6 +17,9 @@ from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
+from app.api.routes.commercial_subscriptions_admin import (
+    router as commercial_subscriptions_admin_router,
+)
 from app.api.routes.site_compliance_admin import router as site_compliance_admin_router
 from app.core.db import get_session
 from app.core.logging import get_logger
@@ -93,6 +96,7 @@ from app.workers.ops_cadence import build_cadence_summary
 
 router = APIRouter(prefix="/internal/service", tags=["service"])
 router.include_router(site_compliance_admin_router)
+router.include_router(commercial_subscriptions_admin_router)
 logger = get_logger(__name__)
 RFC3339_TIMESTAMP_PATTERN = (
     r"(?i)^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})$"
@@ -3978,139 +3982,6 @@ async def update_admin_site_relink_cooldown(
         message="site relink cooldown updated",
         data=result,
         revision="site-relink-v1",
-    )
-
-
-@router.get("/admin/subscriptions")
-async def list_admin_subscriptions(
-    request: Request,
-    status: str | None = Query(default=None),
-    account_id: str | None = Query(default=None),
-    customer: str | None = Query(default=None, max_length=191),
-    plan_id: str | None = Query(default=None),
-    expires_before: datetime | None = Query(default=None),  # noqa: B008
-    risk: Literal["all", "needs_action", "critical", "warning", "monitor", "stable"] = Query(
-        default="all"
-    ),
-    sort: Literal["priority", "expiry", "customer"] = Query(default="priority"),
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, ge=1, le=500),
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
-    if auth is not None:
-        return auth
-    try:
-        result = _get_commercial_service(request).list_admin_subscriptions(
-            status=status,
-            account_id=account_id,
-            customer_query=customer,
-            plan_id=plan_id,
-            expires_before=expires_before,
-            risk=risk,
-            sort=sort,
-            offset=offset,
-            limit=limit,
-        )
-    except CommercialServiceError as error:
-        return _service_error_response(error, request=request)
-    return build_envelope(
-        status="ok",
-        message="admin subscriptions loaded",
-        data=result,
-        revision="m6",
-    )
-
-
-@router.get("/admin/subscriptions/{subscription_id}")
-async def get_admin_subscription(
-    request: Request,
-    subscription_id: str,
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
-    if auth is not None:
-        return auth
-    try:
-        result = _get_commercial_service(request).get_admin_subscription(subscription_id)
-    except CommercialServiceError as error:
-        return _service_error_response(error, request=request)
-    site_id = str(_dict_value(result.get("site")).get("site_id") or "")
-    account_id = str(_dict_value(result.get("account")).get("account_id") or "")
-    result["related_surfaces"] = {
-        "site_href": f"/admin/sites/{site_id}" if site_id else "",
-        "account_href": f"/admin/accounts/{account_id}" if account_id else "",
-        "audit_href": (
-            f"/api/admin/audit-events?site_id={site_id}&account_id={account_id}&limit=20"
-            if site_id or account_id
-            else ""
-        ),
-    }
-    result["commercial_follow_up"] = {
-        "lifecycle_posture": (
-            "Read current status and grace posture first; commercial follow-up "
-            "should lead before runtime debugging when the subscription is degraded."
-        ),
-        "snapshot_reconciliation_summary": (
-            "Use site detail and filtered audit evidence to confirm whether "
-            "snapshot posture and current operational impact are still aligned."
-        ),
-        "next_operator_follow_up": (
-            "Open site detail for runtime and entitlement impact, or customer "
-            "detail for support scope."
-        ),
-    }
-    return build_envelope(
-        status="ok",
-        message="admin subscription loaded",
-        data=result,
-        revision="m6",
-    )
-
-
-@router.post("/admin/subscriptions/{subscription_id}/billing-snapshots/rebuild")
-async def rebuild_admin_subscription_billing_snapshots(
-    request: Request,
-    subscription_id: str,
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=True)
-    if auth is not None:
-        return auth
-    service = _get_commercial_service(request)
-    audit_context = _build_audit_context(request)
-    try:
-        result = service.rebuild_subscription_billing_snapshots(
-            subscription_id,
-            audit_context=audit_context,
-        )
-    except CommercialServiceError as error:
-        _record_service_failure(
-            request,
-            event_kind="subscription.billing_snapshot.rebuild",
-            error=error,
-            subscription_id=subscription_id,
-            scope_kind="subscription",
-            scope_id=subscription_id,
-        )
-        return _service_error_response(error, request=request)
-    return build_envelope(
-        status="ok",
-        message="subscription billing snapshots rebuilt",
-        data=_merge_receipt(
-            result,
-            _build_operator_receipt(
-                event_kind="subscription.billing_snapshot.rebuild",
-                scope_kind="subscription",
-                scope_id=subscription_id,
-                outcome="succeeded",
-                audit_state="persisted",
-                effective_summary=(
-                    f"Billing snapshots for subscription {subscription_id} were rebuilt "
-                    "from usage records."
-                ),
-                account_id=str(_dict_value(result.get("subscription")).get("account_id") or ""),
-                idempotency_key=audit_context.idempotency_key,
-            ),
-        ),
-        revision="m6",
     )
 
 
