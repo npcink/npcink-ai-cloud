@@ -133,12 +133,14 @@ test('fixed service directory uses a table and one configuration workbench', asy
   await expect(unsplashCredentialLink).toHaveAttribute('rel', 'noreferrer noopener');
   await dialog.getByLabel(/API key|API Key|Token/i).fill('test-image-key');
   await dialog.getByLabel(/Enable for runtime calls|启用于运行时调用/i).check();
-  page.once('dialog', async (browserDialog) => {
-    expect(browserDialog.type()).toBe('confirm');
-    await browserDialog.dismiss();
-  });
   await page.keyboard.press('Escape');
+  const discardDialog = page.getByRole('dialog', { name: /Discard unsaved changes|放弃未保存的修改/i });
+  await expect(discardDialog).toBeVisible();
+  await expect(discardDialog).toContainText(/will not affect the saved service settings|已保存的服务设置不会受影响/i);
+  await discardDialog.getByRole('button', { name: /Keep editing|继续编辑/i }).click();
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel(/API key|API Key|Token/i)).toHaveValue('test-image-key');
+  await expect(dialog.getByLabel(/Enable for runtime calls|启用于运行时调用/i)).toBeChecked();
   await expect(dialog.locator('[data-width="compact"]')).toHaveScreenshot('admin-external-services-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
