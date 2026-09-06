@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import select
 
 from app.api.routes import service as service_routes
+from app.api.routes import site_compliance_admin as site_compliance_admin_routes
 from app.core.db import dispose_engine, get_session
 from app.core.models import (
     CatalogCapabilityEvidence,
@@ -699,6 +700,85 @@ def test_admin_site_compliance_publish_is_blocked_until_required_fields_are_conf
     assert published.status_code == 409
     assert published.json()["error_code"] == "site_compliance.publish_blocked"
 
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_failed_publish_records_authenticated_actor_without_content(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "admin_key_sha256": sha256_text(TEST_ADMIN_KEY),
+            "admin_principal_id": "platform:compliance-reviewer",
+        },
+    )
+    login = client.post(
+        "/admin/auth/login",
+        json={"admin_key": TEST_ADMIN_KEY, "redirect": "/admin/site-compliance"},
+        headers={"origin": "http://testserver", "referer": "http://testserver/"},
+    )
+    assert login.status_code == 200
+
+    published = client.post(
+        "/internal/service/admin/site-compliance/publish",
+        json={},
+        headers=build_internal_headers(idempotency_key="site-compliance-publish-error"),
+    )
+    assert published.status_code == 409
+    assert published.json()["error_code"] == "site_compliance.draft_required"
+
+    with get_session(database_url) as session:
+        event = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "site_compliance.publish",
+                ServiceAuditEvent.outcome == "error",
+            )
+        )
+    assert event is not None
+    assert event.actor_ref == "platform:compliance-reviewer"
+    assert event.payload_json["error_code"] == "site_compliance.draft_required"
+    assert event.payload_json["content_exposed"] is False
+    assert "payload" not in event.payload_json
+
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_audit_failure_does_not_change_save_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    initial = client.get(
+        "/internal/service/admin/site-compliance",
+        headers=build_internal_headers(),
+    )
+    payload = initial.json()["data"]["draft"]["payload"]
+
+    original_get_cloud_services = site_compliance_admin_routes.get_cloud_services
+    call_count = 0
+
+    def fail_only_during_audit(request: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return original_get_cloud_services(request)  # type: ignore[arg-type]
+        raise RuntimeError("audit service unavailable")
+
+    monkeypatch.setattr(
+        site_compliance_admin_routes,
+        "get_cloud_services",
+        fail_only_during_audit,
+    )
+    saved = client.put(
+        "/internal/service/admin/site-compliance/draft",
+        json={"payload": payload},
+        headers=build_internal_headers(idempotency_key="site-compliance-audit-failure"),
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"] == "ok"
+    assert call_count == 2
     dispose_engine(database_url)
 
 
