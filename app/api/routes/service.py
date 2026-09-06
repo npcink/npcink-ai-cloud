@@ -3986,6 +3986,7 @@ async def list_admin_subscriptions(
     request: Request,
     status: str | None = Query(default=None),
     account_id: str | None = Query(default=None),
+    customer: str | None = Query(default=None, max_length=191),
     plan_id: str | None = Query(default=None),
     expires_before: datetime | None = Query(default=None),  # noqa: B008
     risk: Literal["all", "needs_action", "critical", "warning", "monitor", "stable"] = Query(
@@ -4002,6 +4003,7 @@ async def list_admin_subscriptions(
         result = _get_commercial_service(request).list_admin_subscriptions(
             status=status,
             account_id=account_id,
+            customer_query=customer,
             plan_id=plan_id,
             expires_before=expires_before,
             risk=risk,
