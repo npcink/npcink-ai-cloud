@@ -23,6 +23,7 @@ type AdminNavItem = {
   href: string;
   labelKey: string;
   fallback: string;
+  collapsedLabel: string;
   activePrefixes?: string[];
   secondary?: boolean;
 };
@@ -58,14 +59,6 @@ type AdminSessionData = {
 
 const ADMIN_SIDEBAR_STORAGE_KEY = 'npcink_admin_sidebar_collapsed';
 const adminLayoutSessionClient = createApiClient({ idempotencyPrefix: 'admin_layout_session' });
-
-function adminNavInitial(label: string): string {
-  const trimmed = label.trim();
-  if (!trimmed) {
-    return '·';
-  }
-  return trimmed.slice(0, 1).toUpperCase();
-}
 
 function isTypingShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -214,7 +207,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       fallback: 'Workspace',
       descFallback: 'Platform posture and next operator actions.',
       items: [
-        { href: '/admin', labelKey: 'nav.overview', fallback: 'Overview' },
+        { href: '/admin', labelKey: 'nav.overview', fallback: 'Overview', collapsedLabel: 'OV' },
       ],
     },
     {
@@ -227,35 +220,41 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/accounts',
           labelKey: 'common.accounts',
           fallback: 'Customers',
+          collapsedLabel: 'CU',
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
           href: '/admin/support-requests',
           labelKey: 'admin.nav_support_requests',
           fallback: 'Tickets',
+          collapsedLabel: 'TI',
         },
         {
           href: '/admin/coverage',
           labelKey: 'admin.nav_coverage',
           fallback: 'Service Operations',
+          collapsedLabel: 'SO',
           activePrefixes: ['/admin/coverage'],
         },
         {
           href: '/admin/subscriptions',
           labelKey: 'admin.nav_subscriptions',
           fallback: 'Subscription Operations',
+          collapsedLabel: 'SU',
           activePrefixes: ['/admin/subscriptions'],
         },
         {
           href: '/admin/plans',
           labelKey: 'admin.nav_plan_catalog',
           fallback: 'Package Catalog',
+          collapsedLabel: 'PC',
           activePrefixes: ['/admin/plans'],
         },
         {
           href: '/admin/credit-packs',
           labelKey: 'admin.nav_credit_packs',
           fallback: 'AI Credit Packs',
+          collapsedLabel: 'CP',
           activePrefixes: ['/admin/credit-packs'],
         },
       ],
@@ -270,30 +269,35 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/ai-resources',
           labelKey: 'admin.nav_ai_resources',
           fallback: 'Model Suppliers',
+          collapsedLabel: 'MS',
           activePrefixes: ['/admin/ai-resources'],
         },
         {
           href: '/admin/external-services',
           labelKey: 'admin.nav_external_services',
           fallback: 'Search & Images',
+          collapsedLabel: 'SI',
           activePrefixes: ['/admin/external-services'],
         },
         {
           href: '/admin/vector-settings',
           labelKey: 'admin.nav_vector_settings',
           fallback: 'Vector Settings',
+          collapsedLabel: 'VS',
           activePrefixes: ['/admin/vector-settings'],
         },
         {
           href: '/admin/runtime-profiles',
           labelKey: 'admin.nav_runtime_profiles',
           fallback: 'Runtime Profiles',
+          collapsedLabel: 'RP',
           activePrefixes: ['/admin/runtime-profiles'],
         },
         {
           href: '/admin/troubleshooting',
           labelKey: 'admin.nav_runtime_diagnostics',
           fallback: 'Runtime Diagnostics',
+          collapsedLabel: 'RD',
           activePrefixes: [
             '/admin/troubleshooting',
             '/admin/audit',
@@ -316,11 +320,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/service-settings',
           labelKey: 'admin.nav_service_settings',
           fallback: 'Service Settings',
+          collapsedLabel: 'SS',
         },
         {
           href: '/admin/site-compliance',
           labelKey: 'admin.nav_site_compliance',
           fallback: 'Site Compliance',
+          collapsedLabel: 'SC',
         },
       ],
     },
@@ -352,12 +358,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       });
       const diagnosticsGroupLabel = t('admin.nav_group_diagnostics', {}, 'Diagnostics');
       const contextualItems: AdminCommandItem[] = [
-        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence' },
-        { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability' },
-        { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability' },
-        { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability' },
-        { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality' },
-        { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor' },
+        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },
+        { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability', collapsedLabel: 'PO' },
+        { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability', collapsedLabel: 'MO' },
+        { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
+        { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
+        { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
       ].map((item) => ({
         ...item,
         groupLabel: diagnosticsGroupLabel,
@@ -431,8 +437,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 >
                   <span className={cn('min-w-0 truncate', collapsed && 'sr-only')}>{itemLabel}</span>
                   {collapsed ? (
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-[0.7rem] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-100" aria-hidden="true">
-                      {adminNavInitial(itemLabel)}
+                    <span
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-[0.65rem] font-bold tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      data-nav-collapsed-label={item.collapsedLabel}
+                      aria-hidden="true"
+                    >
+                      {item.collapsedLabel}
                     </span>
                   ) : null}
                   {active && !collapsed ? (
