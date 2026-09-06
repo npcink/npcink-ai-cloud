@@ -52,6 +52,13 @@ test('quick switcher discovers diagnostic child routes without expanding the sid
     'data-nav-level',
     'primary'
   );
+  await page.getByRole('button', { name: /Collapse sidebar|收起侧栏/i }).click();
+  const collapsedLabels = page.locator('[data-ui="admin-primary-nav"] [data-nav-collapsed-label]');
+  const labelValues = await collapsedLabels.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-nav-collapsed-label')));
+  expect(new Set(labelValues).size).toBe(labelValues.length);
+  await expect(page.locator('[data-nav-collapsed-label="CU"]')).toHaveCount(1);
+  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/accounts"]')).toBeVisible();
+
   const switcherButton = page.getByRole('button', { name: /Open quick switcher|打开快速跳转/i });
   await switcherButton.click();
   const dialog = page.getByRole('dialog', { name: /Quick switcher|快速跳转/i });
