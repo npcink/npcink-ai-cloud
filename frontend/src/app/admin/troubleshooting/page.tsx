@@ -578,18 +578,19 @@ export default function AdminTroubleshootingPage() {
         onRequestStateChange={setQualityRequestState}
       />
 
-      <details id="evidence-lanes" className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <summary className="cursor-pointer list-none px-3 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
+      <section id="evidence-lanes" className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <div className="px-3 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</h2>
-              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.lanes_desc', {}, 'Open the narrowest read-only detail view that matches the support question.')}</p>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.lanes_desc', {}, 'Open the narrowest read-only detail view that matches the support question.')}</p>
             </div>
-            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-              {t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, 'View all {{count}} channels')} ↓
-            </span>
+            <BackofficeStatusBadge
+              label={t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, '{{count}} channels')}
+              status="read_only"
+            />
           </div>
-        </summary>
+        </div>
         <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
           <table
             data-ui="runtime-evidence-lane-table"
@@ -600,6 +601,7 @@ export default function AdminTroubleshootingPage() {
               <tr>
                 <th className="w-[28%] px-3 py-2" scope="col">{t('admin.troubleshooting.lane_column_channel', {}, 'Channel')}</th>
                 <th className="px-3 py-2" scope="col">{t('admin.troubleshooting.lane_column_evidence', {}, 'Evidence scope')}</th>
+                <th className="w-[7rem] px-3 py-2" scope="col">{t('common.status', {}, 'Status')}</th>
                 <th className="w-[6rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_action', {}, 'Action')}</th>
               </tr>
             </thead>
@@ -608,6 +610,7 @@ export default function AdminTroubleshootingPage() {
                 <tr key={lane.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/30">
                   <th className="px-3 py-2.5 text-sm font-semibold text-slate-950 dark:text-white" scope="row">{t(lane.titleKey, {}, lane.titleFallback)}</th>
                   <td className="px-3 py-2.5 text-xs leading-5 text-slate-600 dark:text-slate-300">{t(lane.descKey, {}, lane.descFallback)}</td>
+                  <td className="px-3 py-2.5"><BackofficeStatusBadge label={t('common.read_only', {}, 'Read only')} status="read_only" /></td>
                   <td className="px-3 py-2.5 text-right">
                     <Link href={lane.href} className="text-xs font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300">
                       {t('admin.troubleshooting.inspect', {}, 'Inspect')} →
@@ -618,7 +621,7 @@ export default function AdminTroubleshootingPage() {
             </tbody>
           </table>
         </div>
-      </details>
+      </section>
 
       <details id="runtime-evidence" className="admin-compact-surface border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <summary className="cursor-pointer select-none px-3 py-3 text-sm font-semibold text-slate-900 dark:text-white">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</summary>

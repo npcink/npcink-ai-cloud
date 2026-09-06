@@ -10,6 +10,7 @@ import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
+import { ConfirmModal } from '@/components/ui/Modal';
 import {
   BackofficePageHeader,
   BackofficeDiagnosticNotice,
@@ -99,6 +100,7 @@ export default function ExternalServicesPage() {
   const [credentialRevealed, setCredentialRevealed] = useState(false);
   const [dialogError, setDialogError] = useState('');
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
 
   const loadConnections = useCallback(async () => {
     setError('');
@@ -140,20 +142,25 @@ export default function ExternalServicesPage() {
     setCredentialRevealed(false);
     setDialogError('');
     setConfirmingClear(false);
+    setDiscardConfirmationOpen(false);
   }
 
-  function closeEditor() {
-    if (busy) return;
-    if (editorDirty && !window.confirm(copy(
-      'admin.external_services.discard_confirm',
-      '当前服务有未保存的修改，确认放弃？',
-      'This service has unsaved changes. Discard them?'
-    ))) return;
+  function discardEditor() {
     setEditingId('');
     setDraftCredential('');
     setCredentialRevealed(false);
     setDialogError('');
     setConfirmingClear(false);
+    setDiscardConfirmationOpen(false);
+  }
+
+  function closeEditor() {
+    if (busy) return;
+    if (editorDirty) {
+      setDiscardConfirmationOpen(true);
+      return;
+    }
+    discardEditor();
   }
 
   async function saveOption(option: ServiceOption, enabled: boolean, clearCredential = false) {
@@ -380,7 +387,7 @@ export default function ExternalServicesPage() {
       </BackofficeSectionPanel>
 
       <AdminWorkbenchDialog
-        open={Boolean(editingOption)}
+        open={Boolean(editingOption) && !discardConfirmationOpen}
         title={editingOption ? copy('admin.external_services.edit_title', `配置 ${editingOption.label}`, `Configure ${editingOption.label}`) : ''}
         titleId="external-service-workbench-title"
         error={dialogError}
@@ -508,6 +515,29 @@ export default function ExternalServicesPage() {
           </AdminConfigurationTable>
         ) : null}
       </AdminWorkbenchDialog>
+
+      <ConfirmModal
+        isOpen={discardConfirmationOpen}
+        title={copy(
+          'admin.external_services.discard_title',
+          '放弃未保存的修改？',
+          'Discard unsaved changes?'
+        )}
+        message={copy(
+          'admin.external_services.discard_confirm',
+          '当前服务有未保存的修改。放弃后，已保存的服务设置不会受影响。',
+          'This service has unsaved changes. Discarding them will not affect the saved service settings.'
+        )}
+        confirmLabel={copy(
+          'admin.external_services.discard_action',
+          '放弃修改',
+          'Discard changes'
+        )}
+        cancelLabel={copy('admin.external_services.keep_editing', '继续编辑', 'Keep editing')}
+        variant="danger"
+        onClose={() => setDiscardConfirmationOpen(false)}
+        onConfirm={discardEditor}
+      />
     </BackofficePageStack>
   );
 }
