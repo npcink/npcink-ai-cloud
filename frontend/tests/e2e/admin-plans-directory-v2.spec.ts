@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
+import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 async function installPlanDirectoryHarness(page: Page) {
   await installAdminMocks(page);
@@ -101,4 +101,47 @@ test('package management combines readable limits, descriptions, and editing whi
   await page.getByText(/Package initialization|套餐初始化/i).click();
   await expect(page.getByRole('heading', { name: /Create package record|创建套餐记录/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Create missing packages|创建缺失套餐|补齐缺失套餐/i })).toBeVisible();
+});
+
+test('package initialization reports mixed results and retries only failed tiers', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installPlanDirectoryHarness(page);
+  const planRequests: string[] = [];
+  const versionRequests: string[] = [];
+  let failPlusVersion = true;
+  await page.route('**/api/admin/plans**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await route.fallback();
+      return;
+    }
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/admin/plans') {
+      planRequests.push(String(request.postDataJSON().plan_id));
+    } else {
+      const tierId = pathname.split('/').at(-2) || '';
+      versionRequests.push(tierId);
+      if (tierId === 'plus' && failPlusVersion) {
+        failPlusVersion = false;
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(buildAdminApiErrorEnvelope('plus version failed')) });
+        return;
+      }
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({})) });
+  });
+
+  await page.goto('/admin/plans');
+  await page.getByText(/Package initialization|套餐初始化/i).click();
+  await page.getByRole('button', { name: /Create missing packages|创建缺失套餐|补齐缺失套餐/i }).click();
+  const results = page.locator('[data-ui="package-bootstrap-results"]');
+  await expect(results).toContainText(/Plus.*failed/is);
+  await expect(results).toContainText(/Agency.*succeeded/is);
+  expect(planRequests).toEqual(['plus', 'agency']);
+  expect(versionRequests).toEqual(['plus', 'agency']);
+
+  await results.getByRole('button', { name: /Retry failed packages|重试失败套餐/i }).click();
+  await expect(results).toContainText(/Plus.*succeeded/is);
+  expect(planRequests).toEqual(['plus', 'agency', 'plus']);
+  expect(versionRequests).toEqual(['plus', 'agency', 'plus']);
 });
