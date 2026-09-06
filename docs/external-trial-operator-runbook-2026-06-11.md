@@ -1,6 +1,6 @@
 # External Trial Operator Runbook - 2026-06-11
 
-Status: active controlled-trial runbook.
+Status: active controlled-trial runbook; retained as the current bounded operator procedure.
 
 Purpose: give the platform administrator one short execution path for the first
 approved trial sites. This runbook is not a self-serve onboarding flow, payment

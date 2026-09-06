@@ -1,6 +1,6 @@
 # Provider Connection Production Runbook - 2026-06-30
 
-Status: active operator runbook.
+Status: active operator runbook; retained as the current provider-connection procedure.
 
 Purpose: configure the production supplier matrix through DB-managed provider
 connections after provider environment configuration has been retired.

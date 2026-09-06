@@ -321,3 +321,32 @@ When changing documentation structure:
 
 An unreferenced basename, old date, large file, or `retired` label is a review
 signal, not deletion authority.
+
+## Dated Active-document Review
+
+The 2026 dated-document review classifies current authority explicitly without
+moving or rewriting historical evidence.
+
+Retained active authority:
+
+- [AI Provider Env Config Retirement](ai-provider-env-config-retirement-2026-06-26.md) - retired negative guard;
+- [External Trial Operator Runbook](external-trial-operator-runbook-2026-06-11.md) - bounded operator procedure;
+- [Image Processing FC/OSS Readiness](image-processing-fc-oss-readiness-2026-07-20.md) - current deferred migration decision;
+- [Naming Residual Allowlist](naming-residual-allowlist-2026-06-24.md) - cross-repository naming guard;
+- [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md) - current provider operations procedure;
+- [Release CI Open-source Patterns](release-ci-open-source-patterns-2026-07.md) - current CI selection and evidence-reuse guidance.
+
+Historical evidence retained in place:
+
+- [Admin Account Governance Lightweight](admin-account-governance-lightweight-2026-06-12.md);
+- [Cloud Production Deployment History](cloud-production-deployment-history-2026-06-24.md);
+- [External Trial Capability Note](external-trial-capability-note-2026-06-10.md);
+- [External Trial Copy and Log](external-trial-copy-and-log-2026-06-11.md);
+- [External Trial Handoff Summary](external-trial-handoff-summary-2026-06-15.md);
+- [External Trial Readiness Checklist](external-trial-readiness-checklist-2026-06-10.md);
+- [Pre-release Legacy Debt and Development History](pre-release-legacy-debt-and-development-history-2026-07-10.md).
+
+Run `python3 scripts/report-maintainability-inventory.py` for the advisory,
+read-only large-file trend, source-text-contract, behavior-test, and document
+lifecycle inventory. Its counts are navigation signals, not quality targets or
+merge gates.

@@ -1,6 +1,7 @@
 # External Trial Handoff Summary - 2026-06-15
 
-Status: active handoff summary.
+Status: historical handoff summary. Current readiness authority is
+`docs/internal-new-user-readiness-gate-v1.md`.
 
 Purpose: summarize the recent Cloud positioning, content-risk boundary,
 external-trial preparation work, and next required action so another engineer or

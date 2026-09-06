@@ -1,0 +1,32 @@
+{
+  "revision": "maintainability-inventory.v1",
+  "baseline_revision": "7e4713cba007f7704a0ca80ff55fb8bf85b5b478",
+  "large_file_threshold": 2000,
+  "source_roots": [
+    "app",
+    "frontend/src",
+    "scripts"
+  ],
+  "watched_files": [
+    {
+      "path": "app/api/routes/service.py",
+      "responsibility": "internal service and Admin HTTP routes"
+    },
+    {
+      "path": "app/api/routes/portal.py",
+      "responsibility": "customer Portal HTTP routes"
+    },
+    {
+      "path": "app/domain/runtime/service.py",
+      "responsibility": "hosted runtime orchestration and persistence"
+    },
+    {
+      "path": "app/domain/commercial/mixins/_admin_mixin.py",
+      "responsibility": "commercial operator service behavior"
+    },
+    {
+      "path": "frontend/src/lib/i18n.ts",
+      "responsibility": "frontend localization catalog"
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 # AI Provider Env Config Retirement - 2026-06-26
 
-Status: active retired negative guard; current authority remains the runtime storage contract.
+Status: active retired negative guard; retained because it prohibits restoration of
+the removed environment-backed provider configuration path. Current positive authority
+remains the runtime storage contract.
 
 ## Status
 

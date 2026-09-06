@@ -1,6 +1,7 @@
 # Admin Account Governance Lightweight - 2026-06-12
 
-Status: active development decision.
+Status: historical decision record. Current Admin authority is
+`docs/cloud-admin-customer-operations-workspace-standard-v1.md`.
 
 Purpose: summarize the current platform-admin account management decision while
 Npcink AI Cloud is still pre-release and internally tested. The goal is to keep

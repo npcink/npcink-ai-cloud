@@ -1,6 +1,8 @@
 # External Trial Capability Note - 2026-06-10
 
-Status: active trial handoff.
+Status: historical trial handoff. Current trial authority is
+`docs/early-product-validation-and-minimal-telemetry-standard-v1.md` and
+`docs/internal-new-user-readiness-gate-v1.md`.
 
 Purpose: give future engineers and AI agents a single, repo-grounded summary of
 what Npcink AI Cloud can expose for trial use now, what must stay prohibited,
