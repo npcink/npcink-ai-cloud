@@ -1,6 +1,6 @@
 # Naming Residual Allowlist - 2026-06-24
 
-Status: active cross-repo review aid.
+Status: active cross-repo allowlist; retained as the current naming residue guard.
 
 This document defines which remaining `magick-ai` strings are allowed after the
 Npcink naming reset, and which strings should be treated as active identity

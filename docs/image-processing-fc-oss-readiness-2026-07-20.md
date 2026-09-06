@@ -1,7 +1,8 @@
 # Image Processing FC/OSS Readiness - 2026-07-20
 
 Status: active time-bounded decision record and deferred
-implementation-readiness note.
+implementation-readiness note; retained because it remains the current no-migration
+decision until its measured reconsideration thresholds are met.
 
 This note preserves the image-processing architecture, the July 2026
 host-capacity observation, the decision not to migrate production image

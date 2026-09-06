@@ -1,6 +1,8 @@
 # Pre-release Legacy Debt and Development History - 2026-07-10
 
-Status: active release-readiness handoff.
+Status: historical release-readiness and debt evidence. Current release authority is
+`docs/cloud-production-release-policy-v1.md`; current refactor authority is
+`docs/refactor-master-plan-v1.md`.
 
 ## 1. Purpose
 

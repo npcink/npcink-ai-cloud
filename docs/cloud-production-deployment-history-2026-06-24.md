@@ -1,6 +1,7 @@
 # Cloud Production Deployment History - 2026-06-24
 
-Status: active operational history.
+Status: historical deployment evidence. Current release authority is
+`docs/cloud-production-release-policy-v1.md`.
 
 Scope: summarize the first production deployment of Npcink AI Cloud at
 `https://cloud.npc.ink`, the GitHub-based release model, and the static legal
