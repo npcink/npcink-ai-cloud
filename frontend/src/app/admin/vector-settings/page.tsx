@@ -84,6 +84,14 @@ type VectorProfile = {
   };
 };
 
+type ConfigurationSaveStep = 'embedding' | 'vector_store';
+type ConfigurationStepStatus = 'pending' | 'succeeded' | 'failed' | 'not_started';
+type ConfigurationSaveReceipt = {
+  embedding: ConfigurationStepStatus;
+  vectorStore: ConfigurationStepStatus;
+  failedStep: ConfigurationSaveStep | null;
+};
+
 function formatBackend(value: string): string {
   if (value === 'zilliz_cloud') return 'Zilliz Cloud';
   if (value === 'postgres_json') return 'PostgreSQL JSON';
@@ -110,6 +118,7 @@ export default function VectorSettingsPage() {
   const [rebuilding, setRebuilding] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [configurationReceipt, setConfigurationReceipt] = useState<ConfigurationSaveReceipt | null>(null);
 
   const loadProfile = useCallback(async () => {
     setError('');
@@ -153,38 +162,44 @@ export default function VectorSettingsPage() {
     if (!credential.trim() && !profile?.provider.configured)
       throw new Error('provider credential required');
     setSaving(true);
-    const response = await vectorSettingsClient.request<VectorProfile>(
-      '/api/admin/site-knowledge-vector-profile',
-      { method: 'PUT', body: { credential: credential.trim() || null } }
-    );
-    setProfile(response.data);
-    setCredential('');
-    setProviderCredentialRevealed(false);
-    setSaving(false);
+    try {
+      const response = await vectorSettingsClient.request<VectorProfile>(
+        '/api/admin/site-knowledge-vector-profile',
+        { method: 'PUT', body: { credential: credential.trim() || null } }
+      );
+      setProfile(response.data);
+      setCredential('');
+      setProviderCredentialRevealed(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveAndVerifyVectorStore() {
     if (!zillizEndpoint.trim() || (!zillizToken.trim() && !profile?.vector_store.token_configured))
       throw new Error('vector store credentials required');
     setSavingVectorStore(true);
-    const response = await vectorSettingsClient.request<VectorProfile>(
-      '/api/admin/site-knowledge-vector-profile/vector-store',
-      {
-        method: 'PUT',
-        body: {
-          endpoint: zillizEndpoint.trim(),
-          token: zillizToken.trim() || null
+    try {
+      const response = await vectorSettingsClient.request<VectorProfile>(
+        '/api/admin/site-knowledge-vector-profile/vector-store',
+        {
+          method: 'PUT',
+          body: {
+            endpoint: zillizEndpoint.trim(),
+            token: zillizToken.trim() || null
+          }
         }
-      }
-    );
-    setProfile(response.data);
-    setZillizEndpoint(response.data.vector_store.endpoint || zillizEndpoint.trim());
-    setZillizToken('');
-    setZillizTokenRevealed(false);
-    setSavingVectorStore(false);
+      );
+      setProfile(response.data);
+      setZillizEndpoint(response.data.vector_store.endpoint || zillizEndpoint.trim());
+      setZillizToken('');
+      setZillizTokenRevealed(false);
+    } finally {
+      setSavingVectorStore(false);
+    }
   }
 
-  async function saveConfiguration() {
+  async function saveConfiguration(startAt: ConfigurationSaveStep = 'embedding') {
     if (!credential.trim() && !profile?.provider.configured) {
       setError(
         copy(
@@ -218,17 +233,34 @@ export default function VectorSettingsPage() {
     setSavingConfiguration(true);
     setError('');
     setMessage('');
+    let activeStep: ConfigurationSaveStep = startAt;
+    setConfigurationReceipt({
+      embedding: startAt === 'embedding' ? 'pending' : 'succeeded',
+      vectorStore: 'not_started',
+      failedStep: null
+    });
     try {
-      await saveAndVerify();
+      if (startAt === 'embedding') {
+        await saveAndVerify();
+        setConfigurationReceipt({
+          embedding: 'succeeded',
+          vectorStore: 'pending',
+          failedStep: null
+        });
+      }
+      activeStep = 'vector_store';
       await saveAndVerifyVectorStore();
-      setMessage(
-        copy(
-          'admin.vector_settings.configuration_saved',
-          '配置已保存，并已完成当前固定档案的连接检测。',
-          'Configuration saved and checked against the current fixed profile.'
-        )
-      );
+      setConfigurationReceipt({
+        embedding: 'succeeded',
+        vectorStore: 'succeeded',
+        failedStep: null
+      });
     } catch (saveError) {
+      setConfigurationReceipt({
+        embedding: activeStep === 'embedding' ? 'failed' : 'succeeded',
+        vectorStore: activeStep === 'vector_store' ? 'failed' : 'not_started',
+        failedStep: activeStep
+      });
       const errorCode = saveError instanceof ApiError ? saveError.errorCode : '';
       const knownMessage =
         errorCode === 'site_knowledge_vector_profile.zilliz_endpoint_invalid'
@@ -485,8 +517,14 @@ export default function VectorSettingsPage() {
       {error ? (
         <BackofficeDiagnosticNotice
           message={error}
-          retryLabel={copy('common.retry', '重试', 'Retry')}
-          onRetry={() => void loadProfile()}
+          retryLabel={configurationReceipt?.failedStep === 'embedding'
+            ? copy('admin.vector_settings.retry_embedding', '重试 Embedding 并继续', 'Retry embedding and continue')
+            : configurationReceipt?.failedStep === 'vector_store'
+              ? copy('admin.vector_settings.retry_vector_store', '仅重试 Vector store', 'Retry vector store only')
+              : copy('common.retry', '重试', 'Retry')}
+          onRetry={() => configurationReceipt?.failedStep
+            ? void saveConfiguration(configurationReceipt.failedStep)
+            : void loadProfile()}
         />
       ) : null}
       {message ? (
@@ -712,6 +750,33 @@ export default function VectorSettingsPage() {
               : copy('admin.vector_settings.save_configuration', '保存配置', 'Save configuration')}
           </button>
         </div>
+        {configurationReceipt ? (
+          <div
+            className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800"
+            data-ui="vector-configuration-save-receipt"
+            role="status"
+          >
+            {!configurationReceipt.failedStep && configurationReceipt.vectorStore === 'succeeded' ? (
+              <p className="mb-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                {copy(
+                  'admin.vector_settings.configuration_saved',
+                  '配置已保存，并已完成当前固定档案的连接检测。',
+                  'Configuration saved and checked against the current fixed profile.'
+                )}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <span>
+                {copy('admin.vector_settings.embedding_step', 'Embedding 配置', 'Embedding configuration')}: {' '}
+                <strong>{configurationReceipt.embedding}</strong>
+              </span>
+              <span>
+                {copy('admin.vector_settings.vector_store_step', 'Vector store 配置', 'Vector store configuration')}: {' '}
+                <strong>{configurationReceipt.vectorStore}</strong>
+              </span>
+            </div>
+          </div>
+        ) : null}
       </BackofficeSectionPanel>
 
       <BackofficeSectionPanel data-vector-section="validation">

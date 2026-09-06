@@ -1,6 +1,37 @@
 import { expect, test } from '@playwright/test';
 import { buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
+const baseVectorProfile = {
+  profile_id: 'site-knowledge.zh.v1',
+  model_id: 'BAAI/bge-m3',
+  dimensions: 1024,
+  metric: 'COSINE',
+  production_backend: 'zilliz_cloud',
+  local_test_backend: 'postgres_json',
+  active_backend: 'postgres_json',
+  status: 'ready',
+  editable_fields: ['credential', 'zilliz_endpoint', 'zilliz_token'],
+  reindex_policy: 'profile_change_requires_reindex',
+  provider: {
+    provider_id: 'siliconflow', display_name: 'SiliconFlow', connection_id: 'site_knowledge_vector_siliconflow',
+    configured: true, verified: true, status: 'ready', last_tested_at: '2026-07-13T10:00:00Z'
+  },
+  vector_store: {
+    provider_id: 'zilliz', display_name: 'Zilliz Cloud', connection_id: 'site_knowledge_vector_zilliz',
+    configured: false, verified: false, status: 'not_configured', settings_owner: 'cloud_admin', endpoint: '',
+    token_configured: false, collection: 'site_knowledge_zh_v1', last_tested_at: ''
+  },
+  validation: {
+    connection: { status: 'not_ready', provider_verified: true, vector_store_verified: false },
+    index: {
+      status: 'empty', reason: 'no_source_chunks', embedding_space_id: 'siliconflow:BAAI/bge-m3',
+      source_document_count: 0, source_chunk_count: 0, indexed_chunk_count: 0,
+      roundtrip_status: 'not_applicable', last_reindexed_at: '', last_error_code: ''
+    },
+    retrieval: { status: 'pending', last_verified_at: '', result_count: 0, top1_score: 0, evidence_source: 'site_knowledge_search_metric' }
+  }
+};
+
 test('vector settings keeps the fixed PC profile and saves the continuous configuration table', async ({
   page
 }, testInfo) => {
@@ -9,65 +40,7 @@ test('vector settings keeps the fixed PC profile and saves the continuous config
   await installAdminMocks(page);
 
   let savedPayload: Record<string, unknown> | null = null;
-  let profile = {
-    profile_id: 'site-knowledge.zh.v1',
-    model_id: 'BAAI/bge-m3',
-    dimensions: 1024,
-    metric: 'COSINE',
-    production_backend: 'zilliz_cloud',
-    local_test_backend: 'postgres_json',
-    active_backend: 'postgres_json',
-    status: 'ready',
-    editable_fields: ['credential', 'zilliz_endpoint', 'zilliz_token'],
-    reindex_policy: 'profile_change_requires_reindex',
-    provider: {
-      provider_id: 'siliconflow',
-      display_name: 'SiliconFlow',
-      connection_id: 'site_knowledge_vector_siliconflow',
-      configured: true,
-      verified: true,
-      status: 'ready',
-      last_tested_at: '2026-07-13T10:00:00Z'
-    },
-    vector_store: {
-      provider_id: 'zilliz',
-      display_name: 'Zilliz Cloud',
-      connection_id: 'site_knowledge_vector_zilliz',
-      configured: false,
-      verified: false,
-      status: 'not_configured',
-      settings_owner: 'cloud_admin',
-      endpoint: '',
-      token_configured: false,
-      collection: 'site_knowledge_zh_v1',
-      last_tested_at: ''
-    },
-    validation: {
-      connection: {
-        status: 'not_ready',
-        provider_verified: true,
-        vector_store_verified: false
-      },
-      index: {
-        status: 'empty',
-        reason: 'no_source_chunks',
-        embedding_space_id: 'siliconflow:BAAI/bge-m3',
-        source_document_count: 0,
-        source_chunk_count: 0,
-        indexed_chunk_count: 0,
-        roundtrip_status: 'not_applicable',
-        last_reindexed_at: '',
-        last_error_code: ''
-      },
-      retrieval: {
-        status: 'pending',
-        last_verified_at: '',
-        result_count: 0,
-        top1_score: 0,
-        evidence_source: 'site_knowledge_search_metric'
-      }
-    }
-  };
+  let profile = structuredClone(baseVectorProfile);
 
   await page.route('**/api/admin/site-knowledge-vector-profile**', async (route) => {
     const request = route.request();
@@ -179,4 +152,57 @@ test('vector settings keeps the fixed PC profile and saves the continuous config
   ).toHaveAttribute('href', '/admin/vector-observability');
   await expect(page.locator('[data-ui="vector-settings-technical-details"]')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
+});
+
+test('vector settings reports each failed step and retries only from that step', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  const profile = structuredClone(baseVectorProfile);
+  let embeddingRequests = 0;
+  let vectorStoreRequests = 0;
+
+  await page.route('**/api/admin/site-knowledge-vector-profile**', async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(profile)) });
+      return;
+    }
+    if (pathname.endsWith('/vector-store')) {
+      vectorStoreRequests += 1;
+      if (vectorStoreRequests === 1) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 'error', error_code: 'vector_store.unavailable', message: 'vector store unavailable' }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ ...profile, vector_store: { ...profile.vector_store, endpoint: 'https://example.zilliz.com', token_configured: true } })) });
+      return;
+    }
+    embeddingRequests += 1;
+    if (embeddingRequests === 1) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 'error', error_code: 'embedding.unavailable', message: 'embedding unavailable' }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope(profile)) });
+  });
+
+  await page.goto('/admin/vector-settings');
+  await page.getByLabel('Zilliz Endpoint').fill('https://example.zilliz.com');
+  await page.getByLabel('Zilliz Token').fill('zilliz-secret');
+  await page.getByRole('button', { name: /Save configuration|保存配置/i }).click();
+  const receipt = page.locator('[data-ui="vector-configuration-save-receipt"]');
+  await expect(receipt).toContainText(/Embedding configuration:\s+failed|Embedding 配置:\s+failed/i);
+  await expect(receipt).toContainText(/Vector store configuration:\s+not_started|Vector store 配置:\s+not_started/i);
+  expect(vectorStoreRequests).toBe(0);
+
+  await page.getByRole('button', { name: /Retry embedding and continue|重试 Embedding 并继续/i }).click();
+  await expect(receipt).toContainText(/Vector store configuration:\s+failed|Vector store 配置:\s+failed/i);
+  expect(embeddingRequests).toBe(2);
+  expect(vectorStoreRequests).toBe(1);
+
+  await page.getByRole('button', { name: /Retry vector store only|仅重试 Vector store/i }).click();
+  await expect(receipt).toContainText(/Embedding configuration:\s+succeeded|Embedding 配置:\s+succeeded/i);
+  await expect(receipt).toContainText(/Vector store configuration:\s+succeeded|Vector store 配置:\s+succeeded/i);
+  expect(embeddingRequests).toBe(2);
+  expect(vectorStoreRequests).toBe(2);
 });
