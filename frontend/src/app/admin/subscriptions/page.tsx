@@ -221,6 +221,7 @@ function SubscriptionsContent() {
   const searchParamsKey = searchParams.toString();
   const appliedStatus = normalizeStatus(searchParams.get('status'));
   const appliedAccountId = searchParams.get('account_id') || '';
+  const appliedCustomer = searchParams.get('customer') || '';
   const appliedPlanId = searchParams.get('plan_id') || '';
   const appliedExpiresBefore = searchParams.get('expires_before') || '';
   const appliedRisk = normalizeRiskFilter(searchParams.get('risk'));
@@ -241,7 +242,7 @@ function SubscriptionsContent() {
   const [error, setError] = useState('');
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [draftFilters, setDraftFilters] = useState({
-    account_id: appliedAccountId,
+    customer: appliedCustomer || appliedAccountId,
     plan_id: appliedPlanId,
     expires_before: appliedExpiresBefore,
   });
@@ -255,6 +256,7 @@ function SubscriptionsContent() {
     const params = new URLSearchParams();
     if (appliedStatus) params.set('status', appliedStatus);
     if (appliedAccountId) params.set('account_id', appliedAccountId);
+    if (appliedCustomer) params.set('customer', appliedCustomer);
     if (appliedPlanId) params.set('plan_id', appliedPlanId);
     if (appliedExpiresBefore) params.set('expires_before', appliedExpiresBefore);
     params.set('risk', appliedRisk);
@@ -262,7 +264,7 @@ function SubscriptionsContent() {
     params.set('limit', String(PAGE_SIZE));
     if (offset > 0) params.set('offset', String(offset));
     return params.toString();
-  }, [appliedAccountId, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, offset, sort]);
+  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId, appliedRisk, appliedStatus, offset, sort]);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(searchParamsKey);
@@ -333,11 +335,11 @@ function SubscriptionsContent() {
 
   useEffect(() => {
     setDraftFilters({
-      account_id: appliedAccountId,
+      customer: appliedCustomer || appliedAccountId,
       plan_id: appliedPlanId,
       expires_before: appliedExpiresBefore,
     });
-  }, [appliedAccountId, appliedExpiresBefore, appliedPlanId]);
+  }, [appliedAccountId, appliedCustomer, appliedExpiresBefore, appliedPlanId]);
 
   const queuedSubscriptions = subscriptions;
 
@@ -375,7 +377,8 @@ function SubscriptionsContent() {
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     updateQueueUrl({
-      account_id: draftFilters.account_id.trim() || null,
+      customer: draftFilters.customer.trim() || null,
+      account_id: null,
       plan_id: draftFilters.plan_id.trim() || null,
       expires_before: draftFilters.expires_before || null,
       offset: null,
@@ -384,11 +387,12 @@ function SubscriptionsContent() {
   };
 
   const clearFilters = () => {
-    setDraftFilters({ account_id: '', plan_id: '', expires_before: '' });
+    setDraftFilters({ customer: '', plan_id: '', expires_before: '' });
     updateQueueUrl({
       status: null,
       risk: null,
       account_id: null,
+      customer: null,
       plan_id: null,
       expires_before: null,
       sort: null,
@@ -419,6 +423,7 @@ function SubscriptionsContent() {
     appliedRisk !== 'needs_action' ||
     appliedStatus ||
     appliedAccountId ||
+    appliedCustomer ||
     appliedPlanId ||
     appliedExpiresBefore ||
     sort !== 'priority'
@@ -574,14 +579,14 @@ function SubscriptionsContent() {
               </label>
               <label className="text-sm text-slate-700 dark:text-slate-200">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('common.account', {}, 'Customer')}
+                  {t('admin.subscriptions.customer_filter_label', {}, 'Customer')}
                 </span>
                 <input
                   type="search"
                   className="input w-full"
-                  value={draftFilters.account_id}
-                  placeholder={t('admin.subscriptions.account_filter_placeholder', {}, 'Account ID')}
-                  onChange={(event) => setDraftFilters((current) => ({ ...current, account_id: event.target.value }))}
+                  value={draftFilters.customer}
+                  placeholder={t('admin.subscriptions.customer_filter_placeholder', {}, 'Name, email, or Account ID')}
+                  onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))}
                 />
               </label>
               <label className="text-sm text-slate-700 dark:text-slate-200">
@@ -633,7 +638,7 @@ function SubscriptionsContent() {
                     type="button"
                     className="btn btn-secondary h-11 w-11 shrink-0 p-0"
                     aria-label={t('common.clear_filters', {}, 'Clear filters')}
-                    disabled={!hasFilters && !draftFilters.account_id && !draftFilters.plan_id && !draftFilters.expires_before}
+                    disabled={!hasFilters && !draftFilters.customer && !draftFilters.plan_id && !draftFilters.expires_before}
                     onClick={clearFilters}
                   >
                     <svg

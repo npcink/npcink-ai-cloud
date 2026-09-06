@@ -13,7 +13,9 @@ from app.core.models import (
     Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
+    AccountUserMembership,
     BillingSnapshot,
+    Principal,
     Site,
     SiteKnowledgeDocument,
     UsageMeterEvent,
@@ -1554,6 +1556,26 @@ def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_paginati
                 )
             )
         session.add(
+            Principal(
+                principal_id="prn_queue_alpha",
+                email="alpha.owner@example.test",
+                status="active",
+                session_version=1,
+                metadata_json={},
+            )
+        )
+        session.add(
+            AccountUserMembership(
+                membership_id="aum_queue_alpha",
+                principal_id="prn_queue_alpha",
+                account_id="acct_queue_alpha",
+                role="owner",
+                status="active",
+                allowed_actions_json=[],
+                metadata_json={},
+            )
+        )
+        session.add(
             Site(
                 site_id="site_queue_critical",
                 account_id="acct_queue_delta",
@@ -1633,6 +1655,33 @@ def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_paginati
         "monitor": 0,
         "stable": 1,
     }
+
+    customer_name_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"customer": "alpha warning"},
+        headers=build_internal_headers(),
+    )
+    assert customer_name_response.status_code == 200
+    customer_name_data = customer_name_response.json()["data"]
+    assert customer_name_data["filters"]["customer"] == "alpha warning"
+    assert customer_name_data["total"] == 1
+    assert customer_name_data["items"][0]["subscription"]["account_id"] == "acct_queue_alpha"
+
+    customer_email_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"customer": "ALPHA.OWNER@EXAMPLE.TEST"},
+        headers=build_internal_headers(),
+    )
+    assert customer_email_response.status_code == 200
+    assert customer_email_response.json()["data"]["total"] == 1
+
+    customer_account_id_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"customer": "acct_queue_alpha"},
+        headers=build_internal_headers(),
+    )
+    assert customer_account_id_response.status_code == 200
+    assert customer_account_id_response.json()["data"]["total"] == 1
 
     needs_action_response = client.get(
         "/internal/service/admin/subscriptions",

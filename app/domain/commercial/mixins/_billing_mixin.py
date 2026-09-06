@@ -921,6 +921,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         *,
         status: str | None = None,
         account_id: str | None = None,
+        customer_query: str | None = None,
         plan_id: str | None = None,
         expires_before: datetime | None = None,
         risk: str = "all",
@@ -948,6 +949,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             total = repository.count_subscriptions(
                 status=status,
                 account_id=account_id,
+                customer_query=customer_query,
                 plan_id=plan_id,
                 current_period_end_before=expires_before,
             )
@@ -959,6 +961,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             subscriptions = repository.list_subscriptions(
                 status=status,
                 account_id=account_id,
+                customer_query=customer_query,
                 plan_id=plan_id,
                 current_period_end_before=expires_before,
                 limit=ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS,
@@ -1100,6 +1103,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "filters": {
                 "status": status or "",
                 "account_id": account_id or "",
+                "customer": customer_query or "",
                 "plan_id": plan_id or "",
                 "expires_before": self._serialize_datetime(expires_before),
                 "risk": normalized_risk,
