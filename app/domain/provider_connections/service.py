@@ -132,7 +132,14 @@ class ProviderConnectionAdminService:
                     )
                 )
             )
-        connections = [self._serialize(row) for row in rows]
+        runtime_projection = self._runtime_effective_projection(rows)
+        connections = [
+            self._serialize(
+                row,
+                runtime_projection=runtime_projection.get(row.connection_id),
+            )
+            for row in rows
+        ]
         connections.sort(
             key=lambda item: (
                 not bool(item.get("enabled")),
@@ -1075,7 +1082,12 @@ class ProviderConnectionAdminService:
             "credential": normalized_credential,
         }
 
-    def _serialize(self, row: ProviderConnection) -> dict[str, Any]:
+    def _serialize(
+        self,
+        row: ProviderConnection,
+        *,
+        runtime_projection: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         config = _dict(row.config_json)
         kind = _string(config.get("kind") or row.provider_type)
         capability_ids = _effective_capability_ids(config, kind)
@@ -1147,10 +1159,99 @@ class ProviderConnectionAdminService:
             "last_error_code": row.last_error_code or "",
             "last_error_message": row.last_error_message or "",
             "updated_at": _iso(row.updated_at),
+            "runtime_effective": bool((runtime_projection or {}).get("effective")),
+            "runtime_effective_reason": _string(
+                (runtime_projection or {}).get("reason") or "not_selected"
+            ),
+            "runtime_selection_slot": _string((runtime_projection or {}).get("slot")),
             "detail_href": "/admin/ai-resources",
             "managed_by": "cloud_provider_connections",
             "boundary": _boundary(),
         }
+
+    def _runtime_effective_projection(
+        self,
+        rows: list[ProviderConnection],
+    ) -> dict[str, dict[str, Any]]:
+        """Expose the same effective-runtime choice used by the runtime bridge.
+
+        This is deliberately a read-only projection. It does not change which
+        connection runs, and it keeps the admin surface from inventing a second
+        provider-priority source of truth.
+        """
+
+        projection: dict[str, dict[str, Any]] = {}
+        primary_seen = False
+        singleton_slots_seen: set[str] = set()
+        primary_provider_ids = {
+            "tavily",
+            "bocha",
+            "doubao_search",
+            "apify",
+            "zhihu",
+            "anysearch",
+        }
+        supported_image_ids = {"unsplash", "pixabay", "pexels"}
+        singleton_kinds = {
+            "embedding_provider",
+            "rerank_provider",
+            "vector_store_provider",
+        }
+
+        for row in sorted(rows, key=lambda item: item.connection_id):
+            config = _dict(row.config_json)
+            kind = _string(config.get("kind") or row.provider_type).lower()
+            provider_id = _string(config.get("provider_id") or row.connection_id).lower()
+            slot = _runtime_selection_slot(kind=kind, provider_id=provider_id)
+            item = {"effective": False, "reason": "not_selected", "slot": slot}
+            projection[row.connection_id] = item
+
+            if not row.enabled:
+                item["reason"] = "disabled"
+                continue
+            configured, credential_error = _credential_readiness(
+                self.settings,
+                row,
+                config=config,
+                provider_id=provider_id,
+            )
+            if not configured:
+                item["reason"] = credential_error or "unavailable"
+                continue
+
+            if kind == "web_search_provider":
+                if provider_id == "jina_reader":
+                    item.update(effective=True, reason="enhancer", slot="web_search_reader")
+                elif provider_id in primary_provider_ids:
+                    if primary_seen:
+                        item["reason"] = "secondary"
+                    else:
+                        item.update(effective=True, reason="primary", slot="web_search_primary")
+                        primary_seen = True
+                else:
+                    item["reason"] = "unsupported"
+                continue
+
+            if kind == "image_source_provider":
+                if provider_id in supported_image_ids:
+                    item.update(effective=True, reason="parallel", slot="image_source")
+                else:
+                    item["reason"] = "unsupported"
+                continue
+
+            if kind in singleton_kinds:
+                singleton_slot = kind
+                item["slot"] = singleton_slot
+                if singleton_slot in singleton_slots_seen:
+                    item["reason"] = "secondary"
+                else:
+                    item.update(effective=True, reason="primary")
+                    singleton_slots_seen.add(singleton_slot)
+                continue
+
+            item["reason"] = "unsupported"
+
+        return projection
 
 
 def _image_delivery_probe_verification_inputs(row: ProviderConnection) -> dict[str, Any]:

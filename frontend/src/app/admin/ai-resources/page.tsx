@@ -282,19 +282,50 @@ function AiResourcesContent() {
     setLoadingModelReferences(true);
     setLoadedModelReferenceProviderId('');
     try {
-      const params = new URLSearchParams({
-        provider_id: normalizedProviderId,
-        limit: '500',
-        include_deprecated: 'true',
-      });
-      const response = await aiResourcesClient.request<{
-        items?: ModelReferenceEntry[];
-        total?: number;
-        source_summary?: ModelReferenceSourceSummary[];
-      }>(`/api/admin/model-references?${params.toString()}`);
-      setModelReferences(Array.isArray(response.data.items) ? response.data.items : []);
-      setModelReferenceTotal(Number(response.data.total ?? 0) || 0);
-      setModelReferenceSources(Array.isArray(response.data.source_summary) ? response.data.source_summary : []);
+      const pageSize = 500;
+      const references: ModelReferenceEntry[] = [];
+      let total = 0;
+      let offset = 0;
+      let sourceSummary: ModelReferenceSourceSummary[] = [];
+      const seenReferenceKeys = new Set<string>();
+
+      while (offset === 0 || offset < total) {
+        const params = new URLSearchParams({
+          provider_id: normalizedProviderId,
+          limit: String(pageSize),
+          offset: String(offset),
+          include_deprecated: 'true',
+        });
+        const response = await aiResourcesClient.request<{
+          items?: ModelReferenceEntry[];
+          total?: number;
+          source_summary?: ModelReferenceSourceSummary[];
+        }>(`/api/admin/model-references?${params.toString()}`);
+        const pageItems = Array.isArray(response.data.items) ? response.data.items : [];
+        total = Math.max(total, Number(response.data.total ?? 0) || 0);
+        if (!sourceSummary.length && Array.isArray(response.data.source_summary)) {
+          sourceSummary = response.data.source_summary;
+        }
+        const referenceCountBeforePage = references.length;
+        pageItems.forEach((item) => {
+          const key = `${item.provider_id}:${item.model_id}`;
+          if (!seenReferenceKeys.has(key)) {
+            seenReferenceKeys.add(key);
+            references.push(item);
+          }
+        });
+        if (
+          !pageItems.length
+          || pageItems.length < pageSize
+          || references.length === referenceCountBeforePage
+          || references.length >= total
+        ) break;
+        offset += pageItems.length;
+      }
+
+      setModelReferences(references);
+      setModelReferenceTotal(total || references.length);
+      setModelReferenceSources(sourceSummary);
       setLoadedModelReferenceProviderId(normalizedProviderId);
     } catch (referenceError) {
       setModelReferences([]);

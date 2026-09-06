@@ -16,8 +16,8 @@
       "key": "python_runtime",
       "kind": "dockerfile_base",
       "tag": "python:3.14-alpine",
-      "digest": "sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc",
-      "reference": "python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc",
+      "digest": "sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc",
+      "reference": "python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc",
       "source_file": "Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
@@ -146,7 +146,7 @@
     "max_exception_days": 30,
     "allowlist_file": "deploy/image-lock/cve-allowlist.json",
     "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
-    "authoritative_not_affected_sha256": "ed39719d397e9f09be2655c6181041a0ed330919f92cc24dd2f67df086e077cc",
+    "authoritative_not_affected_sha256": "3cf3cbb74100b6207e0faeefb9fa56e8d484f0c23d6adc6371a4c8f9ca5c2de2",
     "generated_artifacts_must_not_be_committed": true
   }
 }

@@ -35,7 +35,7 @@ function RegisterFormContent() {
       : null;
   const postRegistrationTarget = requestedPlan
     ? `/portal/billing?plan=${requestedPlan}&action=upgrade`
-    : '/portal';
+    : '/portal#sites';
   const requestedPlanLabel = requestedPlan === 'plus'
     ? 'Plus'
     : requestedPlan === 'pro'

@@ -10,11 +10,32 @@ from app.api.auth import get_cloud_services
 from app.api.envelope import build_envelope
 from app.api.routes.portal import finish_qq_login_callback
 from app.api.routes.service import _get_commercial_service
+from app.core.logging import get_logger
+from app.core.redaction import safe_exception_type
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.service_settings import resolve_alipay_payment_runtime_config
 from app.domain.site_compliance import SiteComplianceAdminService
 
 router = APIRouter(prefix="/open", tags=["open"])
+logger = get_logger(__name__)
+
+
+def _public_dependency_error(*, surface: str, error: Exception) -> JSONResponse:
+    logger.error(
+        "public dependency unavailable surface=%s error_type=%s",
+        surface,
+        safe_exception_type(error),
+    )
+    return JSONResponse(
+        status_code=503,
+        content=build_envelope(
+            status="error",
+            error_code="public.dependency_unavailable",
+            message=f"public {surface} is temporarily unavailable",
+            data={"surface": surface, "retryable": True},
+            revision="public-availability-v1",
+        ),
+    )
 
 
 def _not_enabled(
@@ -50,7 +71,10 @@ async def finish_open_qq_login(
 
 @router.get("/plan-catalog")
 async def list_open_plan_catalog(request: Request) -> Any:
-    catalog = _get_commercial_service(request).list_public_plan_catalog()
+    try:
+        catalog = _get_commercial_service(request).list_public_plan_catalog()
+    except Exception as error:
+        return _public_dependency_error(surface="plan_catalog", error=error)
     return build_envelope(
         status="ok",
         message="public plan catalog loaded",
@@ -61,11 +85,14 @@ async def list_open_plan_catalog(request: Request) -> Any:
 
 @router.get("/compliance")
 async def get_open_site_compliance(request: Request) -> Any:
-    services = get_cloud_services(request)
-    result = SiteComplianceAdminService(
-        services.settings.database_url,
-        services.settings,
-    ).get_public_projection()
+    try:
+        services = get_cloud_services(request)
+        result = SiteComplianceAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).get_public_projection()
+    except Exception as error:
+        return _public_dependency_error(surface="compliance", error=error)
     return build_envelope(
         status="ok",
         message="public site compliance loaded",

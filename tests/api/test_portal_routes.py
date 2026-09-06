@@ -60,6 +60,7 @@ from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
+from app.domain.site_compliance import SiteComplianceAdminService
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_INTERNAL_AUTH_TOKEN,
@@ -4449,6 +4450,52 @@ def test_open_plan_catalog_is_anonymous_and_bounded(tmp_path: Path) -> None:
         "cost",
     ):
         assert f'"{private_field}"' not in serialized
+
+    dispose_engine(database_url)
+
+
+def test_open_plan_catalog_fails_closed_when_catalog_dependency_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    def unavailable(_service: CommercialService) -> dict[str, object]:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(CommercialService, "list_public_plan_catalog", unavailable)
+
+    response = client.get("/open/plan-catalog")
+
+    assert response.status_code == 503
+    assert response.json()["error_code"] == "public.dependency_unavailable"
+    assert response.json()["data"] == {
+        "surface": "plan_catalog",
+        "retryable": True,
+    }
+
+    dispose_engine(database_url)
+
+
+def test_open_compliance_fails_closed_when_projection_dependency_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    def unavailable(_service: SiteComplianceAdminService) -> dict[str, object]:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(SiteComplianceAdminService, "get_public_projection", unavailable)
+
+    response = client.get("/open/compliance")
+
+    assert response.status_code == 503
+    assert response.json()["error_code"] == "public.dependency_unavailable"
+    assert response.json()["data"] == {
+        "surface": "compliance",
+        "retryable": True,
+    }
 
     dispose_engine(database_url)
 

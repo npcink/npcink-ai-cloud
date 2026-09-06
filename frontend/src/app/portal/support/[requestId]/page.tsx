@@ -461,6 +461,19 @@ export default function PortalSupportRequestDetailPage() {
       </PortalSection>
 
       <PortalSection>
+        {supportRequest?.status === 'resolved' || supportRequest?.status === 'closed' ? (
+          <div
+            className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200"
+            data-portal-support="reply-reopen-notice"
+            role="status"
+          >
+            {t(
+              'portal.support_reply_reopens_notice',
+              {},
+              'Replying will reopen this ticket and return it to the support queue.'
+            )}
+          </div>
+        ) : null}
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
           {t('portal.support_message_reply_label', {}, 'Reply')}
           <textarea
@@ -478,7 +491,11 @@ export default function PortalSupportRequestDetailPage() {
             disabled={isSubmitting || !reply.trim()}
             onClick={() => void handleReply()}
           >
-            {isSubmitting ? t('common.saving', {}, 'Saving...') : t('portal.support_message_reply_action', {}, 'Send reply')}
+            {isSubmitting
+              ? t('common.saving', {}, 'Saving...')
+              : supportRequest?.status === 'resolved' || supportRequest?.status === 'closed'
+                ? t('portal.support_message_reopen_action', {}, 'Reopen and reply')
+                : t('portal.support_message_reply_action', {}, 'Send reply')}
           </button>
           <button type="button" className="btn btn-secondary" onClick={() => void loadDetail()}>
             {t('common.refresh', {}, 'Refresh')}

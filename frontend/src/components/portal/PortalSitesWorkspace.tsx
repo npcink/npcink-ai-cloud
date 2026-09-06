@@ -381,7 +381,9 @@ function PortalSitesWorkspaceContent() {
         {visibleSites.length === 0 && !searchQuery.trim() ? (
           <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
             <p className="font-semibold">
-              {t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')}
+              {visibleSites.length
+                ? t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')
+                : t('portal.sites.connect_first_hint_title', {}, 'Connect your first WordPress site')}
             </p>
             <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
               {t(

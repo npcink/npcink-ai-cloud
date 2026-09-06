@@ -61,7 +61,7 @@ function buildPortalSession(
       name: 'Clear Site',
       site_url: 'https://clear.example.test',
       platform_kind: 'wordpress',
-      status: 'active',
+      status: options.singleReadySite ? options.siteAttentionStatus || 'active' : 'active',
       capacity_scope: 'scope_1',
       capacity: {
         active_count: 2,
@@ -942,6 +942,26 @@ async function installPortalMocks(
             created_at: '2026-04-07T09:05:00Z',
           },
         ],
+        attachments: [],
+        feedback: null,
+      });
+      return;
+    }
+
+    if (pathname === '/support-requests/ticket_portal_e2e_other_site') {
+      await fulfillJson(route, {
+        request: {
+          request_id: 'ticket_portal_e2e_other_site',
+          topic: 'site',
+          status: 'closed',
+          priority: 'normal',
+          site_id: 'site_not_selected',
+          title: 'A different site needs review',
+          description: 'This ticket belongs to another site in the account.',
+          created_at: '2026-04-06T09:05:00Z',
+          updated_at: '2026-04-06T10:05:00Z',
+        },
+        messages: [],
         attachments: [],
         feedback: null,
       });
@@ -2001,6 +2021,28 @@ test('account-level support stays available without a selected site context', as
   await expect(page.getByText(/Please check the latest account payment order\./i).first()).toBeVisible();
 
   expect(calls.accountProjectionRequestCount()).toBe(0);
+});
+
+test('closed ticket makes the reopen-on-reply behavior explicit', async ({ page }) => {
+  await installPortalMocks(page);
+
+  await page.goto('/portal/support/ticket_portal_e2e_other_site');
+  await expect(page.locator('[data-portal-support="reply-reopen-notice"]')).toContainText(
+    /Replying will reopen this ticket|回复将重新打开此工单/i
+  );
+  await expect(page.getByRole('button', { name: /Reopen and reply|重新打开并回复/i })).toBeVisible();
+});
+
+test('single unavailable site keeps support explicitly account-scoped without a fake site selector', async ({ page }) => {
+  await installPortalMocks(page, {
+    withoutSelectedContext: true,
+    singleReadySite: true,
+    siteAttentionStatus: 'inactive',
+  });
+
+  await page.goto('/portal/support');
+  await expect(page.getByText(/Account-level support \(all sites\)|账号级支持（全部站点）/i)).toBeVisible();
+  await expect(page.getByText(/^Select a site$|^选择站点$/i)).toHaveCount(0);
 });
 
 test('[readiness:new_account_no_site] a new account gets a WordPress connection path instead of a dead end', async ({ page }) => {

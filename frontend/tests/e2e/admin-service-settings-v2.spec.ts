@@ -315,6 +315,9 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   platformTimezone = 'Asia/Shanghai';
   await page.reload();
   await page.getByRole('tab', { name: /System settings|系统设置/i }).click();
+  await expect(page).toHaveURL(/\/admin\/service-settings\?tab=system$/);
+  await page.reload();
+  await expect(page.getByRole('tab', { name: /System settings|系统设置/i })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('[data-configuration-row="platform-timezone"]')).toContainText(/UTC/i);
   await expect(page.locator('[data-configuration-row="platform-timezone"] select')).toHaveValue('Asia/Shanghai');
   const systemSettingsScreenshotPath = testInfo.outputPath('admin-system-settings-pc.png');
@@ -411,4 +414,50 @@ test('service settings initial failure preserves the PC shell and bounded retry'
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/service-settings$/);
+});
+
+test('payment configuration stays disabled until the operator saves a public base URL', async ({ page }) => {
+  await page.context().addCookies([
+    { name: 'npcink_admin_session_token', value: 'e2e-admin-session', url: BASE_URL },
+  ]);
+  await page.route('**/admin/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        principal_id: 'platform:operator-e2e',
+        identity_type: 'platform_admin',
+      })),
+    });
+  });
+  await page.route('**/api/admin/service-settings', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        settings: {
+          portal_public: setting('portal_public', 'disabled', { public_base_url: '' }),
+          qq_login: setting('portal_qq_login', 'disabled', { client_id: '', redirect_uri: '' }),
+          portal_email: setting('portal_email', 'disabled', {}),
+          alipay_payment: setting('payment_alipay', 'disabled', {
+            app_id: '', notify_url: '', return_url: '',
+          }),
+          accounting_fx: setting('commercial_accounting_fx', 'disabled', {}),
+          site_relink_policy: setting('site_relink_policy', 'disabled', { cooldown_days: 90 }),
+          platform_preferences: setting('platform_preferences', 'disabled', { timezone: 'Asia/Shanghai' }),
+          media_recognition_policy: setting('media_recognition_policy', 'disabled', {}),
+        },
+      })),
+    });
+  });
+
+  await page.goto('/admin/service-settings');
+  await page.getByRole('tab', { name: /Payment settings|支付配置/i }).click();
+  await expect(page).toHaveURL(/\/admin\/service-settings\?tab=payment$/);
+  await expect(page.locator('#service-settings-payment')).toContainText(
+    /will not use the current browser address|不会使用当前浏览器地址/i
+  );
+  await page.getByRole('switch', { name: /Enable Alipay payment|启用支付宝支付/i }).click();
+  await expect(page.getByRole('button', { name: /Save Alipay configuration|保存支付宝配置/i })).toBeDisabled();
+  await expect(page.locator('#service-settings-payment input[readonly]').first()).toHaveValue('');
 });
