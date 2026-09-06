@@ -13,6 +13,7 @@ import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
+import { getAdminCommandShortcutLabel } from '@/lib/admin-shortcuts';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -82,8 +83,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
+  const [commandShortcutLabel, setCommandShortcutLabel] = useState('⌘K');
   const [adminSessionReady, setAdminSessionReady] = useState(isLoginPage);
   const [deploymentIdentity, setDeploymentIdentity] = useState<AdminDeploymentIdentity | null>(null);
+
+  useEffect(() => {
+    setCommandShortcutLabel(getAdminCommandShortcutLabel(window.navigator.platform));
+  }, []);
 
   useEffect(() => {
     if (isLoginPage) {
@@ -578,7 +584,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </svg>
                 <span className="hidden min-w-0 truncate lg:inline">{t('common.search', {}, 'Search')}</span>
                 <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-500 lg:inline">
-                  ⌘K
+                  {commandShortcutLabel}
                 </kbd>
               </button>
               <span className="hidden rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200 md:inline-flex">
