@@ -367,9 +367,15 @@ export async function installAdminMocks(
       ];
       const eventId = Number(searchParams.get('event_id') || 0);
       const idempotencyKey = searchParams.get('idempotency_key') || '';
+      const actorRef = searchParams.get('actor_ref') || '';
+      const createdFrom = searchParams.get('created_from') || '';
+      const createdTo = searchParams.get('created_to') || '';
       const filteredItems = auditItems.filter((item) => (
         (!eventId || item.event_id === eventId)
         && (!idempotencyKey || item.idempotency_key === idempotencyKey)
+        && (!actorRef || item.actor_ref === actorRef)
+        && (!createdFrom || item.created_at >= createdFrom)
+        && (!createdTo || item.created_at <= createdTo)
       ));
       const limit = Number(searchParams.get('limit') || 50);
       const offset = Number(searchParams.get('offset') || 0);

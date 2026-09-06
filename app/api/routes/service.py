@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from functools import partial
 from typing import Any, Literal
@@ -96,6 +97,9 @@ from app.workers.ops_cadence import build_cadence_summary
 
 router = APIRouter(prefix="/internal/service", tags=["service"])
 logger = get_logger(__name__)
+RFC3339_TIMESTAMP_PATTERN = (
+    r"(?i)^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:\d{2})$"
+)
 
 
 def _dict_value(value: object) -> dict[str, Any]:
@@ -1244,6 +1248,18 @@ def _build_audit_filters(
     if scope_id:
         filters["scope_id"] = str(scope_id)
     return filters
+
+
+def _parse_audit_rfc3339_filter(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    if re.fullmatch(RFC3339_TIMESTAMP_PATTERN, value) is None:
+        raise ValueError("audit time filter is not RFC3339")
+    normalized_value = f"{value[:-1]}+00:00" if value.lower().endswith("z") else value
+    parsed = datetime.fromisoformat(normalized_value)
+    if parsed.tzinfo is None:
+        raise ValueError("audit time filter timezone is required")
+    return parsed
 
 
 def _build_operator_receipt(
@@ -4430,7 +4446,7 @@ async def save_admin_site_compliance_draft(
         result = SiteComplianceAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_draft(payload.payload, actor_ref="internal")
+        ).save_draft(payload.payload, actor_ref=_build_audit_context(request).actor_ref)
     except SiteComplianceAdminError as error:
         _record_site_compliance_audit(
             request,
@@ -4472,7 +4488,7 @@ async def publish_admin_site_compliance(request: Request) -> Any:
         result = SiteComplianceAdminService(
             services.settings.database_url,
             services.settings,
-        ).publish(actor_ref="internal")
+        ).publish(actor_ref=_build_audit_context(request).actor_ref)
     except SiteComplianceAdminError as error:
         _record_site_compliance_audit(
             request,
@@ -6279,8 +6295,19 @@ async def list_service_audit_events(
     event_kind: str | None = Query(default=None, max_length=64),
     outcome: str | None = Query(default=None, max_length=32),
     idempotency_key: str | None = Query(default=None, max_length=191),
+    actor_ref: str | None = Query(default=None, max_length=191),
     scope_kind: str | None = Query(default=None, max_length=32),
     scope_id: str | None = Query(default=None, max_length=191),
+    created_from: str | None = Query(
+        default=None,
+        max_length=40,
+        pattern=RFC3339_TIMESTAMP_PATTERN,
+    ),
+    created_to: str | None = Query(
+        default=None,
+        max_length=40,
+        pattern=RFC3339_TIMESTAMP_PATTERN,
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0, le=100000),
     include_payload: bool = Query(default=False),
@@ -6288,6 +6315,33 @@ async def list_service_audit_events(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    try:
+        parsed_created_from = _parse_audit_rfc3339_filter(created_from)
+        parsed_created_to = _parse_audit_rfc3339_filter(created_to)
+    except ValueError:
+        return JSONResponse(
+            status_code=422,
+            content=build_envelope(
+                status="error",
+                error_code="audit.time_invalid",
+                message="audit time filters must be RFC3339 timestamps with a timezone",
+                revision="m6",
+            ),
+        )
+    if (
+        parsed_created_from is not None
+        and parsed_created_to is not None
+        and parsed_created_from > parsed_created_to
+    ):
+        return JSONResponse(
+            status_code=422,
+            content=build_envelope(
+                status="error",
+                error_code="audit.time_range_invalid",
+                message="created_from must be earlier than or equal to created_to",
+                revision="m6",
+            ),
+        )
     result = _get_commercial_service(request).list_service_audit_events(
         event_id=event_id,
         site_id=site_id,
@@ -6295,8 +6349,11 @@ async def list_service_audit_events(
         event_kind=event_kind,
         outcome=outcome,
         idempotency_key=idempotency_key,
+        actor_ref=actor_ref,
         scope_kind=scope_kind,
         scope_id=scope_id,
+        created_from=parsed_created_from,
+        created_to=parsed_created_to,
         limit=limit,
         offset=offset,
         include_payload=include_payload,

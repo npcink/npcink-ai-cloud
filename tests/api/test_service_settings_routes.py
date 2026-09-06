@@ -27,6 +27,7 @@ from app.core.secrets import (
 )
 from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
 from app.domain.model_capabilities.probes import vision_probe_fingerprint
+from app.setup.security import sha256_text
 from tests.api.service_routes_test_support import (
     _build_client,
     _runtime_service_settings,
@@ -43,6 +44,7 @@ MALICIOUS_EXCEPTION_DETAIL = (
     "Traceback (most recent call last): /srv/private/advisor.py "
     "database_password=super-secret-token"
 )
+TEST_ADMIN_KEY = "nca_admin_npcink-cloud-admin-key-test-32"
 
 
 def _alipay_test_keys() -> tuple[str, str]:
@@ -595,7 +597,20 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
 
 
 def test_admin_site_compliance_draft_publish_and_public_projection(tmp_path: Path) -> None:
-    database_url, client = _build_client(tmp_path)
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "admin_key_sha256": sha256_text(TEST_ADMIN_KEY),
+            "admin_principal_id": "platform:founder",
+        },
+    )
+
+    login = client.post(
+        "/admin/auth/login",
+        json={"admin_key": TEST_ADMIN_KEY, "redirect": "/admin/site-compliance"},
+        headers={"origin": "http://testserver", "referer": "http://testserver/"},
+    )
+    assert login.status_code == 200
 
     initial = client.get(
         "/internal/service/admin/site-compliance",
@@ -649,6 +664,7 @@ def test_admin_site_compliance_draft_publish_and_public_projection(tmp_path: Pat
         "site_compliance.draft.save",
         "site_compliance.publish",
     }
+    assert {event.actor_ref for event in events} == {"platform:founder"}
     assert "示例运营主体" not in json.dumps(
         [event.payload_json for event in events],
         ensure_ascii=False,
