@@ -2,6 +2,28 @@
   "revision": "maintainability-inventory.v1",
   "baseline_revision": "7e4713cba007f7704a0ca80ff55fb8bf85b5b478",
   "large_file_threshold": 2000,
+  "service_router_route_families": [
+    "accounts",
+    "admin",
+    "advisor",
+    "audit-events",
+    "commercial-decisions",
+    "observability",
+    "ops",
+    "payments",
+    "plans",
+    "runtime",
+    "sites",
+    "subscriptions"
+  ],
+  "dated_active_authority": {
+    "docs/ai-provider-env-config-retirement-2026-06-26.md": "Negative guard against restoring the removed environment-backed provider configuration path.",
+    "docs/external-trial-operator-runbook-2026-06-11.md": "Current bounded operator procedure for the controlled trial.",
+    "docs/image-processing-fc-oss-readiness-2026-07-20.md": "Current no-migration decision record until measured reconsideration thresholds are met.",
+    "docs/naming-residual-allowlist-2026-06-24.md": "Current cross-repository naming residue allowlist guard.",
+    "docs/provider-connection-production-runbook-2026-06-30.md": "Current provider-connection production operator procedure.",
+    "docs/release-ci-open-source-patterns-2026-07.md": "Current CI selection and evidence-reuse patterns used by the development operating model."
+  },
   "source_roots": [
     "app",
     "frontend/src",
