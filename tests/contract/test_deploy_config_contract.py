@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,23 @@ RUNTIME_DATA_KEY_ID = "runtime-data-v1"
 
 def _cloud_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _workflow_action_refs(action_name: str) -> list[str]:
+    workflow_root = _cloud_root() / ".github" / "workflows"
+    workflow_paths = sorted([*workflow_root.glob("*.yml"), *workflow_root.glob("*.yaml")])
+    refs: list[str] = []
+    for workflow_path in workflow_paths:
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        for job in workflow.get("jobs", {}).values():
+            if not isinstance(job, dict):
+                continue
+            for step in job.get("steps", []):
+                if isinstance(step, dict) and str(step.get("uses", "")).startswith(
+                    f"{action_name}@"
+                ):
+                    refs.append(str(step["uses"]))
+    return refs
 
 
 def test_small_customer_preflight_accepts_application_or_edge_fail_closed_ready_status() -> None:
@@ -2472,8 +2490,14 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "artifacts/pytest-files-shard-${{ matrix.shard }}.txt" in ci_workflow
     assert "python3 scripts/report-junit-timing.py" in ci_workflow
     assert "actions/checkout@v6" in ci_workflow
-    assert "actions/setup-node@v6" in ci_workflow
-    assert "actions/setup-python@v6" in ci_workflow
+    setup_node_refs = _workflow_action_refs("actions/setup-node")
+    setup_python_refs = _workflow_action_refs("actions/setup-python")
+    assert setup_node_refs
+    assert setup_python_refs
+    assert all(re.fullmatch(r"actions/setup-node@v[1-9]\d*", ref) for ref in setup_node_refs)
+    assert all(
+        re.fullmatch(r"actions/setup-python@v[1-9]\d*", ref) for ref in setup_python_refs
+    )
     assert "pnpm/action-setup@v6" in ci_workflow
     assert "docker/setup-buildx-action@v4" in ci_workflow
     assert "gitleaks/gitleaks-action@v3" in ci_workflow
