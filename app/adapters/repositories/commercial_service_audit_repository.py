@@ -71,9 +71,12 @@ class CommercialServiceAuditRepository:
         event_kind: str | None = None,
         outcome: str | None = None,
         idempotency_key: str | None = None,
+        actor_ref: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
         since: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[ServiceAuditEvent]:
@@ -86,9 +89,12 @@ class CommercialServiceAuditRepository:
                 event_kind=event_kind,
                 outcome=outcome,
                 idempotency_key=idempotency_key,
+                actor_ref=actor_ref,
                 scope_kind=scope_kind,
                 scope_id=scope_id,
                 since=since,
+                created_from=created_from,
+                created_to=created_to,
             )
         )
         statement = statement.order_by(
@@ -129,9 +135,12 @@ class CommercialServiceAuditRepository:
         event_kind: str | None = None,
         outcome: str | None = None,
         idempotency_key: str | None = None,
+        actor_ref: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
         since: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> int:
         return int(
             self.session.scalar(
@@ -148,9 +157,12 @@ class CommercialServiceAuditRepository:
                             event_kind=event_kind,
                             outcome=outcome,
                             idempotency_key=idempotency_key,
+                            actor_ref=actor_ref,
                             scope_kind=scope_kind,
                             scope_id=scope_id,
                             since=since,
+                            created_from=created_from,
+                            created_to=created_to,
                         )
                     ),
                 )
@@ -215,9 +227,12 @@ class CommercialServiceAuditRepository:
         event_kind: str | None = None,
         outcome: str | None = None,
         idempotency_key: str | None = None,
+        actor_ref: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
         since: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> list[SQLAFilter]:
         filters: list[SQLAFilter] = []
         normalized_site_ids = (
@@ -252,12 +267,18 @@ class CommercialServiceAuditRepository:
             filters.append(ServiceAuditEvent.outcome == outcome)
         if idempotency_key:
             filters.append(ServiceAuditEvent.idempotency_key == idempotency_key)
+        if actor_ref:
+            filters.append(ServiceAuditEvent.actor_ref == actor_ref)
         if scope_kind:
             filters.append(ServiceAuditEvent.scope_kind == scope_kind)
         if scope_id:
             filters.append(ServiceAuditEvent.scope_id == scope_id)
         if since is not None:
             filters.append(ServiceAuditEvent.created_at >= since)
+        if created_from is not None:
+            filters.append(ServiceAuditEvent.created_at >= created_from)
+        if created_to is not None:
+            filters.append(ServiceAuditEvent.created_at <= created_to)
         return filters
 
     def _serialize_datetime(self, value: datetime | None) -> str | None:

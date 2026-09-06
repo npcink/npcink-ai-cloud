@@ -24,13 +24,18 @@ const PAGE_SIZE = 25;
 const FILTER_KEYS = [
   'event_id',
   'idempotency_key',
+  'actor_ref',
   'scope_kind',
   'scope_id',
   'site_id',
   'account_id',
   'event_kind',
   'outcome',
+  'created_from',
+  'created_to',
 ] as const;
+
+const TIME_FILTER_KEYS = new Set(['created_from', 'created_to']);
 
 function positiveInteger(value: string | null, fallback = 0): number {
   const parsed = Number(value);
@@ -47,6 +52,19 @@ function humanizeAuditToken(value: string): string {
 
 function identifier(value: string | undefined, fallback: string): string {
   return value?.trim() || fallback;
+}
+
+function localDateTimeValue(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 23);
+}
+
+function serializeDateTimeFilter(value: string, existingValue: string | null): string {
+  if (existingValue && value === localDateTimeValue(existingValue)) return existingValue;
+  return new Date(value).toISOString();
 }
 
 function auditScope(event: AdminAuditEvent, fallback: string): string {
@@ -112,7 +130,14 @@ export function AdminAuditWorkspace() {
     const params = new URLSearchParams();
     for (const key of FILTER_KEYS) {
       const value = String(data.get(key) || '').trim();
-      if (value) params.set(key, value);
+      if (value) {
+        params.set(
+          key,
+          TIME_FILTER_KEYS.has(key)
+            ? serializeDateTimeFilter(value, searchParams.get(key))
+            : value
+        );
+      }
     }
     const exactEventId = params.get('event_id');
     if (exactEventId) params.set('focus', exactEventId);
@@ -229,6 +254,10 @@ export function AdminAuditWorkspace() {
             </summary>
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.actor_ref', {}, 'Operator ID')}
+                <input name="actor_ref" defaultValue={searchParams.get('actor_ref') || ''} className="input mt-1 w-full" />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t('admin.audit_workspace.site_id', {}, 'Site ID')}
                 <input name="site_id" defaultValue={searchParams.get('site_id') || ''} className="input mt-1 w-full" />
               </label>
@@ -249,6 +278,14 @@ export function AdminAuditWorkspace() {
                   <option value="error">{t('common.error', {}, 'Error')}</option>
                   <option value="blocked">{t('common.blocked', {}, 'Blocked')}</option>
                 </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.created_from', {}, 'From time')}
+                <input name="created_from" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_from'))} className="input mt-1 w-full" />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t('admin.audit_workspace.created_to', {}, 'To time')}
+                <input name="created_to" type="datetime-local" step="0.001" defaultValue={localDateTimeValue(searchParams.get('created_to'))} className="input mt-1 w-full" />
               </label>
             </div>
           </details>

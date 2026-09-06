@@ -189,6 +189,47 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         issue_audit["event_id"]
     ]
     assert "payload" not in exact_audit_data["items"][0]
+    exact_created_at = str(exact_audit_data["items"][0]["created_at"])
+    actor_time_audit_response = client.get(
+        "/internal/service/audit-events",
+        params={
+            "actor_ref": "internal",
+            "created_from": exact_created_at,
+            "created_to": exact_created_at,
+        },
+        headers=build_internal_headers(),
+    )
+    assert actor_time_audit_response.status_code == 200
+    actor_time_data = actor_time_audit_response.json()["data"]
+    assert actor_time_data["items"]
+    assert all(item["actor_ref"] == "internal" for item in actor_time_data["items"])
+    assert actor_time_data["filters"]["created_from"] == exact_created_at
+    assert actor_time_data["filters"]["created_to"] == exact_created_at
+    invalid_time_range = client.get(
+        "/internal/service/audit-events",
+        params={
+            "created_from": "2026-08-16T00:00:00Z",
+            "created_to": "2026-08-15T00:00:00Z",
+        },
+        headers=build_internal_headers(),
+    )
+    assert invalid_time_range.status_code == 422
+    assert invalid_time_range.json()["error_code"] == "audit.time_range_invalid"
+    timezone_missing = client.get(
+        "/internal/service/audit-events?created_from=2026-08-15T00:00:00",
+        headers=build_internal_headers(),
+    )
+    assert timezone_missing.status_code == 422
+    unix_timestamp = client.get(
+        "/internal/service/audit-events?created_from=1723680000",
+        headers=build_internal_headers(),
+    )
+    assert unix_timestamp.status_code == 422
+    lowercase_rfc3339 = client.get(
+        "/internal/service/audit-events?created_from=2026-08-15t00:00:00z",
+        headers=build_internal_headers(),
+    )
+    assert lowercase_rfc3339.status_code == 200
     expected_exact_filters = {
         "event_id": issue_audit["event_id"],
         "idempotency_key": issue_audit["idempotency_key"],
