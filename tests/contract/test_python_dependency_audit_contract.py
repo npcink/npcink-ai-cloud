@@ -10,6 +10,8 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+UV_VERSION = "0.12.10"
+UV_DIGEST = "sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500"
 
 
 def _production_lock_verifier() -> ModuleType:
@@ -81,6 +83,33 @@ def test_dependency_audit_is_locked_hashed_and_covers_production_variants() -> N
     )
 
 
+def test_uv_toolchain_pin_is_coordinated_across_build_and_validation_paths() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    m4_preview = (ROOT / "scripts" / "m4-preview.sh").read_text()
+    image_smoke = (ROOT / "scripts" / "production-python-extras-smoke.sh").read_text()
+    image_lock = json.loads(
+        (ROOT / "deploy" / "image-lock" / "production-images.json").read_text()
+    )
+    uv_input = next(
+        item for item in image_lock["production_inputs"] if item["key"] == "uv_builder"
+    )
+    uv_reference = f"ghcr.io/astral-sh/uv:{UV_VERSION}@{UV_DIGEST}"
+
+    assert uv_input["tag"] == f"ghcr.io/astral-sh/uv:{UV_VERSION}"
+    assert uv_input["digest"] == UV_DIGEST
+    assert uv_input["reference"] == uv_reference
+    assert dockerfile.count(uv_reference) == 1
+    assert dockerfile.count(f'UV_VERSION="{UV_VERSION}"') == 1
+    assert dockerfile.count(f'--uv-version "{UV_VERSION}"') == 1
+    assert workflow.count(f"python -m pip install uv=={UV_VERSION}") == 3
+    assert workflow.count("python -m pip install uv==") == 3
+    assert image_smoke.count(f'UV_VERSION="{UV_VERSION}"') == 1
+    assert image_smoke.count("UV_VERSION=") == 1
+    assert m4_preview.count(f"astral-sh/uv:{UV_VERSION}@{UV_DIGEST}") == 3
+    assert m4_preview.count(UV_DIGEST) == 4
+
+
 def test_ci_blocks_backend_and_keeps_production_deploy_separate() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
@@ -115,9 +144,9 @@ def test_production_dockerfile_consumes_the_locked_hashed_runtime_graph() -> Non
         "COPY scripts/verify-production-python-lock.py "
         "./scripts/verify-production-python-lock.py" in dockerfile
     )
-    assert 'UV_VERSION="0.11.29"' in dockerfile
+    assert 'UV_VERSION="0.12.10"' in dockerfile
     assert re.search(
-        r"^FROM ghcr[.]io/astral-sh/uv:0[.]11[.]29@sha256:[0-9a-f]{64} AS uv$",
+        r"^FROM ghcr[.]io/astral-sh/uv:0[.]12[.]10@sha256:[0-9a-f]{64} AS uv$",
         dockerfile,
         re.MULTILINE,
     )
@@ -271,7 +300,7 @@ def test_production_lock_verifier_rejects_manifest_tampering(tmp_path: Path) -> 
     uv_lock.write_text("version = 1\n")
     manifest = verifier._build_manifest(
         package_extras="",
-        uv_version="0.11.29",
+        uv_version="0.12.10",
         uv_lock_path=uv_lock,
         requirements_path=requirements,
         runtime_distributions={"alpha": "1.0"},
@@ -311,7 +340,7 @@ def test_production_image_smoke_verifies_default_and_zilliz_locked_graphs() -> N
     assert "verify-production-python-lock.py" in script
     assert "--check-manifest" in script
     assert "--import-app" in script
-    assert 'UV_VERSION="0.11.29"' in script
+    assert 'UV_VERSION="0.12.10"' in script
     assert 'UVX_BIN="${UVX_BIN:-uvx}"' in script
     assert '"uv==${UV_VERSION}"' in script
     assert "--no-header" in script
