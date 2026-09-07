@@ -395,7 +395,7 @@ jobs:
       - name: Restore exact API application image
         id: api_application_image_cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/api
           key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
@@ -405,7 +405,7 @@ jobs:
       - name: Restore exact frontend application image
         id: frontend_application_image_cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/frontend
           key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
@@ -415,7 +415,7 @@ jobs:
       - name: Restore disposable production image scan evidence
         id: production_scan_cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
           key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
@@ -447,7 +447,7 @@ jobs:
       - name: Save exact API application image
         if: steps.build_bundle.outputs.api_cache_save == 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/api
           key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
@@ -455,14 +455,14 @@ jobs:
       - name: Save exact frontend application image
         if: steps.build_bundle.outputs.frontend_cache_save == 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/frontend
           key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
 
       - name: Save disposable production image scan evidence
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
           key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
