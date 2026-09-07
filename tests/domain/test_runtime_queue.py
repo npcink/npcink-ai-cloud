@@ -9,6 +9,7 @@ from typing import cast
 import httpx
 import pytest
 from redis import Redis
+from redis.retry import Retry
 from sqlalchemy import select
 
 from app.adapters.callbacks.base import RuntimeCallbackDispatchRequest
@@ -1369,13 +1370,14 @@ def test_redis_runtime_queue_reuses_one_client_across_publish_and_consume(
         decode_responses: bool,
         socket_connect_timeout: float,
         socket_timeout: float,
-        retry_on_timeout: bool,
+        retry: Retry,
     ) -> FakeRedisClient:
         assert redis_url == "redis://example"
         assert decode_responses is True
         assert socket_connect_timeout == 5.0
         assert socket_timeout == 10.0
-        assert retry_on_timeout is False
+        assert isinstance(retry, Retry)
+        assert retry._retries == 0
         client = FakeRedisClient()
         instances.append(client)
         return client

@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import cast
 
 from redis import Redis
+from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
+from redis.retry import Retry
 
 from app.adapters.queue.base import RuntimeQueueError
 
@@ -37,7 +39,7 @@ class RedisRuntimeQueue:
                 decode_responses=True,
                 socket_connect_timeout=REDIS_CONNECT_TIMEOUT_SECONDS,
                 socket_timeout=self.socket_timeout_seconds,
-                retry_on_timeout=False,
+                retry=Retry(NoBackoff(), 0),
             )
         return self._client
 
