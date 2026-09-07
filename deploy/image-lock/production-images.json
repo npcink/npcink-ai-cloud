@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-08-15T02:32:42Z",
-  "resolved_from_revision": "c10d31aafa933b8059909a32b453f5d8fc859185",
+  "resolved_at_utc": "2026-09-07T06:05:11Z",
+  "resolved_from_revision": "891d545fad7688bda64eadeea05d3b5e742d7fdf",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -24,9 +24,9 @@
     {
       "key": "uv_builder",
       "kind": "dockerfile_base",
-      "tag": "ghcr.io/astral-sh/uv:0.11.29",
-      "digest": "sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc",
-      "reference": "ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc",
+      "tag": "ghcr.io/astral-sh/uv:0.12.10",
+      "digest": "sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500",
+      "reference": "ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500",
       "source_file": "Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },

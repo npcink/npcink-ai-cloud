@@ -2752,10 +2752,10 @@ prefetch_python_base_image() {
 prefetch_runtime_base_images() {
 	prefetch_python_base_image
 	prefetch_base_image \
-		'ghcr.nju.edu.cn/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc' \
+		'ghcr.nju.edu.cn/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500' \
 		"${uv_base_image}" \
 		uv \
-		'sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc'
+		'sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500'
 }
 
 build_runtime_image() {
@@ -2768,13 +2768,13 @@ build_runtime_image() {
 			return 1
 			;;
 	esac
-	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc AS uv' Dockerfile
+	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 AS uv' Dockerfile
 	grep -Fq 'FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS builder' Dockerfile
 	grep -Fq 'FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS runtime' Dockerfile
 	echo '[m4-preview] using verified M4-local base aliases; pinned source digests remain unchanged'
 	tail -n +2 Dockerfile |
 		sed \
-			-e "s#ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc#${uv_base_image}#" \
+			-e "s#ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500#${uv_base_image}#" \
 			-e "s#python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc#${python_base_image}#" \
 			-e 's#--timeout 60#--timeout 300#' |
 		docker build \

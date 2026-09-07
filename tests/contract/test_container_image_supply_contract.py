@@ -296,7 +296,7 @@ def test_production_image_lock_matches_every_dockerfile_and_deploy_compose() -> 
 
     assert receipt["status"] == "passed"
     assert inputs["python_runtime"]["tag"] == "python:3.14-alpine"
-    assert inputs["uv_builder"]["reference"].startswith("ghcr.io/astral-sh/uv:0.11.29@sha256:")
+    assert inputs["uv_builder"]["reference"].startswith("ghcr.io/astral-sh/uv:0.12.10@sha256:")
     assert "postgres_base" not in inputs
     assert not (ROOT / "Dockerfile.postgres").exists()
     assert inputs["node_frontend"]["tag"] == "node:22-alpine"

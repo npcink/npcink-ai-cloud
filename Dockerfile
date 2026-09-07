@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc AS uv
+FROM ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 AS uv
 
 FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV UV_NO_PROGRESS=1
-ENV UV_VERSION="0.11.29"
+ENV UV_VERSION="0.12.10"
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
@@ -146,7 +146,7 @@ RUN PYTHONPATH=/app python scripts/verify-production-python-lock.py \
         --requirements /usr/local/share/npcink-ai-cloud/requirements.lock.txt \
         --uv-lock /app/uv.lock \
         --package-extras "${PACKAGE_EXTRAS}" \
-        --uv-version "0.11.29" \
+        --uv-version "0.12.10" \
         --check-manifest /usr/local/share/npcink-ai-cloud/production-python-lock.json \
         --import-app
 
