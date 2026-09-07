@@ -99,6 +99,13 @@ truth.
 
 ## Quick Start
 
+The local Docker setup below is an optional runtime setup. In the approved
+M4 workflow, the authoring Mac does not need a root `.env` merely to edit or
+run source checks. Inspect command implementations before running them:
+`test:api`, `check:seam`, and `check:perimeter` currently invoke local Docker.
+Use the M4 lane for runtime checks and record any gate that was not executed;
+a focused M4 test does not automatically replace a broader gate.
+
 Requirements:
 
 - Python 3.12
