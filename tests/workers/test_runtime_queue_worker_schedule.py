@@ -135,7 +135,13 @@ def test_provider_refresh_and_heartbeat_continue_when_auto_repair_is_skipped(
     monkeypatch.setattr(worker, "configure_logging", lambda _level: None)
     monkeypatch.setattr(worker, "require_database_connection", lambda _url: None)
     monkeypatch.setattr(worker, "get_logger", lambda _name: FakeLogger())
-    monkeypatch.setattr(worker, "RedisRuntimeQueue", lambda *_args: queue)
+    queue_builds: list[dict[str, object]] = []
+
+    def build_queue(*_args: object, **kwargs: object) -> FakeQueue:
+        queue_builds.append(dict(kwargs))
+        return queue
+
+    monkeypatch.setattr(worker, "RedisRuntimeQueue", build_queue)
     monkeypatch.setattr(worker, "WorkerHeartbeat", FakeHeartbeat)
     monkeypatch.setattr(worker, "_build_runtime_service", build_service)
     monkeypatch.setattr(worker, "monotonic", lambda: next(monotonic_values))
@@ -153,4 +159,5 @@ def test_provider_refresh_and_heartbeat_continue_when_auto_repair_is_skipped(
         "processed",
     ]
     assert heartbeat_calls[-1]["payload"]["requeued_stale_queued_total"] == 0
+    assert queue_builds == [{"blocking_timeout_seconds": 5}]
     assert queue.closed is True

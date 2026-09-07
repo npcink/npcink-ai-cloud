@@ -100,6 +100,7 @@ def main() -> None:
     runtime_queue = RedisRuntimeQueue(
         settings.redis_url,
         settings.runtime_queue_key,
+        blocking_timeout_seconds=settings.runtime_worker_poll_seconds,
     )
     heartbeat = WorkerHeartbeat(
         settings=settings,

@@ -7,6 +7,10 @@ from redis.exceptions import RedisError
 
 from app.adapters.queue.base import RuntimeQueueError
 
+REDIS_CONNECT_TIMEOUT_SECONDS = 5.0
+REDIS_MIN_SOCKET_TIMEOUT_SECONDS = 10.0
+REDIS_BLOCKING_TIMEOUT_MARGIN_SECONDS = 5.0
+
 
 class RedisRuntimeQueue:
     def __init__(
@@ -14,15 +18,27 @@ class RedisRuntimeQueue:
         redis_url: str,
         queue_key: str,
         *,
+        blocking_timeout_seconds: float = 0,
         client: Redis | None = None,
     ) -> None:
         self.redis_url = redis_url
         self.queue_key = queue_key
+        self.socket_timeout_seconds = max(
+            REDIS_MIN_SOCKET_TIMEOUT_SECONDS,
+            max(0.0, float(blocking_timeout_seconds))
+            + REDIS_BLOCKING_TIMEOUT_MARGIN_SECONDS,
+        )
         self._client = client
 
     def _get_client(self) -> Redis:
         if self._client is None:
-            self._client = Redis.from_url(self.redis_url, decode_responses=True)
+            self._client = Redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=REDIS_CONNECT_TIMEOUT_SECONDS,
+                socket_timeout=self.socket_timeout_seconds,
+                retry_on_timeout=False,
+            )
         return self._client
 
     def publish(self, run_id: str) -> None:
