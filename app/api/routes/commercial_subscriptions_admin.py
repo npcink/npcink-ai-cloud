@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -145,7 +145,7 @@ async def list_admin_subscriptions(
     account_id: str | None = Query(default=None),
     customer: str | None = Query(default=None, max_length=191),
     plan_id: str | None = Query(default=None),
-    expires_before: datetime | None = Query(default=None),
+    expires_before: Annotated[datetime | None, Query()] = None,
     risk: Literal["all", "needs_action", "critical", "warning", "monitor", "stable"] = Query(
         default="all"
     ),
