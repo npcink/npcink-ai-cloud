@@ -253,7 +253,7 @@ If the next state needs a missing credential, operator authorization, paid
 Provider call, production mutation, or non-author user, report that exact
 missing evidence. Do not turn adjacent green checks into an inferred pass.
 
-## 7. Current Disposition and Explicit Deferrals
+## 7. Dated Disposition and Explicit Deferrals
 
 The historical findings that were in scope for the remediation plan are
 closed at the source/CI/M4 level documented above. The following are not
@@ -262,16 +262,62 @@ silently “fixed” by this synthesis:
 - no real non-author user/value cohort has been manufactured or inferred;
 - production has not been deployed by this closeout;
 - Admin mobile wide-table redesign remains deferred;
-- subscription name/email search remains deferred;
-- collapsed-sidebar abbreviations and shortcut-copy polish remain deferred;
+- subscription customer search was subsequently merged in PR #912;
+- collapsed-sidebar entry codes and platform shortcut labels were subsequently
+  merged in PRs #911 and #910 respectively;
 - broad giant-module refactoring remains deferred except for the bounded Site
-  Compliance extraction pilot;
+  Compliance and subscription route extraction pilots;
 - full commercial front-office and payment/reconciliation expansion remains
   outside the current Cloud boundary.
 
 These are deliberate scope decisions, not missing documentation. A future
 task must re-open them with a current issue ledger, owner, consumer evidence,
 and acceptance gate.
+
+### 7.1 Subsequent Admin work and corrections
+
+The subsequent conversation completed four separate PRs:
+
+| PR | Result | Merge revision |
+| --- | --- | --- |
+| #910 | Platform-specific shortcut labels | `bc329c15` |
+| #911 | Two-character collapsed PC sidebar entry codes | `143b18f7` |
+| #912 | Subscription search by account name, account ID, or email associated with an active membership | `7d6a490b` |
+| #913 | Three Admin subscription routes extracted into a dedicated module | `9ff66004` |
+
+The recorded closeout showed M4 accepted at `9ff66004` for PR #913, a clean
+main checkout and M4 operations worktree, and removal of the four topic
+branches. These are dated observations, not a live status assertion. The
+operator excluded mobile redesign and production deployment.
+
+The conversation also exposed limits in the implementation and reporting:
+
+- Local `check:seam` and `check:perimeter` exited before tests because their
+  Docker configuration required a missing root `.env`. This was a command
+  selection error in the source-only authoring workflow, not an operator
+  obligation to provision a local runtime.
+- `check:seam` includes the API suite and perimeter check. The perimeter
+  script checks production Compose configuration and runs health API/contract
+  tests. The recorded subscription smoke does not establish this full scope.
+  CI coverage must be mapped before claiming equivalent evidence.
+- Passing local API tests, browser checks, required CI and an M4 focused test
+  proves their respective assertions; it does not establish fresh-context
+  independent review or all compatibility properties of the extracted routes.
+- PR #913 removed 133 lines from `service.py` but added a 271-line module,
+  including duplicated HTTP/audit/receipt helpers. Original-file shrinkage
+  alone therefore does not prove reduced total maintenance burden or justify
+  expanding the pilot across the repository.
+- The PR descriptions selected `no_deploy` without recording an exact release
+  planner result. The justified statement is that production deployment was
+  not performed; runtime deployment classification remains a separate check.
+- The final receipt stated no stable-window 502 occurrence without a measured
+  stable-window count. Treat that metric as unmeasured, not zero.
+
+These corrections qualify the earlier blanket completion language. They do
+not undo merged work or assert a production defect. Future closeout should
+evaluate each promised requirement against its own evidence, including any
+remaining review and compatibility gaps. The durable execution rules are in
+[Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md).
 
 ## 8. Recommended Next Use
 
