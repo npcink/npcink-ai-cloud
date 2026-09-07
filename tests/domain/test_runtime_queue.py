@@ -9,6 +9,7 @@ from typing import cast
 import httpx
 import pytest
 from redis import Redis
+from redis.retry import Retry
 from sqlalchemy import select
 
 from app.adapters.callbacks.base import RuntimeCallbackDispatchRequest
@@ -1364,9 +1365,19 @@ def test_redis_runtime_queue_reuses_one_client_across_publish_and_consume(
 
     instances: list[FakeRedisClient] = []
 
-    def fake_from_url(redis_url: str, decode_responses: bool) -> FakeRedisClient:
+    def fake_from_url(
+        redis_url: str,
+        decode_responses: bool,
+        socket_connect_timeout: float,
+        socket_timeout: float,
+        retry: Retry,
+    ) -> FakeRedisClient:
         assert redis_url == "redis://example"
         assert decode_responses is True
+        assert socket_connect_timeout == 5.0
+        assert socket_timeout == 10.0
+        assert isinstance(retry, Retry)
+        assert retry._retries == 0
         client = FakeRedisClient()
         instances.append(client)
         return client
@@ -1383,6 +1394,16 @@ def test_redis_runtime_queue_reuses_one_client_across_publish_and_consume(
 
     assert len(instances) == 1
     assert instances[0].closed is True
+
+
+def test_redis_runtime_queue_socket_timeout_exceeds_blocking_poll_window() -> None:
+    queue = RedisRuntimeQueue(
+        "redis://example",
+        "runtime:test",
+        blocking_timeout_seconds=12,
+    )
+
+    assert queue.socket_timeout_seconds == 17.0
 
 
 def test_redis_runtime_queue_zero_timeout_uses_nonblocking_rpop_and_preserves_fifo() -> None:

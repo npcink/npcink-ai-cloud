@@ -79,6 +79,7 @@ def create_default_services(settings: Settings) -> CloudServices:
         runtime_queue=RedisRuntimeQueue(
             settings.redis_url,
             settings.runtime_queue_key,
+            blocking_timeout_seconds=settings.runtime_worker_poll_seconds,
         ),
         callback_dispatcher=HttpRuntimeCallbackDispatcher(
             timeout_seconds=settings.runtime_callback_timeout_seconds,
