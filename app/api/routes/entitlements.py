@@ -10,6 +10,8 @@ from app.api.envelope import build_envelope
 from app.core.security import extract_trace_id
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
+from app.domain.routing.service import RoutingService
+from app.domain.wordpress_ai_connector.readiness import build_wordpress_ai_capabilities
 
 router = APIRouter(prefix="/v1/entitlements", tags=["entitlements"])
 
@@ -234,7 +236,8 @@ def _build_entitlement_payload(
     account_id = str(site.get("account_id") or "")
     tier_id = _resolve_package_tier(policy)
     site_limit = _resolve_site_limit(policy, tier_id)
-    settings = get_cloud_services(request).settings
+    services = get_cloud_services(request)
+    settings = services.settings
     return {
         "contract_version": CONTRACT_VERSION,
         "paid_object": {
@@ -256,6 +259,15 @@ def _build_entitlement_payload(
             },
             "hosted_runtime_quota": _resolve_runtime_quota(policy),
             "pro_cloud_runtime": _resolve_pro_cloud_runtime(policy),
+            "wordpress_ai_capabilities": build_wordpress_ai_capabilities(
+                policy=policy,
+                routing=RoutingService(
+                    settings.database_url,
+                    settings=settings,
+                    execution_provider_ids=set(services.providers),
+                ),
+                provider_ids=set(services.providers),
+            ),
         },
         "quota_summary": _resolve_quota_summary(request, account_id),
     }

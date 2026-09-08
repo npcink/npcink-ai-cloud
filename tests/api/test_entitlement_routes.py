@@ -92,6 +92,15 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
         "end_at": "2026-06-01T00:00:00Z",
     }
     assert "task_packs" not in data["entitlement"]
+    readiness = data["entitlement"]["wordpress_ai_capabilities"]
+    assert readiness["contract_version"] == "wordpress-ai-capabilities-v1"
+    assert readiness["provider_call_performed"] is False
+    assert readiness["runtime_admission_required"] is True
+    assert set(readiness["capabilities"]) == {"text_generation", "image_generation", "vision"}
+    assert all(
+        item["configuration_state"] == "unavailable"
+        for item in readiness["capabilities"].values()
+    )
     assert data["entitlement"]["usage_limits"] == {
         "period": "month",
         "max_ai_credits": 10000.0,
