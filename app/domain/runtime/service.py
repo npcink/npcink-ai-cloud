@@ -63,6 +63,8 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
 )
+from app.domain.content_formatting.runtime import ABILITY as CONTENT_FORMAT_ABILITY
+from app.domain.content_formatting.runtime import execute_formatting
 from app.domain.hosted_model_defaults import (
     FREE_GPT55_TEXT_PROFILE_ID,
     VISION_AI_PROFILE_ID,
@@ -422,6 +424,8 @@ class RuntimeService:
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
         self.contract_validator.validate_runtime_data_handling_contract(request)
+        if request.ability_name == CONTENT_FORMAT_ABILITY:
+            return execute_formatting(self, request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
         if self._is_cloud_batch_runtime_request(request):
