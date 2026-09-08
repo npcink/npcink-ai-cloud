@@ -132,6 +132,62 @@ Peer Relay path can lose an initial handshake. This retries connection
 establishment only; it does not hide a failed transfer, switch transport mode,
 or extend an operation without limit.
 
+### Compiled Browser Preview
+
+The primary M4 frontend defaults to `NPCINK_CLOUD_M4_FRONTEND_MODE=production`.
+It compiles optimized assets on M4 before starting the Next.js standalone
+server. This is a production **build mode** in the disposable preview runtime;
+`NEXT_PUBLIC_ENV=development`, preview authentication, and loopback bindings
+remain unchanged. It does not authorize a production release.
+
+The existing dependency image and volume are reused. Frontend recreation or
+container restart runs a fresh build, with a five-minute health-check grace
+period. Expect a temporary frontend outage while compiling; API health remains
+a separate check. Unchanged frontend source and configuration still skip
+recreation during ordinary source sync.
+
+For active editing or recovery from a failed frontend build, explicitly select
+the development server on the authoring Mac:
+
+```bash
+NPCINK_CLOUD_M4_FRONTEND_MODE=development pnpm run m4:preview:deploy
+```
+
+Ordinary subsequent `sync`, `deploy`, and `promote` commands default back to
+the compiled preview. Specify the override on each source operation that
+should retain hot reload. The selected mode is recorded as `frontend_mode` in
+`m4:preview:status`; direct operations remain candidate evidence. Frontend
+slots and the optional local development Compose retain their existing dev
+server behavior.
+
+Rollback for this change is a candidate deploy with the development override.
+Use the same source checkout and candidate flags when recovering an unmerged
+candidate; do not promote it as accepted. Verify `/admin/login`, its static
+assets, `/health/live`, and the protected API routes after either switch.
+
+#### Browser and Login Acceptance
+
+- Measure HTML first-byte time, browser resource transfer size, hydration,
+  and form submission separately. A fast HTML response is not a usable page.
+- Compare M4 loopback with the actual operator tunnel. Read the overlay
+  client's connection type; ICMP loss alone does not establish SSH failure.
+- Do not run bulk downloads alongside browser timing. Record contention,
+  cache state, and build mode, and treat one sample as an observation.
+- After a build-mode change, verify an actual form submission, a visible
+  invalid-key error with an enabled retry button, and successful session
+  issuance and destination access when an authorized credential is available.
+  A successful GET or a mocked success test is not successful browser login.
+- Admin login response redirects use sanitized relative `/admin` paths so
+  loopback ports and the public origin both remain same-origin. Backend host
+  evidence stays bound to configured trusted origin. Never relax CSP, trust
+  arbitrary Origin/Referer, or remove cookie security to repair navigation.
+- Record candidate, merged, and accepted evidence separately. Promote clean
+  current master after merge and verify both runtime identity and browser
+  behavior. Never treat a historical receipt as current runtime state.
+
+See the [2026-09-08 investigation and retrospective](m4-compiled-preview-and-login-retrospective-2026-09-08.md)
+for measurements, the missed submission check, and remaining verification limits.
+
 ### Managed Relay Restart Check
 
 The managed relay host enables both `tailscaled` and `nginx` at boot, but the

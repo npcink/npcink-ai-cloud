@@ -32,6 +32,7 @@ M4_BROWSER_PREFLIGHT_SAMPLE_BYTES=262144
 M4_BROWSER_PREFLIGHT_MIN_BYTES_PER_SECOND=65536
 M4_ALLOW_NON_MASTER_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE:-0}"
 M4_ALLOW_DIRTY_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE:-0}"
+M4_FRONTEND_MODE="${NPCINK_CLOUD_M4_FRONTEND_MODE:-production}"
 
 DRY_RUN=0
 TMP_DIR=""
@@ -97,6 +98,7 @@ Environment overrides:
   NPCINK_CLOUD_M4_RELAY_HTTP_GROUP
   NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1 (explicit feature-branch candidate preview)
   NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1 (explicit dirty-worktree candidate preview)
+  NPCINK_CLOUD_M4_FRONTEND_MODE=production|development (default: production)
 EOF
 }
 
@@ -137,6 +139,10 @@ validate_ssh_host() {
 }
 
 validate_target() {
+	case "${M4_FRONTEND_MODE}" in
+		production|development) ;;
+		*) fail "M4 frontend mode must be production or development" ;;
+	esac
 	case "${M4_PROJECT_NAME}" in
 		npcink-ai-cloud-m4-preview)
 			fail "legacy project name is forbidden"
@@ -1671,6 +1677,7 @@ upload_and_apply() {
 	log "worker source SHA256: ${worker_source_sha}"
 	log "migration source SHA256: ${migration_source_sha}"
 	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
+	log "frontend mode: ${M4_FRONTEND_MODE}"
 
 	if [ "${DRY_RUN}" = "1" ]; then
 		if [ "${M4_SOURCE_TRANSFER_MODE}" = "relay" ]; then
@@ -1718,7 +1725,8 @@ upload_and_apply() {
 		"${acceptance_state}" \
 		"${promotion_pr}" \
 		"${M4_SOURCE_TRANSFER_MODE}" \
-		"${SOURCE_RELAY_URL}" <<'REMOTE_APPLY'
+		"${SOURCE_RELAY_URL}" \
+		"${M4_FRONTEND_MODE}" <<'REMOTE_APPLY'
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -1747,6 +1755,7 @@ acceptance_state="${21}"
 promotion_pr="${22}"
 source_transfer_mode="${23}"
 source_relay_url="${24}"
+export NPCINK_CLOUD_M4_FRONTEND_MODE="${25}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -2953,9 +2962,10 @@ fi
 wait_for_http() {
 	url="$1"
 	expected="$2"
+	max_attempts="${3:-60}"
 	attempt=0
-	while [ "${attempt}" -lt 60 ]; do
-		code="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" || true)"
+	while [ "${attempt}" -lt "${max_attempts}" ]; do
+		code="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "${url}" || true)"
 		if [ "${code}" = "${expected}" ]; then
 			return 0
 		fi
@@ -2967,7 +2977,8 @@ wait_for_http() {
 }
 
 wait_for_http "http://127.0.0.1:${preview_port}/health/live" 200
-wait_for_http "http://127.0.0.1:${preview_port}/" 200
+# A compiled preview needs a bounded build window before serving its first page.
+wait_for_http "http://127.0.0.1:${preview_port}/" 200 150
 
 for service in postgres redis api frontend proxy worker callback-worker ops-worker; do
 	container_id="$("${compose[@]}" ps -q "${service}")"
@@ -3039,6 +3050,7 @@ printf '%s\n' "${migration_source_sha}" > "${deployed_migration_source_marker}"
 	printf 'frontend_source_sha256=%s\n' "${frontend_source_sha}"
 	printf 'frontend_source_revision=%s\n' "${frontend_runtime_revision}"
 	printf 'frontend_config_sha256=%s\n' "${frontend_resolved_config_sha}"
+	printf 'frontend_mode=%s\n' "${NPCINK_CLOUD_M4_FRONTEND_MODE}"
 	printf 'worker_source_sha256=%s\n' "${worker_source_sha}"
 	printf 'migration_source_sha256=%s\n' "${migration_source_sha}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"

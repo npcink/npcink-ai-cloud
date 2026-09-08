@@ -53,6 +53,78 @@ PACKAGE_PROXY_VALIDATION = (
 OLLAMA_LAUNCH_AGENT = ROOT / "deploy" / "top.mqzj.npcink-ollama-preview.plist"
 
 
+@pytest.mark.parametrize(
+    ("mode", "build_exit", "expected_exit", "expected_calls"),
+    [
+        ("production", 0, 0, ["build", "serve"]),
+        ("production", 42, 42, ["build"]),
+        ("development", 0, 0, ["dev"]),
+        ("invalid", 0, 64, []),
+    ],
+)
+def test_m4_frontend_start_builds_before_serving_and_fails_closed(
+    tmp_path: Path,
+    mode: str,
+    build_exit: int,
+    expected_exit: int,
+    expected_calls: list[str],
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    calls = tmp_path / "calls.txt"
+    fake_node = fake_bin / "node"
+    fake_node.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            set -eu
+            case "$*" in
+                'node_modules/next/dist/bin/next build --webpack')
+                    test "$NODE_ENV" = production
+                    echo build >> "$CALLS"
+                    test "$BUILD_EXIT" = 0 || exit "$BUILD_EXIT"
+                    mkdir -p .next/standalone/frontend .next/static
+                    touch .next/standalone/frontend/server.js
+                    echo asset > .next/static/client.js
+                    ;;
+                '.next/standalone/frontend/server.js')
+                    test "$NODE_ENV" = production
+                    test "$HOSTNAME" = 0.0.0.0
+                    test "$PORT" = 3000
+                    test -f .next/standalone/frontend/.next/static/client.js
+                    test -f .next/standalone/frontend/public/favicon.ico
+                    echo serve >> "$CALLS"
+                    ;;
+                'node_modules/next/dist/bin/next dev --webpack -H 0.0.0.0')
+                    test "$NODE_ENV" = development
+                    echo dev >> "$CALLS"
+                    ;;
+                *) exit 99 ;;
+            esac
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_node.chmod(0o755)
+    (tmp_path / "public").mkdir()
+    (tmp_path / "public" / "favicon.ico").write_text("icon", encoding="utf-8")
+    completed = subprocess.run(
+        ["sh", str(ROOT / "frontend/scripts/m4-preview-start.sh"), mode],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "CALLS": str(calls),
+            "BUILD_EXIT": str(build_exit),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == expected_exit, completed.stderr
+    assert (calls.read_text().splitlines() if calls.exists() else []) == expected_calls
+
+
 def _write_fake_lsof(fake_bin: Path, *, port_is_occupied: bool) -> None:
     fake_lsof = fake_bin / "lsof"
     fake_lsof.write_text(
@@ -2184,7 +2256,9 @@ def test_m4_overlay_is_loopback_only_and_starts_the_complete_runtime() -> None:
         == 4
     )
     assert '"node"' in overlay
-    assert '"node_modules/next/dist/bin/next"' in overlay
+    assert '"scripts/m4-preview-start.sh"' in overlay
+    assert '${NPCINK_CLOUD_M4_FRONTEND_MODE:-production}' in overlay
+    assert "start_period: 5m" in overlay
     for service in (
         "postgres",
         "redis",
