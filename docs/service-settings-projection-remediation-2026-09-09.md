@@ -102,3 +102,20 @@ migration. The focused M4 suite passed 33 tests in 20.78s under Python 3.14.7;
 only the existing Starlette/httpx deprecation warning was reported.
 
 M4_OBSERVATION_RECEIPT date=2026-09-09; route=Pgy SSH + Tailscale relay; sync=7s transfer (4s upload, 3s download); focused=20.78s pytest; promotion=not occurred; operations=sync 2/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=phase-2 candidate on settings branch
+
+## Phase 3 candidate: usage value helpers
+
+`UsageService` retains all repository queries, usage windows, billing/credit
+aggregation, health evidence, and router/log projections. Pure time, rate,
+percentile, and non-negative-number helpers moved to
+`app/domain/usage/value_helpers.py`; compatibility methods remain on the
+service. This isolates reusable statistics behavior without moving any usage
+truth or changing query boundaries.
+
+M4 Phase 3 candidate: relay sync completed successfully. The sync detected the
+M4 database was behind the current Alembic head and performed the governed
+migration/recreate path; no source migration changed in this batch. Focused M4
+usage tests passed: 23 tests in 16.70s under Python 3.14.7, with only the
+existing Starlette/httpx deprecation warning.
+
+M4_OBSERVATION_RECEIPT date=2026-09-09; route=Pgy SSH + Tailscale relay; sync=6s transfer (4s upload, 2s download; migration drift path); focused=16.70s pytest; promotion=not occurred; operations=sync 3/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=phase-3 candidate on settings branch
