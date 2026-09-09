@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import case, delete, desc, func, select
 from sqlalchemy.sql.elements import ColumnElement
@@ -13,6 +13,51 @@ from app.core.models import (
     PluginObservabilityAttentionState,
     PluginObservabilityEvent,
     Site,
+)
+from app.domain.observability.plugin_event_projection import (
+    _attention_key as _attention_key_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _coerce_float as _coerce_float_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _coerce_int as _coerce_int_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _dict_items as _dict_items_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _format_datetime as _format_datetime_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _health_summary as _health_summary_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _hour_floor as _hour_floor_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _is_safe_scalar as _is_safe_scalar_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _optional_avg as _optional_avg_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _optional_int as _optional_int_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _parse_datetime as _parse_datetime_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _rowcount as _rowcount_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _stale_detail as _stale_detail_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _string_list as _string_list_value,
+)
+from app.domain.observability.plugin_event_projection import (
+    _success_rate as _success_rate_value,
 )
 
 ALLOWED_EVENT_FIELDS = {
@@ -680,6 +725,30 @@ class PluginObservabilityService:
             session.commit()
             return self._attention_state_summary(state, current_time=current_time)
 
+    def _parse_datetime(self, value: object) -> datetime | None:
+        return _parse_datetime_value(value)
+
+    def _optional_int(self, value: object) -> int | None:
+        return _optional_int_value(value)
+
+    def _coerce_int(self, value: object, default: int = 0) -> int:
+        return _coerce_int_value(value, default)
+
+    def _coerce_float(self, value: object, default: float = 0.0) -> float:
+        return _coerce_float_value(value, default)
+
+    def _dict_items(self, value: object) -> list[dict[str, object]]:
+        return _dict_items_value(value)
+
+    def _string_list(self, value: object) -> list[str]:
+        return _string_list_value(value)
+
+    def _rowcount(self, result: object) -> int:
+        return _rowcount_value(result)
+
+    def _is_safe_scalar(self, value: object) -> bool:
+        return _is_safe_scalar_value(value)
+
     def _normalize_event(
         self,
         *,
@@ -745,57 +814,13 @@ class PluginObservabilityService:
             and value not in ("", None)
         }
 
-    def _parse_datetime(self, value: object) -> datetime | None:
-        raw = str(value or "").strip()
-        if not raw:
-            return None
-        try:
-            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC)
 
-    def _optional_int(self, value: object) -> int | None:
-        if value is None or value == "":
-            return None
-        try:
-            return int(cast(Any, value))
-        except (TypeError, ValueError):
-            return None
 
-    def _coerce_int(self, value: object, default: int = 0) -> int:
-        try:
-            return int(cast(Any, value))
-        except (TypeError, ValueError):
-            return default
 
-    def _coerce_float(self, value: object, default: float = 0.0) -> float:
-        try:
-            return float(cast(Any, value))
-        except (TypeError, ValueError):
-            return default
 
-    def _dict_items(self, value: object) -> list[dict[str, object]]:
-        if not isinstance(value, list):
-            return []
-        return [
-            {str(key): item for key, item in candidate.items()}
-            for candidate in value
-            if isinstance(candidate, dict)
-        ]
 
-    def _string_list(self, value: object) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        return [str(item).strip() for item in value if str(item).strip()]
 
-    def _rowcount(self, result: object) -> int:
-        return self._coerce_int(getattr(result, "rowcount", 0))
 
-    def _is_safe_scalar(self, value: object) -> bool:
-        return value is None or isinstance(value, str | int | float | bool)
 
     def _build_totals(self, row: object) -> dict[str, object]:
         events_total = int(row[0] or 0)  # type: ignore[index]
@@ -918,29 +943,7 @@ class PluginObservabilityService:
             timeline.append(item)
         return timeline
 
-    def _hour_floor(self, value: datetime) -> datetime:
-        normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-        return normalized.replace(minute=0, second=0, microsecond=0)
 
-    def _attention_key(
-        self,
-        *,
-        code: str,
-        site_id: str = "",
-        plugin_slug: str = "",
-        event_kind: str = "",
-        error_code: str = "",
-    ) -> str:
-        source = "|".join(
-            [
-                str(code or ""),
-                str(site_id or ""),
-                str(plugin_slug or ""),
-                str(event_kind or ""),
-                str(error_code or ""),
-            ]
-        )
-        return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
     def _apply_attention_states(
         self,
@@ -1382,31 +1385,7 @@ class PluginObservabilityService:
             "reasons": reasons,
         }
 
-    def _health_summary(self, status: str) -> str:
-        if status == "error":
-            return "Error pressure needs operator attention."
-        if status == "warning":
-            return "Review the highlighted monitoring signals."
-        if status == "inactive":
-            return "No plugin events in the selected window."
-        return "Plugin telemetry is reporting normally."
 
-    def _stale_detail(
-        self,
-        last_seen_at: str,
-        *,
-        current_time: datetime,
-        window_hours: int,
-    ) -> str:
-        last_seen = self._parse_datetime(last_seen_at)
-        if not last_seen:
-            return ""
-        stale_threshold = timedelta(hours=min(24, max(2, window_hours // 4)))
-        age = current_time - last_seen
-        if age <= stale_threshold:
-            return ""
-        age_hours = round(age.total_seconds() / 3600, 1)
-        return f"Last plugin event was received {age_hours} hours ago."
 
     def _attention_item(
         self,
@@ -1474,18 +1453,28 @@ class PluginObservabilityService:
             "site_id": event.site_id,
         }
 
+
+
+
+    def _hour_floor(self, value: datetime) -> datetime:
+        return _hour_floor_value(value)
+
+    def _attention_key(self, **kwargs: str) -> str:
+        return _attention_key_value(**kwargs)
+
+    def _health_summary(self, status: str) -> str:
+        return _health_summary_value(status)
+
+    def _stale_detail(self, last_seen_at: str, *, current_time: datetime, window_hours: int) -> str:
+        return _stale_detail_value(
+            last_seen_at, current_time=current_time, window_hours=window_hours
+        )
+
     def _success_rate(self, events_total: int, error_total: int) -> float:
-        if events_total <= 0:
-            return 0.0
-        return round(max(0, events_total - error_total) / events_total, 4)
+        return _success_rate_value(events_total, error_total)
 
     def _optional_avg(self, value: object) -> int:
-        if value is None:
-            return 0
-        return int(round(self._coerce_float(value)))
+        return _optional_avg_value(value)
 
     def _format_datetime(self, value: object) -> str:
-        if not isinstance(value, datetime):
-            return ""
-        normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-        return normalized.isoformat().replace("+00:00", "Z")
+        return _format_datetime_value(value)

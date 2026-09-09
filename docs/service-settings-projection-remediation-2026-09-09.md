@@ -81,3 +81,24 @@ candidate. No migration or data repair is required. Publication/merge and
 production are outside the authorized development lane.
 
 M4_OBSERVATION_RECEIPT date=2026-09-09; route=Pgy SSH + Tailscale relay; sync=not measured (relay upload 4s/download 4s); focused=not measured (pytest 9.89s); promotion=not occurred; operations=sync 1/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=prior candidate replaced, source preserved
+
+## Phase 2 candidate: plugin observability value projection
+
+The second batch keeps event ingestion, database aggregation, retention cleanup,
+consent boundaries, site joins, and attention-state mutation in
+`PluginObservabilityService`. It moves only pure scalar/date/health-key helpers
+to `app/domain/observability/plugin_event_projection.py`; the service retains
+thin compatibility methods so all existing callers and query behavior remain
+unchanged. New focused tests cover UTC normalization, safe scalar filtering,
+rate calculation, and site-scoped attention-key stability.
+
+This is a low-risk structural batch. It does not claim that the remaining
+1,480-line service should be split wholesale. The next observation checkpoint
+must measure whether a pure report builder can be separated without crossing
+site isolation or attention-state contracts.
+
+M4 Phase 2 candidate: relay source sync completed with no image build or
+migration. The focused M4 suite passed 33 tests in 20.78s under Python 3.14.7;
+only the existing Starlette/httpx deprecation warning was reported.
+
+M4_OBSERVATION_RECEIPT date=2026-09-09; route=Pgy SSH + Tailscale relay; sync=7s transfer (4s upload, 3s download); focused=20.78s pytest; promotion=not occurred; operations=sync 2/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=phase-2 candidate on settings branch
