@@ -1,6 +1,7 @@
 # Background Evidence and Natural Cron Delivery Handoff
 
-Status: candidate validated; natural journey delivery pending. Updated 2026-09-09.
+Status: complete. Cloud evidence merged and accepted on M4; natural journey
+delivery accepted. Updated 2026-09-09.
 
 ## Ownership and Scope
 
@@ -24,18 +25,20 @@ expansion remain paused. Production is outside this work.
   The 24-record backup and 10 quarantined fake-run events remain in option
   `npcink_acceptance_journey_backup_20260908_281071`; do not replay them.
 
-## Background Evidence Candidate
+## Background Evidence Delivery
 
 Implementation contract: [Generation Context Evidence v1](generation-context-evidence-v1.md).
-Authoring worktree: `/Users/muze/gitee/.worktrees/npcink-cloud-generation-context`.
-Branch: `codex/generation-context-evidence`, locked for this task.
-Base/current fetched `origin/master`: `e19afb17dafc1b17fbc9f650860365b9571561ed`.
+Cloud PR [#929](https://github.com/npcink/npcink-ai-cloud/pull/929)
+merged to `master` as `d8b1343e1d9bb67e18c7dbd2aa35b30443d9229d`.
+The clean stable operations worktree promoted that PR and reports
+`acceptance_state=accepted`, `promotion_pr=929`, `source_branch=master`, and
+`source_dirty=false`. API, database, Redis, frontend, proxy, and required
+workers were healthy. Production was not changed.
 
-The 2026-09-09 read-only M4 check still reports `acceptance_state=candidate`,
-`promotion_pr=none`, `source_dirty=true`, and bundle
-`c52ad49687ae5bb2ea7b588a01daf18913d3015cc4f0f6d8420a376090e3a458`.
-API, frontend, proxy and storage health checks passed; required workers run.
-No source changes or new M4 sync were needed during this handoff.
+The merged implementation passed 67 focused local domain tests, Ruff, targeted
+mypy, GitHub required checks, and the recorded M4 focused suite. The two
+test-only failures described below were corrected and passed in focused reruns
+before publication.
 
 Reused exact-scope validation from the preceding implementation turn:
 
@@ -68,9 +71,23 @@ after saving its exact diff to
 Only that known task hunk was removed; unrelated edits remain. Do not restore
 this obsolete unvalidated projection or merge it alongside the snapshot design.
 
+### Real post-merge evidence
+
+On 2026-09-09, one bounded WordPress `ai/title-generation` request used the
+existing dedicated draft `281071`. It returned a suggestion without saving or
+publishing the draft and created Cloud run
+`run_47770a0caa4c4080b7e8ec02efb7f1c1`. The signed result read projected:
+
+- `contract_version=generation_context_evidence.v1`;
+- `status=applied`, `mode=site_title_style`, `reason=references_applied`;
+- `reference_count=1`, `context_chars=120`.
+
+This proves bounded site-title background was assembled into that run. It does
+not prove automatic adoption, publishing, or general output quality.
+
 ## Natural Cron Observation
 
-At `2026-09-09T01:04:46Z`, read-only database inspection confirmed:
+Initial read-only inspection confirmed:
 
 - site URL `http://magick-ai.local`, `DISABLE_WP_CRON=false`;
 - `npcink_cloud_addon_flush_observability` scheduled hourly, next due
@@ -99,23 +116,44 @@ same event/run can be correlated with buffer removal. Do not call
 model requests to manufacture this evidence. If no real event exists, keep
 the state `pending_no_real_event`; continue bounded observation during normal use.
 
-## Remaining Closeout
+At `2026-09-09T04:03Z`, the bounded title request above created two real local
+events. `journey_event_7ea08934ea5649d585a7abeaaf6ed9c9` records `started`;
+`journey_event_6e4e340baa604ee6a25a1f9a9756b4a3` records `succeeded` and correlates
+to `run_47770a0caa4c4080b7e8ec02efb7f1c1`. Both remained pending until the
+hourly WP-Cron cycle due after `2026-09-09T04:42:04Z`. A pre-delivery Cloud
+query found neither event, establishing the before state without flushing the
+buffer.
 
-The code is uncommitted and not merged; candidate validation does not close
-Git delivery. Publication requires the merge lane, protected checks and clean
-master M4 promotion. Preserve the locked task worktree until that chain finishes.
-Natural Cron remains independently pending; neither merge nor health grants
-upload acceptance. Do not archive the observation while it still has no proof.
+Existing normal WordPress traffic triggered the due cycle without a Cron
+endpoint, WP-CLI Cron runner, manual flush, fake event, or reschedule. A
+separately scheduled ordinary site-home request occurred at
+`2026-09-09T04:42:11Z`, six seconds after Cloud had already received the batch,
+so it is not claimed as the trigger. The schedule advanced to
+`2026-09-09T05:42:04Z` and the local journey buffer became empty. Cloud stored
+both events with received time `2026-09-09T04:42:05.580169Z`. As required by
+the active privacy contract,
+Cloud stores `SHA-256(site_id|event_id)` rather than the raw event ID. The
+expected and stored values matched exactly:
+
+- started: `18825c6e3266556d05b56b8efcfe896e3e32e651d2c52fdd6eca3a33bf3480f2`;
+- succeeded: `c5efbf197223349959fdca7c6ce3aac8ea99aef668635ee950c863e075b16de7`.
+
+The succeeded row retained `run_47770a0caa4c4080b7e8ec02efb7f1c1`.
+Natural customer-journey delivery is accepted.
+
+## Closeout
+
+Cloud code delivery, clean-master M4 acceptance, real generation-context
+evidence, and natural Cron delivery are complete. The clean merged task
+worktree and its local and remote topic branch were removed after PR merge was
+confirmed. The Addon inspector was extended separately to display the expected
+site-scoped Cloud hash for future correlation without exposing site identity or
+credentials.
 
 Use the existing foreground tunnel during active Local observation. Stop only
 the tunnel owned by this task when observation ends; do not add a tunnel daemon.
 No production promotion, global branch cleanup or cross-repository release is
 implied by this handoff.
 
-Observation continuation: heartbeat `wordpress-cron` was created in this task
-on 2026-09-09, hourly and read-only. It stays quiet without changes, pauses on
-success or after 24 hours without a real sample, and never manufactures traffic
-or model calls. Foreground tunnel session `56006` uses the existing auto route
-and reported `tunnel_ready=true` via LAN. Its continued availability must be
-checked rather than assumed. Merge-lane scope confirmation was requested;
-until an answer arrives, no commit, push, PR or promotion is authorized here.
+The temporary `wordpress-cron` heartbeat and foreground M4 tunnel can be
+stopped after this receipt is committed. No production promotion occurred.

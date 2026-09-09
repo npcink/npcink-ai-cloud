@@ -1,6 +1,7 @@
 # Generation Context Evidence v1
 
-Status: candidate contract; see [dated validation and remaining gates](background-evidence-and-cron-handoff-2026-09-09.md).
+Status: active additive contract, merged in Cloud PR #929 and accepted on M4;
+see [dated validation and closeout evidence](background-evidence-and-cron-handoff-2026-09-09.md).
 
 ## Scope and Meaning
 
