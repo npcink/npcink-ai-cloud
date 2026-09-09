@@ -119,3 +119,20 @@ usage tests passed: 23 tests in 16.70s under Python 3.14.7, with only the
 existing Starlette/httpx deprecation warning.
 
 M4_OBSERVATION_RECEIPT date=2026-09-09; route=Pgy SSH + Tailscale relay; sync=6s transfer (4s upload, 2s download; migration drift path); focused=16.70s pytest; promotion=not occurred; operations=sync 3/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=phase-3 candidate on settings branch
+
+## Phase 4 candidate: provider connection public projection helpers
+
+The provider connection service keeps credential readiness, provider network
+probes, catalog sync, runtime selection, and all mutations. Only recursive
+config sanitization and allowlisted image-delivery evidence projection moved to
+`app/domain/provider_connections/projection.py`. Existing provider route tests
+(32) plus two pure projection tests pass. No credential values are exposed and
+no runtime truth moves to the projection module.
+
+M4 Phase 4 candidate: clean committed source sync completed via Tailscale relay;
+no image build or migration was required. Provider projection focused tests
+passed: 34 tests in 20.95s under Python 3.14.7. The batch removes the duplicate
+in-service sanitizers and keeps the credential/runtime/network owners in the
+service.
+
+M4_OBSERVATION_RECEIPT date=2026-09-10; route=Pgy SSH + Tailscale relay; sync=15s transfer (13s upload, 2s download); focused=20.95s pytest; promotion=not occurred; operations=sync 4/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=phase-4 candidate clean source
