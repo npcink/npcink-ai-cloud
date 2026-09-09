@@ -1,7 +1,9 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
+import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -310,12 +312,7 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
 }
 
 type WindowOption = 24 | 72 | 168;
-type PluginFilter =
-  | 'all'
-  | 'npcink-abilities-toolkit'
-  | 'npcink-governance-core'
-  | 'npcink-ai-client-adapter'
-  | 'npcink-cloud-addon';
+type PluginFilter = string;
 type AttentionWorkflowFilter = 'active' | 'acknowledged' | 'muted' | 'resolved' | 'all';
 type AttentionSeverityFilter = 'all' | 'warning' | 'error';
 type AttentionStateAction = 'acknowledge' | 'mute' | 'resolve' | 'clear';
@@ -368,7 +365,7 @@ function attentionTone(severity: string): 'warning' | 'danger' | 'info' {
 function timelineLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return `${String(date.getHours()).padStart(2, '0')}:00`;
+  return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:00`;
 }
 
 function timestampValue(value: string): number {
@@ -377,58 +374,6 @@ function timestampValue(value: string): number {
 }
 
 type SiteSortKey = 'errors' | 'success' | 'events' | 'latency' | 'lastSeen';
-
-function statusLabel(t: TranslationFn, status: string): string {
-  return t(`status.${status || 'unknown'}`, {}, status || 'unknown');
-}
-
-function pluginHealthSummary(t: TranslationFn, data: PluginObservabilityData): string {
-  if (data.totals.eventsTotal <= 0 || data.health.status === 'inactive') {
-    return t(
-      'admin.plugin_obs_health_summary_inactive',
-      {},
-      'No plugin events in this window.'
-    );
-  }
-  return t(
-    'admin.plugin_obs_health_summary_active',
-    {
-      events: formatInteger(data.totals.eventsTotal),
-      errors: formatInteger(data.totals.errorTotal),
-      latency: formatInteger(data.totals.avgLatencyMs),
-    },
-    '{{events}} events · {{errors}} errors · avg {{latency}}ms'
-  );
-}
-
-function pluginDigestCopy(t: TranslationFn, data: PluginObservabilityData) {
-  if (data.totals.eventsTotal <= 0) return null;
-  const topPlugin = data.digest.topPluginSlug || data.plugins[0]?.pluginSlug || t('common.not_available');
-  const topError = data.digest.topErrorCode || data.errors[0]?.errorCode || t('admin.plugin_obs_no_errors_short', {}, 'None');
-  const hours = String(data.digest.windowHours || data.window.hours || 24);
-  const periodKey = data.digest.periodLabel
-    ? `admin.plugin_obs_period_${data.digest.periodLabel}`
-    : 'admin.plugin_obs_period_hours';
-  return {
-    period: t(periodKey, { hours }, data.digest.periodLabel || `${hours}h`),
-    headline: t(
-      'admin.plugin_obs_digest_headline',
-      {
-        events: formatInteger(data.totals.eventsTotal),
-        errors: formatInteger(data.totals.errorTotal),
-        sites: formatInteger(data.totals.activeSiteCount),
-        plugins: formatInteger(data.totals.activePluginCount),
-      },
-      '{{events}} plugin events across {{sites}} sites and {{plugins}} plugins.'
-    ),
-    bullets: [
-      t('admin.plugin_obs_digest_bullet_success', { rate: formatSuccessRate(data.totals.successRate) }, 'Success rate: {{rate}}'),
-      t('admin.plugin_obs_digest_bullet_latency', { latency: formatInteger(data.totals.avgLatencyMs) }, 'Average latency: {{latency}}ms'),
-      t('admin.plugin_obs_digest_bullet_top_plugin', { plugin: topPlugin }, 'Top reporting plugin: {{plugin}}'),
-      t('admin.plugin_obs_digest_bullet_top_error', { error: topError }, 'Top error: {{error}}'),
-    ],
-  };
-}
 
 function attentionCodeSuffix(code: string): string {
   return (
@@ -449,10 +394,10 @@ function attentionParams(t: TranslationFn, item: AttentionItem): Record<string, 
   const fallback = t('common.not_available');
   return {
     site: item.siteId || fallback,
-    plugin: item.pluginSlug || fallback,
+    plugin: pluginLabel(t, item.pluginSlug) || fallback,
     plugins: missingPluginsFromDetail(item.detail) || item.pluginSlug || fallback,
-    eventKind: item.eventKind || fallback,
-    errorCode: item.errorCode || fallback,
+    eventKind: eventLabel(t, item.eventKind) || fallback,
+    errorCode: errorLabel(t, item.errorCode) || fallback,
   };
 }
 
@@ -487,20 +432,37 @@ function attentionActionLabel(t: TranslationFn, action: AttentionStateAction): s
   );
 }
 
+function errorKey(item: ErrorItem) { return JSON.stringify([item.siteId, item.pluginSlug, item.eventKind, item.errorCode]); }
+function pluginLabel(t: TranslationFn, slug: string) {
+  const option = PLUGIN_FILTER_OPTIONS.find(item => item.value === slug);
+  return option ? t(option.labelKey) : t('admin.plugin_obs_other_plugin');
+}
+function eventLabel(t: TranslationFn, code: string) {
+  const known: Record<string, string> = {"addon.editor_assist.generation.completed": "admin.plugin_obs_event_map_0", "addon.editor_assist.outcome.observed": "admin.plugin_obs_event_map_1", "addon.editor_assist.outcome.expired": "admin.plugin_obs_event_map_2", "addon.media_recognition.completed": "admin.plugin_obs_event_map_3", "addon.media_recognition.failed": "admin.plugin_obs_event_map_4", "validation.technical_monitoring_only": "admin.plugin_obs_event_map_5", "runtime_request": "admin.plugin_obs_event_map_6"};
+  return t(known[code] || 'admin.plugin_obs_event_other');
+}
+function errorLabel(t: TranslationFn, code: string) {
+  const known: Record<string, string> = {"runtimecanceled": "admin.plugin_obs_error_map_0", "provider_timeout": "admin.plugin_obs_error_map_1", "timeout": "admin.plugin_obs_error_map_2"};
+  return t(known[code.toLowerCase()] || 'admin.plugin_obs_error_other');
+}
+function healthReason(t: TranslationFn, code: string) {
+  const known: Record<string, string> = {"plugin_observability.error_rate_high": "admin.plugin_obs_health_map_0", "plugin_observability.error_rate_elevated": "admin.plugin_obs_health_map_1", "plugin_observability.latency_high": "admin.plugin_obs_health_map_2", "plugin_observability.reporting_stale": "admin.plugin_obs_health_map_3", "plugin_observability.inactive": "admin.plugin_obs_health_map_4"};
+  return t(known[code] || 'admin.plugin_obs_health_other');
+}
+
 function normalizeWindowOption(value: string | null): WindowOption {
   const parsed = Number(value);
   return parsed === 72 || parsed === 168 ? parsed : 24;
 }
 
 function normalizePluginFilter(value: string | null): PluginFilter {
-  return PLUGIN_FILTER_OPTIONS.some((option) => option.value === value) ? value as PluginFilter : 'all';
+  return value?.trim() || 'all';
 }
 
 function AdminPluginObservabilityContent() {
   const { t } = useLocale();
   const toast = useToast();
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const windowHours = normalizeWindowOption(searchParams.get('window'));
   const pluginFilter = normalizePluginFilter(searchParams.get('plugin'));
@@ -510,6 +472,9 @@ function AdminPluginObservabilityContent() {
   const [error, setError] = useState('');
   const [siteIdInput, setSiteIdInput] = useState(siteIdFilter);
   const [loading, setLoading] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [issueKey, setIssueKey] = useState<string | null>(null);
+  const [inspectedSite, setInspectedSite] = useState<string | null>(null);
   const [siteSort, setSiteSort] = useState<SiteSortKey>('errors');
   const [attentionWorkflowFilter, setAttentionWorkflowFilter] =
     useState<AttentionWorkflowFilter>('active');
@@ -519,7 +484,6 @@ function AdminPluginObservabilityContent() {
   const [attentionActionKey, setAttentionActionKey] = useState('');
   const requestSequenceRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
-  const hasLoadedRef = useRef(false);
 
   const updateUrl = useCallback((updates: {
     window?: WindowOption | null;
@@ -533,15 +497,16 @@ function AdminPluginObservabilityContent() {
       else params.delete(key);
     });
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, router, searchParams]);
+    window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
+  }, [pathname, searchParams]);
 
   const loadData = useCallback(async (refresh = false) => {
     requestAbortRef.current?.abort();
     const sequence = ++requestSequenceRef.current;
     const controller = new AbortController();
     requestAbortRef.current = controller;
-    if (!hasLoadedRef.current || !refresh) setLoading(true);
+    setLoading(true);
+    if (!refresh) { setData(null); setIssueKey(null); setInspectedSite(null); }
     setError('');
     try {
       const params = new URLSearchParams({ window_hours: String(windowHours) });
@@ -553,7 +518,6 @@ function AdminPluginObservabilityContent() {
       );
       if (sequence !== requestSequenceRef.current) return;
       setData(normalizePluginObservability(response.data));
-      hasLoadedRef.current = true;
     } catch (err) {
       if (sequence !== requestSequenceRef.current) return;
       setError(resolveUiErrorMessage(err, t('error.failed_load')));
@@ -632,21 +596,21 @@ function AdminPluginObservabilityContent() {
   const pluginErrorData = useMemo(
     () =>
       (data?.plugins || []).map((plugin) => ({
-        label: plugin.pluginSlug.replace('npcink-', ''),
+        label: pluginLabel(t, plugin.pluginSlug),
         value: plugin.errorTotal,
         color: plugin.errorTotal > 0 ? '#f59e0b' : '#22c55e',
       })),
-    [data]
+    [data, t]
   );
 
   const pluginVolumeData = useMemo(
     () =>
       (data?.plugins || []).map((plugin) => ({
-        label: plugin.pluginSlug.replace('npcink-', ''),
+        label: pluginLabel(t, plugin.pluginSlug),
         value: plugin.eventsTotal,
         color: plugin.errorTotal > 0 ? '#f59e0b' : '#2563eb',
       })),
-    [data]
+    [data, t]
   );
 
   const hasPluginErrors = pluginErrorData.some((item) => item.value > 0);
@@ -674,7 +638,6 @@ function AdminPluginObservabilityContent() {
     });
   }, [attentionCodeFilter, attentionSeverityFilter, attentionWorkflowFilter, data]);
   const selectedAttention = filteredAttention.find((item) => item.attentionKey === focusedAttentionKey)
-    || filteredAttention[0]
     || null;
 
   const sortedSites = useMemo(() => {
@@ -690,184 +653,109 @@ function AdminPluginObservabilityContent() {
     });
   }, [data, siteSort]);
 
-  const errorBySite = useMemo(() => {
-    const lookup = new Map<string, ErrorItem>();
-    for (const item of data?.errors || []) {
-      if (item.siteId && !lookup.has(item.siteId)) {
-        lookup.set(item.siteId, item);
-      }
-    }
-    return lookup;
-  }, [data]);
-
-  const digestCopy = useMemo(() => (data ? pluginDigestCopy(t, data) : null), [data, t]);
-
-  if (loading && !data) {
-    return <LoadingFallback />;
-  }
-
-  const isEmpty = data !== null && data.totals.eventsTotal === 0 && data.attention.length === 0;
-  const effectiveHealthStatus = data && data.attentionWorkflow.needsAttention > 0
-    ? data.attention.some((item) => item.severity === 'error') ? 'error' : 'warning'
-    : data?.health.status || 'inactive';
-  const effectiveHealthLabel = data && data.attentionWorkflow.needsAttention > 0
-    ? t('admin.plugin_obs_health_needs_attention', {}, 'Needs attention')
-    : data ? `${statusLabel(t, data.health.status)} · ${data.health.score}` : '';
+  const extraPlugins = Array.from(new Set([pluginFilter, ...(data?.plugins.map(plugin => plugin.pluginSlug) || [])])).filter(slug => !PLUGIN_FILTER_OPTIONS.some(option => option.value === slug));
+  const selectedIssue = data?.errors.find((item) => errorKey(item) === issueKey);
+  const siteName = (id: string | null) => data?.sites.find((site) => site.siteId === id)?.siteName || id || t('admin.plugin_obs_unknown_site');
+  const siteDetails = data?.sites.find((site) => site.siteId === inspectedSite);
+  const recent = (data?.recentErrors || []).filter((item) => selectedIssue
+    ? item.siteId === selectedIssue.siteId && item.pluginSlug === selectedIssue.pluginSlug && item.eventKind === selectedIssue.eventKind && item.errorCode === selectedIssue.errorCode
+    : item.siteId === inspectedSite);
+  const copyEvidence = async () => {
+    if (!selectedIssue) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({ window: data?.window, problem: selectedIssue, recentErrors: recent }, null, 2));
+      toast.success(t('admin.plugin_obs_copied'));
+    } catch { toast.error(t('admin.plugin_obs_copy_failed')); }
+  };
+  const problemColumns = ['problem', 'site', 'count', 'last', 'action'];
+  const cellClass = 'px-4 py-3 text-left text-sm';
+  const closeLabel = t('common.close', {}, 'Close');
 
   return (
     <BackofficePageStack>
-      <BackofficePageHeader
-        eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
-        title={t('admin.plugin_observability_title', {}, 'Plugin Observability')}
-        description={t(
-          'admin.plugin_observability_desc',
-          {},
-          'Cross-site plugin event volume, error rates, latency, and recent errors for npcink-abilities-toolkit, npcink-governance-core, npcink-ai-client-adapter, and npcink-cloud-addon.'
-        )}
-        secondaryAction={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+      <BackofficePageHeader title={t('admin.plugin_observability_title')} description={t('admin.plugin_obs_intro')}
+        secondaryAction={<div className="flex gap-2"><button className="btn btn-secondary btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.plugin_obs_more')}{data ? ` · ${data.attentionWorkflow.needsAttention}` : ''}</button><button className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh')}</button></div>}
         summaryItems={data ? [
-          { label: t('admin.plugin_obs_events', {}, 'Events'), value: formatInteger(data.totals.eventsTotal) },
-          { label: t('admin.plugin_obs_success_rate', {}, 'Success rate'), value: formatSuccessRate(data.totals.successRate), toneClassName: successRateStatus(data.totals.successRate) === 'error' ? 'text-rose-600 dark:text-rose-400' : successRateStatus(data.totals.successRate) === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined },
-          { label: t('admin.plugin_obs_avg_latency', {}, 'Avg latency'), value: `${data.totals.avgLatencyMs}ms` },
-          { label: t('admin.plugin_obs_active_sites', {}, 'Active sites'), value: formatInteger(data.totals.activeSiteCount) },
-          { label: t('admin.plugin_obs_attention_open', {}, 'Open watch items'), value: formatInteger(data.attentionWorkflow.needsAttention), toneClassName: data.attentionWorkflow.needsAttention > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
-        ] : []}
-        summaryAside={data ? <BackofficeStatusBadge status={effectiveHealthStatus} label={effectiveHealthLabel} /> : undefined}
-      />
-
-      <BackofficeSectionPanel className="p-4 md:p-5">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-          {WINDOW_OPTIONS.map((opt) => (
-            <BackofficeFilterPill
-              key={opt.value}
-              active={windowHours === opt.value}
-              tone="info"
-              onClick={() => updateUrl({ window: opt.value, focus: null })}
-            >
-              {opt.label}
-            </BackofficeFilterPill>
-          ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-          {PLUGIN_FILTER_OPTIONS.map((opt) => (
-            <BackofficeFilterPill
-              key={opt.value}
-              active={pluginFilter === opt.value}
-              tone="accent"
-              onClick={() => updateUrl({ plugin: opt.value, focus: null })}
-            >
-              {t(opt.labelKey, {}, opt.fallback)}
-            </BackofficeFilterPill>
-          ))}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input type="text" value={siteIdInput} aria-label={t('admin.plugin_obs_site_filter_label', {}, 'Filter by site ID')} onChange={(e) => setSiteIdInput(e.target.value)} onKeyDown={handleSiteIdKeyDown} placeholder={t('admin.plugin_obs_site_filter', {}, 'Site ID')} className="input h-9 min-w-0 flex-1 sm:max-w-xs" />
-            <button type="button" onClick={handleSiteIdSubmit} className="btn btn-secondary btn-sm justify-center">{t('common.apply', {}, 'Apply')}</button>
-            {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm justify-center" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
-            {data?.generatedAt ? <p className="text-xs text-slate-500 sm:ml-auto dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
-          </div>
+          { label: t('admin.plugin_obs_reporting_sites'), value: formatInteger(data.totals.activeSiteCount) },
+          { label: t('admin.plugin_obs_error_records'), value: formatInteger(data.totals.errorTotal) },
+          { label: t('admin.plugin_obs_affected_sites'), value: formatInteger(data.sites.filter(site => site.errorTotal > 0).length) },
+          { label: t('admin.plugin_obs_record_count'), value: formatInteger(data.totals.eventsTotal) },
+        ] : []} />
+      <div className="flex flex-wrap items-center gap-3">
+        {WINDOW_OPTIONS.map(opt => <BackofficeFilterPill key={opt.value} active={windowHours === opt.value} onClick={() => updateUrl({window: opt.value, focus: null})}>{t(`admin.plugin_obs_window_${opt.value}`)}</BackofficeFilterPill>)}
+        <label className="text-sm">{t('admin.plugin_obs_plugin')}<select className="input ml-2 w-auto" aria-label={t('admin.plugin_obs_plugin')} value={pluginFilter} onChange={event => updateUrl({plugin: event.target.value as PluginFilter, focus: null})}>{PLUGIN_FILTER_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>)}{extraPlugins.map(slug => <option key={slug} value={slug}>{pluginLabel(t, slug)} · {slug}</option>)}</select></label>
+        <label className="text-sm">{t('admin.plugin_obs_site')}<input list="plugin-sites" className="input ml-2 w-auto" aria-label={t('admin.plugin_obs_site_filter')} value={siteIdInput} onChange={event => setSiteIdInput(event.target.value)} onKeyDown={handleSiteIdKeyDown} placeholder={t('admin.plugin_obs_all_sites')} /><datalist id="plugin-sites">{data?.sites.map(site => <option key={site.siteId} value={site.siteId}>{site.siteName || site.siteId}</option>)}</datalist></label>
+        <button className="btn btn-secondary btn-sm" onClick={handleSiteIdSubmit}>{t('common.apply')}</button>
+        {siteIdFilter || pluginFilter !== 'all' ? <button className="btn btn-ghost btn-sm" onClick={() => {setSiteIdInput(''); updateUrl({site: null, plugin: null, focus: null});}}>{t('admin.plugin_obs_reset')}</button> : null}
+        <span className="text-xs text-slate-500">{data?.generatedAt ? `${t('common.updated_at')}: ${formatDate(data.generatedAt)}` : ''}</span>
+      </div>
+      {error ? <div role="alert" className="text-sm text-rose-700">{t('error.failed_load')}<details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary>{error}</details>{data ? <p>{t('admin.plugin_obs_stale_notice')}</p> : null}</div> : null}
+      {loading && !data ? <LoadingFallback /> : null}
+      {data ? <>
+        <p className="text-sm text-slate-600">{data.totals.eventsTotal === 0 ? t('admin.plugin_obs_no_records') : data.totals.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</p>
+        <AdminDataTableFrame title={t('admin.plugin_obs_problems')} resultLabel={t('admin.plugin_obs_group_note')} dataUi="plugin-problems" density="compact">
+          <table className="w-full"><thead><tr>{problemColumns.map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>
+            {data.errors.map(item => <tr key={errorKey(item)} className="border-t border-slate-100 dark:border-slate-800"><td className={cellClass}><p className="font-medium">{errorLabel(t, item.errorCode)}</p><p className="mt-1 text-xs text-slate-500">{eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)}</p></td><td className={cellClass}>{siteName(item.siteId)}</td><td className={cellClass}>{item.count}</td><td className={cellClass}>{item.lastSeenAt ? formatDate(item.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setIssueKey(errorKey(item))}>{t('admin.plugin_obs_inspect')}</button></td></tr>)}
+          </tbody></table>
+          {!data.errors.length ? <p className="p-4 text-sm text-slate-500">{data.totals.errorTotal > 0 ? t('admin.plugin_obs_missing_breakdown') : t('admin.plugin_obs_no_errors')}</p> : null}
+        </AdminDataTableFrame>
+        <AdminDataTableFrame title={t('admin.plugin_obs_site_overview')} resultLabel={t('admin.plugin_obs_site_scope')} dataUi="plugin-sites" density="compact" headerActions={<select aria-label={t('admin.plugin_obs_sort')} className="input w-auto" value={siteSort} onChange={e => setSiteSort(e.target.value as SiteSortKey)}><option value="errors">{t('admin.plugin_obs_sort_errors')}</option><option value="lastSeen">{t('admin.plugin_obs_sort_recent')}</option><option value="events">{t('admin.plugin_obs_record_count')}</option></select>}>
+          <table className="w-full"><thead><tr>{['site','clue','records','errors','last_report','action'].map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>{sortedSites.map(site => <tr className="border-t border-slate-100 dark:border-slate-800" key={site.siteId}><td className={cellClass}>{siteName(site.siteId)}<p className="mt-1 break-all text-xs text-slate-500">{site.siteUrl}</p></td><td className={cellClass}>{site.health.reasons.length ? site.health.reasons.map(reason => healthReason(t, reason)).join(' · ') : site.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</td><td className={cellClass}>{site.eventsTotal}</td><td className={cellClass}>{site.errorTotal}</td><td className={cellClass}>{site.lastSeenAt ? formatDate(site.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setInspectedSite(site.siteId)}>{t('admin.plugin_obs_view_records')}</button></td></tr>)}</tbody></table>
+          {!sortedSites.length ? <p className="p-4 text-sm text-slate-500">{t('admin.plugin_obs_no_sites')}</p> : null}
+        </AdminDataTableFrame>
+        <details className="border-t border-slate-200 py-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.plugin_obs_trend')}</summary><p className="my-3 text-xs text-slate-500">{t('admin.plugin_obs_count_note')}</p>{data.timeline.length ? <AnalyticsLineChart data={timelineData} height={240} primarySeriesName={t('admin.plugin_obs_record_count')} secondarySeriesName={t('admin.plugin_obs_error_records')} /> : <p>{t('admin.plugin_obs_no_trend')}</p>}</details>
+      </> : null}
+      <AdminInspectorDrawer open={Boolean(selectedIssue || siteDetails)} title={selectedIssue ? errorLabel(t, selectedIssue.errorCode) : siteName(inspectedSite)} titleId="plugin-problem-title" closeLabel={closeLabel} onClose={() => {setIssueKey(null);setInspectedSite(null);}}>
+        <div className="space-y-5 text-sm">
+          {selectedIssue ? <><p>{siteName(selectedIssue.siteId)} · {eventLabel(t, selectedIssue.eventKind)} · {selectedIssue.count} {t('admin.plugin_obs_occurrences')}</p><h3 className="font-semibold">{t('admin.plugin_obs_known')}</h3><p>{t('admin.plugin_obs_unknown_cause')}</p><h3 className="font-semibold">{t('admin.plugin_obs_next')}</h3><ol className="list-decimal space-y-2 pl-5"><li>{t('admin.plugin_obs_step_records')}</li><li>{t('admin.plugin_obs_step_logs')}</li></ol><button className="btn btn-secondary btn-sm" disabled={!selectedIssue.siteId} onClick={() => {setInspectedSite(selectedIssue.siteId);setIssueKey(null);}}>{t('admin.plugin_obs_view_records')}</button><button className="btn btn-ghost btn-sm" onClick={() => void copyEvidence()}>{t('admin.plugin_obs_copy')}</button></> : null}
+          {siteDetails ? <p>{t('admin.plugin_obs_site_summary', {records: String(siteDetails.eventsTotal), errors: String(siteDetails.errorTotal)})}</p> : null}
+          <h3 className="font-semibold">{t('admin.plugin_obs_recent')}</h3><p className="text-xs text-slate-500">{t('admin.plugin_obs_recent_limit')}</p>
+          {recent.map((item,index) => <div className="space-y-2 border-t border-slate-200 py-3 dark:border-slate-800" key={index}><p>{formatDate(item.receivedAt)} · {errorLabel(t,item.errorCode)}</p><p>{eventLabel(t,item.eventKind)} · {pluginLabel(t,item.pluginSlug)}</p><details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary><dl className="space-y-2 break-all py-3"><dt>{t('admin.plugin_obs_error_id')}</dt><dd><code>{item.errorCode}</code></dd><dt>{t('admin.plugin_obs_event_id')}</dt><dd><code>{item.eventKind}</code></dd><dt>{t('admin.plugin_obs_ability_id')}</dt><dd><code>{item.abilityId || '—'}</code></dd><dt>{t('admin.plugin_obs_proposal_id')}</dt><dd><code>{item.proposalId || '—'}</code></dd><dt>{t('admin.plugin_obs_route')}</dt><dd><code>{item.route || '—'}</code></dd></dl></details></div>)}
+          {!recent.length ? <p>{t('admin.plugin_obs_no_recent')}</p> : null}
+          {selectedIssue ? <details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary><dl className="space-y-2 break-all py-3"><dt>{t('admin.plugin_obs_error_id')}</dt><dd><code>{selectedIssue.errorCode}</code></dd><dt>{t('admin.plugin_obs_event_id')}</dt><dd><code>{selectedIssue.eventKind}</code></dd><dt>{t('admin.plugin_obs_plugin_id')}</dt><dd><code>{selectedIssue.pluginSlug}</code></dd><dt>{t('admin.plugin_obs_site_id')}</dt><dd><code>{selectedIssue.siteId || '—'}</code></dd></dl></details> : null}
+          {siteDetails ? <><button className="btn btn-secondary btn-sm" onClick={() => {updateUrl({site: siteDetails.siteId, focus: null});setInspectedSite(null);}}>{t('admin.plugin_obs_filter_site')}</button><details><summary className="cursor-pointer">{t('admin.plugin_obs_statistics')}</summary><p className="py-3">{t('admin.plugin_obs_record_stats', {rate: formatSuccessRate(siteDetails.successRate), seconds: (siteDetails.avgLatencyMs / 1000).toFixed(1)})}</p><p>{t('admin.plugin_obs_count_note')}</p><code className="break-all">{siteDetails.siteId}</code></details></> : null}
         </div>
-      </BackofficeSectionPanel>
-
-      {error ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"><div className="font-semibold">{error}</div>{data ? <div className="mt-1 text-xs">{t('admin.plugin_obs_stale_notice', {}, 'The last successfully loaded plugin snapshot remains visible.')}</div> : null}</div> : null}
-
-      {isEmpty ? (
-        <BackofficeEmptyState
-          title={t('admin.plugin_obs_empty_title', {}, 'No plugin observability events')}
-          description={t(
-            'admin.plugin_obs_empty_desc',
-            {},
-            'No plugin observability events have been received in the selected time window. Events will appear here once plugins start reporting.'
-          )}
-        />
-      ) : (
-        <>
-          {digestCopy ? (
-            <BackofficeSectionPanel className="space-y-3">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('admin.plugin_obs_digest_label', {}, 'Digest')}
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                    {digestCopy.headline}
-                  </h2>
-                </div>
-                <BackofficeTag tone="info">
-                  {digestCopy.period}
-                </BackofficeTag>
-              </div>
-              <div className="grid gap-2 md:grid-cols-2">
-                {digestCopy.bullets.map((item) => (
-                  <div
-                    key={item}
-                    className="rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300"
-                  >
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </BackofficeSectionPanel>
-          ) : null}
-
-          {data?.attention.length ? (
+      </AdminInspectorDrawer>
+      <AdminInspectorDrawer open={moreOpen || Boolean(focusedAttentionKey)} title={t('admin.plugin_obs_more')} titleId="plugin-more-title" closeLabel={closeLabel} onClose={() => {setMoreOpen(false);updateUrl({focus:null});}}>
+        <p className="mb-4 text-sm text-slate-500">{t('admin.plugin_obs_more_note')}</p>
+                  {data?.attention.length ? (
             <BackofficeSectionPanel className="overflow-hidden p-0 md:p-0">
               <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('admin.plugin_obs_attention_label', {}, 'Attention')}</p><h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{t('admin.plugin_obs_attention_title', {}, 'Current watch items')}</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.plugin_obs_attention_count_detail', { open: formatInteger(data.attentionWorkflow.needsAttention), total: formatInteger(data.attentionWorkflow.total) }, '{{open}} open / {{total}} total')}</p></div>
-                  <BackofficeStatusBadge status={effectiveHealthStatus} label={effectiveHealthLabel} />
+
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {ATTENTION_WORKFLOW_OPTIONS.map((option) => <BackofficeFilterPill key={option.value} active={attentionWorkflowFilter === option.value} tone="info" onClick={() => { setAttentionWorkflowFilter(option.value); updateUrl({ focus: null }); }}>{t(option.labelKey, {}, option.fallback)}</BackofficeFilterPill>)}
                   {ATTENTION_SEVERITY_OPTIONS.map((option) => <BackofficeFilterPill key={option.value} active={attentionSeverityFilter === option.value} tone="accent" onClick={() => { setAttentionSeverityFilter(option.value); updateUrl({ focus: null }); }}>{t(option.labelKey, {}, option.fallback)}</BackofficeFilterPill>)}
-                  <select value={attentionCodeFilter} aria-label={t('admin.plugin_obs_attention_code_filter', {}, 'Watch item code')} onChange={(event) => { setAttentionCodeFilter(event.target.value); updateUrl({ focus: null }); }} className="h-8 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">{attentionCodeOptions.map((code) => <option key={code} value={code}>{code === 'all' ? t('admin.plugin_obs_attention_all_codes', {}, 'All codes') : code}</option>)}</select>
+                  <select value={attentionCodeFilter} aria-label={t('admin.plugin_obs_attention_code_filter', {}, 'Watch item code')} onChange={(event) => { setAttentionCodeFilter(event.target.value); updateUrl({ focus: null }); }} className="h-8 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">{attentionCodeOptions.map((code) => <option key={code} value={code}>{code === 'all' ? t('admin.plugin_obs_attention_all_codes', {}, 'All codes') : t(`admin.plugin_obs_attention_title_${attentionCodeSuffix(code)}`, {}, t('admin.plugin_obs_health_other'))}</option>)}</select>
                 </div>
               </div>
-              <div className="grid xl:grid-cols-[minmax(0,1fr)_22rem]">
+              <div className="space-y-3">
                 <div className="max-h-[38rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
-                  {filteredAttention.slice(0, 12).map((item) => {
+                  {filteredAttention.map((item) => {
                     const selected = selectedAttention?.attentionKey === item.attentionKey;
-                    return <button key={item.attentionKey || `${item.code}-${item.siteId}`} type="button" data-ui="plugin-attention-item" aria-pressed={selected} aria-controls="plugin-attention-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.attentionKey })}>
+                    return <button key={item.attentionKey || `${item.code}-${item.siteId}`} type="button" data-ui="plugin-attention-item" aria-pressed={selected} aria-controls="plugin-attention-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45  md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.attentionKey })}>
                       <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-950 dark:text-white">{attentionCopy(t, item, 'title')}</span><BackofficeTag tone={attentionTone(item.severity)}>{t(`admin.plugin_obs_severity_${item.severity}`, {}, item.severity)}</BackofficeTag></div><p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{attentionCopy(t, item, 'detail')}</p><p className="mt-2 truncate text-xs text-slate-500 dark:text-slate-400">{[item.siteId, item.pluginSlug, item.errorCode].filter(Boolean).join(' · ')}</p></div>
                       <div className="text-sm font-medium text-slate-500 md:text-right dark:text-slate-400">{t(`admin.plugin_obs_workflow_${item.workflowStatus}`, {}, item.workflowStatus)}</div>
                     </button>;
                   })}
                   {!filteredAttention.length ? <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.plugin_obs_attention_filtered_empty', {}, 'No watch items match the selected filters.')} description={t('admin.plugin_obs_attention_filtered_empty_desc', {}, 'Clear a workflow, severity, or code filter to return to the active watch queue.')} /> : null}
                 </div>
-                <div id="plugin-attention-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
+                <div id="plugin-attention-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 ">
                   {selectedAttention ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.plugin_obs_selected_watch_item', {}, 'Selected watch item')}</p><div className="mt-2 flex items-start justify-between gap-3"><h3 className="text-lg font-semibold text-slate-950 dark:text-white">{attentionCopy(t, selectedAttention, 'title')}</h3><BackofficeTag tone={attentionTone(selectedAttention.severity)}>{t(`admin.plugin_obs_severity_${selectedAttention.severity}`, {}, selectedAttention.severity)}</BackofficeTag></div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{attentionCopy(t, selectedAttention, 'detail')}</p></div>
                     <dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.plugin_obs_suggested_step', {}, 'Suggested review step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{attentionCopy(t, selectedAttention, 'action')}</dd></div>{selectedAttention.siteId ? <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedAttention.siteId} /></dd></div> : null}{selectedAttention.pluginSlug ? <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.plugin_obs_plugins', {}, 'Plugin')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedAttention.pluginSlug}</dd></div> : null}{selectedAttention.errorCode ? <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.plugin_obs_error_codes', {}, 'Error code')}</dt><dd className="mt-1 break-all font-mono text-xs text-rose-700 dark:text-rose-300">{selectedAttention.errorCode}</dd></div> : null}</dl>
-                    <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">{(['acknowledge', 'mute', 'resolve'] as AttentionStateAction[]).map((action) => <button key={action} type="button" className={action === 'resolve' ? 'btn btn-primary justify-center' : 'btn btn-secondary justify-center'} disabled={Boolean(attentionActionKey)} onClick={() => void handleAttentionStateAction(selectedAttention, action)}>{attentionActionLabel(t, action)}</button>)}</div>
-                    {selectedAttention.workflowStatus !== 'active' ? <button type="button" className="btn btn-ghost w-full justify-center" disabled={Boolean(attentionActionKey)} onClick={() => void handleAttentionStateAction(selectedAttention, 'clear')}>{attentionActionLabel(t, 'clear')}</button> : null}
+                    <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">{(['acknowledge', 'mute', 'resolve'] as AttentionStateAction[]).map((action) => <button key={action} type="button" className={action === 'resolve' ? 'btn btn-primary justify-center' : 'btn btn-secondary justify-center'} disabled={Boolean(attentionActionKey) || loading || Boolean(error)} onClick={() => void handleAttentionStateAction(selectedAttention, action)}>{attentionActionLabel(t, action)}</button>)}</div>
+                    {selectedAttention.workflowStatus !== 'active' ? <button type="button" className="btn btn-ghost w-full justify-center" disabled={Boolean(attentionActionKey) || loading || Boolean(error)} onClick={() => void handleAttentionStateAction(selectedAttention, 'clear')}>{attentionActionLabel(t, 'clear')}</button> : null}
                     <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.plugin_obs_attention_scope_notice', {}, 'Attention state is Cloud display state only. It does not mutate local plugin settings, approvals, ability definitions, routing, or WordPress content.')}</p>
-                  </div> : <BackofficeEmptyState title={t('admin.plugin_obs_attention_filtered_empty', {}, 'No watch items match the selected filters.')} description={t('admin.plugin_obs_attention_filtered_empty_desc', {}, 'Clear a workflow, severity, or code filter to return to the active watch queue.')} />}
+                  </div> : <p className="text-sm text-slate-500">{t('admin.plugin_obs_select_alert')}</p>}
                 </div>
               </div>
             </BackofficeSectionPanel>
           ) : null}
 
-          {(data?.totals.eventsTotal || 0) > 0 ? <>
-          <div className="grid gap-5 xl:grid-cols-2">
-            <BackofficeSectionPanel className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.plugin_obs_trend_label', {}, 'Trend')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.plugin_obs_trend_title', {}, 'Events and errors')}
-                </h2>
-              </div>
-              <AnalyticsLineChart
-                data={timelineData}
-                height={280}
-                primarySeriesName={t('admin.plugin_obs_events', {}, 'Events')}
-                secondarySeriesName={t('admin.plugin_obs_error_codes', {}, 'Errors')}
-                primaryColor="#2563eb"
-                secondaryColor="#f59e0b"
-              />
-            </BackofficeSectionPanel>
 
+          <div className="grid gap-5 ">
             <BackofficeSectionPanel className="space-y-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -887,7 +775,6 @@ function AdminPluginObservabilityContent() {
             </BackofficeSectionPanel>
           </div>
 
-          <div className="space-y-5">
             <BackofficeSectionPanel className="space-y-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -902,23 +789,22 @@ function AdminPluginObservabilityContent() {
                   <BackofficeStackCard key={plugin.pluginSlug}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-semibold text-slate-950 dark:text-white">{plugin.pluginSlug}</p>
+                        <p className="font-semibold text-slate-950 dark:text-white">{pluginLabel(t, plugin.pluginSlug)}</p>
                         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                           {t(
-                            'admin.plugin_obs_plugin_detail',
+                            'admin.plugin_obs_record_stats',
                             {
-                              events: formatInteger(plugin.eventsTotal),
+                              records: formatInteger(plugin.eventsTotal),
                               rate: formatSuccessRate(plugin.successRate),
-                              latency: formatInteger(plugin.avgLatencyMs),
+                              seconds: (plugin.avgLatencyMs / 1000).toFixed(1),
                             },
                             '{{events}} events · {{rate}} · avg {{latency}}ms'
                           )}
                         </p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
+                        <details className="mt-2"><summary className="cursor-pointer text-sm">{t('admin.plugin_obs_raw')}</summary><code className="break-all text-xs">{plugin.pluginSlug}</code></details>
+                        <div className="mt-2 space-y-2">
                           {plugin.eventKinds.map((ek) => (
-                            <BackofficeTag key={ek.eventKind} tone={ek.errorTotal > 0 ? 'warning' : 'info'}>
-                              {ek.eventKind}
-                            </BackofficeTag>
+                            <details key={ek.eventKind}><summary className="cursor-pointer text-sm">{eventLabel(t, ek.eventKind)} · {ek.eventsTotal}</summary><code className="break-all text-xs">{ek.eventKind}</code></details>
                           ))}
                         </div>
                       </div>
@@ -932,226 +818,8 @@ function AdminPluginObservabilityContent() {
               </div>
             </BackofficeSectionPanel>
 
-            <BackofficeSectionPanel className="space-y-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('admin.plugin_obs_sites', {}, 'Sites')}
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                    {t('admin.plugin_obs_site_health', {}, 'Site health')}
-                  </h2>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    ['errors', t('admin.plugin_obs_sort_errors', {}, 'Errors')],
-                    ['success', t('admin.plugin_obs_sort_success', {}, 'Success')],
-                    ['events', t('admin.plugin_obs_sort_events', {}, 'Events')],
-                    ['latency', t('admin.plugin_obs_sort_latency', {}, 'Latency')],
-                    ['lastSeen', t('admin.plugin_obs_sort_last_seen', {}, 'Last seen')],
-                  ].map(([value, label]) => (
-                    <BackofficeFilterPill
-                      key={value}
-                      active={siteSort === value}
-                      tone="info"
-                      onClick={() => setSiteSort(value as SiteSortKey)}
-                    >
-                      {label}
-                    </BackofficeFilterPill>
-                  ))}
-                </div>
-              </div>
-              <BackofficeStackCard className="overflow-x-auto p-0">
-                <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
-                  <thead className="bg-slate-50/80 text-xs uppercase text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold">{t('common.site', {}, 'Site')}</th>
-                      <th className="px-4 py-3 text-left font-semibold">{t('admin.plugin_obs_health', {}, 'Health')}</th>
-                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_events', {}, 'Events')}</th>
-                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_error_codes', {}, 'Errors')}</th>
-                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_success_rate', {}, 'Success rate')}</th>
-                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_avg_latency', {}, 'Avg latency')}</th>
-                      <th className="px-4 py-3 text-left font-semibold">{t('admin.plugin_obs_top_error', {}, 'Top error')}</th>
-                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_last_seen', {}, 'Last seen')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
-                    {sortedSites.map((site) => {
-                      const topError = errorBySite.get(site.siteId);
-                      return (
-                        <tr key={site.siteId} className="align-top">
-                          <td className="px-4 py-3">
-                            {site.siteName ? (
-                              <p className="font-medium text-slate-950 dark:text-white">{site.siteName}</p>
-                            ) : null}
-                            <BackofficeIdentifier value={site.siteId} className={`${site.siteName ? 'mt-1 ' : ''}font-medium text-slate-950 dark:text-white`} />
-                            {site.siteUrl ? (
-                              <p className="mt-1 max-w-[20rem] truncate text-xs text-slate-500 dark:text-slate-400" title={site.siteUrl}>
-                                {site.siteUrl}
-                              </p>
-                            ) : null}
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {t(
-                                'admin.plugin_obs_plugins_detail',
-                                { count: formatInteger(site.pluginCount) },
-                                '{{count}} plugins'
-                              )}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <BackofficeStatusBadge
-                              status={site.health.status}
-                              label={`${statusLabel(t, site.health.status)} · ${site.health.score}`}
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-200">
-                            {formatInteger(site.eventsTotal)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <BackofficeTag tone={site.errorTotal > 0 ? 'warning' : 'success'}>
-                              {formatInteger(site.errorTotal)}
-                            </BackofficeTag>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <BackofficeStatusBadge
-                              status={successRateStatus(site.successRate)}
-                              label={formatSuccessRate(site.successRate)}
-                              className="justify-end"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-200">
-                            {site.avgLatencyMs}ms
-                          </td>
-                          <td className="px-4 py-3">
-                            {topError ? (
-                              <div className="min-w-0">
-                                <p className="font-mono text-xs font-semibold text-rose-700 dark:text-rose-300">
-                                  {topError.errorCode}
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                  {topError.pluginSlug} &middot; {formatInteger(topError.count)}
-                                </p>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-500 dark:text-slate-400">
-                                {t('admin.plugin_obs_no_errors_short', {}, 'None')}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">
-                            {site.lastSeenAt ? formatDate(site.lastSeenAt) : t('common.not_found')}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </BackofficeStackCard>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {t(
-                  'admin.plugin_obs_site_health_desc',
-                  {},
-                  'Sorted by operational pressure. Payloads and raw requests stay excluded.'
-                )}
-              </div>
-            </BackofficeSectionPanel>
-          </div>
 
-          <div className="grid gap-5 xl:grid-cols-2">
-            <BackofficeSectionPanel className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.plugin_obs_error_codes', {}, 'Error codes')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.plugin_obs_error_ranking', {}, 'Error code ranking')}
-                </h2>
-              </div>
-              <div className="space-y-3">
-                {data?.errors.length ? (
-                  data.errors.map((err, idx) => (
-                    <BackofficeStackCard key={`err-${err.errorCode}-${err.pluginSlug}-${idx}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-mono text-sm font-semibold text-rose-700 dark:text-rose-300">{err.errorCode}</p>
-                          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                            {err.pluginSlug} &middot; {err.eventKind} &middot;{' '}
-                            {t(
-                              'admin.plugin_obs_error_occurrences',
-                              { count: formatInteger(err.count) },
-                              '{{count}} occurrences'
-                            )}
-                          </p>
-                          {err.siteId ? (
-                            <BackofficeIdentifier value={err.siteId} className="mt-1 text-xs text-slate-500 dark:text-slate-400" />
-                          ) : null}
-                        </div>
-                        <BackofficeTag tone="danger">{formatInteger(err.count)}</BackofficeTag>
-                      </div>
-                    </BackofficeStackCard>
-                  ))
-                ) : (
-                  <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
-                    {t('admin.plugin_obs_no_errors', {}, 'No errors in the selected time window.')}
-                  </BackofficeStackCard>
-                )}
-              </div>
-            </BackofficeSectionPanel>
-
-            <BackofficeSectionPanel className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.plugin_obs_recent_errors', {}, 'Recent errors')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.plugin_obs_recent_errors_title', {}, 'Latest error events')}
-                </h2>
-              </div>
-              <div className="space-y-3">
-                {data?.recentErrors.length ? (
-                  data.recentErrors.map((re, idx) => (
-                    <BackofficeStackCard key={`recent-${idx}`}>
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="font-mono text-sm font-semibold text-rose-700 dark:text-rose-300">{re.errorCode}</p>
-                          <BackofficeStatusBadge status="error" label={statusLabel(t, re.status)} />
-                        </div>
-                        <p className="text-sm text-slate-600 dark:text-slate-300">
-                          {re.pluginSlug} &middot; {re.eventKind}
-                        </p>
-                        {re.siteId ? (
-                          <BackofficeIdentifier value={re.siteId} className="text-xs text-slate-500 dark:text-slate-400" />
-                        ) : null}
-                        {re.abilityId ? (
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {t('admin.plugin_obs_recent_ability', {}, 'Ability')}:{' '}
-                            <BackofficeIdentifier value={re.abilityId} />
-                          </p>
-                        ) : null}
-                        {re.proposalId ? (
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {t('admin.plugin_obs_recent_proposal', {}, 'Proposal')}:{' '}
-                            <BackofficeIdentifier value={re.proposalId} />
-                          </p>
-                        ) : null}
-                        {re.route ? (
-                          <p className="font-mono text-xs text-slate-500 dark:text-slate-400">{re.route}</p>
-                        ) : null}
-                        <p className="text-xs text-slate-400 dark:text-slate-500">{formatDate(re.receivedAt)}</p>
-                      </div>
-                    </BackofficeStackCard>
-                  ))
-                ) : (
-                  <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
-                    {t('admin.plugin_obs_no_recent_errors', {}, 'No recent error events.')}
-                  </BackofficeStackCard>
-                )}
-              </div>
-            </BackofficeSectionPanel>
-          </div>
-          </> : null}
-        </>
-      )}
+      </AdminInspectorDrawer>
     </BackofficePageStack>
   );
 }

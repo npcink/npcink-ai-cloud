@@ -83,7 +83,7 @@ for (const key of requiredKeys) {
 
 assert.match(
   i18nSource,
-  /'admin\.plugin_observability_title': '插件观测'/,
+  /'admin\.plugin_observability_title': '插件排查'/,
   'Plugin Observability must provide a Simplified Chinese page title'
 );
 

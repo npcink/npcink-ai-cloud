@@ -176,7 +176,10 @@ export function EditorAssistQualityPanel({
   const hasDecisionSample = ['observation', 'decision'].includes(sampleStage);
   let status: 'success' | 'warning' | 'pending' = 'pending';
   let statusLabel = t('admin.editor_quality.status_waiting', {}, 'Awaiting data');
-  if (actionableTotal > 0) {
+  if (error) {
+    status = 'warning';
+    statusLabel = t('admin.editor_quality.status_unavailable', {}, 'Quality data unavailable');
+  } else if (actionableTotal > 0) {
     status = 'warning';
     statusLabel = t('admin.editor_quality.status_review', {}, 'Review');
   } else if (data?.totals.sessionTotal && hasDecisionSample) {
@@ -206,9 +209,9 @@ export function EditorAssistQualityPanel({
   return (
     <details
       data-ui="editor-assist-quality-panel"
-      className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
+      className="overflow-hidden border-t border-slate-200 dark:border-slate-800"
     >
-      <summary className="cursor-pointer list-none px-3 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -217,7 +220,7 @@ export function EditorAssistQualityPanel({
               </h2>
               <BackofficeStatusBadge label={statusLabel} status={status} />
             </div>
-            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               {t(
                 'admin.editor_quality.description',
                 {},
@@ -225,7 +228,14 @@ export function EditorAssistQualityPanel({
               )}
             </p>
           </div>
-          <dl className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-2 text-xs sm:grid-cols-4">
+          <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+            {data ? `${sampleLabel} · ${formatNumber(data.totals.sessionTotal)} ${t('admin.editor_quality.sessions', {}, 'sessions')}` : '—'}
+          </span>
+        </div>
+      </summary>
+
+      <div className="border-t border-slate-200 dark:border-slate-800">
+          <dl className="grid grid-cols-2 gap-4 px-5 py-3 text-xs sm:grid-cols-4 md:px-6">
             <div>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.resolved_sessions', {}, 'Resolved / total')}</dt>
               <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">
@@ -247,13 +257,6 @@ export function EditorAssistQualityPanel({
               </dd>
             </div>
           </dl>
-          <span className="shrink-0 text-xs font-semibold text-blue-700 dark:text-blue-300">
-            {t('admin.editor_quality.show_details', {}, 'View details')} ↓
-          </span>
-        </div>
-      </summary>
-
-      <div className="border-t border-slate-200 dark:border-slate-800">
         <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
             <h3 className="text-sm font-semibold text-slate-950 dark:text-white">

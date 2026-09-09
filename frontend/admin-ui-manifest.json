@@ -54,6 +54,12 @@
       { "id": "browser-runtime-errors", "authority": "hard_gate" }
     ],
     "pilotRoutes": {
+      "/admin/plugin-observability": {
+        "pageModel": "diagnostic",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"plugin-problems\"]",
+        "requiredStates": ["ready", "selected", "partial_error", "disclosure"]
+      },
       "/admin/ai-resources": {
         "pageModel": "queue",
         "riskTier": "material",

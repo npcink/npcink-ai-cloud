@@ -148,7 +148,7 @@
       "routePattern": "/admin/plugin-observability",
       "smokePath": "/admin/plugin-observability",
       "pageModel": "diagnostic",
-      "evidenceTier": "focused_behavior",
+      "evidenceTier": "pilot_visual",
       "allowedEmptyAdminRequests": ["GET /api/admin/plugin-observability?window_hours=24"],
       "focusedSpecs": ["tests/e2e/admin-plugin-observability-v2.spec.ts"]
     },
