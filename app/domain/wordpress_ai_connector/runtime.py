@@ -275,7 +275,12 @@ class WordPressOperationRuntime:
         )
         mode = str(reference.get("mode") or "")
         if not expected_mode or mode != expected_mode or reference.get("enabled") is not True:
-            return provider_input
+            return self._generation_context_status(
+                provider_input,
+                mode=expected_mode or "none",
+                status="not_requested",
+                reason="reference_disabled_or_unsupported",
+            )
 
         policy = generation_context_policy(
             task=task,

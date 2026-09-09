@@ -859,6 +859,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         "suggestion_only",
         "operation_contract",
         "output",
+        "generation_context",
     }
     assert result["contract_version"] == "cloud_connector_result.v1"
     assert result["site_id"] == "site_alpha"
@@ -1458,6 +1459,64 @@ def test_connector_runtime_replay_returns_identical_persisted_result(
     assert len(provider.requests) == 1
 
 
+def test_connector_context_evidence_ignores_caller_and_provider_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    original_execute = provider.execute
+    forged = {
+        "generation_context_contract": "generation_context.v1",
+        "generation_context_status": "applied",
+        "generation_context_mode": "site_title_style",
+        "generation_context_reason": "references_applied",
+        "generation_context_reference_count": 1,
+        "generation_context_chars": 100,
+    }
+
+    def mutate_input(request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        assert request.input_payload["metadata"]["generation_context_status"] == "not_requested"
+        request.input_payload["metadata"].update(forged)
+        return original_execute(request)
+
+    monkeypatch.setattr(provider, "execute", mutate_input)
+    response = _execute(client, _payload({"metadata": forged}), idempotency_key="context-spoof")
+    assert response.status_code == 400
+    assert provider.requests == []
+    response = _execute(
+        client, _payload(), idempotency_key="context-provider-mutation",
+        trace_id="tracecontextmutation000000000001",
+    )
+    assert response.status_code == 200
+    result = response.json()["data"]["result"]
+    assert result["generation_context"]["status"] == "not_requested"
+    assert result["generation_context"]["reference_count"] == 0
+    assert _get_result(client, response.json()["data"]["run_id"]).json()["data"]["result"] == result
+
+
+def test_connector_context_evidence_is_not_backfilled_and_obeys_retention(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    response = _execute(client, _payload(), idempotency_key="context-retention")
+    assert response.status_code == 200
+    run_id = response.json()["data"]["run_id"]
+    assert "generation_context" in response.json()["data"]["result"]
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, run_id)
+        assert run is not None
+        historical_result = dict(run.result_json)
+        historical_result.pop("generation_context")
+        run.result_json = historical_result
+        session.commit()
+    assert "generation_context" not in _get_result(client, run_id).json()["data"]["result"]
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, run_id)
+        assert run is not None
+        run.retention_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+    expired = _get_result(client, run_id)
+    assert expired.status_code == 410
+    assert expired.json()["error_code"] == "runtime.result_expired"
+
+
 def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelopes(
     tmp_path: Path,
 ) -> None:
@@ -1479,6 +1538,7 @@ def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelo
 
     assert first.status_code == 200
     transient_result = first.json()["data"]["result"]
+    assert transient_result["generation_context"]["status"] == "not_requested"
     assert transient_result["connector_version"] == "3.0.0-no-store"
     assert transient_result["operation_contract"]["task"] == "title_generation"
     assert transient_result["output"]["output_text"] == (
@@ -1489,6 +1549,7 @@ def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelo
     polled = _get_result(client, run_id)
     assert polled.status_code == 200
     durable_result = polled.json()["data"]["result"]
+    assert "generation_context" not in durable_result
     assert durable_result["connector_version"] == "3.0.0-no-store"
     assert durable_result["operation_contract"]["task"] == "title_generation"
     assert durable_result["output"] == {"stored": False, "status": "omitted"}
@@ -1573,6 +1634,7 @@ def test_connector_runtime_queued_worker_persists_pollable_result(tmp_path: Path
     assert result["site_id"] == "site_alpha"
     assert result["site_url"] == CONNECTOR_SITE_URL
     assert result["connector_version"] == "2.0.0-worker"
+    assert result["generation_context"]["status"] == "not_requested"
     assert result["object_ref"] == {
         "object_type": "post",
         "object_id": "84",
@@ -1828,6 +1890,22 @@ def test_wordpress_ai_connector_title_generation_uses_hidden_site_title_style(
     assert provider_input["metadata"]["site_knowledge_reference_count"] == 1
     assert provider_input["metadata"]["generation_context_status"] == "applied"
     assert provider_input["metadata"]["generation_context_reason"] == "references_applied"
+    evidence = response.json()["data"]["result"]["generation_context"]
+    assert evidence == {
+        "contract_version": "generation_context_evidence.v1",
+        "status": "applied",
+        "mode": "site_title_style",
+        "reason": "references_applied",
+        "reference_count": 1,
+        "context_chars": provider_input["metadata"]["generation_context_chars"],
+    }
+    assert evidence["context_chars"] > 0
+    assert (
+        _get_result(client, response.json()["data"]["run_id"]).json()["data"]["result"][
+            "generation_context"
+        ]
+        == evidence
+    )
 
 
 def test_wordpress_ai_connector_title_generation_silently_falls_back_when_site_knowledge_fails(
@@ -1864,6 +1942,14 @@ def test_wordpress_ai_connector_title_generation_silently_falls_back_when_site_k
     assert "site_knowledge_reference" not in provider_input["metadata"]
     assert provider_input["metadata"]["generation_context_status"] == "unavailable"
     assert provider_input["metadata"]["generation_context_reason"] == "retrieval_failed"
+    assert response.json()["data"]["result"]["generation_context"] == {
+        "contract_version": "generation_context_evidence.v1",
+        "status": "unavailable",
+        "mode": "site_title_style",
+        "reason": "retrieval_failed",
+        "reference_count": 0,
+        "context_chars": 0,
+    }
 
 
 @pytest.mark.parametrize(
@@ -2052,6 +2138,10 @@ def test_wordpress_ai_connector_title_generation_ignores_non_list_site_knowledge
     assert "Generation context" not in provider_input["input"]
     assert "site_knowledge_reference" not in provider_input["metadata"]
     assert provider_input["metadata"]["generation_context_reason"] == "no_usable_references"
+    assert (
+        response.json()["data"]["result"]["generation_context"]["reason"]
+        == "no_usable_references"
+    )
 
 
 @pytest.mark.parametrize(

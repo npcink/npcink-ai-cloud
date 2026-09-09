@@ -39,6 +39,9 @@ deleting the old decision history.
 
 ## Product Boundaries
 
+- [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
+- [Background Evidence and Cron Handoff](background-evidence-and-cron-handoff-2026-09-09.md) — reused acceptance, candidate identity and pending natural upload observation.
+
 - [WordPress AI Unified Plan](wordpress-ai-unified-delivery-plan-2026-09-07.md) - current disposition followed by historical proposals; no automatic model calls.
 - [WordPress Formatting History](history/wordpress-content-formatting-summary-2026-09-08.md) - requirements, open-source lessons, implementation tradeoffs and paused research.
 - [WordPress AI Engineering Closeout](history/wordpress-ai-engineering-closeout-2026-09-08.md) - phase-1 source integration, verification and remaining decisions.
