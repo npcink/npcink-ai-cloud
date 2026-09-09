@@ -210,6 +210,7 @@ from app.domain.web_search.contracts import (
     WebSearchContractViolation,
 )
 from app.domain.web_search.service import WebSearchProviderError, WebSearchService
+from app.domain.wordpress_ai_connector.generation_context import GenerationContextEvidence
 from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
 
 __all__ = [
@@ -2692,6 +2693,12 @@ class RuntimeService:
                 ),
             )
         )
+        evidence = getattr(run, "_wordpress_generation_context_evidence", None)
+        if connector_envelope is not None and isinstance(evidence, GenerationContextEvidence):
+            if self._get_storage_mode(policy) != "no_store":
+                normalized_result.durable_result["generation_context"] = evidence.to_payload()
+            if normalized_result.transient_result is not None:
+                normalized_result.transient_result["generation_context"] = evidence.to_payload()
         if normalized_result.transient_result is not None:
             set_transient_runtime_result(run, normalized_result.transient_result)
         return normalized_result.durable_result
@@ -5630,7 +5637,7 @@ class RuntimeService:
             connector_envelope,
             source_artifact=source_artifact,
         )
-        return self.wordpress_operation_runtime.apply_site_knowledge_reference(
+        prepared_input = self.wordpress_operation_runtime.apply_site_knowledge_reference(
             site_id=run.site_id,
             run_id=run.run_id,
             session=repository.session,
@@ -5638,6 +5645,13 @@ class RuntimeService:
             provider_input=provider_input,
             embedding_usage_callback=record_embedding_usage,
         )
+        # Snapshot Cloud-owned evidence before the provider receives mutable input.
+        setattr(  # noqa: B010 - transient evidence is not an ORM column.
+            run,
+            "_wordpress_generation_context_evidence",
+            GenerationContextEvidence.from_runtime_metadata(prepared_input.get("metadata")),
+        )
+        return prepared_input
 
     def _admit_wordpress_operation_artifact_input(
         self,

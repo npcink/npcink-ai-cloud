@@ -1,11 +1,87 @@
 from __future__ import annotations
 
+import pytest
+
 from app.domain.wordpress_ai_connector.generation_context import (
+    GenerationContextEvidence,
     build_generation_context_pack,
     generation_context_policy,
     render_generation_context,
     select_generation_context_post_ids,
 )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("contract", "future.v2"),
+        ("status", "unknown"),
+        ("status", {}),
+        ("mode", []),
+        ("mode", "unknown"),
+        ("reason", "retrieval_failed"),
+        ("reference_count", True),
+        ("reference_count", -1),
+        ("reference_count", 2),
+        ("reference_count", "1"),
+        ("reference_count", 0),
+        ("chars", False),
+        ("chars", 0),
+        ("chars", 401),
+        ("chars", 1.5),
+        ("chars", {"private": "content"}),
+    ],
+)
+def test_generation_context_evidence_rejects_invalid_values(field: str, value: object) -> None:
+    metadata = {
+        "generation_context_contract": "generation_context.v1",
+        "generation_context_status": "applied",
+        "generation_context_mode": "site_title_style",
+        "generation_context_reason": "references_applied",
+        "generation_context_reference_count": 1,
+        "generation_context_chars": 100,
+    }
+    metadata[f"generation_context_{field}"] = value
+    assert GenerationContextEvidence.from_runtime_metadata(metadata) is None
+
+
+@pytest.mark.parametrize(
+    "status,reason,count,chars",
+    [
+        ("applied", "references_applied", 20, 1200),
+        ("not_requested", "reference_disabled_or_unsupported", 0, 0),
+        ("unavailable", "retrieval_failed", 0, 0),
+        ("unavailable", "no_usable_references", 0, 0),
+    ],
+)
+def test_generation_context_evidence_validates_snapshot(
+    status: str,
+    reason: str,
+    count: int,
+    chars: int,
+) -> None:
+    metadata = {
+        "generation_context_contract": "generation_context.v1",
+        "generation_context_status": status,
+        "generation_context_mode": "site_taxonomy_history",
+        "generation_context_reason": reason,
+        "generation_context_reference_count": count,
+        "generation_context_chars": chars,
+        "private_content": "must never be projected",
+    }
+    evidence = GenerationContextEvidence.from_runtime_metadata(metadata)
+    assert evidence is not None
+    metadata["generation_context_status"] = "tampered"
+    assert evidence.to_payload() == {
+        "contract_version": "generation_context_evidence.v1",
+        "status": status,
+        "mode": "site_taxonomy_history",
+        "reason": reason,
+        "reference_count": count,
+        "context_chars": chars,
+    }
+    assert GenerationContextEvidence.from_runtime_metadata({}) is None
+    assert GenerationContextEvidence.from_runtime_metadata(None) is None
 
 
 def test_generation_context_excludes_current_like_content_and_duplicate_posts() -> None:

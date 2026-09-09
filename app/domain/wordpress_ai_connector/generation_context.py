@@ -11,6 +11,69 @@ GENERATION_CONTEXT_CONTRACT = "generation_context.v1"
 
 
 @dataclass(frozen=True)
+class GenerationContextEvidence:
+    status: str
+    mode: str
+    reason: str
+    reference_count: int
+    context_chars: int
+
+    @classmethod
+    def from_runtime_metadata(cls, metadata: object) -> GenerationContextEvidence | None:
+        """Validate a Cloud-produced snapshot, never public request metadata."""
+        if not isinstance(metadata, dict):
+            return None
+        if metadata.get("generation_context_contract") != GENERATION_CONTEXT_CONTRACT:
+            return None
+        status = metadata.get("generation_context_status")
+        mode = metadata.get("generation_context_mode")
+        reason = metadata.get("generation_context_reason")
+        count = metadata.get("generation_context_reference_count")
+        chars = metadata.get("generation_context_chars")
+        if not isinstance(status, str) or not isinstance(mode, str) or not isinstance(reason, str):
+            return None
+        modes = {policy.mode for policy in GENERATION_CONTEXT_POLICIES.values()} | {"none"}
+        reasons = {
+            "applied": {"references_applied"},
+            "unavailable": {
+                "task_policy_unavailable",
+                "scene_input_empty",
+                "retrieval_failed",
+                "insufficient_evidence",
+                "context_assembly_failed",
+                "no_usable_references",
+            },
+            "not_requested": {"reference_disabled_or_unsupported"},
+        }
+        if mode not in modes or reason not in reasons.get(status, set()):
+            return None
+        if type(count) is not int or type(chars) is not int:
+            return None
+        policy = next((p for p in GENERATION_CONTEXT_POLICIES.values() if p.mode == mode), None)
+        max_count, max_chars = (
+            (policy.max_references, policy.max_context_chars) if policy else (0, 0)
+        )
+        if not (0 <= count <= max_count and 0 <= chars <= max_chars):
+            return None
+        if status == "applied":
+            if mode == "none" or count == 0 or chars == 0:
+                return None
+        elif count != 0 or chars != 0:
+            return None
+        return cls(status, mode, reason, count, chars)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "contract_version": "generation_context_evidence.v1",
+            "status": self.status,
+            "mode": self.mode,
+            "reason": self.reason,
+            "reference_count": self.reference_count,
+            "context_chars": self.context_chars,
+        }
+
+
+@dataclass(frozen=True)
 class GenerationContextPolicy:
     task: str
     mode: str
