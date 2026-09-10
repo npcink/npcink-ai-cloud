@@ -136,3 +136,26 @@ in-service sanitizers and keeps the credential/runtime/network owners in the
 service.
 
 M4_OBSERVATION_RECEIPT date=2026-09-10; route=Pgy SSH + Tailscale relay; sync=15s transfer (13s upload, 2s download); focused=20.95s pytest; promotion=not occurred; operations=sync 4/deploy 0; stable_502=not measured; m4_only=not occurred; coordination=phase-4 candidate clean source
+
+## Phase 5 review: evidence-based pause
+
+A fresh source review on 2026-09-10 found no additional high-value, low-impact
+service extraction:
+
+- `site_ops_analysis/service.py` is about 710 lines and already consists of a
+  small service wrapper plus pure analysis functions; another split would add
+  module boundaries without a proven ownership or feedback-time improvement.
+- `observability/service.py` is about 320 lines and has no comparable size or
+  isolation problem.
+- `catalog/service.py` combines refresh, health scan, persistence, and routing
+  synchronization; splitting it would cross transaction and runtime contracts.
+- `site_compliance.py` combines draft, publish, audit, validation, and public
+  disclosure; it is mutation-sensitive and is not a low-risk candidate.
+- The remaining `provider_connections` and `usage` responsibilities involve
+  credentials, network calls, billing/usage truth, or runtime selection and
+  have already had their safe pure layers removed.
+
+This is a deliberate pause under the structural remediation standard. Resume
+only when a concrete defect, repeated cross-responsibility change, difficult
+focused test, or measurable delivery friction identifies one of these as the
+principal hotspot. The four completed batches remain independently reversible.
