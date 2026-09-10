@@ -4,7 +4,6 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from urllib.parse import unquote_plus
 
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.adapters.repositories.stats_repository import StatsRepository
@@ -16,6 +15,33 @@ from app.core.models import (
     RunRecord,
 )
 from app.domain.health.scoring import assess_instance_health
+from app.domain.usage.value_helpers import (
+    _average_latency as _average_latency_value,
+)
+from app.domain.usage.value_helpers import (
+    _calculate_percentile as _calculate_percentile_value,
+)
+from app.domain.usage.value_helpers import (
+    _coerce_non_negative_int as _coerce_non_negative_int_value,
+)
+from app.domain.usage.value_helpers import (
+    _format_datetime as _format_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _format_datetime_or_empty as _format_datetime_or_empty_value,
+)
+from app.domain.usage.value_helpers import (
+    _normalize_datetime as _normalize_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _normalize_required_datetime as _normalize_required_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _parse_logs_analytics_datetime as _parse_logs_analytics_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _safe_rate as _safe_rate_value,
+)
 
 
 def _coerce_int(value: object, default: int = 0) -> int:
@@ -66,6 +92,33 @@ class UsageService:
     ) -> None:
         self.database_url = database_url
         self.now_factory = now_factory or (lambda: datetime.now(UTC))
+
+    def _average_latency(self, latencies: list[int]) -> int:
+        return _average_latency_value(latencies)
+
+    def _safe_rate(self, numerator: int, denominator: int) -> float:
+        return _safe_rate_value(numerator, denominator)
+
+    def _normalize_datetime(self, value: datetime | None) -> datetime | None:
+        return _normalize_datetime_value(value)
+
+    def _normalize_required_datetime(self, value: datetime) -> datetime:
+        return _normalize_required_datetime_value(value)
+
+    def _format_datetime(self, value: datetime) -> str:
+        return _format_datetime_value(value)
+
+    def _format_datetime_or_empty(self, value: datetime | None) -> str:
+        return _format_datetime_or_empty_value(value)
+
+    def _parse_logs_analytics_datetime(self, value: str) -> datetime | None:
+        return _parse_logs_analytics_datetime_value(value)
+
+    def _coerce_non_negative_int(self, value: Any) -> int:
+        return _coerce_non_negative_int_value(value)
+
+    def _calculate_percentile(self, values: list[int], percentile: float) -> int:
+        return _calculate_percentile_value(values, percentile)
 
     def get_instance_stats(
         self,
@@ -1719,15 +1772,7 @@ class UsageService:
         delta_ms = int(round((finished_at - started_at).total_seconds() * 1000))
         return max(0, delta_ms)
 
-    def _average_latency(self, latencies: list[int]) -> int:
-        if not latencies:
-            return 0
-        return int(round(sum(latencies) / len(latencies)))
 
-    def _safe_rate(self, numerator: int, denominator: int) -> float:
-        if denominator <= 0:
-            return 0.0
-        return round(numerator / denominator, 4)
 
     def _is_in_window(self, value: datetime | None, start_at: datetime, end_at: datetime) -> bool:
         normalized = self._normalize_datetime(value)
@@ -1735,27 +1780,9 @@ class UsageService:
             return False
         return start_at <= normalized <= end_at
 
-    def _normalize_datetime(self, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return self._normalize_required_datetime(value)
 
-    def _normalize_required_datetime(self, value: datetime) -> datetime:
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value.astimezone(UTC)
 
-    def _format_datetime(self, value: datetime) -> str:
-        normalized = self._normalize_datetime(value)
-        if normalized is None:
-            return ""
-        return normalized.strftime("%Y-%m-%d %H:%M:%S")
 
-    def _format_datetime_or_empty(self, value: datetime | None) -> str:
-        normalized = self._normalize_datetime(value)
-        if normalized is None:
-            return ""
-        return normalized.strftime("%Y-%m-%d %H:%M:%S")
 
     def _build_logs_analytics_context(
         self,
@@ -1873,21 +1900,7 @@ class UsageService:
             "end_at": now,
         }
 
-    def _parse_logs_analytics_datetime(self, value: str) -> datetime | None:
-        normalized_value = str(value or "").strip()
-        normalized_value = normalized_value.replace("%%20", " ").replace("%20", " ")
-        normalized_value = normalized_value.replace("% ", " ")
-        normalized_value = unquote_plus(normalized_value).strip()
-        normalized_value = normalized_value.replace("T", " ")
-        if not normalized_value:
-            return None
-        return datetime.strptime(normalized_value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
 
-    def _coerce_non_negative_int(self, value: Any) -> int:
-        try:
-            return max(0, int(value or 0))
-        except (TypeError, ValueError):
-            return 0
 
     def _logs_filters_require_unavailable_dimensions(
         self,
@@ -2087,18 +2100,3 @@ class UsageService:
             }
             for label, counts in day_counts.items()
         ]
-
-    def _calculate_percentile(self, values: list[int], percentile: float) -> int:
-        if not values:
-            return 0
-        normalized = sorted(max(0, int(value)) for value in values)
-        if len(normalized) == 1:
-            return normalized[0]
-        rank = max(
-            0,
-            min(
-                len(normalized) - 1,
-                int((len(normalized) * max(0.0, float(percentile))) / 100.0 + 0.999999) - 1,
-            ),
-        )
-        return normalized[rank]

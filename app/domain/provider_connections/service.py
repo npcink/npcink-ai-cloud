@@ -41,6 +41,11 @@ from app.domain.image_generation.provider_fetch import (
     ProviderImageFetchError,
     fetch_provider_image_url,
 )
+from app.domain.provider_connections.projection import (
+    public_config,
+    public_image_evidence,
+    sanitize_config,
+)
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
@@ -264,14 +269,10 @@ class ProviderConnectionAdminService:
             alternative_connections: list[dict[str, Any]] = []
             covered_profiles: set[str] = set()
             for candidate_row in session.scalars(
-                select(ProviderConnection).where(
-                    ProviderConnection.connection_id != normalized_id
-                )
+                select(ProviderConnection).where(ProviderConnection.connection_id != normalized_id)
             ):
                 candidate = self._serialize(candidate_row)
-                candidate_profiles = set(
-                    _normalize_id_list(candidate.get("runtime_profile_ids"))
-                )
+                candidate_profiles = set(_normalize_id_list(candidate.get("runtime_profile_ids")))
                 shared_profiles = sorted(target_profiles & candidate_profiles)
                 if (
                     not shared_profiles
@@ -305,9 +306,7 @@ class ProviderConnectionAdminService:
                 "provider_id": str(connection.get("provider_id") or ""),
                 "display_name": str(connection.get("display_name") or ""),
                 "enabled": enabled,
-                "configuration_status": str(
-                    connection.get("configuration_status") or ""
-                ),
+                "configuration_status": str(connection.get("configuration_status") or ""),
             },
             "expected_updated_at": str(connection.get("updated_at") or ""),
             "impact": {
@@ -1039,13 +1038,13 @@ class ProviderConnectionAdminService:
                 "base_url must be 500 characters or less",
             )
         config = _dict(payload.get("config"))
-        config = _sanitize_config(config)
+        config = sanitize_config(config, _SECRET_CONFIG_KEY_PARTS)
         config = _normalize_image_delivery_config(config)
         for key in SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS:
             config.pop(key, None)
         capability_ids = _normalize_id_list(payload.get("capability_ids"))
         runtime_profile_ids = _normalize_id_list(payload.get("runtime_profile_ids"))
-        metadata = _sanitize_config(_dict(payload.get("metadata")))
+        metadata = sanitize_config(_dict(payload.get("metadata")), _SECRET_CONFIG_KEY_PARTS)
         for key in _SERVER_OWNED_PROVIDER_METADATA_KEYS:
             metadata.pop(key, None)
         metadata.pop("note", None)
@@ -1093,8 +1092,34 @@ class ProviderConnectionAdminService:
         capability_ids = _effective_capability_ids(config, kind)
         runtime_profile_ids = _normalize_id_list(config.get("runtime_profile_ids"))
         metadata = dict(_dict(row.metadata_json))
-        image_delivery_repair = _public_image_delivery_repair(metadata)
-        image_delivery_probe = _public_image_delivery_probe(metadata)
+        image_delivery_repair = public_image_evidence(
+            metadata,
+            "image_delivery_repair",
+            (
+                "status",
+                "reason_code",
+                "detected_host",
+                "evidence_kind",
+                "probe_id",
+                "run_id",
+                "observed_at",
+                "approved_at",
+            ),
+        )
+        image_delivery_probe = public_image_evidence(
+            metadata,
+            "image_delivery_probe",
+            (
+                "probe_id",
+                "status",
+                "provider_id",
+                "model_id",
+                "delivery_format",
+                "detected_host",
+                "tested_at",
+                "host_approved_at",
+            ),
+        )
         metadata.pop("image_delivery_repair", None)
         metadata.pop("image_delivery_probe", None)
         metadata.pop("note", None)
@@ -1150,7 +1175,7 @@ class ProviderConnectionAdminService:
                     "display": _credential_display(configured, credential_error),
                 }
             },
-            "config": _public_config(config),
+            "config": public_config(config, _SECRET_CONFIG_KEY_PARTS),
             "metadata": metadata,
             "image_delivery_probe": image_delivery_probe,
             "image_delivery_repair": image_delivery_repair,
@@ -1791,38 +1816,6 @@ def _effective_capability_ids(config: dict[str, Any], kind: str) -> list[str]:
     return capability_ids
 
 
-def _public_image_delivery_repair(metadata: dict[str, Any]) -> dict[str, Any]:
-    evidence = _dict(metadata.get("image_delivery_repair"))
-    if not evidence:
-        return {}
-    return {
-        "status": _string(evidence.get("status")),
-        "reason_code": _string(evidence.get("reason_code")),
-        "detected_host": _string(evidence.get("detected_host")),
-        "evidence_kind": _string(evidence.get("evidence_kind")) or "runtime_run",
-        "probe_id": _string(evidence.get("probe_id")),
-        "run_id": _string(evidence.get("run_id")),
-        "observed_at": _string(evidence.get("observed_at")),
-        "approved_at": _string(evidence.get("approved_at")),
-    }
-
-
-def _public_image_delivery_probe(metadata: dict[str, Any]) -> dict[str, Any]:
-    evidence = _dict(metadata.get("image_delivery_probe"))
-    if not evidence:
-        return {}
-    return {
-        "probe_id": _string(evidence.get("probe_id")),
-        "status": _string(evidence.get("status")),
-        "provider_id": _string(evidence.get("provider_id")),
-        "model_id": _string(evidence.get("model_id")),
-        "delivery_format": _string(evidence.get("delivery_format")),
-        "detected_host": _string(evidence.get("detected_host")),
-        "tested_at": _string(evidence.get("tested_at")),
-        "host_approved_at": _string(evidence.get("host_approved_at")),
-    }
-
-
 def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(config)
     response_format = _string(normalized.get("image_response_format")).lower()
@@ -1934,45 +1927,6 @@ def _runtime_selection_slot(*, kind: str, provider_id: str) -> str:
     if normalized_kind in {"embedding_provider", "rerank_provider", "vector_store_provider"}:
         return normalized_kind
     return ""
-
-
-def _public_config(config: dict[str, Any]) -> dict[str, Any]:
-    hidden_keys = {
-        "provider_id",
-        "kind",
-        "capability_ids",
-        "runtime_profile_ids",
-        "group_id",
-    }
-    return {
-        key: value
-        for key, value in _sanitize_config(config).items()
-        if key not in hidden_keys and key != "secretless"
-    }
-
-
-def _sanitize_config(config: dict[str, Any]) -> dict[str, Any]:
-    sanitized: dict[str, Any] = {}
-    for key, value in config.items():
-        normalized_key = str(key)
-        if _is_secret_key(normalized_key):
-            continue
-        if isinstance(value, dict):
-            sanitized[normalized_key] = _sanitize_config(value)
-        elif isinstance(value, list):
-            sanitized[normalized_key] = [
-                _sanitize_config(item) if isinstance(item, dict) else item for item in value
-            ]
-        else:
-            sanitized[normalized_key] = value
-    return sanitized
-
-
-def _is_secret_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    if normalized in {"api_key_label", "api_key_labels", "key_label", "key_labels"}:
-        return False
-    return any(part in normalized for part in _SECRET_CONFIG_KEY_PARTS)
 
 
 def _dict(value: object) -> dict[str, Any]:
