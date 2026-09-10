@@ -235,7 +235,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
   const inspector = page.locator('#runtime-diagnostic-inspector');
   const detail = inspector.locator('[data-ui="runtime-issue-evidence"]');
   await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Provider call errors|供应商调用错误/i);
-  await expect(inspector.getByRole('link', { name: /View supplier connections|查看供应商连接/i })).toHaveAttribute('href', '/admin/ai-resources');
+  await expect(inspector).toContainText(/No failed-call details|本次未返回具体失败记录/);
 
   await expect(detail).toContainText(/Failed provider calls: 4|模型调用失败次数: 4/);
   await expect(detail).not.toContainText(/Affected requests|受影响请求数/);
@@ -354,4 +354,33 @@ test('editor quality keeps sample sufficiency separate from candidate status', a
   await expect(qualityPanel).toContainText(/Too few samples to assess quality|样本不足，暂不能判断效果/i);
   await expect(qualityPanel).toContainText(/insufficient|样本不足/i);
   await expect(qualityPanel).not.toContainText(/No review candidate|无复核候选/i);
+});
+
+
+test('provider failure details explain cause, export evidence and keep recovery unverified', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/runtime-telemetry*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+      generated_at: '2026-09-10T10:00:00Z', totals: { runs: 45 },
+      provider_failures: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', profile_id: 'wp-ai.classification', provider_id: 'openai', model_id: 'gpt-5.5', reason: 'output_schema_invalid', error_code: 'provider.invalid_request', occurred_at: '2026-09-05T10:00:00Z', recovery: 'unverified' }],
+      alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_errors', severity: 'warning', count: 3, capabilities: ['text'] }] },
+    })) });
+  });
+  await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
+  const details = page.locator('[data-ui="provider-failure-details"]');
+  await expect(details).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
+  await expect(details).toContainText('site-alpha');
+  await expect(details).toContainText(/恢复待验证|Recovery unverified/i);
+  await expect(page.locator('#runtime-diagnostic-inspector')).not.toContainText(/当前仅有功能分组统计|only function-level totals/i);
+  await expect(details.getByText('run-schema-rejected', { exact: true })).not.toBeVisible();
+  await details.locator('summary').first().click();
+  await details.locator('summary').nth(1).click();
+  await expect(details.getByText('run-schema-rejected', { exact: true })).toBeVisible();
+  const downloadEvent = page.waitForEvent('download');
+  await details.getByRole('button', { name: /Download investigation|下载排查资料/ }).click();
+  const download = await downloadEvent;
+  const evidence = JSON.parse(readFileSync((await download.path())!, 'utf8'));
+  expect(evidence.recovery).toBe('unverified');
+  expect(evidence.windowHours).toBe(168);
+  expect(evidence.failures[0].runId).toBe('run-schema-rejected');
 });

@@ -294,6 +294,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           activePrefixes: ['/admin/runtime-profiles'],
         },
         {
+          href: '/admin/usage-statistics',
+          labelKey: 'admin.nav_usage_statistics',
+          fallback: 'Usage Statistics',
+          collapsedLabel: 'US',
+          activePrefixes: ['/admin/usage-statistics'],
+        },
+        {
           href: '/admin/troubleshooting',
           labelKey: 'admin.nav_runtime_diagnostics',
           fallback: 'Runtime Diagnostics',

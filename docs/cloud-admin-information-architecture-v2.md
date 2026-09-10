@@ -249,6 +249,7 @@ consolidation.
 | `/admin/vector-settings` | Runtime Operations | `configuration` | Providers | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
 | `/admin/runtime-profiles` | Runtime Operations | `configuration` | Runtime profiles | Keep only platform-tagged Cloud hosted candidate-chain configuration; candidate selection renders only inside edit flow |
 | `/admin/troubleshooting` | Runtime Operations | `diagnostic` | Runtime diagnostics | Canonical diagnostic index |
+| `/admin/usage-statistics` | Runtime Operations | `diagnostic` | Usage statistics | Windowed runtime trends, site/function groups, separate plugin reports and editorial outcomes |
 | `/admin/audit` | Runtime Operations | `diagnostic` | Runtime diagnostics | Persistent exact service-operation evidence; no raw payload or mutation authority |
 | `/admin/plugin-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
 | `/admin/media-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
@@ -482,3 +483,16 @@ The admin refactor is complete only when:
 - performance evidence shows low-frequency data is loaded on demand;
 - Cloud/WordPress ownership boundaries remain unchanged;
 - all required gates pass.
+
+
+### Usage statistics scope
+
+`/admin/usage-statistics` reads runtime telemetry for 24, 72 or 168 hours
+(default 168). Its additive `usage_statistics` projection uses the same bounded
+run sample (5,000 rows), with explicit cap warning, UTC daily buckets, distinct
+site counts, profile groups, run success rate and measured duration sample count.
+Pending runs remain in the success-rate denominator. Missing rates/durations
+are null, not zero. Plugin events use their own existing observability source;
+they are never counted as runs. Source errors remain independent. Site links
+retain the selected window and site; function links explicitly open period-wide
+diagnostics. No new event collection, payload disclosure or write control is added.

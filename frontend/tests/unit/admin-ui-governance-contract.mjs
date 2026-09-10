@@ -46,6 +46,7 @@ const unifiedOperationalHeaderSources = [
   ['support detail', 'src/app/admin/support-requests/[requestId]/page.tsx'],
   ['external services', 'src/app/admin/external-services/page.tsx'],
   ['troubleshooting', 'src/app/admin/troubleshooting/page.tsx'],
+  ['usage statistics', 'src/app/admin/usage-statistics/page.tsx'],
   ['agent feedback', 'src/app/admin/agent-feedback/page.tsx'],
   ['media observability', 'src/app/admin/media-observability/page.tsx'],
   ['plugin observability', 'src/app/admin/plugin-observability/page.tsx'],
