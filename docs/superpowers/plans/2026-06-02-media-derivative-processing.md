@@ -1,5 +1,7 @@
 # Media Derivative Processing Service — Implementation Plan
 
+Status: historical implementation plan; verify current contracts before reuse.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement Cloud-side media derivative processing for images within the existing runtime plane, reusing run_records, Redis queue, and worker infrastructure.
