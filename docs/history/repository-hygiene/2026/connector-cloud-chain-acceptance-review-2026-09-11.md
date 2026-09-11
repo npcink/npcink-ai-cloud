@@ -1,4 +1,5 @@
 # 连接器到 Cloud 调用链验收调查（2026-09-11）
+Status: dated acceptance review record.
 
 ## 目的
 

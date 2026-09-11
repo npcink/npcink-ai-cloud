@@ -1,4 +1,5 @@
 # Hosted Model Runtime V1
+Status: reference-only legacy snapshot.
 
 > Legacy snapshot: reference-only; current Cloud contracts take precedence.
 

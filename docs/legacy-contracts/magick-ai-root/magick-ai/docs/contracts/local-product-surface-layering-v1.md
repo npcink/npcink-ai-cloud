@@ -1,4 +1,5 @@
 # Local Product Surface Layering Contract v1
+Status: reference-only legacy snapshot.
 
 > Legacy snapshot: reference-only; current Cloud contracts take precedence.
 
