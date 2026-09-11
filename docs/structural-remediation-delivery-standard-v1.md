@@ -1,4 +1,5 @@
 # Structural Remediation Delivery Standard v1
+Status: active standard.
 
 状态：active engineering guide
 
