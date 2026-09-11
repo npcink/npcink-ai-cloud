@@ -28,7 +28,9 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
 
-def test_admin_record_scope_filters_all_aggregates_without_hiding_unknown_plugins(tmp_path: Path) -> None:
+def test_admin_record_scope_filters_all_aggregates_without_hiding_unknown_plugins(
+    tmp_path: Path,
+) -> None:
     database_url, client = _build_client(tmp_path)
     now = datetime.now(UTC)
     with get_session(database_url) as session:
