@@ -1,5 +1,8 @@
 # Mypy Debt Baseline
 
+Status: historical baseline; current type-checking rules are defined by the
+linked Python Type Checking Standard.
+
 Date: 2026-06-04
 
 Daily development rules now live in
