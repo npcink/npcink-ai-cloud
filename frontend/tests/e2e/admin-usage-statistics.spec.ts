@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import { installAdminMocks, buildAdminApiEnvelope } from './helpers/admin-operator-fixture';
 import { observeAdminBrowserEvidence, writeAdminVisualReceipt } from './helpers/admin-visual-receipt';
 
+test.use({ timezoneId: 'Asia/Shanghai' });
+
 test('usage counts, period filters and source failure stay honest', async ({ page }, testInfo) => {
   const evidence = observeAdminBrowserEvidence(page);
   await page.setViewportSize({ width: 1440, height: 1050 });
@@ -21,6 +23,9 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.locator('[data-ui="usage-breakdown"]')).toContainText(/Classification|内容分类/);
   await page.getByRole('link', { name: /Plugin activity records|插件运行记录/ }).click();
   await expect(page.locator('[data-ui="usage-breakdown"]')).toContainText('23');
+  await expect(page.locator('[data-ui="usage-statistics-workspace"]')).toContainText('Asia/Shanghai');
+  await expect(page.locator('[data-ui="usage-statistics-workspace"]')).toContainText('20:00');
+  await expect(page.getByText(/Grouped by Cloud receipt time|按 Cloud 收到上报的时间统计/)).toBeVisible();
   await expect(page.getByRole('link', { name: /Plugin records|插件记录/ })).toHaveAttribute('href', '/admin/plugin-observability?window=168&plugin=test-plugin');
   const testRequest = page.waitForRequest(request => request.url().includes('record_scope=test'));
   await page.getByRole('link', { name: /View test records|查看测试记录/ }).click();

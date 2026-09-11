@@ -158,6 +158,11 @@ type PluginObservabilityData = {
   timeline: TimelinePoint[];
   errors: ErrorItem[];
   recentErrors: RecentErrorItem[];
+  recentActivity: {
+    eventId: string; eventKind: string; pluginSlug: string; receivedAt: string;
+    status: string; siteId: string;
+    run: { runId: string; status: string; startedAt: string; finishedAt: string; errorCode: string } | null;
+  }[];
   window: {
     hours: number;
     startAt: string;
@@ -290,6 +295,14 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
           lastSeenAt: String(e.last_seen_at ?? ''),
         }))
       : [],
+    recentActivity: Array.isArray(raw?.recent_activity) ? raw.recent_activity.map((item: any) => ({
+      eventId: String(item.event_id ?? ''), eventKind: String(item.event_kind ?? ''),
+      pluginSlug: String(item.plugin_slug ?? ''), siteId: String(item.site_id ?? ''),
+      status: String(item.status ?? ''), receivedAt: String(item.received_at ?? ''),
+      run: item.run ? { runId: String(item.run.run_id ?? ''), status: String(item.run.status ?? ''),
+        startedAt: String(item.run.started_at ?? ''), finishedAt: String(item.run.finished_at ?? ''),
+        errorCode: String(item.run.error_code ?? '') } : null,
+    })) : [],
     recentErrors: Array.isArray(raw?.recent_errors)
       ? raw.recent_errors.map((re: any) => ({
           siteId: String(re.site_id ?? ''),
@@ -460,7 +473,14 @@ function normalizePluginFilter(value: string | null): PluginFilter {
 }
 
 function AdminPluginObservabilityContent() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
+  const activityStatus = (status: string) => ({
+    ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'),
+    error: c('失败', 'Failed'), failed: c('失败', 'Failed'),
+    warning: c('需关注', 'Warning'), running: c('运行中', 'Running'),
+    queued: c('排队中', 'Queued'), canceled: c('已取消', 'Canceled'),
+  })[status] || c('其他状态', 'Other status');
   const toast = useToast();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -703,7 +723,22 @@ function AdminPluginObservabilityContent() {
           <table className="w-full"><thead><tr>{['site','clue','records','errors','last_report','action'].map(key => <th className={cellClass} key={key}>{t(`admin.plugin_obs_col_${key}`)}</th>)}</tr></thead><tbody>{sortedSites.map(site => <tr className="border-t border-slate-100 dark:border-slate-800" key={site.siteId}><td className={cellClass}>{siteName(site.siteId)}<p className="mt-1 break-all text-xs text-slate-500">{site.siteUrl}</p></td><td className={cellClass}>{site.health.reasons.length ? site.health.reasons.map(reason => healthReason(t, reason)).join(' · ') : site.errorTotal > 0 ? t('admin.plugin_obs_has_errors') : t('admin.plugin_obs_no_errors')}</td><td className={cellClass}>{site.eventsTotal}</td><td className={cellClass}>{site.errorTotal}</td><td className={cellClass}>{site.lastSeenAt ? formatDate(site.lastSeenAt) : '—'}</td><td className={cellClass}><button className="btn btn-ghost btn-sm" aria-haspopup="dialog" onClick={() => setInspectedSite(site.siteId)}>{t('admin.plugin_obs_view_records')}</button></td></tr>)}</tbody></table>
           {!sortedSites.length ? <p className="p-4 text-sm text-slate-500">{t('admin.plugin_obs_no_sites')}</p> : null}
         </AdminDataTableFrame>
-        <details className="border-t border-slate-200 py-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.plugin_obs_trend')}</summary><p className="my-3 text-xs text-slate-500">{t('admin.plugin_obs_count_note')}</p>{data.timeline.length ? <AnalyticsLineChart data={timelineData} height={240} primarySeriesName={t('admin.plugin_obs_record_count')} secondarySeriesName={t('admin.plugin_obs_error_records')} /> : <p>{t('admin.plugin_obs_no_trend')}</p>}</details>
+        <AdminDataTableFrame title={c('近期上报', 'Recent reports')} resultLabel={c('所选范围内最近 50 条', 'Latest 50 in selected scope')} dataUi="plugin-recent-activity" density="compact">
+          <p className="p-3 text-xs text-slate-500">{t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p>
+          {data.recentActivity.map((item, index) => <div key={`${item.eventId}-${index}`} className="border-t border-slate-200 p-3 text-sm dark:border-slate-800">
+            <p>{activityStatus(item.status)} · {eventLabel(t, item.eventKind)} · {pluginLabel(t, item.pluginSlug)} · {siteName(item.siteId)}</p>
+            <p className="text-xs text-slate-500">{c('收到上报', 'Report received')}: {formatDate(item.receivedAt)}</p>
+            {item.run ? <details className="mt-2"><summary className="cursor-pointer">{c('查看对应运行', 'View linked run')}</summary>
+              <dl className="space-y-1 py-2"><dt>{c('运行状态', 'Run status')}</dt><dd>{activityStatus(item.run.status)}</dd>
+                <dt>{c('实际开始', 'Execution started')}</dt><dd>{formatDate(item.run.startedAt) || '—'}</dd>
+                <dt>{c('实际完成', 'Execution finished')}</dt><dd>{formatDate(item.run.finishedAt) || '—'}</dd>
+                <dt>{c('运行编号', 'Run ID')}</dt><dd className="break-all"><code>{item.run.runId}</code></dd>
+                {item.run.errorCode ? <><dt>{c('错误代码', 'Error code')}</dt><dd>{item.run.errorCode}</dd></> : null}
+              </dl></details> : <p className="text-xs text-slate-500">{c('未关联 Cloud 运行；不代表调用失败，部分事件只是状态上报。', 'No linked Cloud run; this does not imply failure. Some events only report state.')}</p>}
+          </div>)}
+          {!data.recentActivity.length ? <p className="p-3 text-sm">{c('所选范围暂无近期上报。', 'No recent reports in this scope.')}</p> : null}
+        </AdminDataTableFrame>
+        <details className="border-t border-slate-200 py-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.plugin_obs_trend')}</summary><p className="my-3 text-xs text-slate-500">{t('admin.plugin_obs_count_note')} {t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p>{data.timeline.length ? <AnalyticsLineChart data={timelineData} height={240} primarySeriesName={t('admin.plugin_obs_record_count')} secondarySeriesName={t('admin.plugin_obs_error_records')} /> : <p>{t('admin.plugin_obs_no_trend')}</p>}</details>
       </> : null}
       <AdminInspectorDrawer open={Boolean(selectedIssue || siteDetails)} title={selectedIssue ? errorLabel(t, selectedIssue.errorCode) : siteName(inspectedSite)} titleId="plugin-problem-title" closeLabel={closeLabel} onClose={() => {setIssueKey(null);setInspectedSite(null);}}>
         <div className="space-y-5 text-sm">
@@ -713,7 +748,7 @@ function AdminPluginObservabilityContent() {
           {recent.map((item,index) => <div className="space-y-2 border-t border-slate-200 py-3 dark:border-slate-800" key={index}><p>{formatDate(item.receivedAt)} · {errorLabel(t,item.errorCode)}</p><p>{eventLabel(t,item.eventKind)} · {pluginLabel(t,item.pluginSlug)}</p><details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary><dl className="space-y-2 break-all py-3"><dt>{t('admin.plugin_obs_error_id')}</dt><dd><code>{item.errorCode}</code></dd><dt>{t('admin.plugin_obs_event_id')}</dt><dd><code>{item.eventKind}</code></dd><dt>{t('admin.plugin_obs_ability_id')}</dt><dd><code>{item.abilityId || '—'}</code></dd><dt>{t('admin.plugin_obs_proposal_id')}</dt><dd><code>{item.proposalId || '—'}</code></dd><dt>{t('admin.plugin_obs_route')}</dt><dd><code>{item.route || '—'}</code></dd></dl></details></div>)}
           {!recent.length ? <p>{t('admin.plugin_obs_no_recent')}</p> : null}
           {selectedIssue ? <details><summary className="cursor-pointer">{t('admin.plugin_obs_raw')}</summary><dl className="space-y-2 break-all py-3"><dt>{t('admin.plugin_obs_error_id')}</dt><dd><code>{selectedIssue.errorCode}</code></dd><dt>{t('admin.plugin_obs_event_id')}</dt><dd><code>{selectedIssue.eventKind}</code></dd><dt>{t('admin.plugin_obs_plugin_id')}</dt><dd><code>{selectedIssue.pluginSlug}</code></dd><dt>{t('admin.plugin_obs_site_id')}</dt><dd><code>{selectedIssue.siteId || '—'}</code></dd></dl></details> : null}
-          {siteDetails ? <><button className="btn btn-secondary btn-sm" onClick={() => {updateUrl({site: siteDetails.siteId, focus: null});setInspectedSite(null);}}>{t('admin.plugin_obs_filter_site')}</button><details><summary className="cursor-pointer">{t('admin.plugin_obs_statistics')}</summary><p className="py-3">{t('admin.plugin_obs_record_stats', {rate: formatSuccessRate(siteDetails.successRate), seconds: (siteDetails.avgLatencyMs / 1000).toFixed(1)})}</p><p>{t('admin.plugin_obs_count_note')}</p><code className="break-all">{siteDetails.siteId}</code></details></> : null}
+          {siteDetails ? <><button className="btn btn-secondary btn-sm" onClick={() => {updateUrl({site: siteDetails.siteId, focus: null});setInspectedSite(null);}}>{t('admin.plugin_obs_filter_site')}</button><details><summary className="cursor-pointer">{t('admin.plugin_obs_statistics')}</summary><p className="py-3">{t('admin.plugin_obs_record_stats', {rate: formatSuccessRate(siteDetails.successRate), seconds: (siteDetails.avgLatencyMs / 1000).toFixed(1)})}</p><p>{t('admin.plugin_obs_count_note')} {t('admin.plugin_obs_receipt_time_note')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})</p><code className="break-all">{siteDetails.siteId}</code></details></> : null}
         </div>
       </AdminInspectorDrawer>
       <AdminInspectorDrawer open={moreOpen || Boolean(focusedAttentionKey)} title={t('admin.plugin_obs_more')} titleId="plugin-more-title" closeLabel={closeLabel} onClose={() => {setMoreOpen(false);updateUrl({focus:null});}}>

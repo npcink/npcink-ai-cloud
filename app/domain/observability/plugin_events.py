@@ -12,6 +12,7 @@ from app.core.db import get_session
 from app.core.models import (
     PluginObservabilityAttentionState,
     PluginObservabilityEvent,
+    RunRecord,
     Site,
 )
 from app.domain.observability.plugin_event_projection import (
@@ -558,6 +559,37 @@ class PluginObservabilityService:
                 )
             )
 
+            # Bounded, metadata-only join; a supplied correlation must not cross sites.
+            activity_rows = session.execute(
+                select(PluginObservabilityEvent, RunRecord)
+                .outerjoin(
+                    RunRecord,
+                    (RunRecord.run_id == PluginObservabilityEvent.correlation_id)
+                    & (RunRecord.site_id == PluginObservabilityEvent.site_id),
+                )
+                .where(*base_conditions)
+                .order_by(
+                    PluginObservabilityEvent.received_at.desc(),
+                    PluginObservabilityEvent.id.desc(),
+                )
+                .limit(50)
+            ).all()
+            recent_activity = [
+                {
+                    **self._admin_recent_error(event),
+                    "event_id": event.event_id or str(event.id),
+                    "captured_at": self._format_datetime(event.captured_at),
+                    "run": {
+                        "run_id": run.run_id,
+                        "status": run.status,
+                        "started_at": self._format_datetime(run.started_at),
+                        "finished_at": self._format_datetime(run.finished_at),
+                        "error_code": run.error_code or "",
+                    } if run is not None else None,
+                }
+                for event, run in activity_rows
+            ]
+
             timeline = self._build_timeline(
                 session,
                 base_conditions=base_conditions,
@@ -661,6 +693,8 @@ class PluginObservabilityService:
             "timeline": timeline,
             "errors": errors,
             "recent_errors": [self._admin_recent_error(event) for event in recent_errors],
+            "recent_activity": recent_activity,
+            "recent_activity_limit": 50,
         }
 
     def update_attention_state(
