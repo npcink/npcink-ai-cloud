@@ -215,6 +215,9 @@ class WordPressOperationRuntime:
                     "json_schema": {
                         "name": "wordpress_ability_output",
                         "schema": output_schema,
+                        # Ability schemas may contain optional or open object fields.
+                        # Preserve that contract instead of inheriting strict defaults.
+                        "strict": False,
                     },
                 }
                 if output_schema

@@ -8,6 +8,9 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
 
 ## Collections
 
+- [运行与观测开发复盘与试用交接（2026-09-11）](admin/2026/runtime-observation-closeout-2026-09-11.md)
+  — 页面定位、插件上报接通、部署与浏览器证据、历史问题处理边界。
+
 - [Admin acceptance evidence](admin/2026/) - dated route and interaction
   acceptance records, grouped by delivery phase.
 - [Portal evidence](portal/2026/) - dated Portal implementation histories,

@@ -40,61 +40,148 @@
       "shared": "Admin shell, shared primitive, geometry token, or cross-route interaction change"
     },
     "rules": [
-      { "id": "declared-page-model", "authority": "hard_gate" },
-      { "id": "pc-viewport", "authority": "hard_gate" },
-      { "id": "horizontal-overflow", "authority": "hard_gate" },
-      { "id": "single-page-title", "authority": "hard_gate" },
-      { "id": "working-surface-first-viewport", "authority": "hard_gate" },
-      { "id": "single-primary-action", "authority": "hard_gate" },
-      { "id": "textual-status", "authority": "hard_gate" },
-      { "id": "action-object-proximity", "authority": "hard_gate" },
-      { "id": "distinct-interaction-states", "authority": "hard_gate" },
-      { "id": "dialog-focus-recovery", "authority": "hard_gate" },
-      { "id": "context-stability", "authority": "hard_gate" },
-      { "id": "browser-runtime-errors", "authority": "hard_gate" }
+      {
+        "id": "declared-page-model",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "pc-viewport",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "horizontal-overflow",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "single-page-title",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "working-surface-first-viewport",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "single-primary-action",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "textual-status",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "action-object-proximity",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "distinct-interaction-states",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "dialog-focus-recovery",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "context-stability",
+        "authority": "hard_gate"
+      },
+      {
+        "id": "browser-runtime-errors",
+        "authority": "hard_gate"
+      }
     ],
     "pilotRoutes": {
+      "/admin/usage-statistics": {"pageModel": "diagnostic", "riskTier": "material", "workingSurface": "[data-ui=\"usage-statistics-workspace\"]", "requiredStates": ["ready", "filtered", "partial_error"]},
+      "/admin/plugin-observability": {
+        "pageModel": "diagnostic",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"plugin-problems\"]",
+        "requiredStates": [
+          "ready",
+          "selected",
+          "partial_error",
+          "disclosure"
+        ]
+      },
       "/admin/ai-resources": {
         "pageModel": "queue",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"model-supplier-directory\"]",
-        "requiredStates": ["ready", "selected", "filtered", "operation_error", "dialog"]
+        "requiredStates": [
+          "ready",
+          "selected",
+          "filtered",
+          "operation_error",
+          "dialog"
+        ]
       },
       "/admin/coverage": {
         "pageModel": "queue",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"coverage-workspace\"]",
-        "requiredStates": ["ready", "filtered", "paginated", "selected", "refresh_error"]
+        "requiredStates": [
+          "ready",
+          "filtered",
+          "paginated",
+          "selected",
+          "refresh_error"
+        ]
       },
       "/admin/service-settings": {
         "pageModel": "configuration",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"admin-settings-workbench\"]",
-        "requiredStates": ["ready", "invalid", "dirty", "save_error", "saved", "dialog"]
+        "requiredStates": [
+          "ready",
+          "invalid",
+          "dirty",
+          "save_error",
+          "saved",
+          "dialog"
+        ]
       },
       "/admin/troubleshooting": {
         "pageModel": "diagnostic",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"runtime-diagnostic-table-frame\"]",
-        "requiredStates": ["ready", "selected", "partial_error", "disclosure"]
+        "requiredStates": [
+          "ready",
+          "selected",
+          "partial_error",
+          "disclosure"
+        ]
       },
       "/admin/audit": {
         "pageModel": "diagnostic",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"admin-audit-directory\"]",
-        "requiredStates": ["ready", "filtered", "selected", "refresh_error"]
+        "requiredStates": [
+          "ready",
+          "filtered",
+          "selected",
+          "refresh_error"
+        ]
       },
       "/admin/support-requests": {
         "pageModel": "queue",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"support-request-table\"]",
-        "requiredStates": ["ready", "filtered", "selected", "returned"]
+        "requiredStates": [
+          "ready",
+          "filtered",
+          "selected",
+          "returned"
+        ]
       },
       "/admin/support-requests/[requestId]": {
         "pageModel": "detail",
         "riskTier": "material",
         "workingSurface": "[data-ui=\"support-request-detail-workspace\"]",
-        "requiredStates": ["ready", "action_error", "action_success", "return_context"]
+        "requiredStates": [
+          "ready",
+          "action_error",
+          "action_success",
+          "return_context"
+        ]
       }
     },
     "browserLanes": {
@@ -136,7 +223,8 @@
     "/admin/agent-feedback": "diagnostic",
     "/admin/ai-advisor": "diagnostic",
     "/admin/service-settings": "configuration",
-    "/admin/site-compliance": "configuration"
+    "/admin/site-compliance": "configuration",
+    "/admin/usage-statistics": "diagnostic"
   },
   "legacyRouteLocalDialogs": [],
   "legacyRouteLocalCredentials": []

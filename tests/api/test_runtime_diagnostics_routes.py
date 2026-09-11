@@ -253,6 +253,8 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert admin_alias_response.json()["data"]["totals"]["runs"] == 4
     assert admin_alias_response.json()["data"]["filters"]["recent_minutes"] == 10080
     assert data["totals"]["runs"] == 4
+    assert data["usage_statistics"]["runs"] == 4
+    assert data["usage_statistics"]["active_sites"] == 1
     assert data["totals"]["ai_evidence_required_runs"] == 4
     assert data["totals"]["non_ai_zero_credit_runs"] == 0
     assert data["totals"]["provider_calls"] == 2
@@ -285,6 +287,32 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         for alert in data["alert_summary"]["alerts"]
     )
     assert data["alert_summary"]["boundary"]["direct_wordpress_write"] is False
+
+    assert data["provider_failures"] == []
+    with get_session(database_url) as session:
+        call = session.scalar(
+            select(ProviderCallRecord).where(ProviderCallRecord.run_id == "run-model-gov-text")
+        )
+        assert call is not None
+        call.error_code = "provider.invalid_request"
+        run = session.scalar(select(RunRecord).where(RunRecord.run_id == call.run_id))
+        assert run is not None
+        run.error_message = "private prompt: additionalProperties is required to be false"
+        session.commit()
+    failure_response = client.get(
+        f"/internal/service/admin/runtime-telemetry?site_id={site_id}&recent_minutes=60&limit=1",
+        headers=build_internal_headers(),
+    )
+    failures = failure_response.json()["data"]["provider_failures"]
+    assert len(failures) == 1
+    assert failures[0]["run_id"] == "run-model-gov-text"
+    assert failures[0]["reason"] == "output_schema_invalid"
+    assert "private prompt" not in json.dumps(failures)
+    other_site = client.get(
+        "/internal/service/admin/runtime-telemetry?site_id=unrelated-site&recent_minutes=60",
+        headers=build_internal_headers(),
+    )
+    assert other_site.json()["data"]["provider_failures"] == []
 
 
 def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(

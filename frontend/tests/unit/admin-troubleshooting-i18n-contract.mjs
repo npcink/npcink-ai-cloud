@@ -66,13 +66,13 @@ assert.match(
 
 assert.match(
   pageSource,
-  /runtime-diagnostic-issue[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.suggested_action[\s\S]*admin\.troubleshooting\.open_evidence/,
+  /runtime-diagnostic-issue[\s\S]*AdminInspectorDrawer[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.open_evidence[\s\S]*admin\.troubleshooting\.operator_action_title/,
   'Runtime diagnostics must connect the anomaly queue to a focused read-only evidence inspector'
 );
 
 assert.match(
   anomalyTableSource,
-  /<thead[\s\S]*admin\.troubleshooting\.column_severity[\s\S]*admin\.troubleshooting\.column_scope[\s\S]*admin\.troubleshooting\.column_occurrences[\s\S]*admin\.troubleshooting\.column_action/,
+  /<thead[\s\S]*admin\.troubleshooting\.column_issue[\s\S]*admin\.troubleshooting\.column_scope[\s\S]*admin\.troubleshooting\.column_occurrences[\s\S]*admin\.troubleshooting\.column_action/,
   'Runtime anomaly evidence must keep severity, scope, count, and action scannable in one semantic table'
 );
 
@@ -82,17 +82,8 @@ assert.doesNotMatch(
   'Low-frequency evidence codes must stay out of the primary anomaly queue'
 );
 
-assert.match(
-  anomalyInspectorSource,
-  /admin\.troubleshooting\.issue_code[\s\S]*admin\.troubleshooting\.affected_runs[\s\S]*admin\.troubleshooting\.suggested_action/,
-  'The selected anomaly inspector must retain evidence code, affected runs, and the next diagnostic step'
-);
-
-assert.match(
-  pageSource,
-  /data-ui="runtime-evidence-lane-table"[\s\S]*admin\.troubleshooting\.lane_column_channel[\s\S]*admin\.troubleshooting\.lane_column_evidence/,
-  'Evidence lanes must render as a compact semantic directory table'
-);
+assert.match(anomalyInspectorSource, /admin\.troubleshooting\.issue_code[\s\S]*admin\.troubleshooting\.operator_action_title/, 'Drawer retains evidence and next step');
+assert.match(pageSource, /runtime-evidence-lane-list/, 'Secondary tools use a narrow drawer directory');
 
 assert.match(
   pageSource,
@@ -102,13 +93,13 @@ assert.match(
 
 assert.match(
   pageSource,
-  /evidenceLanes[\s\S]*id="evidence-lanes"[\s\S]*id="runtime-evidence"[\s\S]*admin\.advanced\.runtime_evidence_boundary/,
+  /evidenceLanes[\s\S]*id="runtime-evidence"[\s\S]*admin\.advanced\.runtime_evidence_boundary[\s\S]*id="evidence-lanes"/,
   'Narrow observability lanes and advanced runtime metadata must live under Runtime Diagnostics'
 );
 
 assert.match(
   pageSource,
-  /createApiClient[\s\S]*`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`[\s\S]*BackofficePageHeader[\s\S]*summaryItems=\{data \? \[[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/,
+  /createApiClient[\s\S]*`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`[\s\S]*BackofficePageHeader[\s\S]*runtime-data-integrity[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/,
   'Runtime diagnostics must derive its conclusion and core metrics from the runtime telemetry source'
 );
 

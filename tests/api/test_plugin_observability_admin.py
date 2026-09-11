@@ -28,6 +28,39 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
 
+def test_admin_record_scope_filters_all_aggregates_without_hiding_unknown_plugins(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        for index, (site, plugin, kind) in enumerate([
+            ("site-001", "unknown-real-plugin", "operation.completed"),
+            ("site-002", "unknown-real-plugin", "validation.technical_monitoring_only"),
+            ("site-002", "npcink-tech-20260907-yhz7bh-a", "validation.technical_monitoring_only"),
+        ]):
+            session.add(PluginObservabilityEvent(
+                dedupe_key=f"scope-{index}", site_id=site, key_id="key_default",
+                schema_version="2026-06-01", plugin_slug=plugin, plugin_version="0.1.0",
+                source="local", event_kind=kind, event_id=f"scope-{index}",
+                status="ok", latency_ms=10, captured_at=now, received_at=now,
+            ))
+        session.commit()
+
+    for scope, expected, sites in [("all", 3, 2), ("operational", 1, 1), ("test", 2, 1)]:
+        response = client.get(
+            f"/internal/service/admin/plugin-observability?record_scope={scope}",
+            headers=build_internal_headers(trace_id="traceadminscope0000000000000000"),
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["record_scope"] == scope
+        assert data["totals"]["events_total"] == expected
+        assert data["totals"]["active_site_count"] == sites
+        assert sum(row["events_total"] for row in data["timeline"]) == expected
+        assert sum(row["events_total"] for row in data["plugins"]) == expected
+        if scope == "operational":
+            assert [row["plugin_slug"] for row in data["plugins"]] == ["unknown-real-plugin"]
+
+
 def _seed_plugin_events(database_url: str) -> None:
     now = datetime.now(UTC)
     events = [

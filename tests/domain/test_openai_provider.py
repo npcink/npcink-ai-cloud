@@ -1317,7 +1317,10 @@ def test_openai_adapter_sample_image_uses_typed_static_bytes() -> None:
     assert result.media_candidates[0].source_url is None
 
 
-def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_format() -> None:
+@pytest.mark.parametrize("strict", [True, False])
+def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_format(
+    strict: bool,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         assert request.url.path.endswith("/responses")
@@ -1326,7 +1329,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
             "type": "json_schema",
             "name": "vision_payload",
             "schema": {"type": "object"},
-            "strict": True,
+            "strict": strict,
         }
         assert payload["tools"] == [
             {
@@ -1373,7 +1376,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
                         "json_schema": {
                             "name": "vision_payload",
                             "schema": {"type": "object"},
-                            "strict": True,
+                            "strict": strict,
                         },
                     },
                 },

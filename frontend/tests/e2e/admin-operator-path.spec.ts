@@ -129,11 +129,11 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('heading', { name: /Which runtime signals need follow-up\?|哪些运行时状态需要继续跟进|哪些執行時狀態需要繼續跟進/i })).toBeVisible();
   await expect(
     page
-      .getByText(/Provider call coverage gap|供应商调用遥测缺口|供應商呼叫遙測缺口/i)
+      .getByText(/Call records missing|调用记录缺失/i)
       .first()
   ).toBeVisible();
   await expect(
-    page.getByText(/Some runtime runs do not have matching provider-call telemetry|部分运行任务缺少对应的供应商调用遥测记录/i).first()
+    page.getByText(/Missing records do not establish that the request failed|记录缺失不等于请求失败/i).first()
   ).toBeVisible();
   await expect(page.locator('a[href="/admin/troubleshooting"]').first()).toBeVisible();
 
@@ -211,12 +211,16 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
 
   await page.goto('/admin/troubleshooting');
   await expect(page.getByRole('heading', { name: /Runtime diagnostics|运行诊断|運行診斷/i })).toBeVisible();
+  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
+  await page.locator('[data-ui="runtime-data-integrity"] > summary').click();
   const runtimeEvidenceSection = page.locator('#runtime-evidence');
   await expect(runtimeEvidenceSection).not.toHaveAttribute('open', '');
   await runtimeEvidenceSection.locator('summary').click();
   await expect(runtimeEvidenceSection.getByText(/Runtime resolution|运行时解析/i).first()).toBeVisible();
   const evidenceLanesSection = page.locator('#evidence-lanes');
-  await expect(evidenceLanesSection.locator('[data-ui="runtime-evidence-lane-table"]')).toBeVisible();
+  await expect(evidenceLanesSection).not.toHaveAttribute('open', '');
+  await evidenceLanesSection.locator('summary').click();
+  await expect(evidenceLanesSection.locator('[data-ui="runtime-evidence-lane-list"]')).toBeVisible();
   await expect(evidenceLanesSection.getByText(/Read only|只读/i).first()).toBeVisible();
   await expect(page.locator('a[href="/admin/plugin-observability"]').first()).toBeVisible();
   await expect(page.locator('a[href="/admin/hosted-models"]')).toHaveCount(0);
@@ -449,7 +453,7 @@ test('admin navigation stays customer-first', async ({ page }) => {
   const adminNav = page.getByRole('navigation', { name: /管理后台|admin/i });
   const adminPrimaryNav = page.locator('[data-ui="admin-primary-nav"]');
   const primaryLinks = adminPrimaryNav.locator('a.admin-nav-link');
-  await expect(primaryLinks).toHaveCount(14);
+  await expect(primaryLinks).toHaveCount(15);
   await expect(primaryLinks.nth(0)).toHaveAttribute('href', '/admin');
   await expect(primaryLinks.nth(1)).toHaveAttribute('href', '/admin/accounts');
   await expect(primaryLinks.nth(2)).toHaveAttribute('href', '/admin/support-requests');
@@ -461,12 +465,13 @@ test('admin navigation stays customer-first', async ({ page }) => {
   await expect(primaryLinks.nth(8)).toHaveAttribute('href', '/admin/external-services');
   await expect(primaryLinks.nth(9)).toHaveAttribute('href', '/admin/vector-settings');
   await expect(primaryLinks.nth(10)).toHaveAttribute('href', '/admin/runtime-profiles');
-  await expect(primaryLinks.nth(11)).toHaveAttribute('href', '/admin/troubleshooting');
-  await expect(primaryLinks.nth(12)).toHaveAttribute('href', '/admin/service-settings');
-  await expect(primaryLinks.nth(13)).toHaveAttribute('href', '/admin/site-compliance');
+  await expect(primaryLinks.nth(11)).toHaveAttribute('href', '/admin/usage-statistics');
+  await expect(primaryLinks.nth(12)).toHaveAttribute('href', '/admin/troubleshooting');
+  await expect(primaryLinks.nth(13)).toHaveAttribute('href', '/admin/service-settings');
+  await expect(primaryLinks.nth(14)).toHaveAttribute('href', '/admin/site-compliance');
   await expect(adminPrimaryNav.getByText(/^Workspace$|^工作台$/i)).toBeVisible();
   await expect(adminPrimaryNav.getByText(/^Customer Ops$|^客户运营$/i)).toBeVisible();
-  await expect(adminPrimaryNav.getByText(/^Runtime Plane$|^运行面$/i)).toBeVisible();
+  await expect(adminPrimaryNav.getByText(/^Runtime & Observability$|^运行与观测$/i)).toBeVisible();
   await expect(adminPrimaryNav.getByText(/^Diagnostics$|^诊断$/i)).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Overview$|^概览$|^概覽$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Customers$|^客户$/i })).toBeVisible();

@@ -390,11 +390,15 @@ class PluginObservabilityService:
         window_hours: int = 24,
         site_id: str = "",
         plugin_slug: str = "",
+        record_scope: str = "all",
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
         bounded_hours = min(168, max(1, int(window_hours or 24)))
         start_at = current_time - timedelta(hours=bounded_hours)
+
+        if record_scope not in {"all", "operational", "test"}:
+            raise ValueError("unsupported plugin record scope")
 
         with get_session(self.database_url) as session:
             base_conditions: list[SQLAFilter] = [
@@ -405,6 +409,16 @@ class PluginObservabilityService:
                 base_conditions.append(PluginObservabilityEvent.site_id == site_id)
             if plugin_slug:
                 base_conditions.append(PluginObservabilityEvent.plugin_slug == plugin_slug)
+
+            # The two-site validation emits this explicit marker. Do not infer
+            # test data from arbitrary plugin names or exclude unknown plugins.
+            test_event = (
+                PluginObservabilityEvent.event_kind == "validation.technical_monitoring_only"
+            )
+            if record_scope == "operational":
+                base_conditions.append(~test_event)
+            elif record_scope == "test":
+                base_conditions.append(test_event)
 
             totals_row = session.execute(
                 select(
@@ -630,6 +644,7 @@ class PluginObservabilityService:
 
         return {
             "contract_version": "magick-plugin-observability-admin-summary-v1",
+            "record_scope": record_scope,
             "generated_at": self._format_datetime(current_time),
             "window": {
                 "hours": bounded_hours,

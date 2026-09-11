@@ -3264,6 +3264,21 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
             "request": {
                 "prompt": "Classify this post into WordPress taxonomy suggestions.",
                 "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/content-classification",
+                    "task": "content_classification",
+                    "task_family": "classification",
+                    "context_requirements": ["none"],
+                    "constraints": ["json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"suggestions": {"type": "array", "items": {
+                            "type": "object", "properties": {"term": {"type": "string"}},
+                        }}},
+                    },
+                    "write_posture": "suggestion_only",
+                },
             },
         }
     )
@@ -3278,6 +3293,11 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
     provider_input = provider.requests[0].input_payload
     assert "Return strict JSON only" in provider_input["input"]
     assert '"suggestions"' in provider_input["input"]
+    assert provider_input["response_format"]["json_schema"]["strict"] is False
+    assert (
+        provider_input["response_format"]["json_schema"]["schema"]
+        == payload["input"]["operation_contract"]["request"]["task_contract"]["output_schema"]
+    )
     assert provider_input["max_tokens"] == 220
     assert provider_input["max_output_tokens"] == 220
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
@@ -3335,6 +3355,7 @@ def test_wordpress_ai_connector_runtime_enforces_ability_output_schema_for_comme
         "type": "json_schema",
         "json_schema": {
             "name": "wordpress_ability_output",
+            "strict": False,
             "schema": {
                 "type": "object",
                 "properties": {

@@ -137,6 +137,7 @@ from app.domain.runtime.errors import (
     RuntimeSiteInactiveError,
     RuntimeSiteNotProvisionedError,
 )
+from app.domain.runtime.failure_evidence import provider_failure_evidence
 from app.domain.runtime.models import (
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE,
@@ -168,6 +169,7 @@ from app.domain.runtime.run_lifecycle import (
     RuntimeRunLifecycleService,
 )
 from app.domain.runtime.run_projection import RuntimeRunProjector
+from app.domain.runtime.usage_statistics import build_usage_statistics
 from app.domain.service_settings import (
     SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
     media_recognition_local_day_bounds,
@@ -1536,6 +1538,10 @@ class RuntimeService:
                     len(ai_evidence_required_run_ids),
                 ),
             },
+            "provider_failures": provider_failure_evidence(provider_call_rows, limit=max_items),
+            "usage_statistics": build_usage_statistics(
+                runs, since=recent_since, until=current_time
+            ),
             "capability_groups": capability_items,
             "profile_groups": profile_items,
             "execution_kind_groups": execution_kind_items,
