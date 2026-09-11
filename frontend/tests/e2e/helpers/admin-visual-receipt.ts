@@ -5,7 +5,7 @@ import { expect, type Locator, type Page, type TestInfo } from '@playwright/test
 
 type ResultStatus = 'pass' | 'fail' | 'review_required' | 'not_applicable' | 'unmeasured';
 type PageModel = 'overview' | 'queue' | 'detail' | 'configuration' | 'diagnostic' | 'authentication';
-type VisualEnvironment = 'local' | 'm4_candidate' | 'm4_accepted';
+type VisualEnvironment = 'local' | 'external' | 'm4_candidate' | 'm4_accepted';
 type HumanAcceptance = 'pending' | 'not_required' | 'accepted' | 'rejected';
 
 export type AdminVisualResult = {
@@ -107,7 +107,8 @@ export async function writeAdminVisualReceipt({
   expectedConsoleErrors = [],
   routeRuleResults,
   interactionResults,
-  environment = 'local',
+  environment = process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ? 'external' : 'local',
+  dataMode = 'unmeasured',
   humanAcceptance = 'pending',
   artifactId,
 }: {
@@ -123,6 +124,7 @@ export async function writeAdminVisualReceipt({
   routeRuleResults: AdminVisualResult[];
   interactionResults: AdminVisualResult[];
   environment?: VisualEnvironment;
+  dataMode?: 'mocked' | 'live' | 'mixed' | 'unmeasured';
   humanAcceptance?: HumanAcceptance;
   artifactId?: string;
 }) {
@@ -200,12 +202,38 @@ export async function writeAdminVisualReceipt({
   const screenshotPath = testInfo.outputPath(`admin-visual-receipt${artifactSuffix}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled' });
 
+  const source = sourceEvidence();
+  // APIRequestContext bypasses page.route fixtures: read the serving process,
+  // not the mocked UI data. A matching Git revision cannot prove dirty bytes.
+  const health = await page.request.get(new URL('/api/health', page.url()).href, {
+    timeout: 10_000,
+  }).catch(() => null);
+  const deployed = health ? {
+    frontend_revision: health.headers()['x-npcink-frontend-revision'] || 'unmeasured',
+    backend_revision: health.headers()['x-npcink-backend-revision'] || 'unmeasured',
+    backend_dirty: health.headers()['x-npcink-backend-dirty'] || 'unmeasured',
+  } : null;
+  const observedUrl = new URL(page.url());
   const receipt = {
     schema_version: 1,
     route,
     page_model: pageModel,
-    ...sourceEvidence(),
+    ...source,
     environment,
+    browser_observation: {
+      // Omit arbitrary query values, which can contain customer identifiers.
+      origin: observedUrl.origin,
+      pathname: observedUrl.pathname,
+      browser_engine: page.context().browser()?.browserType().name() || 'unmeasured',
+      browser_version: page.context().browser()?.version() || 'unmeasured',
+      profile: 'isolated_playwright_context',
+      data_mode: dataMode,
+      deployed,
+      health_status: health?.status() ?? null,
+      revision_matches_local: deployed && /^[a-f0-9]{40}$/.test(deployed.frontend_revision)
+        ? deployed.frontend_revision === source.source_revision : null,
+      artifact_matches_local: 'unmeasured',
+    },
     viewport,
     tested_states: [...new Set(testedStates)].sort(),
     rule_results: ruleResults,

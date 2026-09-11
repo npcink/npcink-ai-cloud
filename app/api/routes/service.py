@@ -4083,6 +4083,7 @@ async def get_admin_plugin_observability(
     window_hours: int = Query(default=24, ge=1, le=168),
     site_id: str = Query(default=""),
     plugin_slug: str = Query(default=""),
+    record_scope: Literal["all", "operational", "test"] = Query(default="all"),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
@@ -4093,6 +4094,7 @@ async def get_admin_plugin_observability(
         window_hours=window_hours,
         site_id=site_id,
         plugin_slug=plugin_slug,
+        record_scope=record_scope,
     )
     return build_envelope(
         status="ok",

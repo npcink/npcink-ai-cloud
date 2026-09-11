@@ -496,3 +496,12 @@ are null, not zero. Plugin events use their own existing observability source;
 they are never counted as runs. Source errors remain independent. Site links
 retain the selected window and site; function links explicitly open period-wide
 diagnostics. No new event collection, payload disclosure or write control is added.
+
+The plugin activity view requests `record_scope=operational` from the existing
+admin plugin-observability endpoint. This excludes only events explicitly marked
+`validation.technical_monitoring_only`; unknown plugin names remain included.
+The optional `records=test` page filter requests `record_scope=test` and labels
+the results as test records. Totals, distinct sites, plugin rows and timeline
+share the same server-side scope. Existing API callers retain `record_scope=all`
+by default. This classification does not claim to detect every possible test
+event, and reporting capability is not proof that a site has enabled reporting.

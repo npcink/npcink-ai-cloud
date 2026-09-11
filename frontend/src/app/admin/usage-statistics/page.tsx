@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { BackofficePageHeader, BackofficePageStack, BackofficeSectionPanel, BackofficeMetricStrip } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { EditorAssistQualityPanel } from '@/components/admin/EditorAssistQualityPanel';
@@ -20,9 +20,9 @@ export default function UsageStatisticsPage() {
   const { locale } = useLocale();
   const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
   const params = useSearchParams();
-  const router = useRouter();
   const hours = ([24, 72, 168].includes(Number(params.get('window'))) ? Number(params.get('window')) : 168) as 24 | 72 | 168;
   const dimension = ['sites', 'functions', 'plugins'].includes(params.get('group') || '') ? params.get('group')! : 'sites';
+  const recordScope = params.get('records') === 'test' ? 'test' : 'operational';
   const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [plugins, setPlugins] = useState<Plugins | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -34,7 +34,7 @@ export default function UsageStatisticsPage() {
     setLoading(true); setRuntime(null); setPlugins(null); setErrors([]);
     void Promise.allSettled([
       client.request<Runtime>(`/api/admin/runtime-telemetry?recent_minutes=${hours * 60}&limit=100`, { signal: controller.signal }),
-      client.request<Plugins>(`/api/admin/plugin-observability?window_hours=${hours}`, { signal: controller.signal }),
+      client.request<Plugins>(`/api/admin/plugin-observability?window_hours=${hours}&record_scope=${recordScope}`, { signal: controller.signal }),
     ]).then(([runResult, pluginResult]) => {
       if (controller.signal.aborted) return;
       if (runResult.status === 'fulfilled') setRuntime(runResult.value.data);
@@ -43,8 +43,8 @@ export default function UsageStatisticsPage() {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [hours, refresh]);
-  const update = (key: string, value: string) => { const next = new URLSearchParams(params.toString()); next.set(key, value); router.replace(`/admin/usage-statistics?${next}`); };
+  }, [hours, refresh, recordScope]);
+  const filterHref = (key: string, value: string) => { const next = new URLSearchParams(params.toString()); next.set(key, value); return `/admin/usage-statistics?${next}`; };
   const stats = runtime?.usage_statistics;
   const number = (value: number | null | undefined, suffix = '') => value == null ? '—' : `${Number(value.toFixed(1)).toLocaleString()}${suffix}`;
   const metrics = [
@@ -69,13 +69,24 @@ export default function UsageStatisticsPage() {
     'site-knowledge.managed': c('站点知识库', 'Site knowledge'),
   };
   const nameColumn = dimension === 'functions' ? c('功能名称', 'Function name') : pluginMode ? c('插件', 'Plugin') : c('站点', 'Site');
+  const pluginNames: Record<string, string> = {
+    'npcink-cloud-addon': c('WordPress 云端连接插件', 'WordPress Cloud connector'),
+    'npcink-abilities-toolkit': c('站点能力工具包', 'Site abilities toolkit'),
+    'npcink-governance-core': c('操作审核与执行插件', 'Operation review and execution'),
+    'npcink-ai-client-adapter': c('AI 客户端连接插件', 'AI client connector'),
+  };
+  const testNames: Record<string, string> = {
+    'npcink-tech-20260907-yhz7bh-a': c('站点 A 上报验证', 'Site A reporting validation'),
+    'npcink-tech-20260907-yhz7bh-b': c('站点 B 上报验证', 'Site B reporting validation'),
+  };
   const rowName = (id: string) => dimension === 'functions'
     ? <span title={`${c('功能编号', 'Function ID')}: ${id}`}>{functionNames[id] || `${c('未命名功能', 'Unnamed function')} (${id})`}</span>
+    : pluginMode ? <span title={`${c('来源编号', 'Source ID')}: ${id}`}>{recordScope === 'test' ? `${c('测试记录', 'Test record')} · ${testNames[id] || pluginNames[id] || id}` : pluginNames[id] || id}</span>
     : id;
   return <BackofficePageStack>
     <BackofficePageHeader title={c('使用统计', 'Usage Statistics')} description={c('查看用了多少、哪些站点在用，以及使用变化。', 'Explore usage, active sites and trends.')} />
     <div className="flex flex-wrap items-center gap-2">
-      {[24, 72, 168].map(h => <button key={h} type="button" aria-pressed={hours === h} className={`btn btn-sm ${hours === h ? 'btn-primary' : 'btn-secondary'}`} onClick={() => update('window', String(h))}>{c(`近 ${h / 24} 天`, `Last ${h / 24} days`)}</button>)}
+      {[24, 72, 168].map(h => <Link key={h} aria-current={hours === h ? 'page' : undefined} className={`btn btn-sm ${hours === h ? 'btn-primary' : 'btn-secondary'}`} href={filterHref('window', String(h))}>{c(`近 ${h / 24} 天`, `Last ${h / 24} days`)}</Link>)}
       <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button>
       <Link className="btn btn-ghost btn-sm" href={`/admin/troubleshooting?window=${hours}`}>{c('查看运行诊断', 'Open runtime diagnostics')}</Link>
     </div>
@@ -87,8 +98,9 @@ export default function UsageStatisticsPage() {
       <p className="text-xs text-slate-500">{c('运行样本', 'Run sample')}: {number(stats?.runs)} · {c('耗时样本', 'Duration sample')}: {number(stats?.latency_samples)} · {stats?.possibly_truncated ? c('已达到 5000 条上限，仅代表返回样本', '5,000-run cap reached; returned sample only') : c('按所选时段返回的运行记录统计', 'Based on returned runs in this period')}</p>
     </section>
     <div className="flex flex-wrap gap-2" role="group" aria-label={c('统计维度', 'Statistics dimension')}>
-      {([['sites', c('按站点', 'By site')], ['functions', c('按功能', 'By function')], ['plugins', c('按插件上报', 'By plugin reports')]]).map(([key, label]) => <button key={key} type="button" className={`btn btn-sm ${dimension === key ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={dimension === key} onClick={() => update('group', key)}>{label}</button>)}
+      {([['sites', c('按站点', 'By site')], ['functions', c('按功能', 'By function')], ['plugins', c('插件运行记录', 'Plugin activity records')]]).map(([key, label]) => <Link key={key} className={`btn btn-sm ${dimension === key ? 'btn-primary' : 'btn-secondary'}`} aria-current={dimension === key ? 'page' : undefined} href={filterHref('group', key)}>{label}</Link>)}
     </div>
+    {pluginMode ? <div className="flex flex-wrap items-center gap-3 text-sm"><p>{recordScope === 'test' ? c('仅查看技术验证记录，不代表真实业务使用。', 'Technical validation records only; not actual business usage.') : c('查看插件发送的运行与错误记录，已排除明确标记的技术验证事件。', 'Plugin activity and error records, excluding explicitly marked technical validation events.')}</p><Link className="text-blue-700 underline" href={filterHref('records', recordScope === 'test' ? 'operational' : 'test')}>{recordScope === 'test' ? c('返回运行记录', 'Back to activity records') : c('查看测试记录', 'View test records')}</Link></div> : null}
     <BackofficeSectionPanel className="space-y-2"><h2 className="font-semibold">{pluginMode ? c('插件事件趋势', 'Plugin event trend') : c('每日运行趋势（UTC）', 'Daily run trend (UTC)')}</h2>
       {trend?.length ? <AnalyticsLineChart data={trend} height={220} primarySeriesName={pluginMode ? c('事件数', 'Events') : c('运行次数', 'Runs')} secondarySeriesName={c('失败数', 'Failures')} /> : <p>{loading ? c('加载中', 'Loading') : c('暂无趋势数据', 'No trend data')}</p>}
     </BackofficeSectionPanel>

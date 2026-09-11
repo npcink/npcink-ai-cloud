@@ -16,5 +16,6 @@ dist/
 .tmp/
 .runtime/
 .deploy-secrets/
+.workbuddy/
 
 docs/superpowers/
