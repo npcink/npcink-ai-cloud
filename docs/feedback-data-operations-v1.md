@@ -1,5 +1,7 @@
 # Feedback Data Operations v1
 
+Status: active operator guidance for read-only feedback projections.
+
 ## Purpose
 
 The feedback status command gives operators one aggregate, read-only view of

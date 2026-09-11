@@ -1,5 +1,8 @@
 # Editor Assist Quality Flywheel v1
 
+Status: active quality-evidence contract; metadata-only and non-authoritative
+for WordPress final writes.
+
 ## Purpose
 
 `editor_assist_quality.v1` turns ordinary WordPress AI editor behavior into
