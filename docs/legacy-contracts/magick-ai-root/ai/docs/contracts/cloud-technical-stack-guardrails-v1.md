@@ -1,5 +1,7 @@
 # Cloud Technical Stack Guardrails v1
 
+> Legacy snapshot: reference-only; current Cloud contracts take precedence.
+
 > 状态：active
 > 更新时间：2026-03-27
 > 适用范围：`cloud/**`、`magick-ai-cloud-addon/**`、所有涉及 Cloud 技术选型、扩栈、重构、基础设施引入的实现与评审

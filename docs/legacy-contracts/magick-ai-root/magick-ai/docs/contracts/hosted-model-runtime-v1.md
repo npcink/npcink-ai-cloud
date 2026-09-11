@@ -1,5 +1,7 @@
 # Hosted Model Runtime V1
 
+> Legacy snapshot: reference-only; current Cloud contracts take precedence.
+
 > Status: canonical
 
 > 状态：active

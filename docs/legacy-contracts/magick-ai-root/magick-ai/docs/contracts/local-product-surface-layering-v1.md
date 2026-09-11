@@ -1,5 +1,7 @@
 # Local Product Surface Layering Contract v1
 
+> Legacy snapshot: reference-only; current Cloud contracts take precedence.
+
 > Status: active
 >
 > Updated: `2026-04-11`
