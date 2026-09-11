@@ -1,6 +1,13 @@
 # Internal Alpha Execution Plan
 
-Status: active internal plan
+Status: historical internal-alpha plan; not a current execution queue.
+
+2026-09-11 navigation review: retain the dated model, product-stage and queue
+assumptions below as history. Current priorities are in the [repository focus](../README.md#current-focus),
+[early product validation standard](early-product-validation-and-minimal-telemetry-standard-v1.md)
+and [real title-use observation](title-quality-observation-2026-09.md).
+Do not infer present user counts, installed models or deployment state from this plan.
+
 Date: 2026-05-28
 Scope: local development, mini/remote preview, and pre-release Cloud validation
 

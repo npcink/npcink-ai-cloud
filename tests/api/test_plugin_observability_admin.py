@@ -412,3 +412,45 @@ def test_admin_plugin_observability_invalid_window_hours(tmp_path: Path) -> None
         headers=build_internal_headers(trace_id="traceadmin0060000000000000000000"),
     )
     assert response.status_code == 422
+
+
+def test_recent_activity_links_only_same_site_runs_without_content(tmp_path: Path) -> None:
+    from app.core.models import RunRecord
+
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        session.add(RunRecord(
+            run_id="run-linked", site_id="site-001", ability_name="connector-runtime",
+            channel="wordpress", execution_kind="sync", profile_id="text.ai",
+            status="succeeded", trace_id="trace-linked", started_at=now - timedelta(minutes=32),
+            finished_at=now - timedelta(minutes=31),
+            input_json={"secret": "private-input"}, result_json={"text": "private-result"},
+        ))
+        for index, site in enumerate(["site-001", "site-002"]):
+            session.add(PluginObservabilityEvent(
+                dedupe_key=f"linked-{index}", event_id=f"linked-{index}", site_id=site,
+                plugin_slug="npcink-cloud-addon", event_kind="generation.completed",
+                status="ok", correlation_id="run-linked", received_at=now,
+            ))
+        session.commit()
+    response = client.get(
+        "/internal/service/admin/plugin-observability?site_id=site-001",
+        headers=build_internal_headers(trace_id="traceadminlinked000000000000000"),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["recent_activity_limit"] == 50
+    assert len(data["recent_activity"]) == 1
+    item = data["recent_activity"][0]
+    assert item["status"] == "ok"
+    assert item["run"]["run_id"] == "run-linked"
+    assert item["run"]["status"] == "succeeded"
+    assert item["run"]["started_at"] != item["received_at"]
+    assert "private-input" not in response.text
+    assert "private-result" not in response.text
+    other = client.get(
+        "/internal/service/admin/plugin-observability?site_id=site-002",
+        headers=build_internal_headers(trace_id="traceadminlinked000000000000000"),
+    )
+    assert other.json()["data"]["recent_activity"][0]["run"] is None

@@ -8,13 +8,14 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { EditorAssistQualityPanel } from '@/components/admin/EditorAssistQualityPanel';
 import { AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
 import { createApiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/utils';
 import { useLocale } from '@/contexts/LocaleContext';
 
 const client = createApiClient({ idempotencyPrefix: 'admin_usage_statistics' });
 type Row = { id: string; runs: number; failed: number; success_rate: number | null; avg_latency_ms: number | null };
 type Stats = Row & { active_sites: number; latency_samples: number; possibly_truncated: boolean; sites: Row[]; functions: Row[]; timeline: (Row & { day: string })[] };
 type Runtime = { generated_at: string; window: { since: string; until: string }; usage_statistics?: Stats };
-type Plugins = { generated_at: string; totals: { events_total: number; active_site_count: number }; plugins: { plugin_slug: string; events_total: number; error_total: number; success_rate: number; avg_latency_ms: number }[]; timeline: { bucket_start_at: string; events_total: number; error_total: number }[] };
+type Plugins = { generated_at: string; totals: { events_total: number; active_site_count: number }; plugins: { plugin_slug: string; events_total: number; error_total: number; success_rate: number; avg_latency_ms: number }[]; timeline: { bucket_start_at: string; events_total: number; error_total: number }[]; recent_activity?: { event_id: string; plugin_slug: string; event_kind: string; status: string; site_id: string; received_at: string; run?: { run_id: string; status: string; started_at: string; finished_at: string; error_code: string } | null }[] };
 
 export default function UsageStatisticsPage() {
   const { locale } = useLocale();
@@ -54,8 +55,10 @@ export default function UsageStatisticsPage() {
     { label: c('平均运行耗时', 'Average run duration'), value: number(stats?.avg_latency_ms == null ? null : stats.avg_latency_ms / 1000, c(' 秒', ' s')) },
   ];
   const pluginMode = dimension === 'plugins';
+  const localTime = (value?: string) => formatDateTime(value, locale) || '—';
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const rows: Row[] = pluginMode ? (plugins?.plugins || []).map(p => ({ id: p.plugin_slug, runs: p.events_total, failed: p.error_total, success_rate: p.events_total ? p.success_rate : null, avg_latency_ms: p.events_total ? p.avg_latency_ms : null })) : dimension === 'functions' ? stats?.functions || [] : stats?.sites || [];
-  const trend = pluginMode ? plugins?.timeline.map(p => ({ label: p.bucket_start_at.slice(5, 16).replace('T', ' '), value: p.events_total, secondaryValue: p.error_total })) : stats?.timeline.map(p => ({ label: p.day.slice(5), value: p.runs, secondaryValue: p.failed }));
+  const trend = pluginMode ? plugins?.timeline.map(p => ({ label: localTime(p.bucket_start_at), value: p.events_total, secondaryValue: p.error_total })) : stats?.timeline.map(p => ({ label: p.day.slice(5), value: p.runs, secondaryValue: p.failed }));
   const functionNames: Record<string, string> = {
     'media.upload': c('媒体上传', 'Media upload'),
     'media.transform.worker': c('图片处理', 'Image processing'),
@@ -83,6 +86,7 @@ export default function UsageStatisticsPage() {
     ? <span title={`${c('功能编号', 'Function ID')}: ${id}`}>{functionNames[id] || `${c('未命名功能', 'Unnamed function')} (${id})`}</span>
     : pluginMode ? <span title={`${c('来源编号', 'Source ID')}: ${id}`}>{recordScope === 'test' ? `${c('测试记录', 'Test record')} · ${testNames[id] || pluginNames[id] || id}` : pluginNames[id] || id}</span>
     : id;
+  const activityStatus = (status: string) => ({ ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'), error: c('失败', 'Failed'), failed: c('失败', 'Failed'), warning: c('需关注', 'Warning') }[status] || c('其他状态', 'Other status'));
   return <BackofficePageStack>
     <BackofficePageHeader title={c('使用统计', 'Usage Statistics')} description={c('查看用了多少、哪些站点在用，以及使用变化。', 'Explore usage, active sites and trends.')} />
     <div className="flex flex-wrap items-center gap-2">
@@ -94,23 +98,25 @@ export default function UsageStatisticsPage() {
     {errors.length ? <p role="alert">{c('部分统计加载失败，已成功加载的数据仍可查看。点击刷新重试。', 'Some statistics failed to load. Available sources remain visible. Refresh to retry.')} ({errors.map(source => source === 'runtime' ? c('运行统计', 'Runtime') : c('插件上报', 'Plugin reports')).join('、')})</p> : null}
     <section data-ui="usage-statistics-workspace" className="space-y-3">
       <BackofficeMetricStrip items={metrics} columnsClassName="grid-cols-2 md:grid-cols-4" />
-      <p className="text-xs text-slate-500">{runtime ? `${runtime.window.since.slice(0,16).replace('T',' ')} — ${runtime.window.until.slice(0,16).replace('T',' ')} UTC · ${c('更新于', 'Updated')} ${runtime.generated_at.slice(0,19).replace('T',' ')}` : c('运行统计暂无数据', 'Runtime statistics unavailable')}</p>
+      <p className="text-xs text-slate-500">{runtime ? `${localTime(runtime.window.since)} — ${localTime(runtime.window.until)} (${timeZone}) · ${c('更新于', 'Updated')} ${localTime(runtime.generated_at)}` : c('运行统计暂无数据', 'Runtime statistics unavailable')}</p>
       <p className="text-xs text-slate-500">{c('运行样本', 'Run sample')}: {number(stats?.runs)} · {c('耗时样本', 'Duration sample')}: {number(stats?.latency_samples)} · {stats?.possibly_truncated ? c('已达到 5000 条上限，仅代表返回样本', '5,000-run cap reached; returned sample only') : c('按所选时段返回的运行记录统计', 'Based on returned runs in this period')}</p>
     </section>
     <div className="flex flex-wrap gap-2" role="group" aria-label={c('统计维度', 'Statistics dimension')}>
       {([['sites', c('按站点', 'By site')], ['functions', c('按功能', 'By function')], ['plugins', c('插件运行记录', 'Plugin activity records')]]).map(([key, label]) => <Link key={key} className={`btn btn-sm ${dimension === key ? 'btn-primary' : 'btn-secondary'}`} aria-current={dimension === key ? 'page' : undefined} href={filterHref('group', key)}>{label}</Link>)}
     </div>
     {pluginMode ? <div className="flex flex-wrap items-center gap-3 text-sm"><p>{recordScope === 'test' ? c('仅查看技术验证记录，不代表真实业务使用。', 'Technical validation records only; not actual business usage.') : c('查看插件发送的运行与错误记录，已排除明确标记的技术验证事件。', 'Plugin activity and error records, excluding explicitly marked technical validation events.')}</p><Link className="text-blue-700 underline" href={filterHref('records', recordScope === 'test' ? 'operational' : 'test')}>{recordScope === 'test' ? c('返回运行记录', 'Back to activity records') : c('查看测试记录', 'View test records')}</Link></div> : null}
-    <BackofficeSectionPanel className="space-y-2"><h2 className="font-semibold">{pluginMode ? c('插件事件趋势', 'Plugin event trend') : c('每日运行趋势（UTC）', 'Daily run trend (UTC)')}</h2>
+    {pluginMode ? <section data-ui="usage-recent-activity" className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"><div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800"><h2 className="font-semibold">{c('近期上报记录', 'Recent reports')}</h2><p className="mt-1 text-xs text-slate-500">{c('先看具体记录，再查看统计。最多显示最近 50 条。', 'Start with individual records, then review totals. Showing up to 50 recent records.')}</p></div>{plugins?.recent_activity?.length ? <div>{plugins.recent_activity.map((item, index) => <div key={`${item.event_id}-${index}`} className="border-b border-slate-100 px-4 py-3 text-sm last:border-0 dark:border-slate-800"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><strong>{activityStatus(item.status)}</strong><span>{item.event_kind}</span><span>{item.plugin_slug}</span><span className="text-slate-500">{item.site_id}</span></div><p className="mt-1 text-xs text-slate-500">{c('收到上报', 'Report received')}: {localTime(item.received_at)} ({timeZone})</p>{item.run ? <details className="mt-2"><summary className="cursor-pointer text-blue-700">{c('查看对应运行', 'View linked run')}</summary><div className="mt-2 grid gap-1 text-xs text-slate-600 dark:text-slate-300"><span>{c('运行状态', 'Run status')}: {activityStatus(item.run.status)}</span><span>{c('实际开始', 'Execution started')}: {localTime(item.run.started_at)}</span><span>{c('实际完成', 'Execution finished')}: {localTime(item.run.finished_at)}</span><code>{item.run.run_id}</code></div></details> : <p className="mt-2 text-xs text-slate-500">{c('未关联 Cloud 运行；不代表调用失败。', 'No linked Cloud run; this does not imply failure.')}</p>}</div>)}</div> : <p className="px-4 py-5 text-sm text-slate-500">{loading ? c('加载中…', 'Loading…') : c('所选范围暂无上报记录。', 'No reports in the selected scope.')}</p>}</section> : null}
+    <details className="border-t border-slate-200 py-3"><summary className="cursor-pointer text-sm font-semibold">{c('查看统计与趋势', 'View totals and trends')}</summary><BackofficeSectionPanel className="mt-3 space-y-2"><h2 className="font-semibold">{pluginMode ? c('插件事件趋势', 'Plugin event trend') : c('每日运行趋势（UTC）', 'Daily run trend (UTC)')}</h2>
+      {pluginMode ? <p className="text-xs text-slate-500">{c('按 Cloud 收到上报的时间统计，并非实际运行时间。连接插件通常每小时批量上报，站点定时任务可能进一步延迟。', 'Grouped by Cloud receipt time, not execution time. The connector normally reports hourly; site scheduling may add delays.')} {c('本地时区', 'Local time zone')}: {timeZone}</p> : null}
       {trend?.length ? <AnalyticsLineChart data={trend} height={220} primarySeriesName={pluginMode ? c('事件数', 'Events') : c('运行次数', 'Runs')} secondarySeriesName={c('失败数', 'Failures')} /> : <p>{loading ? c('加载中', 'Loading') : c('暂无趋势数据', 'No trend data')}</p>}
-    </BackofficeSectionPanel>
+    </BackofficeSectionPanel></details>
     <AdminDataTableFrame title={c('使用明细', 'Usage breakdown')} resultLabel={`${rows.length} ${c('组', 'groups')}`} dataUi="usage-breakdown">
       <table className="w-full text-left text-sm"><thead><tr>{[nameColumn, pluginMode ? c('事件数', 'Events') : c('运行次数', 'Runs'), c('失败数', 'Failures'), pluginMode ? c('事件成功率', 'Event success rate') : c('运行成功率', 'Run success rate'), c('平均耗时', 'Average duration'), c('查看', 'Inspect')].map(label => <th key={label} className="px-3 py-2">{label}</th>)}</tr></thead><tbody>
       {rows.map(row => <tr key={row.id} className="border-t border-slate-200 dark:border-slate-800"><td className="break-all px-3 py-2">{rowName(row.id)}</td><td className="px-3 py-2">{number(row.runs)}</td><td className="px-3 py-2">{number(row.failed)}</td><td className="px-3 py-2">{number(row.success_rate == null ? null : row.success_rate * 100, '%')}</td><td className="px-3 py-2">{number(row.avg_latency_ms == null ? null : row.avg_latency_ms / 1000, c(' 秒', ' s'))}</td><td className="px-3 py-2"><Link className="text-blue-700 underline" href={pluginMode ? `/admin/plugin-observability?window=${hours}&plugin=${encodeURIComponent(row.id)}` : `/admin/troubleshooting?window=${hours}${dimension === 'sites' ? `&site=${encodeURIComponent(row.id)}` : ''}`}>{pluginMode ? c('插件记录', 'Plugin records') : dimension === 'sites' ? c('站点诊断', 'Site diagnostics') : c('时段诊断', 'Period diagnostics')}</Link></td></tr>)}
       {!rows.length ? <tr><td colSpan={6} className="px-3 py-5">{loading ? c('加载中', 'Loading') : c('所选来源暂无明细；无上报不代表没有使用。', 'No detail from this source; no reports do not imply no usage.')}</td></tr> : null}
       </tbody></table>
     </AdminDataTableFrame>
-    {pluginMode ? <p className="text-xs text-slate-500">{c('插件上报事件不等于任务次数；成功率与耗时仅代表上报事件。', 'Plugin events are not tasks; rates and duration describe reported events.')} {c('上报站点', 'Reporting sites')}: {number(plugins?.totals.active_site_count)} · {c('事件样本', 'Event sample')}: {number(plugins?.totals.events_total)} · {c('更新于', 'Updated')}: {plugins?.generated_at || '—'}</p> : null}
+    {pluginMode ? <p className="text-xs text-slate-500">{c('插件上报事件不等于任务次数；成功率与耗时仅代表上报事件。', 'Plugin events are not tasks; rates and duration describe reported events.')} {c('上报站点', 'Reporting sites')}: {number(plugins?.totals.active_site_count)} · {c('事件样本', 'Event sample')}: {number(plugins?.totals.events_total)} · {c('更新于', 'Updated')}: {localTime(plugins?.generated_at)} ({timeZone})</p> : null}
     <details className="border-t border-slate-200 py-3"><summary className="cursor-pointer text-sm">{c('统计口径与数据范围', 'Definitions and data scope')}</summary><p className="mt-2 text-sm">{c('运行成功率为成功运行数 / 所有运行数，包含仍在处理的任务。耗时仅统计已有起止时间的运行。一次任务可产生多条事件，事件数不等于任务数。调用记录缺失不等于任务失败。缺失值显示 —，不当作 0。', 'Run success rate is successful runs / all runs, including pending tasks. Duration uses runs with start and finish times. Multiple events may belong to one task. Missing call records do not imply failed tasks. Missing values display —, not zero.')}</p></details>
     <button type="button" className="btn btn-secondary btn-sm self-start" aria-expanded={quality} onClick={() => setQuality(v => !v)}>{c('查看编辑效果', 'View editorial outcomes')}</button>
     {quality ? <EditorAssistQualityPanel windowHours={hours} refreshSignal={refresh} /> : null}

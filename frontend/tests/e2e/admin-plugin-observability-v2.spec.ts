@@ -53,7 +53,7 @@ const pluginObservabilityData = {
   window: { hours: 24, start_at: '2026-07-11T12:00:00Z', end_at: '2026-07-12T12:00:00Z' },
 };
 
-async function installPluginObservabilityHarness(page: Page, responseData = pluginObservabilityData) {
+async function installPluginObservabilityHarness(page: Page, responseData: typeof pluginObservabilityData & { recent_activity?: Record<string, unknown>[] } = pluginObservabilityData) {
   await installAdminMocks(page);
   let statePostCount = 0;
   const getUrls: string[] = [];
@@ -169,4 +169,24 @@ test('Chinese labels explain known events and retain original identifiers', asyn
   await expect(page.locator('[data-ui="plugin-problems"]')).toContainText('运行被取消');
   await expect(page.locator('[data-ui="plugin-problems"]')).toContainText('媒体识别失败');
   await expect(page.locator('[data-ui="plugin-problems"]')).toContainText('云端增强插件');
+});
+
+test('successful report exposes linked execution separately from receipt time', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installPluginObservabilityHarness(page, { ...pluginObservabilityData,
+    recent_activity: [{ event_id: 'evt-linked', site_id: 'site_mvp',
+      plugin_slug: 'npcink-cloud-addon', event_kind: 'addon.editor_assist.generation.completed',
+      status: 'ok', received_at: '2026-07-12T08:42:53Z',
+      run: { run_id: 'run-linked', status: 'succeeded', started_at: '2026-07-12T08:10:06Z',
+        finished_at: '2026-07-12T08:10:22Z', error_code: '' } }],
+  });
+  await page.goto('/admin/plugin-observability');
+  const activity = page.locator('[data-ui="plugin-recent-activity"]');
+  await expect(activity).toContainText(/Succeeded|成功/);
+  await expect(activity.getByText('run-linked', { exact: true })).not.toBeVisible();
+  await activity.getByText(/View linked run|查看对应运行/).click();
+  await expect(activity.getByText('run-linked', { exact: true })).toBeVisible();
+  await expect(activity).toContainText(/Execution started|实际开始/);
+  await expect(activity).toContainText(/Report received|收到上报/);
+  await page.screenshot({ path: '/tmp/plugin-linked-run-preview.png', fullPage: true });
 });

@@ -6,6 +6,16 @@ Purpose: provide one maintained entry point for current Cloud authority while
 preserving dated implementation and validation evidence without presenting it
 as current truth.
 
+## 按当前任务找文档
+
+| 现在要做什么 | 从这里开始 |
+| --- | --- |
+| 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
+| 理解运行诊断、使用统计和插件上报 | [运行与观测交接](history/admin/2026/runtime-observation-closeout-2026-09-11.md) |
+| 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
+| 判断一个大文件是否值得拆 | [结构整改启动条件](structural-remediation-delivery-standard-v1.md) |
+| 找遗漏文档或查看本轮整理结果 | [文档补充清单与结构调查](history/repository-hygiene/2026/document-navigation-and-hotspot-review-2026-09-11.md) |
+
 ## How to Read This Repository
 
 Use documentation in this order:
@@ -46,7 +56,6 @@ deleting the old decision history.
 - [WordPress Formatting History](history/wordpress-content-formatting-summary-2026-09-08.md) - requirements, open-source lessons, implementation tradeoffs and paused research.
 - [WordPress AI Engineering Closeout](history/wordpress-ai-engineering-closeout-2026-09-08.md) - phase-1 source integration, verification and remaining decisions.
 - [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
-- [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
 - [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
@@ -84,7 +93,6 @@ deleting the old decision history.
 - [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
 - [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
 - [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
-- [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
 - [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
   — dated history from issue synthesis and privacy-safe observation through the
@@ -115,6 +123,7 @@ deleting the old decision history.
 - [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
+- [M4 Preview Target Alignment Standard](m4-preview-target-alignment-standard-v1.md) — keep 18010 tunnel and candidate sync targets aligned, with version confirmation and recovery steps
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
 - [Engineering Command Inventory Standard](engineering-command-inventory-standard-v1.md)
 - [Engineering Command Inventory M4 Source Bundle Closeout and Retrospective](engineering-command-inventory-m4-source-bundle-closeout-and-retrospective-2026-08-04.md)
@@ -182,8 +191,6 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Site Media Recognition Closeout and Development Retrospective — 2026-08-31](history/media/2026/site-media-recognition-closeout-and-development-retrospective-2026-08-31.md) — dated Cloud/Add-on/local acceptance record for one-click sequential batching, package capacity, daily pacing, idempotent recovery, progress semantics, and the final `70 / 70` eligible-image result; not current deployment or production authority
 - [Cloud Model Capability Discovery and Verification Standard](cloud-model-capability-discovery-and-verification-standard-v1.md) — external metadata discovery, capability-specific configuration probes, evidence states, route-fingerprint caching, and rollout rules for text, vision, embeddings, image, audio, and video generation
 - [Model Capability Verification Development Retrospective — 2026-08-26](model-capability-verification-development-retrospective-2026-08-26.md) — dated synthesis of the model/Provider/route distinction, capability reliability versus output quality, low-cost single-operator observation, 30-day evidence freshness, runtime fail-closed behavior, and deferred video integration; not merge, M4 acceptance, production, or quality authority
-- [WeMM-Embedding 与 BGE-M3 评估开发经验 — 2026-09-02](history/models/2026/wemm-embedding-and-bge-m3-evaluation-retrospective-2026-09-02.md) — dated M4 local deployment, dataset evolution, text comparison evidence, and the decision to keep BGE-M3 as the text baseline while evaluating WeMM only for multimodal workloads
-- [SiliconFlow VLM 与 M4 图片识别选型开发复盘 — 2026-09-02](history/models/2026/siliconflow-vlm-and-m4-image-recognition-development-retrospective-2026-09-02.md) — dated synthesis of M4 hardware/runtime facts, SiliconFlow VLM observations, cost and capacity reasoning, hosted-first routing, and local privacy/evaluation boundaries
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
 - [Cloud Web Search Provider Integration Standard](cloud-web-search-provider-integration-standard-v1.md) — active investigation, adapter, secret-handling, verification, M4, merge, and rollout rules for managed search providers
 - [AnySearch Web Search Provider Integration Closeout — 2026-08-18](anysearch-web-search-provider-integration-closeout-2026-08-18.md) — dated evidence for PR `#793`, the stale-branch migration correction, M4 acceptance, bounded real-upstream validation, and extracted development lessons; not production or human acceptance authority
@@ -277,7 +284,7 @@ Special retained evidence areas:
 
 - [`docs/history/`](history/) contains material already moved into an explicit
   history namespace;
-- [`docs/legacy-contracts/`](legacy-contracts/) contains reference-only
+- [`docs/legacy-contracts/`](legacy-contracts/magick-ai-root/README.md) contains reference-only
   snapshots imported from the former repository layout;
 - [`docs/superpowers/`](superpowers/) contains historical planning artifacts
   and is excluded from routine documentation governance.

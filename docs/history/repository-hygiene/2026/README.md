@@ -9,6 +9,8 @@ Status: historical evidence index; not cleanup authorization.
 - [2026-08-22 documentation consolidation closeout and lessons](repository-documentation-consolidation-closeout-and-lessons-2026-08-22.md)
 - [2026-08-25 Portal preview source and repository cleanup retrospective](portal-preview-source-and-repository-cleanup-retrospective-2026-08-25.md)
 
+- [2026-09-11 文档入口、遗漏清单与结构热点调查](document-navigation-and-hotspot-review-2026-09-11.md)
+
 Re-inventory the live repository and follow the current standards before any
 new cleanup. Historical counts and candidate lists are not reusable deletion
 authority.
