@@ -81,10 +81,10 @@ for (const key of requiredKeys) {
   );
 }
 
-assert.match(
-  i18nSource,
-  /'admin\.plugin_observability_title': '插件排查'/,
-  'Plugin Observability must provide a Simplified Chinese page title'
+assert.equal(
+  zhSource.match(/'admin\.plugin_observability_title': '([^']+)'/)?.[1],
+  '插件观测',
+  'Plugin Observability must use the approved Simplified Chinese page name'
 );
 
 assert.match(
