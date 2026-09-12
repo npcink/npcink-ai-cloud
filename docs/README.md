@@ -82,6 +82,8 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Performance and Security Remediation Closeout and Standard](performance-security-remediation-closeout-and-standard-v1.md) — September 2026 performance/security findings, merged/M4 evidence, rollback, and reusable review gates.
+
 - [Early Product Validation and Minimal Telemetry Standard](early-product-validation-and-minimal-telemetry-standard-v1.md)
   — active stop rules, minimum non-author trial loop, privacy-safe journey
   evidence, defect priority, and commercial-proof reopening triggers
