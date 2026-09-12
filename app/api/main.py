@@ -115,6 +115,19 @@ def create_app(
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        # Start in report-only mode so existing third-party OAuth/payment
+        # integrations can be inventoried before enforcement.
+        response.headers.setdefault(
+            "Content-Security-Policy-Report-Only",
+            (
+                "default-src 'self'; base-uri 'self'; object-src 'none'; "
+                "frame-ancestors 'none'; form-action 'self'"
+            ),
+        )
         return response
 
     @app.middleware("http")

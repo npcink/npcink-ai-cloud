@@ -223,6 +223,7 @@ class Settings(BaseSettings):
     site_knowledge_rerank_provider: str = Field(default="disabled")
     site_knowledge_rerank_top_k: int = Field(default=30)
     site_knowledge_rerank_timeout_seconds: float = Field(default=8.0)
+    site_knowledge_rerank_max_concurrency: int = Field(default=8, ge=1, le=128)
     site_knowledge_jina_base_url: str = Field(default="https://api.jina.ai")
     site_knowledge_jina_api_key: str | None = Field(default=None)
     site_knowledge_jina_rerank_model: str = Field(default="jina-reranker-v3")
