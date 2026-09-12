@@ -1,4 +1,5 @@
 # CommercialRepository 渐进拆分实施计划 v1
+Status: active plan.
 
 状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7I M4 accepted；CommercialRepository 继续拆分已暂停
 

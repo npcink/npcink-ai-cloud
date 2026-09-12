@@ -150,6 +150,10 @@ def test_live_endpoint_sets_baseline_security_headers() -> None:
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
     assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["permissions-policy"] == (
+        "camera=(), microphone=(), geolocation=(), payment=()"
+    )
+    assert "default-src 'self'" in response.headers["content-security-policy-report-only"]
 
 
 def test_operational_ready_endpoint_requires_fresh_workers_and_cadence(tmp_path) -> None:

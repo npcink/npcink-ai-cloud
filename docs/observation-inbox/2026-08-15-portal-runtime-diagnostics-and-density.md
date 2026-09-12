@@ -1,5 +1,7 @@
 # Session Observation Receipt — 2026-08-15
 
+Status: historical observation receipt; not current Admin or runtime authority.
+
 ## 1. Session Identity
 
 - Session/task name: Portal/runtime diagnostics and delivery-efficiency closeout

@@ -1,5 +1,8 @@
 # WordPress AI 入口到反馈闭环：当前实现核对
 
+Status: current implementation boundary check; verify runtime and connector
+evidence before treating it as acceptance proof.
+
 下一阶段使用[标题生成真实使用与质量观察记录](title-quality-observation-2026-09.md)
 复用已有基线并记录正常编辑中的人工判断；新增样本尚待积累。
 

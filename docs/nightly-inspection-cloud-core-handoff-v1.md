@@ -1,6 +1,7 @@
 # Nightly Inspection Cloud/Core Handoff v1
 
-Status: active implementation handoff
+Status: historical implementation handoff; verify current runtime and boundary
+documents before using it as an execution plan.
 
 Date: 2026-06-16
 

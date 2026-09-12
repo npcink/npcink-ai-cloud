@@ -6329,6 +6329,35 @@ async def get_runtime_telemetry_diagnostics(
     )
 
 
+@router.get("/admin/runtime-telemetry/runs")
+@router.get("/runtime/diagnostics/runtime-telemetry/runs")
+async def get_runtime_run_evidence(
+    request: Request,
+    site_id: str | None = Query(default=None),
+    capability: str | None = Query(default=None, max_length=191),
+    issue_code: str | None = Query(default=None, max_length=64),
+    recent_minutes: int = Query(default=60, ge=1, le=10080),
+    limit: int = Query(default=25, ge=1, le=100),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = RuntimeService(services.settings.database_url).get_runtime_run_evidence(
+        site_id=site_id,
+        capability=capability,
+        issue_code=issue_code,
+        recent_minutes=recent_minutes,
+        limit=limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="runtime run evidence loaded",
+        data=result,
+        revision="m1",
+    )
+
+
 @router.get("/runtime/diagnostics/backlog")
 async def get_runtime_backlog_diagnostics(
     request: Request,

@@ -49,6 +49,7 @@ type EditorAssistQualityPanelProps = {
   windowHours: 24 | 72 | 168;
   refreshSignal: number;
   onRequestStateChange?: (state: EditorAssistQualityRequestState) => void;
+  disclosure?: boolean;
 };
 
 export type EditorAssistQualityRequestState = {
@@ -125,6 +126,7 @@ export function EditorAssistQualityPanel({
   windowHours,
   refreshSignal,
   onRequestStateChange,
+  disclosure = true,
 }: EditorAssistQualityPanelProps) {
   const { t } = useLocale();
   const [taskKey, setTaskKey] = useState('');
@@ -209,9 +211,10 @@ export function EditorAssistQualityPanel({
   return (
     <details
       data-ui="editor-assist-quality-panel"
+      open={!disclosure || undefined}
       className="overflow-hidden border-t border-slate-200 dark:border-slate-800"
     >
-      <summary className="cursor-pointer py-3">
+      <summary className={disclosure ? 'cursor-pointer py-3' : 'hidden'}>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

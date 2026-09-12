@@ -1,4 +1,5 @@
 # Cloud Service Layering Matrix v1
+Status: reference-only legacy snapshot.
 
 前门壳：完整合同以主仓版本为准；不再维护完整正文真源。
 

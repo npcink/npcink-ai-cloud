@@ -1,4 +1,5 @@
 # Cloud Admin UI 审查、迭代与交付手册 v1
+Status: active standard.
 
 状态：active engineering playbook。
 

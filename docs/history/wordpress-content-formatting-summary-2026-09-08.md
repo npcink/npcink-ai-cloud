@@ -1,4 +1,5 @@
 # WordPress AI 与正文整理：历史总结及阶段收尾
+Status: historical record.
 
 日期：2026-09-08。
 

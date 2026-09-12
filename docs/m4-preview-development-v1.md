@@ -1,5 +1,8 @@
 # M4 Preview Development Workflow v1
 
+Status: active operator runbook; follow the M4 Preview AI Development Standard
+for normative lifecycle requirements.
+
 This runbook owns host, command, recovery, and implementation mechanics.
 AI agents must also follow the normative
 [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)

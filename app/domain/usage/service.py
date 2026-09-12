@@ -1797,8 +1797,16 @@ class UsageService:
 
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
-            runs = repository.list_runs(site_id)
-            provider_calls = repository.list_provider_calls(site_id)
+            runs = repository.list_runs(
+                site_id,
+                start_at=window["start_at"],
+                end_at=window["end_at"],
+            )
+            provider_calls = repository.list_provider_calls(
+                site_id,
+                start_at=window["start_at"],
+                end_at=window["end_at"],
+            )
 
         runs_by_id = {run.run_id: run for run in runs}
         filtered_calls: list[ProviderCallRecord] = []

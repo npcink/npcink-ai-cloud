@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import BoundedSemaphore
 from typing import Any, Protocol
 
 import httpx
@@ -55,6 +56,9 @@ class JinaSiteKnowledgeReranker:
         self.model = model
         self.timeout_seconds = float(settings.site_knowledge_rerank_timeout_seconds)
         self.top_k = max(1, int(settings.site_knowledge_rerank_top_k))
+        self.request_semaphore = BoundedSemaphore(
+            max(1, int(settings.site_knowledge_rerank_max_concurrency))
+        )
 
     def rerank(self, *, query: str, results: list[dict[str, object]]) -> RerankOutcome:
         candidates = results[: self.top_k]
@@ -71,6 +75,12 @@ class JinaSiteKnowledgeReranker:
             )
 
         documents = [_document_text(candidate) for candidate in candidates]
+        acquired = self.request_semaphore.acquire(timeout=self.timeout_seconds)
+        if not acquired:
+            raise SiteKnowledgeRerankError(
+                "site_knowledge.jina_rerank_overloaded",
+                "Jina rerank concurrency limit reached",
+            )
         try:
             response = httpx.post(
                 f"{self.base_url}/v1/rerank",
@@ -96,6 +106,8 @@ class JinaSiteKnowledgeReranker:
                 "site_knowledge.jina_rerank_failed",
                 "Jina rerank request failed",
             ) from error
+        finally:
+            self.request_semaphore.release()
 
         ranked_items = _parse_jina_results(payload.get("results"), candidate_count=len(candidates))
         reranked_candidates: list[dict[str, object]] = []

@@ -1,5 +1,7 @@
 # Session Observation Receipt — 2026-08-15
 
+Status: historical observation receipt; not current efficiency evidence.
+
 ## 1. Session Identity
 
 - Session/task name: systematic remediation closeout and development-efficiency phases 1–3

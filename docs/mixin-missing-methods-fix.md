@@ -1,5 +1,8 @@
 # Cloud Mixins 缺失方法修复记录
 
+Status: historical repair record; verify current source and tests before
+reusing its diagnosis.
+
 ## 问题
 
 平台管理后台 (`/admin`) 加载后所有 API 端点返回 500 错误。

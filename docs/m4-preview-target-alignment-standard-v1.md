@@ -1,4 +1,5 @@
 # M4 预览目标与 18010 对齐规范 v1
+Status: active standard.
 
 状态：active operating guidance。
 

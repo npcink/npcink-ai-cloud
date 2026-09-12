@@ -1,5 +1,7 @@
 # Python Type Checking Standard
 
+Status: active engineering standard; repository type-checking authority.
+
 Date: 2026-06-05
 
 ## Purpose

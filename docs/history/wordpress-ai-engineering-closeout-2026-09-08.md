@@ -1,5 +1,8 @@
 # WordPress AI Phase-1 Engineering Closeout
 
+Status: historical engineering closeout; not current deployment or acceptance
+authority.
+
 Date: 2026-09-08. Lane: merge, L2 runtime integration. No production release.
 This is a dated evidence record, not current deployment authority.
 

@@ -224,6 +224,10 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
 
     unauthenticated = client.get("/internal/service/runtime/diagnostics/runtime-telemetry")
     assert unauthenticated.status_code == 401
+    unauthenticated_runs = client.get(
+        "/internal/service/admin/runtime-telemetry/runs"
+    )
+    assert unauthenticated_runs.status_code == 401
 
     response = client.get(
         "/internal/service/runtime/diagnostics/runtime-telemetry"
@@ -235,8 +239,20 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         f"?site_id={site_id}&recent_minutes=10080&limit=10",
         headers=build_internal_headers(),
     )
+    run_evidence_response = client.get(
+        "/internal/service/admin/runtime-telemetry/runs"
+        f"?site_id={site_id}&issue_code=hosted_model.failed_runs&recent_minutes=60&limit=2",
+        headers=build_internal_headers(),
+    )
+    provider_run_evidence_response = client.get(
+        "/internal/service/admin/runtime-telemetry/runs"
+        f"?site_id={site_id}&issue_code=hosted_model.provider_errors&recent_minutes=60&limit=10",
+        headers=build_internal_headers(),
+    )
     assert response.status_code == 200
     assert admin_alias_response.status_code == 200
+    assert run_evidence_response.status_code == 200
+    assert provider_run_evidence_response.status_code == 200
     legacy_response = client.get(
         "/internal/service/runtime/diagnostics/hosted-model-governance"
         f"?site_id={site_id}&recent_minutes=60&limit=10",
@@ -262,6 +278,20 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert data["totals"]["metered_run_coverage_rate"] == 0.75
     assert data["boundary"]["direct_wordpress_write"] is False
     assert data["boundary"]["contains_prompt_or_result_payloads"] is False
+    run_evidence = run_evidence_response.json()["data"]
+    assert run_evidence["filters"]["issue_code"] == "hosted_model.failed_runs"
+    assert run_evidence["filters"]["limit"] == 2
+    assert run_evidence["boundary"]["contains_prompt_or_result_payloads"] is False
+    assert run_evidence["boundary"]["contains_credentials"] is False
+    assert all(
+        "result_json" not in item and "input_json" not in item
+        for item in run_evidence["items"]
+    )
+    provider_run_ids = {
+        item["run_id"]
+        for item in provider_run_evidence_response.json()["data"]["items"]
+    }
+    assert provider_run_ids == {item["run_id"] for item in data["provider_failures"]}
     capability_by_id = {item["group_id"]: item for item in data["capability_groups"]}
     assert capability_by_id["text"]["tokens_total"] == 60
     assert capability_by_id["knowledge"]["tokens_total"] == 5

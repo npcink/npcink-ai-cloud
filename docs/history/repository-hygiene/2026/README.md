@@ -10,6 +10,8 @@ Status: historical evidence index; not cleanup authorization.
 - [2026-08-25 Portal preview source and repository cleanup retrospective](portal-preview-source-and-repository-cleanup-retrospective-2026-08-25.md)
 
 - [2026-09-11 文档入口、遗漏清单与结构热点调查](document-navigation-and-hotspot-review-2026-09-11.md)
+- [2026-09-11 全仓文档语义盘点](full-document-semantic-inventory-2026-09-11.md)
+- [2026-09-11 连接器到 Cloud 链路验收复核](connector-cloud-chain-acceptance-review-2026-09-11.md)
 
 Re-inventory the live repository and follow the current standards before any
 new cleanup. Historical counts and candidate lists are not reusable deletion

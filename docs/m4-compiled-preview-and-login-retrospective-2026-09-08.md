@@ -1,5 +1,8 @@
 # M4 Compiled Preview and Login Retrospective
 
+Status: historical incident evidence; current procedure is the linked M4
+preview runbook.
+
 Date: 2026-09-08. Scope: M4 browser preview and Admin login response navigation.
 This is historical evidence; the active procedure is the
 [M4 preview runbook](m4-preview-development-v1.md).
