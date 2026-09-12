@@ -72,6 +72,21 @@ type RuntimeTelemetrySummary = {
   };
 };
 
+type RuntimeRunEvidence = {
+  run_id: string;
+  site_id: string;
+  ability_name: string;
+  ability_family: string;
+  profile_id: string;
+  status: string;
+  error_code: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  provider_call_count: number;
+  has_meter_event: boolean;
+};
+
 type EvidenceLane = {
   id: string;
   href: string;
@@ -286,6 +301,28 @@ function issueAction(issue: RuntimeTelemetryAlert, t: TranslationFn): string {
   return known ? t(known[0], {}, known[1]) : t('admin.troubleshooting.action_unknown', {}, 'Ask technical support to investigate this time window and diagnostic code.');
 }
 
+function issueOwner(issue: RuntimeTelemetryAlert, t: TranslationFn): string {
+  const key = issue.code === 'hosted_model.provider_errors' || issue.code === 'hosted_model.failed_runs'
+    ? 'admin.troubleshooting.owner_maintenance'
+    : issue.code === 'hosted_model.unmetered_runs' || issue.code === 'hosted_model.provider_call_gap'
+      ? 'admin.troubleshooting.owner_support'
+      : 'admin.troubleshooting.owner_platform';
+  return t(key, {}, key === 'admin.troubleshooting.owner_maintenance' ? 'Maintenance engineer' : key === 'admin.troubleshooting.owner_support' ? 'Technical support' : 'Platform administrator');
+}
+
+function issueEvidenceGuidance(issue: RuntimeTelemetryAlert, t: TranslationFn): string {
+  if (issue.code === 'hosted_model.provider_call_gap') {
+    return t('admin.troubleshooting.evidence_provider_gap', {}, 'This is a provider-call evidence gap. It does not establish that the run failed.');
+  }
+  if (issue.code === 'hosted_model.unmetered_runs') {
+    return t('admin.troubleshooting.evidence_meter_gap', {}, 'This is a metering evidence gap. It does not establish a billing error or run failure.');
+  }
+  if (issue.code === 'hosted_model.provider_errors') {
+    return t('admin.troubleshooting.evidence_provider_error', {}, 'This represents provider-call errors. Confirm the individual run evidence before declaring recovery.');
+  }
+  return t('admin.troubleshooting.evidence_runtime_failure', {}, 'This represents runtime failures in the selected telemetry window.');
+}
+
 function severityLabel(severity: string, t: TranslationFn): string {
   return statusTone(severity) === 'error'
     ? t('admin.troubleshooting.severity_error', {}, 'Error')
@@ -301,8 +338,13 @@ export default function AdminTroubleshootingPage() {
   const windowHours = normalizeWindow(searchParams.get('window'));
   const focusedIssueCode = searchParams.get('focus') || '';
   const siteFilter = searchParams.get('site') || '';
+  const capabilityFilter = searchParams.get('function') || '';
+  const usageStatisticsHref = `/admin/usage-statistics?window=${windowHours}&from=troubleshooting${siteFilter ? `&group=sites&site=${encodeURIComponent(siteFilter)}` : capabilityFilter ? `&group=functions&function=${encodeURIComponent(capabilityFilter)}` : ''}`;
   const [moreOpen, setMoreOpen] = useState(false);
   const [data, setData] = useState<RuntimeTelemetrySummary | null>(null);
+  const [runEvidence, setRunEvidence] = useState<RuntimeRunEvidence[]>([]);
+  const [runEvidenceMeta, setRunEvidenceMeta] = useState({ sampled: false, truncated: false });
+  const [runEvidenceLoading, setRunEvidenceLoading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -334,6 +376,7 @@ export default function AdminTroubleshootingPage() {
     try {
       const params = new URLSearchParams({ recent_minutes: String(windowHours * 60), limit: '25' });
       if (siteFilter) params.set('site_id', siteFilter);
+      if (capabilityFilter) params.set('capability', capabilityFilter);
       const response = await runtimeTelemetryClient.request<unknown>(
         `/api/admin/runtime-telemetry?${params.toString()}`,
         { signal: controller.signal }
@@ -351,7 +394,7 @@ export default function AdminTroubleshootingPage() {
         setRefreshing(false);
       }
     }
-  }, [t, windowHours, siteFilter]);
+  }, [t, windowHours, siteFilter, capabilityFilter]);
 
   useEffect(() => {
     void loadTelemetry();
@@ -364,6 +407,40 @@ export default function AdminTroubleshootingPage() {
   const issues = data?.alertSummary.alerts || [];
   const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || null;
   const selectedGroups = data?.capabilityGroups.filter((group) => selectedIssue?.capabilities.includes(group.id)) || [];
+  useEffect(() => {
+    if (!selectedIssue) {
+      setRunEvidence([]);
+      setRunEvidenceMeta({ sampled: false, truncated: false });
+      return;
+    }
+    const controller = new AbortController();
+    setRunEvidenceLoading(true);
+    const capability = selectedIssue.capabilities[0] || '';
+    const query = new URLSearchParams({
+      recent_minutes: String(windowHours * 60),
+      issue_code: selectedIssue.code,
+      limit: '25',
+    });
+    if (siteFilter) query.set('site_id', siteFilter);
+    if (capabilityFilter || capability) query.set('capability', capabilityFilter || capability);
+    void runtimeTelemetryClient.request<{ items?: RuntimeRunEvidence[]; sampled?: boolean; truncated?: boolean }>(
+      `/api/admin/runtime-telemetry/runs?${query.toString()}`,
+      { signal: controller.signal },
+    ).then((response) => {
+      if (controller.signal.aborted) return;
+      const payload = response.data;
+      setRunEvidence(Array.isArray(payload.items) ? payload.items : []);
+      setRunEvidenceMeta({ sampled: Boolean(payload.sampled), truncated: Boolean(payload.truncated) });
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setRunEvidence([]);
+        setRunEvidenceMeta({ sampled: false, truncated: false });
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setRunEvidenceLoading(false);
+    });
+    return () => controller.abort();
+  }, [selectedIssue, siteFilter, capabilityFilter, windowHours]);
   const refreshInProgress = loading || refreshing;
   const conclusionStatus = data?.alertSummary.status || (loading ? 'pending' : 'inactive');
   const conclusionLabel = statusTone(conclusionStatus) === 'success'
@@ -488,9 +565,12 @@ export default function AdminTroubleshootingPage() {
                         className={selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}
                       >
                         <td className="px-3 py-2.5 align-top">
-                          <span className="font-semibold text-slate-950 dark:text-white">
-                            {issueTitle(issue, t)}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-slate-950 dark:text-white">
+                              {issueTitle(issue, t)}
+                            </span>
+                            <BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} />
+                          </div>
                           <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{issueSummary(issue, t)}</p>
                         </td>
                         <td className="px-3 py-2.5 align-top text-xs leading-5 text-slate-600 dark:text-slate-300">
@@ -582,6 +662,7 @@ export default function AdminTroubleshootingPage() {
                   <div className="space-y-3 py-2">
                     <p className="break-all text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_code', {}, 'Diagnostic code')}: {selectedIssue.code}</p>
                     <p className="text-sm">{t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_count' : 'admin.troubleshooting.affected_runs', {}, 'Affected requests')}: {formatNumber(selectedIssue.count)}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{issueEvidenceGuidance(selectedIssue, t)}</p>
                     {selectedGroups.length ? <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence', {}, 'View function-level data')}>
                         <thead className="border-b border-slate-200 dark:border-slate-800"><tr>
@@ -596,10 +677,16 @@ export default function AdminTroubleshootingPage() {
                       </table>
                     </div> : <p className="text-sm">{t('admin.troubleshooting.groups_unavailable', {}, 'No matching function-level data was returned.')}</p>}
                     <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.group_scope_note', {}, 'Totals for the returned functions in this period, not individual failure records. Functions may be omitted from the bounded response.')}</p>
+                    <section className="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800" data-ui="runtime-run-evidence">
+                      <h3 className="text-sm font-semibold">{t('admin.troubleshooting.run_evidence_title', {}, 'Affected run evidence')}</h3>
+                      {runEvidenceLoading ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_loading', {}, 'Loading bounded run evidence…')}</p> : runEvidence.length ? <div className="space-y-2">{runEvidence.map((run) => <div key={run.run_id} className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-800"><div className="flex flex-wrap items-center gap-2"><BackofficeStatusBadge label={run.status} status={statusTone(run.status)} /><span>{run.site_id}</span><code>{run.run_id}</code></div><p className="mt-1 text-slate-500">{run.ability_name} · {run.ability_family} · {run.profile_id}</p><dl className="mt-2 grid gap-x-4 gap-y-1 text-slate-500 sm:grid-cols-2"><div><dt className="inline font-semibold">{t('admin.troubleshooting.run_error_code', {}, 'Error code')}: </dt><dd className="inline break-all">{run.error_code || t('admin.troubleshooting.no_run_error_code', {}, 'None')}</dd></div><div><dt className="inline font-semibold">{t('admin.troubleshooting.run_duration', {}, 'Duration')}: </dt><dd className="inline">{run.duration_ms == null ? '—' : `${run.duration_ms} ms`}</dd></div><div><dt className="inline font-semibold">{t('admin.troubleshooting.run_provider_calls', {}, 'Provider calls')}: </dt><dd className="inline">{run.provider_call_count}</dd></div><div><dt className="inline font-semibold">{t('admin.troubleshooting.run_metering', {}, 'Metering')}: </dt><dd className="inline">{run.has_meter_event ? t('admin.troubleshooting.metered', {}, 'metered') : t('admin.troubleshooting.unmetered', {}, 'no meter event')}</dd></div></dl></div>)}</div> : <p className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_unavailable', {}, 'No individual run evidence is available for this anomaly in the selected window.')}</p>}
+                      {runEvidenceMeta.truncated ? <p className="text-xs text-amber-700">{t('admin.troubleshooting.run_evidence_truncated', {}, 'Showing a bounded sample of matching runs.')}</p> : null}
+                    </section>
                   </div>
                 </section>
                 {selectedIssue.code !== 'hosted_model.provider_errors' ? <div className="space-y-2 text-sm">
                   <h3 className="font-semibold">{t('admin.troubleshooting.operator_action_title', {}, '按这个顺序处理')}</h3>
+                  <p className="text-xs text-slate-500">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}: {issueOwner(selectedIssue, t)}</p>
                   <ol className="list-decimal space-y-3 pl-5">
                     <li>{t('admin.troubleshooting.operator_step_confirm_scope', {}, '先确认影响范围：上面的功能分组和次数，表示需要核对的请求数量。')}</li>
                     <li>{t('admin.troubleshooting.operator_step_check_followup', {}, '查看同时段插件错误以寻找线索；该入口不含完整成功记录，不能据此确认恢复。')}</li>
@@ -620,8 +707,8 @@ export default function AdminTroubleshootingPage() {
         </div>
       )}
 
-      <Link href={`/admin/usage-statistics?window=${windowHours}`} className="text-sm text-blue-700 underline">{t('admin.nav_usage_statistics')}</Link>
-      {siteFilter ? <p className="text-sm">{siteFilter}</p> : null}
+      <Link href={usageStatisticsHref} className="text-sm text-blue-700 underline">{t('admin.nav_usage_statistics')}</Link>
+      {siteFilter || capabilityFilter ? <p className="text-sm">{siteFilter ? `${t('admin.troubleshooting.site_filter', {}, 'Site')}: ${siteFilter}` : null}{siteFilter && capabilityFilter ? ' · ' : null}{capabilityFilter ? `${t('admin.troubleshooting.function_filter', {}, 'Function')}: ${capabilityFilter}` : null}</p> : null}
       {data ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs', {}, 'Runs')}: {formatNumber(data.totals.runs)} · {windowHours}h</p> : null}
       <AdminInspectorDrawer open={moreOpen} title={t('admin.troubleshooting.more', {}, 'More diagnostics')} titleId="runtime-more-title" closeLabel={t('common.close', {}, 'Close')} onClose={() => setMoreOpen(false)}>
       <div className="space-y-5">

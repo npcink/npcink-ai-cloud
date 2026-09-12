@@ -241,6 +241,8 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
   await expect(detail).not.toContainText(/Affected requests|受影响请求数/);
   await expect(detail).toContainText(/No matching function-level data|未返回匹配的功能分组数据/);
 
+  await expect(inspector).not.toContainText('{count}');
+
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Runtime runs failed|运行任务失败/ }).click();
 
@@ -366,11 +368,19 @@ test('provider failure details explain cause, export evidence and keep recovery 
       alert_summary: { status: 'warning', alerts: [{ code: 'hosted_model.provider_errors', severity: 'warning', count: 3, capabilities: ['text'] }] },
     })) });
   });
+  await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+      generated_at: '2026-09-10T10:00:00Z', sampled: false, truncated: false,
+      items: [{ run_id: 'run-schema-rejected', site_id: 'site-alpha', ability_name: 'wp-ai/classification', ability_family: 'text', profile_id: 'wp-ai.classification', status: 'failed', error_code: 'provider.invalid_request', started_at: '2026-09-05T10:00:00Z', finished_at: '2026-09-05T10:00:01Z', duration_ms: 1000, provider_call_count: 1, has_meter_event: false }],
+    })) });
+  });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
+  await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=168&from=troubleshooting');
   const details = page.locator('[data-ui="provider-failure-details"]');
   await expect(details).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
   await expect(details).toContainText('site-alpha');
   await expect(details).toContainText(/恢复待验证|Recovery unverified/i);
+  await expect(page.locator('[data-ui="runtime-run-evidence"]')).toContainText('run-schema-rejected');
   await expect(page.locator('#runtime-diagnostic-inspector')).not.toContainText(/当前仅有功能分组统计|only function-level totals/i);
   await expect(details.getByText('run-schema-rejected', { exact: true })).not.toBeVisible();
   await details.locator('summary').first().click();

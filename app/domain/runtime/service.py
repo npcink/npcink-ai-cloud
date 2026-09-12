@@ -7,7 +7,7 @@ from time import perf_counter
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.adapters.callbacks.base import RuntimeCallbackDispatcher
@@ -1557,6 +1557,132 @@ class RuntimeService:
         }
         result["alert_summary"] = self._build_hosted_governance_alert_summary(result)
         return result
+
+    def get_runtime_run_evidence(
+        self,
+        *,
+        site_id: str | None = None,
+        capability: str | None = None,
+        issue_code: str | None = None,
+        recent_minutes: int = 60,
+        limit: int = 25,
+    ) -> dict[str, object]:
+        """Return bounded, payload-free run evidence for operator diagnostics."""
+        current_time = datetime.now(UTC)
+        recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
+        max_items = max(1, min(100, limit))
+        with get_session(self.database_url) as session:
+            statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            if site_id:
+                statement = statement.where(RunRecord.site_id == site_id)
+            if capability:
+                statement = statement.where(
+                    or_(
+                        RunRecord.ability_family == capability,
+                        RunRecord.ability_name == capability,
+                        RunRecord.profile_id == capability,
+                    )
+                )
+            if issue_code == "hosted_model.failed_runs":
+                statement = statement.where(RunRecord.status == "failed")
+            elif issue_code == "hosted_model.provider_errors":
+                statement = statement.where(
+                    exists(
+                        select(ProviderCallRecord.id).where(
+                            ProviderCallRecord.run_id == RunRecord.run_id,
+                            ProviderCallRecord.error_code.is_not(None),
+                        )
+                    )
+                )
+            elif issue_code == "hosted_model.unmetered_runs":
+                statement = statement.where(
+                    ~exists(
+                        select(UsageMeterEvent.id).where(
+                            UsageMeterEvent.run_id == RunRecord.run_id,
+                        )
+                    )
+                )
+            runs = list(
+                session.scalars(
+                    statement.order_by(
+                        RunRecord.started_at.desc(), RunRecord.run_id.desc()
+                    ).limit(max_items + 1)
+                )
+            )
+            has_more = len(runs) > max_items
+            runs = runs[:max_items]
+            run_ids = [run.run_id for run in runs]
+            provider_calls = (
+                list(
+                    session.scalars(
+                        select(ProviderCallRecord).where(
+                            ProviderCallRecord.run_id.in_(run_ids)
+                        )
+                    )
+                )
+                if run_ids
+                else []
+            )
+            meter_events = (
+                list(
+                    session.scalars(
+                        select(UsageMeterEvent).where(
+                            UsageMeterEvent.run_id.in_(run_ids)
+                        )
+                    )
+                )
+                if run_ids
+                else []
+            )
+        calls_by_run: dict[str, int] = {}
+        for call in provider_calls:
+            calls_by_run[call.run_id] = calls_by_run.get(call.run_id, 0) + 1
+        metered_run_ids = {str(event.run_id) for event in meter_events if event.run_id}
+
+        def timestamp(value: datetime | None) -> str | None:
+            return value.astimezone(UTC).isoformat() if value else None
+
+        items: list[dict[str, object]] = []
+        for run in runs:
+            duration_ms = None
+            if run.started_at and run.finished_at:
+                duration_ms = max(
+                    0, int((run.finished_at - run.started_at).total_seconds() * 1000)
+                )
+            items.append(
+                {
+                    "run_id": run.run_id,
+                    "site_id": run.site_id,
+                    "ability_name": run.ability_name,
+                    "ability_family": run.ability_family,
+                    "profile_id": run.profile_id,
+                    "status": run.status,
+                    "error_code": run.error_code,
+                    "started_at": timestamp(run.started_at),
+                    "finished_at": timestamp(run.finished_at),
+                    "duration_ms": duration_ms,
+                    "provider_call_count": calls_by_run.get(run.run_id, 0),
+                    "has_meter_event": run.run_id in metered_run_ids,
+                }
+            )
+        return {
+            "filters": {
+                "site_id": site_id or "",
+                "capability": capability or "",
+                "issue_code": issue_code or "",
+                "recent_minutes": recent_minutes,
+                "limit": max_items,
+            },
+            "generated_at": current_time.isoformat(),
+            "freshness": "snapshot",
+            "sampled": has_more,
+            "truncated": has_more,
+            "items": items,
+            "boundary": {
+                "contains_prompt_or_result_payloads": False,
+                "contains_credentials": False,
+            },
+        }
 
     def get_runtime_backlog_diagnostics(
         self,
