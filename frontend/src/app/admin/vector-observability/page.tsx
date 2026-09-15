@@ -97,9 +97,9 @@ type VectorObservabilityData = {
 };
 
 const WINDOW_OPTIONS = [
-  { label: '24h', value: 24 },
-  { label: '72h', value: 72 },
-  { label: '168h', value: 168 },
+  { label: '近 1 天', value: 24 },
+  { label: '近 3 天', value: 72 },
+  { label: '近 7 天', value: 168 },
 ];
 
 function normalizeVectorObservability(raw: any): VectorObservabilityData {
