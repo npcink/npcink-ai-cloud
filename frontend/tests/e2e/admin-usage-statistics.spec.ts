@@ -78,9 +78,9 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.locator('[data-ui="backoffice-page-header"]')).not.toContainText('插件记录');
   await page.screenshot({ path: testInfo.outputPath('chart-ready.png'), fullPage: true });
   const editorialSection = page.locator('[data-ui="usage-related-observability"]');
-  await expect(editorialSection.getByRole('button', { name: /View editorial quality evidence|查看编辑质量证据/ })).toHaveAttribute('aria-expanded', 'false');
-  await editorialSection.getByRole('button', { name: /View editorial quality evidence|查看编辑质量证据/ }).click();
-  await expect(editorialSection.getByRole('button', { name: /Hide editorial outcomes|收起编辑效果/ })).toHaveAttribute('aria-expanded', 'true');
+  await expect(editorialSection.getByRole('button', { name: /Editorial quality evidence|编辑质量证据/ })).toHaveAttribute('aria-expanded', 'false');
+  await editorialSection.getByRole('button', { name: /Editorial quality evidence|编辑质量证据/ }).click();
+  await expect(editorialSection.getByRole('button', { name: /Hide editorial quality|收起编辑质量/ })).toHaveAttribute('aria-expanded', 'true');
   await expect(editorialSection.locator('[data-ui="editor-assist-quality-panel"]')).toHaveAttribute('open', '');
   await expect(editorialSection.locator('[data-ui="editor-assist-quality-panel"] summary')).toBeHidden();
   await page.getByRole('tab', { name: /Table|表格/ }).click();
