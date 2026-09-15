@@ -60,6 +60,9 @@ test('vector observability keeps scope and selected error URL-backed', async ({ 
   const harness = await installVectorHarness(page);
   await page.goto('/admin/vector-observability');
 
+  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/vector-observability"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('header')).toContainText(/Vector Observability|向量观测/);
+
   await expect(page.locator('[data-ui="vector-error-item"]')).toHaveCount(1);
   await expect(page.locator('#vector-error-inspector')).toContainText('vector_search_timeout');
   await page.locator('[data-ui="vector-error-item"]').click();

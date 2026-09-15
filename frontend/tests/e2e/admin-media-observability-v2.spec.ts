@@ -66,6 +66,9 @@ test('media observability keeps scoped filters and failure evidence URL-backed',
   const harness = await installMediaHarness(page);
   await page.goto('/admin/media-observability');
 
+  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/media-observability"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('header')).toContainText(/Media Processing Observability|媒体处理观测/);
+
   await expect(page.locator('[data-ui="media-failure-item"]')).toHaveCount(1);
   await expect(page.locator('#media-failure-inspector')).toContainText('media_run_1');
   await expect(page.locator('#media-failure-inspector')).toContainText('image_decode_failed');
