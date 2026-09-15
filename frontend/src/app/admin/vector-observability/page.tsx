@@ -11,6 +11,7 @@ import {
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -357,6 +358,7 @@ function AdminVectorObservabilityContent() {
 
   return (
     <BackofficePageStack>
+      <AdminObservabilityTabs />
       <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.vector_obs.title', {}, 'Vector Observability')}

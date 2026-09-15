@@ -15,6 +15,7 @@ import {
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
@@ -391,6 +392,7 @@ function AdminMediaObservabilityContent() {
 
   return (
     <BackofficePageStack>
+      <AdminObservabilityTabs />
       <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}

@@ -10,6 +10,7 @@ import { AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
 import { createApiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
 import { useLocale } from '@/contexts/LocaleContext';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 
 const client = createApiClient({ idempotencyPrefix: 'admin_usage_statistics' });
 type Row = { id: string; runs: number; failed: number; success_rate: number | null; avg_latency_ms: number | null };
@@ -110,6 +111,7 @@ export default function UsageStatisticsPage() {
 
   const activityStatus = (status: string) => ({ ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'), error: c('失败', 'Failed'), failed: c('失败', 'Failed'), warning: c('需关注', 'Warning') }[status] || c('其他状态', 'Other status'));
   return <BackofficePageStack className="space-y-4">
+    <AdminObservabilityTabs />
     <BackofficePageHeader title={c('使用统计', 'Usage Statistics')} description={c('发现运行趋势、分布和影响范围', 'Discover runtime trends, distribution, and impact')} summaryItems={metrics.map(item => ({ ...item, size: 'compact' as const }))} primaryAction={<div className="text-right text-xs leading-5 text-slate-500 dark:text-slate-400">{c('当前工作范围', 'Current workspace')}: {c(`近 ${hours / 24} 天 · ${analysisView === 'chart' ? 'Cloud 运行' : dimension === 'sites' ? '按站点' : dimension === 'functions' ? '按功能' : '插件记录'}`, `Last ${hours / 24} days · ${analysisView === 'chart' ? 'Cloud runs' : dimension}`)}<br />{runtime ? `${c('数据更新于', 'Updated')} ${localTime(runtime.generated_at)} · ${timeZone}` : c('等待运行数据', 'Waiting for runtime data')}</div>} />
     <div data-ui="usage-statistics-toolbar" className="relative z-10 flex w-full max-w-full flex-wrap items-center gap-2 rounded-lg border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
       {[24, 72, 168].map(h => <Link key={h} aria-current={hours === h ? 'page' : undefined} className={`btn btn-sm ${hours === h ? 'btn-primary' : 'btn-secondary'}`} href={filterHref('window', String(h))}>{c(`近 ${h / 24} 天`, `Last ${h / 24} days`)}</Link>)}
