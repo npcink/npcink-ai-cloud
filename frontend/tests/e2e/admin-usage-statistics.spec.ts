@@ -78,6 +78,9 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.locator('[data-ui="backoffice-page-header"]')).not.toContainText('插件记录');
   await page.screenshot({ path: testInfo.outputPath('chart-ready.png'), fullPage: true });
   const editorialSection = page.locator('[data-ui="usage-related-observability"]');
+  await expect(editorialSection.getByRole('link', { name: /Media observability|媒体观测/ })).toHaveAttribute('href', '/admin/media-observability?window=168');
+  await expect(editorialSection.getByRole('link', { name: /Vector observability|向量观测/ })).toHaveAttribute('href', '/admin/vector-observability?window=168');
+
   await expect(editorialSection.getByRole('button', { name: /Editorial quality evidence|编辑质量证据/ })).toHaveAttribute('aria-expanded', 'false');
   await editorialSection.getByRole('button', { name: /Editorial quality evidence|编辑质量证据/ }).click();
   await expect(editorialSection.getByRole('button', { name: /Hide editorial quality|收起编辑质量/ })).toHaveAttribute('aria-expanded', 'true');
