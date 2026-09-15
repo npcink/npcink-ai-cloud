@@ -36,7 +36,6 @@ export default function UsageStatisticsPage() {
   const [loading, setLoading] = useState(true);
   const [analysisView, setAnalysisView] = useState<'chart' | 'table'>('table');
   const [refresh, setRefresh] = useState(0);
-  const [quality, setQuality] = useState(false);
   const [activityStatusFilter, setActivityStatusFilter] = useState('all');
   const [activitySort, setActivitySort] = useState<'latest' | 'failures'>('latest');
   const [activityPage, setActivityPage] = useState(1);
@@ -112,7 +111,8 @@ export default function UsageStatisticsPage() {
   const activityStatus = (status: string) => ({ ok: c('成功', 'Succeeded'), succeeded: c('成功', 'Succeeded'), error: c('失败', 'Failed'), failed: c('失败', 'Failed'), warning: c('需关注', 'Warning') }[status] || c('其他状态', 'Other status'));
   return <BackofficePageStack className="space-y-4">
     <AdminObservabilityTabs />
-    <BackofficePageHeader title={c('使用统计', 'Usage Statistics')} description={c('发现运行趋势、分布和影响范围', 'Discover runtime trends, distribution, and impact')} summaryItems={metrics.map(item => ({ ...item, size: 'compact' as const }))} primaryAction={<div className="text-right text-xs leading-5 text-slate-500 dark:text-slate-400">{c('当前工作范围', 'Current workspace')}: {c(`近 ${hours / 24} 天 · ${analysisView === 'chart' ? 'Cloud 运行' : dimension === 'sites' ? '按站点' : dimension === 'functions' ? '按功能' : '插件记录'}`, `Last ${hours / 24} days · ${analysisView === 'chart' ? 'Cloud runs' : dimension}`)}<br />{runtime ? `${c('数据更新于', 'Updated')} ${localTime(runtime.generated_at)} · ${timeZone}` : c('等待运行数据', 'Waiting for runtime data')}</div>} />
+    <BackofficePageHeader title={params.get('view') === 'quality' ? c('编辑质量证据', 'Editorial quality evidence') : c('使用统计', 'Usage Statistics')} description={params.get('view') === 'quality' ? c('查看编辑辅助运行的质量证据', 'Review quality evidence from editorial assistance runs') : c('发现运行趋势、分布和影响范围', 'Discover runtime trends, distribution, and impact')} summaryItems={params.get('view') === 'quality' ? [] : metrics.map(item => ({ ...item, size: 'compact' as const }))} primaryAction={params.get('view') === 'quality' ? undefined : <div className="text-right text-xs leading-5 text-slate-500 dark:text-slate-400">{c('当前工作范围', 'Current workspace')}: {c(`近 ${hours / 24} 天 · ${analysisView === 'chart' ? 'Cloud 运行' : dimension === 'sites' ? '按站点' : dimension === 'functions' ? '按功能' : '插件记录'}`, `Last ${hours / 24} days · ${analysisView === 'chart' ? 'Cloud runs' : dimension}`)}<br />{runtime ? `${c('数据更新于', 'Updated')} ${localTime(runtime.generated_at)} · ${timeZone}` : c('等待运行数据', 'Waiting for runtime data')}</div>} />
+    {params.get('view') === 'quality' ? <EditorAssistQualityPanel disclosure={false} windowHours={hours} refreshSignal={refresh} /> : <>
     <div data-ui="usage-statistics-toolbar" className="relative z-10 flex w-full max-w-full flex-wrap items-center gap-2 rounded-lg border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
       {[24, 72, 168].map(h => <Link key={h} aria-current={hours === h ? 'page' : undefined} className={`btn btn-sm ${hours === h ? 'btn-primary' : 'btn-secondary'}`} href={filterHref('window', String(h))}>{c(`近 ${h / 24} 天`, `Last ${h / 24} days`)}</Link>)}
       <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={() => setRefresh(v => v + 1)}>{c('刷新', 'Refresh')}</button>
@@ -146,7 +146,7 @@ export default function UsageStatisticsPage() {
     </AdminDataTableFrame></div>
 
     </section>
-    <section data-ui="usage-related-observability" className="border-t border-slate-200 py-2 dark:border-slate-800"><div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs"><h2 className="text-sm font-semibold">{c('相关观测', 'Related observability')}</h2><Link className="text-blue-700 underline dark:text-blue-400" href={`/admin/media-observability?window=${hours}`}>{c('媒体观测', 'Media observability')}</Link><Link className="text-blue-700 underline dark:text-blue-400" href={`/admin/vector-observability?window=${hours}`}>{c('向量观测', 'Vector observability')}</Link><button type="button" className="btn btn-secondary btn-sm" aria-expanded={quality} onClick={() => setQuality(v => !v)}>{quality ? c('收起编辑质量', 'Hide editorial quality') : c('编辑质量证据', 'Editorial quality evidence')}</button><span className="text-slate-500">{c('低频核查入口', 'Low-frequency review')}</span></div>{quality ? <div className="mt-3"><EditorAssistQualityPanel disclosure={false} windowHours={hours} refreshSignal={refresh} /></div> : null}</section>
+    </>}
     <details data-ui="usage-definitions" className="max-w-[var(--admin-workbench-compact-max-width)] border-t border-slate-200 py-3">
       <summary className="cursor-pointer text-sm text-slate-600 dark:text-slate-400">{analysisView === 'table' && pluginMode ? c('统计口径与测试记录', 'Definitions and test records') : c('统计口径', 'Definitions')}</summary>
       <p className="mt-2 text-sm">{c('运行成功率为成功运行数 / 所有运行数，包含仍在处理的任务。耗时仅统计已有起止时间的运行。一次任务可产生多条事件，事件数不等于任务数。调用记录缺失不等于任务失败。缺失值显示 —，不当作 0。', 'Run success rate is successful runs / all runs, including pending tasks. Duration uses runs with start and finish times. Multiple events may belong to one task. Missing call records do not imply failed tasks. Missing values display —, not zero.')}</p>
