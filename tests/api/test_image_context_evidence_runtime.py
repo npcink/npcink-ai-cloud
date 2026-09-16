@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
@@ -263,6 +264,22 @@ def _execute(
     return client.post("/v1/runtime/execute", content=body, headers=headers)
 
 
+@pytest.fixture
+def background_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Scheduling is minute-granular. Admission and worker checks must use the
+    # same instant, even if setup/execution crosses a minute or day boundary.
+    frozen_now = datetime.now(UTC)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now.astimezone(tz) if tz else frozen_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(f"{__name__}.datetime", FrozenDatetime)
+    monkeypatch.setattr("app.domain.runtime.service.datetime", FrozenDatetime)
+    monkeypatch.setattr("app.adapters.repositories.runtime_repository.datetime", FrozenDatetime)
+
+
 def _clock_offset(minutes: int) -> str:
     value = datetime.now(UTC) + timedelta(minutes=minutes)
     return f"{value.hour:02d}:{value.minute:02d}"
@@ -353,6 +370,7 @@ def _seed_media_document(
         session.commit()
 
 
+@pytest.mark.usefixtures("background_clock")
 def test_background_media_capacity_blocks_provider_call_and_usage(tmp_path: Path) -> None:
     database_url, client, provider = _build_client(tmp_path)
     _set_media_image_limit(database_url, 1)
@@ -397,6 +415,7 @@ def test_background_media_capacity_blocks_provider_call_and_usage(tmp_path: Path
         assert [event.meter_key for event in usage_events] == ["runs"]
 
 
+@pytest.mark.usefixtures("background_clock")
 def test_background_media_capacity_allows_existing_image_refresh(tmp_path: Path) -> None:
     database_url, client, provider = _build_client(tmp_path)
     _set_media_image_limit(database_url, 1)
@@ -433,6 +452,7 @@ def test_background_media_capacity_allows_existing_image_refresh(tmp_path: Path)
         ).last_sync_run_id == run_id
 
 
+@pytest.mark.usefixtures("background_clock")
 def test_background_media_capacity_filters_batch_before_provider(tmp_path: Path) -> None:
     database_url, client, provider = _build_client(tmp_path)
     _set_media_image_limit(database_url, 2)
@@ -548,6 +568,7 @@ def test_background_media_recognition_requires_enabled_policy(tmp_path: Path) ->
         ) is None
 
 
+@pytest.mark.usefixtures("background_clock")
 def test_background_media_recognition_enforces_window_model_and_daily_item_limit(
     tmp_path: Path,
 ) -> None:
@@ -658,6 +679,7 @@ def test_background_media_recognition_enforces_window_model_and_daily_item_limit
     assert worker.process_next_queued_run(timeout_seconds=0) is None
 
 
+@pytest.mark.usefixtures("background_clock")
 def test_background_media_recognition_queues_outside_window(tmp_path: Path) -> None:
     database_url, client, provider = _build_client(tmp_path)
     _set_media_recognition_policy(
