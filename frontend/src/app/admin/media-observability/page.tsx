@@ -15,6 +15,8 @@ import {
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { normalizeObservationWindow } from '@/features/admin/observability/window';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
@@ -103,11 +105,7 @@ type MediaObservabilityData = {
   }>;
 };
 
-const WINDOW_OPTIONS = [
-  { label: '24h', value: 24 },
-  { label: '72h', value: 72 },
-  { label: '168h', value: 168 },
-];
+
 
 const FORMAT_OPTIONS = [
   { labelKey: 'admin.media_obs.format_all', label: 'All formats', value: '' },
@@ -273,10 +271,7 @@ function mediaHealthSummary(
   );
 }
 
-function normalizeMediaWindow(value: string | null): number {
-  const parsed = Number(value);
-  return parsed === 72 || parsed === 168 ? parsed : 24;
-}
+
 
 function normalizeTargetFormat(value: string | null): string {
   const normalized = value || '';
@@ -288,7 +283,7 @@ function AdminMediaObservabilityContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const windowHours = normalizeMediaWindow(searchParams.get('window'));
+  const windowHours = normalizeObservationWindow(searchParams.get('window'));
   const targetFormat = normalizeTargetFormat(searchParams.get('format'));
   const siteIdFilter = searchParams.get('site') || '';
   const focusedRunId = searchParams.get('focus') || '';
@@ -298,12 +293,11 @@ function AdminMediaObservabilityContent() {
   const [siteIdInput, setSiteIdInput] = useState(siteIdFilter);
   const requestControllerRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
-  const hasLoadedRef = useRef(false);
 
   const updateUrl = useCallback((updates: { window?: number | null; format?: string | null; site?: string | null; focus?: string | null }) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
-      if (value && !(key === 'window' && value === 24)) params.set(key, String(value));
+      if (value) params.set(key, String(value));
       else params.delete(key);
     });
     const query = params.toString();
@@ -313,7 +307,8 @@ function AdminMediaObservabilityContent() {
   const loadData = useCallback(async (refresh = false) => {
     requestControllerRef.current?.abort();
     const sequence = ++requestSequenceRef.current;
-    if (!hasLoadedRef.current || !refresh) setLoading(true);
+    setLoading(true);
+    if (!refresh) setData(null);
     setError('');
     const controller = new AbortController();
     requestControllerRef.current = controller;
@@ -332,7 +327,6 @@ function AdminMediaObservabilityContent() {
       });
       if (sequence !== requestSequenceRef.current) return;
       setData(normalizeMediaObservability(response.data));
-      hasLoadedRef.current = true;
     } catch (err) {
       if (sequence !== requestSequenceRef.current) return;
       setError(resolveUiErrorMessage(err, t('admin.media_obs.load_error', {}, 'Failed to load media processing diagnostics.')));
@@ -347,6 +341,7 @@ function AdminMediaObservabilityContent() {
 
   useEffect(() => {
     void loadData();
+    return () => { requestSequenceRef.current += 1; requestControllerRef.current?.abort(); };
   }, [loadData]);
 
   useEffect(() => {
@@ -385,12 +380,10 @@ function AdminMediaObservabilityContent() {
     || null;
   const isEmpty = data !== null && data.totals.jobsTotal === 0;
 
-  if (loading && !data) {
-    return <LoadingFallback />;
-  }
 
   return (
     <BackofficePageStack>
+      <AdminObservabilityTabs />
       <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}
@@ -410,20 +403,10 @@ function AdminMediaObservabilityContent() {
         summaryAside={data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
       />
 
+      {loading ? <p role="status" className="text-sm text-slate-500">{t('common.loading', {}, 'Loading…')}</p> : null}
       <BackofficeSectionPanel className="p-4 md:p-5">
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-          {WINDOW_OPTIONS.map((opt) => (
-            <BackofficeFilterPill
-              key={opt.value}
-              active={windowHours === opt.value}
-              tone="info"
-              onClick={() => updateUrl({ window: opt.value, focus: null })}
-            >
-              {opt.label}
-            </BackofficeFilterPill>
-          ))}
-          </div>
+
           <div className="flex flex-wrap items-center gap-2">
           {FORMAT_OPTIONS.map((opt) => (
             <BackofficeFilterPill

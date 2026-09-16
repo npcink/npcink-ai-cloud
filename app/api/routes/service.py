@@ -4080,7 +4080,7 @@ async def update_admin_plan_parameters(
 @router.get("/admin/plugin-observability")
 async def get_admin_plugin_observability(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=168),
+    window_hours: int = Query(default=24, ge=1, le=720),
     site_id: str = Query(default=""),
     plugin_slug: str = Query(default=""),
     record_scope: Literal["all", "operational", "test"] = Query(default="all"),
@@ -4107,7 +4107,7 @@ async def get_admin_plugin_observability(
 @router.get("/admin/editor-assist-quality")
 async def get_admin_editor_assist_quality(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=168),
+    window_hours: int = Query(default=24, ge=1, le=720),
     site_id: str = Query(default="", max_length=191),
     task_key: str = Query(default="", max_length=64),
 ) -> Any:
@@ -4131,7 +4131,7 @@ async def get_admin_editor_assist_quality(
 @router.get("/admin/media-observability")
 async def get_admin_media_observability(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=168),
+    window_hours: int = Query(default=24, ge=1, le=720),
     site_id: str = Query(default=""),
     target_format: str = Query(default=""),
 ) -> Any:
@@ -4162,7 +4162,7 @@ async def get_admin_media_observability(
 @router.get("/admin/vector-observability")
 async def get_admin_vector_observability(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=168),
+    window_hours: int = Query(default=24, ge=1, le=720),
     site_id: str = Query(default=""),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6309,7 +6309,8 @@ async def get_nightly_inspection_observability(
 async def get_runtime_telemetry_diagnostics(
     request: Request,
     site_id: str | None = Query(default=None),
-    recent_minutes: int = Query(default=60, ge=1, le=10080),
+    capability: str | None = Query(default=None, max_length=191),
+    recent_minutes: int = Query(default=60, ge=1, le=43200),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6318,6 +6319,7 @@ async def get_runtime_telemetry_diagnostics(
     services = get_cloud_services(request)
     result = RuntimeService(services.settings.database_url).get_runtime_telemetry_diagnostics(
         site_id=site_id,
+        capability=capability,
         recent_minutes=recent_minutes,
         limit=limit,
     )
@@ -6336,7 +6338,7 @@ async def get_runtime_run_evidence(
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
     issue_code: str | None = Query(default=None, max_length=64),
-    recent_minutes: int = Query(default=60, ge=1, le=10080),
+    recent_minutes: int = Query(default=60, ge=1, le=43200),
     limit: int = Query(default=25, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)

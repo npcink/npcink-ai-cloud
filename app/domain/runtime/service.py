@@ -1319,16 +1319,24 @@ class RuntimeService:
         self,
         *,
         site_id: str | None = None,
+        capability: str | None = None,
         recent_minutes: int = 60,
         limit: int = 20,
     ) -> dict[str, object]:
         current_time = datetime.now(UTC)
         recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
         max_items = max(1, min(100, limit))
+        capability_condition = or_(
+            RunRecord.ability_family == capability,
+            RunRecord.ability_name == capability,
+            RunRecord.profile_id == capability,
+        )
         with get_session(self.database_url) as session:
             run_statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
             if site_id:
                 run_statement = run_statement.where(RunRecord.site_id == site_id)
+            if capability:
+                run_statement = run_statement.where(capability_condition)
             runs = list(
                 session.scalars(
                     run_statement.order_by(
@@ -1345,6 +1353,8 @@ class RuntimeService:
             )
             if site_id:
                 call_statement = call_statement.where(RunRecord.site_id == site_id)
+            if capability:
+                call_statement = call_statement.where(capability_condition)
             provider_call_rows = list(
                 session.execute(
                     call_statement.order_by(
@@ -1359,6 +1369,13 @@ class RuntimeService:
             )
             if site_id:
                 meter_statement = meter_statement.where(UsageMeterEvent.site_id == site_id)
+            if capability:
+                meter_statement = meter_statement.where(
+                    exists(select(RunRecord.run_id).where(
+                        RunRecord.run_id == UsageMeterEvent.run_id,
+                        capability_condition,
+                    ))
+                )
             meter_events = list(
                 session.scalars(
                     meter_statement.order_by(
@@ -1515,6 +1532,7 @@ class RuntimeService:
         result: dict[str, object] = {
             "filters": {
                 "site_id": site_id or "",
+                "capability": capability or "",
                 "recent_minutes": recent_minutes,
                 "limit": max_items,
             },

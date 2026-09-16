@@ -130,7 +130,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   expect(exportedQuality.read_only).toBe(true);
 
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '72h' }).click();
+  await page.getByRole('button', { name: /^3 天$|^3 days$/ }).click();
   await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
   await qualityPanel.locator('summary').click();
   await expect(page).toHaveURL(/window=72/);

@@ -15,6 +15,8 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import {
   EditorAssistQualityPanel,
 } from '@/components/admin/EditorAssistQualityPanel';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
+import { normalizeObservationWindow } from '@/features/admin/observability/window';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
@@ -98,7 +100,7 @@ type EvidenceLane = {
 
 type TranslationFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-const WINDOW_OPTIONS = [24, 72, 168] as const;
+
 
 const evidenceLanes: EvidenceLane[] = [
   {
@@ -178,10 +180,7 @@ const runtimeEvidenceItems = [
   },
 ];
 
-function normalizeWindow(value: string | null): 24 | 72 | 168 {
-  const parsed = Number(value);
-  return WINDOW_OPTIONS.includes(parsed as 24 | 72 | 168) ? parsed as 24 | 72 | 168 : 24;
-}
+
 
 function asNumber(value: unknown): number {
   return Number(value ?? 0) || 0;
@@ -335,7 +334,7 @@ export default function AdminTroubleshootingPage() {
   const { t } = useLocale();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const windowHours = normalizeWindow(searchParams.get('window'));
+  const windowHours = normalizeObservationWindow(searchParams.get('window'), 24);
   const focusedIssueCode = searchParams.get('focus') || '';
   const siteFilter = searchParams.get('site') || '';
   const capabilityFilter = searchParams.get('function') || '';
@@ -461,6 +460,7 @@ export default function AdminTroubleshootingPage() {
       <BackofficePageHeader
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         secondaryAction={<div className="flex items-center gap-3">
+          <Link className="btn btn-ghost btn-sm" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Back to usage statistics')}</Link>
           <button className="btn btn-ghost btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.troubleshooting.more', {}, 'More diagnostics')}</button>
           <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
             {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
@@ -469,19 +469,7 @@ export default function AdminTroubleshootingPage() {
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" aria-label={t('admin.troubleshooting.window_label', {}, 'Diagnostic window')}>
-          {WINDOW_OPTIONS.map((hours) => (
-            <button
-              key={hours}
-              type="button"
-              aria-pressed={windowHours === hours}
-              className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition ${windowHours === hours ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300'}`}
-              onClick={() => updateUrl({ window: hours, focus: null })}
-            >
-              {hours === 24 ? '24h' : hours === 72 ? '72h' : '7d'}
-            </button>
-          ))}
-        </div>
+        <AdminObservationWindow defaultHours={24} />
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
           {data?.generatedAt ? (
             <span>{t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}')}</span>
@@ -572,6 +560,11 @@ export default function AdminTroubleshootingPage() {
                             <BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} />
                           </div>
                           <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{issueSummary(issue, t)}</p>
+                          <p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                            <span className="font-medium">{t('admin.troubleshooting.queue_evidence', {}, 'Evidence')}:</span> {issueEvidenceGuidance(issue, t)}
+                            <span className="mx-1" aria-hidden="true">·</span>
+                            <span className="font-medium">{t('admin.troubleshooting.queue_owner', {}, 'Suggested role')}:</span> {issueOwner(issue, t)}
+                          </p>
                         </td>
                         <td className="px-3 py-2.5 align-top text-xs leading-5 text-slate-600 dark:text-slate-300">
                           {scopeLabel(issue.capabilities, t)}
@@ -623,6 +616,15 @@ export default function AdminTroubleshootingPage() {
             headerAccessory={<BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />}
           >
             <div id="runtime-diagnostic-inspector" className="space-y-6">
+              <section data-ui="runtime-inspector-summary" className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {formatNumber(selectedIssue.count)}</dd></div>
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.queue_evidence', {}, 'Evidence')}</dt><dd className="font-semibold">{runEvidenceLoading ? t('admin.troubleshooting.run_evidence_loading', {}, 'Loading bounded run evidence…') : runEvidence.length ? t('admin.troubleshooting.run_evidence_title', {}, 'Affected run evidence') : t('admin.troubleshooting.run_evidence_unavailable', {}, 'No individual run evidence is available')}</dd></div>
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}</dt><dd className="font-semibold">{issueOwner(selectedIssue, t)}</dd></div>
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
+                </dl>
+                <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">{issueEvidenceGuidance(selectedIssue, t)}</p>
+              </section>
               {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-4">
                 <h3 className="font-semibold">{t('admin.troubleshooting.failures_title')}</h3>
                 <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>
@@ -707,7 +709,6 @@ export default function AdminTroubleshootingPage() {
         </div>
       )}
 
-      <Link href={usageStatisticsHref} className="text-sm text-blue-700 underline">{t('admin.nav_usage_statistics')}</Link>
       {siteFilter || capabilityFilter ? <p className="text-sm">{siteFilter ? `${t('admin.troubleshooting.site_filter', {}, 'Site')}: ${siteFilter}` : null}{siteFilter && capabilityFilter ? ' · ' : null}{capabilityFilter ? `${t('admin.troubleshooting.function_filter', {}, 'Function')}: ${capabilityFilter}` : null}</p> : null}
       {data ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs', {}, 'Runs')}: {formatNumber(data.totals.runs)} · {windowHours}h</p> : null}
       <AdminInspectorDrawer open={moreOpen} title={t('admin.troubleshooting.more', {}, 'More diagnostics')} titleId="runtime-more-title" closeLabel={t('common.close', {}, 'Close')} onClose={() => setMoreOpen(false)}>

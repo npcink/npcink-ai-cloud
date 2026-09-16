@@ -11,7 +11,8 @@ import {
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
-import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
+import { normalizeObservationWindow } from '@/features/admin/observability/window';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
@@ -95,11 +96,7 @@ type VectorObservabilityData = {
   errors: Array<{ errorCode: string; count: number; lastSeenAt: string }>;
 };
 
-const WINDOW_OPTIONS = [
-  { label: '24h', value: 24 },
-  { label: '72h', value: 72 },
-  { label: '168h', value: 168 },
-];
+
 
 function normalizeVectorObservability(raw: any): VectorObservabilityData {
   const totals = raw?.totals ?? {};
@@ -220,17 +217,14 @@ function timelineLabel(value: string): string {
   return `${String(date.getHours()).padStart(2, '0')}:00`;
 }
 
-function normalizeVectorWindow(value: string | null): number {
-  const parsed = Number(value);
-  return parsed === 72 || parsed === 168 ? parsed : 24;
-}
+
 
 function AdminVectorObservabilityContent() {
   const { t } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const windowHours = normalizeVectorWindow(searchParams.get('window'));
+  const windowHours = normalizeObservationWindow(searchParams.get('window'));
   const siteIdFilter = searchParams.get('site') || '';
   const focusedErrorCode = searchParams.get('focus') || '';
   const [data, setData] = useState<VectorObservabilityData | null>(null);
@@ -239,12 +233,11 @@ function AdminVectorObservabilityContent() {
   const [siteIdInput, setSiteIdInput] = useState(siteIdFilter);
   const requestControllerRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
-  const hasLoadedRef = useRef(false);
 
   const updateUrl = useCallback((updates: { window?: number | null; site?: string | null; focus?: string | null }) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
-      if (value && !(key === 'window' && value === 24)) params.set(key, String(value));
+      if (value) params.set(key, String(value));
       else params.delete(key);
     });
     const query = params.toString();
@@ -254,7 +247,8 @@ function AdminVectorObservabilityContent() {
   const loadData = useCallback(async (refresh = false) => {
     requestControllerRef.current?.abort();
     const sequence = ++requestSequenceRef.current;
-    if (!hasLoadedRef.current || !refresh) setLoading(true);
+    setLoading(true);
+    if (!refresh) setData(null);
     setError('');
     const controller = new AbortController();
     requestControllerRef.current = controller;
@@ -270,8 +264,7 @@ function AdminVectorObservabilityContent() {
       });
       if (sequence === requestSequenceRef.current) {
         setData(normalizeVectorObservability(response.data));
-        hasLoadedRef.current = true;
-      }
+        }
     } catch (err) {
       if (sequence === requestSequenceRef.current) {
         setError(resolveUiErrorMessage(err, t('admin.vector_obs.load_error', {}, 'Failed to load vector diagnostics.')));
@@ -287,6 +280,7 @@ function AdminVectorObservabilityContent() {
 
   useEffect(() => {
     void loadData();
+    return () => { requestSequenceRef.current += 1; requestControllerRef.current?.abort(); };
   }, [loadData]);
 
   useEffect(() => {
@@ -351,12 +345,10 @@ function AdminVectorObservabilityContent() {
     ),
   ];
 
-  if (loading && !data) {
-    return <LoadingFallback />;
-  }
 
   return (
     <BackofficePageStack>
+      <AdminObservabilityTabs />
       <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.vector_obs.title', {}, 'Vector Observability')}
@@ -376,6 +368,7 @@ function AdminVectorObservabilityContent() {
         summaryAside={data ? <BackofficeStatusBadge status={data.health.status} label={`${vectorStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
       />
 
+      {loading ? <p role="status" className="text-sm text-slate-500">{t('common.loading', {}, 'Loading…')}</p> : null}
       <BackofficeSectionPanel className="p-4 md:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -387,18 +380,7 @@ function AdminVectorObservabilityContent() {
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="flex flex-wrap items-center gap-2">
-              {WINDOW_OPTIONS.map((option) => (
-                <BackofficeFilterPill
-                  key={option.value}
-                  active={windowHours === option.value}
-                  tone="info"
-                  onClick={() => updateUrl({ window: option.value, focus: null })}
-                >
-                  {option.label}
-                </BackofficeFilterPill>
-              ))}
-            </div>
+
             <input
               type="text"
               value={siteIdInput}

@@ -60,12 +60,15 @@ test('vector observability keeps scope and selected error URL-backed', async ({ 
   const harness = await installVectorHarness(page);
   await page.goto('/admin/vector-observability');
 
+  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/usage-statistics"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText(/Vector Observability|向量观测/);
+
   await expect(page.locator('[data-ui="vector-error-item"]')).toHaveCount(1);
   await expect(page.locator('#vector-error-inspector')).toContainText('vector_search_timeout');
   await page.locator('[data-ui="vector-error-item"]').click();
   await expect(page).toHaveURL(/focus=vector_search_timeout/);
 
-  await page.getByRole('button', { name: '72h' }).click();
+  await page.getByRole('button', { name: /^3 天$|^3 days$/ }).click();
   await expect(page).toHaveURL(/window=72/);
   await expect.poll(() => harness.urls().some((url) => url.includes('window_hours=72'))).toBe(true);
   await page.getByLabel(/Filter by site ID|按站点 ID 筛选/i).fill('site_mvp');
