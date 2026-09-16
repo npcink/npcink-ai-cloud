@@ -5,7 +5,7 @@ Status: active engineering standard.
 ## Purpose and boundary
 
 The default branch keeps the complete backend pytest gate, but distributes
-`tests/api`, `tests/contract`, and `tests/domain` across three deterministic
+`tests/api`, `tests/contract`, and `tests/domain` across four deterministic
 weighted shards. Files remain the normal scheduling unit. A file whose rolling
 weight exceeds 15 percent of the per-shard target may be divided by statically
 discoverable pytest node ID when the same rolling evidence contains complete
@@ -173,6 +173,36 @@ database, external coverage service, or another test execution.
 
 ## Refresh and escalation rules
 
+### SQLite fixture initialization
+
+Before changing shard capacity, profile repeated schema creation. SQLite's
+legacy driver transaction mode does not begin a transaction for DDL, even
+inside SQLAlchemy's transaction context. Passing an engine to `create_all`
+therefore commits each table and index separately. `app/core/db.py:init_schema`
+explicitly begins the SQLite transaction and creates the complete schema on
+that connection. This helper serves tests and development harnesses; production
+schema changes remain governed Alembic migrations. Do not optimize this by
+disabling journaling, reducing synchronous durability, sharing mutable fixture
+databases, or changing production connection behavior.
+
+Investigation of PR #944 run `35042814911` on 2026-09-16 found shard 1 timed out
+twice at 1200 seconds without assertion failures (257 and 570 tests passed).
+The first attempt's incomplete JUnit report attributed 644.2 seconds to the
+connector API tests. These incomplete artifacts are diagnostic evidence, not
+eligible scheduling weights. A local Python 3.14 probe of the same 64 tables
+and 496 table/index DDL statements measured about 0.150 seconds without the
+explicit transaction and 0.019 seconds with it. The profiled 13-case connector
+validation group decreased from 6.07 to 4.34 seconds. These local measurements
+do not predict hosted-runner wall time; the repaired PR's required backend
+check remains the completion authority.
+
+Guard the optimization with real SQLite tests for transactional DDL, complete
+tables/indexes, rollback of a partial schema failure, idempotent initialization,
+preserved data, and independent database files. Keep all API assertions, shard
+counts, timing weights, and timeout limits intact.
+
+### Scheduling evidence
+
 1. Refresh weights through a focused PR; never push generated weights directly
    to `master`.
 2. After a refresh, observe three naturally occurring successful full
@@ -219,7 +249,7 @@ Actions run is the orchestration and integration authority; do not duplicate
 it with local Docker or M4.
 
 Before committing generated weights, inspect `source_run_ids`, verify that each
-run is a successful `master` push with three timing artifacts, and replay the
+run is a successful `master` push with four timing artifacts, and replay the
 new assignment against a held-out run when diagnosing a regression.
 
 For changed-code coverage policy or reporting changes, also verify the empty
