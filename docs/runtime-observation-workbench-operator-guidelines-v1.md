@@ -75,6 +75,15 @@ scope of the evidence.
 
 ## Evidence and disclosure boundary
 
+Keep statistics definitions collapsed by default. When expanded, use three
+short labeled definitions for runs, success rate, and duration/missing values.
+Plugin history shows its own retained-report, snapshot, and test-record scope;
+do not mix runtime formulas into that view. Place commonly needed metric
+definitions beside their labels using the shared focusable information hint.
+Use one hint mechanism per metric, without a duplicate native title tooltip.
+Hints explain the existing calculation; changing explanatory copy must not
+silently change the denominator, sample limit, or missing-data semantics.
+
 Cloud surfaces expose bounded operational evidence only. They must not expose
 prompts, result payloads, credentials, or raw Provider requests. Low-frequency
 quality evidence belongs behind its own TAB and must remain read-only. Long
