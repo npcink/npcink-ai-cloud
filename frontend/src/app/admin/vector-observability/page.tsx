@@ -11,6 +11,7 @@ import {
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -96,9 +97,9 @@ type VectorObservabilityData = {
 };
 
 const WINDOW_OPTIONS = [
-  { label: '24h', value: 24 },
-  { label: '72h', value: 72 },
-  { label: '168h', value: 168 },
+  { label: '近 1 天', value: 24 },
+  { label: '近 3 天', value: 72 },
+  { label: '近 7 天', value: 168 },
 ];
 
 function normalizeVectorObservability(raw: any): VectorObservabilityData {
@@ -357,6 +358,7 @@ function AdminVectorObservabilityContent() {
 
   return (
     <BackofficePageStack>
+      <AdminObservabilityTabs />
       <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.vector_obs.title', {}, 'Vector Observability')}

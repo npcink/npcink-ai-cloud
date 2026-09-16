@@ -461,6 +461,7 @@ export default function AdminTroubleshootingPage() {
       <BackofficePageHeader
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         secondaryAction={<div className="flex items-center gap-3">
+          <Link className="btn btn-ghost btn-sm" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Back to usage statistics')}</Link>
           <button className="btn btn-ghost btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.troubleshooting.more', {}, 'More diagnostics')}</button>
           <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
             {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
@@ -572,6 +573,11 @@ export default function AdminTroubleshootingPage() {
                             <BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} />
                           </div>
                           <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{issueSummary(issue, t)}</p>
+                          <p className="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                            <span className="font-medium">{t('admin.troubleshooting.queue_evidence', {}, 'Evidence')}:</span> {issueEvidenceGuidance(issue, t)}
+                            <span className="mx-1" aria-hidden="true">·</span>
+                            <span className="font-medium">{t('admin.troubleshooting.queue_owner', {}, 'Suggested role')}:</span> {issueOwner(issue, t)}
+                          </p>
                         </td>
                         <td className="px-3 py-2.5 align-top text-xs leading-5 text-slate-600 dark:text-slate-300">
                           {scopeLabel(issue.capabilities, t)}
@@ -623,6 +629,15 @@ export default function AdminTroubleshootingPage() {
             headerAccessory={<BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />}
           >
             <div id="runtime-diagnostic-inspector" className="space-y-6">
+              <section data-ui="runtime-inspector-summary" className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {formatNumber(selectedIssue.count)}</dd></div>
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.queue_evidence', {}, 'Evidence')}</dt><dd className="font-semibold">{runEvidenceLoading ? t('admin.troubleshooting.run_evidence_loading', {}, 'Loading bounded run evidence…') : runEvidence.length ? t('admin.troubleshooting.run_evidence_title', {}, 'Affected run evidence') : t('admin.troubleshooting.run_evidence_unavailable', {}, 'No individual run evidence is available')}</dd></div>
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}</dt><dd className="font-semibold">{issueOwner(selectedIssue, t)}</dd></div>
+                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
+                </dl>
+                <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">{issueEvidenceGuidance(selectedIssue, t)}</p>
+              </section>
               {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-4">
                 <h3 className="font-semibold">{t('admin.troubleshooting.failures_title')}</h3>
                 <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>
