@@ -37,3 +37,36 @@ def test_empty_usage_has_no_success_rate_or_duration() -> None:
     assert result["success_rate"] is None
     assert result["avg_latency_ms"] is None
     assert result["possibly_truncated"] is False
+
+
+def test_dimension_comparison_has_distinct_zero_filled_series_and_other() -> None:
+    now = datetime(2026, 9, 10, 12, tzinfo=UTC)
+    runs = [
+        RunRecord(
+            site_id=f"site-{i}",
+            profile_id=f"function-{i % 2}",
+            status="failed" if i % 2 else "succeeded",
+            started_at=now - timedelta(days=i % 2),
+        )
+        for i in range(7)
+    ]
+    result = build_usage_statistics(runs, since=now - timedelta(days=2), until=now)
+    sites = result["comparison"]["sites"]
+    functions = result["comparison"]["functions"]
+    assert sites["group_count"] == 7
+    assert [series["id"] for series in sites["series"]] == [f"site-{i}" for i in range(5)]
+    assert sites["series"][0]["points"][0] == {"day": "2026-09-08", "runs": 0, "failed": 0}
+    assert sites["series"][0]["points"] != sites["series"][1]["points"]
+    assert functions["group_count"] == 2
+    assert functions["other"] == []
+    for index, total in enumerate(result["timeline"]):
+        for metric in ("runs", "failed"):
+            assert (
+                sum(series["points"][index][metric] for series in sites["series"])
+                + sites["other"][index][metric]
+                == total[metric]
+            )
+            assert (
+                sum(series["points"][index][metric] for series in functions["series"])
+                == total[metric]
+            )

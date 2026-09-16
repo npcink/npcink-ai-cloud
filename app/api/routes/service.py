@@ -59,6 +59,7 @@ from app.domain.model_capabilities.probes import (
 )
 from app.domain.model_references import ModelReferenceError, ModelReferenceService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
+from app.domain.observability.plugin_event_history import get_plugin_event_history
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
 from app.domain.provider_connections.model_allowlist import (
@@ -4074,6 +4075,40 @@ async def update_admin_plan_parameters(
             ),
         ),
         revision="m6",
+    )
+
+
+@router.get("/admin/plugin-observability/history")
+async def get_admin_plugin_history(
+    request: Request,
+    window_hours: int = Query(default=168, ge=1, le=720),
+    site_id: str = Query(default="", max_length=191),
+    plugin_slug: str = Query(default="", max_length=64),
+    event_kind: str = Query(default="", max_length=96),
+    record_scope: Literal["all", "operational", "test"] = Query(default="operational"),
+    status: Literal["all", "ok", "failed", "other"] = Query(default="all"),
+    sort: Literal["latest", "failures"] = Query(default="latest"),
+    view: Literal["groups", "events"] = Query(default="groups"),
+    page: int = Query(default=1, ge=1, le=1000000),
+    page_size: int = Query(default=20, ge=1, le=100),
+    snapshot_at: datetime | None = None,
+    snapshot_id: int | None = Query(default=None, ge=0),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    try:
+        result = await run_in_threadpool(partial(
+            get_plugin_event_history, get_cloud_services(request).settings.database_url,
+            window_hours=window_hours, site_id=site_id, plugin_slug=plugin_slug,
+            event_kind=event_kind, record_scope=record_scope, status=status, sort=sort,
+            view=view, page=page, page_size=page_size, snapshot_at=snapshot_at,
+            snapshot_id=snapshot_id,
+        ))
+    except ValueError:
+        return JSONResponse(status_code=422, content={"detail": "Invalid history snapshot"})
+    return build_envelope(
+        status="ok", message="plugin event history loaded", data=result, revision="m6"
     )
 
 

@@ -57,6 +57,7 @@ export interface AnalyticsLineChartProps {
   secondarySeriesName?: string;
   primaryColor?: string;
   secondaryColor?: string;
+  comparisonSeries?: Array<{ name: string; values: number[] }>;
 }
 
 export function AnalyticsLineChart({
@@ -69,6 +70,7 @@ export function AnalyticsLineChart({
   secondarySeriesName = 'Secondary',
   primaryColor = '#3b82f6',
   secondaryColor = '#10b981',
+  comparisonSeries,
 }: AnalyticsLineChartProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -81,8 +83,10 @@ export function AnalyticsLineChart({
 
     return {
       backgroundColor: 'transparent',
+      animation: comparisonSeries ? false : undefined,
       tooltip: {
         trigger: 'axis',
+        renderMode: 'richText',
         backgroundColor: tooltipBg,
         borderColor: tooltipBorder,
         textStyle: { color: textColor, fontSize: 12 },
@@ -97,7 +101,7 @@ export function AnalyticsLineChart({
         left: '3%',
         right: '4%',
         bottom: '3%',
-        top: '10%',
+        top: comparisonSeries ? 50 : '10%',
         containLabel: true,
       },
       xAxis: {
@@ -117,7 +121,11 @@ export function AnalyticsLineChart({
         name: yAxisLabel,
         nameTextStyle: { color: textColor, fontSize: 11 },
       },
-      series: [
+      legend: comparisonSeries ? { type: 'scroll', top: 0, textStyle: { color: textColor } } : undefined,
+      series: comparisonSeries ? comparisonSeries.map(series => ({
+        name: series.name, type: 'line', smooth: false, symbol: 'circle',
+        symbolSize: 6, data: series.values, lineStyle: { width: 2 },
+      })) : [
         {
           name: primarySeriesName,
           type: 'line',
@@ -156,7 +164,7 @@ export function AnalyticsLineChart({
           : []),
       ],
     };
-  }, [data, isDark, xAxisLabel, yAxisLabel, primarySeriesName, secondarySeriesName, primaryColor, secondaryColor]);
+  }, [data, isDark, xAxisLabel, yAxisLabel, primarySeriesName, secondarySeriesName, primaryColor, secondaryColor, comparisonSeries]);
 
   return (
     <ReactEChartsCore

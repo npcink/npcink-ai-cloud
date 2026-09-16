@@ -50,6 +50,44 @@ def build_usage_statistics(
                 else started.astimezone(UTC).date().isoformat()
             )
             daily.setdefault(key, []).append(run)
+
+    def comparison(attribute: str) -> dict[str, object]:
+        ranked = groups(attribute)
+        selected = [str(row["id"]) for row in ranked[:5]]
+        points: dict[str, list[dict[str, object]]] = {key: [] for key in selected}
+        other = []
+        for day, items in sorted(daily.items()):
+            buckets: dict[str, list[RunRecord]] = {key: [] for key in selected}
+            remainder = []
+            for run in items:
+                key = str(getattr(run, attribute) or "unknown")
+                if key in buckets:
+                    buckets[key].append(run)
+                else:
+                    remainder.append(run)
+            for key, bucket in buckets.items():
+                points[key].append(
+                    {
+                        "day": day,
+                        "runs": len(bucket),
+                        "failed": sum(r.status == "failed" for r in bucket),
+                    }
+                )
+            other.append(
+                {
+                    "day": day,
+                    "runs": len(remainder),
+                    "failed": sum(r.status == "failed" for r in remainder),
+                }
+            )
+        return {
+            "series": [{"id": key, "points": points[key]} for key in selected],
+            "other": other if len(ranked) > 5 else [],
+            "group_count": len(ranked),
+            "series_limit": 5,
+            "ranking": "runs_desc_id_asc",
+        }
+
     return {
         **summary(runs),
         "active_sites": len({run.site_id for run in runs}),
@@ -59,4 +97,5 @@ def build_usage_statistics(
         "functions": groups("profile_id"),
         "timeline": [{"day": day, **summary(items)} for day, items in sorted(daily.items())],
         "timezone": "UTC",
+        "comparison": {"sites": comparison("site_id"), "functions": comparison("profile_id")},
     }
