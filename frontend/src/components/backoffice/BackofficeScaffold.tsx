@@ -406,9 +406,12 @@ export function BackofficeSummaryStrip({
               ? 'min-h-7'
               : 'min-h-9 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-950/45'
           )}
-          title={item.detail || undefined}
+          title={item.detailDisplay === 'hint' ? undefined : item.detail || undefined}
         >
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.label}</span>
+          {item.detail && item.detailDisplay === 'hint' ? (
+            <BackofficeInfoHint label={item.label} detail={item.detail} className="h-4 w-4 text-[0.6rem]" />
+          ) : null}
           <span className={cn('font-semibold text-slate-950 dark:text-white', item.toneClassName)}>
             {item.value}
           </span>

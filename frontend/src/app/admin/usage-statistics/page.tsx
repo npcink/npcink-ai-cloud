@@ -53,10 +53,10 @@ export default function UsageStatisticsPage() {
   const stats = runtime?.usage_statistics;
   const number = (value: number | null | undefined, suffix = '') => value == null ? '—' : `${Number(value.toFixed(1)).toLocaleString()}${suffix}`;
   const metrics = [
-    { label: c('运行次数', 'Runs'), value: number(stats?.runs) },
-    { label: c('有运行的站点', 'Sites with runs'), value: number(stats?.active_sites) },
-    { label: c('运行成功率', 'Run success rate'), value: number(stats?.success_rate == null ? null : stats.success_rate * 100, '%') },
-    { label: c('平均运行耗时', 'Average run duration'), value: number(stats?.avg_latency_ms == null ? null : stats.avg_latency_ms / 1000, c(' 秒', ' s')) },
+    { label: c('运行次数', 'Runs'), value: number(stats?.runs), detail: c('所选时间范围内的运行记录；最多统计 5,000 条样本。', 'Runtime records in the selected window; up to 5,000 samples.'), detailDisplay: 'hint' as const },
+    { label: c('有运行的站点', 'Sites with runs'), value: number(stats?.active_sites), detail: c('至少包含一条运行记录的站点数量。', 'Sites with at least one runtime record.'), detailDisplay: 'hint' as const },
+    { label: c('运行成功率', 'Run success rate'), value: number(stats?.success_rate == null ? null : stats.success_rate * 100, '%'), detail: c('成功运行数 ÷ 全部运行数，处理中任务计入分母。', 'Succeeded runs ÷ all runs; processing tasks remain in the denominator.'), detailDisplay: 'hint' as const },
+    { label: c('平均运行耗时', 'Average run duration'), value: number(stats?.avg_latency_ms == null ? null : stats.avg_latency_ms / 1000, c(' 秒', ' s')), detail: c('仅统计同时具有开始和结束时间的运行。', 'Only runs with both start and finish times.'), detailDisplay: 'hint' as const },
     { label: c('运行状态', 'Runtime status'), value: !stats ? c('未知', 'Unknown') : stats.runs === 0 ? c('暂无运行', 'No runs') : stats.failed ? c(`${stats.failed} 次失败`, `${stats.failed} failed`) : c('正常', 'Healthy'), detail: !stats ? c('运行证据未加载', 'Runtime evidence unavailable') : stats.possibly_truncated ? c(`${number(stats?.runs)} 条样本 · 已截断`, `${number(stats?.runs)} runs · truncated`) : c(`${number(stats?.runs)} 条样本 · 完整`, `${number(stats?.runs)} runs · complete`), toneClassName: !stats || stats.runs === 0 ? 'text-slate-500' : stats.failed || stats.possibly_truncated ? 'text-amber-700' : 'text-emerald-700' },
   ];
   const pluginMode = dimension === 'plugins';
@@ -123,13 +123,16 @@ export default function UsageStatisticsPage() {
     </>}
     {!qualityView ? <details data-ui="usage-definitions" className="max-w-[var(--admin-workbench-compact-max-width)] border-t border-slate-200 py-3">
       <summary className="cursor-pointer text-sm text-slate-600 dark:text-slate-400">{analysisView === 'table' && pluginMode ? c('统计口径与测试记录', 'Definitions and test records') : c('统计口径', 'Definitions')}</summary>
-      <p className="mt-2 text-sm">{c('运行成功率为成功运行数 / 所有运行数，包含仍在处理的任务。耗时仅统计已有起止时间的运行。一次任务可产生多条事件，事件数不等于任务数。调用记录缺失不等于任务失败。缺失值显示 —，不当作 0。', 'Run success rate is successful runs / all runs, including pending tasks. Duration uses runs with start and finish times. Multiple events may belong to one task. Missing call records do not imply failed tasks. Missing values display —, not zero.')}</p>
-      {analysisView === 'table' && pluginMode ? <div className="mt-3 space-y-2 text-sm">
-        <p>{c('未关联运行表示暂无对应运行证据，不代表调用失败。分组与逐条记录均由服务端按所选时段分页，翻页保持同一快照。', 'Unlinked means no matching run evidence; it does not imply failure. Groups and individual records are paginated by the server over the selected period; pages share one snapshot.')}</p>
-
-        <p>{c('测试记录是明确标记的技术验证事件，默认从运行记录中隔离；此入口只切换查看范围，不会创建或执行测试。', 'Test records are explicitly marked technical validation events, separated from activity records by default. This link only changes the viewing scope; it does not create or run tests.')}</p>
+      {pluginMode && analysisView === 'table' ? <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+        <p>{c('插件记录只统计所选时段内已留存的上报，分组和逐条记录均由服务端分页；翻页保持同一快照。', 'Plugin records cover retained reports in the selected window. Groups and individual records are server-paginated over one snapshot.')}</p>
+        <p>{c('一次任务可产生多条事件；未关联运行不代表调用失败。已清理或未上报的数据不在范围内。', 'One task may produce multiple events; an unlinked run does not imply failure. Purged or unreported data is outside the scope.')}</p>
+        <p>{c('测试记录是明确标记的技术验证事件，默认与业务运行记录分开；此入口只切换查看范围，不会创建或执行测试。', 'Test records are explicitly marked technical validation events and are separated from operational records by default; this link only changes the viewing scope and never creates or runs tests.')}</p>
         {recordScope !== 'test' ? <Link className="inline-block text-blue-700 underline dark:text-blue-400" href={filterHref('records', 'test')}>{c('查看技术验证记录', 'View technical validation records')}</Link> : null}
-      </div> : null}
+      </div> : <dl className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+        <div><dt className="inline font-medium">{c('运行次数：', 'Runs: ')}</dt><dd className="inline">{c('所选时段内的运行记录，趋势和分组最多基于 5,000 条样本。', 'Records in the selected window; trends and groups use up to 5,000 samples.')}</dd></div>
+        <div><dt className="inline font-medium">{c('成功率：', 'Success rate: ')}</dt><dd className="inline">{c('成功运行数 ÷ 全部运行数，处理中任务计入分母。', 'Succeeded runs ÷ all runs; processing tasks remain in the denominator.')}</dd></div>
+        <div><dt className="inline font-medium">{c('耗时与缺失值：', 'Duration and missing values: ')}</dt><dd className="inline">{c('耗时仅统计有完整起止时间的运行；— 表示暂无数据，不等于 0。', 'Duration uses runs with complete start and finish times; — means unavailable, not zero.')}</dd></div>
+      </dl>}
     </details> : null}
   </BackofficePageStack>;
 }
