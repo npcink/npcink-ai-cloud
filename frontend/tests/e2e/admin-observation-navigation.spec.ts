@@ -35,7 +35,7 @@ test('four observation views share time and site scope with one selected tab', a
   await period.getByRole('button', { name: /^30 天$|^30 days$/ }).click();
   await expect(page).toHaveURL(/window=720&site=site-a/);
   await expect.poll(() => requests.some(url => url.includes('runtime-telemetry?') && url.includes('recent_minutes=43200') && url.includes('site_id=site-a'))).toBe(true);
-  await expect.poll(() => requests.some(url => url.includes('plugin-observability?') && url.includes('window_hours=720') && url.includes('site_id=site-a'))).toBe(true);
+  expect(requests.some(url => url.includes('plugin-observability?'))).toBe(false); // History loads only in its active view.
   await page.reload();
   await expect(period.getByRole('button', { pressed: true })).toHaveText(/30/);
   await page.goBack();

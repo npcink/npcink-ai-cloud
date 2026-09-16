@@ -70,11 +70,21 @@ For repeated plugin events:
 2. group by event type, plugin, and site;
 3. show latest time, status/count, translated event name, source/site, and
    evidence state;
-4. expand a group to inspect a bounded sample of recent events;
-5. paginate groups at 20 per page.
+4. open a group to inspect its individual records in the same table;
+5. paginate groups at 20 per page in the database over the selected retained
+   period, then provide separately paginated individual records for each group.
 
-The table's total may cover the selected period while the visible grouped sample
-is capped. State that distinction in the disclosure or table metadata.
+Group counts and individual-record totals come from the server over the same
+selected scope. Do not group only a latest-N sample and label its pages as
+history. Pin the time window and maximum event ID while paging; refresh or a
+filter change starts a new snapshot. State that retained reports exclude
+unreported and purged data. Technical-validation events remain a separate scope.
+
+Runtime comparison uses the same bounded run sample as the dimension table:
+show the top five sites/functions by run volume and combine remaining groups
+as Other. Rank once over the entire selected window, fill empty UTC days with
+zero, and preserve the same series when switching runs/failures. Never plot the
+same overall line under different dimension labels.
 
 ## Empty, partial, stale, and truncated states
 

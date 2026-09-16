@@ -40,9 +40,10 @@ below the common toolbar. Do not repeat time controls inside each view.
 The supported ranges are `1`, `3`, `7`, `14`, and `30` days (`24`, `72`, `168`,
 `336`, and `720` hours). Admin summary and runtime evidence queries accept up
 to 30 days; larger requests fail validation. Runtime samples remain bounded
-at 5,000 runs, 10,000 provider calls and 10,000 meter events. Plugin activity
-still shows only the latest 50 reports; group pagination is not server history
-pagination. A longer window does not increase retention or imply completeness.
+at 5,000 runs, 10,000 provider calls and 10,000 meter events. Plugin history queries the full retained event set in the selected window;
+group and individual-record pages are each bounded to 20 items in the UI
+(API maximum 100). The older summary endpoint retains its latest-50 sample
+for compatibility; that sample is not the history table source. A longer window does not increase retention or imply completeness.
 Public customer endpoints retain their existing query limits.
 
 The default observation window is seven days. Diagnostics retains its one-day
@@ -142,8 +143,9 @@ a failure must not label the old scope as the newly selected scope. Missing
 runtime evidence means unknown, not healthy. A failed quality request must not
 show zero rates, an insufficient sample, or a no-candidate conclusion. Render
 unavailable metrics as a dash and show one localized failure notice; keep raw
-transport/contract errors out of the normal working surface. Time or status filters must not
-leave a grouped plugin table on an out-of-range page.
+transport/contract errors out of the normal working surface. Time or status filters reset history pagination and its snapshot.
+A failed page request clears the previous page and preserves the requested
+filters for retry; it must not label old rows as the new page.
 
 Before merge, bind each result to the source under test. After merge, promote
 clean current master and verify the merged PR and accepted revision. Never
@@ -159,3 +161,52 @@ For screenshots after viewport changes, wait for the chart canvas to match its
 container and the sidebar padding transition to finish. Then capture the
 stable layout with CSS animations disabled. A non-overflow assertion alone
 cannot prove useful width allocation or a correctly resized chart.
+
+
+## Dimension comparison and retained history contracts
+
+`usage_statistics.comparison.sites` and `.functions` contain at most five
+independent daily series plus an explicit Other series. Ranking is descending
+run volume with ascending identifier ties, fixed across the full window.
+Empty UTC days are zero-filled. Runs and failures share membership; do not
+silently replace low-volume high-failure items when the metric changes. Tables
+remain available for all returned groups. The 5,000-run cap and possible
+truncation notice still apply to both charts and runtime tables.
+
+`GET /admin/plugin-observability/history` is diagnostic-authorized and
+metadata-only. It accepts the time/site/plugin/event/status/record-scope
+filters, `view=groups|events`, `sort=latest|failures`, and bounded page sizes.
+Database grouping/counting precedes LIMIT/OFFSET. No payload column is selected,
+and a run correlation joins only within the event's site. Unknown statuses
+remain Other, not success.
+
+The first page returns `snapshot.at` and `snapshot.id`. Both are supplied for
+subsequent pages so the selected time interval and maximum received event ID
+remain fixed. Sort order ends with unique event IDs or group keys. New reports
+do not move an existing snapshot's pages; refresh starts a new snapshot.
+Retention deletion can still shrink a snapshot; the server clamps obsolete
+page numbers and reports its actual page. This is bounded read consistency,
+not an immutable audit export or a promise that every plugin event was received.
+
+## Closeout lessons
+
+A merged PR proves source integration, not branch/worktree cleanup. A clean
+working tree does not mean all task branches were removed. Check local and
+remote refs, open PRs, linked worktrees, and task-created standalone clones
+separately. Squash merges can leave distinct commit identities even when the
+complete source trees are equal; use PR merge evidence and tree comparison.
+Preserve the main checkout, protected operations worktrees, unrelated bot PRs,
+and historical evidence. Delete only explicitly authorized task-owned refs
+and clean disposable copies after validating their exact identity.
+
+When a layout decision changes, update every active normative description and
+the documentation index in the same PR. A new guideline does not neutralize an
+older still-active contradictory rule. Human visual acceptance, retained-data
+limits, current build identity, and unresolved work must remain explicit in the
+final report.
+
+For a known accepted menu rename, compare old and current golden images before
+updating existing baselines. A localized text-only difference is different from
+a new layout baseline: preserve the failing receipt, record its exact region,
+and rerun the affected cases. Never update an image to hide an unexplained
+geometry difference or treat an automatic update as human visual acceptance.

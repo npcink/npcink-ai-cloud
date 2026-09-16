@@ -47,10 +47,12 @@ redundant copy.
 Use tabs when two views answer the same question and share filters and state.
 For runtime analysis, chart and table are two views of the same evidence:
 
-- `Chart` is the default when trend discovery is the page job;
+- Usage Statistics defaults to `Table` for frequent operator comparison;
+  `Chart` is an explicit comparison view of the same selected scope;
 - `Table` exposes the same scope for comparison and drill-down;
 - filters, time range, sort state, and deep links remain consistent;
-- unrelated observability areas stay outside the tab set.
+- the top-level observation TABs are Usage, Media, Vector, and Editorial
+  Quality; Runtime Diagnostics remains a separate operator job and route.
 
 ### Fold only low-frequency content
 
@@ -68,15 +70,19 @@ blue actions in one toolbar require explicit justification.
 
 ## Accepted runtime observation composition
 
-The Usage Statistics page should follow this order:
+The Usage Statistics page follows this order:
 
-1. page title and concise description;
-2. time range, refresh, and diagnostics navigation;
-3. Cloud runtime scope label and five key metrics;
-4. dimension and sort controls;
-5. Runtime Analysis with `Chart` / `Table` tabs;
-6. Related observability for editorial, media, and vector evidence;
-7. Definitions, collapsed by default.
+1. the shared four observation TABs and 1/3/7/14/30-day control;
+2. page title, compact runtime metrics, and source freshness;
+3. refresh and `Chart` / `Table` controls;
+4. site/function/plugin dimension controls next to the working surface;
+5. one dimension table, comparison chart, or paginated plugin history;
+6. definitions and technical-validation scope, collapsed by default.
+
+Do not restore a bottom related-observation link row or an unconditional
+Runtime Diagnostics shortcut. Contextual table links carry time and site or
+function into diagnostics. Selecting plugin records opens their table; a
+runtime chart must not imply that it depicts plugin events.
 
 The Troubleshooting page owns anomaly handling, evidence completeness, and
 single-run inspection. Usage Statistics should link into it with the current
@@ -114,8 +120,9 @@ pnpm --dir frontend exec eslint <changed-files> --max-warnings=0
 pnpm --dir frontend run test:e2e -- tests/e2e/admin-usage-statistics.spec.ts
 ```
 
-The focused Playwright coverage must include the default chart view, table-tab
-selection, filter persistence, drill-down links, and partial-failure behavior.
+Focused Playwright coverage includes the default table, chart selection,
+distinct site/function series, filter persistence, server pagination and group
+drill-down, contextual diagnostic links, and partial-failure behavior.
 `git diff --check` is required before synchronization.
 
 Only after the local gates and the PC visual review pass may an authorized
@@ -129,7 +136,7 @@ synchronization:
 
 - moving whitespace from one region to another without removing its owner;
 - leaving an old heading or helper sentence after introducing a new tab/workspace;
-- hiding the primary chart by default to reduce page length;
+- hiding the current view behind another disclosure or changing its scope silently;
 - using a catch-all disclosure for unrelated content;
 - adding a visually primary button for a secondary filter;
 - claiming “visual improvement” from passing behavior tests alone.

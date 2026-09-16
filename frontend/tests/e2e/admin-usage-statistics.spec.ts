@@ -16,12 +16,13 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await page.route('**/api/admin/runtime-telemetry*', route => {
     requests.push(route.request().url());
     if (runtimeFail) return route.fulfill({ status: 503, json: {} });
-    return route.fulfill({ json: buildAdminApiEnvelope({ generated_at: '2026-09-10T12:00:00Z', window: { since: '2026-09-03T12:00:00Z', until: '2026-09-10T12:00:00Z' }, usage_statistics: { ...row, active_sites: 1, latency_samples: 10, possibly_truncated: truncated, sites: [row], functions: [{ ...row, id: 'wp-ai.classification' }], timeline: [{ ...row, day: '2026-09-10' }] } }) });
+    return route.fulfill({ json: buildAdminApiEnvelope({ generated_at: '2026-09-10T12:00:00Z', window: { since: '2026-09-03T12:00:00Z', until: '2026-09-10T12:00:00Z' }, usage_statistics: { ...row, active_sites: 1, latency_samples: 10, possibly_truncated: truncated, sites: [row], functions: [{ ...row, id: 'wp-ai.classification' }], timeline: [{ ...row, day: '2026-09-10' }], comparison: { sites: { series: [{ id: 'site-a', points: [{ day: '2026-09-10', runs: 12, failed: 2 }] }], other: [], group_count: 1 }, functions: { series: [{ id: 'wp-ai.classification', points: [{ day: '2026-09-10', runs: 12, failed: 2 }] }], other: [], group_count: 1 } } } }) });
   });
   await page.route('**/api/admin/plugin-observability*', route => route.fulfill(pluginFail ? { status: 503, json: {} } : { json: buildAdminApiEnvelope({ generated_at: '2026-09-10T12:00:00Z', totals: { events_total: 23, active_site_count: 1 }, plugins: [{ plugin_slug: 'test-plugin', events_total: 23, error_total: 1, success_rate: 22 / 23, avg_latency_ms: 200 }], recent_activity: [
     { event_id: 'event-1', plugin_slug: 'npcink-cloud-addon', site_id: 'site-a', status: 'ok', received_at: '2026-09-10T12:00:00Z', event_kind: route.request().url().includes('record_scope=test') ? 'validation.technical_monitoring_only' : 'addon.monitoring.state_projected' },
     { event_id: 'event-2', plugin_slug: 'npcink-cloud-addon', site_id: 'site-a', status: 'ok', received_at: '2026-09-10T11:00:00Z', event_kind: route.request().url().includes('record_scope=test') ? 'validation.technical_monitoring_only' : 'addon.monitoring.state_projected' },
   ], timeline: [{ bucket_start_at: '2026-09-10T12:00:00Z', events_total: 23, error_total: 1 }] }) }));
+  await page.route('**/api/admin/plugin-observability/history?*', route => route.fulfill(pluginFail ? { status: 503, json: {} } : { json: buildAdminApiEnvelope({ items: [{ site_id: 'site-a', plugin_slug: 'npcink-cloud-addon', event_kind: route.request().url().includes('record_scope=test') ? 'validation.technical_monitoring_only' : 'addon.monitoring.state_projected', received_at: '2026-09-10T12:00:00Z', events: 2, failed: 0 }], page: 1, pages: 1, total: 1, totals: { events: 2, failed: 0, succeeded: 2 }, snapshot: { at: '2026-09-10T12:00:00Z', id: 2 } }) }));
   await page.goto('/admin/usage-statistics');
   const toolbar = page.locator('[data-ui="usage-statistics-toolbar"]');
   await expect(toolbar).toBeVisible();
@@ -72,9 +73,9 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('Asia/Shanghai');
   await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('20:00');
   await page.getByRole('tab', { name: /Chart|图表/ }).click();
-  await expect(page.getByRole('group', { name: /Statistics dimension|统计维度/ })).toBeHidden();
+  await expect(page.getByRole('group', { name: /Statistics dimension|统计维度/ })).toBeVisible();
   await expect(page.locator('[data-ui="usage-recent-activity"]')).toBeHidden();
-  await expect(page.getByRole('heading', { name: /Overall runtime trend|总体运行趋势/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Site comparison|按站点对比/ })).toBeVisible();
   await expect(page.locator('[data-ui="backoffice-page-header"]')).not.toContainText('插件记录');
   await page.screenshot({ path: testInfo.outputPath('chart-ready.png'), fullPage: true });
   const observationTabs = page.locator('[data-ui="admin-observability-tabs"]');
@@ -84,7 +85,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(observationTabs.getByRole('link', { name: /Vector observability|向量观测/ })).toHaveAttribute('href', '/admin/vector-observability?window=168');
   await expect(page.locator('[data-ui="usage-related-observability"]')).toHaveCount(0);
   await page.getByRole('tab', { name: /Table|表格/ }).click();
-  await expect(page.getByRole('link', { name: /Plugin activity records|插件运行记录/ })).toHaveAttribute('aria-current', 'page');
+  await page.getByRole('link', { name: /Plugin activity records|插件运行记录/ }).click();
   await page.screenshot({ path: testInfo.outputPath('plugin-table.png'), fullPage: true });
   await definitions.locator('summary').click();
   await expect(definitions).toContainText(/does not create or run tests|不会创建或执行测试/);
@@ -109,7 +110,7 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.getByRole('button', { name: /^3 days$|^3 天$/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('group', { name: /Statistics dimension|统计维度/ })).toBeVisible();
   await expect(viewTabs.getByRole('tab', { name: /Table|表格/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('link', { name: /Plugin activity records|插件运行记录/ })).toHaveAttribute('aria-current', 'page');
+  await page.getByRole('link', { name: /Plugin activity records|插件运行记录/ }).click();
   await expect(page.locator('[data-ui="usage-recent-activity"]')).toBeVisible();
   await page.goBack();
   await expect(page).not.toHaveURL(/window=72/);
@@ -121,13 +122,13 @@ test('usage counts, period filters and source failure stay honest', async ({ pag
   await expect(page.locator('p[role="alert"]')).toBeVisible();
   await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText('12');
   await expect(events.locator('tbody tr')).toHaveCount(0);
-  await expect(events.locator('strong')).toHaveText(['—', '—', '—', '—']);
-  await expect(events).toContainText(/Plugin reports unavailable|插件上报暂不可用/);
+  await expect(events).not.toContainText('2 条记录');
+  await expect(events).toContainText(/History could not be loaded|记录加载失败/);
   pluginFail = false;
   runtimeFail = true;
   await page.getByRole('tab', { name: /Chart|图表/ }).click();
   await page.getByRole('button', { name: /^Refresh$|^刷新$/ }).click();
-  await expect(page.getByText(/Runtime statistics unavailable|运行统计暂不可用/, { exact: true })).toBeVisible();
+  await expect(page.locator('[data-ui="usage-more-reference"]').getByText(/Runtime statistics unavailable|运行统计暂不可用/, { exact: true })).toBeVisible();
   await expect(page.locator('[data-ui="usage-recent-activity"]')).toBeHidden();
   await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText(/Unknown|未知/);
   runtimeFail = false;

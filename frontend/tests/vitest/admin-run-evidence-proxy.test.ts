@@ -43,3 +43,21 @@ it.each(['runs', 'runs/raw'])('does not expose run writes or raw subpaths: %s', 
   expect(response.status).toBe(404);
   expect(backend).toHaveBeenCalledOnce();
 });
+
+it('forwards authorized history pagination and rejects raw paths and writes', async () => {
+  const backend = installBackend(true);
+  const query = '?window_hours=720&page=4&page_size=20&view=events&site_id=site-a';
+  const context = { params: Promise.resolve({ path: ['plugin-observability', 'history'] }) };
+  const response = await GET(new NextRequest(`https://cloud.test/api/admin/plugin-observability/history${query}`), context);
+  expect(response.status).toBe(200);
+  expect(backend).toHaveBeenLastCalledWith(`http://api:8000/internal/service/admin/plugin-observability/history${query}`, expect.objectContaining({ method: 'GET' }));
+  expect((await POST(new NextRequest('https://cloud.test/api/admin/plugin-observability/history', { method: 'POST' }), context)).status).toBe(404);
+  expect((await GET(new NextRequest('https://cloud.test/api/admin/plugin-observability/history/raw'), { params: Promise.resolve({ path: ['plugin-observability', 'history', 'raw'] }) })).status).toBe(404);
+});
+
+it('requires diagnostic capability for plugin history', async () => {
+  const backend = installBackend(false);
+  const response = await GET(new NextRequest('https://cloud.test/api/admin/plugin-observability/history'), { params: Promise.resolve({ path: ['plugin-observability', 'history'] }) });
+  expect(response.status).toBe(403);
+  expect(backend).toHaveBeenCalledOnce();
+});

@@ -11,7 +11,9 @@ as current truth.
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
-| 理解运行诊断、使用统计和插件上报 | [运行与观测交接](history/admin/2026/runtime-observation-closeout-2026-09-11.md) |
+| 理解运行诊断、使用统计和插件上报 | [工作台操作与开发指南](runtime-observation-workbench-operator-guidelines-v1.md) |
+| 修改运行观测页面 | [运行观测 UI 开发规范](cloud-admin-runtime-observation-ui-development-standard-v1.md) |
+| 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md) |
 | 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
 | 判断一个大文件是否值得拆 | [结构整改启动条件](structural-remediation-delivery-standard-v1.md) |
 | 找遗漏文档或查看本轮整理结果 | [文档补充清单与结构调查](history/repository-hygiene/2026/document-navigation-and-hotspot-review-2026-09-11.md) |
