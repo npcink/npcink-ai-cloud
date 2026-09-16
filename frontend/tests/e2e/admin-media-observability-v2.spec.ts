@@ -66,8 +66,8 @@ test('media observability keeps scoped filters and failure evidence URL-backed',
   const harness = await installMediaHarness(page);
   await page.goto('/admin/media-observability');
 
-  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/media-observability"]')).toHaveAttribute('aria-current', 'page');
-  await expect(page.locator('header')).toContainText(/Media Processing Observability|媒体处理观测/);
+  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/usage-statistics"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toContainText(/Media Processing Observability|媒体处理观测/);
 
   await expect(page.locator('[data-ui="media-failure-item"]')).toHaveCount(1);
   await expect(page.locator('#media-failure-inspector')).toContainText('media_run_1');
@@ -75,7 +75,7 @@ test('media observability keeps scoped filters and failure evidence URL-backed',
 
   await page.locator('[data-ui="media-failure-item"]').click();
   await expect(page).toHaveURL(/focus=media_run_1/);
-  await page.getByRole('button', { name: '72h' }).click();
+  await page.getByRole('button', { name: /^3 天$|^3 days$/ }).click();
   await expect(page).toHaveURL(/window=72/);
   await expect.poll(() => harness.urls().some((url) => url.includes('window_hours=72'))).toBe(true);
   await page.getByRole('button', { name: /^WebP$/i }).click();

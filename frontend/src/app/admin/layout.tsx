@@ -295,8 +295,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         },
         {
           href: '/admin/usage-statistics',
-          labelKey: 'admin.nav_usage_statistics',
-          fallback: 'Usage Statistics',
+          labelKey: 'admin.nav_runtime_observation',
+          fallback: 'Runtime observation',
           collapsedLabel: 'US',
           activePrefixes: ['/admin/usage-statistics', '/admin/media-observability', '/admin/vector-observability'],
         },

@@ -15,6 +15,8 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import {
   EditorAssistQualityPanel,
 } from '@/components/admin/EditorAssistQualityPanel';
+import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
+import { normalizeObservationWindow } from '@/features/admin/observability/window';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
@@ -98,7 +100,7 @@ type EvidenceLane = {
 
 type TranslationFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-const WINDOW_OPTIONS = [24, 72, 168] as const;
+
 
 const evidenceLanes: EvidenceLane[] = [
   {
@@ -178,10 +180,7 @@ const runtimeEvidenceItems = [
   },
 ];
 
-function normalizeWindow(value: string | null): 24 | 72 | 168 {
-  const parsed = Number(value);
-  return WINDOW_OPTIONS.includes(parsed as 24 | 72 | 168) ? parsed as 24 | 72 | 168 : 24;
-}
+
 
 function asNumber(value: unknown): number {
   return Number(value ?? 0) || 0;
@@ -335,7 +334,7 @@ export default function AdminTroubleshootingPage() {
   const { t } = useLocale();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const windowHours = normalizeWindow(searchParams.get('window'));
+  const windowHours = normalizeObservationWindow(searchParams.get('window'), 24);
   const focusedIssueCode = searchParams.get('focus') || '';
   const siteFilter = searchParams.get('site') || '';
   const capabilityFilter = searchParams.get('function') || '';
@@ -470,19 +469,7 @@ export default function AdminTroubleshootingPage() {
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" aria-label={t('admin.troubleshooting.window_label', {}, 'Diagnostic window')}>
-          {WINDOW_OPTIONS.map((hours) => (
-            <button
-              key={hours}
-              type="button"
-              aria-pressed={windowHours === hours}
-              className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition ${windowHours === hours ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300'}`}
-              onClick={() => updateUrl({ window: hours, focus: null })}
-            >
-              {hours === 24 ? '24h' : hours === 72 ? '72h' : '7d'}
-            </button>
-          ))}
-        </div>
+        <AdminObservationWindow defaultHours={24} />
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
           {data?.generatedAt ? (
             <span>{t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}')}</span>
@@ -722,7 +709,6 @@ export default function AdminTroubleshootingPage() {
         </div>
       )}
 
-      <Link href={usageStatisticsHref} className="text-sm text-blue-700 underline">{t('admin.nav_usage_statistics')}</Link>
       {siteFilter || capabilityFilter ? <p className="text-sm">{siteFilter ? `${t('admin.troubleshooting.site_filter', {}, 'Site')}: ${siteFilter}` : null}{siteFilter && capabilityFilter ? ' · ' : null}{capabilityFilter ? `${t('admin.troubleshooting.function_filter', {}, 'Function')}: ${capabilityFilter}` : null}</p> : null}
       {data ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs', {}, 'Runs')}: {formatNumber(data.totals.runs)} · {windowHours}h</p> : null}
       <AdminInspectorDrawer open={moreOpen} title={t('admin.troubleshooting.more', {}, 'More diagnostics')} titleId="runtime-more-title" closeLabel={t('common.close', {}, 'Close')} onClose={() => setMoreOpen(false)}>

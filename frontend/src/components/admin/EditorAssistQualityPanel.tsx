@@ -5,7 +5,6 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
-import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 const editorQualityClient = createApiClient({ idempotencyPrefix: 'editor_assist_quality' });
@@ -46,7 +45,8 @@ type EditorQualitySummary = {
 };
 
 type EditorAssistQualityPanelProps = {
-  windowHours: 24 | 72 | 168;
+  windowHours: number;
+  siteId?: string;
   refreshSignal: number;
   onRequestStateChange?: (state: EditorAssistQualityRequestState) => void;
   disclosure?: boolean;
@@ -124,6 +124,7 @@ function downloadJson(payload: unknown, filename: string): void {
 
 export function EditorAssistQualityPanel({
   windowHours,
+  siteId = '',
   refreshSignal,
   onRequestStateChange,
   disclosure = true,
@@ -140,8 +141,11 @@ export function EditorAssistQualityPanel({
     const sequence = ++requestSequenceRef.current;
     setLoading(true);
     setError('');
+    setData(null);
+    setExportData(null);
     try {
       const params = new URLSearchParams({ window_hours: String(windowHours) });
+      if (siteId) params.set('site_id', siteId);
       if (taskKey) params.set('task_key', taskKey);
       const response = await editorQualityClient.request<unknown>(
         `/api/admin/editor-assist-quality?${params.toString()}`
@@ -149,19 +153,17 @@ export function EditorAssistQualityPanel({
       if (sequence !== requestSequenceRef.current) return;
       setData(normalizeEditorQuality(response.data));
       setExportData(response.data);
-    } catch (loadError) {
+    } catch {
       if (sequence !== requestSequenceRef.current) return;
-      setError(resolveUiErrorMessage(
-        loadError,
-        t('admin.editor_quality.load_error', {}, 'Failed to load editor-assist quality.')
-      ));
+      setError(t('admin.editor_quality.load_error', {}, 'Failed to load editor-assist quality.'));
     } finally {
       if (sequence === requestSequenceRef.current) setLoading(false);
     }
-  }, [t, taskKey, windowHours]);
+  }, [t, taskKey, windowHours, siteId]);
 
   useEffect(() => {
     void loadQuality();
+    return () => { requestSequenceRef.current += 1; };
   }, [loadQuality, refreshSignal]);
 
   useEffect(() => {
@@ -242,16 +244,16 @@ export function EditorAssistQualityPanel({
             <div>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.resolved_sessions', {}, 'Resolved / total')}</dt>
               <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">
-                {loading && !data ? '—' : `${formatNumber(data?.totals.resolvedSessionTotal || 0)} / ${formatNumber(data?.totals.sessionTotal || 0)}`}
+                {!data ? '—' : `${formatNumber(data?.totals.resolvedSessionTotal || 0)} / ${formatNumber(data?.totals.sessionTotal || 0)}`}
               </dd>
             </div>
             <div>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.sample_label', {}, 'Sample stage')}</dt>
-              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">{loading && !data ? '—' : sampleLabel}</dd>
+              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">{!data ? '—' : sampleLabel}</dd>
             </div>
             <div>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.candidate_count', {}, 'Review candidates')}</dt>
-              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">{loading && !data ? '—' : formatNumber(actionableTotal)}</dd>
+              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">{!data ? '—' : formatNumber(actionableTotal)}</dd>
             </div>
             <div>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.updated_at', {}, 'Updated')}</dt>
@@ -265,9 +267,6 @@ export function EditorAssistQualityPanel({
             <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
               {t('admin.editor_quality.detail_title', {}, 'Quality evidence detail')}
             </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {t('admin.editor_quality.sample_stage', { stage: sampleLabel }, 'Sample stage: {{stage}}')}
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
@@ -302,6 +301,7 @@ export function EditorAssistQualityPanel({
           </div>
         ) : null}
 
+        {!error ? <>
         <dl className="grid divide-y divide-slate-200 border-y border-slate-200 dark:divide-slate-800 dark:border-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
           {[
             [t('admin.editor_quality.repeat_rate', {}, 'Repeat rate'), formatRate(data?.totals.repeatRate || 0)],
@@ -311,7 +311,7 @@ export function EditorAssistQualityPanel({
           ].map(([label, value]) => (
             <div key={label} className="px-5 py-3 md:px-6">
               <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</dt>
-              <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{loading && !data ? '—' : value}</dd>
+              <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{!data ? '—' : value}</dd>
             </div>
           ))}
         </dl>
@@ -405,7 +405,9 @@ export function EditorAssistQualityPanel({
                 {data?.candidates.length ? null : (
                   <tr>
                     <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                      {t('admin.editor_quality.no_candidates', {}, 'No problem candidate meets the diagnostic threshold.')}
+                      {loading
+                        ? t('admin.editor_quality.loading', {}, 'Loading quality evidence...')
+                        : t('admin.editor_quality.no_candidates', {}, 'No problem candidate meets the diagnostic threshold.')}
                     </td>
                   </tr>
                 )}
@@ -413,6 +415,7 @@ export function EditorAssistQualityPanel({
             </table>
           </div>
         </div>
+        </> : null}
         <p className="border-t border-slate-200 px-5 py-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400 md:px-6">
           {t(
             'admin.editor_quality.boundary',

@@ -78,7 +78,7 @@ represented only by a keyed local fingerprint and is never uploaded.
 
 Filters:
 
-- `window_hours`: 1 to 168;
+- `window_hours`: 1 to 720 (up to 30 days);
 - `site_id`: optional;
 - `task_key`: optional.
 
