@@ -83,6 +83,7 @@ deleting the old decision history.
 - [Cloud Agent Workflow Metadata Projection](cloud-agent-workflow-metadata-projection-v1.md)
 - [Cloud Agent Feedback Contract](cloud-agent-feedback-contract-v1.md)
 - [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md)
+- [Internal AI Advisor](internal-ai-advisor-v1.md) — advisory read layer over Cloud service evidence; allowed and forbidden internal AI usage
 
 ## Engineering and Delivery Standards
 
@@ -170,6 +171,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
 - [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则
+- [Site Monitoring Observability](site-monitoring-observability-v1.md) — implemented read-only Cloud health telemetry for Portal site owners and Admin cross-site aggregation
 - [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](history/portal/2026/portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
@@ -256,6 +258,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [P5 Local Backup/Restore Drill](p5-b5-local-backup-restore-drill-v1.md)
 - [Runtime Stability and Performance Evidence Plan](runtime-stability-performance-evidence-v1.md)
 - [Small-customer Trial Readiness](small-customer-trial-commercial-readiness-v1.md)
+- [Nightly Intelligence / Morning Brief](nightly-site-inspection-morning-brief-v1.md) — active planning contract for off-hours site inspection, content quality scoring, and morning editorial readiness; WordPress remains the content and write owner
 - [ADR-046: Use a Read-Only Production Ownership Inventory](decisions/046-read-only-production-ownership-inventory.md) — accepted; prerequisite before migrating an existing user/site dataset
 - [CNA evidence re-verification — 2026-09-16](history/production/2026/cve-authority-reverification-2026-09-16.md) — dated verification record; not production release approval
 
