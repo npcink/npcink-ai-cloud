@@ -1,7 +1,7 @@
 # Deferred Engineering Triggers v1
 
 Status: active planning record. This document records the 2026-09-18 review of
-three previously proposed architecture directions, their current implementation
+four previously proposed architecture directions, their current implementation
 state, and the pre-declared trigger for each. It is not runtime authority and
 it does not authorize early work: every item here is deferred **by trigger
 condition, not by date**, and none of the triggers has fired.
@@ -12,7 +12,7 @@ condition, not by date**, and none of the triggers has fired.
 
 ## Purpose
 
-Three architecture suggestions were re-audited against current code so that a
+Four architecture suggestions were re-audited against current code so that a
 future session neither re-proposes them prematurely nor forgets them. The
 review method was read-only code inspection; every claim below carries its
 evidence path. The companion deferral for contract-version compatibility is
@@ -86,6 +86,42 @@ reports `insufficient` (26 real quality sessions on M4; fixtures excluded —
 fixture sessions are ~47% of M4 quality data and must be filtered out when
 reading quality numbers).
 
+## Reviewed Item 4: Addon Stops Naming A Hosted Image Profile
+
+**Current state.** The Addon's toolbox image surface hardcodes
+`'profile_id' => 'wp-ai.image-generation'`
+(`npcink-cloud-addon/includes/class-cloud-runtime-client.php:2972`), and its
+behavior test asserts that literal
+(`npcink-cloud-addon/tests/behavior-wordpress-ai-connector-runtime.php:798`).
+Cloud now derives the same profile for that envelope from the Cloud image
+ability plus the `image_generation` task
+(`app/api/routes/runtime.py::_is_wordpress_ai_image_generation_payload`, applied
+in `_resolve_profile_id` without consulting the request's own value), so the
+Addon literal is redundant rather than authoritative. Routing is identical
+before and after: both paths already ran on `wp-ai.image-generation`.
+
+**Why it is not done now.** The remaining work is Addon-only and individually
+safe, but it is a second repository with its own release lane and carries no
+functional gain by itself; packaging it into a Cloud change would produce a
+cross-repo commit that no single gate verifies end to end. The one-sided Addon
+edit is also only safe *because* the Cloud derivation already landed, so the
+precondition is a Cloud test rather than a convention:
+`test_toolbox_image_generation_derives_the_hosted_profile_in_cloud` in
+`tests/api/test_wordpress_ai_connector_runtime.py`.
+
+**Also unresolved.** `RuntimeService._is_wordpress_ai_connector_managed_request`
+(`app/domain/runtime/service.py:5689-5699`) still matches only the narrower
+connector-channel shape. The toolbox envelope therefore resolves to the
+`wp-ai.image-generation` profile without receiving that profile's managed
+runtime policy (timeout, retry, fallback bounds). Widening that predicate
+changes execution bounds rather than routing, so it is a separate decision and
+was deliberately not folded into the profile-resolution change.
+
+**Trigger to act.** The next Addon release that already touches the toolbox
+image envelope, or the first time this literal blocks a Cloud-side rename of
+`wp-ai.image-generation`. In that release, drop the field and its test
+assertion; do not open a dedicated Addon release for it.
+
 ## Current Highest Priority
 
 The only data-gated precondition in the whole set is real usage volume. The
@@ -116,7 +152,7 @@ problem in M4 quality readings.
 
 - No code change is authorized or planned by this document.
 - No conflict with the Refactor Master Plan rules 9-10 (`NO_COMPATIBILITY_LAYER`,
-  `ONE_ACTIVE_CONTRACT_VERSION`): none of the three items introduces a
+  `ONE_ACTIVE_CONTRACT_VERSION`): none of the four items introduces a
   compatibility layer or a second contract version.
 
 ## Rollback

@@ -40,6 +40,7 @@ from app.domain.image_context_evidence.contracts import (
 from app.domain.image_generation.contracts import (
     IMAGE_GENERATION_ABILITIES,
     IMAGE_GENERATION_ABILITY_FAMILY,
+    IMAGE_GENERATION_CLOUD_ABILITY,
     IMAGE_GENERATION_DATA_CLASSIFICATION,
     IMAGE_GENERATION_EXECUTION_KIND,
     IMAGE_GENERATION_PROFILE_ID,
@@ -344,16 +345,32 @@ def _is_wordpress_ai_connector_payload(payload: RuntimePayload) -> bool:
 
 
 def _is_wordpress_ai_image_generation_payload(payload: RuntimePayload) -> bool:
+    """Recognize the Cloud-managed wp-ai image generation envelope.
+
+    Resolution here is Cloud-owned: the hosted profile is derived from the
+    ability and the image_generation task, never from the request's own
+    profile_id. Both shipped Addon surfaces send this ability with this task,
+    so they share one recognition rule instead of one of them naming a hosted
+    profile id itself. The narrower channel/source_surface/connector_id shape
+    stays accepted for the connector-channel surface.
+
+    Do not align this predicate with
+    ``RuntimeService._is_wordpress_ai_connector_managed_request`` without a
+    separate decision: that one gates managed runtime policy (timeout,
+    retry, fallback) rather than profile resolution, so widening it would
+    change execution bounds instead of routing.
+    """
+    if not _is_image_generation_payload(payload):
+        return False
     input_payload = payload.input if isinstance(payload.input, dict) else {}
+    if str(input_payload.get("task") or "") != "image_generation":
+        return False
+    if payload.ability_name == IMAGE_GENERATION_CLOUD_ABILITY:
+        return True
     return (
-        _is_image_generation_payload(payload)
-        and (
-            payload.channel == "wordpress_ai_connector"
-            or str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
-        )
-        and str(input_payload.get("connector_id") or "") == "npcink-cloud"
-        and str(input_payload.get("task") or "") == "image_generation"
-    )
+        payload.channel == "wordpress_ai_connector"
+        or str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
+    ) and str(input_payload.get("connector_id") or "") == "npcink-cloud"
 
 
 def _is_image_source_payload(payload: RuntimePayload) -> bool:
@@ -481,7 +498,7 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
         return IMAGE_CONTEXT_EVIDENCE_PROFILE_ID
     if _is_audio_generation_payload(payload) and not payload.profile_id:
         return AUDIO_GENERATION_PROFILE_ID
-    if _is_wordpress_ai_image_generation_payload(payload) and not payload.profile_id:
+    if _is_wordpress_ai_image_generation_payload(payload):
         return WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
     if _is_image_generation_payload(payload) and not payload.profile_id:
         return IMAGE_GENERATION_PROFILE_ID
