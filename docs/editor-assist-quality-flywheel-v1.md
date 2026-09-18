@@ -32,12 +32,14 @@ Cloud may:
 - receive signed metadata-only events;
 - aggregate rates and latency;
 - correlate the event `correlation_id` with Cloud-owned run evidence;
+- read its own run and provider-call identity to attribute quality evidence;
 - expose a read-only internal quality summary;
 - recommend a fixed-corpus evaluation.
 
 Cloud must not:
 
 - retain prompts, generated text, post IDs, or user IDs in this contract;
+- expose Provider cost, token, or billing data through this read model;
 - approve or publish WordPress content;
 - mutate prompts, models, routes, presets, or workflows automatically;
 - treat an unmatched or expired session as proof that the user rejected the
@@ -85,7 +87,43 @@ Filters:
 The response includes session counts, repeat rate, exact saved rate, unmatched
 saved rate, expired-without-save rate, exact publish count, generation latency
 P50/P95, task breakdowns, a bounded trend, the immediately preceding comparison
-window, and issue candidates.
+window, run and model attribution, and issue candidates.
+
+### Run, model, and runtime-profile attribution
+
+The summary adds a bounded `attribution` section. It answers which hosted model
+and which runtime profile produced the sessions that were exactly saved, saved
+after generation, or expired, so a poor adoption rate can be traced to a model
+or a profile instead of staying a task-level number.
+
+A session is attributed to the Cloud run that the Addon correlated with the
+generated output it matched or expired. That run id was already carried as
+`correlation_id`, so the breakdown reads Cloud's own `run_records` and
+`provider_call_records`. It adds no Addon upload, no telemetry field, and no
+database migration.
+
+- `by_model`: one bucket per `model_id`, with the same rate fields as a task
+  summary, the contributing `provider_ids`, and the provider call that produced
+  the run's output. When a run tried several candidates, the last successful
+  call is treated as the producer.
+- `by_runtime_profile`: one bucket per `run_records.profile_id`, with the
+  contributing `ability_names`. A run with no successful provider call — for
+  example the site-knowledge profile — appears here only and never under
+  `by_model`.
+- `coverage`: attributed and unattributed session counts. An unattributed
+  session has no matching run evidence in Cloud, so its model cannot be stated.
+- `method`: the attribution rule as one sentence.
+
+At most twelve buckets are returned per dimension, ordered by session count.
+The read model declares `attribution_source` as
+`cloud_owned_run_and_provider_call_evidence` in its boundary block.
+
+This is identity attribution only. Cloud selects the provider call's
+`provider_id`, `model_id`, and `instance_id`; `cost`, token counts, and billing
+fields are neither used nor returned, and the existing restriction on joining
+this evidence to Provider cost or customer billing remains in force. An
+unattributed or low-sample bucket is an instrumentation signal, not a
+model-quality verdict, and never changes routing or model selection.
 
 Issue candidates require at least five relevant sessions:
 
