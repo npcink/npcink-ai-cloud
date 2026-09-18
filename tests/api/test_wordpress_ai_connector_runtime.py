@@ -3581,6 +3581,44 @@ def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
         assert artifact.checksum == artifact_result["checksum"]
 
 
+def test_toolbox_image_generation_derives_the_hosted_profile_in_cloud(
+    tmp_path: Path,
+) -> None:
+    """The toolbox image surface must not name a hosted profile id itself.
+
+    The Addon's toolbox envelope still sends profile_id=wp-ai.image-generation.
+    Cloud derives that same profile from the Cloud image ability plus the
+    image_generation task, so the request's own value is ignored rather than
+    honored. Sending a deliberately unrelated value must not change routing:
+    that is what lets the Addon drop its hardcoded profile id later without a
+    coordinated release.
+    """
+    _, client, provider = _build_client(tmp_path)
+    payload = _image_payload(
+        {
+            "source_surface": "toolbox_featured_image",
+            "connector_id": "npcink-cloud-addon",
+        }
+    )
+    payload["channel"] = "toolbox_image_generation"
+    payload["profile_id"] = "text.balanced"
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-toolbox-image-generation",
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["profile_id"] == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+    assert (
+        provider.requests[0].profile_id
+        == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+    )
+
+
 def test_wordpress_ai_connector_runtime_rejects_timeout_above_scene_limit(
     tmp_path: Path,
 ) -> None:

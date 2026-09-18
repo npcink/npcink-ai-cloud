@@ -153,7 +153,7 @@ deleting the old decision history.
 
 - [Refactor Master Plan](refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](refactor-deletion-inventory-v1.md)
-- [Deferred Engineering Triggers](deferred-engineering-triggers-v1.md) — 2026-09-18 review of three deferred architecture directions (Addon contract registry, capability-surface gap, quality-driven routing) with pre-declared trigger conditions; not an authorization for early work
+- [Deferred Engineering Triggers](deferred-engineering-triggers-v1.md) — 2026-09-18 trigger-gated deferrals with pre-declared trigger conditions: three architecture directions (Addon contract registry, capability-surface gap, quality-driven routing) plus the request-log identity deviation and the Addon hosted-profile literal; not an authorization for early work
 - [Hosted Runtime Profiles](cloud-hosted-runtime-profiles-v1.md)
 - [First-install Contract](cloud-first-install-contract-v1.md)
 - [AI Task Runtime Contract](ai-task-runtime-contract-v1.md)

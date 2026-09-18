@@ -37,11 +37,12 @@ so this resource binds the WordPress operation contract explicitly.
 Cloud owns:
 
 - the hosted profile namespace and the task-to-profile-id mapping inside it:
-  resolving a WordPress operation-contract task name to one of the `wp-ai.*`
-  hosted profiles. The table and the resolver live in
-  `app/domain/wordpress_ai_connector/routing_profiles.py` and are applied on the
-  connector runtime path in `app/api/routes/runtime.py`, so a connector request
-  does not select its own hosted profile;
+  resolving a task to one of the `wp-ai.*` hosted profiles, whether it arrives
+  as a WordPress operation-contract task name (text scenes) or as the runtime
+  input's `task` (the image-generation envelope). The table and the resolver
+  live in `app/domain/wordpress_ai_connector/routing_profiles.py` and are applied
+  on the connector runtime path in `app/api/routes/runtime.py`, so a connector
+  request does not select its own hosted profile;
 - the hosted candidate instance chain for each supported runtime profile;
 - runtime timeout, fallback, and bounded retry settings;
 - provider/model availability and health evidence;
