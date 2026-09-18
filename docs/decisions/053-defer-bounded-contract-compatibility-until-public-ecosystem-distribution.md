@@ -2,8 +2,8 @@
 
 ## Status
 
-Proposed — awaiting operator acceptance. This ADR changes no code; it records a
-future lifecycle switch and its trigger.
+Accepted. This ADR changes no code; it records a future lifecycle switch and
+its trigger.
 
 ## Date
 
