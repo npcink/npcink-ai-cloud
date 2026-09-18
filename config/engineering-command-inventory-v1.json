@@ -216,6 +216,21 @@
     },
     {
       "package": "root",
+      "profile": "ci_read",
+      "owner_doc": "docs/repository-hygiene-and-documentation-lifecycle-standard-v1.md",
+      "used_by": ["ci", "runbook"],
+      "status": "active",
+      "evidence": [
+        "docs/README.md",
+        "scripts/check_doc_reachability.py",
+        ".github/workflows/ci.yml"
+      ],
+      "commands": {
+        "check:doc-reachability": "Fail when a tracked document cannot be reached from docs/README.md."
+      }
+    },
+    {
+      "package": "root",
       "profile": "local_read",
       "owner_doc": "docs/development-validation-operating-model-v1.md",
       "used_by": ["runbook", "contract", "automation"],
