@@ -66,7 +66,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /runtime-diagnostic-issue[\s\S]*AdminInspectorDrawer[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.open_evidence[\s\S]*admin\.troubleshooting\.operator_action_title/,
+  /runtime-diagnostic-issue[\s\S]*AdminInspectorDrawer[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.operator_action_title[\s\S]*admin\.troubleshooting\.open_evidence/,
   'Runtime diagnostics must connect the anomaly queue to a focused read-only evidence inspector'
 );
 
@@ -82,7 +82,7 @@ assert.doesNotMatch(
   'Low-frequency evidence codes must stay out of the primary anomaly queue'
 );
 
-assert.match(anomalyInspectorSource, /admin\.troubleshooting\.issue_code[\s\S]*admin\.troubleshooting\.operator_action_title/, 'Drawer retains evidence and next step');
+assert.match(anomalyInspectorSource, /admin\.troubleshooting\.operator_action_title[\s\S]*admin\.troubleshooting\.issue_code/, 'Drawer retains evidence and next step');
 assert.match(pageSource, /runtime-evidence-lane-list/, 'Secondary tools use a narrow drawer directory');
 
 assert.match(
