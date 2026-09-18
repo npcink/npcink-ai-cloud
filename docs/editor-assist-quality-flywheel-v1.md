@@ -145,6 +145,29 @@ high-confidence sustained candidate is marked `actionable` and recommends
 `run_fixed_corpus_evaluation`. This recommendation remains read-only and never
 starts Eval automatically.
 
+### Sample-stage gate for further instrumentation
+
+These stages also gate further instrumentation. While the daily detector reports
+`insufficient` or `validation`, the useful work is collecting ordinary editor
+sessions, not adding fields or views: a new breakdown over a handful of sessions
+produces empty or misleading buckets and makes the loop look more mature than
+its evidence.
+
+Prompt-template version attribution is the next planned evidence stage, and it
+is deliberately not part of this contract. The WordPress text scenes do not
+receive a prompt from WordPress — Cloud builds the scene prompt in
+`app/domain/wordpress_ai_connector/runtime.py::build_provider_input`. That stage
+must therefore version Cloud's own scene prompt scaffold and record the version
+on the run. It must not be implemented by asking the Addon to upload a template
+identifier the Addon has no way to know.
+
+Start that stage when the daily detector reports `observation` — at least 50
+sessions in the seven-day window, ideally from more than one site. The detector
+is the existing `editor_assist.quality_detection.cadence` task in
+`app/workers/ops_cadence.py`, so the gate is already evaluated once every 24
+hours and needs no new machinery. Until it reports `observation`, collecting
+ordinary editor sessions is the only required work.
+
 ## Runtime Diagnostics v1.1
 
 The existing Runtime Diagnostics page contains a compact
