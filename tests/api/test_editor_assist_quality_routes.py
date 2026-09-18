@@ -10,7 +10,11 @@ from sqlalchemy import select
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
-from app.core.models import PluginObservabilityEvent
+from app.core.models import (
+    PluginObservabilityEvent,
+    ProviderCallRecord,
+    RunRecord,
+)
 from app.core.services import CloudServices
 from app.domain.observability.editor_assist_quality import (
     CONTRACT_VERSION,
@@ -83,6 +87,7 @@ def test_editor_assist_quality_summary_builds_problem_candidates(
         "final_write_truth": "wordpress_local",
         "control_plane": "wordpress_local",
         "raw_content_retention": False,
+        "attribution_source": "cloud_owned_run_and_provider_call_evidence",
     }
     assert data["totals"]["session_total"] == 5
     assert data["totals"]["generation_total"] == 5
@@ -247,3 +252,258 @@ def test_editor_assist_quality_marks_repeated_window_candidates_as_sustained(
         and candidate["actionable"] is False
         for candidate in summary["issue_candidates"]
     )
+
+
+def _attribution_events() -> list[dict[str, object]]:
+    def event(
+        session_id: str,
+        task_key: str,
+        event_kind: str,
+        run_id: str = "",
+        **extra: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "plugin_slug": "npcink-cloud-addon",
+            "event_kind": event_kind,
+            "event_id": f"evt_{session_id}_{event_kind.rsplit('.', 1)[-1]}",
+            "status": "ok",
+            "quality_contract": CONTRACT_VERSION,
+            "quality_session_id": session_id,
+            "task_key": task_key,
+            "generation_sequence": 1,
+            "content_storage": "omitted_metadata_only",
+            **extra,
+        }
+        if run_id:
+            payload["correlation_id"] = run_id
+        return payload
+
+    return [
+        event(
+            "q_attrib_strong",
+            "content_summary",
+            "addon.editor_assist.generation.completed",
+            "run_attrib_strong",
+            latency_ms=120,
+        ),
+        event(
+            "q_attrib_strong",
+            "content_summary",
+            "addon.editor_assist.outcome.observed",
+            "run_attrib_strong",
+            outcome="saved_exact_output",
+            outcome_confidence="high",
+            save_kind="save",
+        ),
+        event(
+            "q_attrib_weak",
+            "content_summary",
+            "addon.editor_assist.generation.completed",
+            "run_attrib_weak",
+            latency_ms=210,
+        ),
+        event(
+            "q_attrib_weak",
+            "content_summary",
+            "addon.editor_assist.outcome.observed",
+            "run_attrib_weak",
+            outcome="saved_after_generation_unmatched",
+            outcome_confidence="medium",
+            save_kind="save",
+        ),
+        event(
+            "q_attrib_knowledge",
+            "content_rewrite",
+            "addon.editor_assist.generation.completed",
+            "run_attrib_knowledge",
+            latency_ms=90,
+        ),
+        event(
+            "q_attrib_knowledge",
+            "content_rewrite",
+            "addon.editor_assist.outcome.expired",
+            "run_attrib_knowledge",
+            outcome="expired_without_save",
+            outcome_confidence="medium",
+            save_kind="none",
+        ),
+        event(
+            "q_attrib_uncorrelated",
+            "content_rewrite",
+            "addon.editor_assist.generation.completed",
+            latency_ms=95,
+        ),
+        event(
+            "q_attrib_uncorrelated",
+            "content_rewrite",
+            "addon.editor_assist.outcome.expired",
+            outcome="expired_without_save",
+            outcome_confidence="medium",
+            save_kind="none",
+        ),
+    ]
+
+
+def _seed_attribution_run_evidence(database_url: str) -> None:
+    started_at = datetime.now(UTC)
+    with get_session(database_url) as session:
+        session.add_all(
+            [
+                RunRecord(
+                    run_id="run_attrib_strong",
+                    site_id="site-quality",
+                    ability_name="ai/summarization",
+                    channel="wordpress_ai",
+                    execution_kind="sync",
+                    profile_id="wp-ai.editorial",
+                    status="succeeded",
+                    trace_id="traceattribstrong000000000000",
+                    started_at=started_at,
+                ),
+                RunRecord(
+                    run_id="run_attrib_weak",
+                    site_id="site-quality",
+                    ability_name="ai/summarization",
+                    channel="wordpress_ai",
+                    execution_kind="sync",
+                    profile_id="wp-ai.editorial",
+                    status="succeeded",
+                    trace_id="traceattribweak00000000000000",
+                    started_at=started_at,
+                ),
+                RunRecord(
+                    run_id="run_attrib_knowledge",
+                    site_id="site-quality",
+                    ability_name="npcink-cloud/site-knowledge-status",
+                    ability_family="knowledge",
+                    channel="wordpress_ai",
+                    execution_kind="sync",
+                    profile_id="site-knowledge.managed",
+                    status="succeeded",
+                    trace_id="traceattribknowledge0000000000",
+                    started_at=started_at,
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                ProviderCallRecord(
+                    run_id="run_attrib_strong",
+                    provider_id="openai",
+                    model_id="gpt-4.1-mini",
+                    instance_id="openai-default",
+                    region="us",
+                    latency_ms=120,
+                ),
+                ProviderCallRecord(
+                    run_id="run_attrib_weak",
+                    provider_id="siliconflow",
+                    model_id="Qwen2.5-7B-Instruct",
+                    instance_id="siliconflow-cn",
+                    region="cn",
+                    latency_ms=210,
+                ),
+            ]
+        )
+        session.commit()
+
+
+def test_editor_assist_quality_attributes_sessions_to_model_and_profile(
+    tmp_path: Path,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    _seed_attribution_run_evidence(database_url)
+    PluginObservabilityService(database_url).ingest_events(
+        site_id="site-quality",
+        key_id="key_default",
+        events=_attribution_events(),
+        received_at=datetime.now(UTC),
+    )
+
+    summary = EditorAssistQualityService(database_url).get_summary(window_hours=24)
+    attribution = summary["attribution"]
+
+    assert attribution["coverage"] == {
+        "session_total": 4,
+        "attributed_session_total": 3,
+        "unattributed_session_total": 1,
+        "attribution_rate": 0.75,
+    }
+
+    models = {item["model_id"]: item for item in attribution["by_model"]}
+    assert set(models) == {"gpt-4.1-mini", "Qwen2.5-7B-Instruct"}
+    assert models["gpt-4.1-mini"]["session_total"] == 1
+    assert models["gpt-4.1-mini"]["exact_saved_rate"] == 1.0
+    assert models["gpt-4.1-mini"]["provider_ids"] == ["openai"]
+    assert models["Qwen2.5-7B-Instruct"]["session_total"] == 1
+    assert models["Qwen2.5-7B-Instruct"]["exact_saved_rate"] == 0.0
+    assert models["Qwen2.5-7B-Instruct"]["unmatched_saved_rate"] == 1.0
+
+    profiles = {
+        item["runtime_profile"]: item for item in attribution["by_runtime_profile"]
+    }
+    assert set(profiles) == {"wp-ai.editorial", "site-knowledge.managed"}
+    assert profiles["wp-ai.editorial"]["session_total"] == 2
+    assert profiles["wp-ai.editorial"]["ability_names"] == ["ai/summarization"]
+    assert profiles["site-knowledge.managed"]["session_total"] == 1
+    assert profiles["site-knowledge.managed"]["exact_saved_rate"] == 0.0
+
+
+def test_editor_assist_quality_attribution_prefers_the_matched_generation_run(
+    tmp_path: Path,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    _seed_attribution_run_evidence(database_url)
+    PluginObservabilityService(database_url).ingest_events(
+        site_id="site-quality",
+        key_id="key_default",
+        events=[
+            {
+                **_attribution_events()[0],
+                "event_id": "evt_attrib_first_attempt",
+                "correlation_id": "run_attrib_weak",
+            },
+            {
+                **_attribution_events()[0],
+                "event_id": "evt_attrib_second_attempt",
+                "quality_session_id": "q_attrib_strong",
+                "correlation_id": "run_attrib_strong",
+                "generation_sequence": 2,
+            },
+            {
+                **_attribution_events()[1],
+                "event_id": "evt_attrib_outcome",
+                "quality_session_id": "q_attrib_strong",
+                "correlation_id": "run_attrib_strong",
+            },
+        ],
+        received_at=datetime.now(UTC),
+    )
+
+    summary = EditorAssistQualityService(database_url).get_summary(window_hours=24)
+    attribution = summary["attribution"]
+
+    models = {item["model_id"]: item for item in attribution["by_model"]}
+    assert set(models) == {"gpt-4.1-mini"}
+    assert models["gpt-4.1-mini"]["exact_saved_rate"] == 1.0
+    assert attribution["coverage"]["attributed_session_total"] == 1
+
+
+def test_editor_assist_quality_attribution_is_absent_without_run_evidence(
+    tmp_path: Path,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    PluginObservabilityService(database_url).ingest_events(
+        site_id="site-quality",
+        key_id="key_default",
+        events=_fixture_events(),
+        received_at=datetime.now(UTC),
+    )
+
+    summary = EditorAssistQualityService(database_url).get_summary(window_hours=24)
+    attribution = summary["attribution"]
+
+    assert attribution["coverage"]["session_total"] == 5
+    assert attribution["coverage"]["unattributed_session_total"] == 5
+    assert attribution["by_model"] == []
+    assert attribution["by_runtime_profile"] == []

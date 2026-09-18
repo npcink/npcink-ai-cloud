@@ -61,6 +61,7 @@ deleting the old decision history.
 - [WordPress AI Engineering Closeout](history/wordpress-ai-engineering-closeout-2026-09-08.md) - phase-1 source integration, verification and remaining decisions.
 - [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
 - [WordPress AI Request Path Map](wordpress-ai-request-path-map-v1.md) — end-to-end call chain from the editor button to the feedback events, with the code location of each step; visual companion to the flow document above, not a separate authority.
+- [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) — accepted; keeps `ONE_ACTIVE_CONTRACT_VERSION` pre-public and pre-declares the trigger that switches to a bounded compatibility window with `upgrade_required` semantics
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
 - [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
@@ -152,6 +153,7 @@ deleting the old decision history.
 
 - [Refactor Master Plan](refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](refactor-deletion-inventory-v1.md)
+- [Deferred Engineering Triggers](deferred-engineering-triggers-v1.md) — 2026-09-18 review of three deferred architecture directions (Addon contract registry, capability-surface gap, quality-driven routing) with pre-declared trigger conditions; not an authorization for early work
 - [Hosted Runtime Profiles](cloud-hosted-runtime-profiles-v1.md)
 - [First-install Contract](cloud-first-install-contract-v1.md)
 - [AI Task Runtime Contract](ai-task-runtime-contract-v1.md)
