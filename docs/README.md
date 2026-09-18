@@ -13,6 +13,8 @@ as current truth.
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
 | 理解运行诊断、使用统计和插件上报 | [工作台操作与开发指南](runtime-observation-workbench-operator-guidelines-v1.md) |
 | 修改运行观测页面 | [运行观测 UI 开发规范](cloud-admin-runtime-observation-ui-development-standard-v1.md) |
+| 规划运行观测工作台改造 | [工作台改造计划](runtime-observation-workbench-improvement-plan-v1.md) |
+| 在真实环境验收运行观测工作台 | [真实场景验收记录](runtime-observation-workbench-real-scenario-acceptance-v1.md) |
 | 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md) |
 | 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
 | 判断一个大文件是否值得拆 | [结构整改启动条件](structural-remediation-delivery-standard-v1.md) |
@@ -182,6 +184,9 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Admin UI Review and Delivery Playbook](cloud-admin-ui-review-and-delivery-playbook-v1.md)
 - [Admin Customer Operations Workspace Standard](cloud-admin-customer-operations-workspace-standard-v1.md)
 - [Customer Account and Identity Stage Standard](customer-account-identity-stage-standard-v1.md)
+- [ADR-031: Require Principal-Owned Portal Site Authorization](decisions/031-principal-owned-portal-site-authorization.md) — accepted; decision 6 superseded by ADR-034
+- [ADR-034: Keep Existing Sites Unbound During Ownership Bootstrap](decisions/034-fail-closed-principal-site-ownership-bootstrap.md) — accepted; supersedes decision 6 of ADR-031
+- [User Identity, Membership, and Site Authorization Closeout — 2026-07-27](user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md) — dated evidence; production deployment and real-user acceptance remain outside its scope
 - [Billing Entitlement Contract](cloud-billing-entitlement-v1.md)
 - [Payment Entitlement Contract](cloud-payment-entitlement-v1.md)
 - [Payment Gateway Contract](payment-gateway-contract-v1.md)
@@ -251,6 +256,8 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [P5 Local Backup/Restore Drill](p5-b5-local-backup-restore-drill-v1.md)
 - [Runtime Stability and Performance Evidence Plan](runtime-stability-performance-evidence-v1.md)
 - [Small-customer Trial Readiness](small-customer-trial-commercial-readiness-v1.md)
+- [ADR-046: Use a Read-Only Production Ownership Inventory](decisions/046-read-only-production-ownership-inventory.md) — accepted; prerequisite before migrating an existing user/site dataset
+- [CNA evidence re-verification — 2026-09-16](history/production/2026/cve-authority-reverification-2026-09-16.md) — dated verification record; not production release approval
 
 Production approval, deployment, production validation, and GA remain separate
 states. A historical production or M4 receipt never authorizes a new release.
