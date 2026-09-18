@@ -76,6 +76,9 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const anomalyTable = page.locator('[data-ui="runtime-diagnostic-table"]');
   await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/2 runs · 0 failed|2 次运行 · 0 次失败/);
+  await expect(anomalyTable).toContainText(/1 runs|1 次运行/);
+  await testInfo.attach('runtime-diagnostics-ready', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-ready.png') }), contentType: 'image/png' });
   await expect(page.locator('[data-ui="editor-assist-quality-panel"]')).toHaveCount(0);
   await expect(page.locator('[data-ui="runtime-data-integrity"]')).toHaveCount(0);
   await expect(page.locator('#evidence-lanes')).toHaveCount(0);
@@ -83,8 +86,14 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const inspect = anomalyTable.getByRole('button');
   await inspect.click();
   const drawer = page.getByRole('dialog');
-  await expect(drawer).toContainText(/Individual requests cannot be identified|暂无法定位具体请求/i);
+  await expect(drawer).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
   await expect(drawer.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
+  const actionsBox = await drawer.locator('[data-ui="runtime-investigation-actions"]').boundingBox();
+  const evidenceBox = await drawer.locator('[data-ui="runtime-issue-evidence"]').boundingBox();
+  expect(actionsBox).toBeTruthy();
+  expect(evidenceBox).toBeTruthy();
+  expect(actionsBox!.y).toBeLessThan(evidenceBox!.y);
+  await testInfo.attach('runtime-diagnostics-inspector', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-inspector.png') }), contentType: 'image/png' });
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
@@ -182,7 +191,8 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
     route: '/admin/troubleshooting',
     pageModel: 'diagnostic',
     testedStates: ['ready', 'selected', 'partial_error', 'disclosure'],
-    humanAcceptance: 'not_required',
+    dataMode: 'mocked',
+    humanAcceptance: 'pending',
     pageTitle: page.getByRole('heading', { name: /^Runtime diagnostics$|^运行诊断$/i }),
     workingSurface: page.locator('[data-ui="runtime-diagnostic-table-frame"]'),
     browserEvidence,
@@ -191,7 +201,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
       { id: 'single-primary-action', status: 'not_applicable', evidence: 'diagnostic reference is read-only and exposes no mutation primary action' },
       { id: 'textual-status', status: 'pass', evidence: 'severity, freshness, and partial-data states include text labels' },
       { id: 'action-object-proximity', status: 'pass', evidence: 'anomaly inspection starts from the selected anomaly row and opens its evidence inspector' },
-      { id: 'distinct-interaction-states', status: 'pass', evidence: 'focused anomaly uses aria-pressed and partial refresh has a distinct status message' },
+      { id: 'distinct-interaction-states', status: 'pass', evidence: 'focused anomaly uses aria-expanded and partial refresh has a distinct status message' },
       { id: 'dialog-focus-recovery', status: 'pass', evidence: 'shared drawer closes with Escape and restores the inspection trigger' },
       { id: 'context-stability', status: 'pass', evidence: 'failed refresh retains the last successful diagnostic snapshot and selected anomaly' },
     ],
@@ -393,4 +403,28 @@ test('provider failure details explain cause, export evidence and keep recovery 
   expect(evidence.recovery).toBe('unverified');
   expect(evidence.windowHours).toBe(168);
   expect(evidence.failures[0].runId).toBe('run-schema-rejected');
+});
+
+
+test('successful runs remain successful inside a call-record gap', async ({ page }, testInfo) => {
+  await installAdminMocks(page);
+  await page.setViewportSize({ width: 628, height: 837 });
+  await page.route('**/api/admin/runtime-telemetry/runs*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({
+      sampled: false, truncated: false,
+      items: [{ run_id: 'run-success-with-evidence-gap', site_id: 'site-alpha', ability_name: 'npcink-cloud/site-knowledge-status', ability_family: 'knowledge', profile_id: 'site-knowledge.managed', status: 'SUCCEEDED', error_code: null, duration_ms: 118, provider_call_count: 0, has_meter_event: true }],
+    })) });
+  });
+  await page.goto('/admin/troubleshooting');
+  await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-ready-narrow.png') });
+  await page.getByRole('button', { name: /Call records missing|调用记录缺失/ }).click();
+  const evidence = page.locator('[data-ui="runtime-run-evidence"]');
+  await expect(evidence.getByText(/^Succeeded$|^成功$/)).toBeVisible();
+  await expect(evidence.getByText(/^Succeeded$|^成功$/)).toHaveClass(/emerald/);
+  await expect(evidence.getByText('run-success-with-evidence-gap', { exact: true })).not.toBeVisible();
+  await evidence.locator('summary').click();
+  await expect(evidence.getByText('run-success-with-evidence-gap', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(628);
+  await testInfo.attach('runtime-diagnostics-success-narrow', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-success-narrow.png') }), contentType: 'image/png' });
 });
