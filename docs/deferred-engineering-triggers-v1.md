@@ -1,8 +1,10 @@
 # Deferred Engineering Triggers v1
 
 Status: active planning record. This document records the 2026-09-18 review of
-four previously proposed architecture directions, their current implementation
-state, and the pre-declared trigger for each. It is not runtime authority and
+three previously proposed architecture directions plus two same-day findings (a
+measured request-log identity deviation and a cross-repo profile literal to
+retire), their current implementation state, and the pre-declared trigger for
+each. It is not runtime authority and
 it does not authorize early work: every item here is deferred **by trigger
 condition, not by date**, and none of the triggers has fired.
 
@@ -12,10 +14,12 @@ condition, not by date**, and none of the triggers has fired.
 
 ## Purpose
 
-Four architecture suggestions were re-audited against current code so that a
+Three architecture suggestions were re-audited against current code so that a
 future session neither re-proposes them prematurely nor forgets them. The
 review method was read-only code inspection; every claim below carries its
-evidence path. The companion deferral for contract-version compatibility is
+evidence path. Items 4 and 5 record findings from that inspection rather than
+architecture suggestions, and use the same evidence and trigger format. The
+companion deferral for contract-version compatibility is
 ADR-053 (`decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md`),
 which applies the same trigger-based pattern to a different seam.
 
@@ -86,7 +90,48 @@ reports `insufficient` (26 real quality sessions on M4; fixtures excluded —
 fixture sessions are ~47% of M4 quality data and must be filtered out when
 reading quality numbers).
 
-## Reviewed Item 4: Addon Stops Naming A Hosted Image Profile
+## Reviewed Item 4: WordPress AI Request Log Provider and Model Identity
+
+**Current state.** The WordPress AI request log records Cloud-side identifiers in
+its `provider` and `model` columns. Measured on the local site `magick-ai` in
+`wp_wpai_request_logs` (five rows written 2026-09-08/09):
+
+| provider | model | rows | operation |
+| --- | --- | --- | --- |
+| `openai` | `gpt-5.5` | 4 | `npcink-cloud/connector-runtime:title_generation` |
+| `openai` | `grok-imagine-image-quality` | 1 | `npcink-cloud/generate-image:image_generation` |
+
+Those requests were served by Npcink Cloud, so `provider = openai` holds only from
+Cloud's internal vantage point, and `grok-imagine-image-quality` is a Cloud routing
+profile id (`app/domain/hosted_model_defaults.py:14`), not a model id. A site owner
+reading the row concludes the site called OpenAI, which is not what happened.
+
+Cause chain. The runtime execute success envelope carries `provider_id` and
+`model_id` inside its `data` object (`app/api/routes/runtime.py:778-779`), so the
+Addon's `data.provider_id` and `data.model_id` lookups match, and the Addon log
+event copies the first matching response field before its own identifiers can
+apply: `npcink-cloud-addon/includes/class-cloud-wordpress-ai-connector.php:428-463`,
+with the intended fallbacks at `:1048` (text), `:1583` (vision), and `:1816`
+(image).
+
+Exposure. This is not a content or credential disclosure. In every measured row
+`request_preview` and `response_preview` are null and `error_message` is empty, and
+`context` is at most 352 bytes carrying only contract, connector, task,
+`cloud_run_id`, and `suggestion_only` flags. The audience is small as well: the
+WordPress AI plugin hides its per-feature provider/model selector behind a
+developer-mode toggle that defaults to off
+(`ai/build/routes/ai-home/content.js:24580`, rendered only under
+`checked && isDeveloperMode` at `:24682`, `:25354`, and `:25401`), so a site owner
+is not asked to choose a model either way.
+
+**Trigger to act.** Either an operator or site owner reports the request log as
+misleading, or Cloud decides to expose the served model to sites as a
+professional-user feature. If it fires, settle the site-visible contract first:
+normalizing the Addon log event to its own identifiers is the smaller change and
+stays inside the present boundary, while returning the served model is larger
+because it turns Cloud routing detail into a shipped site-facing surface.
+
+## Reviewed Item 5: Addon Stops Naming A Hosted Image Profile
 
 **Current state.** The Addon's toolbox image surface hardcodes
 `'profile_id' => 'wp-ai.image-generation'`
@@ -98,7 +143,7 @@ ability plus the `image_generation` task
 (`app/api/routes/runtime.py::_is_wordpress_ai_image_generation_payload`, applied
 in `_resolve_profile_id` without consulting the request's own value), so the
 Addon literal is redundant rather than authoritative. Routing is identical
-before and after: both paths already ran on `wp-ai.image-generation`.
+before and after: both shipped envelopes already ran on `wp-ai.image-generation`.
 
 **Why it is not done now.** The remaining work is Addon-only and individually
 safe, but it is a second repository with its own release lane and carries no
@@ -147,12 +192,19 @@ problem in M4 quality readings.
 5. **Speculative abstraction has negative value before its consumer exists.**
    Every item above already has a designated landing site in code, so the
    future change is small — that is the payoff of deferring now.
+6. **Normalize upstream identifiers at the boundary; never copy them through.**
+   A surface that republishes whatever an upstream response happens to contain
+   will present the upstream's internal naming as if it were its own. Item 4 is
+   the case: the Addon had already declared the identity it meant to log
+   (`fallback_model_id`) and still leaked Cloud's `provider_id`/`model_id`,
+   because the fallback applies only when the upstream field is absent. Prefer an
+   explicit allowlist projection over a permissive key search.
 
 ## Non-Goals
 
 - No code change is authorized or planned by this document.
 - No conflict with the Refactor Master Plan rules 9-10 (`NO_COMPATIBILITY_LAYER`,
-  `ONE_ACTIVE_CONTRACT_VERSION`): none of the four items introduces a
+  `ONE_ACTIVE_CONTRACT_VERSION`): none of the items introduces a
   compatibility layer or a second contract version.
 
 ## Rollback
