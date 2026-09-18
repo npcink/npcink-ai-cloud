@@ -36,6 +36,12 @@ so this resource binds the WordPress operation contract explicitly.
 
 Cloud owns:
 
+- the hosted profile namespace and the task-to-profile-id mapping inside it:
+  resolving a WordPress operation-contract task name to one of the `wp-ai.*`
+  hosted profiles. The table and the resolver live in
+  `app/domain/wordpress_ai_connector/routing_profiles.py` and are applied on the
+  connector runtime path in `app/api/routes/runtime.py`, so a connector request
+  does not select its own hosted profile;
 - the hosted candidate instance chain for each supported runtime profile;
 - runtime timeout, fallback, and bounded retry settings;
 - provider/model availability and health evidence;
@@ -44,9 +50,18 @@ Cloud owns:
 The WordPress/plugin side owns:
 
 - ability and workflow identity, schema, and enablement;
-- task-to-profile adoption and the local router truth;
+- task adoption — whether a task uses a hosted profile at all, and which
+  WordPress-side feature exposes it — and the local router truth for everything
+  that does not leave the site;
 - prompts, presets, permissions, review, approval, and preflight;
 - final WordPress writes and final local audit truth.
+
+Mapping ownership and adoption ownership are separate. Cloud resolves a task
+name to a profile id inside its own hosted profile namespace; the resolved id is
+returned with the run as execution metadata, but the site can neither choose it
+nor configure the mapping. Which tasks a site sends to the hosted runtime, and
+whether it uses hosted profiles at all, stay WordPress-side decisions: the
+mapping is only consulted for requests a site has already routed to Cloud.
 
 Cloud configuration can change how an already adopted hosted profile executes.
 It cannot enable a plugin feature, adopt a profile for a site, or authorize a
