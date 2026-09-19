@@ -3,22 +3,24 @@
 Status: active planning record. This document records the 2026-09-18 review of
 three previously proposed architecture directions plus two same-day findings (a
 measured request-log identity deviation and a cross-repo profile literal to
-retire), their current implementation state, and the pre-declared trigger for
+retire) and one 2026-09-19 operational finding from the M4 preview deployment
+flow, their current implementation state, and the pre-declared trigger for
 each. It is not runtime authority and
 it does not authorize early work: every item here is deferred **by trigger
 condition, not by date**, and none of the triggers has fired.
 
 ## Date
 
-2026-09-18.
+2026-09-18 (items 1-5); item 6 recorded 2026-09-19.
 
 ## Purpose
 
 Three architecture suggestions were re-audited against current code so that a
 future session neither re-proposes them prematurely nor forgets them. The
 review method was read-only code inspection; every claim below carries its
-evidence path. Items 4 and 5 record findings from that inspection rather than
-architecture suggestions, and use the same evidence and trigger format. The
+evidence path. Items 4 and 5 record findings from that inspection, and item 6
+records an operational finding from the M4 preview deployment flow, all using
+the same evidence and trigger format. The
 companion deferral for contract-version compatibility is
 ADR-053 (`decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md`),
 which applies the same trigger-based pattern to a different seam.
@@ -166,6 +168,38 @@ was deliberately not folded into the profile-resolution change.
 image envelope, or the first time this literal blocks a Cloud-side rename of
 `wp-ai.image-generation`. In that release, drop the field and its test
 assertion; do not open a dedicated Addon release for it.
+
+## Reviewed Item 6: M4 Preview Sync Marks Frontend Source As Deployed Without Rebuilding
+
+**Current state.** `scripts/m4-preview.sh` sync mode performs the atomic
+source commit into `NPCINK_CLOUD_M4_REMOTE_DIR` and also writes the
+`deployed-frontend-source.sha256` and `deployed-frontend-revision.txt`
+markers (`scripts/m4-preview.sh:3031-3032`) without rebuilding the frontend
+image or recreating the frontend container. The next deploy computes
+`frontend_source_changed` from those markers
+(`scripts/m4-preview.sh:1881-1891`) and therefore reports
+`frontend_source_changed=0` / `frontend_recreate=0` even though the synced
+working-tree content never went through a build. Verified on 2026-09-19: a
+dirty-candidate `sync` followed by `deploy` left the running preview on the
+previous build while the markers claimed the new source; deleting the two
+markers on the M4 and rerunning `deploy` restored the intended
+`frontend_recreate=1` path. Recovery is safe because the frontend container
+compiles at start (`scripts/m4-preview-start.sh production` runs
+`next build` from the mounted source), so recreating the container is
+sufficient; no image rebuild is required for source-only frontend changes.
+
+**Why it is not fixed now.** The repair belongs to the deployment
+orchestration script, which is a shared-runtime seam with its own
+verification loop (marker semantics, sync/deploy/promote interplay, and an
+M4 execution check). Bundling it into the frontend panel change would have
+coupled a product seam to an operations seam without a dedicated gate.
+
+**Trigger to act.** The next `m4:preview:sync` → `deploy` sequence, or the
+first stale-frontend diagnosis on M4: make sync mode either skip the
+frontend deployed-source markers or record a distinct `synced` state that
+deploy treats as changed, then verify with a dirty-candidate sync → deploy
+cycle that `frontend_source_changed=1` and the served build contains the
+synced change.
 
 ## Current Highest Priority
 

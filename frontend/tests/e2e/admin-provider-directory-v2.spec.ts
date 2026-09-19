@@ -111,6 +111,86 @@ const connections = [
   },
 ];
 
+const providerModelHealth24hRows = [
+  {
+    provider_id: 'openai',
+    model_id: 'gpt-5.5',
+    status: 'healthy',
+    call_count: 412,
+    success_count: 410,
+    error_count: 2,
+    success_rate: 0.995,
+    avg_latency_ms: 1804,
+    p95_latency_ms: 4120,
+    tokens_in: 12000,
+    tokens_out: 34000,
+    cost: 0.8621,
+    retry_count: 1,
+    fallback_count: 2,
+    last_error_code: '',
+    last_observed_at: '2026-09-18T06:00:00Z',
+  },
+  {
+    provider_id: 'minimax',
+    model_id: 'MiniMax-M2.1',
+    status: 'degraded',
+    call_count: 31,
+    success_count: 28,
+    error_count: 3,
+    success_rate: 0.903,
+    avg_latency_ms: 6200,
+    p95_latency_ms: 11400,
+    tokens_in: 900,
+    tokens_out: 2100,
+    cost: 0.1201,
+    retry_count: 0,
+    fallback_count: 5,
+    last_error_code: 'provider.timeout',
+    last_observed_at: '2026-09-18T05:40:00Z',
+  },
+];
+
+const providerModelHealthFixture = {
+  source: 'provider_call_records',
+  content_exposed: false,
+  recent_call_limit: 200,
+  default_window_id: 'last_24h',
+  windows: [
+    {
+      window_id: 'last_24h',
+      label: 'Last 24h',
+      hours: 24,
+      rows: providerModelHealth24hRows,
+    },
+    {
+      window_id: 'last_7d',
+      label: 'Last 7d',
+      hours: 168,
+      rows: [
+        ...providerModelHealth24hRows,
+        {
+          provider_id: 'openai',
+          model_id: 'gpt-5.4-mini',
+          status: 'error',
+          call_count: 12,
+          success_count: 3,
+          error_count: 9,
+          success_rate: 0.25,
+          avg_latency_ms: null,
+          p95_latency_ms: 21000,
+          tokens_in: 0,
+          tokens_out: 400,
+          cost: 0.004,
+          retry_count: 3,
+          fallback_count: 9,
+          last_error_code: 'provider.upstream_unavailable',
+          last_observed_at: '2026-09-17T21:10:00Z',
+        },
+      ],
+    },
+  ],
+};
+
 async function installProviderDirectoryHarness(
   page: Page,
   options: { deleteConflict?: boolean; auditUnavailable?: boolean } = {}
@@ -132,6 +212,7 @@ async function installProviderDirectoryHarness(
         buildAdminApiEnvelope({
           surface: 'admin_ai_resources',
           connections,
+          provider_model_health: providerModelHealthFixture,
           capabilities: [],
           capability_matrix: [],
           runtime_resolution: [],
@@ -962,4 +1043,29 @@ test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({
       { id: 'dialog-keyboard-recovery', status: 'pass', evidence: 'dialog closed with Escape and restored focus' },
     ],
   });
+});
+
+test('provider model health stays a collapsed read-only evidence panel', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page);
+  await page.goto('/admin/ai-resources');
+
+  const healthPanel = page.locator('[data-ui="provider-model-health"]');
+  await expect(healthPanel).toBeAttached();
+  await expect(healthPanel.locator('table')).toBeHidden();
+  await expect(healthPanel.getByText(/No provider call evidence|该窗口暂无 Provider 调用证据/i)).toHaveCount(0);
+
+  await healthPanel.locator('summary').click();
+  await expect(healthPanel.locator('table')).toBeVisible();
+  await expect(healthPanel.locator('tbody tr')).toHaveCount(2);
+  await expect(healthPanel.locator('[data-ui="backoffice-status-badge"]').first()).toBeVisible();
+  await expect(healthPanel.getByText(/Read-only evidence|只读证据/i)).toBeVisible();
+  await expect(
+    healthPanel.getByRole('button', { name: /Save|保存|Test|测试|Delete|删除|Configure|配置/i })
+  ).toHaveCount(0);
+
+  await healthPanel.getByRole('button', { name: /Last 7d|最近 7 天/i }).click();
+  await expect(healthPanel.locator('tbody tr')).toHaveCount(3);
+  await expect(healthPanel.getByText(/gpt-5\.4-mini/)).toBeVisible();
 });

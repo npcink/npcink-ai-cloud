@@ -26,6 +26,7 @@ import {
 import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { Modal } from '@/components/ui/Modal';
+import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
@@ -65,6 +66,7 @@ import {
   type ProviderConnectionDeletePreflight,
   type ProviderConnectionTestResult,
   type ProviderImageDeliveryProbeResult,
+  type ProviderModelHealth,
   type SupplierConnection as Connection,
 } from '@/features/admin/ai-resources/types';
 import {
@@ -157,6 +159,163 @@ function providerConnectionTestResultFromError(error: unknown): ProviderConnecti
   return typeof details.connection_id === 'string'
     ? details as ProviderConnectionTestResponse
     : undefined;
+}
+
+type AiResourcesTranslate = (key: string, fallback: string, params?: Record<string, string>) => string;
+
+function providerModelHealthStatusMeta(status: string): { token: string; labelKey: string; fallback: string } {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === 'healthy') {
+    return { token: 'success', labelKey: 'provider_health_status_healthy', fallback: 'Healthy' };
+  }
+  if (normalized === 'degraded') {
+    return { token: 'warning', labelKey: 'provider_health_status_degraded', fallback: 'Degraded' };
+  }
+  if (normalized === 'error') {
+    return { token: 'error', labelKey: 'provider_health_status_error', fallback: 'Error' };
+  }
+  return { token: 'unknown', labelKey: 'provider_health_status_not_observed', fallback: 'Not observed' };
+}
+
+function formatProviderModelLatency(value: number | null): string {
+  if (value === null) return '—';
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
+}
+
+function formatProviderModelCost(value: number): string {
+  return `$${value >= 0.01 ? value.toFixed(2) : value.toFixed(4)}`;
+}
+
+type ProviderModelHealthPanelProps = {
+  health: ProviderModelHealth;
+  translate: AiResourcesTranslate;
+};
+
+function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPanelProps) {
+  const [windowId, setWindowId] = useState(health.default_window_id);
+  const activeWindow = health.windows.find((entry) => entry.window_id === windowId)
+    || health.windows[0];
+  const rows = activeWindow ? activeWindow.rows : [];
+  const totalCalls = rows.reduce((sum, row) => sum + row.call_count, 0);
+  const activeWindowLabel = activeWindow
+    ? translate(
+      `provider_health_window_${activeWindow.window_id}`,
+      activeWindow.label
+    )
+    : '';
+
+  return (
+    <details data-ui="provider-model-health" className="mt-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
+        <span>{translate('health_title', 'Model health')}</span>
+        <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+          {translate('provider_health_summary', '{{calls}} calls · {{window}}', {
+            calls: String(totalCalls),
+            window: activeWindowLabel,
+          })}
+        </span>
+      </summary>
+      <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-2" data-ui="provider-model-health-window">
+          {health.windows.map((entry) => (
+            <button
+              key={entry.window_id}
+              type="button"
+              aria-pressed={activeWindow?.window_id === entry.window_id}
+              className={`h-8 rounded-md border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                activeWindow?.window_id === entry.window_id
+                  ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+                  : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+              }`}
+              onClick={() => setWindowId(entry.window_id)}
+            >
+              {translate(`provider_health_window_${entry.window_id}`, entry.label)}
+            </button>
+          ))}
+        </div>
+        {rows.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+            {translate('provider_health_empty', 'No provider call evidence in this window yet.')}
+          </p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 font-normal dark:border-slate-800">
+                    {translate('provider_health_col_model', 'Model')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 font-normal dark:border-slate-800">
+                    {translate('provider_health_col_status', 'Status')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_calls', 'Calls')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_success', 'Success')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_avg_latency', 'Avg latency')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_p95', 'P95')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_cost', 'Cost')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_fallback', 'Fallbacks')}
+                  </th>
+                  <th scope="col" className="border-b border-slate-200 px-2 py-2 text-right font-normal dark:border-slate-800">
+                    {translate('provider_health_col_last_observed', 'Last observed')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const statusMeta = providerModelHealthStatusMeta(row.status);
+                  return (
+                    <tr key={`${row.provider_id}/${row.model_id}`} className="text-slate-800 dark:text-slate-200">
+                      <td className="border-b border-slate-100 px-2 py-2 dark:border-slate-800/60">
+                        <span className="font-medium">{row.model_id}</span>
+                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{row.provider_id}</span>
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-2 dark:border-slate-800/60">
+                        <BackofficeStatusBadge
+                          label={translate(statusMeta.labelKey, statusMeta.fallback)}
+                          status={statusMeta.token}
+                        />
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">{row.call_count}</td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">
+                        {row.call_count > 0 ? `${Math.round(row.success_rate * 100)}%` : '—'}
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">
+                        {formatProviderModelLatency(row.avg_latency_ms)}
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">
+                        {formatProviderModelLatency(row.p95_latency_ms)}
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">
+                        {formatProviderModelCost(row.cost)}
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right dark:border-slate-800/60">{row.fallback_count}</td>
+                      <td className="border-b border-slate-100 px-2 py-2 text-right text-xs dark:border-slate-800/60">
+                        {row.last_observed_at ? formatDate(row.last_observed_at) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          {translate('provider_health_boundary', 'Read-only evidence from provider call records. This panel does not change hosted runtime profiles or candidate chains.')}
+        </p>
+      </div>
+    </details>
+  );
 }
 
 function AiResourcesContent() {
@@ -2360,6 +2519,13 @@ function AiResourcesContent() {
           }}
           translate={aiText}
         />
+
+        {data.providerModelHealth ? (
+          <ProviderModelHealthPanel
+            health={data.providerModelHealth}
+            translate={aiText}
+          />
+        ) : null}
 
       <Modal
         isOpen={receiptDetailsOpen && Boolean(lastReceipt)}
