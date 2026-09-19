@@ -5,14 +5,16 @@ three previously proposed architecture directions plus two same-day findings (a
 measured request-log identity deviation and a cross-repo profile literal to
 retire), one 2026-09-19 operational finding from the M4 preview deployment
 flow, and one 2026-09-20 release-state finding (a paused production promotion
-that recorded no resume trigger), their current implementation state, and the
-pre-declared trigger for each. It is not runtime authority and
-it does not authorize early work: every item here is deferred **by trigger
-condition, not by date**, and none of the triggers has fired.
+whose resume trigger was not recorded), their current implementation state and
+pre-declared trigger for each. Item 7 also records the operator decision that the production pause continues
+indefinitely until a new resume decision. It is not runtime authority and it
+does not authorize early work: every item here is deferred **by trigger
+condition, not by date**, and no implementation trigger has fired.
 
 ## Date
 
-2026-09-18 (items 1-5); item 6 recorded 2026-09-19; item 7 recorded 2026-09-20.
+2026-09-18 (items 1-5); item 6 recorded 2026-09-19; item 7 and the
+pause decision recorded 2026-09-20.
 
 ## Purpose
 
@@ -21,8 +23,8 @@ future session neither re-proposes them prematurely nor forgets them. The
 review method was read-only code inspection; every claim below carries its
 evidence path. Items 4 and 5 record findings from that inspection, item 6
 records an operational finding from the M4 preview deployment flow, and item 7
-records a release-state finding, all using the same evidence and trigger
-format. The
+records a release-state finding and the operator's indefinite-pause decision,
+all using the same evidence and trigger format. The
 companion deferral for contract-version compatibility is
 ADR-053 (`decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md`),
 which applies the same trigger-based pattern to a different seam.
@@ -203,39 +205,38 @@ deploy treats as changed, then verify with a dirty-candidate sync → deploy
 cycle that `frontend_source_changed=1` and the served build contains the
 synced change.
 
-## Reviewed Item 7: Production Promotion Is Paused And Records No Resume Trigger
+## Reviewed Item 7: Production Promotion Is Paused Indefinitely Until Operator Resumes
 
-**Current state.** `origin/production` last moved on 2026-08-23 (`b9d6f02d`),
-leaving it 641 commits and 417 changed files behind `master` as measured on
-2026-09-20. The pause is intentional and already explained:
+**Current state.** The operator has decided that the production promotion pause
+continues indefinitely. `origin/production` last moved on 2026-08-23
+(`b9d6f02d`); at this review it was 645 commits and 417 changed files behind
+`origin/master`. Those counts are dated evidence for this review, not a future
+current-state claim. The pause remains intentional and is bounded by the
+existing resume sequence:
 `pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md`
-section 7 states that release work resumes only through a five-step sequence
-whose second step rebuilds the Portal capacity/context slice onto current
-`master`. What is missing is a current statement of the pause. That closeout is
-dated development evidence and explicitly not future release authorization, so
-nothing in the repository today distinguishes "still paused on purpose" from
-"paused and then forgotten" — the branch graph looks identical either way.
+section 7 requires rebuilding the Portal capacity/context slice onto the then
+current `master` before any promotion preparation and sets the full resume
+sequence.
 
-The gap does not stay the same size. `production` is still a live release
-target: `.github/workflows/deploy-production.yml` dispatches on it, `ci.yml`
-and `codeql.yml` both list it under `branches:`, and
-`cloud-production-release-policy-v1.md` keeps it as the promotion destination
-(see its "Branch Model" section). Every commit merged to `master` therefore
-widens what the next promotion has to reconcile.
+`production` remains a live release target: `.github/workflows/deploy-production.yml`
+dispatches on it, `ci.yml` and `codeql.yml` list it under `branches:`, and
+`cloud-production-release-policy-v1.md` keeps it as the promotion destination.
+The release policy now records the indefinite pause in its Branch Model, so a
+later session must treat resumption as a new operator decision rather than infer
+it from branch divergence or the age of this item.
 
 **Why it is not resolved now.** Resuming promotion is a governed release action
-with its own gates, and the branch model already treats divergence as expected
-rather than as a defect. The missing piece is a decision, not a repair, so
-recording a trigger is the whole of the safe work available here.
+with its own gates. The operator has chosen to defer that work without a date,
+so no Portal rebuild, production branch update, promotion PR, deployment, or
+release authorization is part of this record.
 
-**Trigger to act.** Whichever comes first. (a) The operator decides to resume
-promotion: rebuild the Portal slice onto current `master`, re-read the section 7
-resume sequence, and re-verify the current production revision before opening
-the promotion pull request. (b) The pause is meant to continue without a date:
-record that intent where the release policy can see it, so a later session does
-not read a month-old `production` tip as an accident. Until one of those
-happens, `production` is expected to keep diverging, and that divergence is not
-by itself evidence of a problem.
+**Trigger to act.** The operator explicitly decides to resume production
+promotion. At that point, refresh `origin/master`, verify the actual production
+revision and current divergence, rebuild the Portal capacity/context slice onto
+current `master`, and execute the complete section 7 resume sequence. Until
+that decision is made, `production` is expected to keep diverging; divergence is
+not by itself evidence that the pause was forgotten or that a release should
+start.
 
 ## Current Highest Priority
 

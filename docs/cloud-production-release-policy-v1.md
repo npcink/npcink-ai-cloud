@@ -23,6 +23,12 @@ by that runtime.
 - `production` is the production release source.
 - feature and fix branches merge to `master` first.
 - production releases are promoted from `master` to `production`.
+- **Current release state (2026-09-20): production promotion is paused
+  indefinitely by operator decision.** No production promotion, deployment, or
+  release PR is authorized by this status. Resumption requires a new explicit
+  operator decision and must begin with the required Portal capacity/context
+  slice rebuild and the complete resume sequence in
+  `pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md` §7.
 
 Do not directly edit production application code on the server. Production
 database credentials and runtime root secrets are authoritative only in the
