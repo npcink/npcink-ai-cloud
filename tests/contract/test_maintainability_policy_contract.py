@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check-maintainability-policy.py"
+
+requires_repository_git = pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="maintainability policy contracts require repository Git metadata",
+)
 
 
 def _load_script():
@@ -15,8 +23,33 @@ def _load_script():
     return module
 
 
+def _base_ref_is_resolvable(base_ref: str) -> bool:
+    """Report whether this checkout can resolve the policy comparison base ref.
+
+    The policy compares the tree against a base ref with Git, so it only carries
+    meaning where that Git context exists. A container smoke copies the source
+    into an image without repository metadata, and a host without a usable Git
+    executable cannot answer the question either. In both cases the contract is
+    skipped rather than failed, because a Git-level error says nothing about the
+    policy itself; CI keeps a real repository and keeps enforcing the check.
+    """
+    try:
+        subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
+@requires_repository_git
 def test_current_maintainability_policy_passes() -> None:
     module = _load_script()
+    if not _base_ref_is_resolvable("origin/master"):
+        pytest.skip("origin/master is not resolvable in this checkout")
     assert module.check(ROOT, "origin/master") == []
 
 
