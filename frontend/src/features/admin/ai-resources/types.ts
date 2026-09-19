@@ -173,3 +173,37 @@ export type ProviderConnectionTestResult = {
     direct_wordpress_write?: boolean;
   };
 };
+
+export type ProviderModelHealthRow = {
+  provider_id: string;
+  model_id: string;
+  status: string;
+  call_count: number;
+  success_count: number;
+  error_count: number;
+  success_rate: number;
+  avg_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  tokens_in: number;
+  tokens_out: number;
+  cost: number;
+  retry_count: number;
+  fallback_count: number;
+  last_error_code: string;
+  last_observed_at: string;
+};
+
+export type ProviderModelHealthWindow = {
+  window_id: string;
+  label: string;
+  hours: number;
+  rows: ProviderModelHealthRow[];
+};
+
+export type ProviderModelHealth = {
+  source: string;
+  content_exposed: boolean;
+  recent_call_limit: number;
+  default_window_id: string;
+  windows: ProviderModelHealthWindow[];
+};

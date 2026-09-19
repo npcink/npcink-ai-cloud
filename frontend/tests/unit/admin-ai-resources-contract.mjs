@@ -17,6 +17,7 @@ const providerWorkbenchStateSource = read(
 const providerPresetsSource = read(
   'src/features/admin/ai-resources/provider-presets.ts'
 );
+const directorySource = read('src/features/admin/ai-resources/directory.ts');
 const i18nSource = read('src/lib/i18n.ts');
 const aiResourcesTranslationSource = i18nSource
   .split('\n')
@@ -61,7 +62,36 @@ assert.doesNotMatch(pageSource, /connection\.capability_ids\.includes\('embeddin
 assert.doesNotMatch(pageSource, /CAPABILITY_PROVIDER_TEMPLATES|CapabilityProviderTemplate|CapabilitySupplierTable/);
 assert.doesNotMatch(pageSource, /isCapabilityProviderForm|capabilityAddDialogOpen|supplierTypeFilter/);
 assert.doesNotMatch(pageSource, /action_add_capability_supplier|capability_channel_form|capability_diagnostics/);
-assert.doesNotMatch(pageSource, /runtime-telemetry|RuntimeTelemetrySummary|provider_model_health|capability_matrix/);
+assert.doesNotMatch(pageSource, /runtime-telemetry|RuntimeTelemetrySummary|capability_matrix/);
+assert.match(
+  pageSource,
+  /<details data-ui="provider-model-health"/,
+  'Provider model health evidence stays behind a default-collapsed read-only disclosure'
+);
+assert.match(
+  pageSource,
+  /ProviderModelHealthPanel/,
+  'Provider model health renders through the bounded read-only panel'
+);
+assert.match(
+  pageSource,
+  /provider_health_boundary/,
+  'Provider model health must state its read-only boundary'
+);
+assert.doesNotMatch(
+  pageSource,
+  /provider-model-health[\s\S]{0,400}(saveProviderConnection|runProviderConnectionTest|deleteProviderConnection)/,
+  'Provider model health stays read-only and never wires supplier mutation handlers'
+);
+assert.match(
+  directorySource,
+  /normalizeProviderModelHealth/,
+  'Directory normalization must own the provider_model_health projection shape'
+);
+assert.match(
+  i18nSource,
+  /'admin\.ai_resources\.provider_health_boundary': '只读证据，来自 provider_call_records/
+);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
 assert.match(pageSource, /buildProviderConnectionForm\(connection, providerPreset\)/);
 assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
