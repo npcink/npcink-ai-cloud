@@ -37,14 +37,28 @@ The trusted-bot lane therefore validates identity, repository origin, branch,
 target, changed-file scope, and version intent. Code review, Cloud CI, CodeQL,
 secret scanning, and branch protection remain unchanged.
 
+The lane validates the envelope, not the wisdom of the version jump. A bot PR
+that rewrites a declared upper bound passes every condition above, so the range
+question is deliberately left to the operator workflow rather than added as a
+seventh acceptance condition.
+
 ## Operator Workflow
 
 1. Review the package, old version, new version, advisory, and changed files.
-2. Require all protected checks to pass.
-3. Merge security patches before routine version updates when both are queued.
-4. For runtime or lockfile changes, deploy the merged `master` revision to M4
+2. When the update crosses a declared range, review it as a change of intent.
+   An explicit upper bound does not block Dependabot; it rewrites the bound.
+   Measured 2026-09-19/20: `pymilvus>=2.4,<3.0` became `>=2.4,<4.0` to admit
+   3.0.1, and `gunicorn>=23.0,<24.0` became `>=23.0,<27.0` to admit 26.2.0 —
+   both presented as routine version updates. A bound the repository wrote
+   deliberately is a decision, so a major update that rewrites one needs its own
+   evaluation: read the changelog across the skipped majors and confirm nothing
+   the consumer relies on changed. Do not merge it on the strength of a green
+   bot lane.
+3. Require all protected checks to pass.
+4. Merge security patches before routine version updates when both are queued.
+5. For runtime or lockfile changes, deploy the merged `master` revision to M4
    and run the relevant runtime smoke checks.
-5. Confirm default-branch alerts resolve after GitHub refreshes the dependency
+6. Confirm default-branch alerts resolve after GitHub refreshes the dependency
    graph.
 
 Do not deploy production merely because a Dependabot PR merged. Production
