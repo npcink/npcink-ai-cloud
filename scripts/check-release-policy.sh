@@ -185,17 +185,6 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - dependencies
-
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "10:30"
-      timezone: Asia/Shanghai
-    open-pull-requests-limit: 1
-    labels:
-      - dependencies
 YAML
 	if ! cmp -s "${ROOT_DIR}/.github/dependabot.yml" <(printf '%s' "${expected}"); then
 		echo "[fail] .github/dependabot.yml does not match the canonical pre-GA policy" >&2
