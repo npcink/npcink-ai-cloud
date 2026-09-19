@@ -2729,18 +2729,6 @@ def test_lightweight_release_policy_gate_is_documented(tmp_path: Path) -> None:
                 "open-pull-requests-limit": 2,
                 "labels": ["dependencies"],
             },
-            {
-                "package-ecosystem": "docker",
-                "directory": "/",
-                "schedule": {
-                    "interval": "weekly",
-                    "day": "monday",
-                    "time": "10:30",
-                    "timezone": "Asia/Shanghai",
-                },
-                "open-pull-requests-limit": 1,
-                "labels": ["dependencies"],
-            },
         ],
     }
 

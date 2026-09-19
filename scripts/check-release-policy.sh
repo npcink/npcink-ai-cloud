@@ -180,20 +180,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "10:00"
-      timezone: Asia/Shanghai
+    time: "10:00"
+    timezone: Asia/Shanghai
     open-pull-requests-limit: 2
-    labels:
-      - dependencies
-
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "10:30"
-      timezone: Asia/Shanghai
-    open-pull-requests-limit: 1
     labels:
       - dependencies
 YAML
