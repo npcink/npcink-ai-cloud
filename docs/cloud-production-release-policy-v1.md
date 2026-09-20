@@ -79,15 +79,15 @@ Git, and run the narrowest relevant local gates plus CI. Before promoting
 
 The temporary Python and Node CVE exceptions are retired. Production images
 must use the digest-locked Python 3.14.7 and Node 22.23.2 candidates recorded in
-`deploy/image-lock/production-images.json`. The operator-approved OpenSSL
-`CVE-2026-14456` exception is active only through `2026-09-19` and only for the
-six exact `libcrypto3`/`libssl3` version `3.5.7-r0` findings recorded for the
-`api`, `frontend`, and `nginx` images. It is valid only while production has no
-QUIC, HTTP/3, or UDP listener; enabling any of those protocols stops the
-release. OpenSSL `3.5.8` or newer, a changed affected package version, an
-additional blocking finding, or expiry requires removal or separate review of
-the exception plus a fresh Linux/AMD64 release scan and exact-bundle replay.
-A changed base-image digest has the same rebuild and scan requirements.
+`deploy/image-lock/production-images.json`. The six OpenSSL
+`CVE-2026-14456` exceptions expired on `2026-09-19` and are retired as of
+2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
+`frontend`, and `nginx`. No active CVE exceptions remain.
+This withdraws authorization; it does not establish that any image is fixed.
+Any remaining high/critical, unknown-severity, or unfixed blocking finding
+must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol
+guards remain in force. A changed base-image digest still requires rebuilding,
+a fresh scan, and exact-bundle replay. Production promotion remains paused.
 Restoring any expired exception, using the historical controlled-validation
 receipt, or using the retired no-user internal-validation switch is not an
 ordinary recovery lane and does not authorize a release.
