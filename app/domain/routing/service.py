@@ -22,6 +22,8 @@ from app.domain.routing.errors import (
 )
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 
+ROUTER_VERSION = "hosted_router.v1"
+
 
 class RoutingService:
     def __init__(
@@ -120,6 +122,7 @@ class RoutingService:
             default_policy=profile.default_policy_json or {},
             selection_policy=binding.selection_policy_json or {},
             candidates=candidates,
+            router_version=ROUTER_VERSION,
         )
 
     @staticmethod

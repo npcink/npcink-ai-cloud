@@ -90,15 +90,43 @@ def test_editor_assist_quality_summary_builds_problem_candidates(
         "attribution_source": "cloud_owned_run_and_provider_call_evidence",
     }
     assert data["totals"]["session_total"] == 5
-    assert data["totals"]["generation_total"] == 5
+    assert data["totals"]["generation_total"] == 7
     assert data["totals"]["repeated_session_total"] == 2
     assert data["totals"]["repeat_session_rate"] == 0.4
     assert data["totals"]["exact_saved_session_total"] == 1
     assert data["totals"]["exact_saved_rate"] == 0.2
     assert data["totals"]["expired_without_save_session_total"] == 2
     assert data["totals"]["expired_without_save_rate"] == 0.4
-    assert data["totals"]["p50_generation_latency_ms"] == 300
+    assert data["totals"]["p50_generation_latency_ms"] == 200
     assert data["totals"]["p95_generation_latency_ms"] == 500
+    assert data["attribution"]["coverage"] == {
+        "session_total": 5,
+        "attributed_session_total": 0,
+        "unattributed_session_total": 5,
+        "attribution_rate": 0.0,
+        "generation_total": 7,
+        "attributed_generation_total": 0,
+        "unattributed_generation_total": 7,
+        "generation_attribution_rate": 0.0,
+    }
+    assert data["runtime"] == {
+        "linked_run_total": 0,
+        "succeeded_run_total": 0,
+        "failed_run_total": 0,
+        "canceled_run_total": 0,
+        "fallback_run_total": 0,
+        "fallback_rate": 0.0,
+        "provider_call_total": 0,
+        "provider_error_total": 0,
+        "provider_error_rate": 0.0,
+        "p50_provider_latency_ms": 0,
+        "p95_provider_latency_ms": 0,
+    }
+    assert data["compatibility"] == {
+        "quality_contract": CONTRACT_VERSION,
+        "addon_versions": [{"addon_version": "0.2.0", "session_total": 5}],
+        "wordpress_ai_versions": [{"wordpress_ai_version": "1.3.0", "session_total": 5}],
+    }
     assert data["totals"]["sample_stage"] == "validation"
     assert len(data["trend"]) == 1
     assert data["trend"][0]["session_total"] == 5
@@ -164,6 +192,24 @@ def test_editor_assist_quality_public_ingestion_accepts_only_metadata(
         assert stored.payload_json["content_storage"] == "omitted_metadata_only"
         assert "content" not in stored.payload_json
         assert "prompt" not in stored.payload_json
+
+    payload["events"][0].pop("generation_id")
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    missing_generation = client.post(
+        "/v1/observability/plugin-events",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/observability/plugin-events",
+                site_id="site-quality",
+                body=body,
+                idempotency_key="editor-quality-ingest-missing-generation-1",
+                trace_id="traceeditorquality0025000000000000",
+            )
+        ),
+    )
+    assert missing_generation.status_code == 422
 
     payload["events"][0]["prompt"] = "must not be accepted"
     body = json.dumps(payload, separators=(",", ":")).encode()
@@ -271,6 +317,7 @@ def _attribution_events() -> list[dict[str, object]]:
             "quality_session_id": session_id,
             "task_key": task_key,
             "generation_sequence": 1,
+            "generation_id": f"generation_{session_id}_1",
             "content_storage": "omitted_metadata_only",
             **extra,
         }
@@ -282,7 +329,7 @@ def _attribution_events() -> list[dict[str, object]]:
         event(
             "q_attrib_strong",
             "content_summary",
-            "addon.editor_assist.generation.completed",
+            "addon.editor_assist.generation.presented",
             "run_attrib_strong",
             latency_ms=120,
         ),
@@ -298,7 +345,7 @@ def _attribution_events() -> list[dict[str, object]]:
         event(
             "q_attrib_weak",
             "content_summary",
-            "addon.editor_assist.generation.completed",
+            "addon.editor_assist.generation.presented",
             "run_attrib_weak",
             latency_ms=210,
         ),
@@ -314,7 +361,7 @@ def _attribution_events() -> list[dict[str, object]]:
         event(
             "q_attrib_knowledge",
             "content_rewrite",
-            "addon.editor_assist.generation.completed",
+            "addon.editor_assist.generation.presented",
             "run_attrib_knowledge",
             latency_ms=90,
         ),
@@ -330,7 +377,7 @@ def _attribution_events() -> list[dict[str, object]]:
         event(
             "q_attrib_uncorrelated",
             "content_rewrite",
-            "addon.editor_assist.generation.completed",
+            "addon.editor_assist.generation.presented",
             latency_ms=95,
         ),
         event(
@@ -356,9 +403,16 @@ def _seed_attribution_run_evidence(database_url: str) -> None:
                     channel="wordpress_ai",
                     execution_kind="sync",
                     profile_id="wp-ai.editorial",
-                    status="succeeded",
-                    trace_id="traceattribstrong000000000000",
-                    started_at=started_at,
+                status="succeeded",
+                trace_id="traceattribstrong000000000000",
+                started_at=started_at,
+                policy_json={
+                    "routing_revision": "wp-ai-editorial-r1",
+                    "routing_explainability": {
+                        "router_version": "hosted_router.v1",
+                        "profile_revision": "wp-ai-editorial-r1",
+                    },
+                },
                 ),
                 RunRecord(
                     run_id="run_attrib_weak",
@@ -367,9 +421,16 @@ def _seed_attribution_run_evidence(database_url: str) -> None:
                     channel="wordpress_ai",
                     execution_kind="sync",
                     profile_id="wp-ai.editorial",
-                    status="succeeded",
-                    trace_id="traceattribweak00000000000000",
-                    started_at=started_at,
+                status="succeeded",
+                trace_id="traceattribweak00000000000000",
+                started_at=started_at,
+                policy_json={
+                    "routing_revision": "wp-ai-editorial-r1",
+                    "routing_explainability": {
+                        "router_version": "hosted_router.v1",
+                        "profile_revision": "wp-ai-editorial-r1",
+                    },
+                },
                 ),
                 RunRecord(
                     run_id="run_attrib_knowledge",
@@ -379,9 +440,16 @@ def _seed_attribution_run_evidence(database_url: str) -> None:
                     channel="wordpress_ai",
                     execution_kind="sync",
                     profile_id="site-knowledge.managed",
-                    status="succeeded",
-                    trace_id="traceattribknowledge0000000000",
-                    started_at=started_at,
+                status="succeeded",
+                trace_id="traceattribknowledge0000000000",
+                started_at=started_at,
+                policy_json={
+                    "routing_revision": "site-knowledge-r1",
+                    "routing_explainability": {
+                        "router_version": "hosted_router.v1",
+                        "profile_revision": "site-knowledge-r1",
+                    },
+                },
                 ),
             ]
         )
@@ -428,6 +496,10 @@ def test_editor_assist_quality_attributes_sessions_to_model_and_profile(
         "attributed_session_total": 3,
         "unattributed_session_total": 1,
         "attribution_rate": 0.75,
+        "generation_total": 4,
+        "attributed_generation_total": 3,
+        "unattributed_generation_total": 1,
+        "generation_attribution_rate": 0.75,
     }
 
     models = {item["model_id"]: item for item in attribution["by_model"]}
@@ -447,6 +519,23 @@ def test_editor_assist_quality_attributes_sessions_to_model_and_profile(
     assert profiles["wp-ai.editorial"]["ability_names"] == ["ai/summarization"]
     assert profiles["site-knowledge.managed"]["session_total"] == 1
     assert profiles["site-knowledge.managed"]["exact_saved_rate"] == 0.0
+    assert summary["runtime"] == {
+        "linked_run_total": 3,
+        "succeeded_run_total": 3,
+        "failed_run_total": 0,
+        "canceled_run_total": 0,
+        "fallback_run_total": 0,
+        "fallback_rate": 0.0,
+        "provider_call_total": 2,
+        "provider_error_total": 0,
+        "provider_error_rate": 0.0,
+        "p50_provider_latency_ms": 120,
+        "p95_provider_latency_ms": 210,
+    }
+    assert {item["router"] for item in summary["attribution"]["by_router"]} == {
+        "hosted_router.v1@site-knowledge-r1",
+        "hosted_router.v1@wp-ai-editorial-r1",
+    }
 
 
 def test_editor_assist_quality_attribution_prefers_the_matched_generation_run(
@@ -469,6 +558,7 @@ def test_editor_assist_quality_attribution_prefers_the_matched_generation_run(
                 "quality_session_id": "q_attrib_strong",
                 "correlation_id": "run_attrib_strong",
                 "generation_sequence": 2,
+                "generation_id": "generation_q_attrib_strong_2",
             },
             {
                 **_attribution_events()[1],
@@ -487,6 +577,7 @@ def test_editor_assist_quality_attribution_prefers_the_matched_generation_run(
     assert set(models) == {"gpt-4.1-mini"}
     assert models["gpt-4.1-mini"]["exact_saved_rate"] == 1.0
     assert attribution["coverage"]["attributed_session_total"] == 1
+    assert attribution["coverage"]["attributed_generation_total"] == 2
 
 
 def test_editor_assist_quality_attribution_is_absent_without_run_evidence(

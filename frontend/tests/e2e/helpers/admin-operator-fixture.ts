@@ -585,7 +585,7 @@ export async function installAdminMocks(
 
     if (pathname === '/api/admin/editor-assist-quality') {
       await fulfillJson(route, {
-        contract_version: 'editor_assist_quality.v1',
+        contract_version: 'editor_assist_quality.v2',
         generated_at: '2026-04-08T10:00:00Z',
         filters: {
           task_key: searchParams.get('task_key') || '',

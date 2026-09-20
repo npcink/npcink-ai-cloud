@@ -131,7 +131,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const qualityDownloadPath = await qualityDownload.path();
   expect(qualityDownloadPath).toBeTruthy();
   const exportedQuality = JSON.parse(readFileSync(qualityDownloadPath!, 'utf8'));
-  expect(exportedQuality.contract_version).toBe('editor_assist_quality.v1');
+  expect(exportedQuality.contract_version).toBe('editor_assist_quality.v2');
   expect(exportedQuality.filters).toEqual({
     task_key: 'content_summary',
     window_hours: 24,

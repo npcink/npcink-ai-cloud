@@ -634,6 +634,7 @@ def test_candidate_engine_canonicalizes_vision_provider_errors_before_persistenc
 def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
     primary = SequenceProvider("primary", [provider_success("reject")])
     fallback = SequenceProvider("fallback", [provider_success("accept")])
+    usage_recorder = RecordingUsageRecorder()
 
     def prepare_output(run: RunRecord, **kwargs: Any) -> ProviderOutputDecision:
         output = kwargs["provider_output"]
@@ -643,6 +644,7 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
                 output=output,
                 error_code="provider.output_quality_rejected",
                 error_message="empty output",
+                usage_context={"output_quality_reason": "test_rejected_shape"},
             )
         return ProviderOutputDecision(accepted=True, output=output)
 
@@ -650,6 +652,7 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
         providers={"primary": primary, "fallback": fallback},
         controller=RecordingRunController(),
         output_preparer=prepare_output,
+        usage_recorder=usage_recorder,
     )
     with get_session(database_url) as session:
         repository = RuntimeRepository(session)
@@ -675,6 +678,9 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
             None,
         ]
         assert calls[1].fallback_used is True
+        assert usage_recorder.calls[0]["usage_context"] == {
+            "output_quality_reason": "test_rejected_shape",
+        }
 
 
 def test_finalization_failure_follows_success_evidence_and_cancel_stops_attempts(

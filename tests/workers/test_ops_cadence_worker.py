@@ -32,7 +32,7 @@ def test_editor_assist_quality_detection_records_bounded_read_only_evidence(
         def get_summary(self, *, window_hours: int) -> dict[str, object]:
             assert window_hours == 168
             return {
-                "contract_version": "editor_assist_quality.v1",
+                "contract_version": "editor_assist_quality.v2",
                 "totals": {
                     "session_total": 65,
                     "resolved_session_total": 60,
@@ -65,7 +65,7 @@ def test_editor_assist_quality_detection_records_bounded_read_only_evidence(
     payload = ops_cadence_module._run_editor_assist_quality_detection(settings)
 
     assert payload == {
-        "contract_version": "editor_assist_quality.v1",
+        "contract_version": "editor_assist_quality.v2",
         "window_hours": 168,
         "session_total": 65,
         "resolved_session_total": 60,
@@ -204,7 +204,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         if item["task_id"] == "editor_assist_quality_detection"
     )
     assert quality_detection["payload"] == {
-        "contract_version": "editor_assist_quality.v1",
+        "contract_version": "editor_assist_quality.v2",
         "window_hours": 168,
         "session_total": 0,
         "resolved_session_total": 0,
