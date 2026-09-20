@@ -5,6 +5,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
+from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.security import extract_trace_id
@@ -238,6 +239,16 @@ def _build_entitlement_payload(
     site_limit = _resolve_site_limit(policy, tier_id)
     services = get_cloud_services(request)
     settings = services.settings
+    # Capability evidence must include enabled DB-managed execution
+    # connections. The long-lived service container intentionally keeps its
+    # base provider map lightweight; using it alone would report
+    # `no_eligible_model` after an operator configures a connection in the
+    # provider table, even though runtime routing can resolve that connection.
+    capability_providers = resolve_live_provider_adapters(
+        settings,
+        base_providers=services.providers,
+        include_enabled_connections=True,
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "paid_object": {
@@ -264,9 +275,9 @@ def _build_entitlement_payload(
                 routing=RoutingService(
                     settings.database_url,
                     settings=settings,
-                    execution_provider_ids=set(services.providers),
+                    execution_provider_ids=set(capability_providers),
                 ),
-                provider_ids=set(services.providers),
+                provider_ids=set(capability_providers),
             ),
         },
         "quota_summary": _resolve_quota_summary(request, account_id),
