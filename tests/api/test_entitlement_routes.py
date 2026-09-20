@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.main import create_app
+from app.api.routes import entitlements as entitlements_route
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
@@ -167,6 +168,52 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
         }
     ]
 
+    dispose_engine(database_url)
+
+
+def test_current_entitlement_includes_db_managed_execution_provider_ids(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_resolve_live_provider_adapters(*args, **kwargs):
+        return {"ollama-m4": object()}
+
+    def fake_build_wordpress_ai_capabilities(*, policy, routing, provider_ids, now=None):
+        captured["provider_ids"] = provider_ids
+        return {
+            "contract_version": "wordpress-ai-capabilities-v1",
+            "provider_call_performed": False,
+            "runtime_admission_required": True,
+            "capabilities": {},
+        }
+
+    monkeypatch.setattr(
+        entitlements_route,
+        "resolve_live_provider_adapters",
+        fake_resolve_live_provider_adapters,
+    )
+    monkeypatch.setattr(
+        entitlements_route,
+        "build_wordpress_ai_capabilities",
+        fake_build_wordpress_ai_capabilities,
+    )
+
+    query = "object_type=site&object_id=site_alpha"
+    response = client.get(
+        f"/v1/entitlements/current?{query}",
+        headers=build_auth_headers(
+            "GET",
+            "/v1/entitlements/current",
+            site_id="site_alpha",
+            query=query,
+        ),
+    )
+
+    assert response.status_code == 200
+    assert captured["provider_ids"] == {"ollama-m4"}
     dispose_engine(database_url)
 
 
