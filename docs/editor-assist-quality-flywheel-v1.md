@@ -5,7 +5,7 @@ for WordPress final writes.
 
 ## Purpose
 
-`editor_assist_quality.v1` turns ordinary WordPress AI editor behavior into
+`editor_assist_quality.v2` turns ordinary WordPress AI editor behavior into
 metadata-only quality evidence:
 
 1. the Cloud Addon records a successful editor-assist generation;
@@ -52,12 +52,16 @@ with safe scalar fields:
 
 | Field | Meaning |
 | --- | --- |
-| `quality_contract` | Must be `editor_assist_quality.v1`. |
+| `quality_contract` | Must be `editor_assist_quality.v2`. |
 | `quality_session_id` | Random identifier for one local post/task/actor session. |
 | `task_key` | `title_generation`, `content_summary`, or `content_rewrite`. |
 | `object_scope_hash` | Site-keyed HMAC used only for local correlation scope. |
 | `actor_scope_hash` | Site-keyed HMAC; never a WordPress user ID. |
 | `generation_sequence` | One-based generation number in the short window. |
+| `generation_id` | Stable opaque identifier for one presented generation within the quality session. |
+| `wordpress_ai_version` | Locally detected official WordPress AI plugin version, or an explicit unknown bucket when unavailable. |
+| `lifecycle_state` | `presented`, `superseded`, `adopted_exact`, `saved_unknown`, or `expired`. |
+| `evidence_type` | Metadata-only evidence class for the lifecycle transition. |
 | `outcome` | Exact save, unmatched save, or expired without save. |
 | `outcome_confidence` | `high` for an exact fingerprint, otherwise `medium`. |
 | `save_kind` | `save`, `publish`, or `none`. |
@@ -69,7 +73,8 @@ represented only by a keyed local fingerprint and is never uploaded.
 
 ## Event Kinds
 
-- `addon.editor_assist.generation.completed`
+- `addon.editor_assist.generation.presented`
+- `addon.editor_assist.generation.superseded`
 - `addon.editor_assist.generation.repeated`
 - `addon.editor_assist.outcome.observed`
 - `addon.editor_assist.outcome.expired`
@@ -87,7 +92,8 @@ Filters:
 The response includes session counts, repeat rate, exact saved rate, unmatched
 saved rate, expired-without-save rate, exact publish count, generation latency
 P50/P95, task breakdowns, a bounded trend, the immediately preceding comparison
-window, run and model attribution, and issue candidates.
+window, run and model attribution, linked-run technical health, Addon-version
+distribution, router-version/profile-revision buckets, and issue candidates.
 
 ### Run, model, and runtime-profile attribution
 
@@ -112,6 +118,9 @@ database migration.
   `by_model`.
 - `coverage`: attributed and unattributed session counts. An unattributed
   session has no matching run evidence in Cloud, so its model cannot be stated.
+- `by_router`: read-only buckets keyed by `router_version` and routing/profile
+  revision. This explains a routing change without allowing the quality report
+  to change routing.
 - `method`: the attribution rule as one sentence.
 
 At most twelve buckets are returned per dimension, ordered by session count.
@@ -124,6 +133,14 @@ fields are neither used nor returned, and the existing restriction on joining
 this evidence to Provider cost or customer billing remains in force. An
 unattributed or low-sample bucket is an instrumentation signal, not a
 model-quality verdict, and never changes routing or model selection.
+
+The `runtime` section reports only runs linked to the observed generation or
+session events: run status totals, fallback count/rate, Provider call/error
+totals, and coarse Provider latency P50/P95. The `compatibility` section reports
+Addon-version and locally detected official WordPress AI-version distributions.
+When a host cannot expose the official version, it is placed in an explicit
+`unknown_wordpress_ai_version` bucket rather than guessed or silently omitted;
+the separate readiness matrix remains the authoritative version coverage gate.
 
 Issue candidates require at least five relevant sessions:
 

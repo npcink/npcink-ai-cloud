@@ -451,7 +451,7 @@ function pluginLabel(t: TranslationFn, slug: string) {
   return option ? t(option.labelKey) : t('admin.plugin_obs_other_plugin');
 }
 function eventLabel(t: TranslationFn, code: string) {
-  const known: Record<string, string> = {"addon.editor_assist.generation.completed": "admin.plugin_obs_event_map_0", "addon.editor_assist.outcome.observed": "admin.plugin_obs_event_map_1", "addon.editor_assist.outcome.expired": "admin.plugin_obs_event_map_2", "addon.media_recognition.completed": "admin.plugin_obs_event_map_3", "addon.media_recognition.failed": "admin.plugin_obs_event_map_4", "validation.technical_monitoring_only": "admin.plugin_obs_event_map_5", "runtime_request": "admin.plugin_obs_event_map_6"};
+  const known: Record<string, string> = {"addon.editor_assist.generation.presented": "admin.plugin_obs_event_map_0", "addon.editor_assist.generation.superseded": "admin.plugin_obs_event_map_7", "addon.editor_assist.outcome.observed": "admin.plugin_obs_event_map_1", "addon.editor_assist.outcome.expired": "admin.plugin_obs_event_map_2", "addon.media_recognition.completed": "admin.plugin_obs_event_map_3", "addon.media_recognition.failed": "admin.plugin_obs_event_map_4", "validation.technical_monitoring_only": "admin.plugin_obs_event_map_5", "runtime_request": "admin.plugin_obs_event_map_6"};
   return t(known[code] || 'admin.plugin_obs_event_other');
 }
 function errorLabel(t: TranslationFn, code: string) {

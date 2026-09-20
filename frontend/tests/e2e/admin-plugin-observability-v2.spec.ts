@@ -175,7 +175,7 @@ test('successful report exposes linked execution separately from receipt time', 
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installPluginObservabilityHarness(page, { ...pluginObservabilityData,
     recent_activity: [{ event_id: 'evt-linked', site_id: 'site_mvp',
-      plugin_slug: 'npcink-cloud-addon', event_kind: 'addon.editor_assist.generation.completed',
+      plugin_slug: 'npcink-cloud-addon', event_kind: 'addon.editor_assist.generation.presented',
       status: 'ok', received_at: '2026-07-12T08:42:53Z',
       run: { run_id: 'run-linked', status: 'succeeded', started_at: '2026-07-12T08:10:06Z',
         finished_at: '2026-07-12T08:10:22Z', error_code: '' } }],

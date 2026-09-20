@@ -316,6 +316,18 @@ Inspect editor-assist detail through the existing read-only internal endpoint:
 GET /internal/service/admin/editor-assist-quality?window_hours=168
 ```
 
+For a local operator status check that includes the seven-day window and the
+50-session manual-decision gate, use the read-only command:
+
+```bash
+python3 -m app.dev.editor_assist_quality_status --window-hours 168
+```
+
+Its `pilot.next_action` remains `continue_natural_observation` until the
+threshold is met. The command explicitly marks synthetic fixture sessions as
+ineligible for natural-traffic evidence and never changes a prompt, model, or
+router.
+
 Keep these sample units separate:
 
 - Provider calls;

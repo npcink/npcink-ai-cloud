@@ -101,7 +101,7 @@ or production coverage.
   sent at least one ordinary plugin observability event.
 - `agent_feedback_window`: distinct sites that sent governed agent feedback.
 - `editor_assist_quality_window`: distinct sites that sent metadata-only
-  editor-assist quality events under `editor_assist_quality.v1`.
+  editor-assist quality events under `editor_assist_quality.v2`.
 - `coverage.plugin_observability_over_monitoring_enabled` uses the explicit
   monitoring-enabled population as its denominator. Active-runtime ratios
   remain available for comparison; `null` means the denominator is zero.

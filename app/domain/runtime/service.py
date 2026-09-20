@@ -2785,6 +2785,12 @@ class RuntimeService:
                 output=normalized_output,
                 error_code="provider.output_quality_rejected",
                 error_message="provider returned no usable WordPress AI connector text",
+                usage_context={
+                    "output_quality_reason": self.wordpress_operation_runtime.output_quality_reason(
+                        input_payload=input_payload,
+                        provider_output=provider_output,
+                    )
+                },
             )
         return ProviderOutputDecision(accepted=True, output=normalized_output)
 
@@ -6167,6 +6173,15 @@ class RuntimeService:
         policy["routing_candidates"] = [
             self._serialize_routing_candidate(candidate) for candidate in resolution.candidates
         ]
+        policy["routing_explainability"] = {
+            "router_version": resolution.router_version,
+            "profile_id": resolution.profile_id,
+            "execution_kind": resolution.execution_kind,
+            "profile_revision": resolution.revision,
+            "selection_policy": dict(resolution.selection_policy),
+            "candidate_order": [candidate.instance_id for candidate in resolution.candidates],
+            "selection_basis": "resolved_candidate_order",
+        }
         return policy
 
     def _prefer_routing_candidate(

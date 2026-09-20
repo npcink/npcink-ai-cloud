@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
@@ -66,6 +66,7 @@ class ProviderOutputDecision:
     output: dict[str, Any]
     error_code: str = ""
     error_message: str = ""
+    usage_context: dict[str, object] = field(default_factory=dict)
 
 
 class ProviderOutputFinalizationError(RuntimeError):
@@ -376,6 +377,7 @@ class RuntimeProviderExecutionService:
                         provider_result=provider_result,
                         error_code=decision.error_code,
                         preflight_usage_context=preflight_usage_context,
+                        output_usage_context=decision.usage_context,
                     )
                     if allow_fallback:
                         break
@@ -487,10 +489,12 @@ class RuntimeProviderExecutionService:
         provider_result: ProviderExecutionResult,
         error_code: str | None = None,
         preflight_usage_context: dict[str, object] | None = None,
+        output_usage_context: dict[str, object] | None = None,
     ) -> None:
         usage_context = {
             **(preflight_usage_context or {}),
             **provider_result.usage_context(),
+            **(output_usage_context or {}),
         }
         self.record_provider_call(
             repository=repository,

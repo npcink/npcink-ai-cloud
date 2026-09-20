@@ -143,17 +143,32 @@ class WordPressOperationRuntime:
                 "analysis": "Analyze the scene input and return the requested result.",
             }.get(task_family, "Return only the requested suggestion. Do not explain.")
 
+        if task == "title_generation" and title_output_schema:
+            task_instruction = (
+                "Generate exactly one concise title faithful to the main topic. For Chinese, "
+                "normally use no more than 36 characters; for other languages, normally use "
+                "no more than 12 words. Return one strict JSON object with exactly one string "
+                "field named `title`. Do not return bare title text."
+            )
+
         fragments = [task_instruction]
         fragments.append(
             "Use the same language as the scene input unless a WordPress ability "
             "instruction explicitly asks for another language."
         )
-        fragments.append(
-            "Output contract: return only the final value for this one task. Do not "
-            "include introductions, headings, Markdown, bullet lists, numbered lists, "
-            "multiple options, labels, explanations, or offers to continue. Never add a "
-            "name, number, claim, or event that is absent from the scene input."
-        )
+        if title_output_schema:
+            fragments.append(
+                "Output contract: return one strict JSON object matching the title Ability "
+                "schema. Do not include Markdown, explanations, multiple options, or any "
+                "field other than `title`."
+            )
+        else:
+            fragments.append(
+                "Output contract: return only the final value for this one task. Do not "
+                "include introductions, headings, Markdown, bullet lists, numbered lists, "
+                "multiple options, labels, explanations, or offers to continue. Never add a "
+                "name, number, claim, or event that is absent from the scene input."
+            )
         if "json_object" in constraints:
             fragments.append(
                 "Return one strict JSON object matching the Ability output schema. No markdown."
@@ -164,7 +179,7 @@ class WordPressOperationRuntime:
                     "Ability output schema: "
                     + json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
                 )
-        if "single_value" in constraints:
+        if "single_value" in constraints and not title_output_schema:
             fragments.append("Return exactly one value, not a list of alternatives.")
         if "source_grounded" in constraints:
             fragments.append("Keep every factual claim grounded in the current scene input.")
@@ -499,6 +514,11 @@ class WordPressOperationRuntime:
         normalized = dict(output)
         normalized["output_text"] = normalized_text
         normalized["messages"] = [{"role": "assistant", "content": normalized_text}]
+        # Responses diagnostics and typed output items are adapter evidence,
+        # not part of the WordPress suggestion contract. Tool execution keeps
+        # its own normalized call projection before this connector boundary.
+        normalized.pop("output", None)
+        normalized.pop("response_status", None)
         return normalized
 
     def _normalize_alt_text_provider_output(
@@ -548,7 +568,7 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _extract_title_schema_output(*, output_text: str, output_schema: dict[str, object]) -> str:
-        """Fail closed unless the Provider result satisfies the Ability title field."""
+        """Extract a title field and fail closed when the declared schema is absent."""
         if output_schema.get("type") != "object":
             return ""
         properties = output_schema.get("properties")
@@ -592,8 +612,13 @@ class WordPressOperationRuntime:
             and "single_value" not in constraints
         ):
             return False
+        response_status = str(provider_output.get("response_status") or "").strip().lower()
+        if response_status in {"incomplete", "failed", "cancelled"}:
+            return True
         output_text = self._extract_provider_output_text(provider_output)
         if output_text == "":
+            return True
+        if self._looks_like_provider_reasoning(output_text):
             return True
         if task != "title_generation":
             return False
@@ -614,6 +639,37 @@ class WordPressOperationRuntime:
             )
         )
         return reasoning_tokens > 0 and visible_unit_count <= 3
+
+    def output_quality_reason(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> str:
+        """Return a content-free reason for a rejected Connector result."""
+        response_status = str(provider_output.get("response_status") or "").strip().lower()
+        if response_status in {"incomplete", "failed", "cancelled"}:
+            return f"responses_{response_status}"
+        output_text = self._extract_provider_output_text(provider_output)
+        if not output_text:
+            return "empty_output_text"
+        if self._looks_like_provider_reasoning(output_text):
+            return "provider_reasoning_leak"
+        metadata = input_payload.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        task = str(metadata.get("task") or "").strip()
+        if task == "title_generation" and self._dict_or_empty(
+            metadata.get("ability_output_schema")
+        ):
+            try:
+                parsed = json.loads(output_text)
+            except json.JSONDecodeError:
+                return "title_schema_invalid_json"
+            if not isinstance(parsed, dict) or not isinstance(parsed.get("title"), str):
+                return "title_schema_missing_title"
+            if not parsed["title"].strip():
+                return "title_schema_empty_title"
+        return "normalized_text_empty"
 
     def apply_managed_policy(
         self,
@@ -1129,6 +1185,27 @@ class WordPressOperationRuntime:
         return bool(
             re.search(
                 r"(?is)<think\b|^\s*(?:reasoning|explanation|analysis)\s*[:：]",
+                output_text,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_provider_reasoning(output_text: str) -> bool:
+        """Reject gateway messages that expose response-planning instructions."""
+        return bool(
+            re.match(
+                r"(?is)^\s*(?:"
+                r"we need (?:to )?(?:answer|return|respond)|"
+                r"need (?:to )?(?:answer|return|respond)|"
+                r"the user wants (?:a |an )?(?:title|summary|rewrite|answer)|"
+                r"the task\s*[:：]|"
+                r"content (?:is|of)\b|"
+                r"language of\b|"
+                r"must (?:answer|return|output)|"
+                r"return (?:only|exactly)|"
+                r"same language|language (?:is|:)|"
+                r"do not mention (?:this )?(?:instruction|request)"
+                r")\b",
                 output_text,
             )
         )

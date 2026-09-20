@@ -90,7 +90,7 @@ def _agent_cases(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 def _editor_cases(payload: dict[str, Any]) -> list[dict[str, str]]:
     _require(
-        payload.get("contract_version") == "editor_assist_quality.v1",
+        payload.get("contract_version") == "editor_assist_quality.v2",
         "unexpected Editor Assist fixture contract",
     )
     cases = payload.get("cases")
@@ -108,6 +108,21 @@ def _editor_cases(payload: dict[str, Any]) -> list[dict[str, str]]:
         _require(
             event.get("content_storage") == "omitted_metadata_only",
             "Editor Assist events must remain metadata-only",
+        )
+        _require(
+            bool(str(event.get("generation_id") or "").strip()),
+            "Editor Assist event requires generation_id",
+        )
+        _require(
+            event.get("event_kind")
+            in {
+                "addon.editor_assist.generation.presented",
+                "addon.editor_assist.generation.superseded",
+                "addon.editor_assist.generation.repeated",
+                "addon.editor_assist.outcome.observed",
+                "addon.editor_assist.outcome.expired",
+            },
+            f"Editor Assist event kind is outside the v2 contract: {event.get('event_kind')}",
         )
         session_id = str(event.get("quality_session_id") or "").strip()
         _require(bool(session_id), "Editor Assist event requires quality_session_id")

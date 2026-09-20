@@ -108,6 +108,7 @@
     "check:agent-feedback-quality": "bash scripts/check-agent-feedback-quality.sh",
     "check:editor-assist-quality": "bash scripts/check-editor-assist-quality.sh",
     "report:ai-quality-regression": "python3 scripts/report_ai_quality_regression_samples.py",
+    "report:editor-assist-quality-status": "python3 -m app.dev.editor_assist_quality_status",
     "check:runtime-stability-plan": "node scripts/check-runtime-stability-evidence-plan.js",
     "check:visual:frontend": "pnpm --dir frontend run test:visual",
     "precheck:admin-acceptance": "node frontend/tests/unit/admin-acceptance-matrix-contract.mjs && pnpm --dir frontend exec eslint tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/helpers/admin-operator-fixture.ts tests/unit/admin-acceptance-matrix-contract.mjs --max-warnings=0",
