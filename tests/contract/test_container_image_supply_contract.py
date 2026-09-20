@@ -491,22 +491,7 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
     entries = allowlist["entries"]
-    expected_identities = [
-        (image, package)
-        for image in ("api", "frontend", "nginx")
-        for package in ("libcrypto3", "libssl3")
-    ]
-    assert [(entry["image"], entry["package"]) for entry in entries] == expected_identities
-    assert {entry["vulnerability_id"] for entry in entries} == {"CVE-2026-14456"}
-    assert {entry["package_version"] for entry in entries} == {"3.5.7-r0"}
-    assert {entry["owner"] for entry in entries} == {"Npcink Cloud release operator"}
-    assert {entry["expires_on"] for entry in entries} == {"2026-09-19"}
-    for entry in entries:
-        reason = entry["reason"]
-        assert "OpenSSL QUIC server listeners" in reason
-        assert "no QUIC, HTTP/3, or UDP listener" in reason
-        assert "Stop immediately if QUIC or UDP is enabled" in reason
-        assert "OpenSSL 3.5.8 or newer" in reason
+    assert entries == []
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
@@ -566,7 +551,7 @@ def test_compose_protocol_guard_defaults_to_repository_paths_from_outside_checko
     ]
 
 
-def test_active_release_contract_records_the_exact_openssl_exception() -> None:
+def test_active_release_contract_records_retired_openssl_exceptions() -> None:
     policy = (ROOT / "docs" / "cloud-production-release-policy-v1.md").read_text()
     checklist = (ROOT / "deploy" / "RELEASE_CHECKLIST.md").read_text()
 
@@ -579,7 +564,8 @@ def test_active_release_contract_records_the_exact_openssl_exception() -> None:
         assert "QUIC" in surface
         assert "HTTP/3" in surface
         assert "UDP" in surface
-    assert "exactly six" in checklist
+    assert "No active CVE exceptions remain." in policy
+    assert "canonical CVE allowlist is empty" in checklist
     assert "quoted and unquoted Compose UDP protocols" in checklist
 
 
@@ -621,6 +607,28 @@ def test_high_unfixed_finding_blocks_and_exact_temporary_exception_is_audited(
     allowed = json.loads(Path(allowed_args.receipt).read_text())
     assert allowed["status"] == "passed"
     assert allowed["allowlisted_blocking_finding_count"] == 1
+
+
+@pytest.mark.parametrize("package", ["libcrypto3", "libssl3"])
+def test_retired_openssl_finding_blocks_with_canonical_allowlist(
+    tmp_path: Path, package: str
+) -> None:
+    supply = _supply_module()
+    allowlist_path = ROOT / _lock()["scan_policy"]["allowlist_file"]
+    args = _evaluate_args(
+        tmp_path, allowlist=json.loads(allowlist_path.read_text()), severity="high"
+    )
+    args.allowlist = str(allowlist_path)
+    report = json.loads(Path(args.report).read_text())
+    report["matches"][0]["vulnerability"]["id"] = "CVE-2026-14456"
+    report["matches"][0]["artifact"] = {"name": package, "version": "3.5.7-r0"}
+    _write_json(Path(args.report), report)
+
+    assert supply.evaluate_scan(args) == 1
+    receipt = json.loads(Path(args.receipt).read_text())
+    assert receipt["status"] == "failed"
+    assert receipt["allowlisted_blocking_finding_count"] == 0
+    assert receipt["unallowlisted_blocking_findings"][0]["vulnerability_id"] == "CVE-2026-14456"
 
 
 def test_expired_or_stale_allowlist_entry_fails_closed(tmp_path: Path) -> None:
