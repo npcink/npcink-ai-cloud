@@ -80,15 +80,15 @@ def _operation_payload(
 @pytest.mark.parametrize(
     ("task", "source_text", "expected_max_tokens"),
     [
-        (
-            "title_generation",
-            "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
-            48,
-        ),
-        (
-            "content_summary",
-            "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
-            160,
+            (
+                "title_generation",
+                "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
+                48,
+            ),
+            (
+                "content_summary",
+                "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
+                160,
         ),
         (
             "content_rewrite",
@@ -424,6 +424,27 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
     }
 
 
+def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
+    runtime = _runtime()
+    title_schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string"}},
+    }
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Hosted Runtime Connector Verified"},
+        input_payload={
+            "metadata": {
+                "task": "title_generation",
+                "ability_output_schema": title_schema,
+            },
+            "text": "Verify the hosted runtime connector.",
+        },
+    )
+
+    assert normalized == {}
+
+
 @pytest.mark.parametrize(
     "provider_text",
     [
@@ -491,6 +512,17 @@ def test_empty_text_output_judgement_is_task_bounded() -> None:
     )
     assert runtime.is_empty_text_output(
         input_payload=title_input,
+        provider_output={
+            "output_text": "partial title",
+            "response_status": "incomplete",
+        },
+    )
+    assert runtime.is_empty_text_output(
+        input_payload=title_input,
+        provider_output={"output_text": "The user wants a title in JSON. Content is English."},
+    )
+    assert runtime.is_empty_text_output(
+        input_payload=title_input,
         provider_output={"output_text": "《未闭合的标题"},
     )
     assert runtime.is_empty_text_output(
@@ -510,6 +542,20 @@ def test_empty_text_output_judgement_is_task_bounded() -> None:
     assert not runtime.is_empty_text_output(
         input_payload={"metadata": {"task": "comment_moderation"}},
         provider_output={},
+    )
+
+
+def test_output_quality_reason_identifies_provider_reasoning_leak() -> None:
+    runtime = _runtime()
+
+    assert (
+        runtime.output_quality_reason(
+            input_payload={"metadata": {"task": "content_summary"}},
+            provider_output={
+                "output_text": "We need answer only summary. Need follow constraints."
+            },
+        )
+        == "provider_reasoning_leak"
     )
 
 

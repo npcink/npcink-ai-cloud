@@ -6,7 +6,6 @@ import math
 import re
 import time
 from collections.abc import Iterable
-from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -506,14 +505,6 @@ class OpenAIProviderAdapter:
         try:
             with self._build_client(request.timeout_ms) as client:
                 response = self._post_with_compatibility_retry(client, endpoint_path, payload)
-                if (
-                    response.status_code == 404
-                    and endpoint_path == "/responses"
-                    and self._can_retry_responses_as_chat_completions(request)
-                ):
-                    result_request = replace(request, endpoint_variant="chat_completions")
-                    endpoint_path, payload = self._build_http_request(result_request)
-                    response = self._post_with_compatibility_retry(client, endpoint_path, payload)
                 response.raise_for_status()
         except httpx.TimeoutException as error:
             raise ProviderExecutionError(
@@ -571,6 +562,20 @@ class OpenAIProviderAdapter:
             result.cache_affinity_applied = bool(
                 payload.get("prompt_cache_key")
                 and self._prompt_cache_key_supported
+            )
+        if result_request.endpoint_variant == "responses" and result.output.get(
+            "response_status"
+        ) in {"incomplete", "failed", "cancelled"}:
+            raise ProviderExecutionError(
+                "provider.output_contract_invalid",
+                f"Responses response ended with {result.finish_reason}",
+                tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out,
+                cost=result.cost,
+                usage_context={
+                    **result.usage_context(),
+                    "response_status": result.output.get("response_status", "unknown"),
+                },
             )
         return result
 
@@ -652,16 +657,6 @@ class OpenAIProviderAdapter:
                 request=streamed_response.request,
                 extensions=streamed_response.extensions,
             )
-
-    def _can_retry_responses_as_chat_completions(
-        self,
-        request: ProviderExecutionRequest,
-    ) -> bool:
-        if request.endpoint_variant != "responses":
-            return False
-        options = self._resolve_request_options(request.input_payload)
-        messages = options.get("messages")
-        return isinstance(messages, list) and bool(messages)
 
     @staticmethod
     def _response_reports_unsupported_parameter(
@@ -879,14 +874,22 @@ class OpenAIProviderAdapter:
             usage = response_json.get("usage", {})
             output_text = self._extract_responses_output_text(response_json)
             response_output = response_json.get("output")
+            response_status = self._extract_responses_status(response_json)
+            reported_model_id = self._optional_string(response_json.get("model"))
             output = {
                 "output_text": output_text,
                 "messages": [{"role": "assistant", "content": output_text}],
-                "model_id": response_json.get("model", request.model_id),
+                # Keep the legacy model_id projection for existing callers, but
+                # expose the two evidence values separately. A gateway's
+                # reported model is not proof of the physical model used.
+                "model_id": reported_model_id or request.model_id,
+                "requested_model_id": request.model_id,
+                "reported_model_id": reported_model_id,
+                "response_status": response_status,
                 "usage": usage if isinstance(usage, dict) else {},
             }
             if isinstance(response_output, list):
-                output["output"] = response_output
+                output["output"] = self._sanitize_responses_output(response_output)
                 tool_calls = self._extract_responses_tool_calls(response_output)
                 if tool_calls:
                     output["tool_calls"] = tool_calls
@@ -1252,7 +1255,11 @@ class OpenAIProviderAdapter:
         payload: dict[str, Any],
         options: dict[str, Any],
     ) -> None:
-        self._apply_common_request_options(payload, options)
+        self._apply_common_request_options(
+            payload,
+            options,
+            include_provider_reasoning_defaults=True,
+        )
         if isinstance(options.get("response_format"), dict):
             payload["response_format"] = options["response_format"]
         tools = self._normalize_chat_tools(options.get("tools"))
@@ -1282,6 +1289,8 @@ class OpenAIProviderAdapter:
         self,
         payload: dict[str, Any],
         options: dict[str, Any],
+        *,
+        include_provider_reasoning_defaults: bool = False,
     ) -> None:
         for numeric_key in ("top_p", "presence_penalty", "frequency_penalty"):
             if isinstance(options.get(numeric_key), (int, float)):
@@ -1305,7 +1314,11 @@ class OpenAIProviderAdapter:
             for key, value in options["extra"].items():
                 if isinstance(key, str) and key not in payload:
                     payload[key] = value
-        if self.default_reasoning_effort and "reasoning_effort" not in payload:
+        if (
+            include_provider_reasoning_defaults
+            and self.default_reasoning_effort
+            and "reasoning_effort" not in payload
+        ):
             payload["reasoning_effort"] = self.default_reasoning_effort
         if "parallel_tool_calls" in options:
             payload["parallel_tool_calls"] = bool(options.get("parallel_tool_calls"))
@@ -2141,41 +2154,119 @@ class OpenAIProviderAdapter:
         return ""
 
     def _extract_responses_output_text(self, payload: dict[str, Any]) -> str:
+        response_status = self._extract_responses_status(payload)
+        if response_status in {"incomplete", "failed", "cancelled"}:
+            return ""
+
         output_text = payload.get("output_text")
         if isinstance(output_text, str) and output_text:
             return output_text
 
         output = payload.get("output")
-        if not isinstance(output, list):
-            return ""
-
         fragments: list[str] = []
-        for item in output:
-            if not isinstance(item, dict):
-                continue
-            content = item.get("content")
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                if not isinstance(block, dict):
+        if isinstance(output, list):
+            for item in output:
+                if not isinstance(item, dict):
                     continue
-                if isinstance(block.get("text"), str):
-                    fragments.append(block["text"])
+                if item.get("type") != "message":
                     continue
-                if isinstance(block.get("content"), str):
-                    fragments.append(block["content"])
+                item_status = item.get("status")
+                if isinstance(item_status, str) and item_status != "completed":
+                    continue
+                content = item.get("content")
+                if isinstance(content, dict):
+                    content = [content]
+                if not isinstance(content, list):
+                    continue
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") != "output_text":
+                        continue
+                    text = block.get("text")
+                    if isinstance(text, str) and text:
+                        fragments.append(text)
 
         return " ".join(fragment for fragment in fragments if fragment).strip()
 
-    def _extract_responses_finish_reason(self, payload: dict[str, Any]) -> str:
+    @staticmethod
+    def _extract_responses_status(payload: dict[str, Any]) -> str:
+        status = payload.get("status")
+        if isinstance(status, str) and status.strip():
+            return status.strip().lower()
         output = payload.get("output")
-        if isinstance(output, list):
-            for item in output:
-                if isinstance(item, dict) and isinstance(item.get("status"), str):
-                    if item["status"] == "completed":
-                        return "stop"
+        if not isinstance(output, list):
+            return "unknown"
+        statuses = {
+            str(item.get("status") or "").strip().lower()
+            for item in output
+            if isinstance(item, dict) and item.get("status")
+        }
+        if "failed" in statuses:
+            return "failed"
+        if "incomplete" in statuses:
+            return "incomplete"
+        if "cancelled" in statuses:
+            return "cancelled"
+        if "completed" in statuses:
+            return "completed"
+        return "unknown"
 
-        return "stop"
+    @staticmethod
+    def _sanitize_responses_output(output: list[Any]) -> list[dict[str, Any]]:
+        """Keep final message and tool-call fields while dropping reasoning text."""
+        safe_items: list[dict[str, Any]] = []
+        allowed_types = {"message", "function_call", "custom_tool_call"}
+        for item in output:
+            if not isinstance(item, dict) or item.get("type") not in allowed_types:
+                continue
+            item_type = item["type"]
+            if item_type == "message":
+                content = item.get("content")
+                safe_content: list[dict[str, str]] = []
+                if isinstance(content, list):
+                    for block in content:
+                        if (
+                            isinstance(block, dict)
+                            and block.get("type") == "output_text"
+                            and isinstance(block.get("text"), str)
+                        ):
+                            safe_content.append({"type": "output_text", "text": block["text"]})
+                safe_item = {
+                    "type": "message",
+                    "status": item.get("status", "completed"),
+                    "role": item.get("role", "assistant"),
+                    "content": safe_content,
+                }
+            else:
+                safe_item = {
+                    key: item[key]
+                    for key in ("type", "id", "call_id", "name", "arguments", "status")
+                    if key in item
+                }
+            safe_items.append(safe_item)
+        return safe_items
+
+    def _extract_responses_finish_reason(self, payload: dict[str, Any]) -> str:
+        status = self._extract_responses_status(payload)
+        if status == "completed":
+            output = payload.get("output")
+            if isinstance(output, list) and any(
+                isinstance(item, dict) and item.get("type") in {"function_call", "custom_tool_call"}
+                for item in output
+            ):
+                return "tool_calls"
+            return "stop"
+        if status == "incomplete":
+            details = payload.get("incomplete_details")
+            if isinstance(details, dict) and isinstance(details.get("reason"), str):
+                return details["reason"]
+            return "incomplete"
+        if status == "failed":
+            return "error"
+        if status == "cancelled":
+            return "cancelled"
+        return "unknown"
 
     def _map_http_status_error(self, status_code: int) -> str:
         if status_code == 401:

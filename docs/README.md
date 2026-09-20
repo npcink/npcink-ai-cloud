@@ -62,6 +62,7 @@ deleting the old decision history.
 - [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
 - [WordPress AI Request Path Map](wordpress-ai-request-path-map-v1.md) — end-to-end call chain from the editor button to the feedback events, with the code location of each step; visual companion to the flow document above, not a separate authority.
 - [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) — accepted; keeps `ONE_ACTIVE_CONTRACT_VERSION` pre-public and pre-declares the trigger that switches to a bounded compatibility window with `upgrade_required` semantics
+- [ADR-054: Responses Output Boundary and No Silent Endpoint Downgrade](decisions/054-responses-output-boundary-and-no-silent-downgrade.md) — accepted; keeps upstream Responses parsing endpoint-specific, fail-closed, and explicit about model evidence
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
 - [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
@@ -215,6 +216,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Image Source AI Generation Handoff](image-source-ai-generation-handoff-v1.md)
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
+- [WordPress AI Runtime Validation Rollout Plan](wordpress-ai-runtime-validation-rollout-plan-v1.md)
 - [Customer Journey Metadata](customer-journey-metadata-v1.md) — active
   metadata-only WordPress and Portal event, consent, retention, summary, and
   release-evidence contract

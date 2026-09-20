@@ -974,6 +974,8 @@ def test_wordpress_ai_connector_title_generation_enforces_its_ability_output_sch
         },
     }
     assert provider_input["metadata"]["ability_output_schema"] == title_schema
+    assert "strict JSON object" in provider_input["input"]
+    assert "Do not return bare title text" in provider_input["input"]
 
 
 def test_wordpress_ai_connector_title_generation_rejects_a_parseable_wrong_schema(
