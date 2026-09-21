@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     )
 
     project_name: str = Field(default="Npcink AI Cloud")
-    environment: str = Field(default="development")
+    environment: str = Field(default="production")
     deployment_release: str = Field(default="development")
     deployment_source_revision: str = Field(default="unknown")
     deployment_source_dirty: bool = Field(default=False)
