@@ -217,6 +217,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
 - [WordPress AI Runtime Validation Rollout Plan](wordpress-ai-runtime-validation-rollout-plan-v1.md)
+- [WordPress AI Runtime Continuous Observation — 2026-09-21](wordpress-ai-runtime-observation-2026-09-21.md) — active observation record for the post-implementation natural-traffic, semantic-review, gateway, compatibility-gate, and production-pause boundaries
 - [Customer Journey Metadata](customer-journey-metadata-v1.md) — active
   metadata-only WordPress and Portal event, consent, retention, summary, and
   release-evidence contract
