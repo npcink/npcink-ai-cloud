@@ -20,7 +20,7 @@
 | Addon 业务测试和文档 | [Addon #154](https://github.com/npcink/npcink-cloud-addon/pull/154)，合并 `078bf419a49ff8e8d4344902a8f4721c8ab8c16c`；本地 `ef54a92` 与远端合并树 diff 为空 | 已合并；包含浏览器 runner 和测试，不能称为“纯文档 PR” |
 | 本地业务路径 | Addon 日期证据记录了 fake 核心流程、取消、权限拒绝、并发标签页、签名传输、Cron、升级回滚、Ollama 三次调用及清理 | 有分场景工程证据，不代表全部场景覆盖 |
 | 自然使用及质量毕业条件 | rollout plan 的七日窗口、至少 50 个自然观察与人工决策条件，没有完成记录 | 未证明完成 |
-| 中央跨仓库 gate | 初次运行因 nested login shell 未继承 fallback Git 而误报 `not a git repository`；随后设置 `BASH_ENV=/tmp/codex-bash-env`、fallback Git 和 `NPCINK_REPO_FAMILY_ROOT=/Users/muze/gitee` 重跑，Addon `composer test:all` 与 Cloud exact-SHA GitHub CI 均 `passed` | 已完成；该环境变量必须写入后续操作手册 |
+| 中央跨仓库 gate | 初次运行因 nested login shell 未继承 fallback Git 而误报 `not a git repository`；随后设置 `BASH_ENV=/tmp/codex-bash-env`、fallback Git 和 `NPCINK_REPO_FAMILY_ROOT=/Users/muze/gitee` 重跑，Addon `composer test:all` 与 Cloud exact-SHA GitHub CI 均 `passed` | 已完成；环境修复已记录，后续操作应复用 |
 
 ## 待处理问题
 
@@ -63,7 +63,7 @@
 - Addon 已切到远端 `master=078bf419…` 的 detached clean worktree，本地和远端
   历史 topic 分支已删除；没有旧辅助 worktree。
 - 清理后的结论是：当前活动 worktree 干净，历史 topic 与旧辅助 worktree 已处理；
-  仅保留受保护分支、生产分支、M4 operations worktree 和可恢复 bundle。
+  历史 topic 清理后仅保留受保护分支、生产分支、M4 operations worktree 和可恢复 bundle；开放的 Dependabot 依赖分支属于自动化待处理项，继续保留。
 
 ## 复盘与复用规则
 
