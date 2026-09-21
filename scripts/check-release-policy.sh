@@ -219,7 +219,6 @@ require_file "deploy/remote-runtime-config-preflight.sh"
 require_file ".env.example"
 require_file "docker-compose.dev.yml"
 require_file "docker-compose.prod.yml"
-require_file "docker-compose.p5-b4-runtime-proof.yml"
 require_file "docker-compose.runtime.yml"
 require_file "docker-compose.pg18-proof.yml"
 require_file "scripts/cloud-deploy-bundle-smoke-flow.sh"
@@ -643,7 +642,6 @@ require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" "NPCINK_CLOUD_SERVICE
 require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" "NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID"
 for ordinary_runtime_surface in \
 	docker-compose.prod.yml \
-	docker-compose.p5-b4-runtime-proof.yml \
 	.env.example \
 	scripts/cloud-deploy-bundle-smoke-flow.sh; do
 	reject_marker "${ordinary_runtime_surface}" "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
