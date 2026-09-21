@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -229,6 +230,11 @@ def _check_manifest(path: Path, expected_manifest: dict[str, Any]) -> None:
 
 
 def _import_app() -> None:
+    # This import check runs in a bare build or smoke container before any
+    # deployment environment exists. The runtime image is always started with
+    # an explicit NPCINK_CLOUD_ENVIRONMENT, so the check declares the lightest
+    # import-time stance instead of relying on the fail-closed Settings default.
+    os.environ.setdefault("NPCINK_CLOUD_ENVIRONMENT", "development")
     import app.api.main  # noqa: F401, PLC0415
 
 
