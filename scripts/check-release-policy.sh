@@ -494,7 +494,7 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'docker exec -i --env VARIAB
 reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "run --rm --no-deps -e VARIABLE_NAME"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
-require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "python -m app.dev.reencrypt_service_secrets"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "python -m app.ops.reencrypt_service_secrets"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "--old-key-id"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '/opt/npcink-ai-cloud/.release-state/<release-name>/env.deploy'
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '`--skip-frontend-image` preserves an existing frontend only'
@@ -518,8 +518,8 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "com.docker.compose.service=
 reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "Runtime configuration-only changes can normally be applied"
 require_marker "deploy/OPS_PLAYBOOK.md" "deploy/deploy-to-ssh-host.sh --stage-only"
 require_marker "deploy/OPS_PLAYBOOK.md" "staged_release=/absolute/release-path"
-require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_runtime_data verify"
-require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_service_secrets verify"
+require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.ops.reencrypt_runtime_data verify"
+require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.ops.reencrypt_service_secrets verify"
 require_marker "deploy/OPS_PLAYBOOK.md" "There is intentionally no copy/paste Compose command"
 reject_marker "deploy/OPS_PLAYBOOK.md" "run --rm --no-deps"
 require_marker "deploy/OPS_PLAYBOOK.md" "protected names-only environment handoff"
@@ -556,7 +556,7 @@ require_marker "deploy/OPS_PLAYBOOK.md" "NPCINK_CLOUD_CERTIFICATE_RENEWAL_HOOK_P
 require_marker "deploy/OPS_PLAYBOOK.md" "/usr/bin/python3.11"
 require_marker "deploy/OPS_PLAYBOOK.md" 'Pure `--stage-only` upload'
 require_marker "deploy/RELEASE_CHECKLIST.md" "new-key-only \`verify\`"
-require_marker "deploy/RELEASE_CHECKLIST.md" "python -m app.dev.reencrypt_service_secrets"
+require_marker "deploy/RELEASE_CHECKLIST.md" "python -m app.ops.reencrypt_service_secrets"
 require_marker "deploy/RELEASE_CHECKLIST.md" "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
 require_marker "deploy/RELEASE_CHECKLIST.md" "deploy/deploy-to-ssh-host.sh --stage-only --skip-bundle-build"
 require_marker "deploy/RELEASE_CHECKLIST.md" "staged_release=/absolute/release-path"

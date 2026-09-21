@@ -803,8 +803,8 @@ sudo "${STAGED_RELEASE}/deploy/runtime-data-encryption-cutover.sh" \
 7. Only after that receipt does the script perform an independent PostgreSQL 16
    restore and `0058 -> 0068`, then separately runs
    `inventory -> dry-run -> apply -> verify` through
-   `python -m app.dev.reencrypt_runtime_data` and
-   `python -m app.dev.reencrypt_service_secrets`. Both the restored rehearsal
+   `python -m app.ops.reencrypt_runtime_data` and
+   `python -m app.ops.reencrypt_service_secrets`. Both the restored rehearsal
    and production are count-locked to 18 Runtime Data rows (17 site signing
    secrets plus one Addon connection payload), 12 service-secret ciphertexts
    (eight provider connections plus four service-setting secret entries), and

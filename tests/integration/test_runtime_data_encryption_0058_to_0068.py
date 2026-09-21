@@ -1160,8 +1160,8 @@ def test_postgresql_maintenance_clis_execute_both_encryption_cutovers_as_subproc
             service_old_root_env: LEGACY_SERVICE_ROOT,
         }
     )
-    runtime_module = "app.dev.reencrypt_runtime_data"
-    service_module = "app.dev.reencrypt_service_secrets"
+    runtime_module = "app.ops.reencrypt_runtime_data"
+    service_module = "app.ops.reencrypt_service_secrets"
     completed_processes: list[subprocess.CompletedProcess[str]] = []
 
     for module in (runtime_module, service_module):

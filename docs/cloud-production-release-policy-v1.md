@@ -989,8 +989,8 @@ that digest.
 Only after the receipt may the script perform an independent PostgreSQL 16
 restore and rehearse `0058 -> 0068`. In that same restore rehearsal and then in
 production it separately runs count-locked `inventory`, `dry-run`, `apply`, and
-new-key-only `verify` through `python -m app.dev.reencrypt_runtime_data` for 18
-rows and `python -m app.dev.reencrypt_service_secrets` for 12 rows. Each
+new-key-only `verify` through `python -m app.ops.reencrypt_runtime_data` for 18
+rows and `python -m app.ops.reencrypt_service_secrets` for 12 rows. Each
 `apply` is an independent database transaction, but both applies and both
 verifies are one 30-row activation gate. The gate also freezes each sorted
 non-secret row-identifier set by canonical-JSON SHA-256; matching counts with a

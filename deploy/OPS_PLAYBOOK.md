@@ -684,8 +684,8 @@ the bounded deployment attempt.
 7. After accepting the receipt, the same process proves an independent
    PostgreSQL 16 restore and rehearses `0058 -> 0068`. Against that restored
    copy it runs `inventory -> dry-run -> apply -> verify` separately through
-   `python -m app.dev.reencrypt_runtime_data` and
-   `python -m app.dev.reencrypt_service_secrets`. Evidence is count-locked to
+   `python -m app.ops.reencrypt_runtime_data` and
+   `python -m app.ops.reencrypt_service_secrets`. Evidence is count-locked to
    18 Runtime Data rows (17 site signing secrets plus one Addon connection
    payload), 12 service-secret ciphertexts (eight provider connections plus
    four service-setting secret entries), and 30 ciphertexts in total. Each `apply` owns one
@@ -710,8 +710,8 @@ the bounded deployment attempt.
 	   `--old-key-id "${OLD_RUNTIME_DATA_KEY_ID}"` inside its dedicated
 	   orchestrator.
 	   The Runtime Data sequence ends with
-   `python -m app.dev.reencrypt_runtime_data verify`; the Service Settings
-   sequence ends with `python -m app.dev.reencrypt_service_secrets verify`.
+   `python -m app.ops.reencrypt_runtime_data verify`; the Service Settings
+   sequence ends with `python -m app.ops.reencrypt_service_secrets verify`.
    Only the matching service `dry-run`/`apply` receives
    `--old-root-env NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET`.
    The sorted non-secret row-identifier sets are also frozen by canonical-JSON
@@ -788,7 +788,7 @@ Inventory and new-key-only `verify` do not receive any old root; only
 `NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET`.
 During the first P1-E06 Service Settings migration, the matching old-root
 exposure rule applies to `NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET` and
-`python -m app.dev.reencrypt_service_secrets`. That tool currently supports
+`python -m app.ops.reencrypt_service_secrets`. That tool currently supports
 only raw Fernet to `sse.v1`; it does not accept an old `sse.v1` key ID. Any
 future `sse.v1` rotation requires a separately designed and approved contract.
 Normal runtime has no legacy or dual-read path. It accepts only active `rde.v1`

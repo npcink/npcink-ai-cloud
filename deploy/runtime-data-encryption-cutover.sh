@@ -2476,7 +2476,7 @@ run_api_evidence() {
 		unset NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET
 	fi
 	if run_exact_api_one_off "${env_flags[@]}" -- \
-		python -m app.dev.reencrypt_runtime_data "$@" \
+		python -m app.ops.reencrypt_runtime_data "$@" \
 		>"${output}" 2>"${errors}"; then
 		run_status=0
 	else
@@ -2540,7 +2540,7 @@ run_service_api_evidence() {
 		unset NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET
 	fi
 	if run_exact_api_one_off "${env_flags[@]}" -- \
-		python -m app.dev.reencrypt_service_secrets "$@" \
+		python -m app.ops.reencrypt_service_secrets "$@" \
 		>"${output}" 2>"${errors}"; then
 		run_status=0
 	else
