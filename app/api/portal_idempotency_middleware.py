@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -109,7 +110,8 @@ class PortalIdempotencyMiddleware:
             fallback = _error_envelope(scope, error_code=response_body.error_code)
             fallback_response = JSONResponse(status_code=500, content=fallback)
             try:
-                complete_portal_mutation(
+                await run_in_threadpool(
+                    complete_portal_mutation,
                     database_url=self.settings.database_url,
                     claim=claim,
                     response_status=500,
@@ -132,7 +134,8 @@ class PortalIdempotencyMiddleware:
             return
 
         try:
-            complete_portal_mutation(
+            await run_in_threadpool(
+                complete_portal_mutation,
                 database_url=self.settings.database_url,
                 claim=claim,
                 response_status=response_status,
