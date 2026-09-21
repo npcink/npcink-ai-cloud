@@ -73,6 +73,12 @@ pnpm run check:anti-drift
 pnpm run smoke:provider-env-retirement
 ```
 
+The one-time migration tool (`python -m app.dev.import_provider_connections_from_env`,
+formerly `pnpm run providers:import-env`) has since been removed with the
+completed retirement; the import commands above are retained only as the
+historical migration record, and the two verification commands remain the
+supported checks.
+
 The first command is a dry run and does not write provider connections. The
 final command removes only imported provider keys from the selected env file.
 Workload guardrails such as Site Knowledge document/chunk limits, quotas,

@@ -26,7 +26,7 @@ read-only diagnosis companion that stays inside the existing service-plane evide
 - **What it means**: No primary blocker detected.
 - **Evidence path**: `operator_guidance.state` is `healthy`.
 - **Operator action**: No immediate action required.
-- **Recording**: Keep the smoke/drill evidence file path for the baseline record.
+- **Recording**: Keep the smoke evidence file path for the baseline record.
 
 ### `provider_failures`
 
@@ -35,14 +35,14 @@ read-only diagnosis companion that stays inside the existing service-plane evide
 - **Operator action**:
   1. Read `failures.dominant_error.error_code` and `provider_id`.
   2. Verify provider credentials, quota, and health:
-     - `pnpm run drill:provider-failure` (isolated fake-provider drill)
      - `GET /internal/service/runtime/diagnostics/summary` → `failures`
      - `GET /internal/service/runtime/diagnostics/runs?status=failed&limit=20`
   3. If the provider is DeepSeek or another OpenAI-compatible adapter, confirm
      the corresponding `/admin/ai-resources` provider connection is configured,
      tested, and not rate-limited.
-- **Do not**: change provider adapter code during the drill; use the drill to confirm
-  whether the issue is credential/quota vs. adapter behavior.
+- **Do not**: change provider adapter code while investigating; use the
+  diagnostics evidence to confirm whether the issue is credential/quota
+  vs. adapter behavior.
 
 ### `callback_delivery`
 
@@ -51,12 +51,10 @@ read-only diagnosis companion that stays inside the existing service-plane evide
 - **Operator action**:
   1. Read `callback.failed`, `callback.overdue`, and `callback.dispatching_stale`.
   2. Verify callback URL reachability from the Cloud network.
-  3. Run `pnpm run drill:callback-failure` to confirm the callback-failure path
-     produces the expected `primary_reason=callback_delivery` guidance.
-  4. Check `callback-worker` heartbeat in ops cadence:
+  3. Check `callback-worker` heartbeat in ops cadence:
      - `GET /internal/service/ops/cadence` → look for `callback-worker`
-- **Do not**: change WordPress callback endpoint code during the drill; the drill
-  uses an isolated fake callback and does not call WordPress.
+- **Do not**: change WordPress callback endpoint code while investigating; the
+  checks above do not call WordPress.
 
 ### `runtime_queue`
 
@@ -93,19 +91,13 @@ read-only diagnosis companion that stays inside the existing service-plane evide
      - recent rate-limit, replay-block, payload-too-large, invalid-nonce counts
   2. Read `GET /internal/service/runtime/diagnostics/guard-events` for recent
      `runtime_guard_events` by `scope_kind` and `event_type`.
-  3. Run `pnpm run drill:auth-failure` to confirm the auth-reject path produces
-     the expected `401` + `auth.invalid_signature` response and that guard events
-     capture the reject evidence.
-  4. If a specific site or key is responsible, verify its signing secret and
+  3. If a specific site or key is responsible, verify its signing secret and
      request header construction (timestamp, nonce, canonical request).
 - **Do not**: disable guard rules globally; investigate per-scope patterns first.
 
 ## Evidence directory conventions
 
 - Local alpha smoke: `.tmp/local-alpha-smoke/`
-- Provider failure drill: `.tmp/local-alpha-provider-failure-drill/`
-- Callback failure drill: `.tmp/local-alpha-callback-failure-drill/`
-- Auth failure drill: `.tmp/local-alpha-auth-failure-drill/`
 
 These directories are gitignored. Only record the path in baseline docs, never
 commit evidence files.
