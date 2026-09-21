@@ -12,6 +12,7 @@ from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings
 from app.core.db import get_session
@@ -787,7 +788,6 @@ async def authorize_request(
     nonce = ""
     idempotency_key = ""
     body_digest = ""
-    client_scope_id = ""
 
     try:
         site_id = _require_header(request, "X-Npcink-Site-Id", "auth.site_id_required")
@@ -827,7 +827,8 @@ async def authorize_request(
             tolerance_seconds=timestamp_tolerance_seconds,
         )
         if body_evidence_loader is not None:
-            _preflight_site_and_key(
+            await run_in_threadpool(
+                _preflight_site_and_key,
                 database_url=database_url,
                 site_id=site_id,
                 key_id=key_id,
@@ -864,131 +865,134 @@ async def authorize_request(
             tolerance_seconds=timestamp_tolerance_seconds,
         )
 
-        with get_session(database_url) as session:
-            site = session.get(Site, site_id)
-            api_key = session.get(SiteApiKey, key_id)
-            authorized_key = _validate_site_and_key(
-                site=site,
-                api_key=api_key,
-                site_id=site_id,
-                key_id=key_id,
-                required_scope=required_scope,
-                now=now,
-            )
-            signing_secret = _resolve_site_api_signing_secret(
-                authorized_key,
-                settings=settings,
-            )
-
-            expected_signature = build_hmac_signature(
-                signing_secret,
-                canonical_request,
-            )
-            if not hmac.compare_digest(expected_signature, signature):
-                raise RequestAuthError(
-                    401,
-                    "auth.invalid_signature",
-                    "request signature is invalid",
+        def authorize_site_credentials() -> None:
+            with get_session(database_url) as session:
+                site = session.get(Site, site_id)
+                api_key = session.get(SiteApiKey, key_id)
+                authorized_key = _validate_site_and_key(
+                    site=site,
+                    api_key=api_key,
+                    site_id=site_id,
+                    key_id=key_id,
+                    required_scope=required_scope,
+                    now=now,
+                )
+                signing_secret = _resolve_site_api_signing_secret(
+                    authorized_key,
+                    settings=settings,
                 )
 
-            if require_nonce:
-                client_scope_id = resolve_client_scope_id(request)
-                replay_ttl_seconds = _resolve_replay_receipt_ttl_seconds(
-                    timestamp_tolerance_seconds
+                expected_signature = build_hmac_signature(
+                    signing_secret,
+                    canonical_request,
                 )
-                if replay_policy == PUBLIC_REPLAY_POLICY_MEDIA_PULL:
-                    scope_kinds = (
-                        REPLAY_SCOPE_PUBLIC_PULL_SITE,
-                        REPLAY_SCOPE_PUBLIC_PULL_KEY,
-                        REPLAY_SCOPE_PUBLIC_PULL_IP,
-                    )
-                    rate_window_seconds = public_pull_rate_limit_window_seconds
-                    rate_limits = (
-                        public_pull_max_requests_per_window,
-                        public_pull_max_requests_per_key_window,
-                        public_pull_max_requests_per_ip_window,
-                    )
-                else:
-                    scope_kinds = (
-                        REPLAY_SCOPE_PUBLIC_POST_SITE,
-                        REPLAY_SCOPE_PUBLIC_POST_KEY,
-                        REPLAY_SCOPE_PUBLIC_POST_IP,
-                    )
-                    rate_window_seconds = public_post_rate_limit_window_seconds
-                    rate_limits = (
-                        public_post_max_requests_per_window,
-                        public_post_max_requests_per_key_window,
-                        public_post_max_requests_per_ip_window,
-                    )
-                cooldown_scopes = [
-                    (
-                        scope_kinds[0],
-                        site_id,
-                        public_guard_max_reject_events_per_site_window,
-                    ),
-                    (
-                        scope_kinds[1],
-                        key_id,
-                        public_guard_max_reject_events_per_key_window,
-                    ),
-                    (
-                        scope_kinds[2],
-                        client_scope_id,
-                        public_guard_max_reject_events_per_ip_window,
-                    ),
-                ]
-                replay_scopes = [
-                    (
-                        scope_kinds[0],
-                        site_id,
-                        rate_limits[0],
-                    ),
-                    (
-                        scope_kinds[1],
-                        key_id,
-                        rate_limits[1],
-                    ),
-                    (
-                        scope_kinds[2],
-                        client_scope_id,
-                        rate_limits[2],
-                    ),
-                ]
-                for scope_kind, scope_id, max_events in cooldown_scopes:
-                    _enforce_guard_cooldown(
-                        session=session,
-                        scope_kind=scope_kind,
-                        scope_id=scope_id,
-                        now=now,
-                        window_seconds=public_guard_cooldown_window_seconds,
-                        max_events=max_events,
-                    )
-                for scope_kind, scope_id, max_requests in replay_scopes:
-                    _enforce_short_window_rate_limit(
-                        session=session,
-                        scope_kind=scope_kind,
-                        scope_id=scope_id,
-                        now=now,
-                        window_seconds=rate_window_seconds,
-                        max_requests=max_requests,
-                    )
-                for scope_kind, scope_id, _ in replay_scopes:
-                    if not scope_id:
-                        continue
-                    _reserve_replay_receipt(
-                        session=session,
-                        scope_kind=scope_kind,
-                        scope_id=scope_id,
-                        replay_key=nonce,
-                        method=request.method,
-                        path=request.url.path,
-                        trace_id=trace_id,
-                        now=now,
-                        ttl_seconds=replay_ttl_seconds,
+                if not hmac.compare_digest(expected_signature, signature):
+                    raise RequestAuthError(
+                        401,
+                        "auth.invalid_signature",
+                        "request signature is invalid",
                     )
 
-            authorized_key.last_used_at = now
-            session.commit()
+                if require_nonce:
+                    client_scope_id = resolve_client_scope_id(request)
+                    replay_ttl_seconds = _resolve_replay_receipt_ttl_seconds(
+                        timestamp_tolerance_seconds
+                    )
+                    if replay_policy == PUBLIC_REPLAY_POLICY_MEDIA_PULL:
+                        scope_kinds = (
+                            REPLAY_SCOPE_PUBLIC_PULL_SITE,
+                            REPLAY_SCOPE_PUBLIC_PULL_KEY,
+                            REPLAY_SCOPE_PUBLIC_PULL_IP,
+                        )
+                        rate_window_seconds = public_pull_rate_limit_window_seconds
+                        rate_limits = (
+                            public_pull_max_requests_per_window,
+                            public_pull_max_requests_per_key_window,
+                            public_pull_max_requests_per_ip_window,
+                        )
+                    else:
+                        scope_kinds = (
+                            REPLAY_SCOPE_PUBLIC_POST_SITE,
+                            REPLAY_SCOPE_PUBLIC_POST_KEY,
+                            REPLAY_SCOPE_PUBLIC_POST_IP,
+                        )
+                        rate_window_seconds = public_post_rate_limit_window_seconds
+                        rate_limits = (
+                            public_post_max_requests_per_window,
+                            public_post_max_requests_per_key_window,
+                            public_post_max_requests_per_ip_window,
+                        )
+                    cooldown_scopes = [
+                        (
+                            scope_kinds[0],
+                            site_id,
+                            public_guard_max_reject_events_per_site_window,
+                        ),
+                        (
+                            scope_kinds[1],
+                            key_id,
+                            public_guard_max_reject_events_per_key_window,
+                        ),
+                        (
+                            scope_kinds[2],
+                            client_scope_id,
+                            public_guard_max_reject_events_per_ip_window,
+                        ),
+                    ]
+                    replay_scopes = [
+                        (
+                            scope_kinds[0],
+                            site_id,
+                            rate_limits[0],
+                        ),
+                        (
+                            scope_kinds[1],
+                            key_id,
+                            rate_limits[1],
+                        ),
+                        (
+                            scope_kinds[2],
+                            client_scope_id,
+                            rate_limits[2],
+                        ),
+                    ]
+                    for scope_kind, scope_id, max_events in cooldown_scopes:
+                        _enforce_guard_cooldown(
+                            session=session,
+                            scope_kind=scope_kind,
+                            scope_id=scope_id,
+                            now=now,
+                            window_seconds=public_guard_cooldown_window_seconds,
+                            max_events=max_events,
+                        )
+                    for scope_kind, scope_id, max_requests in replay_scopes:
+                        _enforce_short_window_rate_limit(
+                            session=session,
+                            scope_kind=scope_kind,
+                            scope_id=scope_id,
+                            now=now,
+                            window_seconds=rate_window_seconds,
+                            max_requests=max_requests,
+                        )
+                    for scope_kind, scope_id, _ in replay_scopes:
+                        if not scope_id:
+                            continue
+                        _reserve_replay_receipt(
+                            session=session,
+                            scope_kind=scope_kind,
+                            scope_id=scope_id,
+                            replay_key=nonce,
+                            method=request.method,
+                            path=request.url.path,
+                            trace_id=trace_id,
+                            now=now,
+                            ttl_seconds=replay_ttl_seconds,
+                        )
+
+                authorized_key.last_used_at = now
+                session.commit()
+
+        await run_in_threadpool(authorize_site_credentials)
     except RequestAuthError as error:
         _log_auth_rejection(
             request,
@@ -998,7 +1002,8 @@ async def authorize_request(
             trace_id=trace_id,
             required_scope=required_scope,
         )
-        record_runtime_guard_rejection(
+        await run_in_threadpool(
+            record_runtime_guard_rejection,
             database_url=database_url,
             request=request,
             auth_surface=RUNTIME_GUARD_SURFACE_PUBLIC,

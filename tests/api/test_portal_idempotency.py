@@ -251,6 +251,40 @@ def test_same_principal_key_and_request_replays_exact_response_once(
         assert "Idempotent support request" not in receipt.response_body_ciphertext
 
 
+def test_concurrent_same_key_mutations_execute_exactly_once(
+    portal_client: tuple[str, TestClient],
+) -> None:
+    database_url, client = portal_client
+    headers = _headers("alpha", key="portal-idempotency-concurrency-001")
+    concurrency = 3
+    barrier = Barrier(concurrency)
+
+    def submit_concurrently() -> Response:
+        concurrent_client = TestClient(client.app)
+        concurrent_client.headers.update(client.headers)
+        barrier.wait()
+        return concurrent_client.post(
+            PORTAL_PATH, json=PORTAL_PAYLOAD, headers=headers
+        )
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        responses = list(
+            pool.map(lambda _: submit_concurrently(), range(concurrency))
+        )
+
+    statuses = [response.status_code for response in responses]
+    assert all(status in {200, 409} for status in statuses), statuses
+    assert 200 in statuses
+    executed = [
+        response
+        for response in responses
+        if response.status_code == 200
+        and response.headers.get("Idempotency-Replayed") != "true"
+    ]
+    assert len(executed) == 1
+    assert _support_request_count(database_url) == 1
+
+
 def test_completed_replay_rechecks_current_site_membership(
     portal_client: tuple[str, TestClient],
 ) -> None:
