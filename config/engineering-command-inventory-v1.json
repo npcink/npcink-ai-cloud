@@ -341,7 +341,6 @@
       "commands": {
         "seed:dev": "Seed the fixed local runtime development baseline.",
         "seed:smoke": "Run the supported local runtime smoke seed alias.",
-        "providers:import-env": "Import legacy provider environment configuration into managed storage.",
         "login:seed:dev": "Seed stable local Admin and Portal login data."
       }
     },
@@ -357,10 +356,7 @@
         "smoke:local-alpha": "Run the local hosted-runtime alpha smoke.",
         "smoke:internal-alpha-onboarding": "Run the focused internal-alpha onboarding smoke.",
         "smoke:site-knowledge": "Run the real-chain Site Knowledge smoke.",
-        "smoke:media-derivative:wp": "Run the WordPress media derivative end-to-end smoke.",
-        "drill:provider-failure": "Exercise the local provider failure drill.",
-        "drill:callback-failure": "Exercise the local callback failure drill.",
-        "drill:auth-failure": "Exercise the local authentication failure drill."
+        "smoke:media-derivative:wp": "Run the WordPress media derivative end-to-end smoke."
       }
     },
     {
