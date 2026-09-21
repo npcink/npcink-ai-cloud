@@ -1792,7 +1792,8 @@ async def upsert_account(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.upsert_account(
+        result = await run_in_threadpool(
+            service.upsert_account,
             account_id=payload.account_id,
             name=payload.name,
             primary_email=payload.primary_email,
@@ -1827,7 +1828,8 @@ async def suspend_admin_account(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.set_account_status(
+        result = await run_in_threadpool(
+            service.set_account_status,
             account_id,
             status="suspended",
             reason=payload.reason if payload is not None else "",
@@ -1875,7 +1877,8 @@ async def restore_admin_account(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.set_account_status(
+        result = await run_in_threadpool(
+            service.set_account_status,
             account_id,
             status="active",
             reason=payload.reason if payload is not None else "",
@@ -1922,7 +1925,8 @@ async def provision_site(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.provision_site(
+        result = await run_in_threadpool(
+            service.provision_site,
             site_id=payload.site_id,
             account_id=payload.account_id,
             name=payload.name,
@@ -1958,7 +1962,8 @@ async def upsert_account_member_access(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.upsert_account_member_access(
+        result = await run_in_threadpool(
+            service.upsert_account_member_access,
             account_id=account_id,
             email=payload.email,
             status=payload.status,
@@ -1993,7 +1998,10 @@ async def activate_site(request: Request, site_id: str) -> Any:
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.activate_site(site_id, audit_context=audit_context)
+        result = await run_in_threadpool(
+            service.activate_site,
+            site_id, audit_context=audit_context
+        )
     except CommercialServiceError as error:
         _record_service_failure(
             request,
@@ -2019,7 +2027,8 @@ async def suspend_site(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.suspend_site(
+        result = await run_in_threadpool(
+            service.suspend_site,
             site_id,
             reason=payload.reason,
             audit_context=audit_context,
@@ -2049,7 +2058,8 @@ async def list_site_keys(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_site_keys(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_site_keys,
             site_id,
             limit=limit,
             offset=offset,
@@ -2071,7 +2081,8 @@ async def issue_site_key(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.issue_site_key(
+        result = await run_in_threadpool(
+            service.issue_site_key,
             site_id=site_id,
             key_id=payload.key_id,
             secret=payload.secret,
@@ -2109,7 +2120,8 @@ async def rotate_site_key(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.rotate_site_key(
+        result = await run_in_threadpool(
+            service.rotate_site_key,
             site_id=site_id,
             key_id=key_id,
             next_key_id=payload.key_id,
@@ -2147,7 +2159,8 @@ async def revoke_site_key(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.revoke_site_key(
+        result = await run_in_threadpool(
+            service.revoke_site_key,
             site_id=site_id,
             key_id=key_id,
             audit_context=audit_context,
@@ -2179,7 +2192,8 @@ async def expire_site_key(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.expire_site_key(
+        result = await run_in_threadpool(
+            service.expire_site_key,
             site_id=site_id,
             key_id=key_id,
             expires_at=payload.expires_at,
@@ -2211,7 +2225,8 @@ async def upsert_plan(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.upsert_plan(
+        result = await run_in_threadpool(
+            service.upsert_plan,
             plan_id=payload.plan_id,
             name=payload.name,
             status=payload.status,
@@ -2263,7 +2278,8 @@ async def publish_plan_version(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.publish_plan_version(
+        result = await run_in_threadpool(
+            service.publish_plan_version,
             plan_id=plan_id,
             plan_version_id=payload.plan_version_id,
             version_label=payload.version_label,
@@ -2324,7 +2340,8 @@ async def upsert_account_subscription(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.upsert_account_subscription(
+        result = await run_in_threadpool(
+            service.upsert_account_subscription,
             subscription_id=payload.subscription_id,
             account_id=account_id,
             plan_id=payload.plan_id,
@@ -2382,7 +2399,10 @@ async def suspend_account_subscription(request: Request, account_id: str) -> Any
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.suspend_account_subscription(account_id, audit_context=audit_context)
+        result = await run_in_threadpool(
+            service.suspend_account_subscription,
+            account_id, audit_context=audit_context
+        )
     except CommercialServiceError as error:
         _record_service_failure(
             request,
@@ -2427,7 +2447,8 @@ async def apply_subscription_topup(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.apply_operator_managed_subscription_topup(
+        result = await run_in_threadpool(
+            service.apply_operator_managed_subscription_topup,
             subscription_id=subscription_id,
             pack_id="",
             ai_credits_increment=payload.ai_credits_increment,
@@ -2487,7 +2508,8 @@ async def create_payment_order(request: Request, payload: PaymentOrderPayload) -
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.create_payment_order(
+        result = await run_in_threadpool(
+            service.create_payment_order,
             account_id=payload.account_id,
             plan_id=payload.plan_id,
             plan_version_id=payload.plan_version_id,
@@ -2526,10 +2548,13 @@ async def list_credit_packs(request: Request) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    credit_packs = await run_in_threadpool(
+        _get_commercial_service(request).list_credit_packs,
+    )
     return build_envelope(
         status="ok",
         message="credit packs loaded",
-        data=_get_commercial_service(request).list_credit_packs(),
+        data=credit_packs,
         revision="m6",
     )
 
@@ -2539,10 +2564,13 @@ async def get_admin_credit_pack_catalog(request: Request) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    catalog = await run_in_threadpool(
+        _get_commercial_service(request).get_admin_credit_pack_catalog,
+    )
     return build_envelope(
         status="ok",
         message="credit pack catalog loaded",
-        data=_get_commercial_service(request).get_admin_credit_pack_catalog(),
+        data=catalog,
         revision="m6",
     )
 
@@ -2559,7 +2587,8 @@ async def update_admin_credit_pack_catalog(
     audit_context = _build_audit_context(request)
     payload_items = [item.model_dump() for item in payload.items]
     try:
-        result = service.update_admin_credit_pack_catalog(
+        result = await run_in_threadpool(
+            service.update_admin_credit_pack_catalog,
             items=payload_items,
             audit_context=audit_context,
         )
@@ -2592,7 +2621,8 @@ async def create_credit_pack_payment_order(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.create_credit_pack_payment_order(
+        result = await run_in_threadpool(
+            service.create_credit_pack_payment_order,
             account_id=payload.account_id,
             pack_id=payload.pack_id,
             provider=payload.provider,
@@ -2630,7 +2660,8 @@ async def mark_payment_order_paid(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.mark_payment_order_paid(
+        result = await run_in_threadpool(
+            service.mark_payment_order_paid,
             order_id=order_id,
             provider_trade_no=payload.provider_trade_no,
             provider_event_id=payload.provider_event_id,
@@ -2669,7 +2700,8 @@ async def request_payment_refund(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.request_payment_refund(
+        result = await run_in_threadpool(
+            service.request_payment_refund,
             order_id=order_id,
             amount=payload.amount,
             reason=payload.reason,
@@ -2706,7 +2738,8 @@ async def mark_payment_refund_succeeded(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.mark_payment_refund_succeeded(
+        result = await run_in_threadpool(
+            service.mark_payment_refund_succeeded,
             refund_id=refund_id,
             provider_refund_no=payload.provider_refund_no,
             provider_event_id=payload.provider_event_id,
@@ -2740,7 +2773,10 @@ async def cancel_account_subscription(request: Request, account_id: str) -> Any:
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.cancel_account_subscription(account_id, audit_context=audit_context)
+        result = await run_in_threadpool(
+            service.cancel_account_subscription,
+            account_id, audit_context=audit_context
+        )
     except CommercialServiceError as error:
         _record_service_failure(
             request,
@@ -2783,7 +2819,10 @@ async def inspect_usage_meter(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).inspect_usage_meter(site_id, limit=limit)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).inspect_usage_meter,
+            site_id, limit=limit
+        )
     except CommercialServiceError as error:
         return _service_error_response(error)
     return build_envelope(
@@ -2800,7 +2839,10 @@ async def list_billing_snapshots(request: Request, site_id: str) -> Any:
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_billing_snapshots(site_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_billing_snapshots,
+            site_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error)
     return build_envelope(
@@ -2817,7 +2859,10 @@ async def reconcile_billing_snapshot(request: Request, site_id: str) -> Any:
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).reconcile_billing_snapshot(site_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).reconcile_billing_snapshot,
+            site_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error)
     return build_envelope(
@@ -2836,7 +2881,10 @@ async def rebuild_billing_snapshot(request: Request, site_id: str) -> Any:
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.rebuild_billing_snapshot(site_id, audit_context=audit_context)
+        result = await run_in_threadpool(
+            service.rebuild_billing_snapshot,
+            site_id, audit_context=audit_context
+        )
     except CommercialServiceError as error:
         _record_service_failure(
             request,
@@ -2861,7 +2909,10 @@ async def inspect_commercial_policy(request: Request, site_id: str) -> Any:
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).inspect_commercial_policy(site_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).inspect_commercial_policy,
+            site_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error)
     return build_envelope(
@@ -2886,14 +2937,16 @@ async def get_admin_overview(
     services = get_cloud_services(request)
     service = _get_commercial_service(request)
     try:
-        result = service.get_admin_overview(
+        result = await run_in_threadpool(
+            service.get_admin_overview,
             usage_window_days=usage_window_days,
             audit_window_minutes=audit_window_minutes,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     ready_report = await services.get_ready_report()
-    operational_readiness = ObservabilityService(services.settings).build_operational_readiness(
+    operational_readiness = await run_in_threadpool(
+        ObservabilityService(services.settings).build_operational_readiness,
         ready_report=ready_report
     )
     result["operational_readiness"] = _build_admin_operational_readiness_projection(
@@ -2967,7 +3020,8 @@ async def get_admin_coverage_work_queue(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_coverage_work_queue(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_coverage_work_queue,
             q=q,
             status=status,
             reason=reason,
@@ -2994,7 +3048,8 @@ async def get_runtime_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_advisor_service(request).get_runtime_advisor(
+    result = await run_in_threadpool(
+        _get_advisor_service(request).get_runtime_advisor,
         site_id=site_id,
         recent_minutes=recent_minutes,
     )
@@ -3015,7 +3070,8 @@ async def get_commercial_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_advisor_service(request).get_commercial_advisor(
+    result = await run_in_threadpool(
+        _get_advisor_service(request).get_commercial_advisor,
         usage_window_days=usage_window_days,
         audit_window_minutes=audit_window_minutes,
     )
@@ -3038,7 +3094,8 @@ async def get_routing_advisor(
     if auth is not None:
         return auth
     try:
-        result = _get_advisor_service(request).get_routing_advisor(
+        result = await run_in_threadpool(
+            _get_advisor_service(request).get_routing_advisor,
             site_id=site_id,
             filters={"range": range_filter, "limit": limit},
         )
@@ -3070,7 +3127,8 @@ async def get_site_diagnostic_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_advisor_service(request).get_site_diagnostic_advisor(
+    result = await run_in_threadpool(
+        _get_advisor_service(request).get_site_diagnostic_advisor,
         site_id=site_id,
         window_hours=window_hours,
     )
@@ -3093,7 +3151,8 @@ async def get_operations_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_advisor_service(request).get_operations_advisor(
+    result = await run_in_threadpool(
+        _get_advisor_service(request).get_operations_advisor,
         site_id=site_id,
         window_hours=_advisor_range_to_hours(range_filter),
         usage_window_days=usage_window_days,
@@ -3127,7 +3186,8 @@ async def get_ops_summary_advisor(
     if auth is not None:
         return auth
     try:
-        result = _get_advisor_service(request).get_ops_summary(
+        result = await run_in_threadpool(
+            _get_advisor_service(request).get_ops_summary,
             scope=scope,
             site_id=site_id,
             draft_kind=draft_kind,
@@ -3180,7 +3240,8 @@ async def get_ops_summary_preview_advisor(
     if auth is not None:
         return auth
     try:
-        result = _get_advisor_service(request).get_ops_summary_preview(
+        result = await run_in_threadpool(
+            _get_advisor_service(request).get_ops_summary_preview,
             scope=scope,
             site_id=site_id,
             draft_kind=draft_kind,
@@ -3223,7 +3284,8 @@ async def review_ops_summary_disclosure(
         return auth
     try:
         actor_context = _build_audit_context(request)
-        result = _get_advisor_service(request).review_ops_summary_disclosure(
+        result = await run_in_threadpool(
+            _get_advisor_service(request).review_ops_summary_disclosure,
             cache_key=payload.cache_key,
             review_status=payload.review_status,
             actor_ref=actor_context.actor_ref,
@@ -3258,7 +3320,8 @@ async def list_ops_summary_history(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_advisor_service(request).list_ops_summary_history(
+    result = await run_in_threadpool(
+        _get_advisor_service(request).list_ops_summary_history,
         site_id=site_id,
         scope=scope,
         limit=limit,
@@ -3282,7 +3345,8 @@ async def get_ops_summary_value_metrics(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_advisor_service(request).get_ops_summary_value_metrics(
+    result = await run_in_threadpool(
+        _get_advisor_service(request).get_ops_summary_value_metrics,
         site_id=site_id,
         scope=scope,
         window_days=window_days,
@@ -3314,7 +3378,8 @@ async def list_admin_accounts(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_admin_accounts(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_admin_accounts,
             q=q,
             status=status,
             expires_before=expires_before,
@@ -3354,7 +3419,8 @@ async def list_admin_support_requests(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_admin_support_requests(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_admin_support_requests,
             status=status,
             topic=topic,
             query=q,
@@ -3379,7 +3445,10 @@ async def get_admin_support_request(request: Request, request_id: str) -> Any:
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_support_request(request_id=request_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_support_request,
+            request_id=request_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return build_envelope(
@@ -3400,7 +3469,8 @@ async def create_admin_support_request_message(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).create_admin_support_request_message(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_admin_support_request_message,
             request_id=request_id,
             body=payload.body,
             visibility=payload.visibility,
@@ -3427,7 +3497,8 @@ async def create_admin_support_request_attachment(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).create_admin_support_request_attachment(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_admin_support_request_attachment,
             request_id=request_id,
             filename=payload.filename,
             content_type=payload.content_type,
@@ -3456,7 +3527,8 @@ async def get_admin_support_request_attachment(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_support_request_attachment(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_support_request_attachment,
             request_id=request_id,
             attachment_id=attachment_id,
         )
@@ -3480,7 +3552,8 @@ async def update_admin_support_request(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).update_admin_support_request(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_admin_support_request,
             request_id=request_id,
             status=payload.status,
             admin_note=payload.admin_note,
@@ -3505,7 +3578,10 @@ async def get_admin_account(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_account(account_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_account,
+            account_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return build_envelope(
@@ -3525,7 +3601,10 @@ async def get_admin_account_quota_summary(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_account_quota_summary(account_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_account_quota_summary,
+            account_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return build_envelope(
@@ -3546,7 +3625,8 @@ async def create_admin_account_agency_quote(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).create_account_agency_quote(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_account_agency_quote,
             account_id=account_id,
             amount_cny=payload.amount_cny,
             valid_days=payload.valid_days,
@@ -3575,7 +3655,8 @@ async def approve_admin_account_agency_trial(
         return auth
     audit_context = _build_audit_context(request)
     try:
-        result = _get_commercial_service(request).start_account_plan_trial(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).start_account_plan_trial,
             account_id=account_id,
             tier_id="agency",
             principal_id=payload.principal_id,
@@ -3606,7 +3687,8 @@ async def get_admin_account_credit_ledger(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_account_credit_ledger(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_account_credit_ledger,
             account_id,
             limit=limit,
             offset=offset,
@@ -3637,7 +3719,8 @@ async def list_admin_portal_users(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_admin_portal_users(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_admin_portal_users,
             q=q,
             source=source,
             status=status,
@@ -3666,7 +3749,8 @@ async def get_admin_portal_user_audit(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_portal_user_audit(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_portal_user_audit,
             principal_id=principal_id,
             limit=limit,
         )
@@ -3691,7 +3775,8 @@ async def batch_disable_admin_portal_users(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.batch_disable_admin_portal_users(
+        result = await run_in_threadpool(
+            service.batch_disable_admin_portal_users,
             principal_ids=payload.principal_ids,
             reason=payload.reason,
             audit_context=audit_context,
@@ -3741,7 +3826,8 @@ async def disable_admin_portal_user(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.disable_admin_portal_user(
+        result = await run_in_threadpool(
+            service.disable_admin_portal_user,
             principal_id=principal_id,
             reason=payload.reason,
             audit_context=audit_context,
@@ -3793,7 +3879,8 @@ async def apply_admin_account_credit_adjustment(
     service = _get_commercial_service(request)
     audit_context = _build_audit_context(request)
     try:
-        result = service.apply_admin_account_credit_adjustment(
+        result = await run_in_threadpool(
+            service.apply_admin_account_credit_adjustment,
             account_id=account_id,
             event_type=payload.event_type,
             ai_credit_delta=payload.ai_credit_delta,
@@ -3846,7 +3933,10 @@ async def get_admin_account_subscription(
     if auth is not None:
         return auth
     try:
-        account = _get_commercial_service(request).get_admin_account(account_id)
+        account = await run_in_threadpool(
+            _get_commercial_service(request).get_admin_account,
+            account_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     subscriptions = _dict_list(account.get("subscriptions"))
@@ -3877,7 +3967,8 @@ async def list_admin_sites(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_admin_sites(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_admin_sites,
             status=status,
             account_id=account_id,
             subscription_status=subscription_status,
@@ -3906,12 +3997,13 @@ async def get_admin_site(
         return auth
     services = get_cloud_services(request)
     try:
-        result = _get_commercial_service(request).get_admin_site(site_id)
+        result = await run_in_threadpool(_get_commercial_service(request).get_admin_site, site_id)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    result["runtime_diagnostics"] = RuntimeService(
+    result["runtime_diagnostics"] = await run_in_threadpool(
+        RuntimeService(
         services.settings.database_url
-    ).get_runtime_diagnostics_summary(
+    ).get_runtime_diagnostics_summary,
         site_id=site_id,
         recent_minutes=runtime_recent_minutes,
     )
@@ -3969,7 +4061,8 @@ async def update_admin_site_relink_cooldown(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).update_site_relink_cooldown(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_site_relink_cooldown,
             site_id,
             action=payload.action,
             cooldown_until=payload.cooldown_until,
@@ -3996,7 +4089,8 @@ async def list_admin_plans(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).list_admin_plans(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_admin_plans,
             status=status,
             limit=limit,
         )
@@ -4019,7 +4113,7 @@ async def get_admin_plan(
     if auth is not None:
         return auth
     try:
-        result = _get_commercial_service(request).get_admin_plan(plan_id)
+        result = await run_in_threadpool(_get_commercial_service(request).get_admin_plan, plan_id)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return build_envelope(
@@ -4041,7 +4135,8 @@ async def update_admin_plan_parameters(
         return auth
     audit_context = _build_audit_context(request)
     try:
-        result = _get_commercial_service(request).update_admin_plan_parameters(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_admin_plan_parameters,
             plan_id=plan_id,
             monthly_included_points=payload.monthly_included_points,
             site_limit=payload.site_limit,
@@ -4150,7 +4245,8 @@ async def get_admin_editor_assist_quality(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = EditorAssistQualityService(services.settings.database_url).get_summary(
+    result = await run_in_threadpool(
+        EditorAssistQualityService(services.settings.database_url).get_summary,
         window_hours=window_hours,
         site_id=site_id.strip(),
         task_key=task_key.strip(),
@@ -4268,10 +4364,10 @@ async def get_admin_service_settings(request: Request) -> Any:
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = ServiceSettingsAdminService(
+    result = await run_in_threadpool(ServiceSettingsAdminService(
         services.settings.database_url,
         services.settings,
-    ).get_settings()
+    ).get_settings)
     return build_envelope(
         status="ok",
         message="service settings loaded",
@@ -4290,10 +4386,10 @@ async def update_admin_portal_public_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_portal_public(payload.model_dump(mode="json"))
+        ).save_portal_public, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4337,10 +4433,10 @@ async def update_admin_site_relink_policy_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_site_relink_policy(payload.model_dump(mode="json"))
+        ).save_site_relink_policy, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4384,10 +4480,10 @@ async def update_admin_media_recognition_policy_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_media_recognition_policy(payload.model_dump(mode="json", exclude_none=True))
+        ).save_media_recognition_policy, payload.model_dump(mode="json", exclude_none=True))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4431,10 +4527,10 @@ async def update_admin_platform_preferences_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_platform_preferences(payload.model_dump(mode="json"))
+        ).save_platform_preferences, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4478,10 +4574,10 @@ async def update_admin_accounting_fx_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_accounting_fx(payload.model_dump(mode="json"))
+        ).save_accounting_fx, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4525,10 +4621,10 @@ async def update_admin_qq_login_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_qq_login(payload.model_dump(mode="json"))
+        ).save_qq_login, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4568,10 +4664,10 @@ async def test_admin_qq_login_settings(request: Request) -> Any:
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = ServiceSettingsAdminService(
+    result = await run_in_threadpool(ServiceSettingsAdminService(
         services.settings.database_url,
         services.settings,
-    ).test_qq_login()
+    ).test_qq_login)
     _record_service_setting_audit(
         request,
         event_kind="service_setting.test",
@@ -4599,10 +4695,10 @@ async def update_admin_portal_email_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_email(payload.model_dump(mode="json"))
+        ).save_email, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4646,10 +4742,11 @@ async def test_admin_portal_email_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(
+            ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).test_email(
+        ).test_email,
             recipient_email=payload.recipient_email,
             project_name=services.settings.project_name,
         )
@@ -4695,10 +4792,11 @@ async def preview_admin_portal_email_settings(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = ServiceSettingsAdminService(
+    result = await run_in_threadpool(
+        ServiceSettingsAdminService(
         services.settings.database_url,
         services.settings,
-    ).preview_email(
+    ).preview_email,
         preview_type=payload.preview_type,
         project_name=services.settings.project_name,
         locale=payload.locale,
@@ -4723,10 +4821,10 @@ async def update_admin_alipay_payment_settings(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_alipay_payment(payload.model_dump(mode="json"))
+        ).save_alipay_payment, payload.model_dump(mode="json"))
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4767,10 +4865,10 @@ async def test_admin_alipay_payment_settings(request: Request) -> Any:
         return auth
     services = get_cloud_services(request)
     try:
-        result = ServiceSettingsAdminService(
+        result = await run_in_threadpool(ServiceSettingsAdminService(
             services.settings.database_url,
             services.settings,
-        ).test_alipay_payment()
+        ).test_alipay_payment)
     except ServiceSettingsAdminError as error:
         _record_service_setting_audit(
             request,
@@ -4812,10 +4910,10 @@ async def get_admin_site_knowledge_vector_profile(request: Request) -> Any:
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = SiteKnowledgeVectorProfileAdminService(
+    result = await run_in_threadpool(SiteKnowledgeVectorProfileAdminService(
         services.settings.database_url,
         services.settings,
-    ).get_profile()
+    ).get_profile)
     return build_envelope(
         status="ok",
         message="Site Knowledge vector profile loaded",
@@ -4835,10 +4933,10 @@ async def update_admin_site_knowledge_vector_profile(
     services = get_cloud_services(request)
     credential_present = bool(str(payload.credential or "").strip())
     try:
-        result = SiteKnowledgeVectorProfileAdminService(
+        result = await run_in_threadpool(SiteKnowledgeVectorProfileAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_and_verify(payload.credential)
+        ).save_and_verify, payload.credential)
     except SiteKnowledgeVectorProfileAdminError as error:
         _record_site_knowledge_vector_profile_audit(
             request,
@@ -4895,10 +4993,10 @@ async def update_admin_site_knowledge_vector_store(
     token_present = bool(str(payload.token or "").strip())
     event_kind = "site_knowledge_vector_profile.vector_store.save_and_verify"
     try:
-        result = SiteKnowledgeVectorProfileAdminService(
+        result = await run_in_threadpool(SiteKnowledgeVectorProfileAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_and_verify_vector_store(payload.endpoint, payload.token)
+        ).save_and_verify_vector_store, payload.endpoint, payload.token)
     except SiteKnowledgeVectorProfileAdminError as error:
         _record_site_knowledge_vector_profile_audit(
             request,
@@ -4957,10 +5055,10 @@ async def rebuild_admin_site_knowledge_vector_index(
     services = get_cloud_services(request)
     event_kind = "site_knowledge_vector_profile.index.rebuild"
     try:
-        result = SiteKnowledgeVectorProfileAdminService(
+        result = await run_in_threadpool(SiteKnowledgeVectorProfileAdminService(
             services.settings.database_url,
             services.settings,
-        ).rebuild_index()
+        ).rebuild_index)
     except SiteKnowledgeVectorProfileAdminError as error:
         _record_site_knowledge_vector_profile_audit(
             request,
@@ -5023,10 +5121,10 @@ async def list_admin_provider_connections(request: Request) -> Any:
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = ProviderConnectionAdminService(
+    result = await run_in_threadpool(ProviderConnectionAdminService(
         services.settings.database_url,
         services.settings,
-    ).list_connections()
+    ).list_connections)
     return build_envelope(
         status="ok",
         message="provider connections loaded",
@@ -5045,10 +5143,10 @@ async def create_admin_provider_connection(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_connection(payload.model_dump(mode="json"))
+        ).save_connection, payload.model_dump(mode="json"))
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5108,10 +5206,10 @@ async def update_admin_provider_connection(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).save_connection(payload.model_dump(mode="json"), connection_id=connection_id)
+        ).save_connection, payload.model_dump(mode="json"), connection_id=connection_id)
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5171,10 +5269,10 @@ async def preview_admin_provider_connection_catalog(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).preview_catalog(payload.model_dump(mode="json"))
+        ).preview_catalog, payload.model_dump(mode="json"))
     except ProviderConnectionAdminError as error:
         return JSONResponse(
             status_code=error.status_code,
@@ -5203,10 +5301,10 @@ async def preflight_admin_provider_connection_delete(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).get_delete_preflight(connection_id)
+        ).get_delete_preflight, connection_id)
     except ProviderConnectionAdminError as error:
         return JSONResponse(
             status_code=error.status_code,
@@ -5236,10 +5334,11 @@ async def delete_admin_provider_connection(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(
+            ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).delete_connection(
+        ).delete_connection,
             connection_id,
             expected_updated_at=payload.expected_updated_at,
         )
@@ -5294,10 +5393,10 @@ async def test_admin_provider_connection(request: Request, connection_id: str) -
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).test_connection(connection_id)
+        ).test_connection, connection_id)
     except ProviderConnectionAdminError as error:
         _record_provider_connection_audit(
             request,
@@ -5360,10 +5459,11 @@ async def approve_admin_provider_connection_image_host(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ProviderConnectionAdminService(
+        result = await run_in_threadpool(
+            ProviderConnectionAdminService(
             services.settings.database_url,
             services.settings,
-        ).approve_detected_image_output_host(
+        ).approve_detected_image_output_host,
             connection_id,
             evidence_run_id=payload.evidence_run_id,
             evidence_probe_id=payload.evidence_probe_id,
@@ -5494,7 +5594,8 @@ async def list_admin_model_references(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = ModelReferenceService(services.settings.database_url).list_references(
+    result = await run_in_threadpool(
+        ModelReferenceService(services.settings.database_url).list_references,
         provider_id=provider_id,
         model_ids=[item.strip() for item in model_ids.split(",") if item.strip()],
         feature=feature,
@@ -5521,7 +5622,8 @@ async def sync_admin_model_references(
         return auth
     services = get_cloud_services(request)
     try:
-        result = ModelReferenceService(services.settings.database_url).sync_models_dev(
+        result = await run_in_threadpool(
+            ModelReferenceService(services.settings.database_url).sync_models_dev,
             payload=payload.payload,
         )
     except ModelReferenceError as error:
@@ -5858,7 +5960,8 @@ async def update_admin_hosted_runtime_profiles(
 
     audit_event = None
     try:
-        audit_event = _get_commercial_service(request).record_service_audit_event(
+        audit_event = await run_in_threadpool(
+            _get_commercial_service(request).record_service_audit_event,
             audit_context=_build_audit_context(request),
             event_kind="runtime_profiles.update",
             outcome="succeeded",
@@ -5992,7 +6095,8 @@ async def get_admin_image_source_metrics(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = ImageSourceMetricsService(services.settings.database_url).get_summary(
+    result = await run_in_threadpool(
+        ImageSourceMetricsService(services.settings.database_url).get_summary,
         site_id=site_id.strip() or None,
         window_hours=window_hours,
     )
@@ -6102,7 +6206,8 @@ async def list_service_audit_events(
                 revision="m6",
             ),
         )
-    result = _get_commercial_service(request).list_service_audit_events(
+    result = await run_in_threadpool(
+        _get_commercial_service(request).list_service_audit_events,
         event_id=event_id,
         site_id=site_id,
         account_id=account_id,
@@ -6137,7 +6242,8 @@ async def summarize_service_audit_events(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_commercial_service(request).summarize_service_audit_events(
+    result = await run_in_threadpool(
+        _get_commercial_service(request).summarize_service_audit_events,
         site_id=site_id,
         account_id=account_id,
         window_minutes=window_minutes,
@@ -6160,7 +6266,8 @@ async def summarize_admin_capability_probes(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_commercial_service(request).summarize_capability_probe_events(
+    result = await run_in_threadpool(
+        _get_commercial_service(request).summarize_capability_probe_events,
         window_minutes=window_minutes,
         limit=limit,
     )
@@ -6197,7 +6304,8 @@ async def get_observability_summary(
         return auth
     services = get_cloud_services(request)
     ready_report = await services.get_ready_report()
-    result = ObservabilityService(services.settings).build_summary(
+    result = await run_in_threadpool(
+        ObservabilityService(services.settings).build_summary,
         ready_report=ready_report,
         recent_minutes=recent_minutes,
         backlog_limit=backlog_limit,
@@ -6221,7 +6329,8 @@ async def list_commercial_decision_events(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_commercial_service(request).list_commercial_decision_events(
+    result = await run_in_threadpool(
+        _get_commercial_service(request).list_commercial_decision_events,
         site_id=site_id,
         decision=decision,
         request_kind=request_kind,
@@ -6246,7 +6355,8 @@ async def summarize_commercial_decision_events(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
-    result = _get_commercial_service(request).summarize_commercial_decision_events(
+    result = await run_in_threadpool(
+        _get_commercial_service(request).summarize_commercial_decision_events,
         site_id=site_id,
         request_kind=request_kind,
         window_minutes=window_minutes,
@@ -6270,7 +6380,8 @@ async def get_runtime_diagnostics_summary(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).get_runtime_diagnostics_summary(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).get_runtime_diagnostics_summary,
         site_id=site_id,
         recent_minutes=recent_minutes,
     )
@@ -6296,7 +6407,8 @@ async def get_provider_runtime_evidence_summary(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).get_provider_runtime_evidence_summary(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).get_provider_runtime_evidence_summary,
         site_id=site_id,
         provider_id=provider_id,
         model_id=model_id,
@@ -6323,10 +6435,11 @@ async def get_nightly_inspection_observability(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(
+    result = await run_in_threadpool(
+        RuntimeService(
         services.settings.database_url,
         settings=services.settings,
-    ).get_nightly_inspection_observability(
+    ).get_nightly_inspection_observability,
         site_id=site_id,
         recent_minutes=recent_minutes,
         limit=limit,
@@ -6352,7 +6465,8 @@ async def get_runtime_telemetry_diagnostics(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).get_runtime_telemetry_diagnostics(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).get_runtime_telemetry_diagnostics,
         site_id=site_id,
         capability=capability,
         recent_minutes=recent_minutes,
@@ -6380,7 +6494,8 @@ async def get_runtime_run_evidence(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).get_runtime_run_evidence(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).get_runtime_run_evidence,
         site_id=site_id,
         capability=capability,
         issue_code=issue_code,
@@ -6406,7 +6521,8 @@ async def get_runtime_backlog_diagnostics(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).get_runtime_backlog_diagnostics(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).get_runtime_backlog_diagnostics,
         scope_kind=scope_kind,
         site_id=site_id,
         limit=limit,
@@ -6433,7 +6549,8 @@ async def list_runtime_diagnostic_runs(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).list_runtime_diagnostic_runs(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).list_runtime_diagnostic_runs,
         issue_kind=issue_kind,
         site_id=site_id,
         limit=limit,
@@ -6458,7 +6575,8 @@ async def list_runtime_guard_events(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).list_runtime_guard_events(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).list_runtime_guard_events,
         site_id=site_id,
         scope_kind=scope_kind,
         event_code=event_code,
@@ -6483,7 +6601,8 @@ async def get_runtime_abuse_guard_diagnostics(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(services.settings.database_url).get_abuse_guard_diagnostics(
+    result = await run_in_threadpool(
+        RuntimeService(services.settings.database_url).get_abuse_guard_diagnostics,
         window_seconds=window_seconds,
         cooldown_window_seconds=cooldown_window_seconds,
         limit_per_scope=limit_per_scope,
@@ -6531,7 +6650,8 @@ async def cleanup_runtime_retention(request: Request) -> Any:
         )
         purged = runtime_service.cleanup_expired_run_results()
         remaining_due_runs = runtime_service.count_expired_run_results()
-        _get_commercial_service(request).record_service_audit_event(
+        await run_in_threadpool(
+            _get_commercial_service(request).record_service_audit_event,
             audit_context=audit_context,
             event_kind="runtime.retention_cleanup",
             outcome="succeeded",
@@ -6545,7 +6665,8 @@ async def cleanup_runtime_retention(request: Request) -> Any:
             },
         )
     except Exception as error:
-        _get_commercial_service(request).record_service_audit_event(
+        await run_in_threadpool(
+            _get_commercial_service(request).record_service_audit_event,
             audit_context=audit_context,
             event_kind="runtime.retention_cleanup",
             outcome="error",
