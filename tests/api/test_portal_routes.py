@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -8018,5 +8019,70 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert denied_response.status_code == 401
     assert denied_response.json()["error_code"] == "auth.portal_session_revoked"
     assert denied_response.json()["meta"]["trace_id"] == "00112233445566778899aabbccddeeff"
+
+    dispose_engine(database_url)
+
+
+def test_portal_identity_providers_answers_concurrent_requests_identically(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_concurrency", "name": "Portal Concurrency"},
+        headers=build_internal_headers(idempotency_key="portal-concurrency-account-001"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_concurrency",
+            "account_id": "acct_portal_concurrency",
+            "name": "Portal Concurrency Site",
+            "status": "provisioning",
+        },
+        headers=build_internal_headers(idempotency_key="portal-concurrency-site-001"),
+    )
+    client.post(
+        "/internal/service/sites/site_portal_concurrency/activate",
+        headers=build_internal_headers(idempotency_key="portal-concurrency-activate-001"),
+    )
+    _grant_account_member_access(
+        client,
+        site_id="site_portal_concurrency",
+        email="portal-concurrency@example.com",
+        idempotency_key="portal-concurrency-members-001",
+    )
+    request_data = _request_portal_login_code(
+        client,
+        email="portal-concurrency@example.com",
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    _verify_portal_login_code(
+        client,
+        email="portal-concurrency@example.com",
+        code=str(request_data["code"]),
+    )
+    session_cookie = client.cookies.get(COOKIE_PORTAL_SESSION_TOKEN)
+    assert session_cookie
+
+    app = client.app
+
+    def request_providers() -> tuple[int, dict[str, object]]:
+        concurrent_client = TestClient(app)
+        concurrent_client.headers.update(
+            {"origin": "http://testserver", "referer": "http://testserver/"}
+        )
+        concurrent_client.cookies.set(COOKIE_PORTAL_SESSION_TOKEN, str(session_cookie))
+        response = concurrent_client.get("/portal/v1/auth/identity-providers")
+        return response.status_code, dict(response.json())
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: request_providers(), range(8)))
+
+    assert [status for status, _payload in results] == [200] * 8
+    baseline_payload = results[0][1]
+    assert set(baseline_payload["data"]) == {"providers"}  # type: ignore[arg-type]
+    for _status, payload in results[1:]:
+        assert payload == baseline_payload
 
     dispose_engine(database_url)
