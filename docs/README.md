@@ -10,6 +10,7 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) |
 | 一个人先把本地流程用起来，暂缓商业化投入 | [本地优先阶段总结与行动计划](local-first-validation-stage-2026-09-21.md) — 当前个人试用计划，非验收通过证明 |
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
 | 理解产品三层定位与数据互联方向 | [战略定位 v1](strategy-positioning-v1-2026-09-21.md) |
