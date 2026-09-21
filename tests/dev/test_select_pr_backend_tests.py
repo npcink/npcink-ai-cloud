@@ -120,6 +120,7 @@ def test_nested_wordpress_connector_changes_select_connector_contract_tests() ->
     assert fallback == []
     assert _relative(selected) == [
         "tests/api/test_wordpress_ai_connector_runtime.py",
+        "tests/domain/test_wordpress_ai_capability_readiness.py",
         "tests/domain/test_wordpress_ai_generation_context.py",
         "tests/domain/test_wordpress_operation_runtime.py",
     ]

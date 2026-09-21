@@ -40,6 +40,9 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
         "tests/api/test_web_routes.py",
     ),
     "app/api/routes/catalog.py": ("tests/api/test_catalog_routes.py",),
+    "app/api/routes/commercial_subscriptions_admin.py": (
+        "tests/api/test_service_routes.py",
+    ),
     "app/api/routes/customer_journey.py": (
         "tests/api/test_customer_journey_routes.py",
     ),
@@ -82,6 +85,9 @@ API_IMPACT_SPECS: dict[str, tuple[str, ...]] = {
         "tests/api/test_admin_plan_management.py",
         "tests/api/test_internal_alpha_onboarding_flow.py",
         "tests/api/test_payment_routes.py",
+    ),
+    "app/api/routes/site_compliance_admin.py": (
+        "tests/api/test_service_settings_routes.py",
     ),
     "app/api/routes/setup.py": ("tests/api/test_setup_routes.py",),
     "app/api/routes/stats.py": ("tests/api/test_stats_routes.py",),
