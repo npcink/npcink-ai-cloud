@@ -20,7 +20,7 @@
 | Addon 业务测试和文档 | [Addon #154](https://github.com/npcink/npcink-cloud-addon/pull/154)，合并 `078bf419a49ff8e8d4344902a8f4721c8ab8c16c`；本地 `ef54a92` 与远端合并树 diff 为空 | 已合并；包含浏览器 runner 和测试，不能称为“纯文档 PR” |
 | 本地业务路径 | Addon 日期证据记录了 fake 核心流程、取消、权限拒绝、并发标签页、签名传输、Cron、升级回滚、Ollama 三次调用及清理 | 有分场景工程证据，不代表全部场景覆盖 |
 | 自然使用及质量毕业条件 | rollout plan 的七日窗口、至少 50 个自然观察与人工决策条件，没有完成记录 | 未证明完成 |
-| 中央跨仓库 gate | 本次 `composer quality:matrix` 返回 exit 1，六个存在的目录均被识别为 `not a git repository`，`Gates=not_run`；同轮直接 Git 可读取 Cloud 和 Addon | 工具执行证据无效，须排查子进程 Git 环境并运行有效矩阵；不报告绿色 |
+| 中央跨仓库 gate | 初次运行因 nested login shell 未继承 fallback Git 而误报 `not a git repository`；随后设置 `BASH_ENV=/tmp/codex-bash-env`、fallback Git 和 `NPCINK_REPO_FAMILY_ROOT=/Users/muze/gitee` 重跑，Addon `composer test:all` 与 Cloud exact-SHA GitHub CI 均 `passed` | 已完成；该环境变量必须写入后续操作手册 |
 
 ## 待处理问题
 
@@ -44,25 +44,26 @@
 6. **生产和自然试点。** 继续暂停生产发布；自然试点、付费 Provider 预算和质量毕业
    是独立事项，不能借本次合并或会话关闭自动授权。
 
-## 分支与 worktree 保留清单
+## 分支与 worktree 清理结果
 
-“无未提交文件”与“清理完毕”分别验收。本次没有删除任何分支或 worktree。
+“无未提交文件”与“清理完毕”分别验收。本次按操作者明确要求完成了历史 topic
+分支和旧辅助 worktree 的清理；保留受保护分支与稳定 M4 worktree。
 
-- Cloud 主工作区 `/Users/muze/gitee/npcink-ai-cloud`：审计开始在已合并 feature
-  `codex/entitlement-db-provider-eligibility`，随后创建本次文档审计分支。
+- Cloud 主工作区 `/Users/muze/gitee/npcink-ai-cloud`：本记录提交时由观察/清理
+  topic worktree 承载；完成本记录 PR 的合并收口后切回 detached `origin/master`
+  并删除该临时分支，最终状态以收口审计命令为准。
 - Cloud 长期 worktree `/Users/muze/gitee/.worktrees/npcink-ai-cloud-m4-ops`：
   `master=4c72ef11…`，需要保留。
-- Cloud 旧 worktree `/Users/muze/.gitee/.worktrees/npcink-ai-cloud-wp-output-fix`：
-  `codex/wp-ai-output-fix=58e0d957…`，锁为 `codex:wp-ai-output-fix-superseded`；
-  相对 master 有独立历史差异。名称中的 superseded 不是可删除证据。
-  必须先核对旧补丁已被接受实现替代、无 owner/handoff、无独立交付，再按生命周期处理。
-- Cloud 还保留 `codex/wordpress-ai-runtime-closeout`、
-  `codex/retire-expired-openssl-exceptions` 等本地及远端分支；远端还有其他历史 topic。
-  未逐一证明安全删除，不宣称已清完。
-- Addon `/Users/muze/gitee/npcink-cloud-addon`：只有主 worktree，干净；
-  本地业务验证分支与远端 master 树相同，但本地 master 仍是旧 `7797cdd…`。
-  还保留 `codex/wordpress-ai-quality-v2` 等分支。API 发布的 topic commit 与本地
-  历史 SHA 不同，应以 merged PR 和完整树等价核验，不能仅靠祖先判断。
+- Cloud 旧 worktree `/Users/muze/.gitee/.worktrees/npcink-ai-cloud-wp-output-fix` 已
+  解锁并删除。其唯一未合并提交 `58e0d957…` 已归档到
+  `/Users/muze/.codex/archives/npcink-ai-cloud/wp-ai-output-fix-58e0d957.bundle`，
+  `git bundle verify` 通过。
+- Cloud 其余已合并 `codex/*` 本地及远端 topic 已删除；保留 `master`、
+  `production` 和稳定 M4 worktree。
+- Addon 已切到远端 `master=078bf419…` 的 detached clean worktree，本地和远端
+  历史 topic 分支已删除；没有旧辅助 worktree。
+- 清理后的结论是：当前活动 worktree 干净，历史 topic 与旧辅助 worktree 已处理；
+  仅保留受保护分支、生产分支、M4 operations worktree 和可恢复 bundle。
 
 ## 复盘与复用规则
 
@@ -77,8 +78,8 @@
 做得好的部分：Provider 预算封顶、run ID 归因、fixture 清理、WordPress 写入边界、
 升级明文凭据失败关闭、Cloud clean-master M4 acceptance 均有独立证据。
 
-下次重点关注：先完成未测场景和语义评审清单、校准兼容性保护规则、修复中央矩阵
-执行环境，再安排一次专门的分支/worktree 清理。新任务应读取本报告和下列标准，
+下次重点关注：先完成未测场景和语义评审清单、校准兼容性保护规则，并持续收集自然
+观察证据。中央矩阵执行环境和本次专门的分支/worktree 清理已完成。新任务应读取本报告和下列标准，
 不要依赖此前会话中的“全部完成”摘要。
 
 ## 已沉淀文档
