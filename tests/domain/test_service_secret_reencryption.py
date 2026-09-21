@@ -15,7 +15,6 @@ from app.core.secrets import (
     decrypt_service_setting_secret,
     encrypt_provider_connection_secret,
 )
-from app.dev.reencrypt_service_secrets import main as reencryption_cli_main
 from app.domain import service_secret_reencryption as reencryption_module
 from app.domain.service_secret_reencryption import (
     ServiceSecretReencryptionError,
@@ -24,6 +23,7 @@ from app.domain.service_secret_reencryption import (
     inventory_service_secret_ciphertexts,
     verify_service_secret_ciphertexts,
 )
+from app.ops.reencrypt_service_secrets import main as reencryption_cli_main
 
 LEGACY_ROOT = "legacy-service-secret-root-at-least-32b"
 CURRENT_ROOT = "Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2M="

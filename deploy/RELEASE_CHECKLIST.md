@@ -147,7 +147,7 @@ evidence.
 
 - [ ] all eight Provider Connection ciphertexts and four Service Setting secret
   entries were migrated losslessly by
-  `python -m app.dev.reencrypt_service_secrets`; migration preserved credential
+  `python -m app.ops.reencrypt_service_secrets`; migration preserved credential
   values without manual entry or a replacement save operation
 
 #### Current first-install secret checks resume
@@ -665,8 +665,8 @@ initialization.
 - [ ] the same process accepted the operator's receipt, completed the
   independent PostgreSQL 16 restore/rehearsal, then recorded successful
   production `inventory`, `dry-run`, `apply`, and new-key-only `verify` phases
-  from both `python -m app.dev.reencrypt_runtime_data` and
-  `python -m app.dev.reencrypt_service_secrets`; evidence proved Runtime Data
+  from both `python -m app.ops.reencrypt_runtime_data` and
+  `python -m app.ops.reencrypt_service_secrets`; evidence proved Runtime Data
   `18 = 17 + 1`, Service Settings `12 = 8 + 4`, and `30` total rows
 - [ ] the canonical-JSON row-identifier SHA-256 values matched the reviewed
   Runtime Data `675cce444dbbf801bc8ab7fb35b717888c878e062097e5fb7f2f5f110e5a764c`

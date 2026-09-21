@@ -1297,9 +1297,9 @@ def _fake_docker_source() -> str:
                 done
                 [ -n "${mode}" ] || exit 87
                 family=""
-                if [[ "${joined}" = *' app.dev.reencrypt_runtime_data '* ]]; then
+                if [[ "${joined}" = *' app.ops.reencrypt_runtime_data '* ]]; then
                     family=runtime
-                elif [[ "${joined}" = *' app.dev.reencrypt_service_secrets '* ]]; then
+                elif [[ "${joined}" = *' app.ops.reencrypt_service_secrets '* ]]; then
                     family=service
                 else
                     exit 88
@@ -2014,8 +2014,8 @@ def test_static_contract_is_fail_closed_and_compose_v227_compatible() -> None:
     assert "-e NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID" in source
     assert "-e NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET" in source
     assert "-e NPCINK_CLOUD_DATABASE_URL" in source
-    assert "python -m app.dev.reencrypt_runtime_data" in source
-    assert "python -m app.dev.reencrypt_service_secrets" in source
+    assert "python -m app.ops.reencrypt_runtime_data" in source
+    assert "python -m app.ops.reencrypt_service_secrets" in source
     assert source.count("run_api_evidence restore") == 4
     assert source.count("run_service_api_evidence restore") == 4
     assert source.count("run_api_evidence production") == 4
@@ -2529,8 +2529,8 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
         for line in exec_calls
     )
     assert sum("|--env|NPCINK_CLOUD_DATABASE_URL" in line for line in exec_calls) == 9
-    runtime_module = ("python", "-m", "app.dev.reencrypt_runtime_data")
-    service_module = ("python", "-m", "app.dev.reencrypt_service_secrets")
+    runtime_module = ("python", "-m", "app.ops.reencrypt_runtime_data")
+    service_module = ("python", "-m", "app.ops.reencrypt_service_secrets")
     encryption_payloads = [
         runtime_module + ("inventory",),
         service_module + ("inventory",),
