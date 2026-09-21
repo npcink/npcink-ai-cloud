@@ -3,6 +3,12 @@
 Status: active development plan. Date: 2026-09-20. The Responses boundary is
 governed by [ADR-054](decisions/054-responses-output-boundary-and-no-silent-downgrade.md).
 
+Current closeout status is recorded in the
+[2026-09-21 evidence and repository audit](history/wordpress-ai-closeout-audit-2026-09-21.md).
+The execution receipt below preserves earlier investigation checkpoints;
+it is not proof that all natural-traffic, semantic-review, or cleanup criteria
+have graduated. Cloud #973 is merged and M4 accepted; Addon #154 is merged.
+
 ## Objective
 
 Validate the existing official WordPress AI surfaces as natural traffic for
