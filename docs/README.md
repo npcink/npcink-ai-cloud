@@ -11,6 +11,8 @@ as current truth.
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
+| 理解产品三层定位与数据互联方向 | [战略定位 v1](strategy-positioning-v1-2026-09-21.md) |
+| 盘点 Site Knowledge 现状与跨平台耦合点 | [Site Knowledge 现状盘点](site-knowledge-inventory-2026-09-21.md) |
 | 理解运行诊断、使用统计和插件上报 | [工作台操作与开发指南](runtime-observation-workbench-operator-guidelines-v1.md) |
 | 修改运行观测页面 | [运行观测 UI 开发规范](cloud-admin-runtime-observation-ui-development-standard-v1.md) |
 | 规划运行观测工作台改造 | [工作台改造计划](runtime-observation-workbench-improvement-plan-v1.md) |
@@ -82,6 +84,8 @@ deleting the old decision history.
 - [Cloud Media Governance Product and Development Retrospective — 2026-09-02](history/media/2026/cloud-media-governance-product-development-retrospective-2026-09-02.md) — dated synthesis of the production exercise, product-boundary decisions, reversible MVP, recovery posture, evidence states and implementation stop lines; not implementation or runtime acceptance evidence
 - [Cloud Open Callback Boundary](cloud-open-callback-boundary-v1.md)
 - [Multi-platform Connector Boundary](multi-platform-connector-boundary-v1.md)
+- [Strategy Positioning v1 — 2026-09-21](strategy-positioning-v1-2026-09-21.md) — operator-directed product direction: three-layer structure (features, connectors, data interconnection), boundary hard lines, and roadmap discipline; direction record, not release authority
+- [Site Knowledge Static Inventory — 2026-09-21](site-knowledge-inventory-2026-09-21.md) — static code inventory of storage, ingestion, retrieval, operations, WordPress coupling, and gaps; evidence record, not runtime authority
 - [Cloud Agent Positioning](cloud-agent-positioning-v1.md)
 - [Cloud Agent Workflow Metadata Projection](cloud-agent-workflow-metadata-projection-v1.md)
 - [Cloud Agent Feedback Contract](cloud-agent-feedback-contract-v1.md)
