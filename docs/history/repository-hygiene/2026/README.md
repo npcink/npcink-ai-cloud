@@ -12,6 +12,7 @@ Status: historical evidence index; not cleanup authorization.
 - [2026-09-11 文档入口、遗漏清单与结构热点调查](document-navigation-and-hotspot-review-2026-09-11.md)
 - [2026-09-11 全仓文档语义盘点](full-document-semantic-inventory-2026-09-11.md)
 - [2026-09-11 连接器到 Cloud 链路验收复核](connector-cloud-chain-acceptance-review-2026-09-11.md)
+- [2026-09-21 P5-B4 一次性验证 compose 归档记录](p5-b4-proof-compose-archive-2026-09-21.md)
 
 Re-inventory the live repository and follow the current standards before any
 new cleanup. Historical counts and candidate lists are not reusable deletion

@@ -178,7 +178,6 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         ".env.example",
         "docker-compose.dev.yml",
         "docker-compose.pg18-proof.yml",
-        "docker-compose.p5-b4-runtime-proof.yml",
         "docker-compose.prod.yml",
         "docker-compose.runtime.yml",
         "package.json",
