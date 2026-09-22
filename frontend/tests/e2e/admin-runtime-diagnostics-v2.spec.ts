@@ -80,14 +80,16 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(anomalyTable).toContainText(/1 runs|1 次运行/);
   await testInfo.attach('runtime-diagnostics-ready', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-ready.png') }), contentType: 'image/png' });
   await expect(page.locator('[data-ui="editor-assist-quality-panel"]')).toHaveCount(0);
-  await expect(page.locator('[data-ui="runtime-data-integrity"]')).toHaveCount(0);
   await expect(page.locator('#evidence-lanes')).toHaveCount(0);
+  const integrity = page.locator('[data-ui="runtime-data-integrity"]');
+  await expect(integrity).toContainText(/not request success|不代表请求成功率/i);
   await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Call records missing|调用记录缺失/i);
   const inspect = anomalyTable.getByRole('button');
   await inspect.click();
   const drawer = page.getByRole('dialog');
   await expect(drawer).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
   await expect(drawer.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
+  await expect(drawer.locator('[data-ui="runtime-issue-evidence"]')).toContainText(/Coverage \(calls \/ usage\)|完整率（调用 \/ 计量）/);
   const actionsBox = await drawer.locator('[data-ui="runtime-investigation-actions"]').boundingBox();
   const evidenceBox = await drawer.locator('[data-ui="runtime-issue-evidence"]').boundingBox();
   expect(actionsBox).toBeTruthy();
@@ -100,9 +102,6 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(inspect).toBeFocused();
   await expect(page).not.toHaveURL(/focus=/);
   await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
-  const integrity = page.locator('[data-ui="runtime-data-integrity"]');
-  await integrity.locator('summary').first().click();
-  await expect(integrity).toContainText(/not request success|不代表请求成功率/i);
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
   await expect(qualityPanel).not.toHaveAttribute('open', '');
   await expect(qualityPanel).toContainText(/Editor-assist quality|编辑辅助质量/i);
@@ -157,7 +156,6 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
   await qualityPanel.locator('summary').click();
-  await page.locator('[data-ui="runtime-data-integrity"] summary').first().click();
   const metadata = page.locator('#runtime-evidence');
   await expect(metadata).not.toHaveAttribute('open', '');
   await expect(metadata.locator('summary')).toContainText(/Runtime evidence guide|运行证据说明/i);
@@ -241,10 +239,12 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
     })) });
   });
   await page.goto('/admin/troubleshooting?window=72');
+  await expect(page.locator('[data-ui="runtime-diagnostic-issue"]').first()).toContainText(/Usage records missing|计量记录缺失/i);
+  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/3 problem types|3 类问题/i);
+  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Usage records missing|计量记录缺失/i);
   await page.getByRole('button', { name: /Provider call errors|供应商调用错误/ }).click();
   const inspector = page.locator('#runtime-diagnostic-inspector');
   const detail = inspector.locator('[data-ui="runtime-issue-evidence"]');
-  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Provider call errors|供应商调用错误/i);
   await expect(inspector).toContainText(/No failed-call details|本次未返回具体失败记录/);
 
   await expect(detail).toContainText(/Failed provider calls: 4|模型调用失败次数: 4/);
@@ -427,4 +427,25 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   await expect(evidence.getByText('run-success-with-evidence-gap', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(628);
   await testInfo.attach('runtime-diagnostics-success-narrow', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-success-narrow.png') }), contentType: 'image/png' });
+});
+
+test('inherited scope filters stay visible at the scope row and clear independently', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.goto('/admin/troubleshooting?site=site-alpha&function=text');
+  const scopeFilters = page.locator('[data-ui="runtime-diagnostic-scope-filters"]');
+  const sitePill = scopeFilters.getByRole('button', { name: /^Clear site filter$|^清除站点筛选$/ });
+  const functionPill = scopeFilters.getByRole('button', { name: /^Clear function filter$|^清除功能筛选$/ });
+  await expect(sitePill).toBeVisible();
+  await expect(sitePill).toContainText(/site-alpha/);
+  await expect(functionPill).toBeVisible();
+
+  await sitePill.click();
+  await expect(page).not.toHaveURL(/site=/);
+  await expect(page).toHaveURL(/function=text/);
+  await expect(sitePill).toHaveCount(0);
+  await expect(functionPill).toBeVisible();
+
+  await functionPill.click();
+  await expect(page).not.toHaveURL(/function=/);
+  await expect(scopeFilters).toHaveCount(0);
 });
