@@ -3,6 +3,8 @@
 Status: operator-approved local development plan and dated history synthesis.
 本文件不证明新的运行验证、个人收益、外部验收或生产授权。
 
+> 状态指引（2026-09-22）：支付状态已有后续进展（真实收款实测通过、退款未完成），见 [payment-and-domestic-readiness-note-2026-09-22.md](payment-and-domestic-readiness-note-2026-09-22.md)。本文其余内容为当时记录，原文未改。
+
 ## 状态
 
 Npcink AI Cloud 目前仍处于本地开发阶段，由一名开发者使用 AI 工具推进。当前目标不是证明产品已经可以正式商业化，而是先证明它对开发者本人有用、基本可靠，并且不会因为支付、Provider 费用或生产运维过早扩大工作量。
