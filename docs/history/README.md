@@ -8,6 +8,9 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
 
 ## Collections
 
+- [运行诊断与编辑器推荐验收（2026-09-21）](trials/2026/diagnostics-and-editor-acceptance-2026-09-21.md)
+  — 当前诊断页浏览器证据、编辑器请求超时与旧验收命令误报问题。
+
 - [运行与观测开发复盘与试用交接（2026-09-11）](admin/2026/runtime-observation-closeout-2026-09-11.md)
   — 页面定位、插件上报接通、部署与浏览器证据、历史问题处理边界。
 
