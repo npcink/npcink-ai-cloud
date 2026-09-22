@@ -120,7 +120,6 @@ export default function AdminTroubleshootingPage() {
 
   const issues = data?.alertSummary.alerts || [];
   const firstIssue = issues[0];
-  const firstIssueGroups = data?.capabilityGroups.filter((group) => firstIssue?.capabilities.includes(group.id)) || [];
   const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || null;
   const selectedGroups = data?.capabilityGroups.filter((group) => selectedIssue?.capabilities.includes(group.id)) || [];
   useEffect(() => {
@@ -222,44 +221,26 @@ export default function AdminTroubleshootingPage() {
 
       {data ? (
         <>
-        <section
-          data-ui="runtime-diagnostic-conclusion"
-          className={`space-y-1.5 rounded-r-lg border-l-2 py-1.5 pl-3 pr-4 ${
-            statusTone(conclusionStatus) === 'error'
-              ? 'border-rose-400 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/25'
-              : statusTone(conclusionStatus) === 'warning'
-                ? 'border-amber-400 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20'
-                : 'border-slate-300 dark:border-slate-700'
-          }`}
-        >
-          <div>
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
-                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{conclusionSummary}</p>
-              </div>
-              {firstIssue ? <>
-                {firstIssueGroups.map((group) => <p key={group.id} className="text-sm text-slate-700 dark:text-slate-300">
-                  {t('admin.troubleshooting.function_summary', { scope: scopeLabel([group.id], t), runs: formatNumber(group.runs), failed: formatNumber(group.failed) })}
-                </p>)}
-                <p className="text-xs text-slate-500 dark:text-slate-400">{issueEvidenceGuidance(firstIssue, t)}</p>
-              </> : null}
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs_window_total', { count: formatNumber(data.totals.runs), window: String(windowHours) }, '{{count}} runs in the last {{window}} hours')}</p>
-            </div>
-          </div>
-          <p data-ui="runtime-data-integrity" className="border-t border-slate-900/10 pt-2 text-xs leading-5 text-slate-600 dark:border-slate-100/10 dark:text-slate-300">
-            {t('admin.troubleshooting.integrity_title', {}, 'Data completeness')}: {t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness')} {formatRate(data.totals.providerCallRunCoverageRate)} · {t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness')} {formatRate(data.totals.meteredRunCoverageRate)} — {t('admin.troubleshooting.integrity_note', {}, 'These rates measure record completeness for requests requiring AI evidence, not request success or billing accuracy.')}
-          </p>
-        </section>
         <div data-ui="runtime-diagnostic-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-6">
           {[
             { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
             { label: t('admin.troubleshooting.metric_provider_calls', {}, 'Provider calls'), value: formatNumber(data.totals.providerCalls) },
             { label: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), value: formatNumber(failedTotal), warn: failedTotal > 0 },
             { label: t('admin.troubleshooting.provider_error_column', {}, 'Provider errors'), value: formatNumber(data.capabilityGroups.reduce((total, group) => total + group.providerErrors, 0)), warn: data.capabilityGroups.some((group) => group.providerErrors > 0) },
-            { label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness'), value: formatRate(data.totals.providerCallRunCoverageRate), warn: data.totals.providerCallRunCoverageRate < 1 },
-            { label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness'), value: formatRate(data.totals.meteredRunCoverageRate), warn: data.totals.meteredRunCoverageRate < 1 },
-          ].map((tile) => (
+            { label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness'), value: formatRate(data.totals.providerCallRunCoverageRate), warn: data.totals.providerCallRunCoverageRate < 1, integrity: true },
+            { label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness'), value: formatRate(data.totals.meteredRunCoverageRate), warn: data.totals.meteredRunCoverageRate < 1, integrity: true },
+          ].map((tile) => tile.integrity ? (
+            <Link
+              key={tile.label}
+              href={usageStatisticsHref}
+              data-ui="runtime-data-integrity"
+              title={t('admin.troubleshooting.integrity_note', {}, 'These rates measure record completeness for requests requiring AI evidence, not request success or billing accuracy.')}
+              className="admin-tier-card block px-3 py-2"
+            >
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{tile.label}</p>
+              <p className={`mt-0.5 text-lg font-semibold leading-7 ${tile.warn ? 'text-amber-700 dark:text-amber-300' : 'text-slate-950 dark:text-white'}`}>{tile.value}</p>
+            </Link>
+          ) : (
             <Link key={tile.label} href={usageStatisticsHref} className="admin-tier-card block px-3 py-2">
               <p className="truncate text-xs text-slate-500 dark:text-slate-400">{tile.label}</p>
               <p className={`mt-0.5 text-lg font-semibold leading-7 ${tile.warn ? 'text-amber-700 dark:text-amber-300' : 'text-slate-950 dark:text-white'}`}>{tile.value}</p>
@@ -351,6 +332,12 @@ export default function AdminTroubleshootingPage() {
               resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} problem types')}
               dataUi="runtime-diagnostic-table-frame"
               density="compact"
+              headerActions={data ? (
+                <div data-ui="runtime-diagnostic-conclusion" className="flex min-w-0 flex-wrap items-center gap-2">
+                  <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+                  <span className="truncate text-xs font-medium text-slate-600 dark:text-slate-300">{conclusionSummary}</span>
+                </div>
+              ) : undefined}
               bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
             >
               {issues.length ? (

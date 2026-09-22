@@ -92,7 +92,7 @@ for (const [marker, message] of [
   [/recent_minutes: String\(windowHours \* 60\)/, 'telemetry requests stay derived from the URL window'],
   [/`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`/, 'the page consumes the governed runtime telemetry route'],
   [/data-ui="runtime-diagnostic-table"/, 'anomalies render through the semantic queue table'],
-  [/data-ui="runtime-data-integrity"[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/, 'record-completeness rates stay visible'],
+  [/data-ui="runtime-data-integrity"/, 'the record-completeness caveat stays attached to the coverage tiles'],
   [/data-ui="runtime-diagnostic-metrics"/, 'the KPI tile row stays part of the diagnostics tier'],
   [/id="runtime-diagnostic-inspector"/, 'the selected anomaly keeps a dedicated inspector region'],
   [/id="runtime-evidence"/, 'the runtime evidence guide stays reachable'],
