@@ -45,7 +45,9 @@ const unifiedOperationalHeaderSources = [
   ['support queue', 'src/features/admin/support-requests/SupportRequestsWorkspace.tsx'],
   ['support detail', 'src/app/admin/support-requests/[requestId]/page.tsx'],
   ['external services', 'src/app/admin/external-services/page.tsx'],
-  ['troubleshooting', 'src/app/admin/troubleshooting/page.tsx'],
+  // 2026-09-22 operator evidence (cloud-admin-ui-standard-v1.md §1.1) authorized
+  // the dense console layout for the diagnostics reference route, so it uses a
+  // compact toolbar instead of the shared page-header card.
   ['usage statistics', 'src/app/admin/usage-statistics/page.tsx'],
   ['agent feedback', 'src/app/admin/agent-feedback/page.tsx'],
   ['media observability', 'src/app/admin/media-observability/page.tsx'],
@@ -266,6 +268,11 @@ assert.match(
 for (const [name, source] of unifiedOperationalHeaderSources) {
   assert.match(source, /<BackofficePageHeader/, `${name} must use the shared top-level page header`);
 }
+assert.match(
+  troubleshootingPageSource,
+  /data-ui="runtime-diagnostic-toolbar"[\s\S]*<h1/,
+  'the diagnostics reference uses the operator-authorized compact toolbar recorded in the standard'
+);
 assert.match(
   standardSource,
   /Every non-authentication Admin route uses `BackofficePageHeader`[\s\S]*`BackofficeConfigurationHeader` remains the[\s\S]*compatibility alias[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,

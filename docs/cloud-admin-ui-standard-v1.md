@@ -134,6 +134,24 @@ page:
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
 
+### 1.1 Operator-Authorized Density Exception (2026-09-22)
+
+The operator reviewed the `/admin/troubleshooting` workbench across four
+feedback rounds and authorized a density exception for this route only:
+
+- a compact toolbar row (page title, source freshness, usage-statistics
+  link, refresh action) replaces the shared `BackofficePageHeader` card;
+- one bounded KPI tile row — runs, provider calls, failed requests,
+  provider errors, and both record-coverage rates — is permitted above
+  the anomaly queue, and the queue uses 13px row type across the full
+  content width;
+- the inline inspector stays docked beside the queue and keeps
+  low-frequency guidance collapsed.
+
+The shared page-header default remains in force for every other
+non-authentication route; extending this exception to another route
+requires new operator evidence and a revision of this section.
+
 ## 2. PC Geometry And Density
 
 - Primary target: desktop operator use at 1280 CSS pixels and wider.

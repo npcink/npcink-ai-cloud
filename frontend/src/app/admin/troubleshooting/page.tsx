@@ -6,10 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import {
   BackofficeEmptyState,
-  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -175,17 +173,21 @@ export default function AdminTroubleshootingPage() {
   const failedTotal = data?.capabilityGroups.reduce((total, group) => total + group.failed, 0) ?? 0;
 
   return (
-    <BackofficePageStack className="space-y-4">
-      <BackofficePageHeader
-        title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
-        secondaryAction={<div className="flex items-center gap-3">
-          <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
-            {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
-          </button>
-        </div>}
-      />
+    <BackofficePageStack className="space-y-3">
+      <div data-ui="runtime-diagnostic-toolbar" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="text-lg font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}</h1>
+          <span className="text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
+            {data?.generatedAt ? t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}') : null}
+          </span>
+          <Link className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Usage statistics')}</Link>
+        </div>
+        <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
+          {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
+        </button>
+      </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <AdminObservationWindow defaultHours={24} />
           {siteFilter || capabilityFilter ? (
@@ -213,18 +215,13 @@ export default function AdminTroubleshootingPage() {
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
-          {data?.generatedAt ? (
-            <span>{t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}')}</span>
-          ) : null}
-          <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Usage statistics')}</Link>
-        </div>
       </div>
 
       {data ? (
+        <>
         <section
           data-ui="runtime-diagnostic-conclusion"
-          className={`space-y-2 border-l-2 py-2 pl-3 pr-4 ${
+          className={`space-y-1.5 border-l-2 py-1.5 pl-3 pr-4 ${
             statusTone(conclusionStatus) === 'error'
               ? 'border-rose-400 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/25'
               : statusTone(conclusionStatus) === 'warning'
@@ -232,8 +229,8 @@ export default function AdminTroubleshootingPage() {
                 : 'border-slate-300 dark:border-slate-700'
           }`}
         >
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0 max-w-3xl space-y-2">
+          <div>
+            <div className="min-w-0 space-y-1.5">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{conclusionSummary}</p>
@@ -246,22 +243,27 @@ export default function AdminTroubleshootingPage() {
               </> : null}
               <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs_window_total', { count: formatNumber(data.totals.runs), window: String(windowHours) }, '{{count}} runs in the last {{window}} hours')}</p>
             </div>
-            <BackofficeSummaryStrip
-              density="compact"
-              className="shrink-0"
-              items={[
-                { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
-                { label: t('admin.troubleshooting.metric_provider_calls', {}, 'Provider calls'), value: formatNumber(data.totals.providerCalls) },
-                { label: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), value: formatNumber(failedTotal) },
-                { label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness'), value: formatRate(data.totals.providerCallRunCoverageRate), toneClassName: data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
-                { label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
-              ]}
-            />
           </div>
           <p data-ui="runtime-data-integrity" className="border-t border-slate-900/10 pt-2 text-xs leading-5 text-slate-600 dark:border-slate-100/10 dark:text-slate-300">
             {t('admin.troubleshooting.integrity_title', {}, 'Data completeness')}: {t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness')} {formatRate(data.totals.providerCallRunCoverageRate)} · {t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness')} {formatRate(data.totals.meteredRunCoverageRate)} — {t('admin.troubleshooting.integrity_note', {}, 'These rates measure record completeness for requests requiring AI evidence, not request success or billing accuracy.')}
           </p>
         </section>
+        <div data-ui="runtime-diagnostic-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-6">
+          {[
+            { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
+            { label: t('admin.troubleshooting.metric_provider_calls', {}, 'Provider calls'), value: formatNumber(data.totals.providerCalls) },
+            { label: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), value: formatNumber(failedTotal), warn: failedTotal > 0 },
+            { label: t('admin.troubleshooting.provider_error_column', {}, 'Provider errors'), value: formatNumber(data.capabilityGroups.reduce((total, group) => total + group.providerErrors, 0)), warn: data.capabilityGroups.some((group) => group.providerErrors > 0) },
+            { label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness'), value: formatRate(data.totals.providerCallRunCoverageRate), warn: data.totals.providerCallRunCoverageRate < 1 },
+            { label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness'), value: formatRate(data.totals.meteredRunCoverageRate), warn: data.totals.meteredRunCoverageRate < 1 },
+          ].map((tile) => (
+            <div key={tile.label} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
+              <p className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{tile.label}</p>
+              <p className={`mt-0.5 text-lg font-semibold leading-7 ${tile.warn ? 'text-amber-700 dark:text-amber-300' : 'text-slate-950 dark:text-white'}`}>{tile.value}</p>
+            </div>
+          ))}
+        </div>
+        </>
       ) : null}
 
       {error ? (
@@ -304,7 +306,7 @@ export default function AdminTroubleshootingPage() {
               {issues.length ? (
                 <table
                   data-ui="runtime-diagnostic-table"
-                  className="w-full min-w-[34rem] table-fixed text-left text-sm"
+                  className="w-full min-w-[34rem] table-fixed text-left text-[13px]"
                   aria-label={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
                 >
                   <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
