@@ -528,13 +528,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
           {renderNavGroups('desktop')}
         </div>
-        <div
-          data-ui="admin-build-stamp"
-          className={cn('shrink-0 pt-2 text-[0.6rem] leading-4 text-slate-400 dark:text-slate-600', sidebarCollapsed && 'sr-only')}
-          title={process.env.NEXT_PUBLIC_BUILD_STAMP || undefined}
-        >
-          build {(process.env.NEXT_PUBLIC_BUILD_STAMP || 'dev').split(' · ')[0]}
-        </div>
       </aside>
 
       <div className="admin-shell-content flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out">

@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -32,21 +31,6 @@ function parseMiniDevOrigins(rawValue) {
 
 const miniDevOrigins = parseMiniDevOrigins(process.env.NPCINK_CLOUD_FRONTEND_DEV_HOST_ALLOWLIST);
 
-function readBuildStamp() {
-  try {
-    const revision = execSync('git rev-parse --short=8 HEAD', {
-      cwd: workspaceRoot,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-    const builtAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
-    return `${revision} · ${builtAt}`;
-  } catch {
-    return 'dev';
-  }
-}
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -56,7 +40,6 @@ const nextConfig = {
   },
   env: {
     NEXT_PUBLIC_MINI_DEV_HOST_ALLOWLIST: miniDevOrigins.join(','),
-    NEXT_PUBLIC_BUILD_STAMP: readBuildStamp(),
   },
 };
 
