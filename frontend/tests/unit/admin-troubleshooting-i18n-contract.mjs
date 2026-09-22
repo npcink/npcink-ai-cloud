@@ -91,7 +91,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /runtime-diagnostic-issue[\s\S]*AdminInspectorDrawer[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.operator_action_title[\s\S]*admin\.troubleshooting\.open_evidence/,
+  /runtime-diagnostic-issue[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.open_evidence[\s\S]*admin\.troubleshooting\.operator_action_title/,
   'Runtime diagnostics must connect the anomaly queue to a focused read-only evidence inspector'
 );
 

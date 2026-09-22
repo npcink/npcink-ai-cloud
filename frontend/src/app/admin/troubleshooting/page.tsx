@@ -9,8 +9,8 @@ import {
   BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
+  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
-import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -53,7 +53,6 @@ export default function AdminTroubleshootingPage() {
   const siteFilter = searchParams.get('site') || '';
   const capabilityFilter = searchParams.get('function') || '';
   const usageStatisticsHref = `/admin/usage-statistics?window=${windowHours}&from=troubleshooting${siteFilter ? `&group=sites&site=${encodeURIComponent(siteFilter)}` : capabilityFilter ? `&group=functions&function=${encodeURIComponent(capabilityFilter)}` : ''}`;
-  const [moreOpen, setMoreOpen] = useState(false);
   const [data, setData] = useState<RuntimeTelemetrySummary | null>(null);
   const [runEvidence, setRunEvidence] = useState<RuntimeRunEvidence[]>([]);
   const [runEvidenceMeta, setRunEvidenceMeta] = useState({ sampled: false, truncated: false });
@@ -173,12 +172,13 @@ export default function AdminTroubleshootingPage() {
       ? t('admin.troubleshooting.no_requests', {}, 'No requests in this period; runtime health cannot be assessed.')
       : t('admin.troubleshooting.conclusion_healthy', {}, 'No monitored anomalies found in this period.');
 
+  const failedTotal = data?.capabilityGroups.reduce((total, group) => total + group.failed, 0) ?? 0;
+
   return (
     <BackofficePageStack className="space-y-4">
       <BackofficePageHeader
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         secondaryAction={<div className="flex items-center gap-3">
-          <button className="btn btn-ghost btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.troubleshooting.more', {}, 'More diagnostics')}</button>
           <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
             {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
           </button>
@@ -232,17 +232,32 @@ export default function AdminTroubleshootingPage() {
                 : 'border-slate-300 dark:border-slate-700'
           }`}
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{conclusionSummary}</p>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 max-w-3xl space-y-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{conclusionSummary}</p>
+              </div>
+              {firstIssue ? <>
+                {firstIssueGroups.map((group) => <p key={group.id} className="text-sm text-slate-700 dark:text-slate-300">
+                  {t('admin.troubleshooting.function_summary', { scope: scopeLabel([group.id], t), runs: formatNumber(group.runs), failed: formatNumber(group.failed) })}
+                </p>)}
+                <p className="text-xs text-slate-500 dark:text-slate-400">{issueEvidenceGuidance(firstIssue, t)}</p>
+              </> : null}
+              <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs_window_total', { count: formatNumber(data.totals.runs), window: String(windowHours) }, '{{count}} runs in the last {{window}} hours')}</p>
+            </div>
+            <BackofficeSummaryStrip
+              density="compact"
+              className="shrink-0"
+              items={[
+                { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
+                { label: t('admin.troubleshooting.metric_provider_calls', {}, 'Provider calls'), value: formatNumber(data.totals.providerCalls) },
+                { label: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), value: formatNumber(failedTotal) },
+                { label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness'), value: formatRate(data.totals.providerCallRunCoverageRate), toneClassName: data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
+                { label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
+              ]}
+            />
           </div>
-          {firstIssue ? <>
-            {firstIssueGroups.map((group) => <p key={group.id} className="text-sm text-slate-700 dark:text-slate-300">
-              {t('admin.troubleshooting.function_summary', { scope: scopeLabel([group.id], t), runs: formatNumber(group.runs), failed: formatNumber(group.failed) })}
-            </p>)}
-            <p className="text-xs text-slate-500 dark:text-slate-400">{issueEvidenceGuidance(firstIssue, t)}</p>
-          </> : null}
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs_window_total', { count: formatNumber(data.totals.runs), window: String(windowHours) }, '{{count}} runs in the last {{window}} hours')}</p>
           <p data-ui="runtime-data-integrity" className="border-t border-slate-900/10 pt-2 text-xs leading-5 text-slate-600 dark:border-slate-100/10 dark:text-slate-300">
             {t('admin.troubleshooting.integrity_title', {}, 'Data completeness')}: {t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness')} {formatRate(data.totals.providerCallRunCoverageRate)} · {t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness')} {formatRate(data.totals.meteredRunCoverageRate)} — {t('admin.troubleshooting.integrity_note', {}, 'These rates measure record completeness for requests requiring AI evidence, not request success or billing accuracy.')}
           </p>
@@ -277,174 +292,141 @@ export default function AdminTroubleshootingPage() {
           <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
         </BackofficeSectionPanel>
       ) : (
-        <div className="space-y-4">
-          <AdminDataTableFrame
-            title={t('admin.troubleshooting.queue_title', {}, 'Problems in this period')}
-            resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} problem types')}
-            dataUi="runtime-diagnostic-table-frame"
-            density="compact"
-            bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
-          >
-            {issues.length ? (
-              <table
-                data-ui="runtime-diagnostic-table"
-                className="w-full min-w-[34rem] table-fixed text-left text-sm"
-                aria-label={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
-              >
-                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                  <tr>
-                    <th className="px-3 py-2" scope="col">{t('admin.troubleshooting.column_issue', {}, 'Anomaly')}</th>
-                    <th className="w-[10rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
-                    <th className="w-[7rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_occurrences', {}, 'Count')}</th>
-                    <th className="hidden w-[8rem] px-3 py-2 md:table-cell" scope="col">{t('admin.troubleshooting.queue_owner', {}, 'Suggested role')}</th>
-                    <th className="w-[6rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_action', {}, 'Action')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {issues.map((issue) => {
-                    const selected = selectedIssue?.code === issue.code;
-                    return (
-                      <tr
-                        key={issue.code}
-                        data-ui="runtime-diagnostic-issue"
-                        aria-selected={selected}
-                        className={selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}
-                      >
-                        <td className="px-3 py-2.5 align-top">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-slate-950 dark:text-white">
-                              {issueTitle(issue, t)}
-                            </span>
-                            <BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} />
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500 md:hidden">{issueOwner(issue, t)}</p>
-                        </td>
-                        <td className="px-3 py-2.5 align-top text-xs leading-5 text-slate-600 dark:text-slate-300">
-                          {scopeLabel(issue.capabilities, t)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right align-top font-semibold text-slate-700 dark:text-slate-200">
-                          {issueCount(issue, t)}
-                        </td>
-                        <td className="hidden px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300 md:table-cell">{issueOwner(issue, t)}</td>
-                        <td className="px-3 py-2.5 text-right align-top">
-                          <button
-                            type="button"
-                            aria-label={`${t('admin.troubleshooting.inspect', {}, 'Inspect')} ${issueTitle(issue, t)}`}
-                            aria-haspopup="dialog"
-                            aria-expanded={selected}
-                            className="cursor-pointer text-xs font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
-                            onClick={() => updateUrl({ focus: issue.code })}
-                          >
-                            {t('admin.troubleshooting.inspect', {}, 'Inspect')}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <BackofficeEmptyState
-                className="m-5 md:m-6"
-                title={error && !data
-                  ? t('admin.troubleshooting.queue_unavailable_title', {}, 'Runtime anomaly data unavailable')
-                  : data?.totals.runs === 0
-                    ? t('admin.troubleshooting.no_requests_title', {}, 'No requests in this period')
-                    : t('admin.troubleshooting.no_issue_title', {}, 'No monitored anomalies found')}
-                description={error && !data
-                  ? t('admin.troubleshooting.queue_unavailable_desc', {}, 'Cloud could not load runtime telemetry, so the current anomaly state cannot be determined. Retry before treating this window as healthy.')
-                  : data?.totals.runs === 0
-                    ? t('admin.troubleshooting.no_requests', {}, 'No requests in this period; runtime health cannot be assessed.')
-                    : t('admin.troubleshooting.no_issue_desc', {}, 'No monitored anomalies found in this period.')}
-              />
-            )}
-          </AdminDataTableFrame>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(19rem,25rem)] lg:items-start">
+          <div className="min-w-0 space-y-4">
+            <AdminDataTableFrame
+              title={t('admin.troubleshooting.queue_title', {}, 'Problems in this period')}
+              resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} problem types')}
+              dataUi="runtime-diagnostic-table-frame"
+              density="compact"
+              bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
+            >
+              {issues.length ? (
+                <table
+                  data-ui="runtime-diagnostic-table"
+                  className="w-full min-w-[34rem] table-fixed text-left text-sm"
+                  aria-label={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
+                >
+                  <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2" scope="col">{t('admin.troubleshooting.column_issue', {}, 'Anomaly')}</th>
+                      <th className="w-[10rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
+                      <th className="w-[7rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_occurrences', {}, 'Count')}</th>
+                      <th className="hidden w-[8rem] px-3 py-2 md:table-cell" scope="col">{t('admin.troubleshooting.queue_owner', {}, 'Suggested role')}</th>
+                      <th className="w-[6rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_action', {}, 'Action')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {issues.map((issue) => {
+                      const selected = selectedIssue?.code === issue.code;
+                      return (
+                        <tr
+                          key={issue.code}
+                          data-ui="runtime-diagnostic-issue"
+                          aria-selected={selected}
+                          className={selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}
+                        >
+                          <td className="px-3 py-2.5 align-top">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-950 dark:text-white">
+                                {issueTitle(issue, t)}
+                              </span>
+                              <BackofficeStatusBadge label={severityLabel(issue.severity, t)} status={statusTone(issue.severity)} />
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{issueEvidenceGuidance(issue, t)}</p>
+                            <p className="mt-1 text-xs text-slate-500 md:hidden">{issueOwner(issue, t)}</p>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-xs leading-5 text-slate-600 dark:text-slate-300">
+                            {scopeLabel(issue.capabilities, t)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right align-top font-semibold text-slate-700 dark:text-slate-200">
+                            {issueCount(issue, t)}
+                          </td>
+                          <td className="hidden px-3 py-2.5 align-top text-xs text-slate-600 dark:text-slate-300 md:table-cell">{issueOwner(issue, t)}</td>
+                          <td className="px-3 py-2.5 text-right align-top">
+                            <button
+                              type="button"
+                              aria-label={`${t('admin.troubleshooting.inspect', {}, 'Inspect')} ${issueTitle(issue, t)}`}
+                              aria-expanded={selected}
+                              className="cursor-pointer text-xs font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
+                              onClick={() => updateUrl({ focus: issue.code })}
+                            >
+                              {t('admin.troubleshooting.inspect', {}, 'Inspect')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <BackofficeEmptyState
+                  className="m-5 md:m-6"
+                  title={error && !data
+                    ? t('admin.troubleshooting.queue_unavailable_title', {}, 'Runtime anomaly data unavailable')
+                    : data?.totals.runs === 0
+                      ? t('admin.troubleshooting.no_requests_title', {}, 'No requests in this period')
+                      : t('admin.troubleshooting.no_issue_title', {}, 'No monitored anomalies found')}
+                  description={error && !data
+                    ? t('admin.troubleshooting.queue_unavailable_desc', {}, 'Cloud could not load runtime telemetry, so the current anomaly state cannot be determined. Retry before treating this window as healthy.')
+                    : data?.totals.runs === 0
+                      ? t('admin.troubleshooting.no_requests', {}, 'No requests in this period; runtime health cannot be assessed.')
+                      : t('admin.troubleshooting.no_issue_desc', {}, 'No monitored anomalies found in this period.')}
+                />
+              )}
+            </AdminDataTableFrame>
 
-          {selectedIssue ? <AdminInspectorDrawer
-            open={true}
-            title={issueTitle(selectedIssue, t)}
-            titleId="runtime-diagnostic-inspector-title"
-            closeLabel={t('common.close', {}, 'Close')}
-            onClose={() => updateUrl({ focus: null })}
-            headerAccessory={<BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />}
-          >
-            <div id="runtime-diagnostic-inspector" className="space-y-5">
-              <section data-ui="runtime-inspector-summary" className="border-b border-slate-200 pb-4 dark:border-slate-800">
-                <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</dd></div>
-                  <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}</dt><dd className="font-semibold">{issueOwner(selectedIssue, t)}</dd></div>
-                  <div className="sm:col-span-2"><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
-                </dl>
-                <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">{issueEvidenceGuidance(selectedIssue, t)}</p>
-              </section>
-              {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-3">
-                <h3 className="font-semibold">{t('admin.troubleshooting.failures_title')}</h3>
-                <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>
-                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
-                  <p className="font-semibold">{t('admin.troubleshooting.operator_action_title')}</p>
-                  <p>{t('admin.troubleshooting.provider_operator_next_step')}</p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_runtime_profiles')}</Link>
-                    <Link href={`/admin/plugin-observability?window=${windowHours}`} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_plugin_errors')}</Link>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">{t('admin.troubleshooting.provider_operator_verify')}</p>
-                  {data?.providerFailures.length ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-                    const blob = new Blob([JSON.stringify({ windowHours, generatedAt: data.generatedAt, recovery: 'unverified', failures: data.providerFailures }, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url; link.download = 'runtime-failure-evidence.json'; link.click();
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                  }}>{t('admin.troubleshooting.failure_export')}</button> : null}
+            <EditorAssistQualityPanel
+              windowHours={windowHours}
+              refreshSignal={qualityRefreshSignal}
+            />
+          </div>
+
+          {selectedIssue ? (
+            <aside
+              id="runtime-diagnostic-inspector"
+              data-ui="runtime-diagnostic-inspector"
+              aria-label={issueTitle(selectedIssue, t)}
+              className="min-w-0 rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 lg:sticky lg:top-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h2 className="text-base font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)}</h2>
+                  <BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />
                 </div>
-                {data?.providerFailures.length ? (() => {
-                  const first = data.providerFailures[0];
-                  const reasonKey = ['output_schema_invalid', 'invalid_request', 'timeout'].includes(first.reason) ? first.reason : 'unknown';
-                  return <>
-                    <article className="space-y-2 py-1">
-                      <p className="font-semibold">{t(`admin.troubleshooting.failure_reason_${reasonKey}`)} · {data.providerFailures.length} {t('admin.troubleshooting.failure_count_suffix')}</p>
-                      <p className="font-mono text-xs text-slate-600 dark:text-slate-300">{first.siteId} · {first.providerId} / {first.modelId} · {first.profileId}</p>
-                      <p className="text-sm">{t(`admin.troubleshooting.failure_step_${first.reason === 'output_schema_invalid' ? 'schema' : first.reason === 'timeout' ? 'timeout' : 'unknown'}`)}</p>
-                      <p className="text-xs text-amber-700">{t('admin.troubleshooting.failure_recovery_unverified')}</p>
-                    </article>
-                    <details className="border-t border-slate-200 pt-2 dark:border-slate-800"><summary className="cursor-pointer text-sm font-semibold">{t('admin.troubleshooting.failure_records_summary', { count: String(data.providerFailures.length) })}</summary><div className="space-y-3 pt-3">{data.providerFailures.map((failure, index) => <div key={`${failure.runId}-${index}`} className="text-xs"><p>{failure.occurredAt ? formatDate(failure.occurredAt) : '—'} · {failure.profileId}</p><details><summary className="cursor-pointer">{t('admin.troubleshooting.technical_detail_title')}</summary><dl className="space-y-1 break-all py-2"><dt>{t('admin.troubleshooting.failure_run_id')}</dt><dd><code>{failure.runId}</code></dd><dt>{t('admin.troubleshooting.issue_code')}</dt><dd><code>{failure.errorCode}</code></dd></dl></details></div>)}</div></details>
-                  </>;
-                })() : <p className="text-sm">{t('admin.troubleshooting.failures_unavailable')}</p>}
-              </section> : null}
-
-                {selectedIssue.code !== 'hosted_model.provider_errors' ? <div className="space-y-2 text-sm" data-ui="runtime-investigation-actions">
-                  <h3 className="font-semibold">{t('admin.troubleshooting.operator_action_title', {}, '按这个顺序处理')}</h3>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Link href={`/admin/plugin-observability?window=${windowHours}`} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_plugin_errors', {}, '查看相关运行记录')}</Link>
-                    {selectedIssue.code === 'hosted_model.provider_errors' || selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href="/admin/ai-resources" className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_suppliers', {}, '检查模型供应商')}</Link> : null}
-                    {selectedIssue.capabilities.some(scope => scope.toLowerCase().includes('knowledge') || scope.includes('知识')) ? <Link href="/admin/vector-observability" className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_knowledge', {}, '检查站点知识库')}</Link> : null}
-                    <Link href="/admin/runtime-profiles" className="btn btn-ghost btn-sm">{t('admin.troubleshooting.view_runtime_profiles', {}, '查看运行配置')}</Link>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.operator_no_mutation_notice', {}, '跳转不会自动修改设置；供应商和运行配置页面包含修改操作，请确认原因后再调整。')}</p>
-                  <details className="text-xs text-slate-500 dark:text-slate-400">
-                    <summary className="cursor-pointer">{t('admin.troubleshooting.investigation_checklist')}</summary>
-                  <ol className="list-decimal space-y-3 pl-5">
-                    <li>{t('admin.troubleshooting.operator_step_confirm_scope', {}, '先确认影响范围：上面的功能分组和次数，表示需要核对的请求数量。')}</li>
-                    <li>{t('admin.troubleshooting.operator_step_check_followup', {}, '查看同时段插件错误以寻找线索；该入口不含完整成功记录，不能据此确认恢复。')}</li>
-                    <li>{t('admin.troubleshooting.operator_step_check_config', {}, '如果持续发生，再检查模型供应商连接或运行配置。')}</li>
-                  </ol>
-                  </details>
-                </div> : null}
+                <button
+                  type="button"
+                  aria-label={t('common.close', {}, 'Close')}
+                  className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white"
+                  onClick={() => updateUrl({ focus: null })}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </div>
+              <div className="mt-3 space-y-4">
+                <section data-ui="runtime-inspector-summary" className="border-b border-slate-200 pb-3 dark:border-slate-800">
+                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</dd></div>
+                    <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}</dt><dd className="font-semibold">{issueOwner(selectedIssue, t)}</dd></div>
+                    <div className="sm:col-span-2"><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
+                  </dl>
+                </section>
 
                 <section key={selectedIssue.code} data-ui="runtime-issue-evidence">
-                  <h3 className="py-2 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
+                  <h3 className="pb-2 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
                   <div className="space-y-3">
                     <p className="text-sm">{t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_count' : 'admin.troubleshooting.affected_runs', {}, 'Affected requests')}: {formatNumber(selectedIssue.count)}</p>
                     {selectedGroups.length ? <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}>
                         <thead className="border-b border-slate-200 dark:border-slate-800"><tr>
-                          <th className="px-3 py-2">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
-                          <th className="px-3 py-2">{t('admin.troubleshooting.runs', {}, 'Requests')}</th>
-                          <th className="px-3 py-2">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
-                          <th className="px-3 py-2">{t('admin.troubleshooting.provider_error_column', {}, 'Provider errors')}</th>
-                          <th className="px-3 py-2">{t('admin.troubleshooting.coverage_header', {}, 'Coverage (calls / usage)')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.runs', {}, 'Requests')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.provider_error_column', {}, 'Provider errors')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.coverage_header', {}, 'Coverage (calls / usage)')}</th>
                         </tr></thead>
                         <tbody>{selectedGroups.map((group) => <tr key={group.id} className="border-b border-slate-100 dark:border-slate-800">
-                          <th className="px-3 py-2">{scopeLabel([group.id], t)}</th><td className="px-3 py-2">{formatNumber(group.runs)}</td><td className="px-3 py-2">{formatNumber(group.failed)}</td><td className="px-3 py-2">{formatNumber(group.providerErrors)}</td><td className="whitespace-nowrap px-3 py-2">{formatRate(group.providerCoverage)} / {formatRate(group.meteringCoverage)}</td>
+                          <th className="px-2 py-2">{scopeLabel([group.id], t)}</th><td className="px-2 py-2">{formatNumber(group.runs)}</td><td className="px-2 py-2">{formatNumber(group.failed)}</td><td className="px-2 py-2">{formatNumber(group.providerErrors)}</td><td className="whitespace-nowrap px-2 py-2">{formatRate(group.providerCoverage)} / {formatRate(group.meteringCoverage)}</td>
                         </tr>)}</tbody>
                       </table>
                     </div> : <p className="text-sm">{t('admin.troubleshooting.groups_unavailable', {}, 'No matching function-level data was returned.')}</p>}
@@ -452,16 +434,16 @@ export default function AdminTroubleshootingPage() {
                   </div>
                 </section>
 
-                <section data-ui="runtime-run-evidence" className="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <section data-ui="runtime-run-evidence" className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                   <h3 className="text-sm font-semibold">{t('admin.troubleshooting.run_evidence_title', {}, 'Affected run evidence')}</h3>
                   {runEvidenceLoading ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_loading')}</p> : runEvidence.length ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.run_evidence_title')}>
                         <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
-                          <th className="py-2 pr-3" scope="col">{t('admin.troubleshooting.run_record')}</th>
-                          <th className="px-2 py-2" scope="col">{t('admin.troubleshooting.run_duration')}</th>
-                          <th className="px-2 py-2" scope="col">{t('admin.troubleshooting.run_provider_calls')}</th>
-                          <th className="px-2 py-2" scope="col">{t('admin.troubleshooting.run_metering')}</th>
+                          <th className="whitespace-nowrap py-2 pr-3" scope="col">{t('admin.troubleshooting.run_record')}</th>
+                          <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.run_duration')}</th>
+                          <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.run_provider_calls')}</th>
+                          <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.run_metering')}</th>
                         </tr></thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {runEvidence.map((run) => <tr key={run.run_id}>
@@ -487,19 +469,70 @@ export default function AdminTroubleshootingPage() {
 
                   {runEvidenceMeta.truncated ? <p className="text-xs text-amber-700">{t('admin.troubleshooting.run_evidence_truncated', {}, 'Showing a bounded sample of matching runs.')}</p> : null}
                 </section>
-                  <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
 
+                {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+                  <h3 className="font-semibold">{t('admin.troubleshooting.failures_title')}</h3>
+                  <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>
+                  <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
+                    <p className="font-semibold">{t('admin.troubleshooting.operator_action_title')}</p>
+                    <p>{t('admin.troubleshooting.provider_operator_next_step')}</p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_runtime_profiles')}</Link>
+                      <Link href={`/admin/plugin-observability?window=${windowHours}`} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_plugin_errors')}</Link>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">{t('admin.troubleshooting.provider_operator_verify')}</p>
+                    {data?.providerFailures.length ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                      const blob = new Blob([JSON.stringify({ windowHours, generatedAt: data.generatedAt, recovery: 'unverified', failures: data.providerFailures }, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url; link.download = 'runtime-failure-evidence.json'; link.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    }}>{t('admin.troubleshooting.failure_export')}</button> : null}
+                  </div>
+                  {data?.providerFailures.length ? (() => {
+                    const first = data.providerFailures[0];
+                    const reasonKey = ['output_schema_invalid', 'invalid_request', 'timeout'].includes(first.reason) ? first.reason : 'unknown';
+                    return <>
+                      <article className="space-y-2 py-1">
+                        <p className="font-semibold">{t(`admin.troubleshooting.failure_reason_${reasonKey}`)} · {data.providerFailures.length} {t('admin.troubleshooting.failure_count_suffix')}</p>
+                        <p className="font-mono text-xs text-slate-600 dark:text-slate-300">{first.siteId} · {first.providerId} / {first.modelId} · {first.profileId}</p>
+                        <p className="text-sm">{t(`admin.troubleshooting.failure_step_${first.reason === 'output_schema_invalid' ? 'schema' : first.reason === 'timeout' ? 'timeout' : 'unknown'}`)}</p>
+                        <p className="text-xs text-amber-700">{t('admin.troubleshooting.failure_recovery_unverified')}</p>
+                      </article>
+                      <details className="border-t border-slate-200 pt-2 dark:border-slate-800"><summary className="cursor-pointer text-sm font-semibold">{t('admin.troubleshooting.failure_records_summary', { count: String(data.providerFailures.length) })}</summary><div className="space-y-3 pt-3">{data.providerFailures.map((failure, index) => <div key={`${failure.runId}-${index}`} className="text-xs"><p>{failure.occurredAt ? formatDate(failure.occurredAt) : '—'} · {failure.profileId}</p><details><summary className="cursor-pointer">{t('admin.troubleshooting.technical_detail_title')}</summary><dl className="space-y-1 break-all py-2"><dt>{t('admin.troubleshooting.failure_run_id')}</dt><dd><code>{failure.runId}</code></dd><dt>{t('admin.troubleshooting.issue_code')}</dt><dd><code>{failure.errorCode}</code></dd></dl></details></div>)}</div></details>
+                    </>;
+                  })() : <p className="text-sm">{t('admin.troubleshooting.failures_unavailable')}</p>}
+                </section> : null}
+
+                {selectedIssue.code !== 'hosted_model.provider_errors' ? <div className="space-y-2 text-sm" data-ui="runtime-investigation-actions">
+                  <h3 className="font-semibold">{t('admin.troubleshooting.operator_action_title', {}, '按这个顺序处理')}</h3>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Link href={`/admin/plugin-observability?window=${windowHours}`} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_plugin_errors', {}, '查看相关运行记录')}</Link>
+                    {selectedIssue.code === 'hosted_model.provider_call_gap' ? <Link href="/admin/ai-resources" className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_suppliers', {}, '检查模型供应商')}</Link> : null}
+                    {selectedIssue.capabilities.some(scope => scope.toLowerCase().includes('knowledge') || scope.includes('知识')) ? <Link href="/admin/vector-observability" className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_knowledge', {}, '检查站点知识库')}</Link> : null}
+                    <Link href="/admin/runtime-profiles" className="btn btn-ghost btn-sm">{t('admin.troubleshooting.view_runtime_profiles', {}, '查看运行配置')}</Link>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.operator_no_mutation_notice', {}, '跳转不会自动修改设置；供应商和运行配置页面包含修改操作，请确认原因后再调整。')}</p>
+                  <details className="text-xs text-slate-500 dark:text-slate-400">
+                    <summary className="cursor-pointer">{t('admin.troubleshooting.investigation_checklist')}</summary>
+                  <ol className="list-decimal space-y-3 pl-5">
+                    <li>{t('admin.troubleshooting.operator_step_confirm_scope', {}, '先确认影响范围：上面的功能分组和次数，表示需要核对的请求数量。')}</li>
+                    <li>{t('admin.troubleshooting.operator_step_check_followup', {}, '查看同时段插件错误以寻找线索；该入口不含完整成功记录，不能据此确认恢复。')}</li>
+                    <li>{t('admin.troubleshooting.operator_step_check_config', {}, '如果持续发生，再检查模型供应商连接或运行配置。')}</li>
+                  </ol>
+                  </details>
+                </div> : null}
+
+                <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
               </div>
-          </AdminInspectorDrawer> : null}
+            </aside>
+          ) : (
+            <aside data-ui="runtime-diagnostic-inspector-hint" className="hidden rounded-[18px] border border-slate-200 bg-white/60 p-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400 lg:block">
+              {t('admin.troubleshooting.inspector_hint', {}, 'Select an anomaly to inspect function-level evidence and next steps.')}
+            </aside>
+          )}
         </div>
       )}
-
-      <AdminInspectorDrawer open={moreOpen} title={t('admin.troubleshooting.more', {}, 'More diagnostics')} titleId="runtime-more-title" closeLabel={t('common.close', {}, 'Close')} onClose={() => setMoreOpen(false)}>
-      <div className="space-y-4">
-      <EditorAssistQualityPanel
-        windowHours={windowHours}
-        refreshSignal={qualityRefreshSignal}
-      />
 
       <details id="runtime-evidence" className="border-t border-slate-200 dark:border-slate-800">
         <summary className="cursor-pointer select-none py-3 text-sm font-semibold text-slate-900 dark:text-white">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</summary>
@@ -526,26 +559,12 @@ export default function AdminTroubleshootingPage() {
         </div>
       </details>
 
-      <details id="evidence-lanes" className="border-t border-slate-200 dark:border-slate-800">
-        <summary className="cursor-pointer py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</h2>
-            </div>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, '{{count}} channels')}</span>
-          </div>
-        </summary>
-        <div data-ui="runtime-evidence-lane-list" className="divide-y divide-slate-200 dark:divide-slate-800">
-          {evidenceLanes.map((lane) => <Link key={lane.id} href={lane.href} className="block py-4 hover:text-blue-700">
-            <span className="text-sm font-semibold">{t(lane.titleKey, {}, lane.titleFallback)} →</span>
-            <p className="mt-1 text-xs leading-5 text-slate-500">{t(lane.descKey, {}, lane.descFallback)}</p>
-          </Link>)}
+      <nav id="evidence-lanes" aria-label={t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')} className="border-t border-slate-200 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-ui="runtime-evidence-lane-list">
+          <span className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</span>
+          {evidenceLanes.map((lane) => <Link key={lane.id} href={lane.href} className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300">{t(lane.titleKey, {}, lane.titleFallback)} →</Link>)}
         </div>
-      </details>
-
-
-      </div>
-      </AdminInspectorDrawer>
+      </nav>
     </BackofficePageStack>
   );
 }

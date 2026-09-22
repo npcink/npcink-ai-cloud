@@ -79,30 +79,29 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/2 runs · 0 failed|2 次运行 · 0 次失败/);
   await expect(anomalyTable).toContainText(/1 runs|1 次运行/);
   await testInfo.attach('runtime-diagnostics-ready', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-ready.png') }), contentType: 'image/png' });
-  await expect(page.locator('[data-ui="editor-assist-quality-panel"]')).toHaveCount(0);
-  await expect(page.locator('#evidence-lanes')).toHaveCount(0);
+  const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
+  await expect(qualityPanel).not.toHaveAttribute('open', '');
+  await expect(page.locator('#evidence-lanes')).toBeVisible();
   const integrity = page.locator('[data-ui="runtime-data-integrity"]');
   await expect(integrity).toContainText(/not request success|不代表请求成功率/i);
   await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Call records missing|调用记录缺失/i);
   const inspect = anomalyTable.getByRole('button');
   await inspect.click();
-  const drawer = page.getByRole('dialog');
-  await expect(drawer).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
-  await expect(drawer.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
-  await expect(drawer.locator('[data-ui="runtime-issue-evidence"]')).toContainText(/Coverage \(calls \/ usage\)|完整率（调用 \/ 计量）/);
-  const actionsBox = await drawer.locator('[data-ui="runtime-investigation-actions"]').boundingBox();
-  const evidenceBox = await drawer.locator('[data-ui="runtime-issue-evidence"]').boundingBox();
+  const inspector = page.locator('#runtime-diagnostic-inspector');
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
+  await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
+  await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText(/Coverage \(calls \/ usage\)|完整率（调用 \/ 计量）/);
+  const actionsBox = await inspector.locator('[data-ui="runtime-investigation-actions"]').boundingBox();
+  const evidenceBox = await inspector.locator('[data-ui="runtime-issue-evidence"]').boundingBox();
   expect(actionsBox).toBeTruthy();
   expect(evidenceBox).toBeTruthy();
-  expect(actionsBox!.y).toBeLessThan(evidenceBox!.y);
+  expect(evidenceBox!.y).toBeLessThan(actionsBox!.y);
   await testInfo.attach('runtime-diagnostics-inspector', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-inspector.png') }), contentType: 'image/png' });
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
-  await page.keyboard.press('Escape');
-  await expect(drawer).toHaveCount(0);
-  await expect(inspect).toBeFocused();
+  await inspector.getByRole('button', { name: /^Close$|^关闭$/ }).click();
+  await expect(inspector).toHaveCount(0);
   await expect(page).not.toHaveURL(/focus=/);
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
-  const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
   await expect(qualityPanel).not.toHaveAttribute('open', '');
   await expect(qualityPanel).toContainText(/Editor-assist quality|编辑辅助质量/i);
   await expect(qualityPanel).toContainText(/Sessions with known outcome \/ total|结果已关联 \/ 总会话/i);
@@ -137,25 +136,18 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   });
   expect(exportedQuality.read_only).toBe(true);
 
-  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /^3 天$|^3 days$/ }).click();
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
-  await qualityPanel.locator('summary').click();
   await expect(page).toHaveURL(/window=72/);
   await expect.poll(() => telemetryRequests.some((url) => url.includes('recent_minutes=4320'))).toBe(true);
   await expect.poll(() => qualityRequests.some((url) => url.includes('window_hours=72'))).toBe(true);
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
 
-  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Call records missing|调用记录缺失/i }).click();
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
-  await expect(page.getByRole('dialog')).toContainText(/Call records missing|调用记录缺失/i);
+  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Call records missing|调用记录缺失/i);
   await page.reload();
   await expect(page.getByRole('button', { name: /Call records missing|调用记录缺失/i })).toHaveAttribute('aria-expanded', 'true');
 
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
-  await qualityPanel.locator('summary').click();
   const metadata = page.locator('#runtime-evidence');
   await expect(metadata).not.toHaveAttribute('open', '');
   await expect(metadata.locator('summary')).toContainText(/Runtime evidence guide|运行证据说明/i);
@@ -171,7 +163,6 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
     contentType: 'image/png',
   });
 
-  await page.keyboard.press('Escape');
   failNextTelemetry = true;
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
   const sourceError = page.locator('[data-ui="runtime-diagnostic-source-error"]');
@@ -200,7 +191,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
       { id: 'textual-status', status: 'pass', evidence: 'severity, freshness, and partial-data states include text labels' },
       { id: 'action-object-proximity', status: 'pass', evidence: 'anomaly inspection starts from the selected anomaly row and opens its evidence inspector' },
       { id: 'distinct-interaction-states', status: 'pass', evidence: 'focused anomaly uses aria-expanded and partial refresh has a distinct status message' },
-      { id: 'dialog-focus-recovery', status: 'pass', evidence: 'shared drawer closes with Escape and restores the inspection trigger' },
+      { id: 'dialog-focus-recovery', status: 'not_applicable', evidence: 'the inline inspector panel replaces the modal drawer; selection stays URL-owned and closes without a dialog' },
       { id: 'context-stability', status: 'pass', evidence: 'failed refresh retains the last successful diagnostic snapshot and selected anomaly' },
     ],
     interactionResults: [
@@ -214,7 +205,6 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]').first()).toBeVisible();
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
   await expect(qualityPanel).toBeVisible();
   await qualityPanel.scrollIntoViewIfNeeded();
   await page.evaluate(() => window.scrollBy(0, -88));
@@ -253,7 +243,6 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
 
   await expect(inspector).not.toContainText('{count}');
 
-  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Runtime runs failed|运行任务失败/ }).click();
 
   await expect(inspector.locator('a[href="/admin/plugin-observability?window=72"]')).toBeVisible();
@@ -261,7 +250,6 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
   await expect(detail).toContainText(/Affected requests: 2|受影响请求数: 2/);
   await expect(page).toHaveURL(/window=72.*focus=hosted_model.failed_runs/);
 
-  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Usage records missing|计量记录缺失/ }).click();
   await expect(inspector).toContainText(/Investigation steps|按这个顺序处理/);
   await expect(inspector.locator('a[href="/admin/runtime-profiles"]')).toBeVisible();
@@ -322,12 +310,8 @@ test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', 
   await installAdminMocks(page);
   await page.goto('/admin/troubleshooting');
 
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
   const lanes = page.locator('#evidence-lanes');
   await expect(lanes).toBeVisible();
-  await expect(lanes).not.toHaveAttribute('open', '');
-  await expect(lanes.locator('a').first()).not.toBeVisible();
-  await lanes.locator('summary').click();
   await expect(lanes.locator('a[href="/admin/audit"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/plugin-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/media-observability"]')).toBeVisible();
@@ -361,7 +345,6 @@ test('editor quality keeps sample sufficiency separate from candidate status', a
   });
 
   await page.goto('/admin/troubleshooting');
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
   await expect(qualityPanel).toContainText(/Too few samples to assess quality|样本不足，暂不能判断效果/i);
   await expect(qualityPanel).toContainText(/insufficient|样本不足/i);
