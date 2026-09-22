@@ -15,12 +15,19 @@ CLEANUP = ROOT / "scripts/production_wordpress_roundtrip_cleanup.py"
 READINESS_WRAPPER = ROOT / "deploy/wordpress-roundtrip-readiness-to-ssh-host.sh"
 CLEANUP_WRAPPER = ROOT / "deploy/wordpress-roundtrip-cleanup-to-ssh-host.sh"
 RUNBOOK = ROOT / "docs/production-wordpress-roundtrip-validation-runbook-v1.md"
-EVIDENCE = ROOT / "docs/history/production/2026/production-wordpress-image-roundtrip-evidence-2026-08-05.md"
+EVIDENCE = (
+    ROOT
+    / "docs/history/production/2026/production-wordpress-image-roundtrip-evidence-2026-08-05.md"
+)
 ACTIVE_SOAK_EVIDENCE = (
-    ROOT / "docs/history/production/2026/production-internal-validation-active-soak-evidence-2026-08-05.md"
+    ROOT
+    / "docs/history/production/2026/"
+    "production-internal-validation-active-soak-evidence-2026-08-05.md"
 )
 CVE_WORKSHEET = (
-    ROOT / "docs/history/production/2026/python-3-14-6-controlled-validation-operator-worksheet-2026-08-05.md"
+    ROOT
+    / "docs/history/production/2026/"
+    "python-3-14-6-controlled-validation-operator-worksheet-2026-08-05.md"
 )
 PACKAGE = ROOT / "package.json"
 INVENTORY = ROOT / "config/engineering-command-inventory-v1.json"
