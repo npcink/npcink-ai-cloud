@@ -31,7 +31,7 @@ echo "[feedback-status] Running targeted Python lint"
 	app/domain/feedback_status \
 	app/domain/observability/plugin_events.py \
 	app/api/routes/observability.py \
-	app/dev/feedback_status.py \
+	app/ops/feedback_status.py \
 	tests/api/test_observability_routes.py \
 	tests/domain/test_feedback_status.py \
 	tests/dev/test_feedback_status_cli.py

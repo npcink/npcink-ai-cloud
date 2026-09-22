@@ -41,7 +41,7 @@ echo "[editor-assist-quality] Running targeted Python lint"
 	app/api/routes/observability.py \
 	app/api/routes/service.py \
 	app/workers/ops_cadence.py \
-	app/dev/editor_assist_quality_status.py \
+	app/ops/editor_assist_quality_status.py \
 	tests/api/test_editor_assist_quality_routes.py \
 	tests/dev/test_editor_assist_quality_status_cli.py \
 	tests/workers/test_ops_cadence_worker.py \

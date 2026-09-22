@@ -7,4 +7,4 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 npcink_ai_cloud_require_cmd docker
 
-npcink_ai_cloud_compose "${ROOT_DIR}" exec -T api python -m app.dev.baseline_status
+npcink_ai_cloud_compose "${ROOT_DIR}" exec -T api python -m app.ops.baseline_status
