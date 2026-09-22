@@ -25,6 +25,7 @@ as current truth.
 | 在真实环境验收运行观测工作台 | [真实场景验收记录](runtime-observation-workbench-real-scenario-acceptance-v1.md) |
 | 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md) |
 | 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
+| 查工程债与暂缓清理队列 | [工程跟进队列](engineering-follow-up-queue-v1.md) — 低收益项的触发条件与已完成整改索引 |
 | 判断一个大文件是否值得拆 | [结构整改启动条件](structural-remediation-delivery-standard-v1.md) |
 | 找遗漏文档或查看本轮整理结果 | [文档补充清单与结构调查](history/repository-hygiene/2026/document-navigation-and-hotspot-review-2026-09-11.md) |
 
