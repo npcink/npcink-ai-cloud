@@ -4237,7 +4237,7 @@ async def get_admin_plugin_observability(
 @router.get("/admin/editor-assist-quality")
 async def get_admin_editor_assist_quality(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=720),
+    window_hours: int = Query(default=24, ge=1, le=2160),
     site_id: str = Query(default="", max_length=191),
     task_key: str = Query(default="", max_length=64),
 ) -> Any:
@@ -4262,7 +4262,7 @@ async def get_admin_editor_assist_quality(
 @router.get("/admin/media-observability")
 async def get_admin_media_observability(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=720),
+    window_hours: int = Query(default=24, ge=1, le=2160),
     site_id: str = Query(default=""),
     target_format: str = Query(default=""),
 ) -> Any:
@@ -4293,7 +4293,7 @@ async def get_admin_media_observability(
 @router.get("/admin/vector-observability")
 async def get_admin_vector_observability(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=720),
+    window_hours: int = Query(default=24, ge=1, le=2160),
     site_id: str = Query(default=""),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6458,7 +6458,7 @@ async def get_runtime_telemetry_diagnostics(
     request: Request,
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
-    recent_minutes: int = Query(default=60, ge=1, le=43200),
+    recent_minutes: int = Query(default=60, ge=1, le=129600),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -6487,7 +6487,7 @@ async def get_runtime_run_evidence(
     site_id: str | None = Query(default=None),
     capability: str | None = Query(default=None, max_length=191),
     issue_code: str | None = Query(default=None, max_length=64),
-    recent_minutes: int = Query(default=60, ge=1, le=43200),
+    recent_minutes: int = Query(default=60, ge=1, le=129600),
     limit: int = Query(default=25, ge=1, le=100),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
