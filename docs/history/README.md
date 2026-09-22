@@ -8,6 +8,11 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
 
 ## Collections
 
+- [工程整改复盘（2026-09-22）](engineering-remediation-retrospective-2026-09-22.md)
+  — 12 个整改 PR 的经验：子会话实现+主会话发布模式、fail-closed 翻转扫全
+  消费面、CI 车道不收窄廉价检查、工作树覆盖事故与确定性重放、契约体系两次
+  实战拦截。
+
 - [运行诊断与编辑器推荐验收（2026-09-21）](trials/2026/diagnostics-and-editor-acceptance-2026-09-21.md)
   — 当前诊断页浏览器证据、编辑器请求超时与旧验收命令误报问题。
 
