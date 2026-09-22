@@ -145,8 +145,9 @@ feedback rounds and authorized a density exception for this route only:
   provider errors, and both record-coverage rates — is permitted above
   the anomaly queue, and the queue uses 13px row type across the full
   content width;
-- the inline inspector stays docked beside the queue and keeps
-  low-frequency guidance collapsed.
+- the selected anomaly's inspector renders full-width beneath the queue
+  (queue rows select directly) so evidence tables keep the whole content
+  width, and low-frequency guidance stays collapsed.
 
 The shared page-header default remains in force for every other
 non-authentication route; extending this exception to another route

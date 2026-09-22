@@ -294,9 +294,8 @@ export default function AdminTroubleshootingPage() {
           <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
         </BackofficeSectionPanel>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(19rem,25rem)] lg:items-start">
-          <div className="min-w-0 space-y-4">
-            <AdminDataTableFrame
+        <div className="space-y-3">
+          <AdminDataTableFrame
               title={t('admin.troubleshooting.queue_title', {}, 'Problems in this period')}
               resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} problem types')}
               dataUi="runtime-diagnostic-table-frame"
@@ -326,7 +325,8 @@ export default function AdminTroubleshootingPage() {
                           key={issue.code}
                           data-ui="runtime-diagnostic-issue"
                           aria-selected={selected}
-                          className={selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}
+                          className={`cursor-pointer ${selected ? 'bg-blue-50/80 dark:bg-blue-950/25' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}`}
+                          onClick={() => updateUrl({ focus: selected ? null : issue.code })}
                         >
                           <td className="px-3 py-2.5 align-top">
                             <div className="flex flex-wrap items-center gap-2">
@@ -378,18 +378,12 @@ export default function AdminTroubleshootingPage() {
               )}
             </AdminDataTableFrame>
 
-            <EditorAssistQualityPanel
-              windowHours={windowHours}
-              refreshSignal={qualityRefreshSignal}
-            />
-          </div>
-
-          {selectedIssue ? (
-            <aside
+            {selectedIssue ? (
+            <section
               id="runtime-diagnostic-inspector"
               data-ui="runtime-diagnostic-inspector"
               aria-label={issueTitle(selectedIssue, t)}
-              className="min-w-0 rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 lg:sticky lg:top-4"
+              className="rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -407,10 +401,10 @@ export default function AdminTroubleshootingPage() {
               </div>
               <div className="mt-3 space-y-4">
                 <section data-ui="runtime-inspector-summary" className="border-b border-slate-200 pb-3 dark:border-slate-800">
-                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
                     <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</dd></div>
                     <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}</dt><dd className="font-semibold">{issueOwner(selectedIssue, t)}</dd></div>
-                    <div className="sm:col-span-2"><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
+                    <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
                   </dl>
                 </section>
 
@@ -527,12 +521,13 @@ export default function AdminTroubleshootingPage() {
 
                 <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
               </div>
-            </aside>
-          ) : (
-            <aside data-ui="runtime-diagnostic-inspector-hint" className="hidden rounded-[18px] border border-slate-200 bg-white/60 p-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400 lg:block">
-              {t('admin.troubleshooting.inspector_hint', {}, 'Select an anomaly to inspect function-level evidence and next steps.')}
-            </aside>
-          )}
+            </section>
+          ) : null}
+
+            <EditorAssistQualityPanel
+              windowHours={windowHours}
+              refreshSignal={qualityRefreshSignal}
+            />
         </div>
       )}
 
