@@ -36,17 +36,23 @@ Root dated records by month: 2026-05: 1, 2026-06: 32, 2026-07: 62,
    from the README task/observation tables, so moves need index updates, and
    the newest records are still live working state.
 2. **ADR numbering defects.** 044 is missing (043 jumps to 045) and two
-   files claim 028 (`028-ai-credit-commercial-meter-contract.md` and
+   files claimed 028 (`028-ai-credit-commercial-meter-contract.md` and
    `028-versioned-public-site-compliance-projection.md`). `docs/README.md`
-   already carries a duplicate-numbering warning, so this is a known-but-
-   unfixed defect.
+   carried a duplicate-numbering warning, so this was a known-but-unfixed
+   defect. Resolution 2026-09-22: the newer meter decision was renumbered to
+   `056-ai-credit-commercial-meter-contract.md`, the 044 gap is recorded in
+   the docs README numbering status, and the documentation reachability gate
+   now fails on duplicate ADR numbers.
 3. **Supersession debt without version variants.** No stem has multiple
    `-vN` variants coexisting (120 versioned files, 118 are v1-only, one
    v2-only). But `site-media-recommendation-engineering-standard-v1.md` and
-   `site-media-recommendation-development-standard-v2.md` cover the same
-   subject under different stems, and the docs README indexes **both** as
-   active rules. This is the clearest "two truths for one subject" case
-   found.
+   `site-media-recommendation-development-standard-v2.md` appeared to cover
+   the same subject under different stems, and the docs README indexed
+   **both** as active rules. Resolution 2026-09-22: reading both documents
+   showed complementary layers, not supersession — v1 governs
+   site-inventory media recommendations and v2 governs external image-source
+   recommendations as its declared implementation companion. The docs README
+   entries and the v1 scope note now state that relationship explicitly.
 4. **No hard orphans; debt shows up as weak linking.** `check:doc-
    reachability` enforces index reachability, so zero docs have no inbound
    reference. Instead, 51 of the 137 non-dated root docs have only 1-2

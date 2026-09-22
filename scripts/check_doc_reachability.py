@@ -22,9 +22,16 @@ readers cannot navigate to it, and link checkers that only follow real links
 consider it absent. Add an entry to the owning section of ``docs/README.md``
 instead of moving or rewriting the document.
 
-This guard checks reachability only. It does not check for broken targets:
-``docs/legacy-contracts/magick-ai-root`` intentionally preserves snapshots whose
-internal links no longer resolve, and rewriting them is out of scope.
+The same guard verifies ADR numbering integrity in ``docs/decisions/``: two
+decisions must never share a number (the 2026-07 duplicate 028 collision is the
+precedent), and unassigned numbers are reported in the success line so a silent
+gap stays visible. Renumbering an ADR requires a status note in the renamed
+file, as recorded in the ``docs/README.md`` numbering status.
+
+This guard checks reachability and numbering only. It does not check for broken
+targets: ``docs/legacy-contracts/magick-ai-root`` intentionally preserves
+snapshots whose internal links no longer resolve, and rewriting them is out of
+scope.
 """
 
 from __future__ import annotations
@@ -109,10 +116,55 @@ def reachable_documents() -> set[Path]:
     return seen & tracked
 
 
+def adr_numbering_errors() -> list[str]:
+    """Return duplicate-numbering defects in ``docs/decisions/``."""
+
+    by_number: dict[str, list[str]] = {}
+    for path in sorted((DOCS / "decisions").glob("*.md")):
+        match = re.match(r"^(\d+)-", path.name)
+        number = match.group(1) if match else "<unnumbered>"
+        by_number.setdefault(number, []).append(path.name)
+    return [
+        f"duplicate ADR number {number}: {', '.join(names)}"
+        for number, names in sorted(by_number.items())
+        if len(names) > 1
+    ]
+
+
+def adr_gap_summary() -> str:
+    """Return the unassigned-number summary for ``docs/decisions/``."""
+
+    numbers = sorted(
+        int(match.group(1))
+        for path in (DOCS / "decisions").glob("*.md")
+        if (match := re.match(r"^(\d+)-", path.name))
+    )
+    if not numbers:
+        return "no numbered ADRs found"
+    highest = numbers[-1]
+    gaps = sorted(set(range(1, highest + 1)) - set(numbers))
+    return (
+        f"ADR numbering: {len(numbers)} decisions, 001-{highest:03d}, "
+        f"unassigned: {gaps if gaps else 'none'}"
+    )
+
+
 def main() -> int:
     tracked = {path.resolve() for path in DOCS.rglob("*.md")}
     reachable = reachable_documents()
     orphans = sorted(tracked - reachable)
+
+    numbering_errors = adr_numbering_errors()
+    if numbering_errors:
+        print("[error] ADR numbering defects in docs/decisions/:", file=sys.stderr)
+        for error in numbering_errors:
+            print(f"  {error}", file=sys.stderr)
+        print(
+            "Renumber the newer decision to the next free number and add a "
+            "status note, as recorded in the docs/README.md numbering status.",
+            file=sys.stderr,
+        )
+        return 1
 
     if orphans:
         print(
@@ -131,7 +183,8 @@ def main() -> int:
 
     print(
         "[ok] documentation reachability: "
-        f"{len(reachable)}/{len(tracked)} documents reachable from docs/README.md"
+        f"{len(reachable)}/{len(tracked)} documents reachable from docs/README.md; "
+        f"{adr_gap_summary()}"
     )
     return 0
 
