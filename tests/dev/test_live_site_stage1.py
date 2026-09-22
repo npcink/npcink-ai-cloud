@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT
-from app.dev.live_site_preflight import SiteTarget
-from app.dev.live_site_stage1 import GuardError, build_stage_report, parse_scopes
+from app.ops.live_site_addon_install import APPROVAL_TEXT
+from app.ops.live_site_preflight import SiteTarget
+from app.ops.live_site_stage1 import GuardError, build_stage_report, parse_scopes
 
 
 def _target() -> SiteTarget:

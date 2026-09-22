@@ -448,7 +448,7 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
     ai_task = _read("docs/ai-task-runtime-contract-v1.md")
     alt_text = _read("docs/wordpress-ai-alt-text-vision-contract-feasibility-v1.md")
     smoke = _read("docs/production-wordpress-ai-connector-smoke-runbook-v1.md")
-    smoke_builder = _read("app/dev/production_wordpress_ai_connector_smoke.py")
+    smoke_builder = _read("app/ops/production_wordpress_ai_connector_smoke.py")
 
     for required in (
         "Status: active; aligned with the P1 connector reset.",

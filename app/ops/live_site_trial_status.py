@@ -6,12 +6,12 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT as STAGE1_APPROVAL_TEXT
-from app.dev.live_site_preflight import _dict, _list, _text
-from app.dev.live_site_runtime_execute_smoke import (
+from app.ops.live_site_addon_install import APPROVAL_TEXT as STAGE1_APPROVAL_TEXT
+from app.ops.live_site_preflight import _dict, _list, _text
+from app.ops.live_site_runtime_execute_smoke import (
     APPROVAL_TEXT as EXECUTE_SMOKE_APPROVAL_TEXT,
 )
-from app.dev.live_site_runtime_smoke import APPROVAL_TEXT as RESOLVE_SMOKE_APPROVAL_TEXT
+from app.ops.live_site_runtime_smoke import APPROVAL_TEXT as RESOLVE_SMOKE_APPROVAL_TEXT
 
 DEFAULT_STAGE1_REPORT = Path(".tmp/live-site-stage1/npcink-stage1/stage1-report.json")
 DEFAULT_HANDOFF_REPORT = Path(

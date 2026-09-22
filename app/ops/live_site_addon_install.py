@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.dev.live_site_addon_package import (
+from app.ops.live_site_addon_package import (
     ADDON_PLUGIN_BASENAME,
     DEFAULT_ADDON_ZIP,
     DEFAULT_NPCINK_SITE,
@@ -18,8 +18,8 @@ from app.dev.live_site_addon_package import (
     run_json_command,
     wp_command,
 )
-from app.dev.live_site_env import resolve_approval_text
-from app.dev.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
+from app.ops.live_site_env import resolve_approval_text
+from app.ops.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
 
 APPROVAL_TEXT = (
     "我明确批准在 npcink.local 安装并激活 Cloud addon，provision 专用 Cloud identity，"

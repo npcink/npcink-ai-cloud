@@ -10,19 +10,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT, approval_matches
-from app.dev.live_site_addon_package import (
+from app.ops.live_site_addon_install import APPROVAL_TEXT, approval_matches
+from app.ops.live_site_addon_package import (
     DEFAULT_ADDON_ZIP,
     DEFAULT_NPCINK_SITE,
     inspect_addon_zip,
 )
-from app.dev.live_site_env import (
+from app.ops.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     default_env_files,
     resolve_approval_text,
     resolve_env_secret,
 )
-from app.dev.live_site_identity_provision import (
+from app.ops.live_site_identity_provision import (
     DEFAULT_ACCOUNT_ID,
     DEFAULT_BASE_URL,
     DEFAULT_KEY_LABEL,
@@ -32,7 +32,7 @@ from app.dev.live_site_identity_provision import (
     DEFAULT_SITE_URL,
     build_request_plan,
 )
-from app.dev.live_site_preflight import (
+from app.ops.live_site_preflight import (
     SiteTarget,
     _dict,
     _list,
