@@ -18,6 +18,7 @@ as current truth.
 | 复用该会话的执行与验证经验 | [会话复盘](compat-budget-payment-session-retrospective-2026-09-22.md) — 分阶段执行模式、文档/发布/清理的机械经验、测试分层与稳定性证据方法 |
 | 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
 | 查延迟观测第二观测点补充 | [延迟观测补充](domestic-latency-observation-supplement-2026-09-22.md) — 跨云 ECS P95≈138ms，结论不变 |
+| 查推荐质量试批与第二性能窗口结论 | [推荐试批与观察窗口记录](history/trials/2026/recommendation-trial-batch-and-second-observation-window-2026-09-22.md) — 8 篇 93 候选有用率 51.6%；锚点修复无回归；正式优化延后至真实使用反馈 |
 | 查退款能力缺口 | [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) — 静态盘点：网关/状态机/幂等已实现未验证；回调、对账、失败终态、运营入口未实现 |
 | 一个人先把本地流程用起来，暂缓商业化投入 | [本地优先阶段总结与行动计划](local-first-validation-stage-2026-09-21.md) — 当前个人试用计划，非验收通过证明 |
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
