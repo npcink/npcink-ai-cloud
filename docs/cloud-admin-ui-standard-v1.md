@@ -147,7 +147,12 @@ feedback rounds and authorized a density exception for this route only:
   content width;
 - the selected anomaly's inspector renders full-width beneath the queue
   (queue rows select directly) so evidence tables keep the whole content
-  width, and low-frequency guidance stays collapsed.
+  width; its breakdown, run-evidence, and actions sections sit behind
+  local tabs, and low-frequency guidance stays collapsed;
+- a window trend panel with a chart/table toggle (daily runs and
+  failures from the telemetry usage timeline) sits under the KPI row,
+  and the evidence-lane link row follows the queue instead of the page
+  footer.
 
 The shared page-header default remains in force for every other
 non-authentication route; extending this exception to another route

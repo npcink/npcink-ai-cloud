@@ -15,6 +15,7 @@ import {
   EditorAssistQualityPanel,
 } from '@/components/admin/EditorAssistQualityPanel';
 import { AdminObservationWindow } from '@/components/admin/AdminObservationWindow';
+import { AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
 import {
   formatRate,
@@ -59,6 +60,8 @@ export default function AdminTroubleshootingPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [qualityRefreshSignal, setQualityRefreshSignal] = useState(0);
+  const [trendView, setTrendView] = useState<'chart' | 'table'>('chart');
+  const [inspectorTab, setInspectorTab] = useState<'breakdown' | 'runs' | 'actions'>('breakdown');
   const requestSequenceRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const hasLoadedRef = useRef(false);
@@ -263,6 +266,47 @@ export default function AdminTroubleshootingPage() {
             </div>
           ))}
         </div>
+        <section data-ui="runtime-diagnostic-trend" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.trend_title', {}, 'Window trend')}</h2>
+            <div className="flex gap-1" role="group" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
+              <button type="button" aria-pressed={trendView === 'chart'} onClick={() => setTrendView('chart')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'chart' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_chart', {}, 'Chart')}</button>
+              <button type="button" aria-pressed={trendView === 'table'} onClick={() => setTrendView('table')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'table' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_table', {}, 'Table')}</button>
+            </div>
+          </div>
+          <div className="mt-2">
+            {data.usageTimeline.length ? (trendView === 'chart' ? (
+              <AnalyticsLineChart
+                data={data.usageTimeline.map((point) => ({ label: point.day, value: point.runs }))}
+                comparisonSeries={[{ name: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), values: data.usageTimeline.map((point) => point.failed) }]}
+                yAxisLabel={t('admin.troubleshooting.runs', {}, 'Runs')}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
+                  <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
+                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_day', {}, 'Day')}</th>
+                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.runs', {}, 'Runs')}</th>
+                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_succeeded', {}, 'Succeeded')}</th>
+                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
+                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_success_rate', {}, 'Success rate')}</th>
+                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_avg_latency', {}, 'Avg duration')}</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {data.usageTimeline.map((point) => <tr key={point.day}>
+                      <td className="px-2 py-2">{point.day}</td>
+                      <td className="px-2 py-2 font-semibold">{formatNumber(point.runs)}</td>
+                      <td className="px-2 py-2">{formatNumber(point.succeeded)}</td>
+                      <td className={`px-2 py-2 ${point.failed ? 'font-semibold text-amber-700 dark:text-amber-300' : ''}`}>{formatNumber(point.failed)}</td>
+                      <td className="px-2 py-2">{point.successRate == null ? '—' : formatRate(point.successRate)}</td>
+                      <td className="whitespace-nowrap px-2 py-2">{point.avgLatencyMs == null ? '—' : `${Math.round(point.avgLatencyMs)} ms`}</td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+            )) : <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.trend_empty', {}, 'No trend data in this window.')}</p>}
+          </div>
+        </section>
         </>
       ) : null}
 
@@ -408,6 +452,25 @@ export default function AdminTroubleshootingPage() {
                   </dl>
                 </section>
 
+                <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-800">
+                  {([
+                    ['breakdown', 'admin.troubleshooting.open_evidence', 'Breakdown by function'],
+                    ['runs', 'admin.troubleshooting.run_evidence_title', 'Affected run evidence'],
+                    ['actions', 'admin.troubleshooting.tab_actions', 'Actions'],
+                  ] as const).map(([value, key, fallback]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={inspectorTab === value}
+                      onClick={() => setInspectorTab(value)}
+                      className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${inspectorTab === value ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
+                    >
+                      {t(key, {}, fallback)}
+                    </button>
+                  ))}
+                </div>
+                <div hidden={inspectorTab !== 'breakdown'}>
                 <section key={selectedIssue.code} data-ui="runtime-issue-evidence">
                   <h3 className="pb-2 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
                   <div className="space-y-3">
@@ -429,8 +492,9 @@ export default function AdminTroubleshootingPage() {
                     <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.group_scope_note', {}, 'Totals for the returned functions in this period, not individual failure records. Functions may be omitted from the bounded response.')}</p>
                   </div>
                 </section>
-
-                <section data-ui="runtime-run-evidence" className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+                </div>
+                <div hidden={inspectorTab !== 'runs'}>
+                <section data-ui="runtime-run-evidence" className="space-y-2 pt-1 dark:border-slate-800">
                   <h3 className="text-sm font-semibold">{t('admin.troubleshooting.run_evidence_title', {}, 'Affected run evidence')}</h3>
                   {runEvidenceLoading ? <p className="text-xs text-slate-500">{t('admin.troubleshooting.run_evidence_loading')}</p> : runEvidence.length ? (
                     <div className="overflow-x-auto">
@@ -465,8 +529,9 @@ export default function AdminTroubleshootingPage() {
 
                   {runEvidenceMeta.truncated ? <p className="text-xs text-amber-700">{t('admin.troubleshooting.run_evidence_truncated', {}, 'Showing a bounded sample of matching runs.')}</p> : null}
                 </section>
-
-                {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+                </div>
+                <div hidden={inspectorTab !== 'actions'}>
+                {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-3 pt-1 dark:border-slate-800">
                   <h3 className="font-semibold">{t('admin.troubleshooting.failures_title')}</h3>
                   <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>
                   <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
@@ -519,10 +584,18 @@ export default function AdminTroubleshootingPage() {
                   </details>
                 </div> : null}
 
+                </div>
                 <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
               </div>
             </section>
           ) : null}
+
+            <nav id="evidence-lanes" aria-label={t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')} className="border-t border-slate-200 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-ui="runtime-evidence-lane-list">
+          <span className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</span>
+          {evidenceLanes.map((lane) => <Link key={lane.id} href={lane.href} className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300">{t(lane.titleKey, {}, lane.titleFallback)} →</Link>)}
+        </div>
+            </nav>
 
             <EditorAssistQualityPanel
               windowHours={windowHours}
@@ -556,12 +629,6 @@ export default function AdminTroubleshootingPage() {
         </div>
       </details>
 
-      <nav id="evidence-lanes" aria-label={t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')} className="border-t border-slate-200 dark:border-slate-800">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-ui="runtime-evidence-lane-list">
-          <span className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</span>
-          {evidenceLanes.map((lane) => <Link key={lane.id} href={lane.href} className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300">{t(lane.titleKey, {}, lane.titleFallback)} →</Link>)}
-        </div>
-      </nav>
     </BackofficePageStack>
   );
 }

@@ -14,9 +14,19 @@ export type ProviderFailure = {
   modelId: string; errorCode: string; reason: string; occurredAt: string;
 };
 
+export type UsageTimelinePoint = {
+  day: string;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  successRate: number | null;
+  avgLatencyMs: number | null;
+};
+
 export type RuntimeTelemetrySummary = {
   providerFailures: ProviderFailure[];
   generatedAt: string;
+  usageTimeline: UsageTimelinePoint[];
   capabilityGroups: {
     id: string;
     runs: number;
@@ -91,8 +101,19 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
   const totals = raw?.totals ?? {};
   const gaps = raw?.governance_gaps ?? {};
   const alertSummary = raw?.alert_summary ?? {};
+  const usageStatistics = raw?.usage_statistics ?? {};
   return {
     generatedAt: String(raw?.generated_at ?? ''),
+    usageTimeline: Array.isArray(usageStatistics?.timeline)
+      ? usageStatistics.timeline.map((point: any) => ({
+          day: String(point?.day ?? ''),
+          runs: asNumber(point?.runs),
+          succeeded: asNumber(point?.succeeded),
+          failed: asNumber(point?.failed),
+          successRate: point?.success_rate == null ? null : asNumber(point?.success_rate),
+          avgLatencyMs: point?.avg_latency_ms == null ? null : asNumber(point?.avg_latency_ms),
+        }))
+      : [],
     providerFailures: Array.isArray(raw?.provider_failures) ? raw.provider_failures.map((item: any) => ({
       runId: String(item.run_id || ''), siteId: String(item.site_id || ''),
       profileId: String(item.profile_id || ''), providerId: String(item.provider_id || ''),

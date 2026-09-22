@@ -72,6 +72,10 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await page.goto('/admin/troubleshooting');
   await expect(page.locator('[data-ui="runtime-diagnostic-toolbar"]')).toBeVisible();
   await expect(page.locator('[data-ui="runtime-diagnostic-metrics"]')).toContainText('83%');
+  const trend = page.locator('[data-ui="runtime-diagnostic-trend"]');
+  await expect(trend).toBeVisible();
+  await trend.getByRole('button', { name: /^表格$|^Table$/ }).click();
+  await expect(trend.getByRole('table')).toBeVisible();
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
   const anomalyTable = page.locator('[data-ui="runtime-diagnostic-table"]');
   await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toHaveCount(0);
@@ -92,11 +96,11 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(inspector).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
   await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
   await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText(/Coverage \(calls \/ usage\)|完整率（调用 \/ 计量）/);
-  const actionsBox = await inspector.locator('[data-ui="runtime-investigation-actions"]').boundingBox();
-  const evidenceBox = await inspector.locator('[data-ui="runtime-issue-evidence"]').boundingBox();
-  expect(actionsBox).toBeTruthy();
-  expect(evidenceBox).toBeTruthy();
-  expect(evidenceBox!.y).toBeLessThan(actionsBox!.y);
+  await expect(inspector.getByRole('tab', { name: /^按功能拆分$|^Breakdown by function$/ })).toHaveAttribute('aria-selected', 'true');
+  await inspector.getByRole('tab', { name: /^受影响运行证据$|^Affected run evidence$/ }).click();
+  await expect(inspector.getByText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i)).toBeVisible();
+  await inspector.getByRole('tab', { name: /^处置$|^Actions$/ }).click();
+  await expect(inspector.locator('[data-ui="runtime-investigation-actions"]')).toBeVisible();
   await testInfo.attach('runtime-diagnostics-inspector', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-inspector.png') }), contentType: 'image/png' });
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
   await inspector.getByRole('button', { name: /^Close$|^关闭$/ }).click();
@@ -244,6 +248,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
   await expect(inspector).not.toContainText('{count}');
 
   await page.getByRole('button', { name: /Runtime runs failed|运行任务失败/ }).click();
+  await inspector.getByRole('tab', { name: /^处置$|^Actions$/ }).click();
 
   await expect(inspector.locator('a[href="/admin/plugin-observability?window=72"]')).toBeVisible();
 
@@ -368,6 +373,7 @@ test('provider failure details explain cause, export evidence and keep recovery 
     })) });
   });
   await page.goto('/admin/troubleshooting?window=168&focus=hosted_model.provider_errors');
+  await page.locator('#runtime-diagnostic-inspector').getByRole('tab', { name: /^处置$|^Actions$/ }).click();
   await expect(page.getByRole('main').getByRole('link', { name: /Usage Statistics|使用统计/ })).toHaveAttribute('href', '/admin/usage-statistics?window=168&from=troubleshooting');
   const details = page.locator('[data-ui="provider-failure-details"]');
   await expect(details).toContainText(/程序发送的返回格式定义|Output schema rejected/i);
@@ -402,6 +408,7 @@ test('successful runs remain successful inside a call-record gap', async ({ page
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
   await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-ready-narrow.png') });
   await page.getByRole('button', { name: /Call records missing|调用记录缺失/ }).click();
+  await page.locator('#runtime-diagnostic-inspector').getByRole('tab', { name: /^受影响运行证据$|^Affected run evidence$/ }).click();
   const evidence = page.locator('[data-ui="runtime-run-evidence"]');
   await expect(evidence.getByText(/^Succeeded$|^成功$/)).toBeVisible();
   await expect(evidence.getByText(/^Succeeded$|^成功$/)).toHaveClass(/emerald/);

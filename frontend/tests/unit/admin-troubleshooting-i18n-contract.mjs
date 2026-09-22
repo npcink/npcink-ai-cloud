@@ -118,7 +118,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /evidenceLanes[\s\S]*id="runtime-evidence"[\s\S]*admin\.advanced\.runtime_evidence_boundary[\s\S]*id="evidence-lanes"/,
+  /evidenceLanes[\s\S]*id="evidence-lanes"[\s\S]*id="runtime-evidence"[\s\S]*admin\.advanced\.runtime_evidence_boundary/,
   'Narrow observability lanes and advanced runtime metadata must live under Runtime Diagnostics'
 );
 
