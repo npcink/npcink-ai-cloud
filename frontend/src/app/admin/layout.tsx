@@ -606,6 +606,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <span className="hidden rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200 md:inline-flex">
                 {t('admin.internal_only')}
               </span>
+              <span
+                data-ui="admin-build-stamp-inline"
+                className="hidden select-none text-[0.62rem] leading-4 text-slate-400 dark:text-slate-600 xl:inline"
+                title={process.env.NEXT_PUBLIC_BUILD_STAMP || undefined}
+              >
+                build {(process.env.NEXT_PUBLIC_BUILD_STAMP || 'dev').split(' · ')[0]}
+              </span>
               <div className="hidden items-center gap-2 md:flex">
                 <LocaleSwitcher />
                 <ThemeToggle />
