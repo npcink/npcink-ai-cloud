@@ -13,6 +13,7 @@ as current truth.
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
+| 查延迟观测第二观测点补充 | [延迟观测补充](domestic-latency-observation-supplement-2026-09-22.md) — 跨云 ECS P95≈138ms，结论不变 |
 | 查退款能力缺口 | [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) — 静态盘点：网关/状态机/幂等已实现未验证；回调、对账、失败终态、运营入口未实现 |
 | 一个人先把本地流程用起来，暂缓商业化投入 | [本地优先阶段总结与行动计划](local-first-validation-stage-2026-09-21.md) — 当前个人试用计划，非验收通过证明 |
 | 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |

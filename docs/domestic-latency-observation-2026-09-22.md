@@ -3,6 +3,11 @@
 Status: dated observation record. HTTP 探测、有限样本，非 SLA；只证明观测时点的
 可达性与量级，不授权任何发布或容量结论。
 
+> 补充（2026-09-22）：第二独立观测点（境内跨云 ECS）已补测，P95 ≈138ms，
+> 同步端点结论不变，见
+> [domestic-latency-observation-supplement-2026-09-22.md](domestic-latency-observation-supplement-2026-09-22.md)。
+> 本文其余内容为原始记录，未改动。
+
 ## 1. 方法
 
 - 目标 GET https://cloud.npc.ink/health/live（完整 TLS 往返，含 DNS 与握手），
