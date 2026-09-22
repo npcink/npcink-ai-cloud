@@ -11,6 +11,10 @@ const queries = readFileSync(fromFrontendRoot('src/features/admin/audit/queries.
 const pagination = readFileSync(fromFrontendRoot('src/features/admin/audit/pagination.ts'), 'utf8');
 const receipt = readFileSync(fromFrontendRoot('src/components/admin/AdminMutationReceipt.tsx'), 'utf8');
 const troubleshooting = readFileSync(fromFrontendRoot('src/app/admin/troubleshooting/page.tsx'), 'utf8');
+const troubleshootingCatalog = readFileSync(
+  fromFrontendRoot('src/features/admin/observability/runtimeIssueCatalog.ts'),
+  'utf8'
+);
 
 assert.match(workspace, /useSearchParams[\s\S]*FILTER_KEYS[\s\S]*offset/, 'audit filters and pagination must remain URL-owned');
 assert.match(queries, /useQuery[\s\S]*keepPreviousData[\s\S]*retry: false/, 'audit remote state must use the existing bounded Admin query layer');
@@ -22,6 +26,7 @@ assert.match(workspace, /AdminDataTableFrame[\s\S]*AdminInspectorDrawer/, 'audit
 assert.match(workspace, /payload values are intentionally excluded/, 'audit payload values must stay outside the Admin workspace');
 assert.doesNotMatch(workspace, /item\.payload|JSON\.stringify\([^)]*payload/, 'the audit workspace must not render audit payload values');
 assert.match(receipt, /\/admin\/audit\?/, 'mutation receipts must navigate into the persistent audit workspace');
-assert.match(troubleshooting, /id: 'audit'[\s\S]*href: '\/admin\/audit'/, 'runtime diagnostics must expose the bounded audit evidence lane');
+assert.match(troubleshootingCatalog, /id: 'audit'[\s\S]*href: '\/admin\/audit'/, 'runtime diagnostics must expose the bounded audit evidence lane');
+assert.match(troubleshooting, /from '@\/features\/admin\/observability\/runtimeIssueCatalog'/, 'runtime diagnostics must render the shared evidence-lane catalog');
 
 console.log('admin_audit_workspace_contract: ok');

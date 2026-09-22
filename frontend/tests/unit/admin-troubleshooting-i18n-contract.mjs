@@ -6,6 +6,10 @@ const pageSource = readFileSync(
   fromFrontendRoot('src/app/admin/troubleshooting/page.tsx'),
   'utf8'
 );
+const catalogSource = readFileSync(
+  fromFrontendRoot('src/features/admin/observability/runtimeIssueCatalog.ts'),
+  'utf8'
+);
 const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 const zhStart = i18nSource.indexOf("'zh-CN': {");
 const anomalyTableStart = pageSource.indexOf('data-ui="runtime-diagnostic-table"');
@@ -25,6 +29,16 @@ const troubleshootingKeys = Array.from(
   .filter((key, index, keys) => keys.indexOf(key) === index)
   .sort();
 
+// The shared issue catalog owns the diagnostic copy mappings. Every
+// `admin.*` key it references — whether inside a t() call or a catalog
+// record — must stay bilingual, so collect quoted literals broadly.
+const catalogKeys = Array.from(
+  catalogSource.matchAll(/['`](admin\.[a-z0-9_.]+)['`]/g)
+)
+  .map((match) => match[1])
+  .filter((key, index, keys) => keys.indexOf(key) === index)
+  .sort();
+
 const workspaceKeys = [
   'admin.advanced.runtime_resolution_title',
   'admin.advanced.runtime_resolution_desc',
@@ -38,11 +52,22 @@ const workspaceKeys = [
   'admin.advanced.action_open_runtime_profiles',
 ];
 
-const requiredKeys = [...new Set([...troubleshootingKeys, ...workspaceKeys])].sort();
+const requiredKeys = [...new Set([...troubleshootingKeys, ...catalogKeys, ...workspaceKeys])].sort();
 
 assert.ok(
   troubleshootingKeys.length >= 35,
   'Runtime diagnostics workspace must declare localized copy for health, anomaly, inspector, and evidence states'
+);
+
+assert.match(
+  pageSource,
+  /from '@\/features\/admin\/observability\/runtimeTelemetry'/,
+  'Runtime diagnostics must reuse the shared telemetry normalization module'
+);
+assert.match(
+  pageSource,
+  /from '@\/features\/admin\/observability\/runtimeIssueCatalog'/,
+  'Runtime diagnostics must reuse the shared diagnostic issue catalog'
 );
 
 for (const key of requiredKeys) {
