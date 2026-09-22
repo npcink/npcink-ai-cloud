@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { fromFrontendRoot } from './_paths.mjs';
 
+// Contract scope (downgraded 2026-09-22 with operator approval): this
+// contract guarantees the bilingual diagnostic catalog, shared-module
+// ownership, URL-backed scope, and the read-only boundary. Text-order
+// layout assertions moved to the route's Playwright suite so internal
+// refactors no longer pay a source-shape tax on every reorder.
 const pageSource = readFileSync(
   fromFrontendRoot('src/app/admin/troubleshooting/page.tsx'),
   'utf8'
@@ -12,10 +17,6 @@ const catalogSource = readFileSync(
 );
 const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 const zhStart = i18nSource.indexOf("'zh-CN': {");
-const anomalyTableStart = pageSource.indexOf('data-ui="runtime-diagnostic-table"');
-const anomalyTableEnd = pageSource.indexOf('</table>', anomalyTableStart);
-const anomalyTableSource = pageSource.slice(anomalyTableStart, anomalyTableEnd);
-const anomalyInspectorSource = pageSource.slice(pageSource.indexOf('id="runtime-diagnostic-inspector"'));
 
 assert.ok(zhStart > 0, 'i18n dictionary must contain a Simplified Chinese section');
 
@@ -59,17 +60,6 @@ assert.ok(
   'Runtime diagnostics workspace must declare localized copy for health, anomaly, inspector, and evidence states'
 );
 
-assert.match(
-  pageSource,
-  /from '@\/features\/admin\/observability\/runtimeTelemetry'/,
-  'Runtime diagnostics must reuse the shared telemetry normalization module'
-);
-assert.match(
-  pageSource,
-  /from '@\/features\/admin\/observability\/runtimeIssueCatalog'/,
-  'Runtime diagnostics must reuse the shared diagnostic issue catalog'
-);
-
 for (const key of requiredKeys) {
   assert.match(
     enSource,
@@ -85,47 +75,41 @@ for (const key of requiredKeys) {
 
 assert.match(
   pageSource,
-  /searchParams\.get\('window'\)[\s\S]*searchParams\.get\('focus'\)[\s\S]*recent_minutes: String\(windowHours \* 60\)/,
-  'Runtime diagnostics must keep its time window and focused anomaly URL-addressable'
+  /from '@\/features\/admin\/observability\/runtimeTelemetry'/,
+  'Runtime diagnostics must reuse the shared telemetry normalization module'
 );
-
 assert.match(
   pageSource,
-  /runtime-diagnostic-issue[\s\S]*runtime-diagnostic-inspector[\s\S]*admin\.troubleshooting\.open_evidence[\s\S]*admin\.troubleshooting\.operator_action_title/,
-  'Runtime diagnostics must connect the anomaly queue to a focused read-only evidence inspector'
+  /from '@\/features\/admin\/observability\/runtimeIssueCatalog'/,
+  'Runtime diagnostics must reuse the shared diagnostic issue catalog'
 );
 
-assert.match(
-  anomalyTableSource,
-  /<thead[\s\S]*admin\.troubleshooting\.column_issue[\s\S]*admin\.troubleshooting\.column_scope[\s\S]*admin\.troubleshooting\.column_occurrences[\s\S]*admin\.troubleshooting\.column_action/,
-  'Runtime anomaly evidence must keep severity, scope, count, and action scannable in one semantic table'
-);
+// Presence-level scope markers; ordering and interaction behavior are
+// owned by tests/e2e/admin-runtime-diagnostics-v2.spec.ts.
+for (const [marker, message] of [
+  [/searchParams\.get\('window'\)/, 'the observation window stays URL-addressable'],
+  [/searchParams\.get\('focus'\)/, 'the focused anomaly stays URL-addressable'],
+  [/recent_minutes: String\(windowHours \* 60\)/, 'telemetry requests stay derived from the URL window'],
+  [/`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`/, 'the page consumes the governed runtime telemetry route'],
+  [/data-ui="runtime-diagnostic-table"/, 'anomalies render through the semantic queue table'],
+  [/data-ui="runtime-data-integrity"[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/, 'record-completeness rates stay visible'],
+  [/data-ui="runtime-diagnostic-metrics"/, 'the KPI tile row stays part of the diagnostics tier'],
+  [/id="runtime-diagnostic-inspector"/, 'the selected anomaly keeps a dedicated inspector region'],
+  [/id="runtime-evidence"/, 'the runtime evidence guide stays reachable'],
+  [/id="evidence-lanes"/, 'evidence lanes stay reachable'],
+  [/runtime-evidence-lane-list/, 'evidence lanes render through the shared lane list'],
+]) {
+  assert.match(pageSource, marker, `Runtime diagnostics: ${message}`);
+}
 
+const queueTableSource = pageSource.slice(
+  pageSource.indexOf('data-ui="runtime-diagnostic-table"'),
+  pageSource.indexOf('</table>', pageSource.indexOf('data-ui="runtime-diagnostic-table"'))
+);
 assert.doesNotMatch(
-  anomalyTableSource,
+  queueTableSource,
   /admin\.troubleshooting\.column_code/,
   'Low-frequency evidence codes must stay out of the primary anomaly queue'
-);
-
-assert.match(anomalyInspectorSource, /admin\.troubleshooting\.operator_action_title[\s\S]*admin\.troubleshooting\.issue_code/, 'Drawer retains evidence and next step');
-assert.match(pageSource, /runtime-evidence-lane-list/, 'Secondary tools use a narrow drawer directory');
-
-assert.match(
-  pageSource,
-  /id="runtime-evidence"[\s\S]*<table[\s\S]*admin\.troubleshooting\.metadata_column_type[\s\S]*admin\.troubleshooting\.metadata_column_purpose/,
-  'Expanded runtime metadata must render as a compact semantic table'
-);
-
-assert.match(
-  pageSource,
-  /evidenceLanes[\s\S]*id="evidence-lanes"[\s\S]*id="runtime-evidence"[\s\S]*admin\.advanced\.runtime_evidence_boundary/,
-  'Narrow observability lanes and advanced runtime metadata must live under Runtime Diagnostics'
-);
-
-assert.match(
-  pageSource,
-  /createApiClient[\s\S]*`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`[\s\S]*runtime-diagnostic-toolbar[\s\S]*runtime-data-integrity[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/,
-  'Runtime diagnostics must derive its conclusion and core metrics from the runtime telemetry source'
 );
 
 assert.doesNotMatch(

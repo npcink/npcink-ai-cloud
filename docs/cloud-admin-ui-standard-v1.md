@@ -134,29 +134,29 @@ page:
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
 
-### 1.1 Operator-Authorized Density Exception (2026-09-22)
+### 1.1 Diagnostic Density Tier v2 (operator-authorized 2026-09-22)
 
-The operator reviewed the `/admin/troubleshooting` workbench across four
-feedback rounds and authorized a density exception for this route only:
+Following six operator feedback rounds on `/admin/troubleshooting`, the
+operator authorized a compact density tier for every `diagnostic`
+page-model route. Any diagnostic route may adopt, without a further
+per-route exception:
 
-- a compact toolbar row (page title, source freshness, usage-statistics
-  link, refresh action) replaces the shared `BackofficePageHeader` card;
-- one bounded KPI tile row — runs, provider calls, failed requests,
-  provider errors, and both record-coverage rates — is permitted above
-  the anomaly queue, and the queue uses 13px row type across the full
-  content width;
-- the selected anomaly's inspector renders full-width beneath the queue
-  (queue rows select directly) so evidence tables keep the whole content
-  width; its breakdown, run-evidence, and actions sections sit behind
-  local tabs, and low-frequency guidance stays collapsed;
-- a window trend panel with a chart/table toggle (daily runs and
-  failures from the telemetry usage timeline) sits under the KPI row,
-  and the evidence-lane link row follows the queue instead of the page
-  footer.
+- the shared `BackofficePageHeader` compact density — a one-line toolbar
+  with the page title, inline source freshness, secondary links, and the
+  refresh action — rendered by the shared primitive instead of the
+  padded header card, plus the shared `BackofficePageStack` compact
+  spacing;
+- one bounded KPI tile row above the evidence queue and 13px queue row
+  type across the full content width;
+- a window trend panel with a chart/table toggle fed by the telemetry
+  usage timeline, evidence-lane links adjacent to the queue, and local
+  tabs inside a full-width expanded inspector.
 
-The shared page-header default remains in force for every other
-non-authentication route; extending this exception to another route
-requires new operator evidence and a revision of this section.
+Queue, detail, and configuration routes keep the default header card
+and quiet-surface rules. A diagnostic route joins the tier by passing
+`density="compact"` (or `spacing="compact"`) to the shared primitives,
+never by forking local toolbar geometry; `/admin/troubleshooting` is
+the accepted reference for the tier.
 
 ## 2. PC Geometry And Density
 
@@ -422,7 +422,8 @@ focus management, credential reveal behavior, table framing, status palette,
 shared geometry, or dashed empty-state framing.
 
 Every non-authentication Admin route uses `BackofficePageHeader` for its
-ready-state top-level page header. `BackofficeConfigurationHeader` remains the
+ready-state top-level page header; diagnostic-model routes may pass
+`density="compact"` to render the shared header as the §1.1 toolbar. `BackofficeConfigurationHeader` remains the
 configuration-page compatibility alias and delegates to the same primitive.
 Keep the header order stable:
 eyebrow, one page title with an information hint, no more than one primary

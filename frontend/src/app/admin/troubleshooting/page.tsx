@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import {
   BackofficeEmptyState,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
@@ -176,19 +177,18 @@ export default function AdminTroubleshootingPage() {
   const failedTotal = data?.capabilityGroups.reduce((total, group) => total + group.failed, 0) ?? 0;
 
   return (
-    <BackofficePageStack className="space-y-3">
-      <div data-ui="runtime-diagnostic-toolbar" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="text-lg font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}</h1>
-          <span className="text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
-            {data?.generatedAt ? t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}') : null}
-          </span>
+    <BackofficePageStack spacing="compact">
+      <BackofficePageHeader
+        density="compact"
+        title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
+        description={data?.generatedAt ? t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}') : undefined}
+        secondaryAction={<div className="flex items-center gap-3">
           <Link className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-300" href={usageStatisticsHref}>{t('admin.troubleshooting.back_to_usage', {}, 'Usage statistics')}</Link>
-        </div>
-        <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
-          {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
-        </button>
-      </div>
+          <button className="btn btn-secondary btn-sm" disabled={refreshInProgress} onClick={() => { setQualityRefreshSignal((current) => current + 1); void loadTelemetry(true); }}>
+            {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
+          </button>
+        </div>}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap items-center gap-3">
