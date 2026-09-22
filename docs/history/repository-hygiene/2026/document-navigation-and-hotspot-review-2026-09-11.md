@@ -78,7 +78,7 @@ Status: dated read-only inventory and documentation candidate; not a full code a
 - [ADR-016: Fail Closed At Portal Account And Admin Browser Boundaries](../../../../docs/decisions/016-fail-closed-portal-admin-service-boundaries.md)
 - [ADR-017: Durable Portal Mutation Idempotency](../../../../docs/decisions/017-durable-portal-mutation-idempotency.md)
 - [ADR-018: Contract Admin Around Hosted Runtime Profiles](../../../../docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md)
-- [ADR-028: Use `ai_credits` as the canonical commercial meter](../../../../docs/decisions/028-ai-credit-commercial-meter-contract.md)
+- [ADR-056: Use `ai_credits` as the canonical commercial meter](../../../../docs/decisions/056-ai-credit-commercial-meter-contract.md)
 - [ADR-032: Defer Provider Credential Delegation And Text Streaming](../../../../docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md)
 - [ADR-033: CNY Accounting And Provider Cost Evidence](../../../../docs/decisions/033-cny-accounting-and-provider-cost-evidence.md)
 - [ADR-040: Reuse Tree-Bound Production PR CI Evidence](../../../../docs/decisions/040-production-pr-ci-evidence-reuse.md)

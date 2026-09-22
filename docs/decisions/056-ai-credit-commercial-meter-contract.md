@@ -1,8 +1,9 @@
-# ADR-028: Use `ai_credits` as the canonical commercial meter
+# ADR-056: Use `ai_credits` as the canonical commercial meter
 
 ## Status
 
-Accepted
+Accepted. Originally published as ADR-028 on 2026-07-28; renumbered to
+ADR-056 on 2026-09-22 because two decisions briefly shared number 028.
 
 ## Date
 

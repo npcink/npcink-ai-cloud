@@ -10,7 +10,7 @@ development lessons from restoring the Addon service summary.
 This is an evidence and engineering-retrospective record. It does not create a
 new billing system, approve production, redefine WordPress ownership, or make
 M4 a source of truth. The canonical commercial-meter decision remains
-[ADR-028](decisions/028-ai-credit-commercial-meter-contract.md).
+[ADR-056](decisions/056-ai-credit-commercial-meter-contract.md).
 
 ## Executive Summary
 
@@ -157,7 +157,7 @@ that Cloud schema, projection, and runtime state were aligned.
 Cloud PR
 [#321](https://github.com/npcink/npcink-ai-cloud/pull/321), merged as
 `973e8924`, made `ai_credits` the canonical internal commercial meter and
-recorded the decision in ADR-028.
+recorded the decision in ADR-056 (renumbered from ADR-028 on 2026-09-22).
 
 The change covered direct ledger/grant fields, DTOs, product copy, and the
 separation between variable AI consumption and hard resource limits.

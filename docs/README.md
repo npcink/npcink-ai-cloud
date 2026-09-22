@@ -301,6 +301,12 @@ Accepted and superseded architectural decisions live under
 - use the current implementation and newest accepted successor when an older
   ADR conflicts with present source.
 
+Numbering status: 044 is unassigned (the sequence skips from 043 to 045);
+the 2026-07-28 `ai_credits` meter decision was renumbered from ADR-028 to
+[ADR-056](decisions/056-ai-credit-commercial-meter-contract.md) on 2026-09-22
+to resolve a duplicate numbering collision. Documentation structural checks
+verify this sequence.
+
 ## Evidence and Historical Material
 
 The following naming patterns normally identify evidence rather than active
