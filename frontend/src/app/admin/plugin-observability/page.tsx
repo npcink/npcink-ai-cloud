@@ -692,7 +692,7 @@ function AdminPluginObservabilityContent() {
   const closeLabel = t('common.close', {}, 'Close');
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack spacing="compact">
       <BackofficePageHeader title={t('admin.plugin_observability_title')} description={t('admin.plugin_obs_intro')}
         secondaryAction={<div className="flex gap-2"><button className="btn btn-secondary btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.plugin_obs_more')}{data ? ` · ${data.attentionWorkflow.needsAttention}` : ''}</button><button className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh')}</button></div>}
         summaryItems={data ? [

@@ -347,9 +347,10 @@ function AdminVectorObservabilityContent() {
 
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack spacing="compact">
       <AdminObservabilityTabs />
       <BackofficePageHeader
+        density="compact"
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.vector_obs.title', {}, 'Vector Observability')}
         description={t(

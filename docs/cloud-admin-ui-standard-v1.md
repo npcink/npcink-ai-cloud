@@ -158,7 +158,11 @@ and quiet-surface rules. The tier also carries its own material tokens
 the `admin-tier-compact` scope: a neutral tight-tracked system sans,
 white cards shaped by a 1px ring instead of hard borders with 8px
 corners, contrast-based selection states instead of accent fills, and a
-single link accent. A diagnostic route joins the tier by passing
+single link accent. The admin shell canvas uses the matching neutral
+surface. On 2026-09-22 the operator extended the tier to every
+diagnostic-model route: usage statistics, plugin, media, and vector
+observability, agent feedback, the AI advisor, audit, and runtime
+diagnostics. A diagnostic route joins the tier by passing
 `density="compact"` (or `spacing="compact"`) to the shared primitives,
 never by forking local toolbar geometry; `/admin/troubleshooting` is
 the accepted reference for the tier.

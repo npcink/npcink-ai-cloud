@@ -142,7 +142,7 @@ h4,
 .admin-shell {
   --admin-header-height: 3rem;
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.98) 100%);
+    linear-gradient(180deg, rgba(250, 250, 251, 0.98) 0%, rgba(244, 244, 245, 0.98) 100%);
 }
 
 .admin-sidebar {

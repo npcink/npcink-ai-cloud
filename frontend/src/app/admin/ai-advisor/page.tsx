@@ -1596,7 +1596,7 @@ function AdminAiAdvisorContent() {
 
   if (error && !data) {
     return (
-      <BackofficePageStack>
+      <BackofficePageStack spacing="compact">
         <BackofficePrimaryPanel
           eyebrow={t('admin.ai_advisor.eyebrow', {}, 'Internal operations')}
           title={t('admin.ai_advisor.title', {}, 'Operations Advisor')}
@@ -1610,6 +1610,7 @@ function AdminAiAdvisorContent() {
   return (
     <BackofficePageStack>
       <BackofficePageHeader
+        density="compact"
         eyebrow={t('admin.ai_advisor.eyebrow', {}, 'Internal operations')}
         title={t('admin.ai_advisor.title', {}, 'Operations Advisor')}
         description={t(

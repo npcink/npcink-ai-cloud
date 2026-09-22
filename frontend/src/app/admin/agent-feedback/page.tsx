@@ -419,8 +419,9 @@ function AgentFeedbackQualityDashboard() {
   }
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack spacing="compact">
       <BackofficePageHeader
+        density="compact"
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.agent_feedback.title', {}, 'Agent Feedback Quality')}
         description={t(

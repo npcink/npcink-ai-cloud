@@ -382,9 +382,10 @@ function AdminMediaObservabilityContent() {
 
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack spacing="compact">
       <AdminObservabilityTabs />
       <BackofficePageHeader
+        density="compact"
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}
         description={t(
