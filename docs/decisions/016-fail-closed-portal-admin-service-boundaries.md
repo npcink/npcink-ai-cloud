@@ -105,4 +105,4 @@ would create the historical burden this refactor is intended to remove.
 - Shared frontend transport tests cover HTTP errors, HTTP 200 error envelopes,
   non-JSON, invalid JSON/envelopes, network failure, and idempotency.
 - P4 closeout runs the gates named in
-  `docs/p4-portal-admin-surface-inventory-2026-07-16.md`.
+  `../history/refactor/2026/p4-portal-admin-surface-inventory-2026-07-16.md`.

@@ -131,14 +131,14 @@ repeated the flow from exact plugin packages in a fresh WordPress 7.0.1/PHP
 governed local adoption, HTTP/reference verification, restore, and cleanup.
 The performance, security, rollback, exact-package, and central-matrix evidence
 is recorded in
-[Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md).
+[Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md).
 This closes P3-B5 but does not authorize production deployment or enable
 production orphan cleanup.
 
 The subsequent WordPress-first product acceptance added a real operator UI
 proof, a deterministic representative processor corpus, and a full disposable
 local staging rehearsal. The evidence and exact non-goals are recorded in
-[WordPress Media Product Acceptance 2026-07-16](wordpress-media-product-acceptance-2026-07-16.md).
+[WordPress Media Product Acceptance 2026-07-16](history/engineering/2026/wordpress-media-product-acceptance-2026-07-16.md).
 That acceptance still does not authorize production deployment, production
 orphan cleanup, another CMS adapter, or a Cloud-owned media library.
 

@@ -14,7 +14,7 @@ smoke.
 
 Current evidence overlay — 2026-07-22: P1-E05 and P1-E06 are complete for the
 exact controlled-production release recorded in
-[Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
+[Post-P5 Final Integration And Production Validation Closeout](history/refactor/2026/post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
 The P1-E05 record includes production title execution, provider/run evidence,
 suggestion-only posture, idempotent replay, unchanged provider-call count, and
 no WordPress write. The separate P1-E06 operator record includes inventory,

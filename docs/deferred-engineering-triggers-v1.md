@@ -213,7 +213,7 @@ continues indefinitely. `origin/production` last moved on 2026-08-23
 `origin/master`. Those counts are dated evidence for this review, not a future
 current-state claim. The pause remains intentional and is bounded by the
 existing resume sequence:
-`pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md`
+`history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md`
 section 7 requires rebuilding the Portal capacity/context slice onto the then
 current `master` before any promotion preparation and sets the full resume
 sequence.

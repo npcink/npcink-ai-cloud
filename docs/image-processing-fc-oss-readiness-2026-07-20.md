@@ -177,7 +177,7 @@ The authoritative implementation and acceptance references are:
 - [Media Runtime Boundary v1](media-runtime-boundary-v1.md)
 - [Media Derivative Operations Runbook v1](media-derivative-operations-runbook-v1.md)
 - [Cloud Media Delivery Boundary v1](cloud-media-delivery-boundary-v1.md)
-- [WordPress Media Product Acceptance 2026-07-16](wordpress-media-product-acceptance-2026-07-16.md)
+- [WordPress Media Product Acceptance 2026-07-16](history/engineering/2026/wordpress-media-product-acceptance-2026-07-16.md)
 
 ## Current Safety Posture And Missing Moderation Gate
 
@@ -531,9 +531,9 @@ local-volume `ArtifactStore`.
 
 - [ADR-005: Cloud-managed local-volume ArtifactStore](decisions/005-local-volume-artifact-store.md)
 - [ADR-022: One-Time Cloud Install and Fresh RDS PostgreSQL 18](decisions/022-one-time-cloud-install-and-rds-postgresql-18.md)
-- [Runtime Stack Decision History - 2026-07-09](runtime-stack-decision-history-2026-07-09.md)
+- [Runtime Stack Decision History - 2026-07-09](history/engineering/2026/runtime-stack-decision-history-2026-07-09.md)
 - [Media Runtime Boundary v1](media-runtime-boundary-v1.md)
 - [Media Derivative Operations Runbook v1](media-derivative-operations-runbook-v1.md)
 - [Cloud Media Delivery Boundary v1](cloud-media-delivery-boundary-v1.md)
-- [Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md)
-- [WordPress Media Product Acceptance 2026-07-16](wordpress-media-product-acceptance-2026-07-16.md)
+- [Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md)
+- [WordPress Media Product Acceptance 2026-07-16](history/engineering/2026/wordpress-media-product-acceptance-2026-07-16.md)

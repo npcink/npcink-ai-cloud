@@ -167,5 +167,5 @@ Final state: frozen historical ledger closed as of 2026-08-14; this receipt is n
 
 - [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
 - [Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)
-- [Cloud Site Capacity Production Release Retrospective — 2026-08-08](../../../cloud-site-capacity-production-release-retrospective-2026-08-08.md)
+- [Cloud Site Capacity Production Release Retrospective — 2026-08-08](../../engineering/2026/cloud-site-capacity-production-release-retrospective-2026-08-08.md)
 - [Repository Hygiene and Documentation Lifecycle Standard](../../../repository-hygiene-and-documentation-lifecycle-standard-v1.md)

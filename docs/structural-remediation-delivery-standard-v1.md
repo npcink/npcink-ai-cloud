@@ -275,7 +275,7 @@ STRUCTURAL_REMEDIATION_RECEIPT
 [CommercialRepository 渐进拆分计划](commercial-repository-decomposition-plan-v1.md)。该热点
 从 4,202 行、157 个自有方法收缩为 36 行、仅 `__init__` 的薄 facade，并在 Phase 7I 后因
 边际收益下降主动暂停。结果与经验见
-[CommercialRepository 拆分收口与开发复盘](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
+[CommercialRepository 拆分收口与开发复盘](history/engineering/2026/commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
 
 全仓盘点与启动决策示例见
 [巨型模块检查与收益复盘（2026-09-07）](history/architecture/2026/giant-module-refactoring-review-2026-09-07.md)。

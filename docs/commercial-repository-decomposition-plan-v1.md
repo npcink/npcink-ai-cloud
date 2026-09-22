@@ -22,7 +22,7 @@ Status: active plan.
 - [生产发布策略](cloud-production-release-policy-v1.md)
 
 阶段结果、收益复核、低效根因与商业验证交接见
-[CommercialRepository 拆分收口与开发复盘](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
+[CommercialRepository 拆分收口与开发复盘](history/engineering/2026/commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
 
 ## 2. 当前事实
 

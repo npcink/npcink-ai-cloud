@@ -17,9 +17,9 @@ TARGET_CONTRACTS = (
     "docs/refactor-deletion-inventory-v1.md",
 )
 
-BASELINE_EVIDENCE = "docs/refactor-baseline-2026-07-14.md"
-P5_AUDIT_EVIDENCE = "docs/p5-hardening-release-audit-2026-07-17.md"
-P5_B1_EVIDENCE = "docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md"
+BASELINE_EVIDENCE = "docs/history/refactor/2026/refactor-baseline-2026-07-14.md"
+P5_AUDIT_EVIDENCE = "docs/history/refactor/2026/p5-hardening-release-audit-2026-07-17.md"
+P5_B1_EVIDENCE = "docs/history/refactor/2026/p5-b1-hosted-profile-contract-cutover-2026-07-17.md"
 
 SUPERSEDED_CONNECTOR_RUNTIME = "wp_ai_connector_" "runtime.v1"
 SUPERSEDED_CONNECTOR_RESULT = "wp_ai_connector_" "result.v1"
@@ -241,7 +241,7 @@ def test_active_refactor_rules_use_the_current_central_matrix_repository() -> No
 
 
 def test_p4_inventory_has_no_stale_remaining_work_after_closeout() -> None:
-    inventory = _read("docs/p4-portal-admin-surface-inventory-2026-07-16.md")
+    inventory = _read("docs/history/refactor/2026/p4-portal-admin-surface-inventory-2026-07-16.md")
 
     assert "Accepted inventory and completed P4 closeout record." in inventory
     assert "Still required before declaring P4 complete:" not in inventory

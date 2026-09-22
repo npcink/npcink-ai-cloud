@@ -35,6 +35,15 @@ Root dated records by month: 2026-05: 1, 2026-06: 32, 2026-07: 62,
    Caveat for planning: roughly 20 recent 2026-09 records are actively linked
    from the README task/observation tables, so moves need index updates, and
    the newest records are still live working state.
+   Resolution 2026-09-22: 112 records were migrated into
+   `docs/history/{engineering,m4,media,production,refactor,repository-hygiene,trials}/2026/`
+   with a new `engineering/2026` collection for general development evidence;
+   inbound and outbound links were rewritten and verified by the reachability
+   gate. Two records pinned to the root by the release-policy checker
+   (`p5-b8-final-engineering-closeout-2026-07-19.md`,
+   `python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md`)
+   were returned, and contract tests reading relocated evidence now point at
+   the history paths.
 2. **ADR numbering defects.** 044 is missing (043 jumps to 045) and two
    files claimed 028 (`028-ai-credit-commercial-meter-contract.md` and
    `028-versioned-public-site-compliance-projection.md`). `docs/README.md`

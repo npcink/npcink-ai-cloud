@@ -182,7 +182,7 @@ remain deferred.
 - Vector/coverage development lessons: [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md)
 - Local prerequisites and editor smoke: [WordPress Editor Readiness Runbook](wordpress-editor-readiness-runbook-v1.md)
 - Timing and delivery evidence: [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
-- Current observation: [WordPress Editor Acceptance Observation — 2026-08-24](wordpress-editor-acceptance-observation-2026-08-24.md)
+- Current observation: [WordPress Editor Acceptance Observation — 2026-08-24](history/engineering/2026/wordpress-editor-acceptance-observation-2026-08-24.md)
 
 When this standard conflicts with an active runtime contract, security policy,
 release policy, or current code/test authority, the active authority wins and

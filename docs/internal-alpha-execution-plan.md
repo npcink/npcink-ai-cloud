@@ -149,7 +149,7 @@ Completion signal:
 
 Current record:
 
-- [Internal Alpha Baseline - 2026-05-28](internal-alpha-baseline-2026-05-28.md)
+- [Internal Alpha Baseline - 2026-05-28](history/engineering/2026/internal-alpha-baseline-2026-05-28.md)
 
 ### Step 2: Internal Alpha Environment
 

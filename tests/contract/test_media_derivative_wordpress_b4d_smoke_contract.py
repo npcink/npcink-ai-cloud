@@ -364,7 +364,7 @@ def test_media_docs_freeze_ack_expiry_and_complete_b5_closeout() -> None:
     ack_adr = _read("docs/decisions/011-signed-pull-media-delivery-ack.md")
     runbook = _read("docs/media-derivative-operations-runbook-v1.md")
     inventory = _read("docs/refactor-deletion-inventory-v1.md")
-    closeout = _read("docs/media-runtime-b5-closeout-2026-07-16.md")
+    closeout = _read("docs/history/media/2026/media-runtime-b5-closeout-2026-07-16.md")
     combined = "\n".join((media, delivery, ack_adr, runbook, inventory, closeout))
 
     assert "without changing the artifact's original `expires_at`" in delivery

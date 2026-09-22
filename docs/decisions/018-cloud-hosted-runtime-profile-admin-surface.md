@@ -120,4 +120,4 @@ run/audit evidence remain intact.
 - [Cloud Hosted Runtime Profiles v1](../cloud-hosted-runtime-profiles-v1.md)
 - [WordPress-first Cloud Runtime Refactor](004-wordpress-first-cloud-runtime-refactor.md)
 - [Cloud Admin Information Architecture v2](../cloud-admin-information-architecture-v2.md)
-- [P4 Portal/Admin Surface Inventory](../p4-portal-admin-surface-inventory-2026-07-16.md)
+- [P4 Portal/Admin Surface Inventory](../history/refactor/2026/p4-portal-admin-surface-inventory-2026-07-16.md)

@@ -9,8 +9,8 @@ ArtifactStore can be captured as one recovery point, rejected when incomplete
 or corrupt, and restored into completely fresh local resources.
 
 It closes a gap left by the production database-only drills recorded on
-[2026-07-10](production-backup-restore-drill-2026-07-10.md) and
-[2026-07-11](production-backup-restore-drill-2026-07-11.md): media artifact
+[2026-07-10](history/production/2026/production-backup-restore-drill-2026-07-10.md) and
+[2026-07-11](history/production/2026/production-backup-restore-drill-2026-07-11.md): media artifact
 metadata is useful only when the matching bytes are recoverable too.
 
 This is an engineering release gate. It is not production backup evidence, a

@@ -168,7 +168,7 @@ Typecho/Z-BlogPHP/Ghost 适配器整体延后。`docs/multi-platform-connector-b
   （`docs/site-knowledge-anti-hallucination-roadmap-v1.md`）；Meilisearch 词面引擎
   受严格准入门约束（`docs/site-knowledge-search-architecture-standard-v1.md`）；
   检索质量阶段 5（RRF/cross-encoder/LTR/换模型）"暂不启动"
-  （`docs/site-knowledge-recommendation-history-synthesis-2026-08-26.md`）。
+  （`history/engineering/2026/site-knowledge-recommendation-history-synthesis-2026-08-26.md`）。
 - 评论摄取是休眠能力：云端 `comments[]` 契约齐全，但
   `site_knowledge_comments_enabled` 默认 False（`app/core/config.py`），且 Addon
   从不上传评论体。
@@ -199,7 +199,7 @@ Typecho/Z-BlogPHP/Ghost 适配器整体延后。`docs/multi-platform-connector-b
   `docs/site-knowledge-runtime-contract-v1.md`、
   `docs/site-knowledge-search-architecture-standard-v1.md`、
   `docs/site-knowledge-anti-hallucination-roadmap-v1.md`、
-  `docs/site-knowledge-recommendation-history-synthesis-2026-08-26.md`、
+  `history/engineering/2026/site-knowledge-recommendation-history-synthesis-2026-08-26.md`、
   `docs/refactor-master-plan-v1.md`、`docs/multi-platform-connector-boundary-v1.md`
 - Addon：`includes/class-cloud-site-knowledge-*.php`、
   `docs/site-knowledge-vector-operations.md`、

@@ -38,7 +38,7 @@ owner.
   Cloud acceptance checklist for Cloud Addon plus Abilities, Core, and Adapter.
 - `docs/plugin-observability-plugin-side-handoff.md` gives copy-ready prompts
   for the plugin-side AI sessions that need to finish real trigger coverage.
-- `docs/plugin-observability-dedupe-smoke-2026-06-03.md` records the real Cloud
+- `history/trials/2026/plugin-observability-dedupe-smoke-2026-06-03.md` records the real Cloud
   Addon flush evidence and the stable `event_id` dedupe rule that ignores
   timestamp drift when `event_id` is present.
 
@@ -208,7 +208,7 @@ When another AI continues this work, start in this order:
 4. Inspect `PluginObservabilityService.get_summary()` and
    `PluginObservabilityService.get_admin_summary()` before changing response
    shape.
-5. Read `docs/plugin-observability-dedupe-smoke-2026-06-03.md` before changing
+5. Read `history/trials/2026/plugin-observability-dedupe-smoke-2026-06-03.md` before changing
    ingestion dedupe logic or plugin-side `event_id` generation.
 6. Run the focused backend and frontend verification commands listed above.
 7. Use the local Portal and Admin smoke-test URLs before claiming the monitoring

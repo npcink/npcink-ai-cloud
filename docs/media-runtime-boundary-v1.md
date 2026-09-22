@@ -30,7 +30,7 @@ was `run_ea365c8ef6fb4b1dbe721338208d9aee`, with derivative artifact
 `art_9ea7725f20914e819ba17d7d2ecc60ff` and explicit receive delivery
 `mdl_ae8fc3d7e06c49fc90d1872314323e50`. P3-B5 subsequently completed the exact
 package and fresh-environment release validation recorded in
-[Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md).
+[Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md).
 Production cleanup remains disabled. P3-B5 is a bounded media milestone, not
 the global P5 refactor milestone and not authorization to enable production
 orphan cleanup.
@@ -716,7 +716,7 @@ capability.
   cross-site/expiry/replay security, upgrade/rollback/store recovery, media
   alias removal, the six-repository central matrix, and independent review
   passed. Its durable evidence record is
-  [Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md).
+  [Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md).
   It does not enable production orphan cleanup and it is not the global P5
   milestone.
 - **P3 target:** The four target resources, typed image contracts, security

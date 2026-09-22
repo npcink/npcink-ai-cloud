@@ -270,8 +270,8 @@ runtime behavior because this decision introduces no implementation.
 
 ## Related Documents
 
-- [Text Model Provider Integration Decision](../text-model-provider-integration-decision-2026-07-11.md)
-- [Provider Runtime Compatibility Development Retrospective](../provider-runtime-compatibility-development-retrospective-2026-07-25.md)
-- [Pi Provider Runtime Compatibility Evidence](../pi-provider-runtime-compatibility-evidence-2026-07-25.md)
+- [Text Model Provider Integration Decision](../history/engineering/2026/text-model-provider-integration-decision-2026-07-11.md)
+- [Provider Runtime Compatibility Development Retrospective](../history/engineering/2026/provider-runtime-compatibility-development-retrospective-2026-07-25.md)
+- [Pi Provider Runtime Compatibility Evidence](../history/engineering/2026/pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [Cloud Content Generation Boundary](../cloud-content-generation-boundary-v1.md)
 - [Development And Validation Operating Model](../development-validation-operating-model-v1.md)
