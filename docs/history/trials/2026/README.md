@@ -36,5 +36,11 @@ credentials, budgets, and operator authority before any new trial.
 - [Controlled setup](real-site-trial-setup-npcink-trial-2026-06-20.md)
 - [Site Knowledge rehearsal](real-site-trial-site-knowledge-npcink-trial-2026-06-20.md)
 
+## Governance Review Inventories (2026-09-22)
+
+- [Documentation debt inventory](governance-docs-debt-inventory-2026-09-22.md)
+- [Rule-to-executor enforcement map](governance-rule-enforcement-map-2026-09-22.md)
+- [Gate timing baseline](governance-gate-timing-baseline-2026-09-22.md)
+
 Active contracts, runbooks, checklists, handoffs, and reusable templates remain
 in the `docs/` root and are intentionally outside this collection.
