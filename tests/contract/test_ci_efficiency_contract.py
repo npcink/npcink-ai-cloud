@@ -448,6 +448,11 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "mapfile" not in source
     assert '$(<"${TMP_CONTRACTS}")' not in source
     assert source.count("--diff-filter=ACMRD") == 6
+    # The targeted static lane must lint the whole repository with full ruff
+    # rules; the changed-file correctness subset alone let style debt merge
+    # unseen (#991) and block every later PR.
+    targeted_static_body = source.split("run_targeted_static() {", 1)[1].split("}", 1)[0]
+    assert ".venv/bin/ruff check ." in targeted_static_body
     assert source.count("--no-renames") == 6
     assert "--diff-filter=ACMR " not in source
     assert "select-pr-backend-tests.py" in source
