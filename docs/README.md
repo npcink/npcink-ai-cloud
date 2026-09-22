@@ -203,6 +203,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [WordPress–Cloud Integration Diagnostics Retrospective — 2026-08-13](wordpress-cloud-integration-diagnostics-retrospective-2026-08-13.md) — dated synthesis of featured-image scene compatibility, Site Knowledge retrieval acceptance, QQ OAuth projection, site lifecycle, Portal proxy, and timeout diagnostics; not current deployment or production evidence
 - [Admin Information Architecture](cloud-admin-information-architecture-v2.md)
 - [Admin UI Standard](cloud-admin-ui-standard-v1.md)
+- [Admin Diagnostics Density Tier Session Retrospective — 2026-09-22](history/admin/2026/records/admin-diagnostics-density-tier-retrospective-2026-09-22.md) — closed session record for the compact density tier rollout (PR #1012): decisions, lessons for future AI sessions, and the densification backlog
 - [Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)
 - [Admin UI Review and Delivery Playbook](cloud-admin-ui-review-and-delivery-playbook-v1.md)
 - [Admin Customer Operations Workspace Standard](cloud-admin-customer-operations-workspace-standard-v1.md)
