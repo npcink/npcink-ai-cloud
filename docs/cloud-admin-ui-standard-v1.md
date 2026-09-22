@@ -149,8 +149,10 @@ per-route exception:
 - one bounded KPI tile row above the evidence queue and 13px queue row
   type across the full content width;
 - a window trend panel with a chart/table toggle fed by the telemetry
-  usage timeline, evidence-lane links adjacent to the queue, and local
-  tabs inside a full-width expanded inspector.
+  usage timeline — standalone under the KPI row when no anomaly is
+  selected, and the inspector's fourth tab once one is; the tab row is
+  a single four-column strip (breakdown, run evidence, actions,
+  trend); evidence-lane links sit adjacent to the queue.
 
 Queue, detail, and configuration routes keep the default header card
 and quiet-surface rules. The tier also carries its own material tokens

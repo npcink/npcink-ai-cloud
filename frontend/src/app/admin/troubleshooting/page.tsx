@@ -62,7 +62,7 @@ export default function AdminTroubleshootingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [qualityRefreshSignal, setQualityRefreshSignal] = useState(0);
   const [trendView, setTrendView] = useState<'chart' | 'table'>('chart');
-  const [inspectorTab, setInspectorTab] = useState<'breakdown' | 'runs' | 'actions'>('breakdown');
+  const [inspectorTab, setInspectorTab] = useState<'breakdown' | 'runs' | 'actions' | 'trend'>('breakdown');
   const requestSequenceRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const hasLoadedRef = useRef(false);
@@ -175,6 +175,57 @@ export default function AdminTroubleshootingPage() {
 
   const failedTotal = data?.capabilityGroups.reduce((total, group) => total + group.failed, 0) ?? 0;
 
+  const trendPanel = data ? (
+          <section data-ui="runtime-diagnostic-trend" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')} className="admin-tier-card p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.trend_title', {}, 'Window trend')}</h2>
+              <div className="flex gap-1" role="group" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
+                <button type="button" aria-pressed={trendView === 'chart'} onClick={() => setTrendView('chart')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'chart' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_chart', {}, 'Chart')}</button>
+                <button type="button" aria-pressed={trendView === 'table'} onClick={() => setTrendView('table')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'table' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_table', {}, 'Table')}</button>
+                <button type="button" className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900" onClick={() => {
+                  const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, timeline: data.usageTimeline }, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url; link.download = `runtime-trend-${windowHours}h.json`; link.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }}>{t('admin.troubleshooting.trend_download', {}, 'Download data')}</button>
+              </div>
+            </div>
+            <div className="mt-2">
+              {data.usageTimeline.length ? (trendView === 'chart' ? (
+                <AnalyticsLineChart
+                  data={data.usageTimeline.map((point) => ({ label: point.day, value: point.runs }))}
+                  comparisonSeries={[{ name: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), values: data.usageTimeline.map((point) => point.failed) }]}
+                  yAxisLabel={t('admin.troubleshooting.runs', {}, 'Runs')}
+                />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
+                    <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
+                      <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_day', {}, 'Day')}</th>
+                      <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.runs', {}, 'Runs')}</th>
+                      <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_succeeded', {}, 'Succeeded')}</th>
+                      <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
+                      <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_success_rate', {}, 'Success rate')}</th>
+                      <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_avg_latency', {}, 'Avg duration')}</th>
+                    </tr></thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {data.usageTimeline.map((point) => <tr key={point.day}>
+                        <td className="px-2 py-2">{point.day}</td>
+                        <td className="px-2 py-2 font-semibold">{formatNumber(point.runs)}</td>
+                        <td className="px-2 py-2">{formatNumber(point.succeeded)}</td>
+                        <td className={`px-2 py-2 ${point.failed ? 'font-semibold text-amber-700 dark:text-amber-300' : ''}`}>{formatNumber(point.failed)}</td>
+                        <td className="px-2 py-2">{point.successRate == null ? '—' : formatRate(point.successRate)}</td>
+                        <td className="whitespace-nowrap px-2 py-2">{point.avgLatencyMs == null ? '—' : `${Math.round(point.avgLatencyMs)} ms`}</td>
+                      </tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              )) : <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.trend_empty', {}, 'No trend data in this window.')}</p>}
+            </div>
+          </section>
+  ) : null;
+
   return (
     <BackofficePageStack spacing="compact">
       <BackofficePageHeader
@@ -247,54 +298,7 @@ export default function AdminTroubleshootingPage() {
             </Link>
           ))}
         </div>
-        <section data-ui="runtime-diagnostic-trend" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')} className="admin-tier-card p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.trend_title', {}, 'Window trend')}</h2>
-            <div className="flex gap-1" role="group" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
-              <button type="button" aria-pressed={trendView === 'chart'} onClick={() => setTrendView('chart')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'chart' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_chart', {}, 'Chart')}</button>
-              <button type="button" aria-pressed={trendView === 'table'} onClick={() => setTrendView('table')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'table' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_table', {}, 'Table')}</button>
-              <button type="button" className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900" onClick={() => {
-                const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, timeline: data.usageTimeline }, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url; link.download = `runtime-trend-${windowHours}h.json`; link.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-              }}>{t('admin.troubleshooting.trend_download', {}, 'Download data')}</button>
-            </div>
-          </div>
-          <div className="mt-2">
-            {data.usageTimeline.length ? (trendView === 'chart' ? (
-              <AnalyticsLineChart
-                data={data.usageTimeline.map((point) => ({ label: point.day, value: point.runs }))}
-                comparisonSeries={[{ name: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), values: data.usageTimeline.map((point) => point.failed) }]}
-                yAxisLabel={t('admin.troubleshooting.runs', {}, 'Runs')}
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
-                  <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
-                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_day', {}, 'Day')}</th>
-                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.runs', {}, 'Runs')}</th>
-                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_succeeded', {}, 'Succeeded')}</th>
-                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
-                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_success_rate', {}, 'Success rate')}</th>
-                    <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_avg_latency', {}, 'Avg duration')}</th>
-                  </tr></thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {data.usageTimeline.map((point) => <tr key={point.day}>
-                      <td className="px-2 py-2">{point.day}</td>
-                      <td className="px-2 py-2 font-semibold">{formatNumber(point.runs)}</td>
-                      <td className="px-2 py-2">{formatNumber(point.succeeded)}</td>
-                      <td className={`px-2 py-2 ${point.failed ? 'font-semibold text-amber-700 dark:text-amber-300' : ''}`}>{formatNumber(point.failed)}</td>
-                      <td className="px-2 py-2">{point.successRate == null ? '—' : formatRate(point.successRate)}</td>
-                      <td className="whitespace-nowrap px-2 py-2">{point.avgLatencyMs == null ? '—' : `${Math.round(point.avgLatencyMs)} ms`}</td>
-                    </tr>)}
-                  </tbody>
-                </table>
-              </div>
-            )) : <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.trend_empty', {}, 'No trend data in this window.')}</p>}
-          </div>
-        </section>
+        {!selectedIssue ? trendPanel : null}
         </>
       ) : null}
 
@@ -446,11 +450,12 @@ export default function AdminTroubleshootingPage() {
                   </dl>
                 </section>
 
-                <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-800">
+                <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
                   {([
                     ['breakdown', 'admin.troubleshooting.open_evidence', 'Breakdown by function'],
                     ['runs', 'admin.troubleshooting.run_evidence_title', 'Affected run evidence'],
                     ['actions', 'admin.troubleshooting.tab_actions', 'Actions'],
+                    ['trend', 'admin.troubleshooting.tab_trend', 'Trend'],
                   ] as const).map(([value, key, fallback]) => (
                     <button
                       key={value}
@@ -458,7 +463,7 @@ export default function AdminTroubleshootingPage() {
                       role="tab"
                       aria-selected={inspectorTab === value}
                       onClick={() => setInspectorTab(value)}
-                      className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${inspectorTab === value ? 'border-slate-900 text-slate-900 dark:border-slate-200 dark:text-slate-100' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
+                      className={`-mb-px whitespace-nowrap border-b-2 px-2 py-2 text-center text-sm font-semibold transition ${inspectorTab === value ? 'border-slate-900 text-slate-900 dark:border-slate-200 dark:text-slate-100' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
                     >
                       {t(key, {}, fallback)}
                     </button>
@@ -579,6 +584,7 @@ export default function AdminTroubleshootingPage() {
                 </div> : null}
 
                 </div>
+                {inspectorTab === 'trend' && trendPanel}
                 <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
               </div>
             </section>

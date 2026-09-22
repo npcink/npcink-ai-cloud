@@ -93,6 +93,10 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await inspect.click();
   const inspector = page.locator('#runtime-diagnostic-inspector');
   await expect(inspector).toBeVisible();
+  await inspector.getByRole('tab', { name: /^趋势$|^Trend$/ }).click();
+  await inspector.getByRole('button', { name: /^图表$|^Chart$/ }).click();
+  await expect(inspector.locator('[data-ui="runtime-diagnostic-trend"]').locator('canvas').first()).toBeVisible();
+  await inspector.getByRole('tab', { name: /^按功能拆分$|^Breakdown by function$/ }).click();
   await expect(inspector).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
   await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
   await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText(/Coverage \(calls \/ usage\)|完整率（调用 \/ 计量）/);
