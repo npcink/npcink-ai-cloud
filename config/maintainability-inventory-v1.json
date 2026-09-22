@@ -23,7 +23,8 @@
     "docs/naming-residual-allowlist-2026-06-24.md": "Current cross-repository naming residue allowlist guard.",
     "docs/provider-connection-production-runbook-2026-06-30.md": "Current provider-connection production operator procedure.",
     "docs/release-ci-open-source-patterns-2026-07.md": "Current CI selection and evidence-reuse patterns used by the development operating model.",
-    "docs/wordpress-ai-runtime-observation-2026-09-21.md": "Active WordPress AI runtime observation record tracking ongoing editor-adoption evidence; it authorizes no release and expires when the observation loop closes."
+    "docs/wordpress-ai-runtime-observation-2026-09-21.md": "Active WordPress AI runtime observation record tracking ongoing editor-adoption evidence; it authorizes no release and expires when the observation loop closes.",
+    "docs/compat-stability-payment-follow-up-handoff-2026-09-22.md": "Active session handoff carrying the open compat, budget, and payment follow-up items until the next session closes them."
   },
   "source_roots": [
     "app",
