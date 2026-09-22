@@ -1,6 +1,6 @@
 # 运行诊断与编辑器推荐验收 — 2026-09-21
 
-Status: initial review completed; 2026-09-22 candidate editor apply/undo/native-save acceptance passed; Cloud runtime merged and M4 accepted; evidence-gate PR #996 pending.
+Status: initial review completed; 2026-09-22 candidate editor apply/undo/native-save acceptance passed; Cloud PR #991 and evidence-gate PR #996 merged; M4 source-only promotion #996 accepted.
 This dated record does not certify human usability, production, or a new M4 promotion.
 
 ## 2026-09-22 后续修复与候选验收
@@ -10,7 +10,7 @@ This dated record does not certify human usability, production, or a new M4 prom
 - 验收脚本已在本地修正：相关文章使用现行 Site Knowledge 搜索入口；HTTP 失败、
   缺少显式 `direct_wordpress_write=false`、Cloud 不可用不再被判为通过。
   4 项负向/边界测试通过，三篇文章六次真实请求全部返回 Cloud 证据且正文不变。
-  已提交 `f63cedec`，Cloud PR #996：https://github.com/npcink/npcink-ai-cloud/pull/996 ，等待必需检查和合并。
+  已提交 `f63cedec`，Cloud PR #996：https://github.com/npcink/npcink-ai-cloud/pull/996 ，必需检查通过并已合并。
 - 超时根因定位为 Cloud 对全部片段的锚点窗口做昂贵边界检查。M4 只读探针在
   737 个片段和固定代表性段落上测得旧算法 26.664 秒，新算法 5.047 秒，
   两者均找到 43 个匹配；每隔 50 个片段抽样比较精确输出一致。此探针使用
@@ -29,9 +29,9 @@ This dated record does not certify human usability, production, or a new M4 prom
   `post_content`，反馈为 `internal_link_saved_unchanged`。测试随后删除草稿，
   `wp post exists 281118` 返回非零，确认清理。
 
-剩余：PR #996 必需检查/合并；Toolbox 的应用资格修复提交 `867300b` 尚因
-GitHub HTTPS 传输失败未推送；诊断页操作者理解度反馈；任务相关分支与 worktree
-清理。Cloud 运行时修复已在 PR #991 合并并由 M4 promotion 接受；当前没有生产部署。
+剩余：Toolbox 的应用资格修复提交 `867300b` 尚因两次 GitHub HTTPS 传输失败未推送；
+诊断页操作者理解度反馈；任务相关分支引用仍按发布规则保留。Cloud PR #991/#996
+均已合并，M4 promotion #996 已接受；当前没有生产部署。
 
 新增本地证据：`.tmp/anchor-candidate-sync.log`、`.tmp/anchor-focused-m4.log`、
 `.tmp/anchor-request-replay.log`、`.tmp/anchor-native-save.log`、
@@ -124,4 +124,4 @@ source_dirty=false、source_revision=4c72ef1139df653502e8b36ab45f9c0dcffead10。
 既有规范继续适用：[运行观测工作台规范](../../../runtime-observation-workbench-operator-guidelines-v1.md)、
 [WordPress readiness runbook](../../../wordpress-editor-readiness-runbook-v1.md)。
 
-M4_OBSERVATION_RECEIPT date=2026-09-21; route=Pgy 172.16.3.35 via local tunnel 18010; sync=not occurred; focused=not measured; promotion=not occurred; operations=sync:0/deploy:0; stable_502=not measured; m4_only=not established (WordPress web request timeout under investigation); coordination=not occurred
+M4_OBSERVATION_RECEIPT date=2026-09-22; route=Pgy 172.16.3.35 via local tunnel 18010; sync=source-only promotion; focused=0.92s; promotion=not measured; operations=source-sync:1/deploy:0; stable_502=not occurred; m4_only=none observed; coordination=not occurred
