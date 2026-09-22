@@ -596,9 +596,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   {commandShortcutLabel}
                 </kbd>
               </button>
-              <span className="hidden rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200 md:inline-flex">
-                {t('admin.internal_only')}
-              </span>
               <div className="hidden items-center gap-2 md:flex">
                 <LocaleSwitcher />
                 <ThemeToggle />
@@ -648,9 +645,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <div className="flex items-center gap-2">
               <LocaleSwitcher />
               <ThemeToggle />
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.22em] text-blue-700 dark:border-blue-900/80 dark:bg-blue-950/40 dark:text-blue-200">
-                {t('admin.internal_only')}
-              </span>
             </div>
             {renderNavGroups('mobile')}
             <div className="grid grid-cols-2 gap-2">

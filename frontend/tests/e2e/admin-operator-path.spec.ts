@@ -211,17 +211,13 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
 
   await page.goto('/admin/troubleshooting');
   await expect(page.getByRole('heading', { name: /Runtime diagnostics|运行诊断|運行診斷/i })).toBeVisible();
-  await page.getByRole('button', { name: /^More diagnostics$|^更多诊断$/ }).click();
-  await page.locator('[data-ui="runtime-data-integrity"] > summary').click();
+  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toBeVisible();
   const runtimeEvidenceSection = page.locator('#runtime-evidence');
   await expect(runtimeEvidenceSection).not.toHaveAttribute('open', '');
   await runtimeEvidenceSection.locator('summary').click();
   await expect(runtimeEvidenceSection.getByText(/Runtime resolution|运行时解析/i).first()).toBeVisible();
   const evidenceLanesSection = page.locator('#evidence-lanes');
-  await expect(evidenceLanesSection).not.toHaveAttribute('open', '');
-  await evidenceLanesSection.locator('summary').click();
   await expect(evidenceLanesSection.locator('[data-ui="runtime-evidence-lane-list"]')).toBeVisible();
-  await expect(evidenceLanesSection.getByText(/Read only|只读/i).first()).toBeVisible();
   await expect(page.locator('a[href="/admin/plugin-observability"]').first()).toBeVisible();
   await expect(page.locator('a[href="/admin/hosted-models"]')).toHaveCount(0);
 

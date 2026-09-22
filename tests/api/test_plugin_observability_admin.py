@@ -408,7 +408,7 @@ def test_admin_plugin_observability_attention_state_requires_idempotency(
 def test_admin_plugin_observability_invalid_window_hours(tmp_path: Path) -> None:
     _, client = _build_client(tmp_path)
     response = client.get(
-        "/internal/service/admin/plugin-observability?window_hours=999",
+        "/internal/service/admin/plugin-observability?window_hours=2161",
         headers=build_internal_headers(trace_id="traceadmin0060000000000000000000"),
     )
     assert response.status_code == 422

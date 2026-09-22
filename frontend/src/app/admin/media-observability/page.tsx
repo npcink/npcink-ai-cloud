@@ -8,11 +8,8 @@ import {
   BackofficeEmptyState,
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
-  BackofficeMetricStrip,
   BackofficePageHeader,
   BackofficePageStack,
-  BackofficeSectionPanel,
-  BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { normalizeObservationWindow } from '@/features/admin/observability/window';
@@ -382,10 +379,10 @@ function AdminMediaObservabilityContent() {
 
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack spacing="compact">
       <AdminObservabilityTabs />
       <BackofficePageHeader
-        eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
+        density="compact"
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}
         description={t(
           'admin.media_obs.desc',
@@ -393,40 +390,26 @@ function AdminMediaObservabilityContent() {
           'Cross-site runtime metrics for Cloud image derivative jobs. This view tracks processing health, temporary artifact pressure, and compression value without exposing image payloads.'
         )}
         secondaryAction={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
-        summaryItems={data ? [
-          { label: t('admin.media_obs.jobs', {}, 'Jobs'), value: formatNumber(data.totals.jobsTotal) },
-          { label: t('admin.media_obs.success_rate', {}, 'Success rate'), value: formatPercent(data.totals.successRate), toneClassName: statusForSuccess(data.totals.successRate, data.totals.failedTotal) === 'error' ? 'text-rose-600 dark:text-rose-400' : statusForSuccess(data.totals.successRate, data.totals.failedTotal) === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined },
-          { label: t('admin.media_obs.p95_processing', {}, 'P95 processing'), value: `${formatNumber(data.totals.p95ProcessingDurationMs)}ms` },
-          { label: t('admin.media_obs.saved', {}, 'Size change'), value: formatBytes(data.totals.bytesSavedTotal), toneClassName: data.totals.bytesSavedTotal < 0 ? 'text-amber-600 dark:text-amber-400' : undefined },
-          { label: t('admin.media_obs.failures', {}, 'Failures'), value: formatNumber(data.totals.failedTotal), toneClassName: data.totals.failedTotal > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
-        ] : []}
-        summaryAside={data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
       />
 
       {loading ? <p role="status" className="text-sm text-slate-500">{t('common.loading', {}, 'Loading…')}</p> : null}
-      <BackofficeSectionPanel className="p-4 md:p-5">
-        <div className="flex flex-col gap-4">
-
-          <div className="flex flex-wrap items-center gap-2">
-          {FORMAT_OPTIONS.map((opt) => (
-            <BackofficeFilterPill
-              key={opt.value || 'all'}
-              active={targetFormat === opt.value}
-              tone="accent"
-              onClick={() => updateUrl({ format: opt.value || null, focus: null })}
-            >
-              {t(opt.labelKey, {}, opt.label)}
-            </BackofficeFilterPill>
-          ))}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input type="text" value={siteIdInput} aria-label={t('admin.media_obs.site_filter_label', {}, 'Filter by site ID')} onChange={(event) => setSiteIdInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') updateUrl({ site: siteIdInput.trim() || null, focus: null }); }} placeholder={t('admin.media_obs.site_filter', {}, 'Site ID')} className="input h-9 min-w-0 flex-1 sm:max-w-xs" />
-            <button type="button" onClick={() => updateUrl({ site: siteIdInput.trim() || null, focus: null })} className="btn btn-secondary btn-sm justify-center">{t('common.apply', {}, 'Apply')}</button>
-            {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm justify-center" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
-            {data?.generatedAt ? <p className="text-xs text-slate-500 sm:ml-auto dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
-          </div>
-        </div>
-      </BackofficeSectionPanel>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-ui="media-observability-scope-row">
+        {FORMAT_OPTIONS.map((opt) => (
+          <BackofficeFilterPill
+            key={opt.value || 'all'}
+            active={targetFormat === opt.value}
+            tone="accent"
+            onClick={() => updateUrl({ format: opt.value || null, focus: null })}
+          >
+            {t(opt.labelKey, {}, opt.label)}
+          </BackofficeFilterPill>
+        ))}
+        <input type="text" value={siteIdInput} aria-label={t('admin.media_obs.site_filter_label', {}, 'Filter by site ID')} onChange={(event) => setSiteIdInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') updateUrl({ site: siteIdInput.trim() || null, focus: null }); }} placeholder={t('admin.media_obs.site_filter', {}, 'Site ID')} className="input h-8 w-44 min-w-0" />
+        <button type="button" onClick={() => updateUrl({ site: siteIdInput.trim() || null, focus: null })} className="btn btn-secondary btn-sm justify-center">{t('common.apply', {}, 'Apply')}</button>
+        {siteIdFilter ? <button type="button" className="btn btn-ghost btn-sm justify-center" onClick={() => { setSiteIdInput(''); updateUrl({ site: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
+        {data?.generatedAt ? <p className="ml-auto text-xs text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}: {formatDate(data.generatedAt)}</p> : null}
+        {data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : null}
+      </div>
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.media_obs.stale_notice', {}, 'The last successfully loaded media snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
 
@@ -441,114 +424,53 @@ function AdminMediaObservabilityContent() {
         />
       ) : (
         <>
-          <div className="grid gap-5 xl:grid-cols-3">
-            <BackofficeSectionPanel className="min-w-0 space-y-4 overflow-hidden xl:col-span-2">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('admin.media_obs.trend_label', {}, 'Trend')}
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                    {t('admin.media_obs.trend_title', {}, 'Jobs and failures')}
-                  </h2>
-                </div>
-                {data ? (
-                  <BackofficeStatusBadge
-                    status={data.health.status}
-                    label={`${data.health.status} · ${data.health.score}`}
-                  />
-                ) : null}
+          <div data-ui="media-observability-metrics" className="grid grid-cols-3 gap-2 md:grid-cols-6">
+            {[
+              { label: t('admin.media_obs.jobs', {}, 'Jobs'), value: formatNumber(data.totals.jobsTotal) },
+              { label: t('admin.media_obs.failures', {}, 'Failures'), value: formatNumber(data.totals.failedTotal), warn: data.totals.failedTotal > 0 },
+              { label: t('admin.media_obs.success_rate', {}, 'Success rate'), value: formatPercent(data.totals.successRate), warn: statusForSuccess(data.totals.successRate, data.totals.failedTotal) !== 'success' },
+              { label: t('admin.media_obs.avg_processing', {}, 'Avg processing'), value: `${formatNumber(data.totals.avgProcessingDurationMs)}ms` },
+              { label: t('admin.media_obs.p95_processing', {}, 'P95 processing'), value: `${formatNumber(data.totals.p95ProcessingDurationMs)}ms` },
+              { label: t('admin.media_obs.saved', {}, 'Size change'), value: formatBytes(data.totals.bytesSavedTotal), warn: data.totals.bytesSavedTotal < 0 },
+            ].map((tile) => (
+              <div key={tile.label} className="admin-tier-card px-3 py-2">
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{tile.label}</p>
+                <p className={`mt-0.5 text-lg font-semibold leading-7 ${tile.warn ? 'text-amber-700 dark:text-amber-300' : 'text-slate-950 dark:text-white'}`}>{tile.value}</p>
               </div>
+            ))}
+          </div>
+          <section className="admin-tier-card overflow-hidden p-3">
+            <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.trend_title', {}, 'Jobs and failures')}</h2>
+            <div className="mt-2">
               <AnalyticsLineChart
                 data={timelineData}
-                height={300}
+                height={220}
                 primarySeriesName={t('admin.media_obs.jobs', {}, 'Jobs')}
                 secondarySeriesName={t('admin.media_obs.failures', {}, 'Failures')}
                 primaryColor="#2563eb"
                 secondaryColor="#f59e0b"
               />
-            </BackofficeSectionPanel>
+            </div>
+          </section>
 
-            <BackofficeSectionPanel className="min-w-0 space-y-4 overflow-hidden">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.media_obs.latency_label', {}, 'Latency')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.media_obs.latency_title', {}, 'Processing speed')}
-                </h2>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <section className="admin-tier-card overflow-hidden p-3">
+              <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.format_mix', {}, 'Format mix')}</h2>
+              <div className="mt-2">
+                <AnalyticsBarChart data={formatData} height={200} barColor="#2563eb" />
               </div>
-              <BackofficeMetricStrip
-                columnsClassName="xl:grid-cols-1"
-                items={[
-                  {
-                    label: t('admin.media_obs.avg_processing', {}, 'Avg processing'),
-                    value: `${formatNumber(data?.totals.avgProcessingDurationMs || 0)}ms`,
-                    size: 'compact',
-                  },
-                  {
-                    label: t('admin.media_obs.p95_processing', {}, 'P95 processing'),
-                    value: `${formatNumber(data?.totals.p95ProcessingDurationMs || 0)}ms`,
-                    size: 'compact',
-                  },
-                  {
-                    label: t('admin.media_obs.queue_wait', {}, 'Avg queue wait'),
-                    value: `${formatNumber(data?.totals.avgQueueWaitMs || 0)}ms`,
-                    size: 'compact',
-                  },
-                  {
-                    label: t('admin.media_obs.delivery_started', {}, 'Deliveries started'),
-                    value: formatNumber(data?.totals.deliveryStartedCount || 0),
-                    detail: t(
-                      'admin.media_obs.delivery_detail',
-                      {
-                        completed: formatNumber(data?.totals.deliveryStreamCompletedCount || 0),
-                        completion_rate: formatPercent(data?.totals.streamCompletionRate || 0),
-                        acknowledged: formatNumber(data?.totals.deliveryAcknowledgedCount || 0),
-                        acknowledgement_rate: formatPercent(
-                          data?.totals.acknowledgementRate || 0
-                        ),
-                      },
-                      '{{completed}} stream-complete ({{completion_rate}}) · {{acknowledged}} receipt-verified ({{acknowledgement_rate}})'
-                    ),
-                  },
-                ]}
-              />
-            </BackofficeSectionPanel>
+            </section>
+            <section className="admin-tier-card overflow-hidden p-3">
+              <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.savings_title', {}, 'Size change by format')}</h2>
+              <div className="mt-2">
+                <AnalyticsBarChart data={savingsData} height={200} barColor="#10b981" />
+              </div>
+            </section>
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-2">
-            <BackofficeSectionPanel className="min-w-0 space-y-4 overflow-hidden">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.media_obs.formats_label', {}, 'Formats')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.media_obs.format_mix', {}, 'Format mix')}
-                </h2>
-              </div>
-              <AnalyticsBarChart data={formatData} height={280} barColor="#2563eb" />
-            </BackofficeSectionPanel>
-
-            <BackofficeSectionPanel className="min-w-0 space-y-4 overflow-hidden">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.media_obs.savings_label', {}, 'Value')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.media_obs.savings_title', {}, 'Size change by format')}
-                </h2>
-              </div>
-              <AnalyticsBarChart data={savingsData} height={280} barColor="#10b981" />
-            </BackofficeSectionPanel>
-          </div>
-
-          <BackofficeSectionPanel className="overflow-hidden p-0">
-            <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800 md:px-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.media_obs.sites_label', {}, 'Sites')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+          {(data?.sites || []).length > 1 ? <section className="admin-tier-card overflow-hidden p-0">
+            <div className="border-b border-slate-200/80 px-4 py-3 dark:border-slate-800">
+              <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
                 {t('admin.media_obs.sites_title', {}, 'Site breakdown')}
               </h2>
             </div>
@@ -592,24 +514,23 @@ function AdminMediaObservabilityContent() {
                 </tbody>
               </table>
             </div>
-          </BackofficeSectionPanel>
+          </section> : null}
 
-          <BackofficeSectionPanel className="overflow-hidden p-0 md:p-0">
+          {data.recentFailures.length ? <section className="admin-tier-card overflow-hidden p-0 md:p-0">
             <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('admin.media_obs.recent_label', {}, 'Recent')}</p><h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{t('admin.media_obs.failure_queue_title', {}, 'Recent failure queue')}</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.media_obs.failure_queue_desc', {}, 'Select a failed media job to inspect its site, format, size, queue wait, and processing evidence.')}</p></div>
-            <div className={data.recentFailures.length ? 'grid xl:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+            <div className="grid xl:grid-cols-[minmax(0,1fr)_22rem]">
               <div className="max-h-[36rem] divide-y divide-slate-200 overflow-y-auto dark:divide-slate-800">
-                {data.recentFailures.map((item) => { const selected = selectedFailure?.runId === item.runId; return <button key={item.runId} type="button" data-ui="media-failure-item" aria-pressed={selected} aria-controls="media-failure-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.runId })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-950 dark:text-white">{item.errorCode}</span><BackofficeTag tone="warning">{item.targetFormat}</BackofficeTag></div><p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{item.siteId} · {formatBytes(item.sourceBytes)} · {item.finishedAt ? formatDate(item.finishedAt) : t('common.not_found')}</p></div><div className="text-sm font-medium text-slate-500 md:text-right dark:text-slate-400">{formatNumber(item.processingDurationMs)}ms</div></button>; })}
-                {data.recentFailures.length ? null : <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.media_obs.no_recent_failures', {}, 'No recent failures.')} description={t('admin.media_obs.no_recent_failures_desc', {}, 'The selected scope has no failed media jobs that require evidence review.')} />}
+                {data.recentFailures.map((item) => { const selected = selectedFailure?.runId === item.runId; return <button key={item.runId} type="button" data-ui="media-failure-item" aria-pressed={selected} aria-controls="media-failure-inspector" className={`grid w-full cursor-pointer gap-3 px-5 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900/45 md:grid-cols-[minmax(0,1fr)_8rem] md:items-center md:px-6 ${selected ? 'bg-blue-50/65 dark:bg-blue-950/20' : ''}`} onClick={() => updateUrl({ focus: item.runId })}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-950 dark:text-white">{item.errorCode}</span><BackofficeTag tone="warning">{item.targetFormat}</BackofficeTag></div><p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">{item.siteId} · {formatBytes(item.sourceBytes)} · {item.finishedAt ? formatDate(item.finishedAt) : t('common.not_found')}</p></div><div className="text-sm font-medium text-slate-500 md:text-right dark:text-slate-400">{formatNumber(item.processingDurationMs)}ms</div></button>; })}
               </div>
-              {data.recentFailures.length ? <div id="media-failure-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
+              <div id="media-failure-inspector" className="border-t border-slate-200 p-5 dark:border-slate-800 xl:border-l xl:border-t-0 xl:p-6">
                 {selectedFailure ? <div className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.media_obs.selected_failure', {}, 'Selected failure')}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{selectedFailure.errorCode}</h3><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{selectedFailure.finishedAt ? formatDate(selectedFailure.finishedAt) : t('common.not_found')}</p></div><dl className="grid gap-3 text-sm"><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.run_id', {}, 'Run ID')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedFailure.runId} /></dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="mt-1"><BackofficeIdentifier value={selectedFailure.siteId} /></dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.failure_format_size', {}, 'Format and source size')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedFailure.targetFormat} · {formatBytes(selectedFailure.sourceBytes)}</dd></div><div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.failure_timing', {}, 'Queue and processing time')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{formatNumber(selectedFailure.queueWaitMs)}ms · {formatNumber(selectedFailure.processingDurationMs)}ms</dd></div></dl><p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.media_obs.failure_boundary', {}, 'Failure evidence is metadata-only. Image payloads and temporary artifact contents are not exposed here.')}</p></div> : null}
-              </div> : null}
+              </div>
             </div>
-          </BackofficeSectionPanel>
+          </section> : <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.no_recent_failures', {}, 'No recent failures.')}</p>}
         </>
       )}
 
-      {data ? <BackofficeDisclosure summary={t('admin.media_obs.advanced_evidence', {}, 'Advanced workflow and error evidence')} contentClassName="space-y-5"><CloudWorkflowMetadataPanel metadata={data.workflowMetadata} /><div><h3 className="text-base font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.errors_title', {}, 'Error codes')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2">{data.errors.length ? data.errors.map((item) => <div key={`${item.errorCode}-${item.lastSeenAt}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-800"><div className="min-w-0"><p className="truncate font-mono text-sm font-semibold text-slate-950 dark:text-white">{item.errorCode}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.lastSeenAt ? formatDate(item.lastSeenAt) : t('common.not_found')}</p></div><BackofficeTag tone="warning">{formatNumber(item.count)}</BackofficeTag></div>) : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.media_obs.no_errors', {}, 'No media processing failures in this window.')}</p>}</div></div></BackofficeDisclosure> : null}
+      {data ? <BackofficeDisclosure summary={t('admin.media_obs.advanced_evidence', {}, 'Advanced workflow and error evidence')} contentClassName="space-y-5"><CloudWorkflowMetadataPanel metadata={data.workflowMetadata} /><div><h3 className="text-base font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.delivery_started', {}, 'Deliveries started')}</h3><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{formatNumber(data.totals.deliveryStartedCount)} · {t('admin.media_obs.delivery_detail', { completed: formatNumber(data.totals.deliveryStreamCompletedCount || 0), completion_rate: formatPercent(data.totals.streamCompletionRate || 0), acknowledged: formatNumber(data.totals.deliveryAcknowledgedCount || 0), acknowledgement_rate: formatPercent(data.totals.acknowledgementRate || 0) }, '{{completed}} stream-complete ({{completion_rate}}) · {{acknowledged}} receipt-verified ({{acknowledgement_rate}})')}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('admin.media_obs.queue_wait', {}, 'Avg queue wait')}: {formatNumber(data.totals.avgQueueWaitMs || 0)}ms</p></div><div><h3 className="text-base font-semibold text-slate-950 dark:text-white">{t('admin.media_obs.errors_title', {}, 'Error codes')}</h3><div className="mt-3 grid gap-2 md:grid-cols-2">{data.errors.length ? data.errors.map((item) => <div key={`${item.errorCode}-${item.lastSeenAt}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-800"><div className="min-w-0"><p className="truncate font-mono text-sm font-semibold text-slate-950 dark:text-white">{item.errorCode}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.lastSeenAt ? formatDate(item.lastSeenAt) : t('common.not_found')}</p></div><BackofficeTag tone="warning">{formatNumber(item.count)}</BackofficeTag></div>) : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.media_obs.no_errors', {}, 'No media processing failures in this window.')}</p>}</div></div></BackofficeDisclosure> : null}
     </BackofficePageStack>
   );
 }

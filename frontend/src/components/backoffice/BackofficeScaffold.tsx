@@ -99,9 +99,14 @@ type BackofficeDisclosureProps = React.DetailsHTMLAttributes<HTMLDetailsElement>
   summaryClassName?: string;
 };
 
-export function BackofficePageStack({ children, className, ...props }: BackofficeFrameProps) {
+export function BackofficePageStack({
+  children,
+  className,
+  spacing = 'default',
+  ...props
+}: BackofficeFrameProps & { spacing?: 'default' | 'compact' }) {
   return (
-    <div className={cn('space-y-6', className)} {...props}>
+    <div className={cn(spacing === 'compact' ? 'space-y-3 admin-tier-compact' : 'space-y-6', className)} {...props}>
       {children}
     </div>
   );
@@ -235,11 +240,35 @@ export function BackofficePageHeader({
   eyebrow,
   title,
   description,
+  density = 'default',
   summaryItems = [],
   primaryAction,
   secondaryAction,
   summaryAside,
-}: BackofficePageHeaderProps) {
+}: BackofficePageHeaderProps & { density?: 'default' | 'compact' }) {
+  if (density === 'compact') {
+    return (
+      <div data-ui="backoffice-page-header" data-density="compact" className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}</h1>
+            {description ? (
+              <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
+            ) : null}
+          </div>
+          {primaryAction || secondaryAction ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {secondaryAction}
+              {primaryAction}
+            </div>
+          ) : null}
+        </div>
+        {summaryItems.length ? (
+          <BackofficeSummaryStrip items={summaryItems} density="compact" className="pt-1" />
+        ) : null}
+      </div>
+    );
+  }
   const actions = primaryAction || secondaryAction ? (
     <>
       {secondaryAction}

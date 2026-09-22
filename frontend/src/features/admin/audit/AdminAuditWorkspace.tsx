@@ -165,8 +165,9 @@ export function AdminAuditWorkspace() {
   const notAvailable = t('common.not_available', {}, 'N/A');
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack spacing="compact">
       <BackofficePageHeader
+        density="compact"
         eyebrow={t('admin.audit_workspace.eyebrow', {}, 'Service evidence')}
         title={t('admin.audit_workspace.title', {}, 'Audit evidence')}
         description={t(

@@ -324,7 +324,7 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
   };
 }
 
-type WindowOption = 24 | 72 | 168;
+type WindowOption = 24 | 72 | 168 | 336 | 720 | 2160;
 type PluginFilter = string;
 type AttentionWorkflowFilter = 'active' | 'acknowledged' | 'muted' | 'resolved' | 'all';
 type AttentionSeverityFilter = 'all' | 'warning' | 'error';
@@ -335,6 +335,9 @@ const WINDOW_OPTIONS: { value: WindowOption; label: string }[] = [
   { value: 24, label: '24h' },
   { value: 72, label: '72h' },
   { value: 168, label: '168h' },
+  { value: 336, label: '336h' },
+  { value: 720, label: '720h' },
+  { value: 2160, label: '2160h' },
 ];
 
 const PLUGIN_FILTER_OPTIONS: { value: PluginFilter; labelKey: string; fallback: string }[] = [
@@ -692,8 +695,8 @@ function AdminPluginObservabilityContent() {
   const closeLabel = t('common.close', {}, 'Close');
 
   return (
-    <BackofficePageStack>
-      <BackofficePageHeader title={t('admin.plugin_observability_title')} description={t('admin.plugin_obs_intro')}
+    <BackofficePageStack spacing="compact">
+      <BackofficePageHeader density="compact" title={t('admin.plugin_observability_title')} description={t('admin.plugin_obs_intro')}
         secondaryAction={<div className="flex gap-2"><button className="btn btn-secondary btn-sm" onClick={() => setMoreOpen(true)}>{t('admin.plugin_obs_more')}{data ? ` · ${data.attentionWorkflow.needsAttention}` : ''}</button><button className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh')}</button></div>}
         summaryItems={data ? [
           { label: t('admin.plugin_obs_reporting_sites'), value: formatInteger(data.totals.activeSiteCount) },

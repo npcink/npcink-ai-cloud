@@ -629,6 +629,18 @@ export async function installAdminMocks(
     if (pathname === '/api/admin/runtime-telemetry') {
       await fulfillJson(route, {
         generated_at: '2026-04-08T10:00:00Z',
+        usage_statistics: {
+          runs: 6,
+          succeeded: 6,
+          failed: 0,
+          success_rate: 1,
+          avg_latency_ms: 616,
+          latency_samples: 6,
+          timeline: [
+            { day: '2026-04-07', runs: 2, succeeded: 2, failed: 0, success_rate: 1, avg_latency_ms: 640, latency_samples: 2 },
+            { day: '2026-04-08', runs: 4, succeeded: 4, failed: 0, success_rate: 1, avg_latency_ms: 604, latency_samples: 4 },
+          ],
+        },
         filters: {
           site_id: searchParams.get('site_id') || '',
           recent_minutes: Number(searchParams.get('recent_minutes') || 1440),

@@ -142,7 +142,7 @@ h4,
 .admin-shell {
   --admin-header-height: 3rem;
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.98) 100%);
+    linear-gradient(180deg, rgba(250, 250, 251, 0.98) 0%, rgba(244, 244, 245, 0.98) 100%);
 }
 
 .admin-sidebar {
@@ -194,6 +194,49 @@ h4,
 
 .admin-compact-surface {
   border-radius: var(--admin-compact-radius);
+}
+
+/* Diagnostic density tier v2 material tokens (cloud-admin-ui-standard
+   §1.1). Scoped to .admin-tier-compact, emitted by
+   BackofficePageStack spacing="compact", so default-density routes keep
+   the quiet card system until their own operator evidence. Values
+   follow the operator's dash.cloudflare.com reference: neutral system
+   sans with tight tracking, white cards shaped by a 1px ring instead
+   of hard borders, contrast-based selection, one link accent. */
+.admin-tier-compact {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Inter", "Helvetica Neue", Arial, "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+  letter-spacing: -0.011em;
+}
+
+.admin-tier-compact .admin-tier-card {
+  border-width: 0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.1), 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+.admin-tier-compact a.admin-tier-card:hover {
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.22), 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+.dark .admin-tier-compact .admin-tier-card {
+  background: rgb(2 6 23 / 0.55);
+  box-shadow: 0 0 0 1px rgb(148 163 184 / 0.16), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+}
+
+/* Contrast-based selection replaces the blue fill inside the tier. */
+.admin-tier-compact [data-ui="backoffice-filter-pill"][aria-pressed="true"] {
+  border-color: rgb(15 23 42 / 0.24);
+  background: #fff;
+  color: #0f172a;
+}
+
+.dark .admin-tier-compact [data-ui="backoffice-filter-pill"][aria-pressed="true"] {
+  border-color: rgb(148 163 184 / 0.28);
+  background: rgb(2 6 23 / 0.55);
+  color: #e2e8f0;
 }
 
 @media (min-width: 1024px) {

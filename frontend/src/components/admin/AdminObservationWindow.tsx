@@ -5,7 +5,7 @@ import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPi
 import { useLocale } from '@/contexts/LocaleContext';
 import { OBSERVATION_WINDOWS, normalizeObservationWindow, type ObservationWindow } from '@/features/admin/observability/window';
 
-export function AdminObservationWindow({ defaultHours = 168 }: { defaultHours?: ObservationWindow }) {
+export function AdminObservationWindow({ defaultHours = 336 }: { defaultHours?: ObservationWindow }) {
   const { locale } = useLocale();
   const pathname = usePathname();
   const params = useSearchParams();

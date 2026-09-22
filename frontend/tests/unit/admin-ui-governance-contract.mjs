@@ -45,7 +45,9 @@ const unifiedOperationalHeaderSources = [
   ['support queue', 'src/features/admin/support-requests/SupportRequestsWorkspace.tsx'],
   ['support detail', 'src/app/admin/support-requests/[requestId]/page.tsx'],
   ['external services', 'src/app/admin/external-services/page.tsx'],
-  ['troubleshooting', 'src/app/admin/troubleshooting/page.tsx'],
+  // Diagnostic-model routes stay under the shared-header requirement; the
+  // §1.1 density tier lets them pass density="compact" to the same primitive.
+  // /admin/troubleshooting is asserted separately below.
   ['usage statistics', 'src/app/admin/usage-statistics/page.tsx'],
   ['agent feedback', 'src/app/admin/agent-feedback/page.tsx'],
   ['media observability', 'src/app/admin/media-observability/page.tsx'],
@@ -267,8 +269,13 @@ for (const [name, source] of unifiedOperationalHeaderSources) {
   assert.match(source, /<BackofficePageHeader/, `${name} must use the shared top-level page header`);
 }
 assert.match(
+  troubleshootingPageSource,
+  /<BackofficePageHeader[\s\S]*density="compact"/,
+  'the diagnostics reference joins the operator-authorized compact density tier through the shared header'
+);
+assert.match(
   standardSource,
-  /Every non-authentication Admin route uses `BackofficePageHeader`[\s\S]*`BackofficeConfigurationHeader` remains the[\s\S]*compatibility alias[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,
+  /Every non-authentication Admin route uses `BackofficePageHeader`[\s\S]*diagnostic-model routes may pass[\s\S]*`BackofficeConfigurationHeader` remains the[\s\S]*compatibility alias[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,
   'the Admin UI standard must distinguish the page header from nested section headers'
 );
 assert.match(

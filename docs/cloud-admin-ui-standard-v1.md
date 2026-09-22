@@ -134,6 +134,41 @@ page:
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
 
+### 1.1 Diagnostic Density Tier v2 (operator-authorized 2026-09-22)
+
+Following six operator feedback rounds on `/admin/troubleshooting`, the
+operator authorized a compact density tier for every `diagnostic`
+page-model route. Any diagnostic route may adopt, without a further
+per-route exception:
+
+- the shared `BackofficePageHeader` compact density — a one-line toolbar
+  with the page title, inline source freshness, secondary links, and the
+  refresh action — rendered by the shared primitive instead of the
+  padded header card, plus the shared `BackofficePageStack` compact
+  spacing;
+- one bounded KPI tile row above the evidence queue and 13px queue row
+  type across the full content width;
+- a window trend panel with a chart/table toggle fed by the telemetry
+  usage timeline — standalone under the KPI row when no anomaly is
+  selected, and the inspector's fourth tab once one is; the tab row is
+  a single four-column strip (breakdown, run evidence, actions,
+  trend); evidence-lane links sit adjacent to the queue.
+
+Queue, detail, and configuration routes keep the default header card
+and quiet-surface rules. The tier also carries its own material tokens
+(operator reference: the dash.cloudflare.com admin), emitted through
+the `admin-tier-compact` scope: a neutral tight-tracked system sans,
+white cards shaped by a 1px ring instead of hard borders with 8px
+corners, contrast-based selection states instead of accent fills, and a
+single link accent. The admin shell canvas uses the matching neutral
+surface. On 2026-09-22 the operator extended the tier to every
+diagnostic-model route: usage statistics, plugin, media, and vector
+observability, agent feedback, the AI advisor, audit, and runtime
+diagnostics. A diagnostic route joins the tier by passing
+`density="compact"` (or `spacing="compact"`) to the shared primitives,
+never by forking local toolbar geometry; `/admin/troubleshooting` is
+the accepted reference for the tier.
+
 ## 2. PC Geometry And Density
 
 - Primary target: desktop operator use at 1280 CSS pixels and wider.
@@ -398,7 +433,8 @@ focus management, credential reveal behavior, table framing, status palette,
 shared geometry, or dashed empty-state framing.
 
 Every non-authentication Admin route uses `BackofficePageHeader` for its
-ready-state top-level page header. `BackofficeConfigurationHeader` remains the
+ready-state top-level page header; diagnostic-model routes may pass
+`density="compact"` to render the shared header as the §1.1 toolbar. `BackofficeConfigurationHeader` remains the
 configuration-page compatibility alias and delegates to the same primitive.
 Keep the header order stable:
 eyebrow, one page title with an information hint, no more than one primary
