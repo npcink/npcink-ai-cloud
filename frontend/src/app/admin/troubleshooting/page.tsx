@@ -48,7 +48,7 @@ export default function AdminTroubleshootingPage() {
   const { t } = useLocale();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const windowHours = normalizeObservationWindow(searchParams.get('window'), 24);
+  const windowHours = normalizeObservationWindow(searchParams.get('window'), 336);
   const focusedIssueCode = searchParams.get('focus') || '';
   const siteFilter = searchParams.get('site') || '';
   const capabilityFilter = searchParams.get('function') || '';
@@ -192,7 +192,7 @@ export default function AdminTroubleshootingPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <AdminObservationWindow defaultHours={24} />
+          <AdminObservationWindow defaultHours={336} />
           {siteFilter || capabilityFilter ? (
             <div className="flex flex-wrap items-center gap-2" data-ui="runtime-diagnostic-scope-filters">
               {siteFilter ? (

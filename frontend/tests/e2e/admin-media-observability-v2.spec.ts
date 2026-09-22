@@ -75,9 +75,9 @@ test('media observability keeps scoped filters and failure evidence URL-backed',
 
   await page.locator('[data-ui="media-failure-item"]').click();
   await expect(page).toHaveURL(/focus=media_run_1/);
-  await page.getByRole('button', { name: /^3 天$|^3 days$/ }).click();
-  await expect(page).toHaveURL(/window=72/);
-  await expect.poll(() => harness.urls().some((url) => url.includes('window_hours=72'))).toBe(true);
+  await page.getByRole('button', { name: /^14 天$|^14 days$/ }).click();
+  await expect(page).toHaveURL(/window=336/);
+  await expect.poll(() => harness.urls().some((url) => url.includes('window_hours=336'))).toBe(true);
   await page.getByRole('button', { name: /^WebP$/i }).click();
   await expect(page).toHaveURL(/format=webp/);
   await page.getByLabel(/Filter by site ID|按站点 ID 筛选/i).fill('site_mvp');
