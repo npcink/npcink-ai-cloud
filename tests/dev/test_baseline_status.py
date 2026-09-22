@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, init_schema
-from app.dev.baseline_status import evaluate_remote_baseline_status, load_remote_baseline_status
+from app.ops.baseline_status import evaluate_remote_baseline_status, load_remote_baseline_status
 
 
 def _sqlite_url(tmp_path: Path) -> str:

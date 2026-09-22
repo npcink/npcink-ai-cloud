@@ -244,7 +244,7 @@ composer run test:contracts
   tests/contract/test_ai_quality_regression_samples.py \
   tests/workers/test_ops_cadence_worker.py
 bash scripts/check-editor-assist-quality.sh
-python3 -m app.dev.editor_assist_quality_status --window-hours 168
+python3 -m app.ops.editor_assist_quality_status --window-hours 168
 ```
 
 Before merge, run the repository changed-path and anti-drift gates. If the v2

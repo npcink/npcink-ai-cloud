@@ -353,7 +353,7 @@ import os
 import sys
 
 from app.core.config import Settings
-from app.dev.seed_runtime import seed_site_auth
+from app.ops.seed_runtime import seed_site_auth
 
 secret = os.environ.pop("NPCINK_CLOUD_SITE_KNOWLEDGE_SEED_SECRET", "")
 if not secret:

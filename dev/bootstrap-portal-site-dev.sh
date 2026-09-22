@@ -18,4 +18,4 @@ done
 cd "${ROOT_DIR}"
 COMPOSE_PROJECT_NAME="${NPCINK_CLOUD_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-npcink-ai-cloud}}" \
 	docker compose -f docker-compose.dev.yml run --rm api \
-	python -m app.dev.bootstrap_portal_site "${ARGS[@]}"
+	python -m app.ops.bootstrap_portal_site "${ARGS[@]}"

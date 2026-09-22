@@ -2018,7 +2018,7 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "ops-worker:" in dev_compose_text
     assert "python -m app.workers.ops_cadence" in dev_compose_text
     assert "npcink-ai-cloud-ops-worker:dev" in dev_compose_text
-    assert "python -m app.dev.baseline_status" in baseline_script
+    assert "python -m app.ops.baseline_status" in baseline_script
     assert "/internal/service/observability/summary" in release_smoke_script
     assert "/health/operational-ready" in release_smoke_script
     assert "deploy/remote-smoke.sh" in release_smoke_script

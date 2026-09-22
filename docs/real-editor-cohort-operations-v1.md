@@ -301,7 +301,7 @@ code before it enters shared evidence.
 Use a seven-day window during the cohort:
 
 ```bash
-python -m app.dev.feedback_status --window-hours 168
+python -m app.ops.feedback_status --window-hours 168
 ```
 
 On a deployed Cloud host, use the governed container wrapper:
@@ -320,7 +320,7 @@ For a local operator status check that includes the seven-day window and the
 50-session manual-decision gate, use the read-only command:
 
 ```bash
-python3 -m app.dev.editor_assist_quality_status --window-hours 168
+python3 -m app.ops.editor_assist_quality_status --window-hours 168
 ```
 
 Its `pilot.next_action` remains `continue_natural_observation` until the

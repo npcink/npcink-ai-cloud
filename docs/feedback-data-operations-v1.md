@@ -46,7 +46,7 @@ It performs no database writes.
 For local diagnostics with an explicitly configured database:
 
 ```bash
-python -m app.dev.feedback_status --window-hours 168
+python -m app.ops.feedback_status --window-hours 168
 ```
 
 ## Interpret

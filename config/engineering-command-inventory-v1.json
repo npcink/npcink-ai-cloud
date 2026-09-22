@@ -383,7 +383,7 @@
         "docs/cloud-agent-feedback-quality-gate-v1.md",
         "docs/editor-assist-quality-flywheel-v1.md",
         "scripts/report_ai_quality_regression_samples.py",
-        "app/dev/editor_assist_quality_status.py",
+        "app/ops/editor_assist_quality_status.py",
         "tests/contract/test_ai_quality_regression_samples.py"
       ],
       "commands": {

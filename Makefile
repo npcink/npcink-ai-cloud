@@ -75,7 +75,7 @@ migrate:
 	docker compose -f docker-compose.dev.yml run --rm api alembic upgrade head
 
 seed-dev:
-	docker compose -f docker-compose.dev.yml run --rm api python -m app.dev.seed_runtime \
+	docker compose -f docker-compose.dev.yml run --rm api python -m app.ops.seed_runtime \
 		--site-id "$(SITE_ID)" \
 		--key-id "$(KEY_ID)" \
 		--secret "$(SECRET)" \

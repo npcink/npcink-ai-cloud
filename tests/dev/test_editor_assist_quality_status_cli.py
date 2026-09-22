@@ -5,8 +5,8 @@ from pathlib import Path
 
 from app.core.config import Settings
 from app.core.db import init_schema
-from app.dev.editor_assist_quality_status import build_payload
 from app.domain.observability.plugin_events import PluginObservabilityService
+from app.ops.editor_assist_quality_status import build_payload
 from tests.api.test_editor_assist_quality_routes import _fixture_events
 from tests.conftest import seed_site_auth
 
