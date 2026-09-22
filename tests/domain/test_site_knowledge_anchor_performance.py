@@ -24,7 +24,9 @@ def test_anchor_prefilter_preserves_exact_source_and_word_boundaries(
         assert all(phrase in source for phrase in phrases)
 
 
-def test_unrelated_chunk_windows_skip_expensive_boundary_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unrelated_chunk_windows_skip_expensive_boundary_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     boundary_calls = 0
     original = service._splits_ascii_word
 
@@ -34,5 +36,10 @@ def test_unrelated_chunk_windows_skip_expensive_boundary_checks(monkeypatch: pyt
         return original(text, start, length)
 
     monkeypatch.setattr(service, "_splits_ascii_word", count_boundary_calls)
-    assert service._exact_shared_anchor_phrases("WordPress 插件兼容性检查", "unrelated text " * 60) == []
+    assert (
+        service._exact_shared_anchor_phrases(
+            "WordPress 插件兼容性检查", "unrelated text " * 60
+        )
+        == []
+    )
     assert boundary_calls == 0
