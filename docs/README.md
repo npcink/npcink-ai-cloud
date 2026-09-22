@@ -10,6 +10,8 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
+| 查战略会话的讨论脉络与决定去向 | [战略会话综合纪要](strategy-session-synthesis-2026-09-22.md) — 时间线、七仓库总览、问题清单摘要 |
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
