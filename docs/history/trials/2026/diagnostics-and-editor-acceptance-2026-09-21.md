@@ -1,7 +1,7 @@
 # 运行诊断与编辑器推荐验收 — 2026-09-21
 
 Status: initial review completed; 2026-09-22 candidate editor apply/undo/native-save acceptance passed; Cloud PR #991 and evidence-gate PR #996 merged; M4 source-only promotion #996 accepted.
-This dated record does not certify human usability, production, or a new M4 promotion.
+This dated record does not certify human usability or production. M4 evidence is revision-bound below.
 
 ## 2026-09-22 后续修复与候选验收
 
@@ -31,7 +31,9 @@ This dated record does not certify human usability, production, or a new M4 prom
 
 剩余：Toolbox 的应用资格修复提交 `867300b` 尚因两次 GitHub HTTPS 传输失败未推送；
 诊断页操作者理解度反馈；任务相关分支引用仍按发布规则保留。Cloud PR #991/#996
-均已合并，M4 promotion #996 已接受；当前没有生产部署。
+均已合并，M4 promotion #996 已接受 `081e0628b0b9bfea11d361abd355e64950f8d591`，
+状态为 `source_branch=master`、`source_dirty=false`。这是当次读取的最新
+`origin/master`，后续文档合并不追溯改变这份日期证据；当前没有生产部署。
 
 新增本地证据：`.tmp/anchor-candidate-sync.log`、`.tmp/anchor-focused-m4.log`、
 `.tmp/anchor-request-replay.log`、`.tmp/anchor-native-save.log`、
@@ -124,4 +126,6 @@ source_dirty=false、source_revision=4c72ef1139df653502e8b36ab45f9c0dcffead10。
 既有规范继续适用：[运行观测工作台规范](../../../runtime-observation-workbench-operator-guidelines-v1.md)、
 [WordPress readiness runbook](../../../wordpress-editor-readiness-runbook-v1.md)。
 
-M4_OBSERVATION_RECEIPT date=2026-09-22; route=Pgy 172.16.3.35 via local tunnel 18010; sync=source-only promotion; focused=0.92s; promotion=not measured; operations=source-sync:1/deploy:0; stable_502=not occurred; m4_only=none observed; coordination=not occurred
+M4_OBSERVATION_RECEIPT date=2026-09-21; route=Pgy 172.16.3.35 via local tunnel 18010; sync=not occurred; focused=not measured; promotion=not occurred; operations=sync:0/deploy:0; stable_502=not measured; m4_only=not established (WordPress web request timeout under investigation); coordination=not occurred
+
+M4_OBSERVATION_RECEIPT date=2026-09-22; route=Pgy 172.16.3.35 direct and local tunnel 18010; sync=not measured; focused=pytest 0.92s (transport not measured); promotion=not measured; operations=candidate-sync:1/promotion-sync:2/deploy:0; stable_502=not measured; m4_only=not established (Cloud anchor CPU cost reproduced); coordination=not measured
