@@ -106,7 +106,7 @@ export function BackofficePageStack({
   ...props
 }: BackofficeFrameProps & { spacing?: 'default' | 'compact' }) {
   return (
-    <div className={cn(spacing === 'compact' ? 'space-y-3' : 'space-y-6', className)} {...props}>
+    <div className={cn(spacing === 'compact' ? 'space-y-3 admin-tier-compact' : 'space-y-6', className)} {...props}>
       {children}
     </div>
   );
@@ -254,7 +254,7 @@ export function BackofficePageHeader({
         className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="text-lg font-semibold text-slate-950 dark:text-white">{title}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}</h1>
           {description ? (
             <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
           ) : null}

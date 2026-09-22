@@ -153,7 +153,12 @@ per-route exception:
   tabs inside a full-width expanded inspector.
 
 Queue, detail, and configuration routes keep the default header card
-and quiet-surface rules. A diagnostic route joins the tier by passing
+and quiet-surface rules. The tier also carries its own material tokens
+(operator reference: the dash.cloudflare.com admin), emitted through
+the `admin-tier-compact` scope: a neutral tight-tracked system sans,
+white cards shaped by a 1px ring instead of hard borders with 8px
+corners, contrast-based selection states instead of accent fills, and a
+single link accent. A diagnostic route joins the tier by passing
 `density="compact"` (or `spacing="compact"`) to the shared primitives,
 never by forking local toolbar geometry; `/admin/troubleshooting` is
 the accepted reference for the tier.

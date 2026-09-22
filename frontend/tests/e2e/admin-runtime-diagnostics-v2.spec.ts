@@ -72,6 +72,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await page.goto('/admin/troubleshooting');
   await expect(page.locator('[data-ui="backoffice-page-header"][data-density="compact"]')).toBeVisible();
   await expect(page.locator('[data-ui="runtime-diagnostic-metrics"]')).toContainText('83%');
+  await expect(page.locator('[data-ui="runtime-diagnostic-metrics"]').getByRole('link').first()).toHaveAttribute('href', /usage-statistics/);
   const trend = page.locator('[data-ui="runtime-diagnostic-trend"]');
   await expect(trend).toBeVisible();
   await trend.getByRole('button', { name: /^表格$|^Table$/ }).click();

@@ -224,7 +224,7 @@ export default function AdminTroubleshootingPage() {
         <>
         <section
           data-ui="runtime-diagnostic-conclusion"
-          className={`space-y-1.5 border-l-2 py-1.5 pl-3 pr-4 ${
+          className={`space-y-1.5 rounded-r-lg border-l-2 py-1.5 pl-3 pr-4 ${
             statusTone(conclusionStatus) === 'error'
               ? 'border-rose-400 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/25'
               : statusTone(conclusionStatus) === 'warning'
@@ -260,18 +260,25 @@ export default function AdminTroubleshootingPage() {
             { label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness'), value: formatRate(data.totals.providerCallRunCoverageRate), warn: data.totals.providerCallRunCoverageRate < 1 },
             { label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness'), value: formatRate(data.totals.meteredRunCoverageRate), warn: data.totals.meteredRunCoverageRate < 1 },
           ].map((tile) => (
-            <div key={tile.label} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
-              <p className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{tile.label}</p>
+            <Link key={tile.label} href={usageStatisticsHref} className="admin-tier-card block px-3 py-2">
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{tile.label}</p>
               <p className={`mt-0.5 text-lg font-semibold leading-7 ${tile.warn ? 'text-amber-700 dark:text-amber-300' : 'text-slate-950 dark:text-white'}`}>{tile.value}</p>
-            </div>
+            </Link>
           ))}
         </div>
-        <section data-ui="runtime-diagnostic-trend" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+        <section data-ui="runtime-diagnostic-trend" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')} className="admin-tier-card p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.trend_title', {}, 'Window trend')}</h2>
             <div className="flex gap-1" role="group" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
               <button type="button" aria-pressed={trendView === 'chart'} onClick={() => setTrendView('chart')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'chart' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_chart', {}, 'Chart')}</button>
               <button type="button" aria-pressed={trendView === 'table'} onClick={() => setTrendView('table')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'table' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_table', {}, 'Table')}</button>
+              <button type="button" className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900" onClick={() => {
+                const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, timeline: data.usageTimeline }, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url; link.download = `runtime-trend-${windowHours}h.json`; link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}>{t('admin.troubleshooting.trend_download', {}, 'Download data')}</button>
             </div>
           </div>
           <div className="mt-2">
@@ -427,7 +434,7 @@ export default function AdminTroubleshootingPage() {
               id="runtime-diagnostic-inspector"
               data-ui="runtime-diagnostic-inspector"
               aria-label={issueTitle(selectedIssue, t)}
-              className="rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+              className="admin-tier-card p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -464,7 +471,7 @@ export default function AdminTroubleshootingPage() {
                       role="tab"
                       aria-selected={inspectorTab === value}
                       onClick={() => setInspectorTab(value)}
-                      className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${inspectorTab === value ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
+                      className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${inspectorTab === value ? 'border-slate-900 text-slate-900 dark:border-slate-200 dark:text-slate-100' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
                     >
                       {t(key, {}, fallback)}
                     </button>
