@@ -11,9 +11,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from app.dev.live_site_env import resolve_approval_text
-from app.dev.live_site_preflight import _dict, _text
-from app.dev.live_site_runtime_smoke import build_signed_headers, load_secret_payload
+from app.ops.live_site_env import resolve_approval_text
+from app.ops.live_site_preflight import _dict, _text
+from app.ops.live_site_runtime_smoke import build_signed_headers, load_secret_payload
 
 DEFAULT_BASE_URL = "https://cloud.npc.ink"
 DEFAULT_OUTPUT_DIR = Path(".tmp/production-wordpress-ai-connector-smoke")

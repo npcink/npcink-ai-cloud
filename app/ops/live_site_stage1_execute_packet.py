@@ -6,14 +6,14 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT
-from app.dev.live_site_identity_provision import DEFAULT_BASE_URL
-from app.dev.live_site_preflight import _dict, _list, _text
-from app.dev.live_site_stage1 import DEFAULT_OUTPUT_ROOT as DEFAULT_STAGE1_OUTPUT_ROOT
-from app.dev.live_site_trial_status import (
+from app.ops.live_site_addon_install import APPROVAL_TEXT
+from app.ops.live_site_identity_provision import DEFAULT_BASE_URL
+from app.ops.live_site_preflight import _dict, _list, _text
+from app.ops.live_site_stage1 import DEFAULT_OUTPUT_ROOT as DEFAULT_STAGE1_OUTPUT_ROOT
+from app.ops.live_site_trial_status import (
     DEFAULT_OUTPUT_ROOT as DEFAULT_STATUS_OUTPUT_ROOT,
 )
-from app.dev.live_site_trial_status import (
+from app.ops.live_site_trial_status import (
     DEFAULT_STAGE1_REPORT,
     load_optional_json,
 )

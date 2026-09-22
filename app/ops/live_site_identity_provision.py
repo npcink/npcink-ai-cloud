@@ -14,14 +14,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT, approval_matches
-from app.dev.live_site_env import (
+from app.domain.commercial.customer_api_keys import build_customer_api_key
+from app.ops.live_site_addon_install import APPROVAL_TEXT, approval_matches
+from app.ops.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     default_env_files,
     resolve_approval_text,
     resolve_env_secret,
 )
-from app.domain.commercial.customer_api_keys import build_customer_api_key
 
 DEFAULT_OUTPUT_ROOT = Path(".tmp/live-site-identity")
 DEFAULT_BASE_URL = "http://127.0.0.1:8010"

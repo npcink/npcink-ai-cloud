@@ -8,24 +8,24 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.dev.live_site_addon_install import (
+from app.ops.live_site_addon_install import (
     APPROVAL_TEXT,
     approval_matches,
 )
-from app.dev.live_site_addon_install import (
+from app.ops.live_site_addon_install import (
     GuardError as AddonGuardError,
 )
-from app.dev.live_site_addon_install import (
+from app.ops.live_site_addon_install import (
     build_plan_report as build_addon_install_report,
 )
-from app.dev.live_site_addon_package import DEFAULT_ADDON_ZIP, DEFAULT_NPCINK_SITE
-from app.dev.live_site_env import (
+from app.ops.live_site_addon_package import DEFAULT_ADDON_ZIP, DEFAULT_NPCINK_SITE
+from app.ops.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     default_env_files,
     resolve_approval_text,
     resolve_env_secret,
 )
-from app.dev.live_site_identity_provision import (
+from app.ops.live_site_identity_provision import (
     DEFAULT_ACCOUNT_ID,
     DEFAULT_BASE_URL,
     DEFAULT_KEY_LABEL,
@@ -35,14 +35,14 @@ from app.dev.live_site_identity_provision import (
     DEFAULT_SITE_URL,
     redact_payload,
 )
-from app.dev.live_site_identity_provision import (
+from app.ops.live_site_identity_provision import (
     GuardError as IdentityGuardError,
 )
-from app.dev.live_site_identity_provision import (
+from app.ops.live_site_identity_provision import (
     build_report as build_identity_report,
 )
-from app.dev.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
-from app.dev.live_site_stage1_readiness import (
+from app.ops.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
+from app.ops.live_site_stage1_readiness import (
     build_readiness_report as build_stage1_readiness_report,
 )
 

@@ -12,8 +12,8 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 from app.core.security import build_body_digest, build_canonical_request, build_hmac_signature
-from app.dev.live_site_env import resolve_approval_text
-from app.dev.live_site_preflight import _dict, _list, _text
+from app.ops.live_site_env import resolve_approval_text
+from app.ops.live_site_preflight import _dict, _list, _text
 
 APPROVAL_TEXT = (
     "我明确批准在 npcink.local 运行一次 Cloud runtime resolve smoke；本次不运行 runtime "

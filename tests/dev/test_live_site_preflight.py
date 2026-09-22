@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.dev.live_site_preflight import (
+from app.ops.live_site_preflight import (
     SiteTarget,
     _parse_curl_write_out,
     cloud_addon_ready,
@@ -99,7 +99,7 @@ def test_resolve_local_site_metadata_matches_path_and_socket(
             }
         )
     )
-    monkeypatch.setattr("app.dev.live_site_preflight.LOCAL_APP_SUPPORT", support_dir)
+    monkeypatch.setattr("app.ops.live_site_preflight.LOCAL_APP_SUPPORT", support_dir)
 
     metadata = resolve_local_site_metadata(
         SiteTarget("example", "http://example.local/", public_root)

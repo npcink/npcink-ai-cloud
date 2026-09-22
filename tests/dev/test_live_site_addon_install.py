@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.dev.live_site_addon_install import (
+from app.ops.live_site_addon_install import (
     APPROVAL_TEXT,
     approval_matches,
     install_command,
@@ -11,8 +11,8 @@ from app.dev.live_site_addon_install import (
     plugin_list_command,
     validate_prewrite_report,
 )
-from app.dev.live_site_addon_package import ADDON_PLUGIN_BASENAME
-from app.dev.live_site_preflight import SiteTarget
+from app.ops.live_site_addon_package import ADDON_PLUGIN_BASENAME
+from app.ops.live_site_preflight import SiteTarget
 
 
 def _target() -> SiteTarget:

@@ -8,15 +8,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.dev.live_site_addon_install import plugin_active, plugin_list_command
-from app.dev.live_site_addon_package import (
+from app.ops.live_site_addon_install import plugin_active, plugin_list_command
+from app.ops.live_site_addon_package import (
     ADDON_OPTION_NAME,
     DEFAULT_NPCINK_SITE,
     run_json_command,
     wp_command,
 )
-from app.dev.live_site_env import resolve_approval_text
-from app.dev.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
+from app.ops.live_site_env import resolve_approval_text
+from app.ops.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
 
 DEFAULT_OUTPUT_ROOT = Path(".tmp/live-site-addon-rollback")
 DEFAULT_SNAPSHOT = Path(

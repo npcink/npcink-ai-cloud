@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT
-from app.dev.live_site_stage1_execute_packet import build_execute_packet
+from app.ops.live_site_addon_install import APPROVAL_TEXT
+from app.ops.live_site_stage1_execute_packet import build_execute_packet
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> Path:

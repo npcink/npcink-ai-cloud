@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
 
-from app.dev.live_site_env import resolve_approval_text
-from app.dev.live_site_preflight import _dict, _list, _text
-from app.dev.live_site_runtime_smoke import (
+from app.ops.live_site_env import resolve_approval_text
+from app.ops.live_site_preflight import _dict, _list, _text
+from app.ops.live_site_runtime_smoke import (
     DEFAULT_ACCEPTANCE_REPORT,
     DEFAULT_BASE_URL,
     DEFAULT_STAGE_REPORT,

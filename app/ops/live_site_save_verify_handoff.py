@@ -6,8 +6,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.dev.live_site_preflight import _dict, _list, _text
-from app.dev.live_site_stage1_acceptance import DEFAULT_STAGE_REPORT, load_json
+from app.ops.live_site_preflight import _dict, _list, _text
+from app.ops.live_site_stage1_acceptance import DEFAULT_STAGE_REPORT, load_json
 
 DEFAULT_OUTPUT_ROOT = Path(".tmp/live-site-save-verify-handoff")
 ADDON_ADMIN_PAGE_SLUG = "npcink-cloud-addon"

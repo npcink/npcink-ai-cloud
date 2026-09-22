@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from app.dev.live_site_addon_package import DEFAULT_NPCINK_SITE
-from app.dev.live_site_preflight import (
+from app.ops.live_site_addon_package import DEFAULT_NPCINK_SITE
+from app.ops.live_site_preflight import (
     SiteTarget,
     _dict,
     _list,
@@ -17,7 +17,7 @@ from app.dev.live_site_preflight import (
     cloud_addon_ready,
     parse_site_spec,
 )
-from app.dev.live_site_preflight import (
+from app.ops.live_site_preflight import (
     build_report as build_preflight_report,
 )
 

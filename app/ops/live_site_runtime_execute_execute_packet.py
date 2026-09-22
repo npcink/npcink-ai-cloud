@@ -6,32 +6,32 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.dev.live_site_identity_provision import DEFAULT_BASE_URL
-from app.dev.live_site_preflight import _dict, _list, _text
-from app.dev.live_site_runtime_execute_smoke import (
+from app.ops.live_site_identity_provision import DEFAULT_BASE_URL
+from app.ops.live_site_preflight import _dict, _list, _text
+from app.ops.live_site_runtime_execute_smoke import (
     APPROVAL_TEXT as RUNTIME_EXECUTE_APPROVAL_TEXT,
 )
-from app.dev.live_site_runtime_execute_smoke import (
+from app.ops.live_site_runtime_execute_smoke import (
     DEFAULT_OUTPUT_ROOT as DEFAULT_RUNTIME_EXECUTE_OUTPUT_ROOT,
 )
-from app.dev.live_site_runtime_execute_smoke import (
+from app.ops.live_site_runtime_execute_smoke import (
     DEFAULT_RESOLVE_SMOKE_REPORT,
 )
-from app.dev.live_site_runtime_resolve_execute_packet import (
+from app.ops.live_site_runtime_resolve_execute_packet import (
     validate_acceptance,
     validate_stage_execute,
 )
-from app.dev.live_site_runtime_smoke import (
+from app.ops.live_site_runtime_smoke import (
     DEFAULT_ACCEPTANCE_REPORT,
     DEFAULT_STAGE_REPORT,
 )
-from app.dev.live_site_runtime_smoke import (
+from app.ops.live_site_runtime_smoke import (
     DEFAULT_OUTPUT_ROOT as DEFAULT_RUNTIME_RESOLVE_OUTPUT_ROOT,
 )
-from app.dev.live_site_trial_status import (
+from app.ops.live_site_trial_status import (
     DEFAULT_OUTPUT_ROOT as DEFAULT_STATUS_OUTPUT_ROOT,
 )
-from app.dev.live_site_trial_status import load_optional_json
+from app.ops.live_site_trial_status import load_optional_json
 
 DEFAULT_EXECUTE_PREPARE_REPORT = (
     DEFAULT_RUNTIME_EXECUTE_OUTPUT_ROOT

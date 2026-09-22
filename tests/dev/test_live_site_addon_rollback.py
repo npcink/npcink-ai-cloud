@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app.dev.live_site_addon_package import ADDON_OPTION_NAME
-from app.dev.live_site_addon_rollback import (
+from app.ops.live_site_addon_package import ADDON_OPTION_NAME
+from app.ops.live_site_addon_rollback import (
     APPROVAL_TEXT,
     GuardError,
     addon_settings_were_empty,
@@ -19,7 +19,7 @@ from app.dev.live_site_addon_rollback import (
     option_snapshot_command,
     validate_snapshot,
 )
-from app.dev.live_site_preflight import SiteTarget
+from app.ops.live_site_preflight import SiteTarget
 
 
 def _target() -> SiteTarget:

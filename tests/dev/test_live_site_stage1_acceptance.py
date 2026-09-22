@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app.dev.live_site_preflight import SiteTarget
-from app.dev.live_site_stage1_acceptance import build_acceptance_report, load_json
+from app.ops.live_site_preflight import SiteTarget
+from app.ops.live_site_stage1_acceptance import build_acceptance_report, load_json
 
 
 def _target() -> SiteTarget:
