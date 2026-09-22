@@ -10,6 +10,8 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
+| 查战略会话的讨论脉络与决定去向 | [战略会话综合纪要](strategy-session-synthesis-2026-09-22.md) — 时间线、七仓库总览、问题清单摘要 |
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
@@ -72,6 +74,7 @@ deleting the old decision history.
 - [WordPress AI Request Path Map](wordpress-ai-request-path-map-v1.md) — end-to-end call chain from the editor button to the feedback events, with the code location of each step; visual companion to the flow document above, not a separate authority.
 - [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) — accepted; keeps `ONE_ACTIVE_CONTRACT_VERSION` pre-public and pre-declares the trigger that switches to a bounded compatibility window with `upgrade_required` semantics
 - [ADR-054: Responses Output Boundary and No Silent Endpoint Downgrade](decisions/054-responses-output-boundary-and-no-silent-downgrade.md) — accepted; keeps upstream Responses parsing endpoint-specific, fail-closed, and explicit about model evidence
+- [ADR-055: Provider Account-Level Spend Budget Kill Switch](decisions/055-provider-account-level-spend-budget.md) — accepted design record; single dispatch choke point reusing existing cost estimates, atomic per-account daily/monthly claims, warn at 80 percent, fail closed at 100 percent; implementation and paid-provider authorization remain separate operator decisions
 
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
 - [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
