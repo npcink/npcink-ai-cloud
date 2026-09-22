@@ -69,6 +69,26 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 - 建议触发：e2e 套件耗时成为日常阻塞时再做并行化；文本契约在其误报第一次
   实际阻碍重构时逐个转行为断言。
 
+### 1.8 残余小项（首次审计提及、未单独处理）
+
+- 路由文件体量（`app/api/routes/service.py` 约 6.9k 行、`portal.py` 约
+  5.4k 行）：由可维护性清单持续观察（2000 行阈值、watched_files），不设
+  专门任务；拆分时机随功能任务到文件时顺带。
+- `domain ↔ adapters` 双向依赖与 `domain → workers` 层间倒置：无运行时故
+  驱动，纯架构治理；触发条件=下次做 provider 适配器或 worker 相关功能任务
+  时先理顺对应边。
+- 221 处 `revision="mN"` 字面量与 114 处重复 except 样板：机械清理无行为
+  收益；触发条件=相关路由任务时局部收敛。
+- 静默吞异常（EXIF 处理、邮箱变更通知）与 11 处 `except BaseException`：
+  加日志一行级修复；触发条件=触碰对应模块时补。
+- `deploy/magick-domain-nginx.conf.template` 旧命名残留（仍被
+  `deploy/bind-domain-to-ssh-host.sh` 引用）：改名需同步两处脚本与检查；
+  触发条件=下次域名绑定任务时顺带。
+- 前端 39/42 页面为客户端组件、247 处内联回退、65 处 any：随 1.6 的逐页
+  迁移自然消化，不单列。
+- 本机 Xcode 许可未签（系统 `/usr/bin/git` 不可用）：属操作者环境项，需
+  `sudo xcodebuild -license`；会话内已用 Xcode 自带 git 绕过。
+
 ## 2. 已完成（2026-09-21/22，防重复规划）
 
 - async 阻塞集群全关：路由层 #982、认证热路径与幂等管道 #983（PBKDF2 随
