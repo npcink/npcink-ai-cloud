@@ -174,7 +174,7 @@ export default function AdminTroubleshootingPage() {
       : t('admin.troubleshooting.conclusion_healthy', {}, 'No monitored anomalies found in this period.');
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack className="space-y-4">
       <BackofficePageHeader
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         secondaryAction={<div className="flex items-center gap-3">
@@ -222,9 +222,15 @@ export default function AdminTroubleshootingPage() {
       </div>
 
       {data ? (
-        <div
+        <section
           data-ui="runtime-diagnostic-conclusion"
-          className="space-y-2 border-l-2 border-slate-300 py-1 pl-3 dark:border-slate-700"
+          className={`space-y-2 border-l-2 py-2 pl-3 pr-4 ${
+            statusTone(conclusionStatus) === 'error'
+              ? 'border-rose-400 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/25'
+              : statusTone(conclusionStatus) === 'warning'
+                ? 'border-amber-400 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20'
+                : 'border-slate-300 dark:border-slate-700'
+          }`}
         >
           <div className="flex min-w-0 items-center gap-2">
             <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
@@ -237,13 +243,10 @@ export default function AdminTroubleshootingPage() {
             <p className="text-xs text-slate-500 dark:text-slate-400">{issueEvidenceGuidance(firstIssue, t)}</p>
           </> : null}
           <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.runs_window_total', { count: formatNumber(data.totals.runs), window: String(windowHours) }, '{{count}} runs in the last {{window}} hours')}</p>
-        </div>
-      ) : null}
-
-      {data ? (
-        <p data-ui="runtime-data-integrity" className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-          {t('admin.troubleshooting.integrity_title', {}, 'Data completeness')}: {t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness')} {formatRate(data.totals.providerCallRunCoverageRate)} · {t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness')} {formatRate(data.totals.meteredRunCoverageRate)} — {t('admin.troubleshooting.integrity_note', {}, 'These rates measure record completeness for requests requiring AI evidence, not request success or billing accuracy.')}
-        </p>
+          <p data-ui="runtime-data-integrity" className="border-t border-slate-900/10 pt-2 text-xs leading-5 text-slate-600 dark:border-slate-100/10 dark:text-slate-300">
+            {t('admin.troubleshooting.integrity_title', {}, 'Data completeness')}: {t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness')} {formatRate(data.totals.providerCallRunCoverageRate)} · {t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness')} {formatRate(data.totals.meteredRunCoverageRate)} — {t('admin.troubleshooting.integrity_note', {}, 'These rates measure record completeness for requests requiring AI evidence, not request success or billing accuracy.')}
+          </p>
+        </section>
       ) : null}
 
       {error ? (
@@ -365,7 +368,7 @@ export default function AdminTroubleshootingPage() {
             onClose={() => updateUrl({ focus: null })}
             headerAccessory={<BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />}
           >
-            <div id="runtime-diagnostic-inspector" className="space-y-6">
+            <div id="runtime-diagnostic-inspector" className="space-y-5">
               <section data-ui="runtime-inspector-summary" className="border-b border-slate-200 pb-4 dark:border-slate-800">
                 <dl className="grid gap-3 text-sm sm:grid-cols-2">
                   <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</dd></div>
@@ -374,7 +377,7 @@ export default function AdminTroubleshootingPage() {
                 </dl>
                 <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">{issueEvidenceGuidance(selectedIssue, t)}</p>
               </section>
-              {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-4">
+              {selectedIssue.code === 'hosted_model.provider_errors' ? <section data-ui="provider-failure-details" className="space-y-3">
                 <h3 className="font-semibold">{t('admin.troubleshooting.failures_title')}</h3>
                 <p className="text-xs text-slate-500">{t('admin.troubleshooting.failures_limit')}</p>
                 <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
@@ -385,25 +388,25 @@ export default function AdminTroubleshootingPage() {
                     <Link href={`/admin/plugin-observability?window=${windowHours}`} className="btn btn-secondary btn-sm">{t('admin.troubleshooting.view_plugin_errors')}</Link>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300">{t('admin.troubleshooting.provider_operator_verify')}</p>
+                  {data?.providerFailures.length ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                    const blob = new Blob([JSON.stringify({ windowHours, generatedAt: data.generatedAt, recovery: 'unverified', failures: data.providerFailures }, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url; link.download = 'runtime-failure-evidence.json'; link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}>{t('admin.troubleshooting.failure_export')}</button> : null}
                 </div>
-                {data?.providerFailures.length ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-                  const blob = new Blob([JSON.stringify({ windowHours, generatedAt: data.generatedAt, recovery: 'unverified', failures: data.providerFailures }, null, 2)], { type: 'application/json' });
-                  const url = URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url; link.download = 'runtime-failure-evidence.json'; link.click();
-                  setTimeout(() => URL.revokeObjectURL(url), 1000);
-                }}>{t('admin.troubleshooting.failure_export')}</button> : null}
                 {data?.providerFailures.length ? (() => {
                   const first = data.providerFailures[0];
                   const reasonKey = ['output_schema_invalid', 'invalid_request', 'timeout'].includes(first.reason) ? first.reason : 'unknown';
                   return <>
-                    <article className="space-y-3 border-b border-slate-200 pb-4 dark:border-slate-800">
+                    <article className="space-y-2 py-1">
                       <p className="font-semibold">{t(`admin.troubleshooting.failure_reason_${reasonKey}`)} · {data.providerFailures.length} {t('admin.troubleshooting.failure_count_suffix')}</p>
-                      <p className="text-sm">{first.siteId} · {first.providerId} / {first.modelId} · {first.profileId}</p>
+                      <p className="font-mono text-xs text-slate-600 dark:text-slate-300">{first.siteId} · {first.providerId} / {first.modelId} · {first.profileId}</p>
                       <p className="text-sm">{t(`admin.troubleshooting.failure_step_${first.reason === 'output_schema_invalid' ? 'schema' : first.reason === 'timeout' ? 'timeout' : 'unknown'}`)}</p>
                       <p className="text-xs text-amber-700">{t('admin.troubleshooting.failure_recovery_unverified')}</p>
                     </article>
-                    <details className="border-b border-slate-200 pb-4 dark:border-slate-800"><summary className="cursor-pointer text-sm font-semibold">{t('admin.troubleshooting.failure_records_summary', { count: String(data.providerFailures.length) })}</summary><div className="space-y-3 pt-3">{data.providerFailures.map((failure, index) => <div key={`${failure.runId}-${index}`} className="text-xs"><p>{failure.occurredAt ? formatDate(failure.occurredAt) : '—'} · {failure.profileId}</p><details><summary className="cursor-pointer">{t('admin.troubleshooting.technical_detail_title')}</summary><dl className="space-y-1 break-all py-2"><dt>{t('admin.troubleshooting.failure_run_id')}</dt><dd><code>{failure.runId}</code></dd><dt>{t('admin.troubleshooting.issue_code')}</dt><dd><code>{failure.errorCode}</code></dd></dl></details></div>)}</div></details>
+                    <details className="border-t border-slate-200 pt-2 dark:border-slate-800"><summary className="cursor-pointer text-sm font-semibold">{t('admin.troubleshooting.failure_records_summary', { count: String(data.providerFailures.length) })}</summary><div className="space-y-3 pt-3">{data.providerFailures.map((failure, index) => <div key={`${failure.runId}-${index}`} className="text-xs"><p>{failure.occurredAt ? formatDate(failure.occurredAt) : '—'} · {failure.profileId}</p><details><summary className="cursor-pointer">{t('admin.troubleshooting.technical_detail_title')}</summary><dl className="space-y-1 break-all py-2"><dt>{t('admin.troubleshooting.failure_run_id')}</dt><dd><code>{failure.runId}</code></dd><dt>{t('admin.troubleshooting.issue_code')}</dt><dd><code>{failure.errorCode}</code></dd></dl></details></div>)}</div></details>
                   </>;
                 })() : <p className="text-sm">{t('admin.troubleshooting.failures_unavailable')}</p>}
               </section> : null}
@@ -492,34 +495,34 @@ export default function AdminTroubleshootingPage() {
       )}
 
       <AdminInspectorDrawer open={moreOpen} title={t('admin.troubleshooting.more', {}, 'More diagnostics')} titleId="runtime-more-title" closeLabel={t('common.close', {}, 'Close')} onClose={() => setMoreOpen(false)}>
-      <div className="space-y-5">
+      <div className="space-y-4">
       <EditorAssistQualityPanel
         windowHours={windowHours}
         refreshSignal={qualityRefreshSignal}
       />
 
-      <details id="runtime-evidence" className="admin-compact-surface border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <summary className="cursor-pointer select-none px-3 py-3 text-sm font-semibold text-slate-900 dark:text-white">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</summary>
+      <details id="runtime-evidence" className="border-t border-slate-200 dark:border-slate-800">
+        <summary className="cursor-pointer select-none py-3 text-sm font-semibold text-slate-900 dark:text-white">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</summary>
         <div className="border-t border-slate-200 dark:border-slate-800">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[38rem] table-fixed text-left text-sm" aria-label={t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}>
               <thead className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-400">
                 <tr>
-                  <th className="w-[30%] px-5 py-2.5 md:px-6" scope="col">{t('admin.troubleshooting.metadata_column_type', {}, 'Evidence type')}</th>
-                  <th className="px-5 py-2.5 md:px-6" scope="col">{t('admin.troubleshooting.metadata_column_purpose', {}, 'Purpose')}</th>
+                  <th className="w-[30%] px-3 py-2.5" scope="col">{t('admin.troubleshooting.metadata_column_type', {}, 'Evidence type')}</th>
+                  <th className="px-3 py-2.5" scope="col">{t('admin.troubleshooting.metadata_column_purpose', {}, 'Purpose')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                 {runtimeEvidenceItems.map((item) => (
                   <tr key={item.titleKey}>
-                    <th className="px-5 py-3 font-semibold text-slate-950 dark:text-white md:px-6" scope="row">{t(item.titleKey, {}, item.titleFallback)}</th>
-                    <td className="px-5 py-3 text-xs leading-5 text-slate-600 dark:text-slate-300 md:px-6">{t(item.descKey, {}, item.descFallback)}</td>
+                    <th className="px-3 py-3 font-semibold text-slate-950 dark:text-white" scope="row">{t(item.titleKey, {}, item.titleFallback)}</th>
+                    <td className="px-3 py-3 text-xs leading-5 text-slate-600 dark:text-slate-300">{t(item.descKey, {}, item.descFallback)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6"><p className="max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.advanced.runtime_evidence_boundary', {}, 'Evidence source remains Cloud runtime metadata such as run records, provider-call records, usage meter events, runtime profiles, and capability projection rows.')}</p><Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.advanced.action_open_runtime_profiles', {}, 'Open runtime profiles')}</Link></div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-3 py-3 dark:border-slate-800"><p className="max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.advanced.runtime_evidence_boundary', {}, 'Evidence source remains Cloud runtime metadata such as run records, provider-call records, usage meter events, runtime profiles, and capability projection rows.')}</p><Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.advanced.action_open_runtime_profiles', {}, 'Open runtime profiles')}</Link></div>
         </div>
       </details>
 
@@ -529,10 +532,7 @@ export default function AdminTroubleshootingPage() {
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</h2>
             </div>
-            <BackofficeStatusBadge
-              label={t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, '{{count}} channels')}
-              status="read_only"
-            />
+            <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, '{{count}} channels')}</span>
           </div>
         </summary>
         <div data-ui="runtime-evidence-lane-list" className="divide-y divide-slate-200 dark:divide-slate-800">

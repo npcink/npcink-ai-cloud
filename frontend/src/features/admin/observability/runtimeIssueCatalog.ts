@@ -114,7 +114,7 @@ export function issueTitle(issue: { code: string; title: string }, t: Translatio
 }
 
 export function issueAction(issue: { code: string; suggestedAction: string }, t: TranslationFn): string {
-  if (issue.code === 'hosted_model.provider_errors') return t('admin.troubleshooting.failures_title');
+  if (issue.code === 'hosted_model.provider_errors') return t('admin.troubleshooting.action_provider_failures', {}, 'Inspect the failure details and next actions below.');
   const knownActions: Record<string, [string, string]> = {
     inspect_metering_callback_or_usage_event_mapping: ['admin.troubleshooting.action_check_metering', 'Ask technical support to check usage event recording and request association for the affected functions.'],
     inspect_provider_credentials_quota_and_health: ['admin.troubleshooting.action_check_provider_health', 'Check supplier health, credentials, and quota evidence.'],

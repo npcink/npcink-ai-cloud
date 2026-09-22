@@ -68,7 +68,7 @@ describe('runtime issue catalog copy mappings', () => {
     expect(issueOwner({ code: 'hosted_model.provider_errors' }, identityT)).toBe('Maintenance engineer');
     expect(issueOwner({ code: 'hosted_model.unmetered_runs' }, identityT)).toBe('Technical support');
     expect(issueOwner({ code: 'unknown.code' }, identityT)).toBe('Platform administrator');
-    expect(issueAction({ code: 'hosted_model.provider_errors', suggestedAction: '' }, identityT)).toBe('admin.troubleshooting.failures_title');
+    expect(issueAction({ code: 'hosted_model.provider_errors', suggestedAction: '' }, identityT)).toBe('Inspect the failure details and next actions below.');
     expect(issueAction({ code: 'x', suggestedAction: 'inspect_metering_callback_or_usage_event_mapping' }, identityT))
       .toBe('Ask technical support to check usage event recording and request association for the affected functions.');
     expect(issueAction({ code: 'x', suggestedAction: 'unmapped_action' }, identityT))
