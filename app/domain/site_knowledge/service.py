@@ -2790,6 +2790,10 @@ def _exact_shared_anchor_phrases(source: str, target: str) -> list[str]:
             phrase = raw.strip(" \t\n\r,.;:!?，。；：！？、()[]{}<>\"'")
             if len(phrase) < 4 or phrase in seen:
                 continue
+            # Most target windows do not occur in the source. Reject those with
+            # a cheap substring lookup before checking ASCII word boundaries.
+            if phrase.lower() not in source_lower:
+                continue
             phrase_start = start + raw.find(phrase)
             if _splits_ascii_word(target, phrase_start, len(phrase)):
                 continue
