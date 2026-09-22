@@ -15,6 +15,7 @@ as current truth.
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 接续兼容稳定性、预算与支付会话的未完事项 | [兼容稳定性、预算与支付后续交接清单](compat-stability-payment-follow-up-handoff-2026-09-22.md) — 台账记行节奏、required 决策门槛、ADR-055 实现前置、退款两项裁决、观察窗口与提交门治理 |
+| 复用该会话的执行与验证经验 | [会话复盘](compat-budget-payment-session-retrospective-2026-09-22.md) — 分阶段执行模式、文档/发布/清理的机械经验、测试分层与稳定性证据方法 |
 | 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
 | 查延迟观测第二观测点补充 | [延迟观测补充](domestic-latency-observation-supplement-2026-09-22.md) — 跨云 ECS P95≈138ms，结论不变 |
 | 查退款能力缺口 | [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) — 静态盘点：网关/状态机/幂等已实现未验证；回调、对账、失败终态、运营入口未实现 |
