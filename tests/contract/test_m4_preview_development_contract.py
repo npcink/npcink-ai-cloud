@@ -40,7 +40,7 @@ SOURCE_RELAY_ADR = (
 )
 PGY_ACCESS_ADR = ROOT / "docs" / "decisions" / "052-pgy-primary-m4-access.md"
 SOURCE_RELAY_VALIDATION = (
-    ROOT / "docs" / "m4-source-relay-transfer-validation-2026-07-24.md"
+    ROOT / "docs" / "history" / "m4" / "2026" / "m4-source-relay-transfer-validation-2026-07-24.md"
 )
 PACKAGE_PROXY_ADR = (
     ROOT / "docs" / "decisions" / "027-m4-package-proxy-streaming-cache.md"
@@ -48,6 +48,9 @@ PACKAGE_PROXY_ADR = (
 PACKAGE_PROXY_VALIDATION = (
     ROOT
     / "docs"
+    / "history"
+    / "m4"
+    / "2026"
     / "m4-package-proxy-streaming-cache-validation-2026-07-25.md"
 )
 OLLAMA_LAUNCH_AGENT = ROOT / "deploy" / "top.mqzj.npcink-ollama-preview.plist"
