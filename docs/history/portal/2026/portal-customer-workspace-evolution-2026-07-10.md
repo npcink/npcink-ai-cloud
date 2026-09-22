@@ -18,7 +18,7 @@ This summary builds on the more focused historical records below:
 - `docs/history/portal/2026/portal-customer-surface-simplification-history-2026-07-04.md`
 - `docs/history/portal/2026/portal-auth-verification-closeout-2026-07-08.md`
 - `docs/history/portal/2026/cloud-account-portal-stage-closeout-summary-2026-06-29.md`
-- `docs/cloud-site-connection-closeout-history-2026-06-29.md`
+- `../../engineering/2026/cloud-site-connection-closeout-history-2026-06-29.md`
 - `docs/history/admin/2026/records/admin-portal-user-management-history-2026-06-29.md`
 
 When details conflict, the current code, migrations, tests, and newer boundary

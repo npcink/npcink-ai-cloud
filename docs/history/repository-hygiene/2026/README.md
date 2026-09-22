@@ -17,3 +17,10 @@ Status: historical evidence index; not cleanup authorization.
 Re-inventory the live repository and follow the current standards before any
 new cleanup. Historical counts and candidate lists are not reusable deletion
 authority.
+
+## Records Migrated from docs/ Root (2026-09-22)
+
+- [magick ai root harvest inventory 2026 06 24](magick-ai-root-harvest-inventory-2026-06-24.md)
+- [npcink cloud local docker closeout 2026 06 24](npcink-cloud-local-docker-closeout-2026-06-24.md)
+- [npcink naming reset closeout 2026 06 24](npcink-naming-reset-closeout-2026-06-24.md)
+- [npcink workspace history summary 2026 06 24](npcink-workspace-history-summary-2026-06-24.md)

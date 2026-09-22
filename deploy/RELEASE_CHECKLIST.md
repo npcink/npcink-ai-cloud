@@ -273,7 +273,7 @@ the unchecked evidence above is not authoritative for current deployment.
 Complete these items before migrating an existing user/site dataset or enabling
 real-user Portal access. A fresh empty database may satisfy the inventory with
 zero-row counts. Follow the evidence boundary and rationale in
-[User Identity, Membership, and Site Authorization Closeout](../docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md#131-read-only-inventory-result-and-its-limit)
+[User Identity, Membership, and Site Authorization Closeout](../docs/history/engineering/2026/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md#131-read-only-inventory-result-and-its-limit)
 and the normative ownership contract in
 [ADR-031](../docs/decisions/031-principal-owned-portal-site-authorization.md)
 plus its fail-closed bootstrap correction in

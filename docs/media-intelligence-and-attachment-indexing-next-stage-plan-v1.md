@@ -32,7 +32,7 @@ target product architecture.
 
 The current product focus remains the real WordPress hosted text loop described
 in [README](../README.md) and the
-[system-refactor handoff](system-refactor-phase-closeout-and-feature-iteration-handoff-2026-07-26.md).
+[system-refactor handoff](history/engineering/2026/system-refactor-phase-closeout-and-feature-iteration-handoff-2026-07-26.md).
 Media work may begin only as a bounded evidence pilot after an operator
 deliberately reopens it. It must not displace the current text-loop evidence
 work with another broad architecture program.
@@ -191,7 +191,7 @@ These figures are planning estimates checked against official list prices on
 2026-07-29. They are not the project's upstream gateway settlement price,
 customer billing truth, AI-credit policy, tax calculation, or margin evidence.
 The actual gateway settlement lifecycle remains deferred under
-[Provider Pricing And Cache Economics Revalidation](provider-pricing-and-cache-economics-revalidation-2026-07-25.md).
+[Provider Pricing And Cache Economics Revalidation](history/engineering/2026/provider-pricing-and-cache-economics-revalidation-2026-07-25.md).
 
 Assumptions:
 
@@ -432,7 +432,7 @@ Pause instead of expanding when any of these occurs:
 Do not begin persistent indexing code in this documentation task.
 
 Milestone A execution evidence is recorded in
-[Media Intelligence Milestone A Inventory And Gate — 2026-07-29](media-intelligence-milestone-a-inventory-and-gate-2026-07-29.md).
+[Media Intelligence Milestone A Inventory And Gate — 2026-07-29](history/media/2026/media-intelligence-milestone-a-inventory-and-gate-2026-07-29.md).
 That inventory froze 58 Local image candidates. The operator subsequently
 confirmed that the cohort contains no sensitive information and approved a
 short-TTL Artifact pilot, avoiding public exposure of the loopback-only site.
@@ -442,7 +442,7 @@ fields were null. Charged execution remained closed at that checkpoint pending
 trusted tariff or bounded call-ledger evidence.
 
 The trusted-price and single-image compatibility gate is now satisfied by
-[MQZJ GPT-5.4 Mini Vision Validation — 2026-07-29](mqzj-gpt54-mini-vision-validation-2026-07-29.md).
+[MQZJ GPT-5.4 Mini Vision Validation — 2026-07-29](history/engineering/2026/mqzj-gpt54-mini-vision-validation-2026-07-29.md).
 The controlled M4 call returned structured, attachment-matched evidence at an
 estimated USD `0.00205` using the operator-selected official OpenAI tariff.
 

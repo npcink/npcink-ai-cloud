@@ -4,7 +4,7 @@ Status: completed controlled local Cloud inspection runs.
 
 Purpose: record the first local controlled-trial attempt for Nightly Site
 Inspection / Morning Brief on `npcink.local`. This record follows
-`docs/nightly-inspection-real-site-operator-trial-2026-06-17.md`.
+`nightly-inspection-real-site-operator-trial-2026-06-17.md`.
 
 This is a local development trial record. It is not external production
 evidence, but it does count as the first successful local controlled real-site

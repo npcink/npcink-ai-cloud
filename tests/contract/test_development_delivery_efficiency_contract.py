@@ -7,6 +7,9 @@ STANDARD = ROOT / "docs" / "development-delivery-efficiency-standard-v1.md"
 RETROSPECTIVE = (
     ROOT
     / "docs"
+    / "history"
+    / "engineering"
+    / "2026"
     / "development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md"
 )
 DOCS_INDEX = ROOT / "docs" / "README.md"

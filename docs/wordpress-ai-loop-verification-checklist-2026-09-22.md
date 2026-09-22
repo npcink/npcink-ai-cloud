@@ -47,7 +47,7 @@ npcink-ai-client-adapter、npcink-workflow-toolbox 为临时验证性项目，�
 
 - [wordpress-editor-readiness-runbook-v1.md](wordpress-editor-readiness-runbook-v1.md)
   ——编辑器验收就绪前提；云端不可用时阻断而不是当作建议证据；
-- [wordpress-editor-acceptance-observation-2026-08-24.md](wordpress-editor-acceptance-observation-2026-08-24.md)
+- [history/engineering/2026/wordpress-editor-acceptance-observation-2026-08-24.md](history/engineering/2026/wordpress-editor-acceptance-observation-2026-08-24.md)
   ——五样本延迟与证据基线，新一轮跑完对照；
 - Addon PR #153：文本能力证据是浏览器验收的前置门；
 - [local-first-validation-stage-2026-09-21.md](local-first-validation-stage-2026-09-21.md)

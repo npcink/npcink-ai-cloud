@@ -7,6 +7,12 @@ existing WordPress media while an editor is writing. This standard consolidates
 the product discussion, repository investigation, current implementation
 lessons, and relevant open-source patterns reviewed through 2026-08-27.
 
+Scope note: this standard governs recommendations drawn from the site's own
+WordPress media inventory. External image-source recommendations are a
+separate delivery layer governed by
+`site-media-recommendation-development-standard-v2.md`, the implementation
+companion to this standard.
+
 This document does not approve implementation, Provider spend, production
 deployment, automatic WordPress writes, or a permanent Cloud media library.
 It also records the evidence-reuse rules for image compression, format

@@ -482,7 +482,7 @@ local bundle replay, security/dependency gates and clean six-repository matrix
 also passed.
 
 The current requirement-to-evidence table and exact revision separation are in
-[Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
+[Post-P5 Final Integration And Production Validation Closeout](history/refactor/2026/post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
 It distinguishes the deployed controlled-production release from later
 engineering `master` and does not authorize deploying the latter.
 

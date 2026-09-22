@@ -296,7 +296,7 @@ attempt real browser assertions.
 
 The implementation reasoning, rejected alternatives, timeout correction,
 measured LAN/Pgy/Tailscale evidence, and troubleshooting lessons are recorded in
-[the 2026-07-25 single-operator preview retrospective](m4-personal-preview-auto-route-retrospective-2026-07-25.md).
+[the 2026-07-25 single-operator preview retrospective](history/m4/2026/m4-personal-preview-auto-route-retrospective-2026-07-25.md).
 
 `https://cloud.mqzjmax.top` remains the protected browser-preview entry. Do not
 configure an automated local WordPress connector against that hostname:
@@ -569,7 +569,7 @@ request, hit, miss, upstream-byte, served-cache-byte, and downstream-disconnect
 counters for diagnosis. See
 [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) for the decision
 boundary and
-[the 2026-07-25 validation record](m4-package-proxy-streaming-cache-validation-2026-07-25.md)
+[the 2026-07-25 validation record](history/m4/2026/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 for measured evidence.
 
 The frontend image already contains its pinned `node_modules`. M4 Preview starts

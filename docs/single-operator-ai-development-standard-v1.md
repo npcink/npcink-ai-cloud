@@ -251,4 +251,4 @@ Cloud 仍是 hosted runtime enhancement layer，不得变成第二套 WordPress 
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
 - [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
-- [Development and Delivery Efficiency Closeout](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md)
+- [Development and Delivery Efficiency Closeout](history/engineering/2026/development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md)

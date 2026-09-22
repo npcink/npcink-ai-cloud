@@ -36,5 +36,22 @@ credentials, budgets, and operator authority before any new trial.
 - [Controlled setup](real-site-trial-setup-npcink-trial-2026-06-20.md)
 - [Site Knowledge rehearsal](real-site-trial-site-knowledge-npcink-trial-2026-06-20.md)
 
+## Governance Review Inventories (2026-09-22)
+
+- [Documentation debt inventory](governance-docs-debt-inventory-2026-09-22.md)
+- [Rule-to-executor enforcement map](governance-rule-enforcement-map-2026-09-22.md)
+- [Gate timing baseline](governance-gate-timing-baseline-2026-09-22.md)
+- [Slow suite profiling proposal](governance-slow-suite-profiling-proposal-2026-09-22.md)
+
 Active contracts, runbooks, checklists, handoffs, and reusable templates remain
 in the `docs/` root and are intentionally outside this collection.
+
+## Records Migrated from docs/ Root (2026-09-22)
+
+- [external trial user briefing copy zh 2026 06 10](external-trial-user-briefing-copy-zh-2026-06-10.md)
+- [live site addon setup plan npcink 2026 06 20](live-site-addon-setup-plan-npcink-2026-06-20.md)
+- [live site addon write action checklist npcink 2026 06 20](live-site-addon-write-action-checklist-npcink-2026-06-20.md)
+- [live site preflight wp npcink dbd 2026 06 20](live-site-preflight-wp-npcink-dbd-2026-06-20.md)
+- [nightly inspection real site operator trial 2026 06 17](nightly-inspection-real-site-operator-trial-2026-06-17.md)
+- [plugin observability dedupe smoke 2026 06 03](plugin-observability-dedupe-smoke-2026-06-03.md)
+- [site monitoring discussion summary 2026 06](site-monitoring-discussion-summary-2026-06.md)

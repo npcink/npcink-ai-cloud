@@ -31,6 +31,11 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
   worktree consolidation, preservation, and rollback records from 2026.
 - [Refactor evidence](refactor/2026/) - dated P5 engineering closeouts,
   acceptance records, and expired exceptions from 2026.
+- [M4 preview evidence](m4/2026/) - dated M4 preview transfer, routing,
+  and package-cache validation records.
+- [Engineering development evidence](engineering/2026/) - dated
+  engineering retrospectives, closeouts, and session syntheses migrated
+  from the `docs/` root on 2026-09-22.
 - [Trial and rehearsal evidence](trials/2026/) - dated external-trial,
   live-site, Nightly Inspection, and real-site rehearsal records from 2026.
 

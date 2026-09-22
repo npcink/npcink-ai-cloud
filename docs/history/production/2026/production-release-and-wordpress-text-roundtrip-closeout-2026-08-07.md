@@ -301,5 +301,5 @@ blocking defect or an intentional release.
 - [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
 - [Production WordPress Round-Trip Validation Runbook](../../../production-wordpress-roundtrip-validation-runbook-v1.md)
 - [Hosted WordPress Text Generation Closed-Loop Validation Standard](../../../hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
-- [Production WordPress Image Round-Trip Evidence — 2026-08-05](../../../production-wordpress-image-roundtrip-evidence-2026-08-05.md)
-- [Issue #406 Controlled Production Validation Preparation Retrospective — 2026-08-04](../../../issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
+- [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
+- [Issue #406 Controlled Production Validation Preparation Retrospective — 2026-08-04](../../engineering/2026/issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)

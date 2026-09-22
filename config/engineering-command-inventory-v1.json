@@ -146,10 +146,10 @@
     {
       "package": "root",
       "profile": "local_read",
-      "owner_doc": "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md",
+      "owner_doc": "docs/history/production/2026/python-3-14-cve-upstream-checkpoint-2026-07-24.md",
       "used_by": ["runbook", "contract"],
       "status": "active",
-      "evidence": ["README.md", "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md"],
+      "evidence": ["README.md", "docs/history/production/2026/python-3-14-cve-upstream-checkpoint-2026-07-24.md"],
       "commands": {
         "check:python-dependency-audit": "Audit locked Python dependencies and supported indexes.",
         "check:python-cve-upstream": "Inspect the recorded upstream Python CVE checkpoint.",
@@ -159,10 +159,10 @@
     {
       "package": "root",
       "profile": "provider_budget",
-      "owner_doc": "docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md",
+      "owner_doc": "docs/history/engineering/2026/provider-call-ledger-and-next-stage-deferral-2026-07-25.md",
       "used_by": ["runbook"],
       "status": "active",
-      "evidence": ["README.md", "docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md"],
+      "evidence": ["README.md", "docs/history/engineering/2026/provider-call-ledger-and-next-stage-deferral-2026-07-25.md"],
       "commands": {
         "provider:call-ledger": "Inspect or record governed real-provider call budget evidence."
       }
@@ -362,10 +362,10 @@
     {
       "package": "root",
       "profile": "local_state",
-      "owner_doc": "docs/ai-provider-connections-and-dev-frontend-history-2026-06-26.md",
+      "owner_doc": "docs/history/engineering/2026/ai-provider-connections-and-dev-frontend-history-2026-06-26.md",
       "used_by": ["runbook", "automation", "manual"],
       "status": "active",
-      "evidence": ["README.md", "Makefile", "docs/ai-provider-connections-and-dev-frontend-history-2026-06-26.md"],
+      "evidence": ["README.md", "Makefile", "docs/history/engineering/2026/ai-provider-connections-and-dev-frontend-history-2026-06-26.md"],
       "commands": {
         "frontend:sync": "Synchronize local frontend dependencies and generated state.",
         "frontend:watch": "Run the local frontend auto-sync watch loop.",

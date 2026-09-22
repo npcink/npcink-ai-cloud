@@ -16,7 +16,7 @@ It does not replace the
 [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md),
 [Development and Validation Operating Model](development-validation-operating-model-v1.md),
 [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md),
-[Provider Call Ledger](provider-call-ledger-and-next-stage-deferral-2026-07-25.md),
+[Provider Call Ledger](history/engineering/2026/provider-call-ledger-and-next-stage-deferral-2026-07-25.md),
 or WordPress Ability-owned contracts. It does not authorize production,
 Issue `#406`, Provider spend, customer trials, or human acceptance.
 
@@ -475,8 +475,8 @@ measured and unmeasured fields. It cannot claim `production validated` or
 
 ## 17. Related records
 
-- [Hosted GPT-5.5 WordPress Short Text Closeout — 2026-07-28](hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md)
-- [WordPress Title External Provider E2E Revalidation — 2026-07-25](wordpress-title-external-provider-e2e-revalidation-2026-07-25.md)
-- [WordPress Title Provider E2E and Context Preflight — 2026-07-25](wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md)
-- [Provider Runtime Compatibility Retrospective — 2026-07-25](provider-runtime-compatibility-development-retrospective-2026-07-25.md)
+- [Hosted GPT-5.5 WordPress Short Text Closeout — 2026-07-28](history/engineering/2026/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md)
+- [WordPress Title External Provider E2E Revalidation — 2026-07-25](history/engineering/2026/wordpress-title-external-provider-e2e-revalidation-2026-07-25.md)
+- [WordPress Title Provider E2E and Context Preflight — 2026-07-25](history/engineering/2026/wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md)
+- [Provider Runtime Compatibility Retrospective — 2026-07-25](history/engineering/2026/provider-runtime-compatibility-development-retrospective-2026-07-25.md)
 - [Cloud Hosted Runtime Profiles v1](cloud-hosted-runtime-profiles-v1.md)

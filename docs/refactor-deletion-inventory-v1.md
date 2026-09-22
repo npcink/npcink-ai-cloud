@@ -145,7 +145,7 @@ with exact-package manifests, fresh-environment WordPress-plus-Cloud E2E,
 measured performance/memory bounds, security and proxy-trust proof,
 upgrade/rollback/store recovery, media-alias deletion, a clean six-repository
 central matrix, and independent review. The complete evidence is attached to
-[Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md).
+[Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md).
 P3-B5 is not the global P5 milestone, and production cleanup remains
 default-off.
 
@@ -157,10 +157,10 @@ that any specific page has already been audited or approved for deletion.
 Current status: complete. The accepted inventory, destructive no-compatibility
 cutovers, strict client migration, bounded hot-path contraction, executable
 `P4-E02` gates, and screenshot-backed `P4-E03` browser smoke are recorded in
-`docs/p4-portal-admin-surface-inventory-2026-07-16.md`.
+`history/refactor/2026/p4-portal-admin-surface-inventory-2026-07-16.md`.
 
 The accepted path-by-path classification and owner map are recorded in
-`docs/p4-portal-admin-surface-inventory-2026-07-16.md`. ADR-016 fixes the
+`history/refactor/2026/p4-portal-admin-surface-inventory-2026-07-16.md`. ADR-016 fixes the
 fail-closed account-membership, Admin browser proxy, and customer credential
 decisions used by the implementation.
 

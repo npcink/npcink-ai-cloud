@@ -375,12 +375,12 @@ CI pytest 分片、PR publisher、Provider 调用账本和 Python CVE daily watc
 
 ## 相关权威记录
 
-- [Post-P5 Final Integration And Production Validation Closeout](../../../post-p5-final-integration-and-production-validation-closeout-2026-07-22.md)
-- [Post-Refactor Runtime Stack And GA-Readiness Retrospective](../../../post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
-- [Python 3.14 CVE Upstream Checkpoint](../../../python-3-14-cve-upstream-checkpoint-2026-07-24.md)
+- [Post-P5 Final Integration And Production Validation Closeout](../../refactor/2026/post-p5-final-integration-and-production-validation-closeout-2026-07-22.md)
+- [Post-Refactor Runtime Stack And GA-Readiness Retrospective](../../refactor/2026/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
+- [Python 3.14 CVE Upstream Checkpoint](python-3-14-cve-upstream-checkpoint-2026-07-24.md)
 - [Python 3.14.6 Controlled Production Validation Risk Decision](../../../python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md)
-- [Public Frontend Development Retrospective And Standard](../../../public-frontend-development-retrospective-and-standard-2026-07-25.md)
-- [Provider Three-Item Closeout And Development Retrospective](../../../provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
+- [Public Frontend Development Retrospective And Standard](../../engineering/2026/public-frontend-development-retrospective-and-standard-2026-07-25.md)
+- [Provider Three-Item Closeout And Development Retrospective](../../engineering/2026/provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
 - [M4 Preview AI Development Standard](../../../m4-preview-ai-development-standard-v1.md)
 - [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
 - [Cloud Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)

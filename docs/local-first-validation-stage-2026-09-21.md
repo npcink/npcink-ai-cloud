@@ -148,7 +148,7 @@ M4 已接受版本继续作为运行基线。docs-only 变化不触发重新部�
 - [Payment gateway contract](payment-gateway-contract-v1.md)
 - [Open callback boundary](cloud-open-callback-boundary-v1.md)
 - [AI credit charge contract](ai-credit-charge-contract-v1.md)
-- [Provider call ledger](provider-call-ledger-and-next-stage-deferral-2026-07-25.md)
+- [Provider call ledger](history/engineering/2026/provider-call-ledger-and-next-stage-deferral-2026-07-25.md)
 - [Production release policy](cloud-production-release-policy-v1.md)
 - [WordPress AI closeout audit](history/wordpress-ai-closeout-audit-2026-09-21.md)
 - [Dependency alert closeout](history/dependency-high-alerts-closeout-2026-09-21.md)

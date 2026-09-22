@@ -18,7 +18,7 @@ Invite a site only when all of these are true:
   high-stakes advice without a separate manual approval.
 - The operator accepts that final writes remain local WordPress/Core owned.
 - The operator has received the trial briefing copy in
-  `docs/external-trial-user-briefing-copy-zh-2026-06-10.md`.
+  `history/trials/2026/external-trial-user-briefing-copy-zh-2026-06-10.md`.
 
 ## Provision Access
 

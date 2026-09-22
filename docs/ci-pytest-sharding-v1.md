@@ -156,7 +156,7 @@ Do not infer coverage overhead from one run. Compare multiple natural samples
 and separate runner setup or scheduling variance from recorded pytest time and
 coverage instrumentation. The initial implementation and cost correction are
 recorded in the
-[2026-08-08 changed-code coverage retrospective](ai-development-changed-code-coverage-retrospective-2026-08-08.md).
+[2026-08-08 changed-code coverage retrospective](history/engineering/2026/ai-development-changed-code-coverage-retrospective-2026-08-08.md).
 
 Keep `threshold=null` during this observation cycle. A low percentage remains
 advisory; incomplete or invalid evidence remains fail closed. Introducing a

@@ -494,7 +494,7 @@ backup, restore, key rewrite, pointer, worker, or cleanup sequence by hand.
 #### Historical controlled-production CVE acceptance (non-normative)
 
 Before the retired P1-E06 staging or production-host mutation, operators followed
-`docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md`.
+`../docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md`.
 After the final Linux/AMD64 bundle had a fresh passed scan and successful
 same-bundle double replay, the operator created the bundle-external
 `npcink.controlled_production_cve_risk_acceptance.v1` file in the trusted
