@@ -4176,7 +4176,7 @@ async def update_admin_plan_parameters(
 @router.get("/admin/plugin-observability/history")
 async def get_admin_plugin_history(
     request: Request,
-    window_hours: int = Query(default=168, ge=1, le=720),
+    window_hours: int = Query(default=168, ge=1, le=2160),
     site_id: str = Query(default="", max_length=191),
     plugin_slug: str = Query(default="", max_length=64),
     event_kind: str = Query(default="", max_length=96),
@@ -4210,7 +4210,7 @@ async def get_admin_plugin_history(
 @router.get("/admin/plugin-observability")
 async def get_admin_plugin_observability(
     request: Request,
-    window_hours: int = Query(default=24, ge=1, le=720),
+    window_hours: int = Query(default=24, ge=1, le=2160),
     site_id: str = Query(default=""),
     plugin_slug: str = Query(default=""),
     record_scope: Literal["all", "operational", "test"] = Query(default="all"),
