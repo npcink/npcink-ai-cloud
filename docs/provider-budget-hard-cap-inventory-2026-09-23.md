@@ -14,7 +14,7 @@ claim、日/月计数器、幂等 dispatch key、保守未定价成本、80% war
 实际成本回收。
 
 候选状态补充（2026-09-23）：M4 focused 运行又通过
-`tests/domain/test_provider_budget.py`（2/2）、`tests/domain/test_web_search_budget.py`
+`tests/domain/test_provider_budget.py`（3/3）、`tests/domain/test_web_search_budget.py`
 （2/2）和 `tests/api/test_admin_overview_operator_projection.py`（5/5）。Admin 总览现已
 把 warning/exceeded 投影为可操作的预算压力项，并保留到 AI 资源页的主动作；这些结果仍
 属于当前分支 candidate 证据，不替代合入 `master` 后的 promotion 或操作者真实 smoke。
