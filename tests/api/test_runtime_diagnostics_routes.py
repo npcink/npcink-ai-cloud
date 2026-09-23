@@ -316,6 +316,23 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         and "uncovered_text" in alert["capabilities"]
         for alert in data["alert_summary"]["alerts"]
     )
+    alert_daily = {
+        alert["code"]: alert["daily_counts"]
+        for alert in data["alert_summary"]["alerts"]
+    }
+    assert sum(
+        point["count"] for point in alert_daily["hosted_model.unmetered_runs"]
+    ) == 1
+    assert sum(
+        point["count"] for point in alert_daily["hosted_model.provider_call_gap"]
+    ) == 2
+    assert all(
+        isinstance(point["day"], str)
+        and isinstance(point["count"], int)
+        and point["count"] >= 0
+        for series in alert_daily.values()
+        for point in series
+    )
     assert data["alert_summary"]["boundary"]["direct_wordpress_write"] is False
 
     assert data["provider_failures"] == []
@@ -338,6 +355,17 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert failures[0]["run_id"] == "run-model-gov-text"
     assert failures[0]["reason"] == "output_schema_invalid"
     assert "private prompt" not in json.dumps(failures)
+    provider_error_response = client.get(
+        f"/internal/service/admin/runtime-telemetry?site_id={site_id}&recent_minutes=60&limit=10",
+        headers=build_internal_headers(),
+    )
+    provider_error_alert = next(
+        alert
+        for alert in provider_error_response.json()["data"]["alert_summary"]["alerts"]
+        if alert["code"] == "hosted_model.provider_errors"
+    )
+    assert provider_error_alert["count"] == 1
+    assert sum(point["count"] for point in provider_error_alert["daily_counts"]) == 1
     other_site = client.get(
         "/internal/service/admin/runtime-telemetry?site_id=unrelated-site&recent_minutes=60",
         headers=build_internal_headers(),

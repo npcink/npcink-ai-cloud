@@ -1531,6 +1531,15 @@ class RuntimeService:
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
         )
+        issue_daily_counts = self._build_hosted_governance_issue_daily_counts(
+            runs=runs,
+            provider_call_rows=provider_call_rows,
+            ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_call_run_ids=provider_call_run_ids,
+            meter_run_ids=meter_run_ids,
+            since=recent_since,
+            until=current_time,
+        )
         result: dict[str, object] = {
             "filters": {
                 "site_id": site_id or "",
@@ -1567,6 +1576,7 @@ class RuntimeService:
             "execution_kind_groups": execution_kind_items,
             "provider_model_groups": provider_model_items,
             "governance_gaps": governance_gaps,
+            "issue_daily_counts": issue_daily_counts,
             "boundary": {
                 "surface": "internal_operator_diagnostics",
                 "cloud_role": "hosted_runtime_detail",
@@ -1920,6 +1930,72 @@ class RuntimeService:
             else "Recent runtime providers have meter coverage in this window.",
         }
 
+    def _build_hosted_governance_issue_daily_counts(
+        self,
+        *,
+        runs: list[RunRecord],
+        provider_call_rows: list[tuple[ProviderCallRecord, RunRecord]],
+        ai_evidence_required_run_ids: set[str],
+        provider_call_run_ids: set[str],
+        meter_run_ids: set[str],
+        since: datetime,
+        until: datetime,
+    ) -> dict[str, list[dict[str, object]]]:
+        # Per-issue daily series share the usage-statistics day convention:
+        # dense UTC calendar days across the requested window, so the Admin
+        # inspector can draw an issue-scoped trend aligned with the window
+        # timeline without a second request.
+        days: list[str] = []
+        day = since.date()
+        while day <= until.date():
+            days.append(day.isoformat())
+            day += timedelta(days=1)
+        day_index = {value: index for index, value in enumerate(days)}
+
+        def day_key(value: datetime | None) -> int | None:
+            if value is None:
+                return None
+            aware = (
+                value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+            )
+            return day_index.get(aware.date().isoformat())
+
+        counts = {
+            "hosted_model.unmetered_runs": [0] * len(days),
+            "hosted_model.provider_call_gap": [0] * len(days),
+            "hosted_model.provider_errors": [0] * len(days),
+            "hosted_model.failed_runs": [0] * len(days),
+        }
+        unmetered_ids = ai_evidence_required_run_ids - (
+            meter_run_ids & ai_evidence_required_run_ids
+        )
+        provider_gap_ids = ai_evidence_required_run_ids - (
+            provider_call_run_ids & ai_evidence_required_run_ids
+        )
+        for run in runs:
+            index = day_key(run.started_at)
+            if index is None:
+                continue
+            if run.run_id in unmetered_ids:
+                counts["hosted_model.unmetered_runs"][index] += 1
+            if run.run_id in provider_gap_ids:
+                counts["hosted_model.provider_call_gap"][index] += 1
+            if str(run.status or "") == "failed":
+                counts["hosted_model.failed_runs"][index] += 1
+        for call, _run in provider_call_rows:
+            if not call.error_code:
+                continue
+            index = day_key(call.created_at)
+            if index is not None:
+                counts["hosted_model.provider_errors"][index] += 1
+        return {
+            code: [
+                {"day": day_value, "count": daily[index]}
+                for index, day_value in enumerate(days)
+            ]
+            for code, daily in counts.items()
+        }
+
     def _build_hosted_governance_alert_summary(
         self,
         diagnostics: dict[str, object],
@@ -1951,6 +2027,16 @@ class RuntimeService:
             gaps.get("runs_without_provider_call_count"),
             default=0,
         )
+        raw_issue_daily = diagnostics.get("issue_daily_counts")
+        issue_daily: dict[str, list[dict[str, object]]] = {
+            str(code): [
+                self._dict_or_empty(point)
+                for point in (series if isinstance(series, list) else [])
+            ]
+            for code, series in (
+                raw_issue_daily.items() if isinstance(raw_issue_daily, dict) else []
+            )
+        }
 
         alerts: list[dict[str, object]] = []
 
@@ -1973,6 +2059,7 @@ class RuntimeService:
                     "count": max(0, count),
                     "capabilities": capabilities[:10],
                     "suggested_action": suggested_action,
+                    "daily_counts": issue_daily.get(code, []),
                     "href": "/admin/troubleshooting",
                 }
             )

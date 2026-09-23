@@ -162,6 +162,31 @@ export function issueCount(issue: { code: string; count: number }, t: Translatio
     : 'admin.troubleshooting.count_runs', { count: formatNumber(issue.count) });
 }
 
+export type IssueBreakdownMetric = {
+  metric: 'providerErrors' | 'failed' | 'providerCoverage' | 'meteringCoverage';
+  ascending: boolean;
+  label: string;
+};
+
+// The capability-group table carries generic function totals; each issue
+// type only owns one of them, so the breakdown tab ranks and highlights
+// the column that actually moves with the selected issue.
+export function issueBreakdownMetric(issue: { code: string }, t: TranslationFn): IssueBreakdownMetric | null {
+  if (issue.code === 'hosted_model.provider_errors') {
+    return { metric: 'providerErrors', ascending: false, label: t('admin.troubleshooting.provider_error_column', {}, 'Provider errors') };
+  }
+  if (issue.code === 'hosted_model.failed_runs') {
+    return { metric: 'failed', ascending: false, label: t('admin.troubleshooting.failed_requests', {}, 'Failed requests') };
+  }
+  if (issue.code === 'hosted_model.provider_call_gap') {
+    return { metric: 'providerCoverage', ascending: true, label: t('admin.troubleshooting.provider_coverage', {}, 'Call record completeness') };
+  }
+  if (issue.code === 'hosted_model.unmetered_runs') {
+    return { metric: 'meteringCoverage', ascending: true, label: t('admin.troubleshooting.metering_coverage', {}, 'Usage record completeness') };
+  }
+  return null;
+}
+
 export function runStatusLabel(status: string, t: TranslationFn): string {
   if (status.toLowerCase() === 'succeeded') return t('admin.troubleshooting.run_succeeded');
   if (status.toLowerCase() === 'failed') return t('admin.troubleshooting.run_failed');
