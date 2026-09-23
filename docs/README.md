@@ -10,6 +10,7 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
 | 查战略会话的讨论脉络与决定去向 | [战略会话综合纪要](strategy-session-synthesis-2026-09-22.md) — 时间线、七仓库总览、问题清单摘要 |
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) |
