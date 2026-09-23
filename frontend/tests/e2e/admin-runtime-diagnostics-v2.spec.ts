@@ -159,7 +159,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
 
   await page.getByRole('button', { name: /Call records missing|调用记录缺失/i }).click();
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
-  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Call records missing|调用记录缺失/i);
+  await expect(page.locator('[data-ui="runtime-diagnostic-issue"][aria-expanded="true"]')).toContainText(/Call records missing|调用记录缺失/i);
   await page.reload();
   await expect(page.getByRole('button', { name: /Call records missing|调用记录缺失/i })).toHaveAttribute('aria-expanded', 'true');
 

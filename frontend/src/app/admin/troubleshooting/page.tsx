@@ -246,7 +246,7 @@ export default function AdminTroubleshootingPage() {
     issueTrendIssues.map((issue) => [issue.code, new Map(issue.dailyCounts.map((point) => [point.day, point.count]))])
   );
   const issueTrendPanel = data && selectedIssue && issueTrendIssues.length ? (
-    <section data-ui="runtime-issue-trend" aria-label={t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')} className="admin-tier-card p-3">
+    <section data-ui="runtime-issue-trend" aria-label={t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)} · {t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')}</h2>
@@ -463,33 +463,15 @@ export default function AdminTroubleshootingPage() {
                   aria-label={issueTitle(selectedIssue, t)}
                   className="mx-3 mb-3 rounded-r-lg border-l-2 border-slate-900 bg-slate-50/75 p-4 dark:border-slate-300 dark:bg-slate-900/40"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h2 className="text-base font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)}</h2>
-                      <BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={t('common.close', {}, 'Close')}
-                      className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white"
-                      onClick={() => updateUrl({ focus: null })}
-                    >
-                      <span aria-hidden="true">×</span>
-                    </button>
-                  </div>
-                  <div className="mt-3 space-y-4">
-                    <section data-ui="runtime-inspector-summary" className="border-b border-slate-200 pb-3 dark:border-slate-800">
-                      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {t('admin.troubleshooting.column_scope', {}, 'Affected scope')} <span className="font-semibold text-slate-800 dark:text-slate-200">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</span>
-                        {' · '}
-                        {t('admin.troubleshooting.owner_label', {}, 'Recommended owner')} <span className="font-semibold text-slate-800 dark:text-slate-200">{issueOwner(selectedIssue, t)}</span>
-                      </p>
-                      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {t('admin.troubleshooting.next_action', {}, 'Next action')}: <span className="font-semibold text-slate-800 dark:text-slate-200">{issueAction(selectedIssue, t)}</span>
-                      </p>
-                    </section>
+                <div className="space-y-3">
+                  <section data-ui="runtime-inspector-summary">
+                    <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                      {t('admin.troubleshooting.next_action', {}, 'Next action')}: <span className="font-semibold text-slate-800 dark:text-slate-200">{issueAction(selectedIssue, t)}</span>
+                    </p>
+                  </section>
 
-                    <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-1">
+                  <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="grid min-w-0 flex-1 grid-cols-4 border-b border-slate-200 dark:border-slate-800">
                       {([
                         ['breakdown', 'admin.troubleshooting.open_evidence', 'Breakdown by function'],
                         ['runs', 'admin.troubleshooting.run_evidence_title', 'Affected run evidence'],
@@ -507,8 +489,17 @@ export default function AdminTroubleshootingPage() {
                           {t(key, {}, fallback)}
                         </button>
                       ))}
-                    </div>
-                    <div hidden={inspectorTab !== 'breakdown'}>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={t('common.close', {}, 'Close')}
+                    className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-base font-semibold text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white"
+                    onClick={() => updateUrl({ focus: null })}
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                  </div>
+                <div hidden={inspectorTab !== 'breakdown'}>
                 <section key={selectedIssue.code} data-ui="runtime-issue-evidence">
                   <h3 className="pb-1 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
                   {breakdownMetric ? <p className="pb-2 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.breakdown_sort_note', { metric: breakdownMetric.label }, 'Sorted by the metric relevant to this issue: {{metric}}.')}</p> : null}
