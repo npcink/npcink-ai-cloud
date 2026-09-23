@@ -6,12 +6,13 @@ import re
 import secrets
 import threading
 import time
-from dataclasses import dataclass
-from typing import Any, TypedDict
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, TypedDict
 from urllib.parse import quote, urlsplit
 
 import httpx
 
+from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionRequest
 from app.core.config import Settings
 from app.domain.agent_workflow_metadata import (
     WEB_SEARCH_EVIDENCE_WORKFLOW_ID,
@@ -33,6 +34,12 @@ from app.domain.web_search.contracts import (
     validate_public_source_url,
     validate_web_search_runtime_contract,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.core.models import RunRecord
+    from app.domain.runtime.provider_execution import ProviderBudgetGuard
 
 MAX_QUERY_CHARS = 500
 MAX_RESULT_TITLE_CHARS = 220
@@ -89,6 +96,7 @@ class WebSearchProviderUsage:
     latency_ms: int
     cost: float = 0.0
     error_code: str | None = None
+    budget_claim_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -123,6 +131,9 @@ class WebSearchService:
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        budget_guard: ProviderBudgetGuard | None = None,
+        budget_session: Session | None = None,
+        budget_run: RunRecord | None = None,
     ) -> WebSearchExecutionResult:
         validate_web_search_runtime_contract(
             ability_name=ability_name,
@@ -175,14 +186,75 @@ class WebSearchService:
 
         errors: list[dict[str, str]] = []
         for candidate in providers:
+            provider = _build_provider(self.settings, candidate)
+            budget_claim_ids: tuple[str, ...] = ()
+            if budget_guard is not None:
+                if budget_session is None or budget_run is None:
+                    raise ValueError(
+                        "budget session and run are required when a budget guard is configured"
+                    )
+                budget_request = ProviderExecutionRequest(
+                    run_id=run_id,
+                    site_id=site_id,
+                    ability_name=ability_name,
+                    profile_id="web-search.managed",
+                    execution_kind="web_search",
+                    model_id=str(getattr(provider, "model_id", "web-search")),
+                    instance_id=str(getattr(provider, "instance_id", "cloud-managed")),
+                    endpoint_variant=candidate,
+                    trace_id=run_id,
+                    input_payload={"query": query, "options": options},
+                    policy={"provider": candidate},
+                    timeout_ms=30_000,
+                )
+                try:
+                    budget_claim = budget_guard.claim_before_dispatch(
+                        session=budget_session,
+                        run=budget_run,
+                        provider_id=candidate,
+                        model_id=budget_request.model_id,
+                        request=budget_request,
+                    )
+                except ProviderExecutionError as error:
+                    if provider_id != "auto":
+                        raise WebSearchProviderError(error.error_code, error.message) from error
+                    errors.append(
+                        {
+                            "provider": candidate,
+                            "error_code": error.error_code,
+                            "message": error.message,
+                        }
+                    )
+                    continue
+                if budget_claim is not None:
+                    budget_claim_ids = budget_claim.claim_ids
             try:
-                result = _build_provider(self.settings, candidate).search(
+                result = provider.search(
                     query=query,
                     options=options,
                     site_id=site_id,
                     run_id=run_id,
                 )
             except WebSearchProviderError as error:
+                if budget_guard is not None and budget_claim_ids:
+                    if error.usage is None:
+                        budget_guard.reconcile(
+                            session=budget_session,
+                            claim_ids=budget_claim_ids,
+                            actual_cost_usd=None,
+                        )
+                    else:
+                        budget_guard.reconcile(
+                            session=budget_session,
+                            claim_ids=budget_claim_ids,
+                            actual_cost_usd=None
+                            if error.error_code.startswith("provider.")
+                            else error.usage.cost,
+                        )
+                        error.usage = replace(
+                            error.usage,
+                            budget_claim_ids=budget_claim_ids,
+                        )
                 if provider_id != "auto":
                     raise
                 errors.append(
@@ -193,6 +265,16 @@ class WebSearchService:
                     }
                 )
                 continue
+            if budget_guard is not None and budget_claim_ids:
+                budget_guard.reconcile(
+                    session=budget_session,
+                    claim_ids=budget_claim_ids,
+                    actual_cost_usd=result.usage.cost,
+                )
+                result.usage = replace(
+                    result.usage,
+                    budget_claim_ids=budget_claim_ids,
+                )
             result.result_json["provider_mode"] = str(
                 result.result_json.get("provider_mode") or provider_id
             )

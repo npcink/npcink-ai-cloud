@@ -2981,6 +2981,9 @@ class RuntimeService:
                 contract_version=WEB_SEARCH_CONTRACT,
                 input_payload=plan.to_web_search_input(),
                 run_id=f"{run.run_id}:automatic-web-search",
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_session=repository.session,
+                budget_run=run,
             )
         except WebSearchProviderError as error:
             if error.usage is not None:
@@ -3178,6 +3181,8 @@ class RuntimeService:
                 account_id=site_account_id,
                 account_vector_document_limit=account_vector_document_limit,
                 account_media_image_limit=account_media_image_limit,
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_run=run,
             ).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,
@@ -3451,6 +3456,7 @@ class RuntimeService:
                         retry_count=0,
                         fallback_used=False,
                         error_code=error.usage.error_code or error.error_code,
+                        budget_claim_ids=error.usage.budget_claim_ids,
                     ),
                 )
             self.run_lifecycle_service.fail_run(
@@ -3486,6 +3492,7 @@ class RuntimeService:
                 retry_count=0,
                 fallback_used=False,
                 error_code=execution.usage.error_code,
+                budget_claim_ids=execution.usage.budget_claim_ids,
             ),
             usage_context=usage_context,
         )
@@ -4597,6 +4604,9 @@ class RuntimeService:
                 price_input=selected_candidate.price_input,
                 price_output=selected_candidate.price_output,
                 artifact_inputs=artifact_inputs,
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_session=repository.session,
+                budget_run=run,
             )
         except ImageContextEvidenceContractViolation as error:
             self.run_lifecycle_service.fail_run(
@@ -4627,6 +4637,7 @@ class RuntimeService:
                         retry_count=0,
                         fallback_used=False,
                         error_code=error.usage.error_code or error.error_code,
+                        budget_claim_ids=error.usage.budget_claim_ids,
                     ),
                 )
             self.run_lifecycle_service.fail_run(
@@ -4656,6 +4667,7 @@ class RuntimeService:
                 retry_count=0,
                 fallback_used=False,
                 error_code=execution.usage.error_code,
+                budget_claim_ids=execution.usage.budget_claim_ids,
             ),
         )
         result_json = execution.result_json
@@ -4916,6 +4928,8 @@ class RuntimeService:
             account_id=account_id,
             account_vector_document_limit=account_vector_document_limit,
             account_media_image_limit=account_media_image_limit,
+            budget_guard=self.provider_execution_service.budget_guard,
+            budget_run=run,
         ).sync(
             site_id=run.site_id,
             input_payload={
@@ -5404,6 +5418,8 @@ class RuntimeService:
                 settings=self.settings,
                 providers=self.providers,
                 embedding_usage_callback=record_embedding_usage,
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_run=run,
             ).execute(
                 site_id=run.site_id,
                 ability_name=SITE_KNOWLEDGE_SEARCH_ABILITY,

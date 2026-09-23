@@ -6,12 +6,15 @@ import math
 import re
 from dataclasses import dataclass
 from io import BytesIO
+from typing import TYPE_CHECKING
 
 from app.adapters.providers.base import (
     ProviderAdapter,
     ProviderExecutionError,
     ProviderExecutionRequest,
+    ProviderExecutionResult,
 )
+from app.core.db import get_session
 from app.domain.audio_generation.artifacts import (
     AUDIO_ARTIFACT_DEFAULT_MAX_BYTES,
     AudioArtifactMaterializationConfig,
@@ -27,6 +30,10 @@ from app.domain.model_capabilities.contracts import (
     CapabilityEvidenceState,
     build_route_fingerprint,
 )
+
+if TYPE_CHECKING:
+    from app.core.models import RunRecord
+    from app.domain.runtime.provider_execution import ProviderBudgetGuard
 
 # A deterministic, non-sensitive fixture. Probe requests must never persist it.
 _PROBE_IMAGE = bytes.fromhex(
@@ -46,6 +53,50 @@ class CapabilityProbeResult:
     detail: str = ""
 
 
+def _execute_probe(
+    provider: ProviderAdapter,
+    request: ProviderExecutionRequest,
+    *,
+    budget_guard: ProviderBudgetGuard | None = None,
+    budget_database_url: str | None = None,
+    budget_run: RunRecord | None = None,
+) -> ProviderExecutionResult:
+    if budget_guard is None:
+        return provider.execute(request)
+    if budget_database_url is None or budget_run is None:
+        raise ValueError("budget database URL and run are required for capability probes")
+    with get_session(budget_database_url) as session:
+        claim_ids: tuple[str, ...] = ()
+        claim = budget_guard.claim_before_dispatch(
+            session=session,
+            run=budget_run,
+            provider_id=str(getattr(provider, "provider_id", "")),
+            model_id=request.model_id,
+            request=request,
+        )
+        if claim is not None:
+            claim_ids = claim.claim_ids
+        try:
+            result = provider.execute(request)
+        except ProviderExecutionError:
+            if claim_ids:
+                budget_guard.reconcile(
+                    session=session,
+                    claim_ids=claim_ids,
+                    actual_cost_usd=None,
+                )
+                session.commit()
+            raise
+        if claim_ids:
+            budget_guard.reconcile(
+                session=session,
+                claim_ids=claim_ids,
+                actual_cost_usd=result.cost,
+            )
+            session.commit()
+        return result
+
+
 def probe_vision(
     *,
     provider: ProviderAdapter,
@@ -56,6 +107,9 @@ def probe_vision(
     endpoint_variant: str,
     trace_id: str,
     timeout_ms: int = 30_000,
+    budget_guard: ProviderBudgetGuard | None = None,
+    budget_database_url: str | None = None,
+    budget_run: RunRecord | None = None,
 ) -> CapabilityProbeResult:
     """Check image input on one exact route without writing any product data."""
 
@@ -87,7 +141,13 @@ def probe_vision(
         timeout_ms=timeout_ms,
     )
     try:
-        result = provider.execute(request)
+        result = _execute_probe(
+            provider,
+            request,
+            budget_guard=budget_guard,
+            budget_database_url=budget_database_url,
+            budget_run=budget_run,
+        )
     except ProviderExecutionError as error:
         error_text = f"{error.error_code} {error.message}"
         state: CapabilityEvidenceState = (
@@ -130,6 +190,9 @@ def probe_embedding(
     endpoint_variant: str,
     trace_id: str,
     timeout_ms: int = 30_000,
+    budget_guard: ProviderBudgetGuard | None = None,
+    budget_database_url: str | None = None,
+    budget_run: RunRecord | None = None,
 ) -> CapabilityProbeResult:
     """Check that an embeddings route returns a finite, stable-dimension vector."""
 
@@ -148,7 +211,13 @@ def probe_embedding(
         timeout_ms=timeout_ms,
     )
     try:
-        result = provider.execute(request)
+        result = _execute_probe(
+            provider,
+            request,
+            budget_guard=budget_guard,
+            budget_database_url=budget_database_url,
+            budget_run=budget_run,
+        )
     except ProviderExecutionError as error:
         return CapabilityProbeResult(
             state="verification_failed",
@@ -199,6 +268,9 @@ def probe_image_generation(
     endpoint_variant: str,
     trace_id: str,
     timeout_ms: int = 90_000,
+    budget_guard: ProviderBudgetGuard | None = None,
+    budget_database_url: str | None = None,
+    budget_run: RunRecord | None = None,
 ) -> CapabilityProbeResult:
     """Check one low-cost image route and decode its transient artifact."""
 
@@ -220,7 +292,13 @@ def probe_image_generation(
         timeout_ms=timeout_ms,
     )
     try:
-        result = provider.execute(request)
+        result = _execute_probe(
+            provider,
+            request,
+            budget_guard=budget_guard,
+            budget_database_url=budget_database_url,
+            budget_run=budget_run,
+        )
     except ProviderExecutionError as error:
         return CapabilityProbeResult(
             state=(
@@ -302,6 +380,9 @@ def probe_audio_generation(
     endpoint_variant: str,
     trace_id: str,
     timeout_ms: int = 90_000,
+    budget_guard: ProviderBudgetGuard | None = None,
+    budget_database_url: str | None = None,
+    budget_run: RunRecord | None = None,
 ) -> CapabilityProbeResult:
     """Check one short audio route and validate its transient bytes."""
 
@@ -324,7 +405,13 @@ def probe_audio_generation(
         timeout_ms=timeout_ms,
     )
     try:
-        result = provider.execute(request)
+        result = _execute_probe(
+            provider,
+            request,
+            budget_guard=budget_guard,
+            budget_database_url=budget_database_url,
+            budget_run=budget_run,
+        )
     except ProviderExecutionError as error:
         return CapabilityProbeResult(
             state=(

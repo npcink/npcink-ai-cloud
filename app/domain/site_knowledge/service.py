@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -68,6 +68,10 @@ from app.domain.site_knowledge.related_content_search_quality import (
     rank_related_content_search_results,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+
+if TYPE_CHECKING:
+    from app.core.models import RunRecord
+    from app.domain.runtime.provider_execution import ProviderBudgetGuard
 from app.domain.site_knowledge.rerankers import (
     SiteKnowledgeReranker,
     SiteKnowledgeRerankError,
@@ -139,6 +143,8 @@ class SiteKnowledgeService:
         account_id: str = '',
         account_vector_document_limit: int | None = None,
         account_media_image_limit: int | None = None,
+        budget_guard: ProviderBudgetGuard | None = None,
+        budget_run: RunRecord | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.providers = providers or {}
@@ -147,6 +153,8 @@ class SiteKnowledgeService:
         self.account_id = str(account_id or '').strip()
         self.account_vector_document_limit = account_vector_document_limit
         self.account_media_image_limit = account_media_image_limit
+        self.budget_guard = budget_guard
+        self.budget_run = budget_run
         self.repository = SiteKnowledgeRepository(session)
         self.vector_backend = build_vector_backend(self.settings)
         self.reranker = build_site_knowledge_reranker(self.settings)
@@ -1155,14 +1163,45 @@ class SiteKnowledgeService:
             policy={"storage_mode": "result_only"},
             timeout_ms=max(1, int(self._embedding_timeout_seconds() * 1000)),
         )
+        budget_claim_ids: tuple[str, ...] = ()
+        if self.budget_guard is not None:
+            if self.budget_run is None:
+                raise SiteKnowledgeBackendError(
+                    "site_knowledge.embedding_budget_context_missing",
+                    "site knowledge embedding budget context is not configured",
+                )
+            try:
+                budget_claim = self.budget_guard.claim_before_dispatch(
+                    session=self.repository.session,
+                    run=self.budget_run,
+                    provider_id=self.embedding_provider_id,
+                    model_id=model_id,
+                    request=provider_request,
+                )
+            except ProviderExecutionError as error:
+                raise SiteKnowledgeBackendError(error.error_code, error.message) from error
+            if budget_claim is not None:
+                budget_claim_ids = budget_claim.claim_ids
         try:
             result = provider.execute(provider_request)
         except ProviderExecutionError as error:
+            if self.budget_guard is not None and budget_claim_ids:
+                self.budget_guard.reconcile(
+                    session=self.repository.session,
+                    claim_ids=budget_claim_ids,
+                    actual_cost_usd=None,
+                )
             self._record_embedding_usage(provider_request, provider_error=error)
             raise SiteKnowledgeBackendError(
                 error.error_code,
                 "site knowledge embedding provider request failed",
             ) from error
+        if self.budget_guard is not None and budget_claim_ids:
+            self.budget_guard.reconcile(
+                session=self.repository.session,
+                claim_ids=budget_claim_ids,
+                actual_cost_usd=result.cost,
+            )
         self._record_embedding_usage(provider_request, provider_result=result)
 
         embedding = result.output.get("embedding")

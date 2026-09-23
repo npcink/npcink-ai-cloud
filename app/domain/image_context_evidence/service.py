@@ -6,7 +6,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.adapters.providers.base import (
     ProviderAdapter,
@@ -24,6 +24,12 @@ from app.domain.image_context_evidence.contracts import (
 )
 from app.domain.media_artifacts.input_loading import LoadedArtifactInput
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.core.models import RunRecord
+    from app.domain.runtime.provider_execution import ProviderBudgetGuard
+
 MAX_PROMPT_METADATA_CHARS = 500
 
 
@@ -38,6 +44,7 @@ class ImageContextEvidenceProviderUsage:
     tokens_out: int = 0
     cost: float = 0.0
     error_code: str | None = None
+    budget_claim_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -85,6 +92,9 @@ class ImageContextEvidenceService:
         price_input: float | None = None,
         price_output: float | None = None,
         artifact_inputs: dict[str, LoadedArtifactInput] | None = None,
+        budget_guard: ProviderBudgetGuard | None = None,
+        budget_session: Session | None = None,
+        budget_run: RunRecord | None = None,
     ) -> ImageContextEvidenceExecutionResult:
         validate_image_context_evidence_runtime_contract(
             ability_name=ability_name,
@@ -113,6 +123,27 @@ class ImageContextEvidenceService:
             price_output=price_output,
             retry_count=0,
         )
+        budget_claim_ids: tuple[str, ...] = ()
+        if budget_guard is not None:
+            if budget_session is None or budget_run is None:
+                raise ValueError(
+                    "budget session and run are required when a budget guard is configured"
+                )
+            try:
+                budget_claim = budget_guard.claim_before_dispatch(
+                    session=budget_session,
+                    run=budget_run,
+                    provider_id=provider_id,
+                    model_id=model_id,
+                    request=request,
+                )
+            except ProviderExecutionError as error:
+                raise ImageContextEvidenceProviderError(
+                    error.error_code,
+                    error.message,
+                ) from error
+            if budget_claim is not None:
+                budget_claim_ids = budget_claim.claim_ids
         started = time.monotonic()
         try:
             provider_result = provider.execute(request)
@@ -127,6 +158,7 @@ class ImageContextEvidenceService:
                 tokens_out=max(0, int(error.tokens_out)),
                 cost=max(0.0, float(error.cost)),
                 error_code=error.error_code,
+                budget_claim_ids=budget_claim_ids,
             )
             raise ImageContextEvidenceProviderError(
                 error.error_code,
@@ -143,6 +175,7 @@ class ImageContextEvidenceService:
             tokens_in=provider_result.tokens_in,
             tokens_out=provider_result.tokens_out,
             cost=provider_result.cost,
+            budget_claim_ids=budget_claim_ids,
         )
         result_json = _build_result_json(
             evidence_request,

@@ -23,7 +23,7 @@ from app.api.routes.commercial_subscriptions_admin import (
 from app.api.routes.site_compliance_admin import router as site_compliance_admin_router
 from app.core.db import get_session
 from app.core.logging import get_logger
-from app.core.models import CatalogInstance, CatalogModel
+from app.core.models import CatalogInstance, CatalogModel, RunRecord
 from app.core.security import extract_trace_id
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_feedback.service import AgentFeedbackService
@@ -74,6 +74,7 @@ from app.domain.runtime.models import (
     RUNTIME_BACKLOG_SCOPE_KIND_PATTERN,
     RUNTIME_DIAGNOSTIC_ISSUE_KIND_PATTERN,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.runtime.service import RuntimeRunNotFoundError, RuntimeService
 from app.domain.service_settings import (
     ServiceSettingsAdminError,
@@ -5858,15 +5859,26 @@ async def probe_admin_hosted_runtime_capability(
             revision="m6",
         )
 
+    probe_run_id = f"capability_probe_{uuid4().hex}"
     probe_kwargs: dict[str, Any] = {
         "provider": provider,
-        "run_id": f"capability_probe_{uuid4().hex}",
+        "run_id": probe_run_id,
         "site_id": "admin-capability-probe",
         "model_id": model_id,
         "instance_id": payload.instance_id,
         "endpoint_variant": endpoint_variant,
         "trace_id": extract_trace_id(request.headers.get("traceparent", "")),
         "timeout_ms": payload.timeout_ms,
+        "budget_guard": ProviderBudgetService(),
+        "budget_database_url": services.settings.database_url,
+        "budget_run": RunRecord(
+            run_id=probe_run_id,
+            site_id="admin-capability-probe",
+            ability_name="npcink-cloud/capability-probe",
+            profile_id=f"{payload.capability}.probe",
+            execution_kind=payload.capability,
+            policy_json={"capability_probe": True},
+        ),
     }
     probe_function = {
         "vision": probe_vision,
