@@ -379,7 +379,12 @@ When changing documentation structure:
 5. run the narrowest policy/contract gate covering the changed entry points;
 6. keep documentation-only work out of M4 unless a runtime-specific risk
    explicitly requires it;
-7. report local, PR, merged, M4, production, and human evidence separately.
+7. report local, PR, merged, M4, production, and human evidence separately;
+8. move a task's dated records into `docs/history/<topic>/` when the task
+   merges; a dated record stays at the `docs/` root only with an entry under
+   [Dated Active-document Review](#dated-active-document-review), and
+   `check_doc_reachability.py` fails on unlisted dated root records older
+   than the current month.
 
 An unreferenced basename, old date, large file, or `retired` label is a review
 signal, not deletion authority.
@@ -395,7 +400,9 @@ Retained active authority:
 - [External Trial Operator Runbook](external-trial-operator-runbook-2026-06-11.md) - bounded operator procedure;
 - [Image Processing FC/OSS Readiness](image-processing-fc-oss-readiness-2026-07-20.md) - current deferred migration decision;
 - [Naming Residual Allowlist](naming-residual-allowlist-2026-06-24.md) - cross-repository naming guard;
+- [P5 B8 Final Engineering Closeout](p5-b8-final-engineering-closeout-2026-07-19.md) - pinned at the root by `check-release-policy.sh`;
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md) - current provider operations procedure;
+- [Python 3.14.6 Controlled Production Validation Risk Decision](python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md) - pinned at the root by `check-release-policy.sh`;
 - [Release CI Open-source Patterns](release-ci-open-source-patterns-2026-07.md) - current CI selection and evidence-reuse guidance.
 
 Historical evidence retained in place:
