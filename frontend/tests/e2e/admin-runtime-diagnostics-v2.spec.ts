@@ -252,7 +252,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
   const detail = inspector.locator('[data-ui="runtime-issue-evidence"]');
   await expect(inspector).toContainText(/No failed-call details|本次未返回具体失败记录/);
 
-  await expect(detail).toContainText(/Failed provider calls: 4|模型调用失败次数: 4/);
+  await expect(detail).toContainText(/Failed provider calls[\s\S]*?4|模型调用失败次数[\s\S]*?4/);
   await expect(detail).not.toContainText(/Affected requests|受影响请求数/);
   await expect(detail).toContainText(/No matching function-level data|未返回匹配的功能分组数据/);
 
@@ -263,7 +263,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
 
   await expect(inspector.locator('a[href="/admin/plugin-observability?window=336"]')).toBeVisible();
 
-  await expect(detail).toContainText(/Affected requests: 2|受影响请求数: 2/);
+  await expect(detail).toContainText(/Affected requests[\s\S]*?2|受影响请求数[\s\S]*?2/);
   await expect(page).toHaveURL(/window=72.*focus=hosted_model.failed_runs/);
 
   await page.getByRole('button', { name: /Usage records missing|计量记录缺失/ }).click();

@@ -457,21 +457,24 @@ export default function AdminTroubleshootingPage() {
                 />
               )}
               {selectedIssue ? (
+                <>
+                <div aria-hidden="true" className="mx-3 -mb-3 h-3 w-0.5 bg-slate-900 dark:bg-slate-300" />
                 <section
                   id="runtime-diagnostic-inspector"
                   data-ui="runtime-diagnostic-inspector"
                   aria-label={issueTitle(selectedIssue, t)}
-                  className="mx-3 mb-3 rounded-r-lg border-l-2 border-slate-900 bg-slate-50/75 p-4 dark:border-slate-300 dark:bg-slate-900/40"
+                  className="mx-3 mb-3 flex gap-3 rounded-r-lg bg-slate-50/75 p-4 dark:bg-slate-900/40"
                 >
-                <div className="space-y-3">
+                <div aria-hidden="true" className="w-0.5 shrink-0 self-stretch bg-slate-900 dark:bg-slate-300" />
+                <div className="min-w-0 flex-1 space-y-3">
                   <section data-ui="runtime-inspector-summary">
                     <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                       {t('admin.troubleshooting.next_action', {}, 'Next action')}: <span className="font-semibold text-slate-800 dark:text-slate-200">{issueAction(selectedIssue, t)}</span>
                     </p>
                   </section>
 
-                  <div className="flex items-center gap-1">
-                  <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="grid min-w-0 flex-1 grid-cols-4 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-end justify-between gap-1">
+                  <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="flex min-w-0 items-end gap-1 border-b border-slate-200 dark:border-slate-800">
                       {([
                         ['breakdown', 'admin.troubleshooting.open_evidence', 'Breakdown by function'],
                         ['runs', 'admin.troubleshooting.run_evidence_title', 'Affected run evidence'],
@@ -484,7 +487,7 @@ export default function AdminTroubleshootingPage() {
                           role="tab"
                           aria-selected={inspectorTab === value}
                           onClick={() => setInspectorTab(value)}
-                          className={`-mb-px whitespace-nowrap border-b-2 px-2 py-2 text-center text-sm font-semibold transition ${inspectorTab === value ? 'border-slate-900 text-slate-900 dark:border-slate-200 dark:text-slate-100' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
+                          className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold transition ${inspectorTab === value ? 'border-slate-900 text-slate-900 dark:border-slate-200 dark:text-slate-100' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white'}`}
                         >
                           {t(key, {}, fallback)}
                         </button>
@@ -493,7 +496,7 @@ export default function AdminTroubleshootingPage() {
                   <button
                     type="button"
                     aria-label={t('common.close', {}, 'Close')}
-                    className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-base font-semibold text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white"
+                    className="mb-1.5 inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-500 dark:hover:bg-slate-900 dark:hover:text-white"
                     onClick={() => updateUrl({ focus: null })}
                   >
                     <span aria-hidden="true">×</span>
@@ -501,10 +504,14 @@ export default function AdminTroubleshootingPage() {
                   </div>
                 <div hidden={inspectorTab !== 'breakdown'}>
                 <section key={selectedIssue.code} data-ui="runtime-issue-evidence">
-                  <h3 className="pb-1 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
-                  {breakdownMetric ? <p className="pb-2 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.breakdown_sort_note', { metric: breakdownMetric.label }, 'Sorted by the metric relevant to this issue: {{metric}}.')}</p> : null}
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-2">
+                    <h3 className="text-sm font-semibold">
+                      {t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}
+                      <span className="font-normal text-slate-500 dark:text-slate-400"> · {t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_count' : 'admin.troubleshooting.affected_runs', {}, 'Affected requests')} {formatNumber(selectedIssue.count)}</span>
+                    </h3>
+                    {breakdownMetric ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.breakdown_sort_note', { metric: breakdownMetric.label }, 'Sorted by the metric relevant to this issue: {{metric}}.')}</p> : null}
+                  </div>
                   <div className="space-y-3">
-                    <p className="text-sm">{t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_count' : 'admin.troubleshooting.affected_runs', {}, 'Affected requests')}: {formatNumber(selectedIssue.count)}</p>
                     {sortedGroups.length ? <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}>
                         <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
@@ -621,9 +628,10 @@ export default function AdminTroubleshootingPage() {
                     {trendPanel}
                   </>
                 )) : null}
-                    <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
+                    <details className="border-t border-slate-200 pt-3 text-slate-700 dark:border-slate-800 dark:text-slate-300"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
                   </div>
               </section>
+                </>
           ) : null}
             </AdminDataTableFrame>
 
