@@ -1177,17 +1177,17 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
         run: pnpm --dir frontend exec playwright install --with-deps chromium
 
+      # The admin operator-path spec runs in full: title-filter selection hid
+      # return-context link drift from CI for seven weeks until #1020.
+      # The portal spec stays title-filtered for runtime; the CI efficiency
+      # contract keeps every grep alternative matched to a real test title.
       - name: Critical frontend paths
         if: needs.classify.outputs.frontend_e2e_required == 'true'
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
-        run: >-
-          node scripts/run-cloud-frontend-playwright.js
-          test -c playwright.config.ts
-          tests/e2e/admin-operator-path.spec.ts
-          tests/e2e/portal-workspace-path.spec.ts
-          --grep
-          'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
+        run: |
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-workspace-path.spec.ts --grep 'portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
 
       - name: Unchanged frontend acknowledgement
         if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'
