@@ -120,10 +120,14 @@ page:
 1. one compact scope, time-window control, and independently fresh remote
    sources;
 2. one explicit runtime conclusion before the evidence surfaces;
-3. one bounded semantic anomaly queue with severity, issue, scope, count, and
-   one inspect action;
+3. one bounded anomaly queue rendered as an issue-card grid — three cards
+   per row on PC, each card carrying the severity badge, count, scope plus
+   owner, and two-line guidance, with the whole card acting as the select
+   action;
 4. one contextual inspector for evidence code, affected runs, scope, and the
-   next diagnostic step;
+   next diagnostic step, nested inside the queue frame as an indented
+   detail panel (left rule plus tinted surface) rather than a second
+   standalone card;
 5. one compact quality summary that keeps sample sufficiency separate from
    the presence or absence of a review candidate;
 6. low-frequency quality detail, evidence lanes, and runtime guidance behind
@@ -147,7 +151,10 @@ per-route exception:
   padded header card, plus the shared `BackofficePageStack` compact
   spacing;
 - one bounded KPI tile row above the evidence queue and 13px queue row
-  type across the full content width;
+  type across the full content width; the reference route renders its
+  anomaly queue as a three-per-row issue-card grid (contrast-ring
+  selection) whose inspector nests inside the queue frame as an indented
+  detail panel;
 - a window trend panel with a chart/table toggle fed by the telemetry
   usage timeline — standalone under the KPI row when no anomaly is
   selected, and the inspector's fourth tab once one is; the tab row is

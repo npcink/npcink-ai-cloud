@@ -91,7 +91,7 @@ for (const [marker, message] of [
   [/searchParams\.get\('focus'\)/, 'the focused anomaly stays URL-addressable'],
   [/recent_minutes: String\(windowHours \* 60\)/, 'telemetry requests stay derived from the URL window'],
   [/`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`/, 'the page consumes the governed runtime telemetry route'],
-  [/data-ui="runtime-diagnostic-table"/, 'anomalies render through the semantic queue table'],
+  [/data-ui="runtime-diagnostic-issue-grid"/, 'anomalies render through the compact issue-card grid'],
   [/data-ui="runtime-data-integrity"/, 'the record-completeness caveat stays attached to the coverage tiles'],
   [/data-ui="runtime-diagnostic-metrics"/, 'the KPI tile row stays part of the diagnostics tier'],
   [/id="runtime-diagnostic-inspector"/, 'the selected anomaly keeps a dedicated inspector region'],
@@ -102,12 +102,8 @@ for (const [marker, message] of [
   assert.match(pageSource, marker, `Runtime diagnostics: ${message}`);
 }
 
-const queueTableSource = pageSource.slice(
-  pageSource.indexOf('data-ui="runtime-diagnostic-table"'),
-  pageSource.indexOf('</table>', pageSource.indexOf('data-ui="runtime-diagnostic-table"'))
-);
 assert.doesNotMatch(
-  queueTableSource,
+  pageSource,
   /admin\.troubleshooting\.column_code/,
   'Low-frequency evidence codes must stay out of the primary anomaly queue'
 );

@@ -239,6 +239,21 @@ h4,
   color: #e2e8f0;
 }
 
+/* The diagnostic queue renders issue cards as buttons, not links, so the
+   hover ring needs its own selector; selection keeps the tier's
+   contrast-based rule (2px ring) instead of a blue fill. */
+.admin-tier-compact button.admin-tier-card:hover {
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.22), 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+.admin-tier-compact [data-ui="runtime-diagnostic-issue"][aria-expanded="true"] {
+  box-shadow: 0 0 0 2px #0f172a, 0 1px 2px 0 rgb(15 23 42 / 0.05);
+}
+
+.dark .admin-tier-compact [data-ui="runtime-diagnostic-issue"][aria-expanded="true"] {
+  box-shadow: 0 0 0 2px #e2e8f0, 0 1px 2px 0 rgb(0 0 0 / 0.4);
+}
+
 @media (min-width: 1024px) {
   .admin-shell-content {
     padding-left: var(--admin-sidebar-expanded);

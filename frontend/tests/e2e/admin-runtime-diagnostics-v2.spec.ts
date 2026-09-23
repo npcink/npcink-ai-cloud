@@ -78,10 +78,11 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await trend.getByRole('button', { name: /^表格$|^Table$/ }).click();
   await expect(trend.getByRole('table')).toBeVisible();
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
-  const anomalyTable = page.locator('[data-ui="runtime-diagnostic-table"]');
-  await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toHaveCount(0);
+  const issueGrid = page.locator('[data-ui="runtime-diagnostic-issue-grid"]');
+  await expect(issueGrid).toBeVisible();
+  await expect(issueGrid.getByRole('columnheader', { name: /Severity|严重度/i })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(anomalyTable).toContainText(/1 runs|1 次运行/);
+  await expect(issueGrid).toContainText(/1 runs|1 次运行/);
   await testInfo.attach('runtime-diagnostics-ready', { body: await page.screenshot({ path: testInfo.outputPath('runtime-diagnostics-ready.png') }), contentType: 'image/png' });
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
   await expect(qualityPanel).not.toHaveAttribute('open', '');
@@ -89,7 +90,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const integrity = page.locator('[data-ui="runtime-data-integrity"]').first();
   expect(await integrity.getAttribute('title')).toMatch(/not request success|不代表请求成功率/i);
   await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Call records missing|调用记录缺失/i);
-  const inspect = anomalyTable.getByRole('button');
+  const inspect = issueGrid.getByRole('button');
   await inspect.click();
   const inspector = page.locator('#runtime-diagnostic-inspector');
   await expect(inspector).toBeVisible();
