@@ -492,6 +492,15 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "--diff-filter=ACMR " not in source
     assert "select-pr-backend-tests.py" in source
     assert "select-pr-contract-tests.py" in source
+    # service.py route changes must pull in the cross-module observation window
+    # contract tests: #1012 widened the window limits, the impacted selection
+    # missed these two files, and the deterministic failures only surfaced on
+    # full master push runs (#1023).
+    assert '"tests/api/test_admin_observation_windows.py"' in selector
+    assert '"tests/api/test_plugin_event_history.py"' in selector
+    service_mapping = selector.split('"app/api/routes/service.py"', 1)[1].split("),", 1)[0]
+    assert "test_admin_observation_windows.py" in service_mapping
+    assert "test_plugin_event_history.py" in service_mapping
     assert "selected contract lanes cover contract impacts" in source
     assert "GLOBAL_APP_SCAN_CONTRACTS" in contract_selector
     assert "non-ordinary backend path requires all contracts" in contract_selector
