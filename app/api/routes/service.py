@@ -153,6 +153,7 @@ def _build_admin_overview_operator_projection(
     guard = _dict_value(runtime.get("guard"))
     telemetry = _dict_value(overview.get("runtime_telemetry"))
     telemetry_summary = _dict_value(telemetry.get("alert_summary"))
+    provider_budget = _dict_value(overview.get("provider_budget"))
     counts = _dict_value(overview.get("counts"))
     expiring = _dict_value(overview.get("expiring_subscriptions"))
     attention_subscriptions = _dict_list(overview.get("attention_subscriptions"))
@@ -184,6 +185,11 @@ def _build_admin_overview_operator_projection(
     telemetry_alert_count = max(
         0,
         _coerce_int(telemetry_summary.get("alert_count"), default=len(telemetry_alerts)),
+    )
+    provider_budget_status = str(provider_budget.get("status") or "disabled").strip().lower()
+    provider_budget_items = _dict_list(provider_budget.get("items"))
+    provider_budget_warning_count = sum(
+        1 for item in provider_budget_items if bool(item.get("warning"))
     )
 
     watch_items: list[tuple[int, dict[str, object]]] = []
@@ -249,6 +255,23 @@ def _build_admin_overview_operator_projection(
             )
         )
 
+    if provider_budget_status in {"exceeded", "warning"}:
+        watch_items.append(
+            (
+                12 if provider_budget_status == "exceeded" else 32,
+                {
+                    "code": "provider_budget_pressure",
+                    "scope": "runtime.provider_budget",
+                    "severity": "action_needed" if provider_budget_status == "exceeded" else "warn",
+                    "value": max(provider_budget_warning_count, 1),
+                    "detail_code": "provider_budget_exceeded"
+                    if provider_budget_status == "exceeded"
+                    else "provider_budget_warning",
+                    "detail_args": {},
+                },
+            )
+        )
+
     if guard_events > 0:
         is_hot = guard_events >= 25
         watch_items.append(
@@ -309,12 +332,17 @@ def _build_admin_overview_operator_projection(
     elif resolved_readiness_status == "unknown":
         status = "warning"
         conclusion_code = "operational_readiness_unknown"
-    elif callback_failed > 0 or telemetry_status == "error":
+    elif callback_failed > 0 or telemetry_status == "error" or provider_budget_status == "exceeded":
         status = "error"
-        conclusion_code = "runtime_error"
+        conclusion_code = (
+            "provider_budget_exceeded"
+            if provider_budget_status == "exceeded"
+            else "runtime_error"
+        )
     elif (
         attention_subscriptions
         or telemetry_status == "warning"
+        or provider_budget_status == "warning"
         or expiring_in_7_days > 0
         or guard_events > 0
         or callback_pending > 0
@@ -340,6 +368,11 @@ def _build_admin_overview_operator_projection(
         primary_action = {
             "kind": "runtime_telemetry",
             "href": "/admin/troubleshooting",
+        }
+    elif first_watch_code == "provider_budget_pressure":
+        primary_action = {
+            "kind": "provider_budget",
+            "href": "/admin/ai-resources",
         }
     elif first_watch_scope.startswith(("runtime.", "request.")):
         primary_action = {

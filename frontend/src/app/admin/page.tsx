@@ -121,7 +121,7 @@ interface AdminOverview {
       failureScopes: string[];
     };
     primaryAction: {
-      kind: 'readiness' | 'runtime_telemetry' | 'coverage' | 'accounts';
+      kind: 'readiness' | 'runtime_telemetry' | 'provider_budget' | 'coverage' | 'accounts';
       href: string;
     };
     followUpFocus: 'runtime' | 'commercial';
@@ -150,6 +150,7 @@ function normalizeOverview(raw: any): AdminOverview {
   const operatorPrimaryActionKind: AdminOverview['operatorProjection']['primaryAction']['kind'] =
     operatorPrimaryAction.kind === 'readiness' ||
     operatorPrimaryAction.kind === 'runtime_telemetry' ||
+    operatorPrimaryAction.kind === 'provider_budget' ||
     operatorPrimaryAction.kind === 'coverage' ||
     operatorPrimaryAction.kind === 'accounts'
       ? operatorPrimaryAction.kind
@@ -157,6 +158,7 @@ function normalizeOverview(raw: any): AdminOverview {
   const operatorPrimaryActionFallbacks = {
     readiness: '/admin/troubleshooting',
     runtime_telemetry: '/admin/troubleshooting',
+    provider_budget: '/admin/ai-resources',
     coverage: '/admin/coverage',
     accounts: '/admin/accounts',
   } as const;
@@ -518,6 +520,19 @@ function AdminOverviewContent() {
               ),
           };
         }
+        case 'provider_budget_pressure':
+          return {
+            title: t('admin.watch_provider_budget_title', {}, 'Provider budget needs review'),
+            reason: t(
+              item.detailCode === 'provider_budget_exceeded'
+                ? 'admin.watch_provider_budget_exceeded_reason'
+                : 'admin.watch_provider_budget_warning_reason',
+              {},
+              item.detailCode === 'provider_budget_exceeded'
+                ? 'A provider account spend limit has been reached; new dispatches are fail-closed.'
+                : 'A provider account spend budget is near its warning threshold.'
+            ),
+          };
         default:
           return {
             title: item.code || t('common.unknown'),
@@ -643,6 +658,8 @@ function AdminOverviewContent() {
       ? t('admin.home_primary_action_readiness', {}, 'Inspect readiness failures')
     : overview.operatorProjection.primaryAction.kind === 'runtime_telemetry'
       ? t('admin.home_primary_action_runtime_telemetry', {}, 'Inspect runtime telemetry')
+      : overview.operatorProjection.primaryAction.kind === 'provider_budget'
+      ? t('admin.home_primary_action_provider_budget', {}, 'Review provider budget')
       : overview.operatorProjection.primaryAction.kind === 'coverage'
       ? t('admin.home_primary_action_coverage', {}, 'Review service status')
       : t('admin.home_primary_action_accounts', {}, 'Review customers');

@@ -117,6 +117,39 @@ def test_admin_overview_projection_routes_commercial_warning_to_coverage() -> No
     ]
 
 
+def test_admin_overview_projection_surfaces_provider_budget_pressure() -> None:
+    overview = _overview()
+    overview["provider_budget"] = {
+        "status": "warning",
+        "items": [{"warning": True}],
+    }
+
+    warning = service_routes._build_admin_overview_operator_projection(overview)
+
+    assert warning["status"] == "warning"
+    assert warning["conclusion_code"] == "warning"
+    assert warning["primary_action"] == {
+        "kind": "provider_budget",
+        "href": "/admin/ai-resources",
+    }
+    assert warning["watch_items"] == [
+        {
+            "code": "provider_budget_pressure",
+            "scope": "runtime.provider_budget",
+            "severity": "warn",
+            "value": 1,
+            "detail_code": "provider_budget_warning",
+            "detail_args": {},
+        }
+    ]
+
+    overview["provider_budget"] = {"status": "exceeded", "items": [{"warning": True}]}
+    exceeded = service_routes._build_admin_overview_operator_projection(overview)
+    assert exceeded["status"] == "error"
+    assert exceeded["conclusion_code"] == "provider_budget_exceeded"
+    assert exceeded["watch_items"][0]["detail_code"] == "provider_budget_exceeded"
+
+
 def test_admin_overview_projection_keeps_nominal_and_inactive_fallbacks_distinct() -> None:
     nominal = service_routes._build_admin_overview_operator_projection(_overview())
     inactive_overview = deepcopy(_overview())

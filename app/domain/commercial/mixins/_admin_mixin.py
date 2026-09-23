@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from app.adapters.repositories.commercial_access_repository import CommercialAccessRepository
 from app.adapters.repositories.commercial_account_site_repository import (
     CommercialAccountSiteRepository,
@@ -60,6 +62,8 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
+    ProviderBudgetCounter,
+    ServiceSetting,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.credits import (
@@ -367,6 +371,68 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             usage_summary = usage_repository.summarize_usage_meter_events_for_admin(
                 since=usage_since
             )
+            provider_budget_setting = session.get(
+                ServiceSetting,
+                "provider_account_spend_budget",
+            )
+            provider_budget_config = (
+                provider_budget_setting.config_json
+                if provider_budget_setting is not None
+                and isinstance(provider_budget_setting.config_json, dict)
+                else {}
+            )
+            try:
+                provider_budget_warning_ratio = min(
+                    1.0,
+                    max(0.01, float(provider_budget_config.get("warning_ratio") or 0.8)),
+                )
+            except (TypeError, ValueError):
+                provider_budget_warning_ratio = 0.8
+            provider_budget_counters = list(
+                session.scalars(
+                    select(ProviderBudgetCounter).order_by(
+                        ProviderBudgetCounter.provider_id.asc(),
+                        ProviderBudgetCounter.period_kind.asc(),
+                    )
+                )
+            )
+            provider_budget_items = []
+            for counter in provider_budget_counters:
+                limit = float(counter.limit_cost_usd or 0.0)
+                reserved = float(counter.reserved_cost_usd or 0.0)
+                ratio = reserved / max(limit, 1e-9) if limit > 0 else 1.0
+                provider_budget_items.append(
+                    {
+                        "provider_id": counter.provider_id,
+                        "account_class": counter.account_class,
+                        "period_kind": counter.period_kind,
+                        "period_start_at": self._serialize_datetime(counter.period_start_at),
+                        "period_end_at": self._serialize_datetime(counter.period_end_at),
+                        "limit_cost_usd": round(limit, 6),
+                        "reserved_cost_usd": round(reserved, 6),
+                        "utilization_ratio": round(ratio, 6),
+                        "warning": ratio >= provider_budget_warning_ratio,
+                        "exceeded": ratio >= 1.0,
+                        "warning_emitted": bool(counter.warning_emitted),
+                    }
+                )
+            provider_budget_status = "disabled"
+            if provider_budget_setting is not None and provider_budget_setting.enabled:
+                provider_budget_status = "ok"
+                if any(item["exceeded"] for item in provider_budget_items):
+                    provider_budget_status = "exceeded"
+                elif any(item["warning"] for item in provider_budget_items):
+                    provider_budget_status = "warning"
+            provider_budget_projection = {
+                "status": provider_budget_status,
+                "warning_ratio": provider_budget_warning_ratio,
+                "configured_provider_count": len(
+                    provider_budget_config.get("providers", {})
+                    if isinstance(provider_budget_config.get("providers"), dict)
+                    else {}
+                ),
+                "items": provider_budget_items,
+            }
             expiring_subscriptions = subscription_repository.list_subscriptions(
                 statuses=active_subscription_statuses,
                 current_period_end_before=now + timedelta(days=30),
@@ -486,6 +552,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "event_count": usage_event_count,
                 "totals": usage_totals if isinstance(usage_totals, dict) else {},
             },
+            "provider_budget": provider_budget_projection,
             "recent_audit_summary": {
                 "window_minutes": max(1, audit_window_minutes),
                 "items": recent_audit,
