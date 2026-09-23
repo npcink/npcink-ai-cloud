@@ -443,11 +443,14 @@ export default function AdminTroubleshootingPage() {
               </div>
               <div className="mt-3 space-y-4">
                 <section data-ui="runtime-inspector-summary" className="border-b border-slate-200 pb-3 dark:border-slate-800">
-                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                    <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</dt><dd className="font-semibold">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</dd></div>
-                    <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.owner_label', {}, 'Recommended owner')}</dt><dd className="font-semibold">{issueOwner(selectedIssue, t)}</dd></div>
-                    <div><dt className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.next_action', {}, 'Next action')}</dt><dd className="font-semibold">{issueAction(selectedIssue, t)}</dd></div>
-                  </dl>
+                  <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    {t('admin.troubleshooting.column_scope', {}, 'Affected scope')} <span className="font-semibold text-slate-800 dark:text-slate-200">{scopeLabel(selectedIssue.capabilities, t)} · {issueCount(selectedIssue, t)}</span>
+                    {' · '}
+                    {t('admin.troubleshooting.owner_label', {}, 'Recommended owner')} <span className="font-semibold text-slate-800 dark:text-slate-200">{issueOwner(selectedIssue, t)}</span>
+                  </p>
+                  <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    {t('admin.troubleshooting.next_action', {}, 'Next action')}: <span className="font-semibold text-slate-800 dark:text-slate-200">{issueAction(selectedIssue, t)}</span>
+                  </p>
                 </section>
 
                 <div role="tablist" aria-label={issueTitle(selectedIssue, t)} className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
