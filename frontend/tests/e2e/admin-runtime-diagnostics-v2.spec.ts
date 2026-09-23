@@ -98,6 +98,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const issueTrend = inspector.locator('[data-ui="runtime-issue-trend"]');
   await expect(issueTrend).toBeVisible();
   await expect(issueTrend).toContainText(/Call records missing|调用记录缺失/i);
+  await expect(issueTrend.getByRole('columnheader', { name: /Call records missing|调用记录缺失/i })).toBeVisible();
   await issueTrend.getByRole('button', { name: /^图表$|^Chart$/ }).click();
   await expect(issueTrend.locator('canvas').first()).toBeVisible();
   await issueTrend.getByRole('button', { name: /^表格$|^Table$/ }).click();

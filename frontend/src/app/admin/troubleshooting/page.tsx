@@ -184,7 +184,6 @@ export default function AdminTroubleshootingPage() {
       : t('admin.troubleshooting.conclusion_healthy', {}, 'No monitored anomalies found in this period.');
 
   const failedTotal = data?.capabilityGroups.reduce((total, group) => total + group.failed, 0) ?? 0;
-  const windowFailedByDay = new Map((data?.usageTimeline ?? []).map((point) => [point.day, point.failed]));
 
   const trendControls = (groupLabel: string, onDownload: () => void) => (
     <div className="flex gap-1" role="group" aria-label={groupLabel}>
@@ -241,26 +240,35 @@ export default function AdminTroubleshootingPage() {
           </section>
   ) : null;
 
-  const issueTrendPanel = data && selectedIssue && selectedIssue.dailyCounts.length ? (
+  const issueTrendIssues = issues.filter((issue) => issue.dailyCounts.length);
+  const issueTrendDays = selectedIssue?.dailyCounts.map((point) => point.day) ?? [];
+  const issueTrendCountByDay = new Map(
+    issueTrendIssues.map((issue) => [issue.code, new Map(issue.dailyCounts.map((point) => [point.day, point.count]))])
+  );
+  const issueTrendPanel = data && selectedIssue && issueTrendIssues.length ? (
     <section data-ui="runtime-issue-trend" aria-label={t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')} className="admin-tier-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)} · {t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')}</h2>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_trend_note', {}, 'Daily occurrences of this issue in the observation window. The failed-request line gives whole-window context, not issue counts.')}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_trend_note', {}, 'Every issue is one line; the bold line follows the selected issue.')}</p>
         </div>
         {trendControls(t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend'), () => {
-          const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, issue_code: selectedIssue.code, daily_counts: selectedIssue.dailyCounts }, null, 2)], { type: 'application/json' });
+          const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, selected_issue: selectedIssue.code, issues: issueTrendIssues.map((issue) => ({ code: issue.code, daily_counts: issue.dailyCounts })) }, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
-          link.href = url; link.download = `runtime-issue-trend-${selectedIssue.code}-${windowHours}h.json`; link.click();
+          link.href = url; link.download = `runtime-issue-trend-${windowHours}h.json`; link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         })}
       </div>
       <div className="mt-2">
         {trendView === 'chart' ? (
           <AnalyticsLineChart
-            data={selectedIssue.dailyCounts.map((point) => ({ label: point.day, value: point.count }))}
-            comparisonSeries={[{ name: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), values: selectedIssue.dailyCounts.map((point) => windowFailedByDay.get(point.day) ?? 0) }]}
+            data={issueTrendDays.map((day) => ({ label: day, value: 0 }))}
+            comparisonSeries={issueTrendIssues.map((issue) => ({
+              name: issueTitle(issue, t),
+              values: issueTrendDays.map((day) => issueTrendCountByDay.get(issue.code)?.get(day) ?? 0),
+              emphasis: issue.code === selectedIssue.code,
+            }))}
             yAxisLabel={t('admin.troubleshooting.issue_trend_count', {}, 'Issue occurrences')}
           />
         ) : (
@@ -268,14 +276,18 @@ export default function AdminTroubleshootingPage() {
             <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')}>
               <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
                 <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_day', {}, 'Day')}</th>
-                <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.issue_trend_count', {}, 'Issue occurrences')}</th>
-                <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
+                {issueTrendIssues.map((issue) => (
+                  <th key={issue.code} scope="col" className={`whitespace-nowrap px-2 py-2 ${issue.code === selectedIssue.code ? 'font-semibold text-slate-900 dark:text-white' : ''}`}>{issueTitle(issue, t)}</th>
+                ))}
               </tr></thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {selectedIssue.dailyCounts.map((point) => <tr key={point.day}>
-                  <td className="px-2 py-2">{point.day}</td>
-                  <td className={`px-2 py-2 ${point.count ? 'font-semibold text-amber-700 dark:text-amber-300' : ''}`}>{formatNumber(point.count)}</td>
-                  <td className="px-2 py-2">{formatNumber(windowFailedByDay.get(point.day) ?? 0)}</td>
+                {issueTrendDays.map((day) => <tr key={day}>
+                  <td className="px-2 py-2">{day}</td>
+                  {issueTrendIssues.map((issue) => {
+                    const count = issueTrendCountByDay.get(issue.code)?.get(day) ?? 0;
+                    const emphasized = issue.code === selectedIssue.code;
+                    return <td key={issue.code} className={`whitespace-nowrap px-2 py-2 ${emphasized && count ? 'font-semibold text-amber-700 dark:text-amber-300' : emphasized ? 'font-semibold text-slate-900 dark:text-white' : ''}`}>{formatNumber(count)}</td>;
+                  })}
                 </tr>)}
               </tbody>
             </table>
