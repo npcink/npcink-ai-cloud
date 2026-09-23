@@ -292,10 +292,10 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await expect(page.locator('[data-ui="subscription-queue-item"] a[href^="/admin/subscriptions/sub_mvp?"]')).toBeVisible();
 
   await page.goto('/admin/accounts');
-  await expect(page.locator(`a[href="/admin/accounts/${LONG_ACCOUNT_ID}"]`).first()).toBeVisible();
+  await expect(page.locator(`a[href^="/admin/accounts/${LONG_ACCOUNT_ID}?"]`).first()).toBeVisible();
 
   await page.goto('/admin/accounts');
-  await expect(page.locator(`a[href="/admin/accounts/${LONG_ACCOUNT_ID}"]`).first()).toBeVisible();
+  await expect(page.locator(`a[href^="/admin/accounts/${LONG_ACCOUNT_ID}?"]`).first()).toBeVisible();
   await expect(page.getByText(/Npcink AI Demo/i).first()).toBeVisible();
   await expect(page.getByText(/Pilot customer\. Confirm package before public release\./i).first()).toBeVisible();
   await expect(page.getByText(/Free Account|免费客户|免費客戶/i)).toBeVisible();
@@ -316,7 +316,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await page.getByLabel(/Operator name|运营显示名|營運顯示名/i).fill('New Customer Display');
   await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
-  await expect(page).toHaveURL(/\/admin\/accounts\/acct_new_customer_free$/);
+  await expect(page).toHaveURL(/\/admin\/accounts\/acct_new_customer_free\?return_to=%2Fadmin%2Faccounts$/);
   await expect(page.getByRole('heading', { name: /New Customer Free/i })).toBeVisible();
 
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
@@ -415,7 +415,7 @@ test('admin support and detail pages keep bounded operator hierarchy', async ({ 
   await expect(page.getByText(/Covered by paid package|付费套餐已覆盖|付費方案已覆蓋/i).first()).toBeVisible();
   await page.getByRole('tab', { name: /Sites|站点|站點/i }).click();
   await expect(page.getByRole('tab', { name: /Sites|站点|站點/i })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('a[href="/admin/sites/site_mvp"]').first()).toBeVisible();
+  await expect(page.locator('a[href^="/admin/sites/site_mvp?"]').first()).toBeVisible();
 
   await page.goto('/admin/sites/site_mvp');
   await expect(page.getByText('site_mvp').first()).toBeVisible();
