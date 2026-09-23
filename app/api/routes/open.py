@@ -141,10 +141,21 @@ async def receive_open_alipay_payment_notify(request: Request) -> Any:
     if not raw_event:
         raw_event = {str(key): str(value) for key, value in request.query_params.items()}
     try:
-        result = _get_commercial_service(request).process_payment_gateway_callback(
-            provider="alipay",
-            raw_event=raw_event,
+        service = _get_commercial_service(request)
+        is_refund_callback = any(
+            str(raw_event.get(key) or "").strip()
+            for key in ("refund_status", "refund_state", "out_refund_no", "out_biz_no")
         )
+        if is_refund_callback:
+            result = service.process_payment_gateway_refund_callback(
+                provider="alipay",
+                raw_event=raw_event,
+            )
+        else:
+            result = service.process_payment_gateway_callback(
+                provider="alipay",
+                raw_event=raw_event,
+            )
     except CommercialServiceError:
         return PlainTextResponse("fail", status_code=400)
     if result.get("status") != "succeeded":

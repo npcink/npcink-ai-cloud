@@ -17,6 +17,7 @@ from app.core.models import (
     PAYMENT_ORDER_STATUS_REFUNDED,
     PAYMENT_REFUND_STATUS_REQUESTED,
     PAYMENT_REFUND_STATUS_SUCCEEDED,
+    PAYMENT_REFUND_STATUS_UNKNOWN,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_TRIALING,
@@ -624,6 +625,120 @@ def test_verified_synchronous_refund_success_updates_entitlement_atomically(
             "refund.succeeded",
         ]
 
+    dispose_engine(database_url)
+
+
+def test_refund_gateway_unknown_status_is_persisted_for_reconciliation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("unknown-refund-order"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="unknown-refund-paid",
+        amount=199.0,
+        audit_context=_audit("unknown-refund-paid"),
+    )
+
+    def _raise_unknown(*args: object, **kwargs: object) -> PaymentGatewayRefundResult:
+        raise CommercialValidationError(
+            "service.alipay_refund_status_unknown",
+            "gateway response could not be verified",
+        )
+
+    monkeypatch.setattr(
+        "app.domain.commercial.mixins._payment_mixin.get_payment_gateway_provider",
+        lambda *args, **kwargs: type(
+            "UnknownGateway",
+            (),
+            {"create_refund": _raise_unknown},
+        )(),
+    )
+    with pytest.raises(CommercialValidationError) as error:
+        service.request_payment_refund(
+            order_id=str(order["order_id"]),
+            amount=199.0,
+            audit_context=_audit("unknown-refund-request"),
+        )
+    assert error.value.error_code == "service.alipay_refund_status_unknown"
+    with get_session(database_url) as session:
+        refund = session.scalar(select(PaymentRefund))
+        assert refund is not None
+        assert refund.status == PAYMENT_REFUND_STATUS_UNKNOWN
+        assert refund.external_refund_no == refund.refund_id
+        assert refund.metadata_json["gateway_outcome"]["status"] == "unknown"
+    dispose_engine(database_url)
+
+
+def test_refund_callback_is_amount_checked_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("callback-refund-order"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="callback-refund-paid",
+        amount=199.0,
+        audit_context=_audit("callback-refund-paid"),
+    )
+    refund = service.request_payment_refund(
+        order_id=str(order["order_id"]),
+        amount=199.0,
+        audit_context=_audit("callback-refund-request"),
+    )
+
+    with pytest.raises(CommercialValidationError) as mismatch:
+        service.process_payment_gateway_refund_callback(
+            provider="alipay",
+            raw_event={
+                "out_biz_no": refund["refund_id"],
+                "refund_status": "REFUND_SUCCESS",
+                "refund_fee": "198.99",
+                "notify_id": "callback-refund-mismatch",
+            },
+        )
+    assert mismatch.value.error_code == "service.payment_refund_amount_mismatch"
+
+    event = {
+        "out_biz_no": refund["refund_id"],
+        "refund_status": "REFUND_SUCCESS",
+        "refund_fee": "199.00",
+        "trade_no": "provider-refund-1",
+        "notify_id": "callback-refund-success",
+    }
+    first = service.process_payment_gateway_refund_callback(
+        provider="alipay",
+        raw_event=event,
+    )
+    replay = service.process_payment_gateway_refund_callback(
+        provider="alipay",
+        raw_event=event,
+    )
+    assert first["status"] == replay["status"] == "succeeded"
+    with get_session(database_url) as session:
+        assert len(list(session.scalars(select(PaymentEvent)))) == 2
+        refund_record = session.get(PaymentRefund, str(refund["refund_id"]))
+        assert refund_record is not None
+        assert refund_record.status == PAYMENT_REFUND_STATUS_SUCCEEDED
     dispose_engine(database_url)
 
 

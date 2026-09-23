@@ -124,6 +124,7 @@ PAYMENT_ORDER_STATUS_CANCELED = "canceled"
 PAYMENT_ORDER_STATUS_REFUNDED = "refunded"
 
 PAYMENT_REFUND_STATUS_REQUESTED = "requested"
+PAYMENT_REFUND_STATUS_UNKNOWN = "unknown"
 PAYMENT_REFUND_STATUS_SUCCEEDED = "succeeded"
 PAYMENT_REFUND_STATUS_FAILED = "failed"
 
@@ -1624,6 +1625,58 @@ class ProviderCallRecord(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+class ProviderBudgetCounter(Base):
+    """Atomic reserved spend for one provider/account-class period."""
+
+    __tablename__ = "provider_budget_counters"
+
+    scope_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(64), index=True)
+    account_class: Mapped[str] = mapped_column(String(32), index=True)
+    period_kind: Mapped[str] = mapped_column(String(16), index=True)
+    period_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    period_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    limit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    reserved_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    warning_emitted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ProviderBudgetClaim(Base):
+    """Idempotent reservation for one provider dispatch attempt."""
+
+    __tablename__ = "provider_budget_claims"
+    __table_args__ = (
+        UniqueConstraint("dispatch_key", name="uq_provider_budget_claims_dispatch"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    dispatch_key: Mapped[str] = mapped_column(String(255), index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), index=True)
+    run_id: Mapped[str] = mapped_column(String(191), index=True)
+    account_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    provider_id: Mapped[str] = mapped_column(String(64), index=True)
+    account_class: Mapped[str] = mapped_column(String(32), index=True)
+    period_kind: Mapped[str] = mapped_column(String(16), index=True)
+    reserved_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    actual_cost_usd: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(32), default="claimed", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class UsageMeterEvent(Base):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from typing import cast
 
 from redis.asyncio import Redis
 
@@ -45,8 +47,33 @@ class CloudServices:
         }
 
     async def get_ready_report(self) -> ReadyReport:
-        database_ok, database_detail = check_database_connection(self.settings.database_url)
-        redis_ok, redis_detail = await self._check_redis_connection()
+        database_check = asyncio.wait_for(
+            asyncio.to_thread(
+                check_database_connection,
+                self.settings.database_url,
+            ),
+            timeout=float(self.settings.database_connect_timeout_seconds),
+        )
+        redis_check = self._check_redis_connection()
+        database_result: object
+        redis_result: object
+        database_result, redis_result = await asyncio.gather(
+            database_check,
+            redis_check,
+            return_exceptions=True,
+        )
+        if isinstance(database_result, asyncio.TimeoutError):
+            database_ok, database_detail = False, "database readiness check timed out"
+        elif isinstance(database_result, Exception):
+            database_ok, database_detail = False, str(database_result)
+        else:
+            database_ok, database_detail = cast(
+                tuple[bool, str], database_result
+            )
+        if isinstance(redis_result, Exception):
+            redis_ok, redis_detail = False, str(redis_result)
+        else:
+            redis_ok, redis_detail = cast(tuple[bool, str], redis_result)
 
         return ReadyReport(
             checks={
@@ -63,7 +90,10 @@ class CloudServices:
         client = Redis.from_url(self.settings.redis_url)
 
         try:
-            await client.ping()
+            await asyncio.wait_for(
+                client.ping(),
+                timeout=float(self.settings.database_connect_timeout_seconds),
+            )
             return True, "redis is reachable"
         except Exception as error:  # pragma: no cover - redis client errors vary by driver/runtime.
             return False, str(error)

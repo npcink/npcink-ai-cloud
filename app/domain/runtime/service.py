@@ -152,6 +152,7 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
     ProviderOutputDecision,
@@ -326,6 +327,7 @@ class RuntimeService:
             input_preprocessor=self._preprocess_provider_input,
             output_preparer=self._prepare_provider_output,
             output_finalizer=self._finalize_provider_output,
+            budget_guard=ProviderBudgetService(),
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
@@ -1363,6 +1365,7 @@ class RuntimeService:
                     ).limit(10000)
                 )
             )
+            provider_call_pairs = [(row[0], row[1]) for row in provider_call_rows]
 
             meter_statement = select(UsageMeterEvent).where(
                 UsageMeterEvent.created_at >= recent_since
@@ -1531,7 +1534,7 @@ class RuntimeService:
         )
         issue_daily_counts = self._build_hosted_governance_issue_daily_counts(
             runs=runs,
-            provider_call_rows=provider_call_rows,
+            provider_call_rows=provider_call_pairs,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,

@@ -19,6 +19,9 @@ from app.adapters.providers.compatibility import assess_context_budget
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.error_taxonomy import get_error_taxonomy
 from app.core.models import ProviderCallRecord, RunRecord
+from app.domain.runtime.provider_budget import (
+    ProviderBudgetClaimReceipt,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +37,7 @@ class ProviderCallEvidenceCommand:
     retry_count: int
     fallback_used: bool
     error_code: str | None = None
+    budget_claim_ids: tuple[str, ...] = ()
 
 
 class ProviderUsageRecorder(Protocol):
@@ -44,6 +48,26 @@ class ProviderUsageRecorder(Protocol):
         run: RunRecord,
         provider_call: ProviderCallRecord,
         usage_context: dict[str, object] | None = None,
+    ) -> None: ...
+
+
+class ProviderBudgetGuard(Protocol):
+    def claim_before_dispatch(
+        self,
+        *,
+        session: Session,
+        run: RunRecord,
+        provider_id: str,
+        model_id: str,
+        request: ProviderExecutionRequest,
+    ) -> ProviderBudgetClaimReceipt | None: ...
+
+    def reconcile(
+        self,
+        *,
+        session: Session,
+        claim_ids: tuple[str, ...],
+        actual_cost_usd: float | None,
     ) -> None: ...
 
 
@@ -155,6 +179,7 @@ class RuntimeProviderExecutionService:
         input_preprocessor: ProviderInputPreprocessor | None = None,
         output_preparer: ProviderOutputPreparer | None = None,
         output_finalizer: ProviderOutputFinalizer | None = None,
+        budget_guard: ProviderBudgetGuard | None = None,
     ) -> None:
         self.usage_recorder = usage_recorder
         self.providers = providers or {}
@@ -162,6 +187,7 @@ class RuntimeProviderExecutionService:
         self.input_preprocessor = input_preprocessor
         self.output_preparer = output_preparer
         self.output_finalizer = output_finalizer
+        self.budget_guard = budget_guard
 
     @staticmethod
     def execute_provider(
@@ -219,6 +245,18 @@ class RuntimeProviderExecutionService:
             provider_call=provider_call,
             usage_context=usage_context,
         )
+        if self.budget_guard is not None and command.budget_claim_ids:
+            unknown_cost = command.error_code in {
+                "provider.timeout",
+                "provider.network_error",
+                "provider.upstream_error",
+                "provider.upstream_unavailable",
+            }
+            self.budget_guard.reconcile(
+                session=repository.session,
+                claim_ids=command.budget_claim_ids,
+                actual_cost_usd=None if unknown_cost else command.cost,
+            )
         return provider_call
 
     def execute_candidate_chain(
@@ -310,6 +348,33 @@ class RuntimeProviderExecutionService:
                     price_cache_write=getattr(candidate, "price_cache_write", None),
                     retry_count=retry_count,
                 )
+                budget_claim: ProviderBudgetClaimReceipt | None = None
+                if self.budget_guard is not None:
+                    try:
+                        budget_claim = self.budget_guard.claim_before_dispatch(
+                            session=repository.session,
+                            run=run,
+                            provider_id=candidate.provider_id,
+                            model_id=candidate.model_id,
+                            request=provider_request,
+                        )
+                    except ProviderExecutionError as error:
+                        last_error_code = error.error_code
+                        last_error_message = error.message
+                        taxonomy = get_error_taxonomy(error.error_code)
+                        if allow_fallback and taxonomy.fallback_eligible:
+                            break
+                        self.run_controller.fail_run(
+                            repository,
+                            run,
+                            error_code=last_error_code,
+                            error_message=last_error_message,
+                            provider_id=candidate.provider_id,
+                            model_id=candidate.model_id,
+                            instance_id=candidate.instance_id,
+                            fallback_used=fallback_used,
+                        )
+                        return
                 preflight_usage_context: dict[str, object] | None = None
                 try:
                     preflight_usage_context = self.enforce_context_budget(
@@ -332,6 +397,7 @@ class RuntimeProviderExecutionService:
                         fallback_used=fallback_used,
                         timeout_ms=timeout_ms,
                         error=error,
+                        budget_claim_ids=budget_claim.claim_ids if budget_claim else (),
                     )
                     last_error_code = error.error_code
                     last_error_message = (
@@ -378,6 +444,7 @@ class RuntimeProviderExecutionService:
                         error_code=decision.error_code,
                         preflight_usage_context=preflight_usage_context,
                         output_usage_context=decision.usage_context,
+                        budget_claim_ids=budget_claim.claim_ids if budget_claim else (),
                     )
                     if allow_fallback:
                         break
@@ -401,6 +468,7 @@ class RuntimeProviderExecutionService:
                     fallback_used=fallback_used,
                     provider_result=provider_result,
                     preflight_usage_context=preflight_usage_context,
+                    budget_claim_ids=budget_claim.claim_ids if budget_claim else (),
                 )
                 try:
                     durable_result = self.output_finalizer(
@@ -458,6 +526,7 @@ class RuntimeProviderExecutionService:
         fallback_used: bool,
         timeout_ms: int,
         error: ProviderExecutionError,
+        budget_claim_ids: tuple[str, ...] = (),
     ) -> None:
         self.record_provider_call(
             repository=repository,
@@ -474,6 +543,7 @@ class RuntimeProviderExecutionService:
                 retry_count=retry_count,
                 fallback_used=fallback_used,
                 error_code=error.error_code,
+                budget_claim_ids=budget_claim_ids,
             ),
             usage_context=error.usage_context,
         )
@@ -490,6 +560,7 @@ class RuntimeProviderExecutionService:
         error_code: str | None = None,
         preflight_usage_context: dict[str, object] | None = None,
         output_usage_context: dict[str, object] | None = None,
+        budget_claim_ids: tuple[str, ...] = (),
     ) -> None:
         usage_context = {
             **(preflight_usage_context or {}),
@@ -511,6 +582,7 @@ class RuntimeProviderExecutionService:
                 retry_count=retry_count,
                 fallback_used=fallback_used,
                 error_code=error_code,
+                budget_claim_ids=budget_claim_ids,
             ),
             usage_context=usage_context,
         )

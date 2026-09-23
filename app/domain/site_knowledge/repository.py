@@ -450,6 +450,39 @@ class SiteKnowledgeRepository:
         ).all()
         return {str(source_type): int(count or 0) for source_type, count in rows}
 
+    def coverage_evidence(self, site_id: str) -> dict[str, Any]:
+        """Return indexed counts and only evidence-backed staleness signals.
+
+        Whole-site denominators belong to the WordPress connector.  The Cloud
+        index cannot infer them from its own rows, so this method deliberately
+        reports counts plus comparable stale rows rather than manufacturing a
+        percentage from the indexed set.
+        """
+        documents = list(
+            self.session.scalars(
+                select(SiteKnowledgeDocument).where(
+                    SiteKnowledgeDocument.site_id == site_id
+                )
+            )
+        )
+        stale_count = 0
+        comparable_count = 0
+        for document in documents:
+            modified = _parse_source_datetime(document.modified_gmt)
+            indexed = _as_utc(document.last_indexed_at)
+            if modified is None or indexed is None:
+                continue
+            comparable_count += 1
+            if modified > indexed:
+                stale_count += 1
+        return {
+            "indexed_documents": len(documents),
+            "post_type_counts": self.post_type_counts(site_id),
+            "source_type_counts": self.source_type_counts(site_id),
+            "stale_document_count": stale_count,
+            "staleness_comparable_document_count": comparable_count,
+        }
+
     def has_running_sync(self, site_id: str) -> bool:
         count = self.session.scalar(
             select(func.count())
@@ -514,3 +547,22 @@ class SiteKnowledgeRepository:
                 statement.order_by(SiteKnowledgeChunk.indexed_at.desc()).limit(max(1, limit))
             )
         )
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _parse_source_datetime(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _as_utc(parsed)

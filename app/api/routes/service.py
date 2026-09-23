@@ -2765,6 +2765,45 @@ async def mark_payment_refund_succeeded(
     )
 
 
+@router.get("/payments/refunds/{refund_id}")
+async def get_payment_refund(request: Request, refund_id: str) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    try:
+        result = await run_in_threadpool(service.get_payment_refund, refund_id=refund_id)
+    except CommercialServiceError as error:
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="payment refund loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/payments/refunds/{refund_id}/reconcile")
+async def reconcile_payment_refund(request: Request, refund_id: str) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    try:
+        result = await run_in_threadpool(
+            service.reconcile_payment_refund,
+            refund_id=refund_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="payment refund reconciliation state loaded",
+        data=result,
+        revision="m6",
+    )
+
+
 @router.post("/admin/accounts/{account_id}/subscription/cancel")
 async def cancel_account_subscription(request: Request, account_id: str) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=True)

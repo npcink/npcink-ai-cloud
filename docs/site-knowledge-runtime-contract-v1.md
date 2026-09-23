@@ -642,10 +642,15 @@ when the caller explicitly allowed a non-site-grounded fallback.
 
 ## Coverage Semantics
 
-`post_type_coverage` is MVP Cloud-seen coverage. It reports coverage for post
-types present in the Cloud index, not authoritative whole-site WordPress
-coverage. Whole-site coverage requires the WordPress side to provide source
-totals in a later contract.
+`post_type_coverage` and `source_type_coverage` are nullable ratios. Cloud
+returns a ratio only when the WordPress connector supplies an authoritative
+whole-site denominator; otherwise the value is `null`. The response always
+includes `post_type_counts`, `source_type_counts`, and
+`coverage_basis=cloud_index_counts_without_whole_site_denominator`, so an
+indexed count is never presented as complete site coverage. `has_stale_content`
+is `true` only when a comparable source `modified_gmt` is newer than the index;
+it is `null` when no comparable source timestamp exists, and the response also
+exposes both stale and comparable document counts.
 
 ## Anti-Hallucination Roadmap
 
