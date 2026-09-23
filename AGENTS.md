@@ -69,6 +69,12 @@ prompt/router/preset local truth, or WordPress write owner.
   After two consecutive failures with the same external-transfer signature,
   stop automatic retries, preserve the evidence, and either use a documented
   recovery lane or report the blocker to the operator.
+- A green GitHub Actions run is not evidence for lanes it skipped. The change
+  classifier deliberately skips irrelevant lanes, so a push-run `success` with
+  skipped backend lanes says nothing about backend health. Before diagnosing a
+  required-check failure as flaky or pre-existing, confirm that the runs being
+  compared actually executed the relevant lane; never infer master health from
+  a run that skipped it.
 - When the operator explicitly declares sessions to be running in parallel,
   follow the Three Uniques in
   `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
