@@ -872,8 +872,13 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert status_data["truth_boundaries"]["cloud_owns_local_approval"] is False
     assert status_data["coverage"]["indexed_posts"] == 1
     assert status_data["coverage"]["indexed_chunks"] >= 1
-    assert status_data["coverage"]["post_type_coverage"] == {"post": 1.0}
-    assert status_data["coverage"]["source_type_coverage"] == {"post": 1.0}
+    assert status_data["coverage"]["post_type_coverage"] == {"post": None}
+    assert status_data["coverage"]["source_type_coverage"] == {"post": None}
+    assert status_data["coverage"]["post_type_counts"] == {"post": 1}
+    assert status_data["coverage"]["source_type_counts"] == {"post": 1}
+    assert status_data["coverage"]["coverage_basis"] == (
+        "cloud_index_counts_without_whole_site_denominator"
+    )
     assert status_data["coverage"]["indexed_post_ids"] == [123]
     assert status_data["coverage"]["indexed_post_ids_requested"] == 2
 

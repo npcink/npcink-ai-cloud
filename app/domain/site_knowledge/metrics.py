@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, desc, func, select
+from sqlalchemy import case, delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_usage_repository import CommercialUsageRepository
@@ -24,6 +24,41 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+
+
+def cleanup_site_knowledge_observability(
+    database_url: str,
+    *,
+    retention_days: int,
+    batch_size: int,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Prune bounded Site Knowledge telemetry while preserving index truth."""
+    cutoff = (now or datetime.now(UTC)).astimezone(UTC) - timedelta(
+        days=max(1, int(retention_days or 1))
+    )
+    limit = max(1, int(batch_size or 1))
+    with get_session(database_url) as session:
+        deleted: dict[str, int] = {}
+        for model, timestamp_column, label in (
+            (SiteKnowledgeSearchMetric, SiteKnowledgeSearchMetric.created_at, "search_metrics"),
+            (SiteKnowledgeIndexJobMetric, SiteKnowledgeIndexJobMetric.created_at, "index_metrics"),
+            (SiteKnowledgeIndexSnapshot, SiteKnowledgeIndexSnapshot.captured_at, "snapshots"),
+        ):
+            ids = list(
+                session.scalars(
+                    select(model.id)
+                    .where(timestamp_column < cutoff)
+                    .order_by(timestamp_column.asc(), model.id.asc())
+                    .limit(limit)
+                )
+            )
+            if ids:
+                result = session.execute(delete(model).where(model.id.in_(ids)))
+                deleted[label] = int(result.rowcount or 0)
+            else:
+                deleted[label] = 0
+        return deleted
 
 
 def record_site_knowledge_run_metric(

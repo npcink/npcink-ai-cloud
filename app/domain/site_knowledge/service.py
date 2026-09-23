@@ -61,6 +61,9 @@ from app.domain.site_knowledge.media_search_quality import (
     collapse_media_search_duplicates,
     rank_media_search_results,
 )
+from app.domain.site_knowledge.recommendation_quality import (
+    apply_recommendation_quality_controls,
+)
 from app.domain.site_knowledge.related_content_search_quality import (
     rank_related_content_search_results,
 )
@@ -737,12 +740,26 @@ class SiteKnowledgeService:
         elif indexed_chunks == 0 and self.repository.latest_failed_sync(site_id) is not None:
             status = "failed"
 
+        coverage_evidence = self.repository.coverage_evidence(site_id)
+        post_type_counts = coverage_evidence["post_type_counts"]
+        source_type_counts = coverage_evidence["source_type_counts"]
+        stale_count = int(coverage_evidence["stale_document_count"])
+        comparable_count = int(
+            coverage_evidence["staleness_comparable_document_count"]
+        )
         coverage = {
             "indexed_posts": indexed_posts,
             "indexed_chunks": indexed_chunks,
             "truncated_documents": self.repository.count_truncated_documents(site_id),
             "last_sync_at": _serialize_datetime(last_sync_at),
-            "has_stale_content": False,
+            "has_stale_content": (
+                stale_count > 0 if comparable_count > 0 else None
+            ),
+            "stale_document_count": stale_count,
+            "staleness_comparable_document_count": comparable_count,
+            "coverage_basis": "cloud_index_counts_without_whole_site_denominator",
+            "post_type_counts": post_type_counts,
+            "source_type_counts": source_type_counts,
             "post_type_coverage": {},
             "source_type_coverage": {},
             "comments_enabled": bool(self.settings.site_knowledge_comments_enabled),
@@ -752,12 +769,14 @@ class SiteKnowledgeService:
             indexed_chunks=indexed_chunks,
         )
         if include_coverage:
+            # A ratio needs the WordPress-side total as denominator.  Returning
+            # null here is intentional until that manifest is supplied; the
+            # indexed counts above remain useful and auditable.
             coverage["post_type_coverage"] = {
-                post_type: 1.0 for post_type in sorted(self.repository.post_type_counts(site_id))
+                post_type: None for post_type in sorted(post_type_counts)
             }
             coverage["source_type_coverage"] = {
-                source_type: 1.0
-                for source_type in sorted(self.repository.source_type_counts(site_id))
+                source_type: None for source_type in sorted(source_type_counts)
             }
         if requested_post_ids:
             coverage["indexed_post_ids"] = self.repository.indexed_post_ids(
@@ -1205,6 +1224,16 @@ class SiteKnowledgeService:
         candidate_count = len(reranked)
         collapsed_count = 0
         duplicate_media_count = 0
+        recommendation_quality = {
+            "document_duplicates_collapsed": 0,
+            "weak_candidates_suppressed": 0,
+            "strong_or_review_candidates": 0,
+        }
+        if intent in {"internal_links", "related_content"}:
+            reranked, recommendation_quality = apply_recommendation_quality_controls(
+                reranked,
+                max_results=max_results,
+            )
         if result_granularity == "document":
             reranked, collapsed_count = _collapse_search_results_by_document(reranked)
         if intent == "media_library_search":
@@ -1223,6 +1252,7 @@ class SiteKnowledgeService:
                 "returned_count": len(returned),
                 "duplicate_chunks_collapsed": collapsed_count,
                 "duplicate_media_collapsed": duplicate_media_count,
+                "recommendation_quality": recommendation_quality,
                 "ranking_strategy": _ranking_strategy_for_intent(intent),
             },
         )

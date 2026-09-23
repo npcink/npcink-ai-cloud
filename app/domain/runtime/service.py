@@ -152,6 +152,7 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
     ProviderOutputDecision,
@@ -326,6 +327,7 @@ class RuntimeService:
             input_preprocessor=self._preprocess_provider_input,
             output_preparer=self._prepare_provider_output,
             output_finalizer=self._finalize_provider_output,
+            budget_guard=ProviderBudgetService(),
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:

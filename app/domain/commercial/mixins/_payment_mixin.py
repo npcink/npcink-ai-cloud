@@ -15,8 +15,10 @@ from app.core.models import (
     PAYMENT_ORDER_STATUS_PAID,
     PAYMENT_ORDER_STATUS_PENDING,
     PAYMENT_ORDER_STATUS_REFUNDED,
+    PAYMENT_REFUND_STATUS_FAILED,
     PAYMENT_REFUND_STATUS_REQUESTED,
     PAYMENT_REFUND_STATUS_SUCCEEDED,
+    PAYMENT_REFUND_STATUS_UNKNOWN,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_TRIALING,
@@ -37,6 +39,7 @@ from app.domain.commercial.credits import AI_CREDIT_RATE_VERSION
 from app.domain.commercial.errors import (
     CommercialConflictError,
     CommercialNotFoundError,
+    CommercialServiceError,
     CommercialValidationError,
 )
 from app.domain.commercial.mixins._audit_mixin import (
@@ -969,7 +972,12 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             committed_refund_amount = sum(
                 float(item.amount)
                 for item in repository.list_payment_refunds(order.order_id)
-                if item.status in {PAYMENT_REFUND_STATUS_REQUESTED, PAYMENT_REFUND_STATUS_SUCCEEDED}
+                if item.status
+                in {
+                    PAYMENT_REFUND_STATUS_REQUESTED,
+                    PAYMENT_REFUND_STATUS_UNKNOWN,
+                    PAYMENT_REFUND_STATUS_SUCCEEDED,
+                }
             )
             if round(committed_refund_amount + refund_amount, 6) > round(float(order.amount), 6):
                 raise CommercialValidationError(
@@ -1006,29 +1014,16 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 idempotency_key=idempotency_key,
             )
             refund_metadata = dict(metadata_json or {})
-            gateway = get_payment_gateway_provider(
-                order.provider,
-                config=self._payment_gateway_runtime_config(order.provider),
-            )
-            gateway_refund = gateway.create_refund(
-                PaymentGatewayRefundRequest(
-                    provider=order.provider,
-                    refund_id=refund_id,
-                    order_id=order.order_id,
-                    amount=refund_amount,
-                    currency=order.currency,
-                    reason=str(reason or "").strip(),
-                    metadata=refund_metadata,
-                )
-            )
-            refund_metadata["payment_gateway"] = gateway_refund.provider_payload
             refund = repository.create_payment_refund(
                 refund_id=refund_id,
                 order_id=order.order_id,
                 account_id=order.account_id,
                 subscription_id=order.subscription_id,
                 provider=order.provider,
-                external_refund_no=gateway_refund.external_refund_no,
+                # The locally generated request number is the stable provider
+                # idempotency key and remains usable when the gateway response
+                # is lost before Cloud can parse it.
+                external_refund_no=refund_id,
                 status=PAYMENT_REFUND_STATUS_REQUESTED,
                 amount=refund_amount,
                 currency=order.currency,
@@ -1042,7 +1037,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 repository=repository,
                 audit_context=audit_context,
                 event_kind="payment.refund.request",
-                outcome="succeeded",
+                outcome="requested",
                 account_id=order.account_id,
                 site_id=order.site_id,
                 subscription_id=order.subscription_id,
@@ -1052,32 +1047,104 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 scope_id=refund.refund_id,
                 payload_json=payload,
             )
-            if str(gateway_refund.provider_payload.get("refund_status") or "") == "succeeded":
-                event = self._record_payment_event_once(
-                    repository=repository,
-                    provider=refund.provider,
-                    event_kind="refund.succeeded",
-                    order_id=refund.order_id,
-                    refund_id=refund.refund_id,
-                    provider_event_id=f"{refund.provider}:refund:{refund.refund_id}",
-                    idempotency_key=f"refund-success:{refund.refund_id}",
-                    payload_json=self._sanitize_payload_dict(gateway_refund.provider_payload) or {},
-                    processed_at=now,
-                )
-                succeeded_payload = self._apply_payment_refund_succeeded_in_session(
-                    repository=repository,
-                    order=order,
-                    refund=refund,
-                    event=event,
-                    provider_refund_no=str(
-                        gateway_refund.provider_payload.get("provider_refund_no") or ""
-                    ),
-                    succeeded_at=now,
-                    audit_context=audit_context,
-                )
-                payload = cast(dict[str, object], succeeded_payload["refund"])
             session.commit()
-            return payload
+
+        # Never hold the order transaction open while contacting a gateway. The
+        # durable requested row above is the recovery anchor for every outcome.
+        gateway = get_payment_gateway_provider(
+            order.provider,
+            config=self._payment_gateway_runtime_config(order.provider),
+        )
+        try:
+            gateway_refund = gateway.create_refund(
+                PaymentGatewayRefundRequest(
+                    provider=order.provider,
+                    refund_id=refund_id,
+                    order_id=order.order_id,
+                    amount=refund_amount,
+                    currency=order.currency,
+                    reason=str(reason or "").strip(),
+                    metadata=refund_metadata,
+                )
+            )
+        except CommercialServiceError as error:
+            status = (
+                PAYMENT_REFUND_STATUS_UNKNOWN
+                if "status_unknown" in error.error_code
+                else PAYMENT_REFUND_STATUS_FAILED
+            )
+            self._record_payment_refund_gateway_outcome(
+                refund_id=refund_id,
+                status=status,
+                error_code=error.error_code,
+            )
+            raise
+        except Exception as error:
+            self._record_payment_refund_gateway_outcome(
+                refund_id=refund_id,
+                status=PAYMENT_REFUND_STATUS_UNKNOWN,
+                error_code="service.payment_refund_status_unknown",
+            )
+            raise CommercialValidationError(
+                "service.payment_refund_status_unknown",
+                "payment gateway did not return a verifiable refund result",
+            ) from error
+
+        with get_session(service.database_url) as session:
+            repository = CommercialRepository(session)
+            refund = repository.get_payment_refund(refund_id)
+            if refund is None:
+                raise CommercialNotFoundError(
+                    "service.payment_refund_not_found",
+                    f"payment refund '{refund_id}' was not found",
+                )
+            metadata = dict(refund.metadata_json or {})
+            metadata["payment_gateway"] = gateway_refund.provider_payload
+            refund.external_refund_no = (
+                str(gateway_refund.external_refund_no or "").strip() or refund.external_refund_no
+            )
+            refund.metadata_json = metadata
+            session.commit()
+
+        if str(gateway_refund.provider_payload.get("refund_status") or "") == "succeeded":
+            succeeded = self.mark_payment_refund_succeeded(
+                refund_id=refund_id,
+                provider_refund_no=str(
+                    gateway_refund.provider_payload.get("provider_refund_no") or ""
+                ),
+                provider_event_id=f"{order.provider}:refund:{refund_id}",
+                succeeded_at=now,
+                raw_event=gateway_refund.provider_payload,
+                audit_context=audit_context,
+            )
+            return cast(dict[str, object], succeeded["refund"])
+        with get_session(service.database_url) as session:
+            refund = CommercialRepository(session).get_payment_refund(refund_id)
+            return self._serialize_payment_refund(refund) if refund is not None else payload
+
+    def _record_payment_refund_gateway_outcome(
+        self,
+        *,
+        refund_id: str,
+        status: str,
+        error_code: str,
+    ) -> None:
+        service = cast(Any, self)
+        with get_session(service.database_url) as session:
+            refund = CommercialRepository(session).get_payment_refund(refund_id)
+            if refund is None:
+                return
+            refund.status = status
+            if status == PAYMENT_REFUND_STATUS_FAILED:
+                refund.failed_at = service.now_factory()
+            metadata = dict(refund.metadata_json or {})
+            metadata["gateway_outcome"] = {
+                "status": status,
+                "error_code": error_code,
+                "recorded_at": service._serialize_datetime(service.now_factory()),
+            }
+            refund.metadata_json = metadata
+            session.commit()
 
     def mark_payment_refund_succeeded(
         self,
@@ -1128,6 +1195,101 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             )
             session.commit()
             return payload
+
+    def get_payment_refund(self, *, refund_id: str) -> dict[str, object]:
+        service = cast(Any, self)
+        with get_session(service.database_url) as session:
+            refund = CommercialRepository(session).get_payment_refund(refund_id)
+            if refund is None:
+                raise CommercialNotFoundError(
+                    "service.payment_refund_not_found",
+                    f"payment refund '{refund_id}' was not found",
+                )
+            return self._serialize_payment_refund(refund)
+
+    def reconcile_payment_refund(self, *, refund_id: str) -> dict[str, object]:
+        refund = self.get_payment_refund(refund_id=refund_id)
+        status = str(refund.get("status") or "")
+        return {
+            "refund": refund,
+            "reconciliation": {
+                "required": status in {
+                    PAYMENT_REFUND_STATUS_REQUESTED,
+                    PAYMENT_REFUND_STATUS_UNKNOWN,
+                },
+                "stable_external_refund_no": str(refund.get("external_refund_no") or ""),
+                "next_action": (
+                    "query_provider_or_replay_refund_callback"
+                    if status in {PAYMENT_REFUND_STATUS_REQUESTED, PAYMENT_REFUND_STATUS_UNKNOWN}
+                    else "none"
+                ),
+            },
+        }
+
+    def process_payment_gateway_refund_callback(
+        self,
+        *,
+        provider: str,
+        raw_event: dict[str, object],
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        normalized_provider = self._normalize_payment_provider(provider)
+        gateway = get_payment_gateway_provider(
+            normalized_provider,
+            config=self._payment_gateway_runtime_config(normalized_provider),
+        )
+        callback = gateway.verify_refund_callback(dict(raw_event or {}))
+        if callback.status != "succeeded":
+            return {
+                "status": callback.status,
+                "mutation_applied": False,
+                "callback": callback.to_payload(),
+            }
+        service = cast(Any, self)
+        with get_session(service.database_url) as session:
+            repository = CommercialRepository(session)
+            refund = repository.get_payment_refund_by_provider_external_no(
+                provider=normalized_provider,
+                external_refund_no=callback.external_refund_no,
+            )
+            if refund is None:
+                raise CommercialNotFoundError(
+                    "service.payment_refund_not_found",
+                    "payment refund for provider callback was not found",
+                )
+            if callback.amount is not None and round(float(callback.amount), 6) != round(
+                float(refund.amount), 6
+            ):
+                raise CommercialValidationError(
+                    "service.payment_refund_amount_mismatch",
+                    "refund callback amount does not match the requested amount",
+                )
+            refund_id = refund.refund_id
+        callback_audit = audit_context or ServiceAuditContext(
+            trace_id=f"refund-callback:{callback.provider_event_id or callback.external_refund_no}",
+            idempotency_key=(
+                f"refund-callback:{normalized_provider}:"
+                f"{callback.provider_event_id or callback.external_refund_no}"
+            ),
+            method="POST",
+            path=f"/open/payments/{normalized_provider}/notify",
+            actor_kind="payment_gateway",
+            actor_ref=normalized_provider,
+        )
+        result = self.mark_payment_refund_succeeded(
+            refund_id=refund_id,
+            provider_refund_no=callback.provider_refund_no,
+            provider_event_id=callback.provider_event_id,
+            succeeded_at=callback.occurred_at,
+            raw_event=callback.raw_event,
+            audit_context=callback_audit,
+        )
+        return {
+            "status": "succeeded",
+            "mutation_applied": True,
+            "callback": callback.to_payload(),
+            "refund": result,
+        }
 
     def _apply_payment_refund_succeeded_in_session(
         self,
