@@ -169,6 +169,8 @@ Cloud 的服务。与 Link Whisper 式"纯本地 BYOK"的区别在于：后者�
   访问；API 延迟待实测；生成式 AI 服务与 AI 生成内容标识合规仍待确认；收款
   主体为个体工商户且真实收款已实测通过、退款未完成。见
   payment-and-domestic-readiness-note-2026-09-22.md。
+  合规待确认项的逐项核对清单（工作底稿，非法律意见）见
+  compliance-confirmation-checklist-2026-09-23.md。
 - **数据互联的安全与同意面**：服务端抓取各数据源需延续 cloud-addon outbound
   endpoint policy 的出站约束（HTTPS/DNS/大小限制，仅允许固定 provider 域名、
   拒绝环回/私网地址）；知识层的同意标准需在现有观测同意标准基础上扩展。
