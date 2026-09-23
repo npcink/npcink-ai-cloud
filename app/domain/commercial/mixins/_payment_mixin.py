@@ -1092,18 +1092,19 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
 
         with get_session(service.database_url) as session:
             repository = CommercialRepository(session)
-            refund = repository.get_payment_refund(refund_id)
-            if refund is None:
+            persisted_refund = repository.get_payment_refund(refund_id)
+            if persisted_refund is None:
                 raise CommercialNotFoundError(
                     "service.payment_refund_not_found",
                     f"payment refund '{refund_id}' was not found",
                 )
-            metadata = dict(refund.metadata_json or {})
+            metadata = dict(persisted_refund.metadata_json or {})
             metadata["payment_gateway"] = gateway_refund.provider_payload
-            refund.external_refund_no = (
-                str(gateway_refund.external_refund_no or "").strip() or refund.external_refund_no
+            persisted_refund.external_refund_no = (
+                str(gateway_refund.external_refund_no or "").strip()
+                or persisted_refund.external_refund_no
             )
-            refund.metadata_json = metadata
+            persisted_refund.metadata_json = metadata
             session.commit()
 
         if str(gateway_refund.provider_payload.get("refund_status") or "") == "succeeded":
@@ -1119,8 +1120,12 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             )
             return cast(dict[str, object], succeeded["refund"])
         with get_session(service.database_url) as session:
-            refund = CommercialRepository(session).get_payment_refund(refund_id)
-            return self._serialize_payment_refund(refund) if refund is not None else payload
+            pending_refund = CommercialRepository(session).get_payment_refund(refund_id)
+            return (
+                self._serialize_payment_refund(pending_refund)
+                if pending_refund is not None
+                else payload
+            )
 
     def _record_payment_refund_gateway_outcome(
         self,

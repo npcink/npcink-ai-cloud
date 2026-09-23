@@ -1365,6 +1365,7 @@ class RuntimeService:
                     ).limit(10000)
                 )
             )
+            provider_call_pairs = [(row[0], row[1]) for row in provider_call_rows]
 
             meter_statement = select(UsageMeterEvent).where(
                 UsageMeterEvent.created_at >= recent_since
@@ -1533,7 +1534,7 @@ class RuntimeService:
         )
         issue_daily_counts = self._build_hosted_governance_issue_daily_counts(
             runs=runs,
-            provider_call_rows=provider_call_rows,
+            provider_call_rows=provider_call_pairs,
             ai_evidence_required_run_ids=ai_evidence_required_run_ids,
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,

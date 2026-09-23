@@ -55,7 +55,7 @@ def cleanup_site_knowledge_observability(
             )
             if ids:
                 result = session.execute(delete(model).where(model.id.in_(ids)))
-                deleted[label] = int(result.rowcount or 0)
+                deleted[label] = int(getattr(result, "rowcount", 0) or 0)
             else:
                 deleted[label] = 0
         return deleted
