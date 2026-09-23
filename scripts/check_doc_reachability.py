@@ -28,6 +28,12 @@ precedent), and unassigned numbers are reported in the success line so a silent
 gap stays visible. Renumbering an ADR requires a status note in the renamed
 file, as recorded in the ``docs/README.md`` numbering status.
 
+The guard also keeps dated evidence records out of the ``docs/`` root: a
+date-stamped root record must either carry a current-month date (live working
+state) or appear in the docs README's "Dated Active-document Review" retention
+list. Older unlisted records fail the gate so the 2026-09-22 migration of 112
+root records into ``docs/history/`` does not silently regrow.
+
 This guard checks reachability and numbering only. It does not check for broken
 targets: ``docs/legacy-contracts/magick-ai-root`` intentionally preserves
 snapshots whose internal links no longer resolve, and rewriting them is out of
@@ -39,6 +45,7 @@ from __future__ import annotations
 import re
 import sys
 from collections import deque
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -149,6 +156,42 @@ def adr_gap_summary() -> str:
     )
 
 
+ROOT_DATED_NAME = re.compile(r"-(\d{4})-(\d{2})(?:-\d{2})?\.md$")
+RETENTION_HEADING = "## Dated Active-document Review"
+
+
+def retained_root_records() -> set[str]:
+    """Return filenames the docs README explicitly retains at the root."""
+
+    if not ENTRY.is_file():
+        return set()
+    section: list[str] = []
+    in_section = False
+    for line in ENTRY.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            in_section = line.startswith(RETENTION_HEADING)
+            continue
+        if in_section:
+            section.append(line)
+    return set(re.findall(r"([\w.-]+\.md)", "\n".join(section)))
+
+
+def root_dated_violations(now: tuple[int, int]) -> list[Path]:
+    """Return dated root records needing migration or explicit retention."""
+
+    retained = retained_root_records()
+    violations: list[Path] = []
+    for path in sorted(DOCS.glob("*.md")):
+        match = ROOT_DATED_NAME.search(path.name)
+        if not match or path.name in retained:
+            continue
+        year_month = (int(match.group(1)), int(match.group(2)))
+        if year_month >= now:
+            continue  # current-month records are live working state
+        violations.append(path)
+    return violations
+
+
 def main() -> int:
     tracked = {path.resolve() for path in DOCS.rglob("*.md")}
     reachable = reachable_documents()
@@ -181,10 +224,34 @@ def main() -> int:
         )
         return 1
 
+    dated_violations = root_dated_violations((date.today().year, date.today().month))
+    if dated_violations:
+        print(
+            "[error] dated evidence records at the docs/ root without a "
+            "retention entry:",
+            file=sys.stderr,
+        )
+        for path in dated_violations:
+            print(f"  {path.name}", file=sys.stderr)
+        print(
+            "Move the record into docs/history/<topic>/ with index entries, or "
+            "add an explicit entry under 'Dated Active-document Review' in "
+            "docs/README.md. Records dated within the current month are "
+            "treated as live working state.",
+            file=sys.stderr,
+        )
+        return 1
+
+    root_dated = [
+        path
+        for path in DOCS.glob("*.md")
+        if ROOT_DATED_NAME.search(path.name)
+    ]
     print(
         "[ok] documentation reachability: "
         f"{len(reachable)}/{len(tracked)} documents reachable from docs/README.md; "
-        f"{adr_gap_summary()}"
+        f"{adr_gap_summary()}; "
+        f"dated root records: {len(root_dated)} (retained or current-month)"
     )
     return 0
 

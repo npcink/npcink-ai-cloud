@@ -122,6 +122,7 @@ Use:
 ```bash
 pnpm run worktree:audit
 pnpm run worktree:audit -- --format json
+pnpm run worktree:audit -- --require-locked
 ```
 
 The audit classifies the current task, primary/locked/dirty/long-lived
@@ -130,7 +131,9 @@ text output also reconcile each readable worktree with its branch upstream,
 ahead/behind counts, patch-equivalent and unique commits against
 `origin/master`, matching GitHub pull request when available, protected-role
 markers, and a conservative `retain` or `manual_review` disposition. It never
-unlocks, removes, prunes, or changes a worktree.
+unlocks, removes, prunes, or changes a worktree. With `--require-locked`, the
+audit fails when an auxiliary `codex/*` task worktree is unlocked; sessions
+use it at closeout to prove lock discipline without changing any worktree.
 
 GitHub authentication, missing upstreams, unreadable paths, or unavailable
 `origin/master` evidence are reported as evidence gaps. An evidence gap fails
