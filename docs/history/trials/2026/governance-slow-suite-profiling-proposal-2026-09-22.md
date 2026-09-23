@@ -69,3 +69,42 @@ encryption-cutover suite alone is ~277s of one shard, so total-wall-clock
 improvements require either reducing that suite or rebalancing weights after
 any fix. Shard weights are maintained by `pnpm run ci:pytest:weights:refresh`
 and should be refreshed after any of the above changes lands.
+
+## Measurement Result and Decisions (2026-09-23)
+
+The instrumented run proposed above was executed on the authoring Mac (local
+venv, CPython 3.14.6, SQLite fixtures - `backend-pytest` in CI provisions no
+Postgres service, so the local environment matches the CI test backend):
+
+- `tests/api/test_wordpress_ai_connector_runtime.py`: 188 tests passed in
+  30.3s; slowest single test 0.41s; average 0.16s per test.
+- PBKDF2 instrumentation (one-off plugin counting `hashlib.pbkdf2_hmac`):
+  374 calls, 5.6s total, 14.9ms average - 18.5% of the local suite time.
+
+Reading: no pathological cost exists in this suite. Per-test call costs are
+uniform and small; hashing is the largest single attributable factor locally
+but spreads across 188 tests. The CI weighted numbers for this file
+(281.6s weighted, slowest node 56.4s) cannot be explained by this
+measurement: the same nodes run in 0.2-0.4s locally in the same test
+backend. The weights are mean-plus-stddev aggregations over older Actions
+runs, so variance from past flaky/slow runs is baked in and likely stale.
+
+Decisions:
+
+1. **CLOSED: PBKDF2 test-tier override.** No dominant cost to remove; CI
+   full-run wall time is already healthy; a security-adjacent settings
+   change is not justified by an 18.5% local share of a 30s suite. Reopen
+   trigger: a future full backend lane whose wall time is dominated by
+   hashing-attributable tests.
+2. **CLOSED: session-scoped schema refactor.** Local per-test overhead
+   (schema plus fixtures) averages 0.16s - nothing to reclaim locally, and
+   the CI gap is weight staleness, not schema cost.
+3. **UNCHANGED: no xdist for the encryption-cutover suite.** Its 507
+   fake-docker spawns per test remain deliberate simulation fidelity.
+4. **NEW cheap follow-up: refresh the shard weights** with
+   `pnpm run ci:pytest:weights:refresh` (reporting-only maintenance) so
+   shard balancing stops honoring stale variance from old runs.
+
+Baseline for future comparison: this file at ~30s local / 188 tests on
+CPython 3.14.6; a local run exceeding roughly 2x this, or a CI full backend
+run exceeding ~10 minutes wall, should reopen the investigation.
