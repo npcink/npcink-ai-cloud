@@ -117,3 +117,22 @@ Cloud Batch Runtime、微信支付、broad admin 面、Typecho/静态站连接�
 development lane、documentation-only、L0。基线：master `3573b900`（PR #987
 之后）。本文不改变任何现行暂缓决定；阶段 B/C 的启动以第 3、4 节出口/触发
 条件为准。回退：revert 单个合并提交。
+
+## 8. 增补（2026-09-22 计划补录）：开放前必做项 — Provider 账户级预算硬上限
+
+> 本节为 2026-09-23 对本计划的增补，补录 2026-09-21/22 战略会话已确认、但本计划
+> 发布时遗漏的缺口；上文原有条目（第 0-7 节）未改动。
+
+- **必做项：Provider 账户级预算硬上限**——账户级每日/月度 USD 硬上限、预算告警、
+  超限自动停用三层。现状与差距的逐项盘点（含文件路径证据）见
+  [provider-budget-hard-cap-inventory-2026-09-23.md](provider-budget-hard-cap-inventory-2026-09-23.md)：
+  三层在已提交 master 上均未实现，已有的只有客户侧限制（AI credits/套餐 budgets）、
+  事后成本计量与本地实验 ledger。
+- 设计依据：[ADR-055](decisions/055-provider-account-level-spend-budget.md)
+  （2026-09-22 经 PR #1007 合入，已接受、未实现）；
+  [compat-stability-payment-follow-up-handoff-2026-09-22.md](compat-stability-payment-follow-up-handoff-2026-09-22.md)
+  待办 #3 已把实现 PR 列为先于任何付费 Provider 调用授权的前置。
+- "开放前"指：外部试用者接入、阶段 B 公共内容 API 上线、正式收费任一发生之前；
+  更强的既定门槛是任何付费 Provider 调用授权之前。
+- 实现与验证门槛：L2（迁移、worker、运行时行为），focused pytest + dispatch
+  扼点合同测试 + M4 运行时证据 + 操作者 smoke；详见盘点文档第 5 节。
