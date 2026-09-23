@@ -13,6 +13,12 @@ claim、日/月计数器、幂等 dispatch key、保守未定价成本、80% war
 以及 Provider 连接测试、图像探针、Web Search、Site Knowledge、能力探测等旁路接入与
 实际成本回收。
 
+候选状态补充（2026-09-23）：M4 focused 运行又通过
+`tests/domain/test_provider_budget.py`（2/2）、`tests/domain/test_web_search_budget.py`
+（2/2）和 `tests/api/test_admin_overview_operator_projection.py`（5/5）。Admin 总览现已
+把 warning/exceeded 投影为可操作的预算压力项，并保留到 AI 资源页的主动作；这些结果仍
+属于当前分支 candidate 证据，不替代合入 `master` 后的 promotion 或操作者真实 smoke。
+
 ## 1. 缺口定义：三层防线
 
 2026-09-21/22 战略会话确认的缺口是：目前没有统一的 Provider 账户级每日/月度成本
