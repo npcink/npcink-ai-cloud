@@ -113,7 +113,7 @@ def test_history_rejects_invalid_queries_and_unauthorized_reads(tmp_path: Path) 
     _, client = _build_client(tmp_path)
     assert client.get(PATH).status_code in (401, 403)
     for query in (
-        {"window_hours": 721},
+        {"window_hours": 2161},
         {"page_size": 101},
         {"page": 0},
         {"status": "bad"},

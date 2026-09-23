@@ -69,7 +69,7 @@ def test_observation_windows_include_older_evidence_without_silent_seven_day_cla
         data = response.json()['data']
         assert data['window']['hours'] == hours
         assert (data['totals'][count] > 0) == (hours > age_days * 24)
-    for hours in (0, 721):
+    for hours in (0, 2161):
         assert client.get(
             f'/internal/service/admin/{route}?window_hours={hours}', headers=headers,
         ).status_code == 422
@@ -104,5 +104,5 @@ def test_long_runtime_window_preserves_function_scope_in_summary_and_run_evidenc
         assert 'input_json' not in runs.text
     for route in ('runtime-telemetry', 'runtime-telemetry/runs'):
         assert client.get(
-            f'/internal/service/admin/{route}?recent_minutes=43201', headers=headers,
+            f'/internal/service/admin/{route}?recent_minutes=129601', headers=headers,
         ).status_code == 422
