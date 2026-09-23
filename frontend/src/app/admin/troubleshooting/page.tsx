@@ -28,6 +28,7 @@ import {
 import {
   evidenceLanes,
   issueAction,
+  issueBreakdownMetric,
   issueCount,
   issueEvidenceGuidance,
   issueOwner,
@@ -122,6 +123,15 @@ export default function AdminTroubleshootingPage() {
   const firstIssue = issues[0];
   const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || null;
   const selectedGroups = data?.capabilityGroups.filter((group) => selectedIssue?.capabilities.includes(group.id)) || [];
+  const breakdownMetric = selectedIssue ? issueBreakdownMetric(selectedIssue, t) : null;
+  const sortedGroups = breakdownMetric
+    ? [...selectedGroups].sort((a, b) => {
+        const diff = a[breakdownMetric.metric] - b[breakdownMetric.metric];
+        return breakdownMetric.ascending ? diff : -diff;
+      })
+    : selectedGroups;
+  const breakdownEmphasis = (kind: 'providerErrors' | 'failed' | 'providerCoverage' | 'meteringCoverage') =>
+    breakdownMetric?.metric === kind ? ' font-semibold text-slate-900 dark:text-white' : '';
   useEffect(() => {
     if (!selectedIssue) {
       setRunEvidence([]);
@@ -174,22 +184,27 @@ export default function AdminTroubleshootingPage() {
       : t('admin.troubleshooting.conclusion_healthy', {}, 'No monitored anomalies found in this period.');
 
   const failedTotal = data?.capabilityGroups.reduce((total, group) => total + group.failed, 0) ?? 0;
+  const windowFailedByDay = new Map((data?.usageTimeline ?? []).map((point) => [point.day, point.failed]));
+
+  const trendControls = (groupLabel: string, onDownload: () => void) => (
+    <div className="flex gap-1" role="group" aria-label={groupLabel}>
+      <button type="button" aria-pressed={trendView === 'chart'} onClick={() => setTrendView('chart')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'chart' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_chart', {}, 'Chart')}</button>
+      <button type="button" aria-pressed={trendView === 'table'} onClick={() => setTrendView('table')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'table' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_table', {}, 'Table')}</button>
+      <button type="button" className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900" onClick={onDownload}>{t('admin.troubleshooting.trend_download', {}, 'Download data')}</button>
+    </div>
+  );
 
   const trendPanel = data ? (
           <section data-ui="runtime-diagnostic-trend" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')} className="admin-tier-card p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.trend_title', {}, 'Window trend')}</h2>
-              <div className="flex gap-1" role="group" aria-label={t('admin.troubleshooting.trend_title', {}, 'Window trend')}>
-                <button type="button" aria-pressed={trendView === 'chart'} onClick={() => setTrendView('chart')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'chart' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_chart', {}, 'Chart')}</button>
-                <button type="button" aria-pressed={trendView === 'table'} onClick={() => setTrendView('table')} className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${trendView === 'table' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900'}`}>{t('admin.troubleshooting.view_table', {}, 'Table')}</button>
-                <button type="button" className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900" onClick={() => {
-                  const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, timeline: data.usageTimeline }, null, 2)], { type: 'application/json' });
-                  const url = URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url; link.download = `runtime-trend-${windowHours}h.json`; link.click();
-                  setTimeout(() => URL.revokeObjectURL(url), 1000);
-                }}>{t('admin.troubleshooting.trend_download', {}, 'Download data')}</button>
-              </div>
+              {trendControls(t('admin.troubleshooting.trend_title', {}, 'Window trend'), () => {
+                const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, timeline: data.usageTimeline }, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url; link.download = `runtime-trend-${windowHours}h.json`; link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              })}
             </div>
             <div className="mt-2">
               {data.usageTimeline.length ? (trendView === 'chart' ? (
@@ -224,6 +239,50 @@ export default function AdminTroubleshootingPage() {
               )) : <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.trend_empty', {}, 'No trend data in this window.')}</p>}
             </div>
           </section>
+  ) : null;
+
+  const issueTrendPanel = data && selectedIssue && selectedIssue.dailyCounts.length ? (
+    <section data-ui="runtime-issue-trend" aria-label={t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')} className="admin-tier-card p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)} · {t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')}</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_trend_note', {}, 'Daily occurrences of this issue in the observation window. The failed-request line gives whole-window context, not issue counts.')}</p>
+        </div>
+        {trendControls(t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend'), () => {
+          const blob = new Blob([JSON.stringify({ window_hours: windowHours, generated_at: data.generatedAt, issue_code: selectedIssue.code, daily_counts: selectedIssue.dailyCounts }, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url; link.download = `runtime-issue-trend-${selectedIssue.code}-${windowHours}h.json`; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        })}
+      </div>
+      <div className="mt-2">
+        {trendView === 'chart' ? (
+          <AnalyticsLineChart
+            data={selectedIssue.dailyCounts.map((point) => ({ label: point.day, value: point.count }))}
+            comparisonSeries={[{ name: t('admin.troubleshooting.failed_requests', {}, 'Failed requests'), values: selectedIssue.dailyCounts.map((point) => windowFailedByDay.get(point.day) ?? 0) }]}
+            yAxisLabel={t('admin.troubleshooting.issue_trend_count', {}, 'Issue occurrences')}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.issue_trend_title', {}, 'Issue daily trend')}>
+              <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
+                <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.trend_day', {}, 'Day')}</th>
+                <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.issue_trend_count', {}, 'Issue occurrences')}</th>
+                <th className="whitespace-nowrap px-2 py-2" scope="col">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
+              </tr></thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {selectedIssue.dailyCounts.map((point) => <tr key={point.day}>
+                  <td className="px-2 py-2">{point.day}</td>
+                  <td className={`px-2 py-2 ${point.count ? 'font-semibold text-amber-700 dark:text-amber-300' : ''}`}>{formatNumber(point.count)}</td>
+                  <td className="px-2 py-2">{formatNumber(windowFailedByDay.get(point.day) ?? 0)}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
   ) : null;
 
   return (
@@ -438,27 +497,28 @@ export default function AdminTroubleshootingPage() {
                       ))}
                     </div>
                     <div hidden={inspectorTab !== 'breakdown'}>
-                    <section key={selectedIssue.code} data-ui="runtime-issue-evidence">
-                      <h3 className="pb-2 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
-                      <div className="space-y-3">
-                        <p className="text-sm">{t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_count' : 'admin.troubleshooting.affected_runs', {}, 'Affected requests')}: {formatNumber(selectedIssue.count)}</p>
-                        {selectedGroups.length ? <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}>
-                            <thead className="border-b border-slate-200 dark:border-slate-800"><tr>
-                              <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
-                              <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.runs', {}, 'Requests')}</th>
-                              <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
-                              <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.provider_error_column', {}, 'Provider errors')}</th>
-                              <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.coverage_header', {}, 'Coverage (calls / usage)')}</th>
-                            </tr></thead>
-                            <tbody>{selectedGroups.map((group) => <tr key={group.id} className="border-b border-slate-100 dark:border-slate-800">
-                              <th className="px-2 py-2">{scopeLabel([group.id], t)}</th><td className="px-2 py-2">{formatNumber(group.runs)}</td><td className="px-2 py-2">{formatNumber(group.failed)}</td><td className="px-2 py-2">{formatNumber(group.providerErrors)}</td><td className="whitespace-nowrap px-2 py-2">{formatRate(group.providerCoverage)} / {formatRate(group.meteringCoverage)}</td>
-                            </tr>)}</tbody>
-                          </table>
-                        </div> : <p className="text-sm">{t('admin.troubleshooting.groups_unavailable', {}, 'No matching function-level data was returned.')}</p>}
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.group_scope_note', {}, 'Totals for the returned functions in this period, not individual failure records. Functions may be omitted from the bounded response.')}</p>
-                      </div>
-                    </section>
+                <section key={selectedIssue.code} data-ui="runtime-issue-evidence">
+                  <h3 className="pb-1 text-sm font-semibold">{t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}</h3>
+                  {breakdownMetric ? <p className="pb-2 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.breakdown_sort_note', { metric: breakdownMetric.label }, 'Sorted by the metric relevant to this issue: {{metric}}.')}</p> : null}
+                  <div className="space-y-3">
+                    <p className="text-sm">{t(selectedIssue.code === 'hosted_model.provider_errors' ? 'admin.troubleshooting.provider_error_count' : 'admin.troubleshooting.affected_runs', {}, 'Affected requests')}: {formatNumber(selectedIssue.count)}</p>
+                    {sortedGroups.length ? <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs" aria-label={t('admin.troubleshooting.open_evidence', {}, 'Breakdown by function')}>
+                        <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800"><tr>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.runs', {}, 'Requests')}</th>
+                          <th className={`whitespace-nowrap px-2 py-2${breakdownEmphasis('failed')}`}>{t('admin.troubleshooting.failed_requests', {}, 'Failed requests')}</th>
+                          <th className={`whitespace-nowrap px-2 py-2${breakdownEmphasis('providerErrors')}`}>{t('admin.troubleshooting.provider_error_column', {}, 'Provider errors')}</th>
+                          <th className="whitespace-nowrap px-2 py-2">{t('admin.troubleshooting.coverage_header', {}, 'Coverage (calls / usage)')}</th>
+                        </tr></thead>
+                        <tbody>{sortedGroups.map((group) => <tr key={group.id} className="border-b border-slate-100 dark:border-slate-800">
+                          <th className="px-2 py-2">{scopeLabel([group.id], t)}</th><td className="px-2 py-2">{formatNumber(group.runs)}</td><td className={`px-2 py-2${breakdownEmphasis('failed')}`}>{formatNumber(group.failed)}</td><td className={`px-2 py-2${breakdownEmphasis('providerErrors')}`}>{formatNumber(group.providerErrors)}</td><td className="whitespace-nowrap px-2 py-2"><span className={breakdownEmphasis('providerCoverage')}>{formatRate(group.providerCoverage)}</span> / <span className={breakdownEmphasis('meteringCoverage')}>{formatRate(group.meteringCoverage)}</span></td>
+                        </tr>)}</tbody>
+                      </table>
+                    </div> : <p className="text-sm">{t('admin.troubleshooting.groups_unavailable', {}, 'No matching function-level data was returned.')}</p>}
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.group_scope_note', {}, 'Totals for the returned functions in this period, not individual failure records. Functions may be omitted from the bounded response.')}</p>
+                  </div>
+                </section>
                     </div>
                     <div hidden={inspectorTab !== 'runs'}>
                     <section data-ui="runtime-run-evidence" className="space-y-2 pt-1 dark:border-slate-800">
@@ -552,7 +612,12 @@ export default function AdminTroubleshootingPage() {
                     </div> : null}
 
                     </div>
-                    {inspectorTab === 'trend' && trendPanel}
+                    {inspectorTab === 'trend' ? (issueTrendPanel ?? (
+                  <>
+                    <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_trend_unavailable', {}, 'Daily trend for this issue is not available from the current telemetry snapshot; showing the window trend instead.')}</p>
+                    {trendPanel}
+                  </>
+                )) : null}
                     <details className="border-t border-slate-200 pt-3 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t('admin.troubleshooting.technical_detail_title', {}, '技术详情')}</summary><p className="mt-2 break-all text-xs text-slate-500">{t('admin.troubleshooting.issue_code', {}, '诊断代码')}: <code>{selectedIssue.code}</code></p></details>
                   </div>
               </section>

@@ -790,6 +790,10 @@ export async function installAdminMocks(
               count: 1,
               capabilities: ['knowledge'],
               suggested_action: 'inspect_provider_call_recording_for_hosted_profiles',
+              daily_counts: [
+                { day: '2026-04-07', count: 0 },
+                { day: '2026-04-08', count: 1 },
+              ],
               href: '/admin/troubleshooting',
             },
           ],
