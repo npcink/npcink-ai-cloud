@@ -7,6 +7,7 @@ export type RuntimeTelemetryAlert = {
   capabilities: string[];
   suggestedAction: string;
   href: string;
+  dailyCounts: Array<{ day: string; count: number }>;
 };
 
 export type ProviderFailure = {
@@ -157,6 +158,12 @@ export function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
             capabilities: Array.isArray(item?.capabilities) ? item.capabilities.map(String) : [],
             suggestedAction: String(item?.suggested_action ?? ''),
             href: String(item?.href ?? ''),
+            dailyCounts: (Array.isArray(item?.daily_counts)
+              ? item.daily_counts.map((point: any) => ({
+                  day: String(point?.day ?? ''),
+                  count: Math.max(0, asNumber(point?.count)),
+                })).filter((point: { day: string }) => point.day)
+              : []) as RuntimeTelemetryAlert['dailyCounts'],
           }))
         : []) as RuntimeTelemetryAlert[]
       ).sort((a, b) => alertSortRank(b.severity) - alertSortRank(a.severity) || b.count - a.count || a.code.localeCompare(b.code)),

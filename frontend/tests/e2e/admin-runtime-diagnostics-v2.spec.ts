@@ -95,8 +95,14 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const inspector = page.locator('#runtime-diagnostic-inspector');
   await expect(inspector).toBeVisible();
   await inspector.getByRole('tab', { name: /^趋势$|^Trend$/ }).click();
-  await inspector.getByRole('button', { name: /^图表$|^Chart$/ }).click();
-  await expect(inspector.locator('[data-ui="runtime-diagnostic-trend"]').locator('canvas').first()).toBeVisible();
+  const issueTrend = inspector.locator('[data-ui="runtime-issue-trend"]');
+  await expect(issueTrend).toBeVisible();
+  await expect(issueTrend).toContainText(/Call records missing|调用记录缺失/i);
+  await expect(issueTrend.getByRole('columnheader', { name: /Call records missing|调用记录缺失/i })).toBeVisible();
+  await issueTrend.getByRole('button', { name: /^图表$|^Chart$/ }).click();
+  await expect(issueTrend.locator('canvas').first()).toBeVisible();
+  await issueTrend.getByRole('button', { name: /^表格$|^Table$/ }).click();
+  await expect(issueTrend.getByRole('table')).toContainText('2026-04-08');
   await inspector.getByRole('tab', { name: /^按功能拆分$|^Breakdown by function$/ }).click();
   await expect(inspector).toContainText(/No individual run evidence|所选时段内没有该异常对应的单次运行证据/i);
   await expect(inspector.locator('[data-ui="runtime-issue-evidence"]')).toContainText('50%');
@@ -153,7 +159,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
 
   await page.getByRole('button', { name: /Call records missing|调用记录缺失/i }).click();
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
-  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Call records missing|调用记录缺失/i);
+  await expect(page.locator('[data-ui="runtime-diagnostic-issue"][aria-expanded="true"]')).toContainText(/Call records missing|调用记录缺失/i);
   await page.reload();
   await expect(page.getByRole('button', { name: /Call records missing|调用记录缺失/i })).toHaveAttribute('aria-expanded', 'true');
 
@@ -246,7 +252,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
   const detail = inspector.locator('[data-ui="runtime-issue-evidence"]');
   await expect(inspector).toContainText(/No failed-call details|本次未返回具体失败记录/);
 
-  await expect(detail).toContainText(/Failed provider calls: 4|模型调用失败次数: 4/);
+  await expect(detail).toContainText(/Failed provider calls[\s\S]*?4|模型调用失败次数[\s\S]*?4/);
   await expect(detail).not.toContainText(/Affected requests|受影响请求数/);
   await expect(detail).toContainText(/No matching function-level data|未返回匹配的功能分组数据/);
 
@@ -257,7 +263,7 @@ test('anomaly selection keeps counts honest and preserves the diagnostic time wi
 
   await expect(inspector.locator('a[href="/admin/plugin-observability?window=336"]')).toBeVisible();
 
-  await expect(detail).toContainText(/Affected requests: 2|受影响请求数: 2/);
+  await expect(detail).toContainText(/Affected requests[\s\S]*?2|受影响请求数[\s\S]*?2/);
   await expect(page).toHaveURL(/window=72.*focus=hosted_model.failed_runs/);
 
   await page.getByRole('button', { name: /Usage records missing|计量记录缺失/ }).click();

@@ -157,7 +157,9 @@ per-route exception:
   detail panel;
 - a window trend panel with a chart/table toggle fed by the telemetry
   usage timeline — standalone under the KPI row when no anomaly is
-  selected, and the inspector's fourth tab once one is; the tab row is
+  selected, and the inspector's fourth tab once one is; that tab plots
+  every alert's own daily series (alert `daily_counts`) as one line per
+  issue with the selected issue emphasized; the tab row is
   a single four-column strip (breakdown, run evidence, actions,
   trend); evidence-lane links sit adjacent to the queue.
 
