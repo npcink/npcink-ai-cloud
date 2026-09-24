@@ -286,7 +286,9 @@ class WordPressOperationRuntime:
             "title_generation": (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
                 "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Return only the title text."
+                "no more than 12 words. Do not copy or return the exact wording of any "
+                "existing title or heading in the scene input; write a meaningfully "
+                "different alternative. Return only the title text."
             ),
             "slug_generation": (
                 "Generate concise SEO-friendly slug suggestions and return strict JSON "
@@ -309,8 +311,10 @@ class WordPressOperationRuntime:
             task_instruction = (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
                 "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Return one strict JSON object with exactly one string "
-                "field named `title`. Do not return bare title text."
+                "no more than 12 words. Do not copy or return the exact wording of any "
+                "existing title or heading in the scene input; write a meaningfully "
+                "different alternative. Return one strict JSON object with exactly one "
+                "string field named `title`. Do not return bare title text."
             )
 
         fragments = [task_instruction]
@@ -1073,6 +1077,11 @@ class WordPressOperationRuntime:
             return True
         if self._is_boilerplate_output(output_text):
             return True
+        if self._title_matches_scene_heading(
+            output_text,
+            str(input_payload.get("text") or ""),
+        ):
+            return True
         usage = provider_output.get("usage")
         usage = usage if isinstance(usage, dict) else {}
         completion_details = usage.get("completion_tokens_details")
@@ -1149,6 +1158,11 @@ class WordPressOperationRuntime:
                 return "title_schema_empty_title"
         if task == "title_generation" and self._is_boilerplate_output(output_text):
             return "title_boilerplate"
+        if task == "title_generation" and self._title_matches_scene_heading(
+            output_text,
+            str(input_payload.get("text") or ""),
+        ):
+            return "title_unchanged"
         return "normalized_text_empty"
 
     @classmethod
@@ -1302,6 +1316,31 @@ class WordPressOperationRuntime:
         if isinstance(enum, list) and value not in enum:
             return False
         return True
+    def _title_matches_scene_heading(cls, output_text: str, source_text: str) -> bool:
+        """Reject a title suggestion that simply repeats a supplied heading."""
+        candidate = cls._comparable_title(output_text)
+        if not candidate or not source_text.strip():
+            return False
+
+        source = cls._strip_reasoning_noise(source_text)
+        headings = re.findall(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", source)
+        headings.extend(
+            match.group(1)
+            for match in re.finditer(r"(?m)^\s*#{1,3}\s+(.+?)\s*$", source)
+        )
+        plain_source = re.sub(r"<[^>]+>", " ", source)
+        plain_lines = [line.strip() for line in plain_source.splitlines() if line.strip()]
+        if len(plain_lines) == 1:
+            headings.append(plain_lines[0])
+        return any(candidate == cls._comparable_title(heading) for heading in headings)
+
+    @staticmethod
+    def _comparable_title(value: str) -> str:
+        value = re.sub(r"<[^>]+>", " ", value)
+        value = re.sub(r"^\s*#{1,6}\s+", "", value)
+        value = re.sub(r"[\"'“”‘’《》「」]+", "", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.strip().casefold()
 
     def apply_managed_policy(
         self,

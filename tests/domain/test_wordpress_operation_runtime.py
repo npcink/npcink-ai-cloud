@@ -129,6 +129,8 @@ def test_p2_text_provider_input_projects_source_text_once(
     assert provider_input["metadata"]["task"] == task
     assert provider_input["metadata"]["suggestion_only"] is True
     assert provider_input["max_tokens"] == expected_max_tokens
+    if task == "title_generation":
+        assert "Do not copy or return the exact wording" in provider_input["input"]
     assert "site_alpha" not in serialized
     assert "alpha.example.test" not in serialized
     assert "object_revision" not in serialized
@@ -1147,6 +1149,23 @@ def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
     )
 
     assert normalized == {}
+
+
+def test_title_generation_rejects_an_existing_scene_heading() -> None:
+    runtime = _runtime()
+    source = "# OneBlog - Typecho文字博客主题\n\n这是文章正文。"
+    provider_input = runtime.build_provider_input(
+        _operation_payload(task="title_generation", request={"source_text": source})
+    )
+
+    assert runtime.is_empty_text_output(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+    assert runtime.output_quality_reason(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    ) == "title_unchanged"
 
 
 @pytest.mark.parametrize(
