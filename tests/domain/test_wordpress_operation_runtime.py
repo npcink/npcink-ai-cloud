@@ -1195,6 +1195,61 @@ def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> 
 
 
 @pytest.mark.parametrize(
+    ("provider_text", "expected_reason"),
+    [
+        (
+            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。"
+            * 3,
+            "title_length_exceeded",
+        ),
+        ("云端标题！！？？", "title_repeated_punctuation"),
+        ("OneBlog 主题 V9.9 部署指南", "title_unsupported_claim"),
+        ("标题建议", "title_vague"),
+    ],
+)
+def test_title_generation_reports_deterministic_quality_reasons(
+    provider_text: str,
+    expected_reason: str,
+) -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+
+    assert runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    )[0] == expected_reason
+    assert runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    )
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    ) == expected_reason
+
+
+def test_title_generation_keeps_mixed_language_as_review_evidence() -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+    provider_output = {"output_text": "OneBlog Typecho Theme Deployment Guide 部署指南"}
+
+    assert runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == ("title_mixed_language",)
+    assert not runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    )
+
+
+@pytest.mark.parametrize(
     "provider_text",
     [
         "审核说明中使用建议改写为：作为标签示例。正文必须保持完整。",

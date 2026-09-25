@@ -289,7 +289,9 @@ class WordPressOperationRuntime:
                 "normally use no more than 36 characters; for other languages, normally use "
                 "no more than 12 words. Do not copy or return the exact wording of any "
                 "existing title or heading in the scene input; write a meaningfully "
-                "different alternative. Return only the title text."
+                "different alternative. Keep the title under 80 characters, use normal "
+                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
+                "or numbers absent from the scene input. Return only the title text."
             ),
             "slug_generation": (
                 "Generate concise SEO-friendly slug suggestions and return strict JSON "
@@ -315,7 +317,9 @@ class WordPressOperationRuntime:
                 "no more than 12 words. Do not copy or return the exact wording of any "
                 "existing title or heading in the scene input; write a meaningfully "
                 "different alternative. Return one strict JSON object with exactly one "
-                "string field named `title`. Do not return bare title text."
+                "string field named `title`. Keep the title under 80 characters, use normal "
+                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
+                "or numbers absent from the scene input. Do not return bare title text."
             )
 
         fragments = [task_instruction]
@@ -1087,10 +1091,13 @@ class WordPressOperationRuntime:
             return True
         if self._is_boilerplate_output(output_text):
             return True
-        if self._title_matches_scene_heading(
-            output_text,
-            str(input_payload.get("text") or ""),
-            existing_title=str(metadata.get("existing_title") or ""),
+        title_quality_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if any(
+            reason != "title_mixed_language"
+            for reason in title_quality_reasons
         ):
             return True
         usage = provider_output.get("usage")
@@ -1108,6 +1115,106 @@ class WordPressOperationRuntime:
             )
         )
         return reasoning_tokens > 0 and visible_unit_count <= 3
+
+    def title_quality_reasons(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Return bounded, deterministic title findings for runtime evidence."""
+        metadata = self._dict_or_empty(input_payload.get("metadata"))
+        if str(metadata.get("task") or "").strip() != "title_generation":
+            return ()
+        candidate = self._title_candidate_for_quality(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if not candidate:
+            return ()
+
+        source_text = str(input_payload.get("text") or "")
+        reasons: list[str] = []
+        if len(candidate) > 80:
+            reasons.append("title_length_exceeded")
+        if self._is_vague_title(candidate):
+            reasons.append("title_vague")
+        elif self._is_boilerplate_output(candidate):
+            reasons.append("title_boilerplate")
+        if self._title_matches_scene_heading(
+            candidate,
+            source_text,
+            existing_title=str(metadata.get("existing_title") or ""),
+        ):
+            reasons.append("title_unchanged")
+        if re.search(r"([,，。！？!?；;：:、])\1+", candidate):
+            reasons.append("title_repeated_punctuation")
+        if self._has_unsupported_title_claim(candidate, source_text):
+            reasons.append("title_unsupported_claim")
+        if self._is_mixed_language_title(candidate):
+            # Mixed language is evidence for review, not a rejection: product names
+            # such as WordPress and Typecho are legitimate in Chinese titles.
+            reasons.append("title_mixed_language")
+        return tuple(dict.fromkeys(reasons))
+
+    def _title_candidate_for_quality(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> str:
+        metadata = self._dict_or_empty(input_payload.get("metadata"))
+        raw = self._extract_provider_output_text(provider_output)
+        schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if schema:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return ""
+            raw = str(parsed.get("title") or "") if isinstance(parsed, dict) else ""
+        if not raw:
+            return ""
+        return self._normalize_plain_text_output(
+            raw,
+            limit=10_000,
+            strip_explanation=True,
+            source_text=str(input_payload.get("text") or ""),
+            task="title_generation",
+        ).strip()
+
+    @staticmethod
+    def _is_vague_title(candidate: str) -> bool:
+        normalized = re.sub(r"\s+", "", candidate).casefold()
+        return normalized in {
+            "文章标题",
+            "标题建议",
+            "内容介绍",
+            "相关文章介绍",
+            "一篇文章",
+            "thisarticle",
+            "anarticle",
+            "suggestedtitle",
+        }
+
+    @staticmethod
+    def _has_unsupported_title_claim(candidate: str, source_text: str) -> bool:
+        source = re.sub(r"<[^>]+>", " ", source_text).casefold()
+        claims = re.findall(
+            r"(?<![A-Za-z0-9])v?\d+(?:\.\d+){1,3}(?![A-Za-z0-9])|\b20\d{2}\b",
+            candidate,
+            re.I,
+        )
+        claims.extend(
+            match.group(1)
+            for match in re.finditer(r"[\[【《「]([^\]】》」]{2,80})[\]】》」]", candidate)
+        )
+        return any(claim.casefold() not in source for claim in claims)
+
+    @staticmethod
+    def _is_mixed_language_title(candidate: str) -> bool:
+        has_cjk = bool(re.search(r"[\u3400-\u9fff]", candidate))
+        english_words = re.findall(r"[A-Za-z]{2,}", candidate)
+        return has_cjk and len(english_words) >= 4
 
     def output_quality_reason(
         self,
@@ -1167,6 +1274,12 @@ class WordPressOperationRuntime:
                 return "title_schema_missing_title"
             if not parsed["title"].strip():
                 return "title_schema_empty_title"
+        title_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if title_reasons:
+            return title_reasons[0]
         if task == "title_generation" and self._is_boilerplate_output(output_text):
             return "title_boilerplate"
         if task == "title_generation" and self._title_matches_scene_heading(

@@ -97,6 +97,29 @@ write controls.
 Cloud returns `cloud_connector_result.v1` suggestion evidence. It never treats
 runtime success as approval or applies the result to WordPress.
 
+## Title Generation Quality Floor
+
+For `title_generation`, Cloud applies a small deterministic output floor after
+provider normalization. It rejects empty or unusable suggestions when they:
+
+- exceed the 80-character title boundary;
+- repeat the current title or a supplied scene heading;
+- contain boilerplate, only vague filler, or repeated punctuation;
+- introduce an explicit version or year claim that is absent from the scene
+  input; or
+- fail the declared title output schema.
+
+Mixed Chinese and Latin text is recorded as a review finding rather than
+rejected, because product and project names such as WordPress and Typecho are
+valid in Chinese titles. Rejection reasons use the existing
+`provider.output_quality_rejected` error and its `output_quality_reason`
+usage evidence. Accepted suggestions keep the official WordPress result shape
+unchanged; any non-blocking title finding is retained only in internal provider
+call evidence and is not added to the `title` result field.
+
+Cloud does not claim to decide whether a title is publish-worthy. WordPress
+continues to own the editable suggestion, human review, and final write.
+
 ## Change And Rollback Rule
 
 Changing or removing `ai_task_contract.v1` requires one coordinated update to
