@@ -194,6 +194,7 @@ class WordPressOperationRuntime:
             )
             or ""
         ).strip()
+        existing_title = str(scene_request.get("existing_title") or "").strip()
         raw_system_instruction = scene_request.get("system_instruction")
         if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
             system_instruction = (
@@ -318,6 +319,13 @@ class WordPressOperationRuntime:
             )
 
         fragments = [task_instruction]
+        if task == "title_generation" and existing_title:
+            fragments.append(
+                "Existing WordPress title: "
+                + existing_title
+                + ". Do not return this title or a trivially unchanged version; provide a "
+                "meaningfully different alternative."
+            )
         if task != "slug_generation":
             fragments.append(
                 "Use the same language as the scene input unless a WordPress ability "
@@ -442,6 +450,8 @@ class WordPressOperationRuntime:
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:
                 provider_input["metadata"]["target_language"] = target_language
+        if task == "title_generation" and existing_title:
+            provider_input["metadata"]["existing_title"] = existing_title
         if title_output_schema:
             provider_input["metadata"]["ability_output_schema"] = title_output_schema
             provider_input["response_format"] = {
@@ -1080,6 +1090,7 @@ class WordPressOperationRuntime:
         if self._title_matches_scene_heading(
             output_text,
             str(input_payload.get("text") or ""),
+            existing_title=str(metadata.get("existing_title") or ""),
         ):
             return True
         usage = provider_output.get("usage")
@@ -1161,6 +1172,7 @@ class WordPressOperationRuntime:
         if task == "title_generation" and self._title_matches_scene_heading(
             output_text,
             str(input_payload.get("text") or ""),
+            existing_title=str(metadata.get("existing_title") or ""),
         ):
             return "title_unchanged"
         return "normalized_text_empty"
@@ -1316,14 +1328,23 @@ class WordPressOperationRuntime:
         if isinstance(enum, list) and value not in enum:
             return False
         return True
-    def _title_matches_scene_heading(cls, output_text: str, source_text: str) -> bool:
+
+    @classmethod
+    def _title_matches_scene_heading(
+        cls,
+        output_text: str,
+        source_text: str,
+        *,
+        existing_title: str = "",
+    ) -> bool:
         """Reject a title suggestion that simply repeats a supplied heading."""
         candidate = cls._comparable_title(output_text)
-        if not candidate or not source_text.strip():
+        if not candidate or (not source_text.strip() and not existing_title.strip()):
             return False
 
         source = cls._strip_reasoning_noise(source_text)
-        headings = re.findall(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", source)
+        headings = [existing_title] if existing_title.strip() else []
+        headings.extend(re.findall(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", source))
         headings.extend(
             match.group(1)
             for match in re.finditer(r"(?m)^\s*#{1,3}\s+(.+?)\s*$", source)

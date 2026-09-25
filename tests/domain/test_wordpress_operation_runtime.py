@@ -1168,6 +1168,32 @@ def test_title_generation_rejects_an_existing_scene_heading() -> None:
     ) == "title_unchanged"
 
 
+def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="title_generation",
+            request={
+                "source_text": "这是文章正文。",
+                "existing_title": "OneBlog - Typecho文字博客主题",
+            },
+        )
+    )
+
+    assert "Existing WordPress title: OneBlog - Typecho文字博客主题" in provider_input["input"]
+    assert provider_input["metadata"]["existing_title"] == "OneBlog - Typecho文字博客主题"
+    assert runtime.is_empty_text_output(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+    empty_source_payload = dict(provider_input)
+    empty_source_payload["text"] = ""
+    assert runtime.is_empty_text_output(
+        input_payload=empty_source_payload,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+
+
 @pytest.mark.parametrize(
     "provider_text",
     [

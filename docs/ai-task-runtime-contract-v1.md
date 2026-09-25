@@ -56,6 +56,9 @@ one text scene input shape:
   is trimmed before execution, may be empty after trimming, and is limited to
   12,000 characters after trimming. It carries the local Ability-owned
   instruction projection separately from the source text.
+- `request.existing_title` is optional and allowed only for `title_generation`;
+  it carries the current WordPress title as bounded read-only context so Cloud
+  can avoid returning the unchanged title.
 
 Contract failures use stable `wordpress_operation.*` errors:
 
@@ -68,6 +71,9 @@ Contract failures use stable `wordpress_operation.*` errors:
   `wordpress_operation.system_instruction_invalid`;
 - system instruction above the limit:
   `wordpress_operation.system_instruction_too_large`.
+- invalid or oversized existing title context:
+  `wordpress_operation.existing_title_invalid` or
+  `wordpress_operation.existing_title_too_large`.
 
 For title and summary tasks, WordPress projects the relevant current content as
 `source_text`. For a rewrite task, WordPress projects only the selected text.
