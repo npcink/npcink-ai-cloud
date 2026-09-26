@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -40,7 +41,7 @@ def _operation_payload(
 ) -> dict[str, Any]:
     scene_text_field = (
         "source_text"
-        if task in {"title_generation", "content_summary", "content_rewrite"}
+        if task in {"title_generation", "content_summary", "content_rewrite", "editorial_updates"}
         else "prompt"
     )
     scene_request: dict[str, Any] = {
@@ -127,6 +128,34 @@ def test_p2_text_provider_input_projects_source_text_once(
     assert "connector_version" not in serialized
 
 
+def test_editorial_updates_provider_input_forbids_process_explanations() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="editorial_updates",
+            request={
+                "source_text": "This paragraph needs a concise editorial update.",
+                "system_instruction": "Editorial notes to apply: Make the paragraph clearer.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/editorial-updates",
+                    "task": "editorial_updates",
+                    "task_family": "transformation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                    "output_schema": {"type": "string"},
+                    "write_posture": "suggestion_only",
+                },
+            },
+        )
+    )
+
+    assert provider_input["max_tokens"] == 256
+    assert "Return only the final revised content" in provider_input["input"]
+    assert "never say that the task is impossible" in provider_input["input"]
+    assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
+
+
 def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() -> None:
     runtime = _runtime()
     source_artifact = LoadedArtifactInput(
@@ -158,7 +187,7 @@ def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() 
         "type": "image_url",
         "image_url": {"url": "data:image/png;base64,aW1hZ2UtYnl0ZXM="},
     }
-    assert provider_input["max_tokens"] == 96
+    assert provider_input["max_tokens"] == 1536
     assert provider_input["temperature"] == 0.0
     assert "image-bytes" not in repr(source_artifact)
 
@@ -272,6 +301,42 @@ def test_alt_text_contract_rejects_legacy_alias_and_unknown_fields(
         )
 
     assert error.value.error_code == ("wordpress_operation.alt_text_request_fields_forbidden")
+
+
+def test_alt_text_contract_accepts_ability_schema_projection() -> None:
+    input_schema = {"type": "object", "properties": {"attachment_id": {"type": "integer"}}}
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "alt_text": {"type": "string"},
+            "is_decorative": {"type": "boolean"},
+        },
+    }
+    canonical = json.dumps(
+        {"input_schema": input_schema, "output_schema": output_schema},
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).replace("/", "\\/")
+    request = {
+        "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+        "prompt": "Generate alt text.",
+        "task_contract": {
+            "contract_version": "ai_task_contract.v1",
+            "ability_name": "ai/alt-text-generation",
+            "task": "alt_text_suggest",
+            "task_family": "generation",
+            "context_requirements": [],
+            "constraints": ["single_value", "source_grounded"],
+            "input_schema": input_schema,
+            "output_schema": output_schema,
+            "schema_hash": "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "write_posture": "suggestion_only",
+        },
+    }
+    normalized = validate_wordpress_operation_contract(
+        {"contract_version": "wordpress_operation.v1", "task": "alt_text_suggest", "request": request}
+    )
+    assert normalized["request"]["task_contract"]["schema_hash"].startswith("sha256:")
 
 
 @pytest.mark.parametrize(

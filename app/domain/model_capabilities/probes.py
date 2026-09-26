@@ -133,9 +133,11 @@ def probe_vision(
         endpoint_variant=endpoint_variant,
         trace_id=trace_id,
         input_payload=(
-            {"input": [{"role": "user", "content": content}], "params": {"max_tokens": 8}}
+            # Some local vision models spend a bounded prefix on reasoning;
+            # leave enough output budget to reach the probe's short answer.
+            {"input": [{"role": "user", "content": content}], "params": {"max_tokens": 512}}
             if endpoint_variant == "responses"
-            else {"messages": [{"role": "user", "content": content}], "params": {"max_tokens": 8}}
+            else {"messages": [{"role": "user", "content": content}], "params": {"max_tokens": 512}}
         ),
         policy={"capability_probe": True},
         timeout_ms=timeout_ms,

@@ -12,6 +12,24 @@ from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
 
 
+def test_openai_chat_projection_prefers_complete_input_over_source_text() -> None:
+    adapter = OpenAIProviderAdapter(api_key="test-api-key")
+
+    messages = adapter._resolve_chat_messages(
+        {
+            "input": "Apply the editorial notes.\n\nScene input:\nOriginal paragraph.",
+            "text": "Original paragraph.",
+        }
+    )
+
+    assert messages == [
+        {
+            "role": "user",
+            "content": "Apply the editorial notes.\n\nScene input:\nOriginal paragraph.",
+        }
+    ]
+
+
 def test_openai_adapter_fetches_catalog_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/models")
@@ -70,6 +88,25 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
     assert snapshot.models[2].instances[0].endpoint_variant == "image_generations"
     assert snapshot.models[3].feature == "embedding"
     assert snapshot.models[3].instances[0].endpoint_variant == "embeddings"
+
+
+def test_openai_adapter_classifies_qwen_vl_catalog_models_as_vision() -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="",
+        allow_http_without_api_key=True,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"data": [{"id": "qwen3-vl:2b"}]},
+            )
+        ),
+    )
+
+    model = adapter.fetch_catalog().models[0]
+
+    assert model.feature == "vision"
+    assert model.instances[0].endpoint_variant == "chat_completions"
+    assert model.instances[0].capability_tags[0] == "vision"
 
 
 def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> None:
@@ -1818,6 +1855,56 @@ def test_openai_adapter_disables_unsupported_prompt_cache_key_after_one_retry() 
     assert prompt_cache_presence == [True, False, False]
     assert first_result.cache_affinity_applied is False
     assert second_result.cache_affinity_applied is False
+
+
+def test_openai_adapter_retries_when_response_format_is_unavailable() -> None:
+    seen_response_format: list[bool] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        seen_response_format.append("response_format" in payload)
+        if "response_format" in payload:
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": "This response_format type is unavailable now",
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": "compatible-model",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": '{"title":"ok"}'},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="chat_completions",
+            model_id="compatible-model",
+            input_payload={
+                "messages": [{"role": "user", "content": "return JSON"}],
+                "params": {"response_format": {"type": "json_object"}},
+            },
+        )
+    )
+
+    assert seen_response_format == [True, False]
+    assert result.output["output_text"] == '{"title":"ok"}'
 
 
 def test_openai_adapter_maps_context_overflow_separately_from_invalid_request() -> None:
