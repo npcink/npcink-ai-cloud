@@ -49,6 +49,7 @@ from app.domain.provider_connections.projection import (
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS,
 )
@@ -548,18 +549,57 @@ class ProviderConnectionAdminService:
                 policy={"allow_fallback": False},
                 timeout_ms=_image_delivery_probe_timeout_ms(adapter),
             )
+            budget_guard = ProviderBudgetService()
+            budget_run = RunRecord(
+                run_id=probe_id,
+                site_id="admin_provider_connection_probe",
+                ability_name="admin.provider_image_delivery_probe",
+                profile_id="admin.image_delivery_probe",
+                execution_kind="image_generation",
+                policy_json={"allow_fallback": False},
+            )
+            budget_claim_ids: tuple[str, ...] = ()
             try:
+                budget_claim = budget_guard.claim_before_dispatch(
+                    session=session,
+                    run=budget_run,
+                    provider_id=provider_id,
+                    model_id=model.model_id,
+                    request=request,
+                )
+                if budget_claim is not None:
+                    budget_claim_ids = budget_claim.claim_ids
                 execution_result = adapter.execute(request)
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=execution_result.cost,
+                    )
                 probe_result = _inspect_image_delivery_probe_candidate(
                     execution_result.media_candidates,
                 )
             except ProviderExecutionError as error:
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=None,
+                    )
+                    session.commit()
                 raise ProviderConnectionAdminError(
                     _map_test_error_code(error),
                     "provider image delivery probe failed",
                     status_code=502,
                 ) from error
             except (ImageGenerationArtifactMaterializationError, ProviderImageFetchError) as error:
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=None,
+                    )
+                    session.commit()
                 reason_code = _string(getattr(error, "reason_code", ""))
                 raise ProviderConnectionAdminError(
                     "provider_connection.image_delivery_probe_failed",
@@ -890,13 +930,30 @@ class ProviderConnectionAdminService:
             "direct_wordpress_write": False,
         }
         try:
-            result = WebSearchService(test_settings).execute(
-                site_id="admin_provider_connection_test",
-                ability_name=WEB_SEARCH_ABILITY,
-                contract_version=WEB_SEARCH_CONTRACT,
-                input_payload=input_payload,
-                run_id=f"provider-connection-test-{row.connection_id}-{int(now.timestamp())}",
-            )
+            with get_session(self.database_url) as session:
+                test_run = RunRecord(
+                    run_id=f"provider-connection-test-{row.connection_id}-{int(now.timestamp())}",
+                    site_id="admin_provider_connection_test",
+                    ability_name=WEB_SEARCH_ABILITY,
+                    profile_id="admin.web_search_probe",
+                    execution_kind="web_search",
+                    policy_json={"provider": provider_id},
+                )
+                try:
+                    result = WebSearchService(test_settings).execute(
+                        site_id="admin_provider_connection_test",
+                        ability_name=WEB_SEARCH_ABILITY,
+                        contract_version=WEB_SEARCH_CONTRACT,
+                        input_payload=input_payload,
+                        run_id=test_run.run_id,
+                        budget_guard=ProviderBudgetService(),
+                        budget_session=session,
+                        budget_run=test_run,
+                    )
+                except Exception:
+                    session.commit()
+                    raise
+                session.commit()
         except Exception as error:
             error_code = _map_test_error_code(error)
             return _test_result(

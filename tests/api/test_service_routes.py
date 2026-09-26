@@ -998,6 +998,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert overview["counts"]["sites_active"] == 1
     assert overview["counts"]["site_keys_active"] == 1
     assert overview["recent_usage"]["event_count"] >= 1
+    assert overview["provider_budget"]["status"] in {"disabled", "ok", "warning", "exceeded"}
     assert "platform_credit_summary" not in overview
     assert "runtime_diagnostics" in overview
     assert overview["operational_readiness"]["status"] == "error"

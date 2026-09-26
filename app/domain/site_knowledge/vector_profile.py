@@ -16,6 +16,7 @@ from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
     ProviderConnection,
+    RunRecord,
     SiteKnowledgeChunk,
     SiteKnowledgeDocument,
     SiteKnowledgeSearchMetric,
@@ -24,6 +25,7 @@ from app.core.secrets import decrypt_provider_connection_secret, encrypt_provide
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.site_knowledge.backends import (
     SiteKnowledgeBackendError,
     ZillizCloudSiteKnowledgeBackend,
@@ -634,8 +636,45 @@ class SiteKnowledgeVectorProfileAdminService:
             policy={"storage_mode": "no_store"},
             timeout_ms=max(1, int(float(self.settings.siliconflow_timeout_seconds) * 1000)),
         )
+        budget_guard = ProviderBudgetService()
+        budget_run = RunRecord(
+            run_id="site-knowledge-vector-profile-probe",
+            site_id="admin_site_knowledge_vector_profile",
+            ability_name="npcink-cloud/site-knowledge-vector-profile-probe",
+            profile_id=SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+            execution_kind="embedding",
+            policy_json={"storage_mode": "no_store"},
+        )
+        budget_claim_ids: tuple[str, ...] = ()
         try:
-            result = adapter.execute(request)
+            with get_session(self.database_url) as session:
+                budget_claim = budget_guard.claim_before_dispatch(
+                    session=session,
+                    run=budget_run,
+                    provider_id=SITE_KNOWLEDGE_VECTOR_PROVIDER_ID,
+                    model_id=SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+                    request=request,
+                )
+                if budget_claim is not None:
+                    budget_claim_ids = budget_claim.claim_ids
+                try:
+                    result = adapter.execute(request)
+                except ProviderExecutionError:
+                    if budget_claim_ids:
+                        budget_guard.reconcile(
+                            session=session,
+                            claim_ids=budget_claim_ids,
+                            actual_cost_usd=None,
+                        )
+                    session.commit()
+                    raise
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=result.cost,
+                    )
+                session.commit()
         except ProviderExecutionError as error:
             raise SiteKnowledgeVectorProfileAdminError(
                 error.error_code or "site_knowledge_vector_profile.probe_failed",

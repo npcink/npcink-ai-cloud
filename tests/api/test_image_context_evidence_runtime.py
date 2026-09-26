@@ -25,6 +25,8 @@ from app.core.models import (
     AccountSubscription,
     MediaArtifact,
     PlanVersion,
+    ProviderBudgetClaim,
+    ProviderBudgetCounter,
     ProviderCallRecord,
     RunRecord,
     ServiceSetting,
@@ -546,6 +548,118 @@ def test_image_context_evidence_runtime_calls_vision_provider(tmp_path: Path) ->
         assert provider_calls[0].provider_id == "fakevision"
         assert provider_calls[0].tokens_in == 123
         assert provider_calls[0].tokens_out == 45
+
+
+def test_image_context_evidence_budget_blocks_provider_call(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        session.add(
+            ServiceSetting(
+                setting_id="provider_account_spend_budget",
+                setting_kind="runtime",
+                enabled=True,
+                status="ready",
+                config_json={
+                    "providers": {
+                        "fakevision": {
+                            "account_class": "paid",
+                            "daily_usd": 0.000001,
+                            "monthly_usd": 0.000001,
+                        }
+                    }
+                },
+                secret_ciphertext_json={},
+                metadata_json={},
+            )
+        )
+        session.commit()
+
+    response = _execute(
+        client,
+        _payload(),
+        idempotency_key="image-context-evidence-budget-blocked",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["data"]["status"] == "failed"
+    assert payload["data"]["error_code"] == "provider.budget_exceeded"
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, payload["data"]["run_id"])
+        assert run is not None
+        assert list(
+            session.scalars(
+                select(ProviderCallRecord).where(ProviderCallRecord.run_id == run.run_id)
+            )
+        ) == []
+        assert list(
+            session.scalars(
+                select(ProviderBudgetClaim).where(ProviderBudgetClaim.run_id == run.run_id)
+            )
+        ) == []
+
+
+def test_image_context_evidence_budget_claim_reconciles_after_provider_call(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        session.add(
+            ServiceSetting(
+                setting_id="provider_account_spend_budget",
+                setting_kind="runtime",
+                enabled=True,
+                status="ready",
+                config_json={
+                    "providers": {
+                        "fakevision": {
+                            "account_class": "paid",
+                            "daily_usd": 1.0,
+                            "monthly_usd": 1.0,
+                        }
+                    }
+                },
+                secret_ciphertext_json={},
+                metadata_json={},
+            )
+        )
+        session.commit()
+
+    response = _execute(
+        client,
+        _payload(),
+        idempotency_key="image-context-evidence-budget-reconciled",
+    )
+
+    assert response.status_code == 200, response.json()
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert len(provider.requests) == 1
+    with get_session(database_url) as session:
+        claims = list(
+            session.scalars(
+                select(ProviderBudgetClaim).where(ProviderBudgetClaim.run_id == data["run_id"])
+            )
+        )
+        assert len(claims) == 2
+        assert {claim.status for claim in claims} == {"reconciled"}
+        assert {round(float(claim.actual_cost_usd or 0.0), 6) for claim in claims} == {0.001}
+        counters = list(
+            session.scalars(
+                select(ProviderBudgetCounter).where(
+                    ProviderBudgetCounter.provider_id == "fakevision"
+                )
+            )
+        )
+        assert len(counters) == 2
+        assert all(
+            round(float(counter.reserved_cost_usd or 0.0), 6) == 0.001
+            for counter in counters
+        )
 
 
 def test_background_media_recognition_requires_enabled_policy(tmp_path: Path) -> None:

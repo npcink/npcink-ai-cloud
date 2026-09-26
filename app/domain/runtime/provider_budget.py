@@ -221,9 +221,9 @@ class ProviderBudgetService:
                 else max(0.0, float(actual_cost_usd))
             )
             if counter is not None:
-                released = max(0.0, float(claim.reserved_cost_usd or 0.0) - actual)
+                reserved = max(0.0, float(claim.reserved_cost_usd or 0.0))
                 counter.reserved_cost_usd = round(
-                    max(0.0, float(counter.reserved_cost_usd or 0.0) - released),
+                    max(0.0, float(counter.reserved_cost_usd or 0.0) - reserved + actual),
                     6,
                 )
             claim.actual_cost_usd = round(actual, 6)

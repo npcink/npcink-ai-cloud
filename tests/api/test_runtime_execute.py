@@ -263,7 +263,9 @@ def test_runtime_auto_web_search_enriches_provider_input(
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        **kwargs: Any,
     ) -> WebSearchExecutionResult:
+        del kwargs
         assert input_payload["query"] == "latest WordPress AI search trends"
         assert input_payload["intent"] == "news"
         return WebSearchExecutionResult(
@@ -386,7 +388,9 @@ def test_runtime_auto_web_search_preserves_zhihu_deepsearch_credit_lane(
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        **kwargs: Any,
     ) -> WebSearchExecutionResult:
+        del kwargs
         captured_input.update(input_payload)
         return WebSearchExecutionResult(
             result_json={
@@ -679,7 +683,9 @@ def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        **kwargs: Any,
     ) -> WebSearchExecutionResult:
+        del kwargs
         captured_input.update(input_payload)
         return WebSearchExecutionResult(
             result_json={

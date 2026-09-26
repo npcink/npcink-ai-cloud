@@ -5,6 +5,20 @@ Status: dated gap inventory（静态只读盘点）。基线：已提交 `origin
 付费 Provider 调用、生产操作或暂缓决定的变更；使用前按 README 证据规则对照当前
 `origin/master` 与 ADR-055 实现状态重新核对。
 
+候选实现更新（2026-09-23）：当前开发分支 `codex/provider-budget-closure` 已提交
+Provider 账户级预算实现（`61a59227`），并在 M4 candidate 上完成迁移、API 健康检查及
+`tests/api/test_service_routes.py` focused 运行验证；该实现尚未合入 `master`，因此不
+改写下文对 `origin/master` 的历史盘点结论。实现后的候选证据包括统一 dispatch 前
+claim、日/月计数器、幂等 dispatch key、保守未定价成本、80% warning、100% fail-closed，
+以及 Provider 连接测试、图像探针、Web Search、Site Knowledge、能力探测等旁路接入与
+实际成本回收。
+
+候选状态补充（2026-09-23）：M4 focused 运行又通过
+`tests/domain/test_provider_budget.py`（3/3）、`tests/domain/test_web_search_budget.py`
+（2/2）和 `tests/api/test_admin_overview_operator_projection.py`（5/5）。Admin 总览现已
+把 warning/exceeded 投影为可操作的预算压力项，并保留到 AI 资源页的主动作；这些结果仍
+属于当前分支 candidate 证据，不替代合入 `master` 后的 promotion 或操作者真实 smoke。
+
 ## 1. 缺口定义：三层防线
 
 2026-09-21/22 战略会话确认的缺口是：目前没有统一的 Provider 账户级每日/月度成本
@@ -20,8 +34,8 @@ Status: dated gap inventory（静态只读盘点）。基线：已提交 `origin
 
 [ADR-055](decisions/055-provider-account-level-spend-budget.md)（2026-09-22 经 PR
 #1007 合入）已按此三层给出设计：单一 dispatch 扼点、按账户 × UTC 日/月历月的原子
-claim、80% 告警 / 100% 停用、account_class 分级校验。**设计已接受，代码未实现**；
-本盘点确认这一现状并给出逐项证据。
+claim、80% 告警 / 100% 停用、account_class 分级校验。对本文 `origin/master` 基线而言，
+设计已接受、代码未实现；当前候选分支已有实现，仍等待合并后才能更新正式基线。
 
 ## 2. 背景与文档链
 
@@ -147,3 +161,13 @@ claim、80% 告警 / 100% 停用、account_class 分级校验。**设计已接�
 docs-only（L0 管理）：相对链接逐一核验、`git diff --check`、
 `bash scripts/check-release-policy.sh`、`pnpm run check:changed -- --plan`。
 回退：revert 单个合并提交，无数据或运行时影响。
+
+## 9. 当前候选实现的剩余验证
+
+候选实现已经覆盖代码与 M4 focused 验证，但仍有三项证据不能由自动测试替代：
+
+1. 合入 `master` 后在干净 `origin/master` 上重新执行 promotion/acceptance 链；
+2. 操作者在 M4 Admin 或受控调用面观察一次 80% warning 与 100% 拒绝的可见结果；
+3. 在允许的 Provider 账户上完成一次真实但有界的 smoke，记录实际成本回收与预算状态。
+
+这些步骤不授权生产或无界付费调用；在完成前，公共内容 API 仍是 development candidate。
