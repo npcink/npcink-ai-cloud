@@ -572,19 +572,17 @@ class RuntimeRepository:
                 )
                 .order_by(UsageMeterEvent.id.asc())
             )
-            for provider_call_id, meter_key, quantity, payload_json in (
-                self.session.execute(statement)
-            ):
-                if provider_call_id is None:
+            for row in self.session.execute(statement):
+                if row[0] is None:
                     continue
                 events.append(
                     ProviderEvidenceMeterEvent(
-                        provider_call_id=int(provider_call_id),
-                        meter_key=str(meter_key or ""),
-                        quantity=max(0.0, float(quantity or 0.0)),
+                        provider_call_id=int(row[0]),
+                        meter_key=str(row[1] or ""),
+                        quantity=max(0.0, float(row[2] or 0.0)),
                         payload=(
-                            dict(payload_json)
-                            if isinstance(payload_json, dict)
+                            dict(row[3])
+                            if isinstance(row[3], dict)
                             else {}
                         ),
                     )

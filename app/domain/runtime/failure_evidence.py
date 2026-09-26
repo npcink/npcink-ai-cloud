@@ -10,7 +10,7 @@ from app.core.models import ProviderCallRecord, RunRecord
 
 
 def provider_failure_evidence(
-    rows: Iterable[Row[tuple[ProviderCallRecord, RunRecord]]], *, limit: int
+    rows: Iterable[Row[ProviderCallRecord, RunRecord]], *, limit: int
 ) -> list[dict[str, str]]:
     failures = []
     for call, run in rows:
