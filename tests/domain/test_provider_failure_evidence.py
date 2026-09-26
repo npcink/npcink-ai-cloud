@@ -26,6 +26,7 @@ def _row(
         run_id=run_id,
         site_id="site-1",
         profile_id="profile-1",
+        ability_family="wordpress.title",
         error_message=error_message,
     )
     return call, run
@@ -53,7 +54,7 @@ def test_failure_evidence_skips_successful_calls_and_classifies_reasons() -> Non
     assert [item["reason"] for item in evidence] == [
         "timeout",
         "output_schema_invalid",
-        "invalid_request",
+        "unknown",
     ]
     assert evidence[0]["recovery"] == "unverified"
     assert evidence[0]["occurred_at"] == "2026-09-26T00:00:00+00:00"
