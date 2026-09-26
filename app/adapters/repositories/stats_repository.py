@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import ColumnElement, Integer, Select, and_, case, cast, distinct, func, select
 from sqlalchemy.orm import Session
@@ -256,25 +258,16 @@ class StatsRepository:
             start_at=start_at,
             end_at=end_at,
         )
-        (
-            calls_total,
-            success_total,
-            fallback_total,
-            avg_latency_ms,
-            tokens_in_total,
-            tokens_out_total,
-            cost_total,
-            last_seen_at,
-        ) = self.session.execute(statement).one()
+        row = self.session.execute(statement).one()
         return {
-            "calls_total": int(calls_total or 0),
-            "success_total": int(success_total or 0),
-            "fallback_total": int(fallback_total or 0),
-            "avg_latency_ms": int(round(float(avg_latency_ms or 0))),
-            "tokens_in_total": int(tokens_in_total or 0),
-            "tokens_out_total": int(tokens_out_total or 0),
-            "cost_total": round(float(cost_total or 0.0), 6),
-            "last_seen_at": last_seen_at,
+            "calls_total": int(row[0] or 0),
+            "success_total": int(row[1] or 0),
+            "fallback_total": int(row[2] or 0),
+            "avg_latency_ms": int(round(float(row[3] or 0))),
+            "tokens_in_total": int(row[4] or 0),
+            "tokens_out_total": int(row[5] or 0),
+            "cost_total": round(float(row[6] or 0.0), 6),
+            "last_seen_at": row[7],
         }
 
     def list_provider_call_latency_values_window(
@@ -321,7 +314,8 @@ class StatsRepository:
             start_at=start_at,
             end_at=end_at,
         ).order_by(ProviderCallRecord.created_at.asc(), ProviderCallRecord.id.asc())
-        return [int(value or 0) for value in self.session.scalars(statement)]
+        latency_values: Iterable[Any] = self.session.scalars(statement)
+        return [int(value or 0) for value in latency_values]
 
     def aggregate_runs_window(
         self,
@@ -362,21 +356,14 @@ class StatsRepository:
             start_at=start_at,
             end_at=end_at,
         )
-        (
-            runs_total,
-            success_total,
-            fallback_total,
-            last_seen_at,
-            active_sites_total,
-            avg_latency_ms,
-        ) = self.session.execute(statement).one()
+        row = self.session.execute(statement).one()
         return {
-            "runs_total": int(runs_total or 0),
-            "success_total": int(success_total or 0),
-            "fallback_total": int(fallback_total or 0),
-            "last_seen_at": last_seen_at,
-            "active_sites_total": int(active_sites_total or 0),
-            "avg_latency_ms": int(round(float(avg_latency_ms or 0))),
+            "runs_total": int(row[0] or 0),
+            "success_total": int(row[1] or 0),
+            "fallback_total": int(row[2] or 0),
+            "last_seen_at": row[3],
+            "active_sites_total": int(row[4] or 0),
+            "avg_latency_ms": int(round(float(row[5] or 0))),
         }
 
     def list_run_latency_values_window(
@@ -409,7 +396,8 @@ class StatsRepository:
             start_at=start_at,
             end_at=end_at,
         ).order_by(RunRecord.started_at.asc(), RunRecord.run_id.asc())
-        return [int(value or 0) for value in self.session.scalars(statement)]
+        latency_values: Iterable[Any] = self.session.scalars(statement)
+        return [int(value or 0) for value in latency_values]
 
     def list_health_snapshots(
         self,

@@ -101,14 +101,15 @@ class CommercialCreditLedgerQueries:
             if not site_ids:
                 return {}
             statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
-        return {
-            int(bucket_index): {
-                "ai_credits": round(float(consumed_ai_credits or 0.0), 6),
-                "entry_count": int(entry_count or 0),
+        summaries: dict[int, dict[str, float | int]] = {}
+        for row in self.session.execute(statement):
+            if row[0] is None:
+                continue
+            summaries[int(row[0])] = {
+                "ai_credits": round(float(row[1] or 0.0), 6),
+                "entry_count": int(row[2] or 0),
             }
-            for bucket_index, consumed_ai_credits, entry_count in self.session.execute(statement)
-            if bucket_index is not None
-        }
+        return summaries
 
     def list_portal_credit_event_groups(
         self,

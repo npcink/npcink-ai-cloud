@@ -167,7 +167,7 @@ def evaluate_remote_baseline_status(
         inspector = inspect(connection)
         existing_tables = set(inspector.get_table_names())
         alembic_version_present = "alembic_version" in existing_tables
-        database_versions = (
+        database_versions: list[str] = (
             sorted(
                 session.execute(
                     text("SELECT version_num FROM alembic_version ORDER BY version_num")

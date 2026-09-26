@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -382,7 +383,7 @@ class SiteKnowledgeRepository:
         )
 
     def count_truncated_documents(self, site_id: str) -> int:
-        documents = self.session.scalars(
+        documents: Iterable[Any] = self.session.scalars(
             select(SiteKnowledgeDocument.metadata_json).where(
                 SiteKnowledgeDocument.site_id == site_id
             )
@@ -415,11 +416,11 @@ class SiteKnowledgeRepository:
             )
         ).all()
         metadata_by_post_id = {
-            int(post_id): {
-                "title": str(title or ""),
-                **(metadata if isinstance(metadata, dict) else {}),
+            int(row[0]): {
+                "title": str(row[1] or ""),
+                **(row[2] if isinstance(row[2], dict) else {}),
             }
-            for post_id, title, metadata in rows
+            for row in rows
         }
         return {
             post_id: metadata_by_post_id[post_id]
