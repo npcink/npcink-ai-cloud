@@ -19,6 +19,26 @@ claim、日/月计数器、幂等 dispatch key、保守未定价成本、80% war
 把 warning/exceeded 投影为可操作的预算压力项，并保留到 AI 资源页的主动作；这些结果仍
 属于当前分支 candidate 证据，不替代合入 `master` 后的 promotion 或操作者真实 smoke。
 
+实现合入更新（2026-09-26）：上述候选已合入 `master`——核心熔断与迁移随 PR #1029，
+旁路收敛（能力探针、web search、图像上下文证据、图像投递探针、连接测试、内部 advisor
+摘要、site knowledge embedding 与向量档案探针、image prompt 翻译/规划直通路径）、Admin
+预算压力投影、warning 阈值测试、dispatch 合同测试与 `execute_provider` 直通路径 claim
+随 PR #1031。上文"代码未实现"的历史盘点结论仅对基线 `28c1e579` 有效。截至本更新，
+开放前仍待完成的出口：
+
+1. **M4 promotion 证据**：clean `master` 的 `m4:preview:promote` 与 accepted 状态
+   （编写本更新时共享 M4 的 candidate 被另一会话占用，按共享运行时纪律让位未执行）。
+2. **操作者武装**：迁移 `20260923_0084` 随部署应用后，在 Admin service settings 配置
+   `provider_account_spend_budget`（配置形状见
+   [provider-account-spend-budget-implementation-v1.md](provider-account-spend-budget-implementation-v1.md)；
+   每条 paid 连接需同时给出 `daily_usd` 与 `monthly_usd`，未配置即在 dispatch 时
+   fail-closed 返回 `provider.budget_configuration_missing`；`warning_ratio` 默认 0.8），
+   并执行操作者 smoke——超限账户 dispatch 被显式 `provider.budget_exceeded` 拒绝、
+   80% warning 日志可见、Admin 总览出现预算压力项。金额属操作者决策，会话不得代设。
+3. **裸 HTTP 付费路径收敛**：rerank（Jina）与 web search httpx 兜底等不经适配器
+   `execute(` 习惯用法的调用尚未纳入 claim，需单独设计接入或写入显式豁免记录；
+   `tests/domain/test_provider_dispatch_contract.py` 的结构扫描只约束适配器调用点。
+
 ## 1. 缺口定义：三层防线
 
 2026-09-21/22 战略会话确认的缺口是：目前没有统一的 Provider 账户级每日/月度成本
