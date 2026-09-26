@@ -27,7 +27,7 @@ this record is not product acceptance.
 | --- | --- | --- | --- |
 | 1 | compat 台账记行：schedule 运行记入账 B，合入运行记入账 A | 每日（09:00 自动检查给出数据，记行由任务会话完成） | 任务会话 |
 | 2 | 决定是否把 `WordPress AI compatibility blocking lanes` 加入 branch protection required contexts | 账 A streak ≥ 10 且窗口内账 B 第三方失败率 ≈ 0 | 操作者 |
-| 3 | ADR-055 实现 PR（dispatch 单点原子 claim、阈值、账号分级校验定稿） | 操作者评审 ADR 后；先于任何付费 Provider 调用授权 | 操作者决策 + 开发会话 |
+| 3 | ~~ADR-055 实现 PR~~（2026-09-26 追记：核心熔断随 PR #1029、旁路收敛/Admin 压力面/合同测试随 PR #1031 合入 `master`；剩余出口为 clean-`master` M4 promotion、操作者配置 `provider_account_spend_budget` 并执行 warning/拒绝 smoke、rerank 与 web search httpx 兜底等裸 HTTP 付费路径接入或显式豁免——见 [盘点文档](provider-budget-hard-cap-inventory-2026-09-23.md) "实现合入更新"节） | M4 promotion 待共享运行时空闲；武装与 smoke 属操作者决策，先于任何付费 Provider 调用授权 | 操作者 + 开发会话 |
 | 4 | 退款回调分发缺口：公网 notify 端点对退款形状通知返回 `fail`（已退款订单），引发支付宝重试；与 [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) 相互印证 | 建议单独聚焦任务 | 待操作者裁决 |
 | 5 | 信用包拆分退款语义：积分结清但订单停留 `paid`，与单笔全额退款翻转为 `refunded` 不一致（PR #1008 Notes 有断言现状的测试） | 建议单独聚焦任务 | 待操作者裁决 |
 | 6 | Alipay 沙箱授权 | notify 矩阵已绿，等操作者明确授权 | 操作者 |

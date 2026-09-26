@@ -137,10 +137,14 @@ development lane、documentation-only、L0。基线：master `3573b900`（PR #98
 - 实现与验证门槛：L2（迁移、worker、运行时行为），focused pytest + dispatch
   扼点合同测试 + M4 运行时证据 + 操作者 smoke；详见盘点文档第 5 节。
 
-### 8.1 当前候选实现状态（2026-09-23）
+### 8.1 当前候选实现状态（2026-09-23；2026-09-26 更新）
 
-`codex/provider-budget-closure` 已完成 Provider 账户预算候选实现并通过当前分支的
-focused Python/M4 验证，覆盖统一 dispatch 扼点、日/月原子 claim、重复 dispatch
-幂等、未定价成本保守回退、warning/fail-closed 以及已发现的 Provider 旁路。该候选尚未
-合入 `master`；合入后的 promotion、操作者 warning/拒绝 smoke 和有界真实成本回收仍是
-开放前的验证出口。
+Provider 账户预算实现已分两批合入 `master`：核心熔断（统一 dispatch 扼点、日/月原子
+claim、重复 dispatch 幂等、未定价成本保守回退、warning/fail-closed）随 PR #1029；
+旁路收敛、Admin 预算压力投影、warning 阈值测试、dispatch 合同测试与
+`execute_provider` 直通路径 claim 随 PR #1031。开放前的剩余验证出口：
+clean-`master` M4 promotion、操作者配置 `provider_account_spend_budget` 并执行
+warning/拒绝 smoke、rerank（Jina）与 web search httpx 兜底等裸 HTTP 付费路径的
+接入或显式豁免——详见
+[provider-budget-hard-cap-inventory-2026-09-23.md](provider-budget-hard-cap-inventory-2026-09-23.md)
+"实现合入更新（2026-09-26）"节。

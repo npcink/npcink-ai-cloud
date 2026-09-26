@@ -16,7 +16,7 @@ as current truth.
 | 查本地 WordPress 草稿闭环证据 | [本地草稿闭环验证记录](history/engineering/2026/local-wordpress-draft-closed-loop-validation-2026-09-23.md) — fake Provider、预览/插入/显式保存、回读一致性与精确清理；不是商业或用户验收证据 |
 | 查战略会话的讨论脉络与决定去向 | [战略会话综合纪要](strategy-session-synthesis-2026-09-22.md) — 时间线、七仓库总览、问题清单摘要 |
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) — 含 2026-09-23 增补的开放前必做项 |
-| 查 Provider 账户级预算硬上限缺口（开放前必做） | [Provider 预算硬上限缺口盘点](provider-budget-hard-cap-inventory-2026-09-23.md) — 三层缺口（日/月硬上限、预算告警、超限自动停用）在已提交 master 均未实现；ADR-055 设计已接受、实现待做 |
+| 查 Provider 账户级预算硬上限缺口（开放前必做） | [Provider 预算硬上限缺口盘点](provider-budget-hard-cap-inventory-2026-09-23.md) — 三层防线已合入 master（PR #1029/#1031）；剩余出口：M4 promotion、操作者武装与 smoke、裸 HTTP 付费路径收敛（见"实现合入更新"节） |
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
 | 逐项确认境内合规待办（生成式AI、标识、收款、数据） | [境内合规确认清单](compliance-confirmation-checklist-2026-09-23.md) — 工作底稿，非法律意见 |
