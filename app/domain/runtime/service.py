@@ -2775,6 +2775,9 @@ class RuntimeService:
                 result = self.provider_execution_service.execute_provider(
                     provider,
                     replace(request, retry_count=retry_count),
+                    session=repository.session,
+                    run=run,
+                    provider_id=candidate.provider_id,
                 )
                 successful_retry_count = retry_count
                 break
@@ -5531,6 +5534,9 @@ class RuntimeService:
             provider_result = self.provider_execution_service.execute_provider(
                 provider,
                 request,
+                session=repository.session,
+                run=run,
+                provider_id=candidate.provider_id,
             )
         except ProviderExecutionError as error:
             self.provider_execution_service.record_provider_call(

@@ -189,12 +189,49 @@ class RuntimeProviderExecutionService:
         self.output_finalizer = output_finalizer
         self.budget_guard = budget_guard
 
-    @staticmethod
     def execute_provider(
+        self,
         provider: ProviderAdapter,
         request: ProviderExecutionRequest,
+        *,
+        session: Session | None = None,
+        run: RunRecord | None = None,
+        provider_id: str | None = None,
     ) -> ProviderExecutionResult:
-        return provider.execute(request)
+        claim_ids: tuple[str, ...] = ()
+        if self.budget_guard is not None:
+            if session is None or run is None:
+                raise ProviderExecutionError(
+                    "provider.budget_configuration_missing",
+                    "provider budget guard requires session and run for direct dispatch",
+                    retryable=False,
+                )
+            claim = self.budget_guard.claim_before_dispatch(
+                session=session,
+                run=run,
+                provider_id=provider_id or str(getattr(provider, "provider_id", "")),
+                model_id=request.model_id,
+                request=request,
+            )
+            if claim is not None:
+                claim_ids = claim.claim_ids
+        try:
+            result = provider.execute(request)
+        except ProviderExecutionError:
+            if self.budget_guard is not None and claim_ids and session is not None:
+                self.budget_guard.reconcile(
+                    session=session,
+                    claim_ids=claim_ids,
+                    actual_cost_usd=None,
+                )
+            raise
+        if self.budget_guard is not None and claim_ids and session is not None:
+            self.budget_guard.reconcile(
+                session=session,
+                claim_ids=claim_ids,
+                actual_cost_usd=result.cost,
+            )
+        return result
 
     @staticmethod
     def enforce_context_budget(

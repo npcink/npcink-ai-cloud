@@ -188,6 +188,7 @@ class WebSearchService:
         for candidate in providers:
             provider = _build_provider(self.settings, candidate)
             budget_claim_ids: tuple[str, ...] = ()
+            claimed_budget_session: Session | None = None
             if budget_guard is not None:
                 if budget_session is None or budget_run is None:
                     raise ValueError(
@@ -228,6 +229,7 @@ class WebSearchService:
                     continue
                 if budget_claim is not None:
                     budget_claim_ids = budget_claim.claim_ids
+                    claimed_budget_session = budget_session
             try:
                 result = provider.search(
                     query=query,
@@ -236,16 +238,20 @@ class WebSearchService:
                     run_id=run_id,
                 )
             except WebSearchProviderError as error:
-                if budget_guard is not None and budget_claim_ids:
+                if (
+                    budget_guard is not None
+                    and budget_claim_ids
+                    and claimed_budget_session is not None
+                ):
                     if error.usage is None:
                         budget_guard.reconcile(
-                            session=budget_session,
+                            session=claimed_budget_session,
                             claim_ids=budget_claim_ids,
                             actual_cost_usd=None,
                         )
                     else:
                         budget_guard.reconcile(
-                            session=budget_session,
+                            session=claimed_budget_session,
                             claim_ids=budget_claim_ids,
                             actual_cost_usd=None
                             if error.error_code.startswith("provider.")
@@ -265,9 +271,13 @@ class WebSearchService:
                     }
                 )
                 continue
-            if budget_guard is not None and budget_claim_ids:
+            if (
+                budget_guard is not None
+                and budget_claim_ids
+                and claimed_budget_session is not None
+            ):
                 budget_guard.reconcile(
-                    session=budget_session,
+                    session=claimed_budget_session,
                     claim_ids=budget_claim_ids,
                     actual_cost_usd=result.usage.cost,
                 )
