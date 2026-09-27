@@ -36,6 +36,7 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
 )
+
 PROVIDER_ID = "ollama-m4"
 CONNECTION_ID = PROVIDER_ID
 LEGACY_CONNECTION_ID = "ollama_m4"
