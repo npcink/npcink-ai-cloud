@@ -3718,7 +3718,7 @@ def test_wordpress_ai_connector_runtime_accepts_empty_editorial_notes(
         {
             "task": "editorial_notes",
             "request": {
-                "prompt": "empty editorial notes: review this block",
+                "prompt": "empty editorial notes: 请检查这段中文内容的语法和可读性",
                 "response_format": "json",
                 "task_contract": {
                     "contract_version": "ai_task_contract.v1",
@@ -3755,6 +3755,7 @@ def test_wordpress_ai_connector_runtime_accepts_empty_editorial_notes(
 
     assert response.status_code == 200
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
+    assert "predominantly Simplified Chinese" in provider.requests[0].input_payload["input"]
     result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
     assert result == {"suggestions": []}
 

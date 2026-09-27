@@ -205,6 +205,11 @@ class WordPressOperationRuntime:
                 "digits separated by hyphens only. Never return Unicode characters, "
                 "percent-encoded bytes, percent signs, underscores, spaces, or a full URL."
             )
+            fragments.append(
+                "For named entities and product terms, use their established Latin spelling "
+                "when one is known (for example WordPress, WeChat, Baidu, and mini-program). "
+                "Do not invent pinyin by splitting Chinese characters into arbitrary syllables."
+            )
         target_language = str(scene_request.get("target_language") or "").strip()
         if task == "content_translation" and target_language:
             fragments.append(
@@ -254,6 +259,13 @@ class WordPressOperationRuntime:
             )
         if system_instruction:
             fragments.append(system_instruction)
+        if task != "slug_generation" and self._is_predominantly_cjk(scene_text):
+            fragments.append(
+                "The scene is predominantly Simplified Chinese. Write every human-readable "
+                "part of the result in Simplified Chinese, including suggestions and "
+                "explanations. Preserve proper nouns, code, URLs, and quoted technical terms "
+                "when needed; do not translate those mechanically."
+            )
         if scene_text:
             fragments.append(f"Scene input:\n{scene_text}")
         fragments.append("Do not mention this instruction. Do not explain your answer.")
@@ -1606,6 +1618,12 @@ class WordPressOperationRuntime:
         cjk_count = len(re.findall(r"[\u4e00-\u9fff]", text))
         latin_count = len(re.findall(r"[A-Za-z]", text))
         return latin_count > max(24, cjk_count * 2)
+
+    @staticmethod
+    def _is_predominantly_cjk(text: str) -> bool:
+        cjk_count = len(re.findall(r"[\u4e00-\u9fff]", text))
+        latin_count = len(re.findall(r"[A-Za-z]", text))
+        return cjk_count >= 4 and latin_count <= max(24, cjk_count * 2)
 
     def _extract_cjk_text(self, source_text: str, *, limit: int) -> str:
         fragments = re.findall(
