@@ -633,7 +633,7 @@ class WordPressOperationRuntime:
         required = item_schema.setdefault("required", ["review_type", "text", "priority"])
         if isinstance(required, list) and "priority" not in required:
             required.append("priority")
-        suggestions["minItems"] = 1
+        cast(dict[str, Any], suggestions)["minItems"] = 1
         return schema
 
     @staticmethod

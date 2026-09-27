@@ -2249,12 +2249,11 @@ class OpenAIProviderAdapter:
                     if block_type in {"text", "input_text"} and isinstance(block.get("text"), str):
                         text_parts.append(block["text"])
                     image = block.get("image_url")
+                    image_url = ""
                     if block_type == "input_image" and isinstance(image, str):
                         image_url = image
-                    elif isinstance(image, dict):
-                        image_url = image.get("url")
-                    else:
-                        image_url = ""
+                    elif isinstance(image, dict) and isinstance(image.get("url"), str):
+                        image_url = image["url"]
                     if isinstance(image_url, str) and image_url.startswith("data:"):
                         encoded = image_url.split(",", 1)[1] if "," in image_url else ""
                         if encoded:
