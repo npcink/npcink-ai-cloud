@@ -376,7 +376,9 @@ class WordPressAIConnectorTextProvider:
                 )
         elif task == "slug_generation":
             output_text = (
-                '{"slugs":["thebiz-%e5%be%ae%e4%bf%a1-%e5%b0%8f%e7%a8%8b%e5%ba%8f", '
+                '{"slugs":["%e4%b8%ad%e6%96%87%e6%a0%87%e9%a2%98", "中文标题"]}'
+                if "invalid slug" in source_text
+                else '{"slugs":["thebiz-%e5%be%ae%e4%bf%a1-%e5%b0%8f%e7%a8%8b%e5%ba%8f", '
                 '"中文标题", "wordpress-ai-cloud"]}'
                 if "encoded slug" in source_text
                 else '{"slugs":["wordpress-ai-cloud","cloud-provider"]}'
@@ -3570,6 +3572,43 @@ def test_wordpress_ai_connector_runtime_normalizes_encoded_slug_suggestions(
     assert "thebiz" not in result["slugs"]
     assert all("%" not in slug and slug == slug.lower() for slug in result["slugs"])
     assert all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) for slug in result["slugs"])
+
+
+def test_wordpress_ai_connector_runtime_returns_empty_slug_shape_for_invalid_candidates(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "slug_generation",
+            "request": {
+                "prompt": "invalid slug: <title>中文标题</title>",
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/slug-generation",
+                    "task": "slug_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["json_object", "source_grounded"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "slugs": {"type": "array", "items": {"type": "string"}}
+                        },
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-invalid-slug")
+
+    assert response.status_code == 200
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result == {"slugs": []}
 
 
 def test_wordpress_ai_connector_runtime_matches_taxonomy_spacing_to_existing_term(

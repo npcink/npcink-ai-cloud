@@ -1202,8 +1202,10 @@ class WordPressOperationRuntime:
                     break
         if not slugs:
             # An empty result is safer than fabricating a slug from transport
-            # metadata or a title whose language may not be transliterable.
-            return ""
+            # metadata or a title whose language may not be transliterable. Keep
+            # the official JSON shape so the raw provider value cannot leak
+            # back through the generic output fallback.
+            return json.dumps({"slugs": []}, ensure_ascii=False, separators=(",", ":"))
         return json.dumps({"slugs": slugs}, ensure_ascii=False, separators=(",", ":"))
 
     @staticmethod
