@@ -334,7 +334,11 @@ def test_alt_text_contract_accepts_ability_schema_projection() -> None:
         },
     }
     normalized = validate_wordpress_operation_contract(
-        {"contract_version": "wordpress_operation.v1", "task": "alt_text_suggest", "request": request}
+        {
+            "contract_version": "wordpress_operation.v1",
+            "task": "alt_text_suggest",
+            "request": request,
+        }
     )
     assert normalized["request"]["task_contract"]["schema_hash"].startswith("sha256:")
 

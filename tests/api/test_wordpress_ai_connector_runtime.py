@@ -371,7 +371,8 @@ class WordPressAIConnectorTextProvider:
             output_text = '{"slugs":["wordpress-ai-cloud","cloud-provider"]}'
         elif task == "editorial_notes":
             output_text = (
-                '{"suggestions":[{"review_type":"seo","text":"Clarify the primary topic.","priority":1}]}'
+                '{"suggestions":[{"review_type":"seo","text":"Clarify the '
+                'primary topic.","priority":1}]}'
             )
         elif task == "content_rewrite" and "rewrite variants" in source_text:
             output_text = (
@@ -1107,7 +1108,9 @@ def test_wordpress_ai_connector_accepts_php_compatible_schema_hash(
                     "constraints": ["json_object", "source_grounded"],
                     "input_schema": {"description": "中文/路径"},
                     "output_schema": {"type": "string"},
-                    "schema_hash": "sha256:1d8d58420ee02ff26a208c24a2fd5024f47357b2e460af7f735df9e72f7c732b",
+                    "schema_hash": (
+                        "sha256:1d8d58420ee02ff26a208c24a2fd5024f47357b2e460af7f735df9e72f7c732b"
+                    ),
                     "write_posture": "suggestion_only",
                 },
             },
@@ -1117,7 +1120,10 @@ def test_wordpress_ai_connector_accepts_php_compatible_schema_hash(
     response = _execute(client, payload, idempotency_key="wp-ai-schema-hash-compatible")
 
     assert response.status_code == 200, response.text
-    assert response.json().get("error_code") != "wordpress_operation.ai_task_contract_schema_hash_mismatch"
+    assert (
+        response.json().get("error_code")
+        != "wordpress_operation.ai_task_contract_schema_hash_mismatch"
+    )
     assert len(provider.requests) >= 1
 
 

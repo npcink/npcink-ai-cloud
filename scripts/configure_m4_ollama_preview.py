@@ -16,8 +16,9 @@ from app.core.models import (
     RoutingBinding,
     RoutingProfile,
 )
-from app.domain.provider_connections.service import ProviderConnectionAdminService
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
 from app.domain.model_capabilities.probes import probe_vision, vision_probe_fingerprint
+from app.domain.provider_connections.service import ProviderConnectionAdminService
 from app.domain.routing.service import RoutingService
 from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_LOCAL_PREVIEW_BASE_URL,
@@ -35,8 +36,6 @@ from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
 )
-from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
-
 PROVIDER_ID = "ollama-m4"
 CONNECTION_ID = PROVIDER_ID
 LEGACY_CONNECTION_ID = "ollama_m4"

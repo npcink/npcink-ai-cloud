@@ -436,7 +436,9 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             ensure_ascii=True,
             separators=(",", ":"),
         ).replace("/", "\\/")
-        expected_hash = "sha256:" + hashlib.sha256(canonical_schema_json.encode("utf-8")).hexdigest()
+        expected_hash = "sha256:" + hashlib.sha256(
+            canonical_schema_json.encode("utf-8")
+        ).hexdigest()
         if expected_hash != schema_hash:
             raise WordPressOperationContractViolation(
                 "wordpress_operation.ai_task_contract_schema_hash_mismatch",
