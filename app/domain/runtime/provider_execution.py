@@ -483,6 +483,8 @@ class RuntimeProviderExecutionService:
                         output_usage_context=decision.usage_context,
                         budget_claim_ids=budget_claim.claim_ids if budget_claim else (),
                     )
+                    if retry_count < max_retries:
+                        continue
                     if allow_fallback:
                         break
                     self.run_controller.fail_run(

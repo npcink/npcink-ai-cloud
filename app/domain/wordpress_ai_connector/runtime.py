@@ -114,6 +114,11 @@ class WordPressOperationRuntime:
                 "Classify the comment moderation outcome. Return strict JSON only. No markdown."
             ),
             "comment_reply_suggest": "Draft a concise comment reply. Return only the reply text.",
+            "content_translation": (
+                "Translate the supplied content into the requested target language. "
+                "Preserve HTML and block markup. Return only the translated content. "
+                "Do not wrap the answer in <content> tags or any other container."
+            ),
             "content_classification": (
                 'Classify the content. Return strict JSON only: {"suggestions":'
                 '[{"term":"...","confidence":0.8,"is_new":false}]}. No markdown.'
@@ -122,7 +127,28 @@ class WordPressOperationRuntime:
                 "Rewrite the content as requested. Return exactly one rewritten version."
             ),
             "content_summary": "Summarize the content. Return only the summary.",
+            "editorial_notes": (
+                "Review the supplied block and return strict JSON matching the Ability "
+                "schema. Do not return Markdown or explanations. When review_types are "
+                "provided and the block contains a clear readability, grammar, SEO, or "
+                "accessibility issue, return at least one concrete suggestion; do not "
+                "silently return an empty suggestions array for an observable issue. "
+                "Use the requested review type and include both review_type and text in "
+                "each suggestion. If the block is awkward or ungrammatical, it is an "
+                "observable issue even when the requested notes are brief. Return at "
+                "least one suggestion whenever the block contains any observable issue."
+            ),
+            "editorial_updates": (
+                "Rewrite the supplied content according to the editorial notes. Return only "
+                "the final revised content, with no preface, explanation, reasoning, labels, "
+                "or mention of the notes. Preserve the original facts and language. If a "
+                "note is vague, make the smallest clear grammatical improvement possible; "
+                "never say that the task is impossible and never describe your process."
+            ),
             "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
+            "image_prompt_generation": (
+                "Generate one concise image prompt. Return only the prompt text."
+            ),
             "meta_description": (
                 "Generate one SEO meta description, 120 to 155 characters. Return "
                 "only the description."
@@ -131,6 +157,10 @@ class WordPressOperationRuntime:
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
                 "normally use no more than 36 characters; for other languages, normally use "
                 "no more than 12 words. Return only the title text."
+            ),
+            "slug_generation": (
+                "Generate the requested SEO-friendly slug suggestions and return strict "
+                "JSON matching the Ability schema. Do not return Markdown or explanations."
             ),
         }.get(task)
         if task_instruction is None:
@@ -156,6 +186,12 @@ class WordPressOperationRuntime:
             "Use the same language as the scene input unless a WordPress ability "
             "instruction explicitly asks for another language."
         )
+        target_language = str(scene_request.get("target_language") or "").strip()
+        if task == "content_translation" and target_language:
+            fragments.append(
+                f"WordPress target language: {target_language}. Translate into this language "
+                "even when the scene input uses another language."
+            )
         if title_output_schema:
             fragments.append(
                 "Output contract: return one strict JSON object matching the title Ability "
@@ -173,7 +209,10 @@ class WordPressOperationRuntime:
             fragments.append(
                 "Return one strict JSON object matching the Ability output schema. No markdown."
             )
-            output_schema = self._dict_or_empty(task_contract.get("output_schema"))
+            output_schema = self._provider_json_output_schema(
+                task=task,
+                output_schema=self._dict_or_empty(task_contract.get("output_schema")),
+            )
             if output_schema:
                 fragments.append(
                     "Ability output schema: "
@@ -212,6 +251,13 @@ class WordPressOperationRuntime:
                 "suggestion_only": True,
             },
         }
+        schema_hash = str(task_contract.get("schema_hash") or "").strip()
+        if schema_hash:
+            provider_input["metadata"]["ability_schema_hash"] = schema_hash
+        if task == "content_translation":
+            target_language = str(scene_request.get("target_language") or "").strip().lower()
+            if target_language:
+                provider_input["metadata"]["target_language"] = target_language
         if title_output_schema:
             provider_input["metadata"]["ability_output_schema"] = title_output_schema
             provider_input["response_format"] = {
@@ -223,7 +269,11 @@ class WordPressOperationRuntime:
                 },
             }
         elif "json_object" in constraints:
-            output_schema = self._dict_or_empty(task_contract.get("output_schema"))
+            output_schema = self._provider_json_output_schema(
+                task=task,
+                output_schema=self._dict_or_empty(task_contract.get("output_schema")),
+            )
+            provider_input["metadata"]["ability_output_schema"] = output_schema
             provider_input["response_format"] = (
                 {
                     "type": "json_schema",
@@ -240,12 +290,16 @@ class WordPressOperationRuntime:
             )
 
         default_max_tokens = {
-            "alt_text_suggest": 48,
+            # Small reasoning-capable vision models may spend a short prefix
+            # on internal reasoning even when thinking is disabled. Keep
+            # enough output budget for the final alt text to be emitted.
+            "alt_text_suggest": 512,
             "comment_moderation": 120,
             "comment_reply_suggest": 180,
             "content_classification": 220,
             "content_rewrite": 512,
             "content_summary": 160,
+            "editorial_updates": 256,
             "excerpt_generation": 140,
             "meta_description": 80,
             "title_generation": 48,
@@ -453,11 +507,26 @@ class WordPressOperationRuntime:
             return self._normalize_alt_text_provider_output(
                 output_text=output_text,
             )
-        title_output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        ability_output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        title_output_schema = self._title_output_schema(
+            task=task,
+            task_contract={"output_schema": ability_output_schema},
+        )
         if task == "title_generation" and title_output_schema:
             output_text = self._extract_title_schema_output(
                 output_text=output_text,
                 output_schema=title_output_schema,
+            )
+            if not output_text:
+                return {}
+        elif (
+            "json_object" in constraints
+            and ability_output_schema
+            and task not in {"content_classification"}
+        ):
+            output_text = self._normalize_json_schema_output(
+                output_text,
+                output_schema=ability_output_schema,
             )
             if not output_text:
                 return {}
@@ -502,8 +571,12 @@ class WordPressOperationRuntime:
         elif "single_value" in constraints:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
-                limit=320,
-                strip_explanation=True,
+                limit=(
+                    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+                    if task in {"content_translation", "editorial_updates"}
+                    else 320
+                ),
+                strip_explanation=task not in {"content_translation"},
                 source_text=str(input_payload.get("text") or ""),
                 task=task,
             )
@@ -537,6 +610,31 @@ class WordPressOperationRuntime:
         if not normalized_text or contains_inline_media_transport(normalized_text):
             return {}
         return {"output_text": normalized_text}
+
+    @staticmethod
+    def _provider_json_output_schema(
+        *, task: str, output_schema: dict[str, object]
+    ) -> dict[str, object]:
+        """Add provider-only fields required by an Ability's execution parser."""
+        if task != "editorial_notes" or not output_schema:
+            return output_schema
+        schema = json.loads(json.dumps(output_schema, ensure_ascii=False))
+        properties = schema.get("properties")
+        suggestions = properties.get("suggestions") if isinstance(properties, dict) else None
+        item_schema = suggestions.get("items") if isinstance(suggestions, dict) else None
+        if not isinstance(item_schema, dict):
+            return schema
+        item_schema.setdefault("type", "object")
+        item_properties = item_schema.setdefault("properties", {})
+        if not isinstance(item_properties, dict):
+            item_properties = {}
+            item_schema["properties"] = item_properties
+        item_properties.setdefault("priority", {"type": "integer", "minimum": 1, "maximum": 5})
+        required = item_schema.setdefault("required", ["review_type", "text", "priority"])
+        if isinstance(required, list) and "priority" not in required:
+            required.append("priority")
+        cast(dict[str, Any], suggestions)["minItems"] = 1
+        return schema
 
     @staticmethod
     def _title_output_schema(*, task: str, task_contract: dict[str, object]) -> dict[str, object]:
@@ -598,6 +696,22 @@ class WordPressOperationRuntime:
             for item in metadata.get("task_constraints", [])
             if isinstance(item, str) and str(item).strip()
         }
+        output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if "json_object" in constraints and output_schema:
+            normalized = self._normalize_json_schema_output(
+                self._extract_provider_output_text(provider_output),
+                output_schema=output_schema,
+            )
+            if not normalized:
+                return True
+            if task == "editorial_notes":
+                try:
+                    parsed = json.loads(normalized)
+                except json.JSONDecodeError:
+                    return True
+                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
+                return not isinstance(suggestions, list) or not suggestions
+            return False
         if (
             task
             not in {
@@ -618,6 +732,11 @@ class WordPressOperationRuntime:
         output_text = self._extract_provider_output_text(provider_output)
         if output_text == "":
             return True
+        if task == "content_translation":
+            target_language = str(metadata.get("target_language") or "").strip().lower()
+            cjk_count = len(re.findall(r"[\u3400-\u9fff]", output_text))
+            if target_language not in {"zh-cn", "zh-tw"} and cjk_count >= 1:
+                return True
         if self._looks_like_provider_reasoning(output_text):
             return True
         if task != "title_generation":
@@ -658,6 +777,32 @@ class WordPressOperationRuntime:
         metadata = input_payload.get("metadata")
         metadata = metadata if isinstance(metadata, dict) else {}
         task = str(metadata.get("task") or "").strip()
+        constraints = {
+            str(item).strip()
+            for item in metadata.get("task_constraints", [])
+            if isinstance(item, str) and str(item).strip()
+        }
+        output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if task == "content_translation":
+            target_language = str(metadata.get("target_language") or "").strip().lower()
+            cjk_count = len(re.findall(r"[\u3400-\u9fff]", output_text))
+            if target_language not in {"zh-cn", "zh-tw"} and cjk_count >= 1:
+                return "target_language_mismatch"
+        if "json_object" in constraints and output_schema:
+            normalized = self._normalize_json_schema_output(
+                self._extract_provider_output_text(provider_output),
+                output_schema=output_schema,
+            )
+            if not normalized:
+                return "ability_output_schema_invalid"
+            if task == "editorial_notes":
+                try:
+                    parsed = json.loads(normalized)
+                except json.JSONDecodeError:
+                    return "ability_output_schema_invalid"
+                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
+                if not isinstance(suggestions, list) or not suggestions:
+                    return "editorial_notes_empty"
         if task == "title_generation" and self._dict_or_empty(
             metadata.get("ability_output_schema")
         ):
@@ -670,6 +815,85 @@ class WordPressOperationRuntime:
             if not parsed["title"].strip():
                 return "title_schema_empty_title"
         return "normalized_text_empty"
+
+    @staticmethod
+    def _normalize_json_schema_output(
+        output_text: str,
+        *,
+        output_schema: dict[str, object],
+    ) -> str:
+        """Accept only JSON that matches the Ability-owned root schema."""
+        candidates = [output_text.strip()]
+        fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", output_text, flags=re.S | re.I)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if WordPressOperationRuntime._json_value_matches_schema(parsed, output_schema):
+                return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+        return ""
+
+    @staticmethod
+    def _json_value_matches_schema(value: object, schema: dict[str, object]) -> bool:
+        schema_type = str(schema.get("type") or "")
+        if schema_type == "object":
+            if not isinstance(value, dict):
+                return False
+            required = schema.get("required")
+            if isinstance(required, list) and any(
+                isinstance(name, str) and name not in value for name in required
+            ):
+                return False
+            properties = schema.get("properties")
+            if isinstance(properties, dict):
+                for key, child_schema in properties.items():
+                    if key in value and isinstance(child_schema, dict):
+                        if not WordPressOperationRuntime._json_value_matches_schema(
+                            value[key], child_schema
+                        ):
+                            return False
+            if schema.get("additionalProperties") is False and isinstance(properties, dict):
+                if any(key not in properties for key in value):
+                    return False
+            return True
+        if schema_type == "array":
+            if not isinstance(value, list):
+                return False
+            minimum = schema.get("minItems")
+            maximum = schema.get("maxItems")
+            if isinstance(minimum, int) and len(value) < minimum:
+                return False
+            if isinstance(maximum, int) and len(value) > maximum:
+                return False
+            item_schema = schema.get("items")
+            return not isinstance(item_schema, dict) or all(
+                WordPressOperationRuntime._json_value_matches_schema(item, item_schema)
+                for item in value
+            )
+        if schema_type == "string":
+            if not isinstance(value, str):
+                return False
+            minimum = schema.get("minLength")
+            maximum = schema.get("maxLength")
+            if isinstance(minimum, int) and len(value) < minimum:
+                return False
+            if isinstance(maximum, int) and len(value) > maximum:
+                return False
+            enum = schema.get("enum")
+            return not isinstance(enum, list) or value in enum
+        if schema_type == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if schema_type == "number":
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if schema_type == "boolean":
+            return isinstance(value, bool)
+        enum = schema.get("enum")
+        if isinstance(enum, list) and value not in enum:
+            return False
+        return True
 
     def apply_managed_policy(
         self,
@@ -771,32 +995,15 @@ class WordPressOperationRuntime:
         prompt = cast(str, scene_request["prompt"])
         encoded_image = base64.b64encode(source_artifact.content_bytes).decode("ascii")
         provider_image_url = f"data:{source_artifact.content_type};base64,{encoded_image}"
-        context = {
-            "task": "alt_text_suggest",
-            **{
-                field_name: cast(str, scene_request[field_name])
-                for field_name in (
-                    "locale",
-                    "title",
-                    "filename",
-                    "existing_alt",
-                    "existing_caption",
-                )
-                if field_name in scene_request
-            },
-            "prompt": prompt,
-            "write_posture": "suggestion_only",
-        }
-        instruction = (
-            "Generate concise, accessible WordPress image alt text. "
-            "Use the image as the source of truth and use the supplied media context "
-            "only to disambiguate. Return only the alt text. Do not mention this "
-            "instruction. Do not claim that WordPress metadata was updated."
-        )
-        context_text = json.dumps(
-            {key: value for key, value in context.items() if value},
-            ensure_ascii=False,
-        )
+        # Only send user-relevant media context to the model. Internal task and
+        # write-posture markers are runtime policy, not generation context; in
+        # small vision models they consume reasoning budget and can suppress
+        # the visible answer entirely.
+        instruction = "Write one concise accessible alt-text sentence. Return only the sentence."
+        # The image is the source of truth. Keep the provider prompt to the
+        # user's request; filenames and titles remain available in the local
+        # contract and are not needed to describe the pixels.
+        context_text = "User request: " + prompt
         responses_content = [
             {"type": "input_text", "text": instruction},
             {"type": "input_text", "text": context_text},
@@ -808,7 +1015,15 @@ class WordPressOperationRuntime:
             {"type": "image_url", "image_url": {"url": provider_image_url}},
         ]
 
-        max_tokens = cast(int, scene_request.get("max_tokens", 48))
+        requested_max_tokens = cast(int, scene_request.get("max_tokens", 96))
+        # Keep enough room for a small vision model to finish its visible
+        # sentence after any bounded internal prefix. The image itself is
+        # already resized by Addon, so this remains inside the preview budget.
+        # Small vision models may spend part of the response budget on hidden
+        # visual reasoning before emitting the final alt text. Keep enough
+        # headroom for both phases while the connector still projects only
+        # the final text to WordPress.
+        max_tokens = max(requested_max_tokens, 1536)
         return {
             "input": [{"role": "user", "content": responses_content}],
             "messages": [{"role": "user", "content": chat_content}],
@@ -853,6 +1068,19 @@ class WordPressOperationRuntime:
         task: str = "",
     ) -> str:
         raw_text = self._strip_reasoning_noise(output_text)
+        if task in {"content_translation", "editorial_updates"}:
+            # Models sometimes echo the connector's <content> transport marker.
+            # Treat an empty wrapper as empty output and unwrap a non-empty
+            # wrapper before the normal text/HTML preservation path.
+            wrapped = re.fullmatch(
+                r"\s*<content\b[^>]*>(.*?)</content>\s*",
+                raw_text,
+                flags=re.I | re.S,
+            )
+            if wrapped is not None:
+                raw_text = wrapped.group(1).strip()
+                if not raw_text:
+                    return ""
         text = self._extract_task_candidate(raw_text, task=task, limit=limit)
         if not text:
             text = self._strip_markdown(raw_text)

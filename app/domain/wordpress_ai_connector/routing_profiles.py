@@ -45,8 +45,11 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         label="Short text",
         execution_kind="text",
         tasks=(
+            "content_translation",
             "excerpt_generation",
+            "image_prompt_generation",
             "meta_description",
+            "slug_generation",
             "title_generation",
             "audio_summary_script",
         ),
@@ -54,7 +57,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         timeout_ms=45_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
-        max_retries=0,
+        max_retries=1,
         description=(
             "Low-latency WordPress AI suggestions for titles, SEO text, excerpts, "
             "and audio summary scripts."
@@ -70,12 +73,13 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
             "comment_reply_suggest",
             "content_rewrite",
             "content_summary",
+            "editorial_updates",
         ),
         ordered_tiers=("free-gpt55", "hosted-free", "balanced", "economy", "quality"),
-        timeout_ms=45_000,
+        timeout_ms=60_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
-        max_retries=0,
+        max_retries=1,
         description=(
             "Bounded editorial suggestions for summaries, rewrites, and reviewable "
             "replies."
@@ -90,12 +94,13 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         tasks=(
             "comment_moderation",
             "content_classification",
+            "editorial_notes",
         ),
         ordered_tiers=("free-gpt55", "hosted-free", "balanced", "economy"),
         timeout_ms=25_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
-        max_retries=0,
+        max_retries=1,
         description="Structured taxonomy and moderation suggestions for WordPress AI tasks.",
     ),
     WordPressAIConnectorProfileSpec(
@@ -106,7 +111,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         execution_kind="vision",
         tasks=("alt_text_suggest",),
         ordered_tiers=("default", "quality"),
-        timeout_ms=45_000,
+        timeout_ms=60_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
         max_retries=0,

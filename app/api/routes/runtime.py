@@ -239,12 +239,20 @@ def _validate_runtime_json_shape(
     allow_wordpress_ai_output_schema: bool = False,
 ) -> None:
     depth_limit = MAX_RUNTIME_JSON_DEPTH
-    if allow_wordpress_ai_output_schema and path[:4] == (
-        "operation_contract",
-        "request",
-        "task_contract",
-        "output_schema",
-    ):
+    if allow_wordpress_ai_output_schema and path[:4] in {
+        (
+            "operation_contract",
+            "request",
+            "task_contract",
+            "input_schema",
+        ),
+        (
+            "operation_contract",
+            "request",
+            "task_contract",
+            "output_schema",
+        ),
+    }:
         depth_limit = MAX_RUNTIME_SCHEMA_JSON_DEPTH
     if depth >= depth_limit:
         raise ValueError(f"{field_name} exceeds the accepted nesting depth")

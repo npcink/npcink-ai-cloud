@@ -140,6 +140,36 @@ def test_runtime_payload_accepts_bounded_wordpress_ai_output_schema() -> None:
     )
 
 
+def test_runtime_payload_accepts_bounded_wordpress_ai_input_schema() -> None:
+    RuntimePayload(
+        site_id="site_alpha",
+        ability_name="npcink-cloud/connector-runtime",
+        contract_version="cloud_connector_runtime.v1",
+        channel="editor",
+        execution_kind="text",
+        input=_connector_payload_input(
+            {
+                "task_contract": {
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "object",
+                                "properties": {
+                                    "blocks": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            }
+        ),
+    )
+
+
 def test_runtime_payload_keeps_non_schema_wordpress_ai_input_depth_bounded() -> None:
     value: object = "leaf"
     for _ in range(9):

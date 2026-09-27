@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any
@@ -34,6 +35,7 @@ WP_AI_CONNECTOR_ALT_TEXT_REQUEST_FIELDS = frozenset(
         "max_tokens",
         "prompt",
         "source_artifact_id",
+        "task_contract",
         "title",
     }
 )
@@ -65,11 +67,15 @@ WP_AI_CONNECTOR_ALLOWED_TASKS = frozenset(
         "audio_summary_script",
         "comment_moderation",
         "comment_reply_suggest",
+        "content_translation",
         "content_classification",
         "content_rewrite",
         "content_summary",
+        "editorial_notes",
+        "editorial_updates",
         "excerpt_generation",
         "meta_description",
+        "slug_generation",
         "title_generation",
     }
 )
@@ -77,6 +83,8 @@ WP_AI_CONNECTOR_SOURCE_TEXT_TASKS = frozenset(
     {
         "content_rewrite",
         "content_summary",
+        "content_translation",
+        "editorial_updates",
         "title_generation",
     }
 )
@@ -332,7 +340,9 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
         "task_family",
         "context_requirements",
         "constraints",
+        "input_schema",
         "output_schema",
+        "schema_hash",
         "write_posture",
     }
     if set(value) - allowed_fields:
@@ -403,6 +413,37 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "wordpress_operation.ai_task_contract_output_schema_too_large",
             "AI task contract output schema exceeds the runtime projection limit",
         )
+    input_schema = value.get("input_schema")
+    if input_schema is not None and not isinstance(input_schema, dict):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_input_schema_invalid",
+            "AI task contract input schema must be an object when provided",
+        )
+    schema_hash = str(value.get("schema_hash") or "")
+    if schema_hash and re.fullmatch(r"sha256:[0-9a-f]{64}", schema_hash) is None:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_schema_hash_invalid",
+            "AI task contract schema_hash must be a sha256 digest when provided",
+        )
+    if schema_hash:
+        # Keep the digest byte-compatible with PHP's default wp_json_encode()
+        # used by the Addon: compact JSON, escaped Unicode, and escaped slashes.
+        canonical_schema_json = json.dumps(
+            {
+                "input_schema": input_schema if isinstance(input_schema, dict) else {},
+                "output_schema": output_schema,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).replace("/", "\\/")
+        expected_hash = "sha256:" + hashlib.sha256(
+            canonical_schema_json.encode("utf-8")
+        ).hexdigest()
+        if expected_hash != schema_hash:
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.ai_task_contract_schema_hash_mismatch",
+                "AI task contract schema_hash does not match its input and output schemas",
+            )
 
 
 def resolve_site_knowledge_reference_mode(

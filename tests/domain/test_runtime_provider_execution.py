@@ -683,6 +683,44 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
         }
 
 
+def test_candidate_engine_rejected_output_retries_before_success(database_url: str) -> None:
+    primary = SequenceProvider(
+        "primary",
+        [provider_success("reject"), provider_success("accept")],
+    )
+    service = execution_service(
+        providers={"primary": primary},
+        controller=RecordingRunController(),
+        output_preparer=lambda run, **kwargs: ProviderOutputDecision(
+            accepted=kwargs["provider_output"]["output_text"] == "accept",
+            output=kwargs["provider_output"],
+            error_code="provider.output_quality_rejected",
+            error_message="empty output",
+        ),
+    )
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_rejected_retry",
+            policy={"allow_fallback": False, "max_retries": 1},
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "model-primary", "instance-primary")],
+            input_payload={},
+        )
+
+        assert run.status == "succeeded"
+        calls = repository.list_provider_calls(run.run_id)
+        assert len(calls) == 2
+        assert calls[0].error_code == "provider.output_quality_rejected"
+        assert calls[0].retry_count == 0
+        assert calls[1].error_code is None
+        assert calls[1].retry_count == 1
+
+
 def test_finalization_failure_follows_success_evidence_and_cancel_stops_attempts(
     database_url: str,
 ) -> None:
