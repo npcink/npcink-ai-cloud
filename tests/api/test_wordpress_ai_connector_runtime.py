@@ -376,7 +376,8 @@ class WordPressAIConnectorTextProvider:
                 )
         elif task == "slug_generation":
             output_text = (
-                '{"slugs":["thebiz-%e5%be%ae%e4%bf%a1-%e5%b0%8f%e7%a8%8b%e5%ba%8f", "中文标题"]}'
+                '{"slugs":["thebiz-%e5%be%ae%e4%bf%a1-%e5%b0%8f%e7%a8%8b%e5%ba%8f", '
+                '"中文标题", "wordpress-ai-cloud"]}'
                 if "encoded slug" in source_text
                 else '{"slugs":["wordpress-ai-cloud","cloud-provider"]}'
             )
@@ -3565,6 +3566,8 @@ def test_wordpress_ai_connector_runtime_normalizes_encoded_slug_suggestions(
     assert "ASCII transport value" in provider_input["input"]
     result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
     assert result["slugs"]
+    assert "wordpress-ai-cloud" in result["slugs"]
+    assert "thebiz" not in result["slugs"]
     assert all("%" not in slug and slug == slug.lower() for slug in result["slugs"])
     assert all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) for slug in result["slugs"])
 
@@ -3621,7 +3624,7 @@ def test_wordpress_ai_connector_runtime_matches_taxonomy_spacing_to_existing_ter
     ]
 
 
-def test_wordpress_ai_connector_runtime_falls_back_to_grounded_existing_taxonomy_term(
+def test_wordpress_ai_connector_runtime_does_not_fabricate_existing_taxonomy_result(
     tmp_path: Path,
 ) -> None:
     _, client, provider = _build_client(tmp_path)
@@ -3665,9 +3668,7 @@ def test_wordpress_ai_connector_runtime_falls_back_to_grounded_existing_taxonomy
     assert response.status_code == 200
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
     result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
-    assert result["suggestions"] == [
-        {"term": "WP 插件", "confidence": 0.72, "is_new": False}
-    ]
+    assert result == {"suggestions": []}
 
 
 def test_wordpress_ai_connector_runtime_accepts_empty_editorial_notes(

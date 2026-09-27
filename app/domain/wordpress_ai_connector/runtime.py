@@ -590,10 +590,7 @@ class WordPressOperationRuntime:
                 source_text=str(input_payload.get("text") or ""),
             )
         elif task == "slug_generation":
-            normalized_text = self._normalize_slug_output(
-                output_text,
-                source_text=str(input_payload.get("text") or ""),
-            )
+            normalized_text = self._normalize_slug_output(output_text)
         elif task in (
             "title_generation",
             "excerpt_generation",
@@ -1161,30 +1158,36 @@ class WordPressOperationRuntime:
         *,
         source_text: str = "",
     ) -> str:
+        available_terms = self._extract_available_terms(source_text)
         parsed = self._parse_classification_json(output_text)
         if parsed is None:
+            # With an official candidate pool, malformed model output cannot be
+            # safely converted into a new taxonomy term. Preserve a legitimate
+            # empty result and let the local Ability report no suggestions.
             parsed = {
-                "suggestions": [
-                    {"term": term, "confidence": 0.6, "is_new": True}
-                    for term in self._extract_classification_terms(
-                        output_text,
-                        source_text=source_text,
-                    )
-                ]
+                "suggestions": (
+                    []
+                    if available_terms
+                    else [
+                        {"term": term, "confidence": 0.6, "is_new": True}
+                        for term in self._extract_classification_terms(
+                            output_text,
+                            source_text=source_text,
+                        )
+                    ]
+                )
             }
-        available_terms = self._extract_available_terms(source_text)
         if available_terms:
-            matched = self._match_existing_taxonomy_terms(
+            # WordPress supplies the candidate pool and owns the meaning of an
+            # empty result. Keep only model suggestions that can be mapped to a
+            # supplied term; never infer a taxonomy term from arbitrary content.
+            parsed["suggestions"] = self._match_existing_taxonomy_terms(
                 parsed.get("suggestions"),
-                available_terms,
-            )
-            parsed["suggestions"] = matched or self._fallback_existing_taxonomy_suggestions(
-                source_text,
                 available_terms,
             )
         return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
 
-    def _normalize_slug_output(self, output_text: str, *, source_text: str) -> str:
+    def _normalize_slug_output(self, output_text: str) -> str:
         parsed = self._parse_json_object(output_text)
         raw_slugs = parsed.get("slugs") if isinstance(parsed, dict) else None
         slugs: list[str] = []
@@ -1198,10 +1201,8 @@ class WordPressOperationRuntime:
                 if len(slugs) >= 10:
                     break
         if not slugs:
-            fallback = self._fallback_ascii_slug(source_text)
-            if fallback:
-                slugs.append(fallback)
-        if not slugs:
+            # An empty result is safer than fabricating a slug from transport
+            # metadata or a title whose language may not be transliterable.
             return ""
         return json.dumps({"slugs": slugs}, ensure_ascii=False, separators=(",", ":"))
 
@@ -1228,19 +1229,16 @@ class WordPressOperationRuntime:
             if decoded == value:
                 break
             value = decoded
-        value = unicodedata.normalize("NFKC", value).lower().replace("_", "-")
-        value = value.encode("ascii", "ignore").decode("ascii")
+        value = unicodedata.normalize("NFKC", value).lower()
+        # Percent-decoded CJK and other Unicode must be rejected as a whole.
+        # Dropping those bytes would silently turn a meaningful slug into an
+        # unrelated partial value such as ``thebiz``. The provider must return
+        # an intentional ASCII transliteration instead.
+        if not value.isascii():
+            return ""
+        value = value.replace("_", "-")
         value = re.sub(r"[^a-z0-9]+", "-", value)
         return value.strip("-")[:80].strip("-")
-
-    @classmethod
-    def _fallback_ascii_slug(cls, source_text: str) -> str:
-        title_match = re.search(r"<title>\s*(.*?)\s*</title>", source_text, flags=re.I | re.S)
-        candidate = title_match.group(1) if title_match else source_text
-        tokens = [token.lower() for token in re.findall(r"[A-Za-z0-9]+", candidate)]
-        stop_words = {"a", "an", "and", "for", "in", "of", "on", "post", "the", "to", "with"}
-        tokens = [token for token in tokens if token not in stop_words]
-        return "-".join(tokens[:8]) or "post"
 
     @staticmethod
     def _extract_available_terms(source_text: str) -> list[str]:
@@ -1275,49 +1273,6 @@ class WordPressOperationRuntime:
             normalized["is_new"] = False
             matched.append(normalized)
         return matched
-
-    @classmethod
-    def _fallback_existing_taxonomy_suggestions(
-        cls,
-        source_text: str,
-        available_terms: list[str],
-    ) -> list[dict[str, Any]]:
-        content_match = re.search(
-            r"<content>\s*(.*?)\s*</content>",
-            source_text,
-            flags=re.I | re.S,
-        )
-        content = content_match.group(1) if content_match else source_text
-        assigned_match = re.search(
-            r"<assigned-terms>\s*(.*?)\s*</assigned-terms>",
-            source_text,
-            flags=re.I | re.S,
-        )
-        assigned = {
-            cls._taxonomy_term_key(item)
-            for item in re.split(r"[,，]", assigned_match.group(1) if assigned_match else "")
-            if item.strip()
-        }
-        content_folded = unicodedata.normalize("NFKC", content).casefold()
-        suggestions: list[dict[str, Any]] = []
-        for term in available_terms:
-            term_key = cls._taxonomy_term_key(term)
-            if not term_key or term_key in assigned or term_key in {"uncategorized", "默认分类"}:
-                continue
-            parts = re.findall(r"[a-z0-9]+|[\u3400-\u9fff]+", term.casefold())
-            if not parts:
-                continue
-            if all(
-                (
-                    (part == "wp" and ("wordpress" in content_folded or "wp" in content_folded))
-                    or part in content_folded
-                )
-                for part in parts
-            ):
-                suggestions.append({"term": term, "confidence": 0.72, "is_new": False})
-            if len(suggestions) >= 3:
-                break
-        return suggestions
 
     @staticmethod
     def _taxonomy_term_key(term: str) -> str:
