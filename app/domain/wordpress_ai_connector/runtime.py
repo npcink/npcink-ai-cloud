@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import json
 import re
+import unicodedata
 from collections.abc import Callable
 from typing import Any, cast
+from urllib.parse import unquote
 
 from sqlalchemy.orm import Session
 
@@ -136,12 +138,10 @@ class WordPressOperationRuntime:
                 "Review the supplied block and return strict JSON matching the Ability "
                 "schema. Do not return Markdown or explanations. When review_types are "
                 "provided and the block contains a clear readability, grammar, SEO, or "
-                "accessibility issue, return at least one concrete suggestion; do not "
-                "silently return an empty suggestions array for an observable issue. "
-                "Use the requested review type and include both review_type and text in "
-                "each suggestion. If the block is awkward or ungrammatical, it is an "
-                "observable issue even when the requested notes are brief. Return at "
-                "least one suggestion whenever the block contains any observable issue."
+                "accessibility issue, return a concrete suggestion. Use the requested "
+                "review type and include review_type, text, and priority in each "
+                "suggestion. An empty suggestions array is valid when there is no "
+                "material, objective issue."
             ),
             "editorial_updates": (
                 "Rewrite the supplied content according to the editorial notes. Return only "
@@ -169,8 +169,10 @@ class WordPressOperationRuntime:
                 "no more than 12 words. Return only the title text."
             ),
             "slug_generation": (
-                "Generate the requested SEO-friendly slug suggestions and return strict "
-                "JSON matching the Ability schema. Do not return Markdown or explanations."
+                "Generate concise SEO-friendly slug suggestions and return strict JSON "
+                "matching the Ability schema. Use lowercase ASCII letters and digits "
+                "separated by hyphens only. Never return Unicode characters, percent "
+                "encoded bytes, percent signs, underscores, spaces, or a full URL."
             ),
         }.get(task)
         if task_instruction is None:
@@ -192,10 +194,17 @@ class WordPressOperationRuntime:
             )
 
         fragments = [task_instruction]
-        fragments.append(
-            "Use the same language as the scene input unless a WordPress ability "
-            "instruction explicitly asks for another language."
-        )
+        if task != "slug_generation":
+            fragments.append(
+                "Use the same language as the scene input unless a WordPress ability "
+                "instruction explicitly asks for another language."
+            )
+        else:
+            fragments.append(
+                "Slugs are an ASCII transport value: use lowercase ASCII letters and "
+                "digits separated by hyphens only. Never return Unicode characters, "
+                "percent-encoded bytes, percent signs, underscores, spaces, or a full URL."
+            )
         target_language = str(scene_request.get("target_language") or "").strip()
         if task == "content_translation" and target_language:
             fragments.append(
@@ -580,6 +589,11 @@ class WordPressOperationRuntime:
                 output_text,
                 source_text=str(input_payload.get("text") or ""),
             )
+        elif task == "slug_generation":
+            normalized_text = self._normalize_slug_output(
+                output_text,
+                source_text=str(input_payload.get("text") or ""),
+            )
         elif task in (
             "title_generation",
             "excerpt_generation",
@@ -691,7 +705,6 @@ class WordPressOperationRuntime:
         required = item_schema.setdefault("required", ["review_type", "text", "priority"])
         if isinstance(required, list) and "priority" not in required:
             required.append("priority")
-        cast(dict[str, Any], suggestions)["minItems"] = 1
         return schema
 
     @staticmethod
@@ -762,13 +775,6 @@ class WordPressOperationRuntime:
             )
             if not normalized:
                 return True
-            if task == "editorial_notes":
-                try:
-                    parsed = json.loads(normalized)
-                except json.JSONDecodeError:
-                    return True
-                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
-                return not isinstance(suggestions, list) or not suggestions
             return False
         if (
             task
@@ -853,14 +859,6 @@ class WordPressOperationRuntime:
             )
             if not normalized:
                 return "ability_output_schema_invalid"
-            if task == "editorial_notes":
-                try:
-                    parsed = json.loads(normalized)
-                except json.JSONDecodeError:
-                    return "ability_output_schema_invalid"
-                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
-                if not isinstance(suggestions, list) or not suggestions:
-                    return "editorial_notes_empty"
         if task == "title_generation" and self._dict_or_empty(
             metadata.get("ability_output_schema")
         ):
@@ -1174,7 +1172,157 @@ class WordPressOperationRuntime:
                     )
                 ]
             }
+        available_terms = self._extract_available_terms(source_text)
+        if available_terms:
+            matched = self._match_existing_taxonomy_terms(
+                parsed.get("suggestions"),
+                available_terms,
+            )
+            parsed["suggestions"] = matched or self._fallback_existing_taxonomy_suggestions(
+                source_text,
+                available_terms,
+            )
         return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+    def _normalize_slug_output(self, output_text: str, *, source_text: str) -> str:
+        parsed = self._parse_json_object(output_text)
+        raw_slugs = parsed.get("slugs") if isinstance(parsed, dict) else None
+        slugs: list[str] = []
+        if isinstance(raw_slugs, list):
+            for raw_slug in raw_slugs:
+                if not isinstance(raw_slug, str):
+                    continue
+                slug = self._normalize_ascii_slug(raw_slug)
+                if slug and slug not in slugs:
+                    slugs.append(slug)
+                if len(slugs) >= 10:
+                    break
+        if not slugs:
+            fallback = self._fallback_ascii_slug(source_text)
+            if fallback:
+                slugs.append(fallback)
+        if not slugs:
+            return ""
+        return json.dumps({"slugs": slugs}, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _parse_json_object(output_text: str) -> dict[str, Any] | None:
+        candidates = [output_text.strip()]
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output_text, flags=re.S | re.I)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
+
+    @staticmethod
+    def _normalize_ascii_slug(raw_slug: str) -> str:
+        value = raw_slug.strip()
+        for _ in range(3):
+            decoded = unquote(value)
+            if decoded == value:
+                break
+            value = decoded
+        value = unicodedata.normalize("NFKC", value).lower().replace("_", "-")
+        value = value.encode("ascii", "ignore").decode("ascii")
+        value = re.sub(r"[^a-z0-9]+", "-", value)
+        return value.strip("-")[:80].strip("-")
+
+    @classmethod
+    def _fallback_ascii_slug(cls, source_text: str) -> str:
+        title_match = re.search(r"<title>\s*(.*?)\s*</title>", source_text, flags=re.I | re.S)
+        candidate = title_match.group(1) if title_match else source_text
+        tokens = [token.lower() for token in re.findall(r"[A-Za-z0-9]+", candidate)]
+        stop_words = {"a", "an", "and", "for", "in", "of", "on", "post", "the", "to", "with"}
+        tokens = [token for token in tokens if token not in stop_words]
+        return "-".join(tokens[:8]) or "post"
+
+    @staticmethod
+    def _extract_available_terms(source_text: str) -> list[str]:
+        match = re.search(
+            r"<available-terms>\s*(.*?)\s*</available-terms>",
+            source_text,
+            flags=re.I | re.S,
+        )
+        if match is None:
+            return []
+        return [item.strip() for item in re.split(r"[,，]", match.group(1)) if item.strip()]
+
+    @classmethod
+    def _match_existing_taxonomy_terms(
+        cls,
+        suggestions: Any,
+        available_terms: list[str],
+    ) -> list[dict[str, Any]]:
+        canonical_by_key = {cls._taxonomy_term_key(term): term for term in available_terms}
+        matched: list[dict[str, Any]] = []
+        if not isinstance(suggestions, list):
+            return matched
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                continue
+            term = str(suggestion.get("term") or "").strip()
+            canonical = canonical_by_key.get(cls._taxonomy_term_key(term))
+            if not canonical:
+                continue
+            normalized = dict(suggestion)
+            normalized["term"] = canonical
+            normalized["is_new"] = False
+            matched.append(normalized)
+        return matched
+
+    @classmethod
+    def _fallback_existing_taxonomy_suggestions(
+        cls,
+        source_text: str,
+        available_terms: list[str],
+    ) -> list[dict[str, Any]]:
+        content_match = re.search(
+            r"<content>\s*(.*?)\s*</content>",
+            source_text,
+            flags=re.I | re.S,
+        )
+        content = content_match.group(1) if content_match else source_text
+        assigned_match = re.search(
+            r"<assigned-terms>\s*(.*?)\s*</assigned-terms>",
+            source_text,
+            flags=re.I | re.S,
+        )
+        assigned = {
+            cls._taxonomy_term_key(item)
+            for item in re.split(r"[,，]", assigned_match.group(1) if assigned_match else "")
+            if item.strip()
+        }
+        content_folded = unicodedata.normalize("NFKC", content).casefold()
+        suggestions: list[dict[str, Any]] = []
+        for term in available_terms:
+            term_key = cls._taxonomy_term_key(term)
+            if not term_key or term_key in assigned or term_key in {"uncategorized", "默认分类"}:
+                continue
+            parts = re.findall(r"[a-z0-9]+|[\u3400-\u9fff]+", term.casefold())
+            if not parts:
+                continue
+            if all(
+                (
+                    (part == "wp" and ("wordpress" in content_folded or "wp" in content_folded))
+                    or part in content_folded
+                )
+                for part in parts
+            ):
+                suggestions.append({"term": term, "confidence": 0.72, "is_new": False})
+            if len(suggestions) >= 3:
+                break
+        return suggestions
+
+    @staticmethod
+    def _taxonomy_term_key(term: str) -> str:
+        normalized = unicodedata.normalize("NFKC", term).casefold()
+        return re.sub(r"[^\w\u3400-\u9fff]+", "", normalized)
 
     def _has_available_terms(self, source_text: str) -> bool:
         match = re.search(

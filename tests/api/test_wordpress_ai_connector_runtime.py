@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -363,16 +364,27 @@ class WordPressAIConnectorTextProvider:
         elif task == "title_generation" and "cjk reasoning title" in source_text:
             output_text = "小团队如何验证人工智能写作能力"
         if task == "content_classification":
-            output_text = (
-                '{"suggestions":[{"term":"经验教程","confidence":0.8,"is_new":false}]}'
-                if "<available-terms>" in source_text
-                else "- WordPress AI\n- Cloud connector\n- Scene runtime"
-            )
+            if "taxonomy spacing" in source_text:
+                output_text = '{"suggestions":[{"term":"WP插件","confidence":0.8,"is_new":true}]}'
+            elif "taxonomy fallback" in source_text:
+                output_text = '{"suggestions":[]}'
+            else:
+                output_text = (
+                    '{"suggestions":[{"term":"经验教程","confidence":0.8,"is_new":false}]}'
+                    if "<available-terms>" in source_text
+                    else "- WordPress AI\n- Cloud connector\n- Scene runtime"
+                )
         elif task == "slug_generation":
-            output_text = '{"slugs":["wordpress-ai-cloud","cloud-provider"]}'
+            output_text = (
+                '{"slugs":["thebiz-%e5%be%ae%e4%bf%a1-%e5%b0%8f%e7%a8%8b%e5%ba%8f", "中文标题"]}'
+                if "encoded slug" in source_text
+                else '{"slugs":["wordpress-ai-cloud","cloud-provider"]}'
+            )
         elif task == "editorial_notes":
             output_text = (
-                '{"suggestions":[{"review_type":"seo","text":"Clarify the '
+                '{"suggestions":[]}'
+                if "empty editorial notes" in source_text
+                else '{"suggestions":[{"review_type":"seo","text":"Clarify the '
                 'primary topic.","priority":1}]}'
             )
         elif task == "content_rewrite" and "rewrite variants" in source_text:
@@ -3515,6 +3527,196 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
     assert any(
         suggestion["term"] in {"WordPress", "WordPress AI"} for suggestion in result["suggestions"]
     )
+
+
+def test_wordpress_ai_connector_runtime_normalizes_encoded_slug_suggestions(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "slug_generation",
+            "request": {
+                "prompt": "<title>encoded slug</title><content>微信小程序 WordPress</content>",
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/slug-generation",
+                    "task": "slug_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["json_object", "source_grounded"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "slugs": {"type": "array", "items": {"type": "string"}}
+                        },
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-encoded-slug")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert "ASCII transport value" in provider_input["input"]
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result["slugs"]
+    assert all("%" not in slug and slug == slug.lower() for slug in result["slugs"])
+    assert all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) for slug in result["slugs"])
+
+
+def test_wordpress_ai_connector_runtime_matches_taxonomy_spacing_to_existing_term(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_classification",
+            "request": {
+                "prompt": (
+                    "taxonomy spacing: <content>WordPress plugin</content>"
+                    "<available-terms>WP 插件, 资源</available-terms>"
+                ),
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/content-classification",
+                    "task": "content_classification",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content", "taxonomy_candidates"],
+                    "constraints": ["json_object", "existing_terms_only"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "suggestions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "term": {"type": "string"},
+                                        "confidence": {"type": "number"},
+                                        "is_new": {"type": "boolean"},
+                                    },
+                                },
+                            }
+                        },
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-taxonomy-spacing")
+
+    assert response.status_code == 200
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result["suggestions"] == [
+        {"term": "WP 插件", "confidence": 0.8, "is_new": False}
+    ]
+
+
+def test_wordpress_ai_connector_runtime_falls_back_to_grounded_existing_taxonomy_term(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_classification",
+            "request": {
+                "prompt": (
+                    "taxonomy fallback: <content>WordPress 插件可以同步文章。</content>"
+                    "<assigned-terms>资源</assigned-terms>"
+                    "<available-terms>WP 插件, 资源, Uncategorized</available-terms>"
+                ),
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/content-classification",
+                    "task": "content_classification",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content", "taxonomy_candidates"],
+                    "constraints": ["json_object", "existing_terms_only"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "suggestions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {"term": {"type": "string"}},
+                                },
+                            }
+                        },
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-taxonomy-fallback")
+
+    assert response.status_code == 200
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result["suggestions"] == [
+        {"term": "WP 插件", "confidence": 0.72, "is_new": False}
+    ]
+
+
+def test_wordpress_ai_connector_runtime_accepts_empty_editorial_notes(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "editorial_notes",
+            "request": {
+                "prompt": "empty editorial notes: review this block",
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/editorial-notes",
+                    "task": "editorial_notes",
+                    "task_family": "analysis",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["json_object", "source_grounded"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "suggestions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "review_type": {"type": "string"},
+                                        "text": {"type": "string"},
+                                        "priority": {"type": "integer"},
+                                    },
+                                    "required": ["review_type", "text", "priority"],
+                                },
+                            }
+                        },
+                        "required": ["suggestions"],
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-empty-editorial-notes")
+
+    assert response.status_code == 200
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result == {"suggestions": []}
 
 
 def test_wordpress_ai_connector_runtime_projects_generic_ability_json_schema(
