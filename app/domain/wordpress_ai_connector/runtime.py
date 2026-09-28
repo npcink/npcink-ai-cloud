@@ -246,6 +246,9 @@ class WordPressOperationRuntime:
                 "source_surface": "wordpress_ai_connector",
                 "task": task,
                 "ability_name": str(task_contract.get("ability_name") or ""),
+                "ability_id": str(task_contract.get("ability_id") or task_contract.get("ability_name") or ""),
+                "contract_source": str(task_contract.get("contract_source") or ""),
+                "contract_version": str(task_contract.get("contract_version") or ""),
                 "task_family": task_family,
                 "task_constraints": sorted(constraints),
                 "suggestion_only": True,
@@ -254,6 +257,8 @@ class WordPressOperationRuntime:
         schema_hash = str(task_contract.get("schema_hash") or "").strip()
         if schema_hash:
             provider_input["metadata"]["ability_schema_hash"] = schema_hash
+        if task_contract.get("verification_state"):
+            provider_input["metadata"]["contract_status"] = str(task_contract["verification_state"])
         if task == "content_translation":
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:
