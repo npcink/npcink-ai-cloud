@@ -699,6 +699,101 @@ def test_output_quality_reason_identifies_provider_reasoning_leak() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("provider_text", "expected_reason"),
+    [
+        (
+            "I cannot complete this request. Per my instructions, I must refuse.",
+            "translation_refusal_leak",
+        ),
+        (
+            "我无法完成这个请求。",
+            "translation_refusal_leak",
+        ),
+        (
+            "<p>Translated paragraph</p>",
+            "translation_structure_drift",
+        ),
+        (
+            "<p>Translated paragraph</p>\n未翻译的中文段落。" * 12,
+            "translation_untranslated_source",
+        ),
+    ],
+)
+def test_translation_quality_gate_rejects_unsafe_output(
+    provider_text: str,
+    expected_reason: str,
+) -> None:
+    runtime = _runtime()
+    source_text = (
+        '<content><p>这是一个需要完整翻译的中文段落，包含来源链接。'
+        '<a href="https://example.test/docs">文档</a></p></content>'
+    )
+    if expected_reason == "translation_structure_drift":
+        source_text = "<content><p>Translate this structured paragraph.</p></content>"
+        provider_text = "Translated paragraph"
+    if expected_reason == "translation_untranslated_source":
+        source_text = "中文内容需要完整翻译。" * 40
+        provider_text = "中文内容需要完整翻译。" * 30
+
+    input_payload = {
+        "metadata": {"task": "content_translation", "target_language": "en-us"},
+        "text": source_text,
+    }
+    provider_output = {"output_text": provider_text}
+
+    assert runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    )
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == expected_reason
+
+
+def test_translation_quality_gate_rejects_length_inflation() -> None:
+    runtime = _runtime()
+    source_text = "A concise source paragraph with a stable meaning. " * 8
+    provider_output = {"output_text": "A translated paragraph with added noise. " * 24}
+    input_payload = {
+        "metadata": {"task": "content_translation", "target_language": "en-us"},
+        "text": source_text,
+    }
+
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == "translation_length_inflation"
+
+
+def test_translation_normalization_preserves_markup_and_links() -> None:
+    runtime = _runtime()
+    source_text = (
+        '<content><!-- wp:paragraph --><p>Translate this paragraph.</p>'
+        '<a href="https://example.test/docs">Docs</a><!-- /wp:paragraph --></content>'
+    )
+    translated_text = (
+        '<!-- wp:paragraph --><p>Übersetze diesen Absatz.</p>'
+        '<a href="https://example.test/docs">Dokumentation</a><!-- /wp:paragraph -->'
+    )
+    input_payload = {
+        "metadata": {"task": "content_translation", "target_language": "de-de"},
+        "text": source_text,
+    }
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": translated_text},
+        input_payload=input_payload,
+    )
+
+    assert normalized["output_text"] == translated_text
+    assert not runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=normalized,
+    )
+
+
 def test_managed_policy_projects_profile_runtime_controls() -> None:
     runtime = _runtime()
     merged_policy: dict[str, object] = {

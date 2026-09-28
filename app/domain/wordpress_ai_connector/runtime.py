@@ -4,6 +4,7 @@ import base64
 import json
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Callable
 from typing import Any, cast
 from urllib.parse import unquote
@@ -792,6 +793,7 @@ class WordPressOperationRuntime:
                 "comment_reply_suggest",
                 "content_rewrite",
                 "content_summary",
+                "content_translation",
                 "excerpt_generation",
                 "meta_description",
                 "title_generation",
@@ -806,9 +808,11 @@ class WordPressOperationRuntime:
         if output_text == "":
             return True
         if task == "content_translation":
-            target_language = str(metadata.get("target_language") or "").strip().lower()
-            cjk_count = len(re.findall(r"[\u3400-\u9fff]", output_text))
-            if target_language not in {"zh-cn", "zh-tw"} and cjk_count >= 1:
+            if self._translation_quality_reason(
+                source_text=str(input_payload.get("text") or ""),
+                output_text=output_text,
+                target_language=str(metadata.get("target_language") or ""),
+            ):
                 return True
         if self._looks_like_provider_reasoning(output_text):
             return True
@@ -857,10 +861,13 @@ class WordPressOperationRuntime:
         }
         output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
         if task == "content_translation":
-            target_language = str(metadata.get("target_language") or "").strip().lower()
-            cjk_count = len(re.findall(r"[\u3400-\u9fff]", output_text))
-            if target_language not in {"zh-cn", "zh-tw"} and cjk_count >= 1:
-                return "target_language_mismatch"
+            translation_reason = self._translation_quality_reason(
+                source_text=str(input_payload.get("text") or ""),
+                output_text=output_text,
+                target_language=str(metadata.get("target_language") or ""),
+            )
+            if translation_reason:
+                return translation_reason
         if "json_object" in constraints and output_schema:
             normalized = self._normalize_json_schema_output(
                 self._extract_provider_output_text(provider_output),
@@ -880,6 +887,82 @@ class WordPressOperationRuntime:
             if not parsed["title"].strip():
                 return "title_schema_empty_title"
         return "normalized_text_empty"
+
+    @classmethod
+    def _translation_quality_reason(
+        cls,
+        *,
+        source_text: str,
+        output_text: str,
+        target_language: str,
+    ) -> str:
+        """Reject translation output that is structurally unsafe or contaminated."""
+        if cls._contains_translation_refusal(output_text):
+            return "translation_refusal_leak"
+
+        source_markers = cls._translation_structure_markers(source_text)
+        output_markers = cls._translation_structure_markers(output_text)
+        if source_markers != output_markers:
+            return "translation_structure_drift"
+
+        normalized_target = target_language.strip().lower().replace("_", "-")
+        if normalized_target not in {"zh-cn", "zh-tw", "zh-hans", "zh-hant"}:
+            source_cjk = cls._translation_visible_cjk_count(source_text)
+            output_cjk = cls._translation_visible_cjk_count(output_text)
+            if source_cjk == 0 and output_cjk >= 1:
+                return "target_language_mismatch"
+            # A few CJK characters can be valid proper nouns. A fifth of a
+            # substantial source is a strong signal that the model left source
+            # paragraphs untranslated, so fail closed before WordPress stores it.
+            if source_cjk >= 80 and output_cjk >= max(20, int(source_cjk * 0.20)):
+                return "translation_untranslated_source"
+
+        if len(source_text) >= 200 and len(output_text) > int(len(source_text) * 2.2):
+            return "translation_length_inflation"
+        return ""
+
+    @staticmethod
+    def _contains_translation_refusal(output_text: str) -> bool:
+        return bool(
+            re.search(
+                r"(?is)(?:"
+                r"i\s+(?:cannot|can't|can\s+not)\s+(?:complete|fulfill|help|comply)|"
+                r"per\s+my\s+instructions|"
+                r"i\s+must\s+refuse|"
+                r"as\s+an\s+ai\b|"
+                r"我(?:不能|无法|不可以)(?:完成|遵循|提供)|"
+                r"根据我的指令"
+                r")",
+                output_text,
+            )
+        )
+
+    @staticmethod
+    def _translation_structure_markers(value: str) -> dict[str, object]:
+        tags = Counter(
+            match.group(1).lower()
+            for match in re.finditer(r"</?([A-Za-z][\w:-]*)\b[^>]*>", value)
+            if match.group(1).lower() not in {"content", "block-content"}
+        )
+        block_comments = Counter(
+            re.findall(r"<!--\s*/?wp:[^>]+-->", value, flags=re.I)
+        )
+        links = Counter(
+            re.sub(r"[),.;:，。；：]+$", "", match)
+            for match in re.findall(r"https?://[^\s\"'<>]+", value)
+        )
+        return {
+            "tags": dict(tags),
+            "block_comments": dict(block_comments),
+            "links": dict(links),
+            "code_fences": value.count("```")
+            + value.count("~~~"),
+        }
+
+    @staticmethod
+    def _translation_visible_cjk_count(value: str) -> int:
+        visible = re.sub(r"(?is)<[^>]+>|https?://[^\s\"'<>]+|```.*?```", " ", value)
+        return len(re.findall(r"[\u3400-\u9fff]", visible))
 
     @staticmethod
     def _normalize_json_schema_output(
@@ -1146,7 +1229,15 @@ class WordPressOperationRuntime:
                 raw_text = wrapped.group(1).strip()
                 if not raw_text:
                     return ""
-        text = self._extract_task_candidate(raw_text, task=task, limit=limit)
+        # Translation is a structure-preserving operation. Do not run it
+        # through the Markdown cleanup used by short suggestions: that would
+        # remove underscores, collapse code formatting, and alter HTML-facing
+        # content before the structure gate can assess it.
+        text = raw_text if task == "content_translation" else self._extract_task_candidate(
+            raw_text,
+            task=task,
+            limit=limit,
+        )
         if not text:
             text = self._strip_markdown(raw_text)
         if strip_explanation:
