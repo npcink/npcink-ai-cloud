@@ -127,8 +127,19 @@ AI_TASK_ALLOWED_CONSTRAINTS = frozenset(
         "existing_terms_only",
     }
 )
-AI_TASK_ALLOWED_SOURCES = frozenset({"wordpress_abilities_api", "npcink_abilities_toolkit"})
-AI_TASK_ALLOWED_VERIFICATION_STATES = frozenset({"registered", "mapped", "schema_valid", "mapping_current", "contract_drift", "unsupported"})
+AI_TASK_ALLOWED_SOURCES = frozenset(
+    {"wordpress_abilities_api", "npcink_abilities_toolkit"}
+)
+AI_TASK_ALLOWED_VERIFICATION_STATES = frozenset(
+    {
+        "registered",
+        "mapped",
+        "schema_valid",
+        "mapping_current",
+        "contract_drift",
+        "unsupported",
+    }
+)
 AI_TASK_MAX_OUTPUT_SCHEMA_BYTES = 12_000
 
 WP_AI_CONNECTOR_FORBIDDEN_KEYS = frozenset(
