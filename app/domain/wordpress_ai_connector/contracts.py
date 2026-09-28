@@ -127,6 +127,19 @@ AI_TASK_ALLOWED_CONSTRAINTS = frozenset(
         "existing_terms_only",
     }
 )
+AI_TASK_ALLOWED_SOURCES = frozenset(
+    {"wordpress_abilities_api", "npcink_abilities_toolkit"}
+)
+AI_TASK_ALLOWED_VERIFICATION_STATES = frozenset(
+    {
+        "registered",
+        "mapped",
+        "schema_valid",
+        "mapping_current",
+        "contract_drift",
+        "unsupported",
+    }
+)
 AI_TASK_MAX_OUTPUT_SCHEMA_BYTES = 12_000
 
 WP_AI_CONNECTOR_FORBIDDEN_KEYS = frozenset(
@@ -334,6 +347,11 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "AI task contract must be an object",
         )
     allowed_fields = {
+        "ability_id",
+        "contract_source",
+        "risk_level",
+        "requires_approval",
+        "verification_state",
         "contract_version",
         "ability_name",
         "task",
@@ -356,12 +374,18 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "AI task contract requires ai_task_contract.v1",
         )
     ability_name = str(value.get("ability_name") or "").strip()
+    ability_id = str(value.get("ability_id") or ability_name).strip()
+    contract_source = str(value.get("contract_source") or "wordpress_abilities_api").strip()
+    verification_state = str(value.get("verification_state") or "mapping_current").strip()
     projected_task = str(value.get("task") or "").strip()
     family = str(value.get("task_family") or "").strip()
     valid_ability_name = re.fullmatch(r"[a-z0-9_-]+/[a-z0-9_-]+", ability_name) is not None
     valid_task = re.fullmatch(r"[a-z0-9_]{1,64}", projected_task) is not None
     if (
         not valid_ability_name
+        or ability_id != ability_name
+        or contract_source not in AI_TASK_ALLOWED_SOURCES
+        or verification_state not in AI_TASK_ALLOWED_VERIFICATION_STATES
         or not valid_task
         or projected_task != task
         or family not in AI_TASK_ALLOWED_FAMILIES
@@ -369,6 +393,17 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
         raise WordPressOperationContractViolation(
             "wordpress_operation.ai_task_contract_identity_invalid",
             "AI task contract identity does not match the registered task projection",
+        )
+    risk_level = str(value.get("risk_level") or "read").strip()
+    if risk_level not in {"read", "write", "destructive"}:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_risk_invalid",
+            "AI task contract risk_level is not supported",
+        )
+    if "requires_approval" in value and not isinstance(value["requires_approval"], bool):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_approval_invalid",
+            "AI task contract requires_approval must be boolean",
         )
     if str(value.get("write_posture") or "") != "suggestion_only":
         raise WordPressOperationContractViolation(

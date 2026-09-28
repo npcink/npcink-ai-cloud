@@ -251,9 +251,29 @@ class WordPressOperationRuntime:
                 "suggestion_only": True,
             },
         }
+        if any(
+            key in task_contract
+            for key in ("ability_id", "contract_source", "verification_state")
+        ):
+            if task_contract.get("ability_id"):
+                provider_input["metadata"]["ability_id"] = str(
+                    task_contract["ability_id"]
+                )
+            if task_contract.get("contract_source"):
+                provider_input["metadata"]["contract_source"] = str(
+                    task_contract["contract_source"]
+                )
+            if task_contract.get("contract_version"):
+                provider_input["metadata"]["contract_version"] = str(
+                    task_contract["contract_version"]
+                )
         schema_hash = str(task_contract.get("schema_hash") or "").strip()
         if schema_hash:
             provider_input["metadata"]["ability_schema_hash"] = schema_hash
+        if task_contract.get("verification_state"):
+            provider_input["metadata"]["contract_status"] = str(
+                task_contract["verification_state"]
+            )
         if task == "content_translation":
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:

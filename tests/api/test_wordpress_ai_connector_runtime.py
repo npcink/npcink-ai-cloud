@@ -4831,3 +4831,67 @@ def test_admin_runtime_profiles_requires_enabled_provider_model(
     payload = response.json()
     assert payload["error_code"] == "runtime_profiles.invalid_profile"
     assert "may only use models enabled for provider openai" in payload["message"]
+
+
+def test_wordpress_ai_connector_accepts_additive_ability_contract_metadata(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "title_generation",
+            "request": {
+                "source_text": "Generate a title.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_id": "ai/title-generation",
+                    "contract_source": "wordpress_abilities_api",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value"],
+                    "output_schema": {"type": "string"},
+                    "risk_level": "read",
+                    "requires_approval": False,
+                    "verification_state": "mapping_current",
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+    response = _execute(client, payload, idempotency_key="wp-ai-contract-metadata")
+    assert response.status_code == 200, response.text
+    assert len(provider.requests) >= 1
+
+
+def test_wordpress_ai_connector_rejects_invalid_contract_source_before_provider(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "title_generation",
+            "request": {
+                "source_text": "Generate a title.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_id": "ai/title-generation",
+                    "contract_source": "cloud_registry",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value"],
+                    "output_schema": {"type": "string"},
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+    response = _execute(client, payload, idempotency_key="wp-ai-contract-source-invalid")
+    assert response.status_code == 400
+    assert response.json()["error_code"] == (
+        "wordpress_operation.ai_task_contract_identity_invalid"
+    )
+    assert provider.requests == []
