@@ -101,9 +101,7 @@ def test_wordpress_ai_connector_requires_local_contract_for_image_prompt_generat
         },
     }
 
-    assert validate_wordpress_operation_contract(request)["task"] == (
-        "image_prompt_generation"
-    )
+    assert validate_wordpress_operation_contract(request)["task"] == ("image_prompt_generation")
 
     request_without_local_contract = {
         **request,
@@ -366,6 +364,10 @@ class WordPressAIConnectorTextProvider:
         if task == "content_classification":
             if "taxonomy spacing" in source_text:
                 output_text = '{"suggestions":[{"term":"WP插件","confidence":0.8,"is_new":true}]}'
+            elif "taxonomy prose fallback" in source_text:
+                output_text = "建议标签：WP 插件。"
+            elif "taxonomy empty pool" in source_text:
+                output_text = "建议标签：WordPress。"
             elif "taxonomy fallback" in source_text:
                 output_text = '{"suggestions":[]}'
             else:
@@ -1135,9 +1137,7 @@ def test_wordpress_ai_connector_rejects_non_current_contract_before_provider(
     response = _execute(client, payload, idempotency_key="wp-ai-contract-drift")
 
     assert response.status_code == 400
-    assert response.json()["error_code"] == (
-        "wordpress_operation.ai_task_contract_not_current"
-    )
+    assert response.json()["error_code"] == ("wordpress_operation.ai_task_contract_not_current")
     assert provider.requests == []
 
 
@@ -1247,9 +1247,7 @@ def test_wordpress_ai_connector_title_generation_accepts_cjk_with_reasoning_usag
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["status"] == "succeeded"
-    assert data["result"]["output"]["output_text"] == (
-        "小团队如何验证人工智能写作能力"
-    )
+    assert data["result"]["output"]["output_text"] == ("小团队如何验证人工智能写作能力")
     assert len(provider.requests) == 1
 
 
@@ -1681,7 +1679,8 @@ def test_connector_runtime_replay_returns_identical_persisted_result(
 
 
 def test_connector_context_evidence_ignores_caller_and_provider_metadata(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, client, provider = _build_client(tmp_path)
     original_execute = provider.execute
@@ -1704,7 +1703,9 @@ def test_connector_context_evidence_ignores_caller_and_provider_metadata(
     assert response.status_code == 400
     assert provider.requests == []
     response = _execute(
-        client, _payload(), idempotency_key="context-provider-mutation",
+        client,
+        _payload(),
+        idempotency_key="context-provider-mutation",
         trace_id="tracecontextmutation000000000001",
     )
     assert response.status_code == 200
@@ -2360,8 +2361,7 @@ def test_wordpress_ai_connector_title_generation_ignores_non_list_site_knowledge
     assert "site_knowledge_reference" not in provider_input["metadata"]
     assert provider_input["metadata"]["generation_context_reason"] == "no_usable_references"
     assert (
-        response.json()["data"]["result"]["generation_context"]["reason"]
-        == "no_usable_references"
+        response.json()["data"]["result"]["generation_context"]["reason"] == "no_usable_references"
     )
 
 
@@ -3410,8 +3410,7 @@ def test_wordpress_ai_connector_runtime_extracts_one_rewrite_from_concise_altern
         ),
         (
             "rewrite legitimate numbered list",
-            "1. Keep the first migration step intact. "
-            "2. Keep the second migration step intact.",
+            "1. Keep the first migration step intact. 2. Keep the second migration step intact.",
         ),
         (
             "rewrite legitimate inline bold",
@@ -3487,6 +3486,9 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
             "request": {
                 "prompt": "Classify this post into WordPress taxonomy suggestions.",
                 "response_format": "json",
+                "taxonomy": "post_tag",
+                "strategy": "allow_new",
+                "max_suggestions": 3,
                 "task_contract": {
                     "contract_version": "ai_task_contract.v1",
                     "ability_name": "ai/content-classification",
@@ -3496,9 +3498,15 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
                     "constraints": ["json_object"],
                     "output_schema": {
                         "type": "object",
-                        "properties": {"suggestions": {"type": "array", "items": {
-                            "type": "object", "properties": {"term": {"type": "string"}},
-                        }}},
+                        "properties": {
+                            "suggestions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {"term": {"type": "string"}},
+                                },
+                            }
+                        },
                     },
                     "write_posture": "suggestion_only",
                 },
@@ -3514,6 +3522,9 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
 
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
+    assert provider_input["metadata"]["taxonomy"] == "post_tag"
+    assert provider_input["metadata"]["taxonomy_strategy"] == "allow_new"
+    assert provider_input["metadata"]["taxonomy_max_suggestions"] == 3
     assert "Return strict JSON only" in provider_input["input"]
     assert '"suggestions"' in provider_input["input"]
     assert provider_input["response_format"]["json_schema"]["strict"] is False
@@ -3551,9 +3562,7 @@ def test_wordpress_ai_connector_runtime_normalizes_encoded_slug_suggestions(
                     "constraints": ["json_object", "source_grounded"],
                     "output_schema": {
                         "type": "object",
-                        "properties": {
-                            "slugs": {"type": "array", "items": {"type": "string"}}
-                        },
+                        "properties": {"slugs": {"type": "array", "items": {"type": "string"}}},
                     },
                     "write_posture": "suggestion_only",
                 },
@@ -3593,9 +3602,7 @@ def test_wordpress_ai_connector_runtime_returns_empty_slug_shape_for_invalid_can
                     "constraints": ["json_object", "source_grounded"],
                     "output_schema": {
                         "type": "object",
-                        "properties": {
-                            "slugs": {"type": "array", "items": {"type": "string"}}
-                        },
+                        "properties": {"slugs": {"type": "array", "items": {"type": "string"}}},
                     },
                     "write_posture": "suggestion_only",
                 },
@@ -3658,9 +3665,59 @@ def test_wordpress_ai_connector_runtime_matches_taxonomy_spacing_to_existing_ter
     assert response.status_code == 200
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
     result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
-    assert result["suggestions"] == [
-        {"term": "WP 插件", "confidence": 0.8, "is_new": False}
-    ]
+    assert result["suggestions"] == [{"term": "WP 插件", "confidence": 0.8, "is_new": False}]
+
+
+def test_wordpress_ai_connector_runtime_recovers_exact_term_from_non_json_reply(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_classification",
+            "request": {
+                "prompt": (
+                    "taxonomy prose fallback: <content>WordPress plugin</content>"
+                    "<available-terms>WP 插件, 资源</available-terms>"
+                ),
+                "response_format": "json",
+                "strategy": "existing_only",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/content-classification",
+                    "task": "content_classification",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content", "taxonomy_candidates"],
+                    "constraints": ["json_object", "existing_terms_only"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "suggestions": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                            }
+                        },
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-connector-taxonomy-prose-fallback",
+    )
+
+    assert response.status_code == 200
+    assert provider.requests[0].input_payload["metadata"]["taxonomy_strategy"] == "existing_only"
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result == {
+        "suggestions": [
+            {"term": "WP 插件", "confidence": 0.6, "is_new": False},
+        ]
+    }
 
 
 def test_wordpress_ai_connector_runtime_does_not_fabricate_existing_taxonomy_result(
@@ -3706,6 +3763,46 @@ def test_wordpress_ai_connector_runtime_does_not_fabricate_existing_taxonomy_res
 
     assert response.status_code == 200
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
+    result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
+    assert result == {"suggestions": []}
+
+
+def test_wordpress_ai_connector_runtime_does_not_infer_new_term_without_pool(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_classification",
+            "request": {
+                "prompt": "taxonomy empty pool: <content>WordPress plugin</content>",
+                "response_format": "json",
+                "strategy": "existing_only",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/content-classification",
+                    "task": "content_classification",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content", "taxonomy_candidates"],
+                    "constraints": ["json_object", "existing_terms_only"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"suggestions": {"type": "array"}},
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-connector-taxonomy-empty-pool",
+    )
+
+    assert response.status_code == 200
+    assert provider.requests[0].input_payload["metadata"]["taxonomy_strategy"] == "existing_only"
     result = json.loads(response.json()["data"]["result"]["output"]["output_text"])
     assert result == {"suggestions": []}
 
@@ -3778,9 +3875,7 @@ def test_wordpress_ai_connector_runtime_projects_generic_ability_json_schema(
                     "constraints": ["json_object", "source_grounded"],
                     "output_schema": {
                         "type": "object",
-                        "properties": {
-                            "slugs": {"type": "array", "items": {"type": "string"}}
-                        },
+                        "properties": {"slugs": {"type": "array", "items": {"type": "string"}}},
                         "required": ["slugs"],
                     },
                     "write_posture": "suggestion_only",
@@ -3806,8 +3901,7 @@ def test_wordpress_ai_connector_runtime_enforces_ability_output_schema_for_comme
             "task": "comment_moderation",
             "request": {
                 "prompt": (
-                    "Comment by Local diagnostic:\n"
-                    '\"\"\"Thank you for the useful explanation.\"\"\"'
+                    'Comment by Local diagnostic:\n"""Thank you for the useful explanation."""'
                 ),
                 "response_format": "json",
                 "task_contract": {
@@ -4101,10 +4195,7 @@ def test_toolbox_image_generation_derives_the_hosted_profile_in_cloud(
     data = response.json()["data"]
     assert data["status"] == "succeeded"
     assert data["profile_id"] == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
-    assert (
-        provider.requests[0].profile_id
-        == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
-    )
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
 
 
 def test_wordpress_ai_connector_runtime_rejects_timeout_above_scene_limit(
@@ -4263,9 +4354,7 @@ def test_admin_runtime_profiles_updates_hosted_candidates(
     ]
     assert short_text["routing_intent"] == "content.short_text"
     alt_text_vision = next(
-        profile
-        for profile in data["profiles"]
-        if profile["profile_id"] == VISION_AI_PROFILE_ID
+        profile for profile in data["profiles"] if profile["profile_id"] == VISION_AI_PROFILE_ID
     )
     assert alt_text_vision["execution_kind"] == "vision"
     assert alt_text_vision["routing_intent"] == "media.alt_text_vision"
@@ -4539,9 +4628,7 @@ def test_admin_runtime_profiles_keeps_fresh_failed_evidence_visible(tmp_path: Pa
         "state": "verification_failed",
         "source": "test_probe",
         "revision": "test-2026-08-26",
-        "checked_at": image_instance["capability_evidence"]["image_generation"][
-            "checked_at"
-        ],
+        "checked_at": image_instance["capability_evidence"]["image_generation"]["checked_at"],
         "error_code": "capability_probe.timeout",
     }
 
