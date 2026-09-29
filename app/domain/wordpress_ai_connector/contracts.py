@@ -394,6 +394,11 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "wordpress_operation.ai_task_contract_identity_invalid",
             "AI task contract identity does not match the registered task projection",
         )
+    if verification_state != "mapping_current":
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_not_current",
+            "AI task contract verification must be mapping_current before Cloud execution",
+        )
     risk_level = str(value.get("risk_level") or "read").strip()
     if risk_level not in {"read", "write", "destructive"}:
         raise WordPressOperationContractViolation(

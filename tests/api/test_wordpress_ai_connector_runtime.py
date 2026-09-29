@@ -1091,6 +1091,41 @@ def test_wordpress_ai_connector_rejects_schema_hash_drift(
     assert provider.requests == []
 
 
+def test_wordpress_ai_connector_rejects_non_current_contract_before_provider(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "title_generation",
+            "request": {
+                "source_text": "Generate a title.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_id": "ai/title-generation",
+                    "contract_source": "wordpress_abilities_api",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value"],
+                    "output_schema": {"type": "string"},
+                    "verification_state": "contract_drift",
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-contract-drift")
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == (
+        "wordpress_operation.ai_task_contract_not_current"
+    )
+    assert provider.requests == []
+
+
 def test_wordpress_ai_connector_accepts_php_compatible_schema_hash(
     tmp_path: Path,
 ) -> None:
