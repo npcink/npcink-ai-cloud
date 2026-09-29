@@ -283,14 +283,25 @@ class WordPressOperationRuntime:
                 "suggestion_only": True,
             },
         }
+        if task == "content_classification":
+            # Keep the local Ability's classification controls available as
+            # non-authoritative runtime metadata. The candidate terms remain
+            # in the official prompt; Cloud uses these fields only to preserve
+            # strategy semantics and to make the run diagnosable.
+            taxonomy = str(scene_request.get("taxonomy") or "").strip()
+            strategy = str(scene_request.get("strategy") or "").strip()
+            max_suggestions = self._coerce_int(scene_request.get("max_suggestions"), default=0)
+            if taxonomy:
+                provider_input["metadata"]["taxonomy"] = taxonomy[:64]
+            if strategy:
+                provider_input["metadata"]["taxonomy_strategy"] = strategy[:32]
+            if max_suggestions > 0:
+                provider_input["metadata"]["taxonomy_max_suggestions"] = min(max_suggestions, 10)
         if any(
-            key in task_contract
-            for key in ("ability_id", "contract_source", "verification_state")
+            key in task_contract for key in ("ability_id", "contract_source", "verification_state")
         ):
             if task_contract.get("ability_id"):
-                provider_input["metadata"]["ability_id"] = str(
-                    task_contract["ability_id"]
-                )
+                provider_input["metadata"]["ability_id"] = str(task_contract["ability_id"])
             if task_contract.get("contract_source"):
                 provider_input["metadata"]["contract_source"] = str(
                     task_contract["contract_source"]
@@ -303,9 +314,7 @@ class WordPressOperationRuntime:
         if schema_hash:
             provider_input["metadata"]["ability_schema_hash"] = schema_hash
         if task_contract.get("verification_state"):
-            provider_input["metadata"]["contract_status"] = str(
-                task_contract["verification_state"]
-            )
+            provider_input["metadata"]["contract_status"] = str(task_contract["verification_state"])
         if task == "content_translation":
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:
@@ -601,6 +610,7 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_classification_output(
                 output_text,
                 source_text=str(input_payload.get("text") or ""),
+                strategy=str(metadata.get("taxonomy_strategy") or ""),
             )
         elif task == "slug_generation":
             normalized_text = self._normalize_slug_output(output_text)
@@ -930,9 +940,7 @@ class WordPressOperationRuntime:
             for match in re.finditer(r"</?([A-Za-z][\w:-]*)\b[^>]*>", value)
             if match.group(1).lower() not in {"content", "block-content"}
         )
-        block_comments = Counter(
-            re.findall(r"<!--\s*/?wp:[^>]+-->", value, flags=re.I)
-        )
+        block_comments = Counter(re.findall(r"<!--\s*/?wp:[^>]+-->", value, flags=re.I))
         links = Counter(
             re.sub(r"[),.;:，。；：]+$", "", match)
             for match in re.findall(r"https?://[^\s\"'<>]+", value)
@@ -941,8 +949,7 @@ class WordPressOperationRuntime:
             "tags": dict(tags),
             "block_comments": dict(block_comments),
             "links": dict(links),
-            "code_fences": value.count("```")
-            + value.count("~~~"),
+            "code_fences": value.count("```") + value.count("~~~"),
         }
 
     @staticmethod
@@ -1041,8 +1048,7 @@ class WordPressOperationRuntime:
         if (
             default_policy.get("platform_kind") != "wordpress"
             or default_policy.get("connector_id") != "wordpress_ai_connector"
-            or default_policy.get("operation_contract_version")
-            != WORDPRESS_OPERATION_CONTRACT
+            or default_policy.get("operation_contract_version") != WORDPRESS_OPERATION_CONTRACT
         ):
             raise RuntimeExecutionContractError(
                 "runtime_profiles.managed_contract_invalid",
@@ -1219,10 +1225,14 @@ class WordPressOperationRuntime:
         # through the Markdown cleanup used by short suggestions: that would
         # remove underscores, collapse code formatting, and alter HTML-facing
         # content before the structure gate can assess it.
-        text = raw_text if task == "content_translation" else self._extract_task_candidate(
-            raw_text,
-            task=task,
-            limit=limit,
+        text = (
+            raw_text
+            if task == "content_translation"
+            else self._extract_task_candidate(
+                raw_text,
+                task=task,
+                limit=limit,
+            )
         )
         if not text:
             text = self._strip_markdown(raw_text)
@@ -1246,17 +1256,21 @@ class WordPressOperationRuntime:
         output_text: str,
         *,
         source_text: str = "",
+        strategy: str = "",
     ) -> str:
         available_terms = self._extract_available_terms(source_text)
         parsed = self._parse_classification_json(output_text)
         if parsed is None:
             # With an official candidate pool, malformed model output cannot be
-            # safely converted into a new taxonomy term. Preserve a legitimate
-            # empty result and let the local Ability report no suggestions.
+            # safely converted into a new taxonomy term. Recover only exact
+            # mentions of supplied candidates; this handles providers that
+            # return a short list or sentence despite the JSON contract.
             parsed = {
                 "suggestions": (
-                    []
+                    self._extract_available_term_mentions(output_text, available_terms)
                     if available_terms
+                    else []
+                    if strategy == "existing_only"
                     else [
                         {"term": term, "confidence": 0.6, "is_new": True}
                         for term in self._extract_classification_terms(
@@ -1270,11 +1284,53 @@ class WordPressOperationRuntime:
             # WordPress supplies the candidate pool and owns the meaning of an
             # empty result. Keep only model suggestions that can be mapped to a
             # supplied term; never infer a taxonomy term from arbitrary content.
-            parsed["suggestions"] = self._match_existing_taxonomy_terms(
+            matched = self._match_existing_taxonomy_terms(
                 parsed.get("suggestions"),
                 available_terms,
             )
+            if not matched:
+                # A provider may have returned a human-readable list even when
+                # it ignored the JSON response format. Mapping only exact
+                # candidate mentions preserves existing_only semantics without
+                # fabricating or writing a term.
+                matched = self._extract_available_term_mentions(output_text, available_terms)
+            parsed["suggestions"] = matched
+        elif strategy == "existing_only":
+            # An empty candidate pool means there is no safe existing term to
+            # return. Do not turn source words into new taxonomy suggestions.
+            parsed["suggestions"] = []
         return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+    @classmethod
+    def _extract_available_term_mentions(
+        cls,
+        output_text: str,
+        available_terms: list[str],
+    ) -> list[dict[str, Any]]:
+        """Recover exact candidate mentions from a non-JSON provider reply."""
+        output = str(output_text or "").strip()
+        if not output or not available_terms:
+            return []
+        output_folded = output.casefold()
+        output_key = cls._taxonomy_term_key(output)
+        recovered: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw_term in available_terms:
+            term = str(raw_term or "").strip()
+            key = cls._taxonomy_term_key(term)
+            if not term or not key or key in seen:
+                continue
+            if key.isascii() and re.search(
+                r"(?<![a-z0-9])" + re.escape(key) + r"(?![a-z0-9])", output_folded
+            ):
+                found = True
+            else:
+                found = key in output_key
+            if not found:
+                continue
+            recovered.append({"term": term, "confidence": 0.6, "is_new": False})
+            seen.add(key)
+        return recovered
 
     def _normalize_slug_output(self, output_text: str) -> str:
         parsed = self._parse_json_object(output_text)
