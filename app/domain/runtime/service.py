@@ -2873,19 +2873,50 @@ class RuntimeService:
             input_payload=input_payload,
             provider_output=normalized_output,
         ):
+            quality_reason = self.wordpress_operation_runtime.output_quality_reason(
+                input_payload=input_payload,
+                provider_output=provider_output,
+            )
+            self._record_wordpress_output_quality_diagnostic(run, quality_reason)
             return ProviderOutputDecision(
                 accepted=False,
                 output=normalized_output,
                 error_code="provider.output_quality_rejected",
                 error_message="provider returned no usable WordPress AI connector text",
                 usage_context={
-                    "output_quality_reason": self.wordpress_operation_runtime.output_quality_reason(
-                        input_payload=input_payload,
-                        provider_output=provider_output,
-                    )
+                    "output_quality_reason": quality_reason,
                 },
             )
+        self._clear_wordpress_output_quality_diagnostic(run)
         return ProviderOutputDecision(accepted=True, output=normalized_output)
+
+    @staticmethod
+    def _record_wordpress_output_quality_diagnostic(run: RunRecord, reason: str) -> None:
+        """Keep bounded, payload-free quality evidence on failed connector runs."""
+        normalized_reason = str(reason or "").strip()[:96]
+        if not normalized_reason:
+            return
+        policy = dict(run.policy_json) if isinstance(run.policy_json, dict) else {}
+        raw_diagnostics = policy.get("runtime_diagnostics")
+        diagnostics = dict(raw_diagnostics) if isinstance(raw_diagnostics, dict) else {}
+        diagnostics.update(
+            {
+                "contract_version": "wordpress_ai_connector_quality.v1",
+                "output_quality_reason": normalized_reason,
+            }
+        )
+        policy["runtime_diagnostics"] = diagnostics
+        run.policy_json = policy
+        flag_modified(run, "policy_json")
+
+    @staticmethod
+    def _clear_wordpress_output_quality_diagnostic(run: RunRecord) -> None:
+        policy = dict(run.policy_json) if isinstance(run.policy_json, dict) else {}
+        if "runtime_diagnostics" not in policy:
+            return
+        policy.pop("runtime_diagnostics", None)
+        run.policy_json = policy
+        flag_modified(run, "policy_json")
 
     def _finalize_provider_output(
         self,

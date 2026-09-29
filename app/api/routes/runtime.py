@@ -825,6 +825,7 @@ async def execute_runtime(
                 },
                 "task_backend": result.task_backend,
                 "run_lifecycle": result.run_lifecycle,
+                "run_state": result.run_state,
                 "result": result.result,
             },
             trace_id=result.trace_id,

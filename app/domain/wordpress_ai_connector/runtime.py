@@ -119,8 +119,12 @@ class WordPressOperationRuntime:
             "comment_reply_suggest": "Draft a concise comment reply. Return only the reply text.",
             "content_translation": (
                 "Translate the supplied content into the requested target language. "
-                "Preserve HTML and block markup. Return only the translated content. "
-                "Do not wrap the answer in <content> tags or any other container."
+                "Preserve HTML and block markup. When Gutenberg block comments are present, "
+                "copy every block delimiter and every HTML tag exactly and translate only "
+                "visible human text inside the existing structure. Keep the same number and "
+                "order of blocks, links, attributes, and code markers. Return only the "
+                "translated content. Do not wrap the answer in <content> tags or any other "
+                "container."
             ),
             "content_classification": (
                 'Classify the content. Return strict JSON only: {"suggestions":'
@@ -141,8 +145,9 @@ class WordPressOperationRuntime:
                 "provided and the block contains a clear readability, grammar, SEO, or "
                 "accessibility issue, return a concrete suggestion. Use the requested "
                 "review type and include review_type, text, and priority in each "
-                "suggestion. An empty suggestions array is valid when there is no "
-                "material, objective issue."
+                "suggestion. If an objective issue is present, an empty suggestions array "
+                "is invalid; return at least one actionable suggestion. An empty suggestions "
+                "array is valid only when there is no material, objective issue."
             ),
             "editorial_updates": (
                 "Rewrite the supplied content according to the editorial notes. Return only "
@@ -384,6 +389,16 @@ class WordPressOperationRuntime:
         temperature = scene_request.get("temperature")
         if isinstance(temperature, (int, float)):
             provider_input["temperature"] = float(temperature)
+        elif task in {
+            "content_translation",
+            "content_classification",
+            "editorial_notes",
+            "slug_generation",
+        }:
+            # Structure-sensitive connector tasks should be reproducible by
+            # default. Callers can still provide an explicit temperature when
+            # the local Ability contract allows it.
+            provider_input["temperature"] = 0.0
 
         return provider_input
 
