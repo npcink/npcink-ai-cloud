@@ -2897,9 +2897,8 @@ class RuntimeService:
         if not normalized_reason:
             return
         policy = dict(run.policy_json) if isinstance(run.policy_json, dict) else {}
-        diagnostics = dict(policy.get("runtime_diagnostics")) if isinstance(
-            policy.get("runtime_diagnostics"), dict
-        ) else {}
+        raw_diagnostics = policy.get("runtime_diagnostics")
+        diagnostics = dict(raw_diagnostics) if isinstance(raw_diagnostics, dict) else {}
         diagnostics.update(
             {
                 "contract_version": "wordpress_ai_connector_quality.v1",
