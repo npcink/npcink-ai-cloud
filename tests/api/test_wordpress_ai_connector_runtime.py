@@ -3487,7 +3487,7 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
                 "prompt": "Classify this post into WordPress taxonomy suggestions.",
                 "response_format": "json",
                 "taxonomy": "post_tag",
-                "strategy": "existing_only",
+                "strategy": "allow_new",
                 "max_suggestions": 3,
                 "task_contract": {
                     "contract_version": "ai_task_contract.v1",
@@ -3523,7 +3523,7 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
     assert provider_input["metadata"]["taxonomy"] == "post_tag"
-    assert provider_input["metadata"]["taxonomy_strategy"] == "existing_only"
+    assert provider_input["metadata"]["taxonomy_strategy"] == "allow_new"
     assert provider_input["metadata"]["taxonomy_max_suggestions"] == 3
     assert "Return strict JSON only" in provider_input["input"]
     assert '"suggestions"' in provider_input["input"]

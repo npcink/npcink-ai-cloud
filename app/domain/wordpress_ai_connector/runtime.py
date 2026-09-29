@@ -1329,7 +1329,7 @@ class WordPressOperationRuntime:
             if not found:
                 continue
             recovered.append({"term": term, "confidence": 0.6, "is_new": False})
-            seen.add(key)
+            seen = seen | {key}
         return recovered
 
     def _normalize_slug_output(self, output_text: str) -> str:
