@@ -3,8 +3,11 @@ from __future__ import annotations
 import base64
 import json
 import re
+import unicodedata
+from collections import Counter
 from collections.abc import Callable
 from typing import Any, cast
+from urllib.parse import unquote
 
 from sqlalchemy.orm import Session
 
@@ -136,12 +139,10 @@ class WordPressOperationRuntime:
                 "Review the supplied block and return strict JSON matching the Ability "
                 "schema. Do not return Markdown or explanations. When review_types are "
                 "provided and the block contains a clear readability, grammar, SEO, or "
-                "accessibility issue, return at least one concrete suggestion; do not "
-                "silently return an empty suggestions array for an observable issue. "
-                "Use the requested review type and include both review_type and text in "
-                "each suggestion. If the block is awkward or ungrammatical, it is an "
-                "observable issue even when the requested notes are brief. Return at "
-                "least one suggestion whenever the block contains any observable issue."
+                "accessibility issue, return a concrete suggestion. Use the requested "
+                "review type and include review_type, text, and priority in each "
+                "suggestion. An empty suggestions array is valid when there is no "
+                "material, objective issue."
             ),
             "editorial_updates": (
                 "Rewrite the supplied content according to the editorial notes. Return only "
@@ -169,8 +170,10 @@ class WordPressOperationRuntime:
                 "no more than 12 words. Return only the title text."
             ),
             "slug_generation": (
-                "Generate the requested SEO-friendly slug suggestions and return strict "
-                "JSON matching the Ability schema. Do not return Markdown or explanations."
+                "Generate concise SEO-friendly slug suggestions and return strict JSON "
+                "matching the Ability schema. Use lowercase ASCII letters and digits "
+                "separated by hyphens only. Never return Unicode characters, percent "
+                "encoded bytes, percent signs, underscores, spaces, or a full URL."
             ),
         }.get(task)
         if task_instruction is None:
@@ -192,10 +195,22 @@ class WordPressOperationRuntime:
             )
 
         fragments = [task_instruction]
-        fragments.append(
-            "Use the same language as the scene input unless a WordPress ability "
-            "instruction explicitly asks for another language."
-        )
+        if task != "slug_generation":
+            fragments.append(
+                "Use the same language as the scene input unless a WordPress ability "
+                "instruction explicitly asks for another language."
+            )
+        else:
+            fragments.append(
+                "Slugs are an ASCII transport value: use lowercase ASCII letters and "
+                "digits separated by hyphens only. Never return Unicode characters, "
+                "percent-encoded bytes, percent signs, underscores, spaces, or a full URL."
+            )
+            fragments.append(
+                "For named entities and product terms, use their established Latin spelling "
+                "when one is known (for example WordPress, WeChat, Baidu, and mini-program). "
+                "Do not invent pinyin by splitting Chinese characters into arbitrary syllables."
+            )
         target_language = str(scene_request.get("target_language") or "").strip()
         if task == "content_translation" and target_language:
             fragments.append(
@@ -245,6 +260,13 @@ class WordPressOperationRuntime:
             )
         if system_instruction:
             fragments.append(system_instruction)
+        if task != "slug_generation" and self._is_predominantly_cjk(scene_text):
+            fragments.append(
+                "The scene is predominantly Simplified Chinese. Write every human-readable "
+                "part of the result in Simplified Chinese, including suggestions and "
+                "explanations. Preserve proper nouns, code, URLs, and quoted technical terms "
+                "when needed; do not translate those mechanically."
+            )
         if scene_text:
             fragments.append(f"Scene input:\n{scene_text}")
         fragments.append("Do not mention this instruction. Do not explain your answer.")
@@ -580,6 +602,8 @@ class WordPressOperationRuntime:
                 output_text,
                 source_text=str(input_payload.get("text") or ""),
             )
+        elif task == "slug_generation":
+            normalized_text = self._normalize_slug_output(output_text)
         elif task in (
             "title_generation",
             "excerpt_generation",
@@ -691,7 +715,6 @@ class WordPressOperationRuntime:
         required = item_schema.setdefault("required", ["review_type", "text", "priority"])
         if isinstance(required, list) and "priority" not in required:
             required.append("priority")
-        cast(dict[str, Any], suggestions)["minItems"] = 1
         return schema
 
     @staticmethod
@@ -762,13 +785,6 @@ class WordPressOperationRuntime:
             )
             if not normalized:
                 return True
-            if task == "editorial_notes":
-                try:
-                    parsed = json.loads(normalized)
-                except json.JSONDecodeError:
-                    return True
-                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
-                return not isinstance(suggestions, list) or not suggestions
             return False
         if (
             task
@@ -777,6 +793,7 @@ class WordPressOperationRuntime:
                 "comment_reply_suggest",
                 "content_rewrite",
                 "content_summary",
+                "content_translation",
                 "excerpt_generation",
                 "meta_description",
                 "title_generation",
@@ -791,9 +808,11 @@ class WordPressOperationRuntime:
         if output_text == "":
             return True
         if task == "content_translation":
-            target_language = str(metadata.get("target_language") or "").strip().lower()
-            cjk_count = len(re.findall(r"[\u3400-\u9fff]", output_text))
-            if target_language not in {"zh-cn", "zh-tw"} and cjk_count >= 1:
+            if self._translation_quality_reason(
+                source_text=str(input_payload.get("text") or ""),
+                output_text=output_text,
+                target_language=str(metadata.get("target_language") or ""),
+            ):
                 return True
         if self._looks_like_provider_reasoning(output_text):
             return True
@@ -842,10 +861,13 @@ class WordPressOperationRuntime:
         }
         output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
         if task == "content_translation":
-            target_language = str(metadata.get("target_language") or "").strip().lower()
-            cjk_count = len(re.findall(r"[\u3400-\u9fff]", output_text))
-            if target_language not in {"zh-cn", "zh-tw"} and cjk_count >= 1:
-                return "target_language_mismatch"
+            translation_reason = self._translation_quality_reason(
+                source_text=str(input_payload.get("text") or ""),
+                output_text=output_text,
+                target_language=str(metadata.get("target_language") or ""),
+            )
+            if translation_reason:
+                return translation_reason
         if "json_object" in constraints and output_schema:
             normalized = self._normalize_json_schema_output(
                 self._extract_provider_output_text(provider_output),
@@ -853,14 +875,6 @@ class WordPressOperationRuntime:
             )
             if not normalized:
                 return "ability_output_schema_invalid"
-            if task == "editorial_notes":
-                try:
-                    parsed = json.loads(normalized)
-                except json.JSONDecodeError:
-                    return "ability_output_schema_invalid"
-                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
-                if not isinstance(suggestions, list) or not suggestions:
-                    return "editorial_notes_empty"
         if task == "title_generation" and self._dict_or_empty(
             metadata.get("ability_output_schema")
         ):
@@ -873,6 +887,82 @@ class WordPressOperationRuntime:
             if not parsed["title"].strip():
                 return "title_schema_empty_title"
         return "normalized_text_empty"
+
+    @classmethod
+    def _translation_quality_reason(
+        cls,
+        *,
+        source_text: str,
+        output_text: str,
+        target_language: str,
+    ) -> str:
+        """Reject translation output that is structurally unsafe or contaminated."""
+        if cls._contains_translation_refusal(output_text):
+            return "translation_refusal_leak"
+
+        source_markers = cls._translation_structure_markers(source_text)
+        output_markers = cls._translation_structure_markers(output_text)
+        if source_markers != output_markers:
+            return "translation_structure_drift"
+
+        normalized_target = target_language.strip().lower().replace("_", "-")
+        if normalized_target not in {"zh-cn", "zh-tw", "zh-hans", "zh-hant"}:
+            source_cjk = cls._translation_visible_cjk_count(source_text)
+            output_cjk = cls._translation_visible_cjk_count(output_text)
+            if source_cjk == 0 and output_cjk >= 1:
+                return "target_language_mismatch"
+            # A few CJK characters can be valid proper nouns. A fifth of a
+            # substantial source is a strong signal that the model left source
+            # paragraphs untranslated, so fail closed before WordPress stores it.
+            if source_cjk >= 80 and output_cjk >= max(20, int(source_cjk * 0.20)):
+                return "translation_untranslated_source"
+
+        if len(source_text) >= 200 and len(output_text) > int(len(source_text) * 2.2):
+            return "translation_length_inflation"
+        return ""
+
+    @staticmethod
+    def _contains_translation_refusal(output_text: str) -> bool:
+        return bool(
+            re.search(
+                r"(?is)(?:"
+                r"i\s+(?:cannot|can't|can\s+not)\s+(?:complete|fulfill|help|comply)|"
+                r"per\s+my\s+instructions|"
+                r"i\s+must\s+refuse|"
+                r"as\s+an\s+ai\b|"
+                r"我(?:不能|无法|不可以)(?:完成|遵循|提供)|"
+                r"根据我的指令"
+                r")",
+                output_text,
+            )
+        )
+
+    @staticmethod
+    def _translation_structure_markers(value: str) -> dict[str, object]:
+        tags = Counter(
+            match.group(1).lower()
+            for match in re.finditer(r"</?([A-Za-z][\w:-]*)\b[^>]*>", value)
+            if match.group(1).lower() not in {"content", "block-content"}
+        )
+        block_comments = Counter(
+            re.findall(r"<!--\s*/?wp:[^>]+-->", value, flags=re.I)
+        )
+        links = Counter(
+            re.sub(r"[),.;:，。；：]+$", "", match)
+            for match in re.findall(r"https?://[^\s\"'<>]+", value)
+        )
+        return {
+            "tags": dict(tags),
+            "block_comments": dict(block_comments),
+            "links": dict(links),
+            "code_fences": value.count("```")
+            + value.count("~~~"),
+        }
+
+    @staticmethod
+    def _translation_visible_cjk_count(value: str) -> int:
+        visible = re.sub(r"(?is)<[^>]+>|https?://[^\s\"'<>]+|```.*?```", " ", value)
+        return len(re.findall(r"[\u3400-\u9fff]", visible))
 
     @staticmethod
     def _normalize_json_schema_output(
@@ -1139,7 +1229,15 @@ class WordPressOperationRuntime:
                 raw_text = wrapped.group(1).strip()
                 if not raw_text:
                     return ""
-        text = self._extract_task_candidate(raw_text, task=task, limit=limit)
+        # Translation is a structure-preserving operation. Do not run it
+        # through the Markdown cleanup used by short suggestions: that would
+        # remove underscores, collapse code formatting, and alter HTML-facing
+        # content before the structure gate can assess it.
+        text = raw_text if task == "content_translation" else self._extract_task_candidate(
+            raw_text,
+            task=task,
+            limit=limit,
+        )
         if not text:
             text = self._strip_markdown(raw_text)
         if strip_explanation:
@@ -1163,18 +1261,128 @@ class WordPressOperationRuntime:
         *,
         source_text: str = "",
     ) -> str:
+        available_terms = self._extract_available_terms(source_text)
         parsed = self._parse_classification_json(output_text)
         if parsed is None:
+            # With an official candidate pool, malformed model output cannot be
+            # safely converted into a new taxonomy term. Preserve a legitimate
+            # empty result and let the local Ability report no suggestions.
             parsed = {
-                "suggestions": [
-                    {"term": term, "confidence": 0.6, "is_new": True}
-                    for term in self._extract_classification_terms(
-                        output_text,
-                        source_text=source_text,
-                    )
-                ]
+                "suggestions": (
+                    []
+                    if available_terms
+                    else [
+                        {"term": term, "confidence": 0.6, "is_new": True}
+                        for term in self._extract_classification_terms(
+                            output_text,
+                            source_text=source_text,
+                        )
+                    ]
+                )
             }
+        if available_terms:
+            # WordPress supplies the candidate pool and owns the meaning of an
+            # empty result. Keep only model suggestions that can be mapped to a
+            # supplied term; never infer a taxonomy term from arbitrary content.
+            parsed["suggestions"] = self._match_existing_taxonomy_terms(
+                parsed.get("suggestions"),
+                available_terms,
+            )
         return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+    def _normalize_slug_output(self, output_text: str) -> str:
+        parsed = self._parse_json_object(output_text)
+        raw_slugs = parsed.get("slugs") if isinstance(parsed, dict) else None
+        slugs: list[str] = []
+        if isinstance(raw_slugs, list):
+            for raw_slug in raw_slugs:
+                if not isinstance(raw_slug, str):
+                    continue
+                slug = self._normalize_ascii_slug(raw_slug)
+                if slug and slug not in slugs:
+                    slugs.append(slug)
+                if len(slugs) >= 10:
+                    break
+        if not slugs:
+            # An empty result is safer than fabricating a slug from transport
+            # metadata or a title whose language may not be transliterable. Keep
+            # the official JSON shape so the raw provider value cannot leak
+            # back through the generic output fallback.
+            return json.dumps({"slugs": []}, ensure_ascii=False, separators=(",", ":"))
+        return json.dumps({"slugs": slugs}, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _parse_json_object(output_text: str) -> dict[str, Any] | None:
+        candidates = [output_text.strip()]
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output_text, flags=re.S | re.I)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
+
+    @staticmethod
+    def _normalize_ascii_slug(raw_slug: str) -> str:
+        value = raw_slug.strip()
+        for _ in range(3):
+            decoded = unquote(value)
+            if decoded == value:
+                break
+            value = decoded
+        value = unicodedata.normalize("NFKC", value).lower()
+        # Percent-decoded CJK and other Unicode must be rejected as a whole.
+        # Dropping those bytes would silently turn a meaningful slug into an
+        # unrelated partial value such as ``thebiz``. The provider must return
+        # an intentional ASCII transliteration instead.
+        if not value.isascii():
+            return ""
+        value = value.replace("_", "-")
+        value = re.sub(r"[^a-z0-9]+", "-", value)
+        return value.strip("-")[:80].strip("-")
+
+    @staticmethod
+    def _extract_available_terms(source_text: str) -> list[str]:
+        match = re.search(
+            r"<available-terms>\s*(.*?)\s*</available-terms>",
+            source_text,
+            flags=re.I | re.S,
+        )
+        if match is None:
+            return []
+        return [item.strip() for item in re.split(r"[,，]", match.group(1)) if item.strip()]
+
+    @classmethod
+    def _match_existing_taxonomy_terms(
+        cls,
+        suggestions: Any,
+        available_terms: list[str],
+    ) -> list[dict[str, Any]]:
+        canonical_by_key = {cls._taxonomy_term_key(term): term for term in available_terms}
+        matched: list[dict[str, Any]] = []
+        if not isinstance(suggestions, list):
+            return matched
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                continue
+            term = str(suggestion.get("term") or "").strip()
+            canonical = canonical_by_key.get(cls._taxonomy_term_key(term))
+            if not canonical:
+                continue
+            normalized = dict(suggestion)
+            normalized["term"] = canonical
+            normalized["is_new"] = False
+            matched.append(normalized)
+        return matched
+
+    @staticmethod
+    def _taxonomy_term_key(term: str) -> str:
+        normalized = unicodedata.normalize("NFKC", term).casefold()
+        return re.sub(r"[^\w\u3400-\u9fff]+", "", normalized)
 
     def _has_available_terms(self, source_text: str) -> bool:
         match = re.search(
@@ -1501,6 +1709,12 @@ class WordPressOperationRuntime:
         cjk_count = len(re.findall(r"[\u4e00-\u9fff]", text))
         latin_count = len(re.findall(r"[A-Za-z]", text))
         return latin_count > max(24, cjk_count * 2)
+
+    @staticmethod
+    def _is_predominantly_cjk(text: str) -> bool:
+        cjk_count = len(re.findall(r"[\u4e00-\u9fff]", text))
+        latin_count = len(re.findall(r"[A-Za-z]", text))
+        return cjk_count >= 4 and latin_count <= max(24, cjk_count * 2)
 
     def _extract_cjk_text(self, source_text: str, *, limit: int) -> str:
         fragments = re.findall(

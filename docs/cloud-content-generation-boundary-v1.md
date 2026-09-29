@@ -189,6 +189,13 @@ Required posture:
   - `no_store`
   - `result_only`
   - `full_store_with_ttl`
+- Translation results must pass a deterministic output-quality gate before the
+  Connector result is accepted. The gate rejects refusal or instruction-leak
+  text, missing or changed HTML/Block/link/code structure, substantial source
+  language residue, and unreasonable output-length inflation. Rejected results
+  remain suggestions-only failures and carry a typed diagnostic reason such as
+  `translation_refusal_leak`, `translation_structure_drift`,
+  `translation_untranslated_source`, or `translation_length_inflation`.
 - Cloud may meter by `ability_family`, `execution_kind`, `execution_tier`, and
   `data_classification`, but entitlement/metering does not become governance
   truth.
