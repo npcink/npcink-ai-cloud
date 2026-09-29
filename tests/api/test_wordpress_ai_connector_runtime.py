@@ -5254,7 +5254,7 @@ def test_admin_runtime_profiles_requires_enabled_provider_model(
 def test_wordpress_ai_connector_accepts_additive_ability_contract_metadata(
     tmp_path: Path,
 ) -> None:
-    _, client, provider = _build_client(tmp_path)
+    database_url, client, provider = _build_client(tmp_path)
     payload = _payload(
         {
             "task": "title_generation",
@@ -5270,6 +5270,9 @@ def test_wordpress_ai_connector_accepts_additive_ability_contract_metadata(
                     "context_requirements": ["current_content"],
                     "constraints": ["single_value"],
                     "output_schema": {"type": "string"},
+                    "schema_hash": (
+                        "sha256:ccda4ac42a77a063ad891cc4bd82f13679a78a7dd7661054125f60b051f22c6c"
+                    ),
                     "risk_level": "read",
                     "requires_approval": False,
                     "verification_state": "mapping_current",
@@ -5281,6 +5284,17 @@ def test_wordpress_ai_connector_accepts_additive_ability_contract_metadata(
     response = _execute(client, payload, idempotency_key="wp-ai-contract-metadata")
     assert response.status_code == 200, response.text
     assert len(provider.requests) >= 1
+    with get_session(database_url) as session:
+        run = session.execute(select(RunRecord)).scalar_one()
+        assert run.policy_json["execution_contract"]["ability_contract"] == {
+            "ability_id": "ai/title-generation",
+            "contract_source": "wordpress_abilities_api",
+            "contract_version": "ai_task_contract.v1",
+            "schema_hash": (
+                "sha256:ccda4ac42a77a063ad891cc4bd82f13679a78a7dd7661054125f60b051f22c6c"
+            ),
+            "verification_state": "mapping_current",
+        }
 
 
 def test_wordpress_ai_connector_rejects_invalid_contract_source_before_provider(

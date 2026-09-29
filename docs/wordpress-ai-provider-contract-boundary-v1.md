@@ -15,6 +15,10 @@ WordPress Abilities API / npcink-abilities-toolkit
 - `npcink-abilities-toolkit/*` abilities use the Toolkit contract endpoint as their contract source. The Toolkit exposes stable schema hashes and `contract_source=npcink_abilities_toolkit`.
 - The Addon is a projection and validation boundary. It does not register a second Ability catalog, change prompts, or own WordPress writes.
 - Cloud validates and records the optional provenance fields `ability_id`, `contract_source`, `contract_version`, and `schema_hash`. Cloud does not register Abilities or override local schemas.
+- For accepted connector runs, Cloud keeps a content-free `ability_contract` summary
+  inside the runtime policy evidence. It contains only the Ability identifier,
+  contract source/version, schema hash, and verification state; input/output
+  schemas, prompts, and WordPress content never enter this summary.
 - Eval Lab consumes Addon acceptance reports. It never calls a Provider, registers an Ability, or writes WordPress.
 
 ## Contract status
