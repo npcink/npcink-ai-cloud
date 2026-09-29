@@ -219,6 +219,7 @@ def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
         "execution_context",
         "task_backend",
         "run_lifecycle",
+        "run_state",
         "result",
     }
     assert payload["data"]["canonical_run_id"] == "wp_run_contract_execute_001"
