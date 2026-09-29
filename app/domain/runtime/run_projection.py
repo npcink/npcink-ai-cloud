@@ -148,6 +148,12 @@ class RuntimeRunProjector:
             (call for call in reversed(provider_calls) if call.error_code),
             None,
         )
+        diagnostics = (
+            run.policy_json.get("runtime_diagnostics")
+            if isinstance(run.policy_json, dict)
+            else {}
+        )
+        diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
         retryable = bool(
             result_state.get("retry", {}).get("retryable")
             if isinstance(result_state.get("retry"), dict)
@@ -203,6 +209,8 @@ class RuntimeRunProjector:
                 "provider_error_code": failed_provider_call.error_code
                 if failed_provider_call is not None
                 else "",
+                "quality_contract_version": str(diagnostics.get("contract_version") or ""),
+                "quality_reason": str(diagnostics.get("output_quality_reason") or ""),
             },
             "observability": {
                 "trace_id": run.trace_id,

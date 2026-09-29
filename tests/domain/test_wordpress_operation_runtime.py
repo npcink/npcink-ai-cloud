@@ -156,6 +156,80 @@ def test_editorial_updates_provider_input_forbids_process_explanations() -> None
     assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
 
 
+@pytest.mark.parametrize(
+    "task",
+    ["content_translation", "content_classification", "editorial_notes", "slug_generation"],
+)
+def test_structure_sensitive_connector_tasks_default_to_deterministic_temperature(
+    task: str,
+) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task=task,
+            request={
+                "prompt": "Review this fixed connector sample.",
+                "source_text": "Review this fixed connector sample.",
+                "task_contract": {
+                    "task_family": "analysis" if task == "editorial_notes" else "generation",
+                    "constraints": (
+                        ["json_object"]
+                        if task in {"content_classification", "editorial_notes", "slug_generation"}
+                        else []
+                    ),
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"suggestions": {"type": "array"}},
+                    }
+                    if task in {"content_classification", "editorial_notes"}
+                    else {},
+                },
+            },
+        )
+    )
+
+    assert provider_input["temperature"] == 0.0
+
+
+def test_content_translation_provider_input_protects_gutenberg_structure() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="content_translation",
+            request={
+                "source_text": "<!-- wp:paragraph --><p>需要翻译。</p><!-- /wp:paragraph -->",
+                "target_language": "en-us",
+            },
+        )
+    )
+
+    assert "copy every block delimiter" in provider_input["input"]
+    assert "same number and order of blocks" in provider_input["input"]
+    assert provider_input["temperature"] == 0.0
+
+
+def test_editorial_notes_provider_input_requires_suggestion_for_objective_issue() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="editorial_notes",
+            request={
+                "prompt": "These sentence are hard to reads.",
+                "task_contract": {
+                    "task_family": "analysis",
+                    "constraints": ["json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"suggestions": {"type": "array"}},
+                    },
+                },
+            },
+        )
+    )
+
+    assert "an empty suggestions array is invalid" in provider_input["input"]
+
+
 def test_content_rewrite_provider_input_preserves_scope_and_source_length() -> None:
     runtime = _runtime()
     provider_input = runtime.build_provider_input(

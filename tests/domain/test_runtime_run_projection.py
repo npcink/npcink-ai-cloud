@@ -151,6 +151,29 @@ def test_run_projection_covers_public_status_states(
     assert task_backend["callback_url"] == ""
 
 
+def test_run_state_projects_payload_free_wordpress_quality_reason() -> None:
+    projector = RuntimeRunProjector()
+    run = _run(
+        "failed",
+        ability_name="ai/content-translation",
+        error_code="provider.output_quality_rejected",
+        policy_json={
+            "max_retries": 1,
+            "runtime_diagnostics": {
+                "contract_version": "wordpress_ai_connector_quality.v1",
+                "output_quality_reason": "translation_structure_drift",
+            },
+        },
+    )
+
+    error = cast(dict[str, object], projector.build_run_state_payload(run, [])[
+        "error"
+    ])
+
+    assert error["quality_contract_version"] == "wordpress_ai_connector_quality.v1"
+    assert error["quality_reason"] == "translation_structure_drift"
+
+
 def test_lifecycle_projects_callback_cancel_retention_and_task_backend() -> None:
     projector = RuntimeRunProjector()
     run = _run(
