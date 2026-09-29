@@ -194,6 +194,17 @@ Repository integration gate:
 pnpm run check:fast
 ```
 
+Advisory AI review gate (run before `pnpm run pr:publish`):
+
+```bash
+ocr review --from origin/master --to HEAD
+```
+
+Treat findings as a second opinion: fix real defects or record why they are
+acceptable. Follows AI Code Review Standard v1 in `npcink-workflow-toolbox`
+`docs/platform/ai-code-review-standard-v1.md`; the CI workflow posting the same
+review on pull requests is advisory and never a required check.
+
 `check:fast` is not the default inner-loop command for every small edit. Start
 with the narrowest test, lint, type, or contract gate that covers the changed
 seam. Use `check:fast` when risk or integration closeout requires the combined
