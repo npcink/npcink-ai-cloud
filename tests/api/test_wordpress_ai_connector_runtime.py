@@ -1142,9 +1142,9 @@ def test_wordpress_ai_connector_accepts_order_independent_schema_hash(
         },
         "output_schema": {"minLength": 1, "type": "string"},
     }
-    canonical = json.dumps(schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True).replace(
-        "/", "\\/"
-    )
+    canonical = json.dumps(
+        schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    ).replace("/", "\\/")
     schema["input_schema"] = {
         "type": "object",
         "properties": {
