@@ -28,11 +28,11 @@ The Addon and Cloud use these development verification states:
 - `contract_drift`: the local contract and mapped projection disagree.
 - `unsupported`: no valid projection exists.
 
-A missing source, invalid schema, or hash mismatch is a contract error. The intended Addon behavior is to fail closed before the Cloud Provider call and keep detailed provenance in development acceptance evidence; the current Cloud implementation validates only the metadata it receives and does not yet prove local Addon drift detection.
+A missing source, invalid schema, or hash mismatch is a contract error. The Addon now fails closed before the Cloud Provider call for Toolkit contract absence, schema drift, identity/version drift, permission drift, and any non-current verification state. Detailed provenance remains in development acceptance evidence.
 
 ## Compatibility rule
 
-Provenance metadata is additive at the Cloud boundary. Requests that predate these fields remain valid with the WordPress Abilities API default for backward compatibility. When provenance is present, Cloud validates the source and verification vocabulary and records the metadata supplied by the connector. Addon-side baseline comparison and fail-closed drift handling remain a follow-up required before this document can be treated as a complete implementation claim.
+Provenance metadata is additive at the Cloud boundary. Requests that predate these fields remain valid with the WordPress Abilities API default for backward compatibility. When provenance is present, Cloud validates the source and verification vocabulary and records the metadata supplied by the connector. The Addon performs the local baseline comparison: Toolkit-owned abilities are checked against the Toolkit contract source, while `ai/*` abilities remain sourced from the WordPress Abilities API.
 
 ## Change procedure
 
