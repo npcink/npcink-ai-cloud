@@ -316,6 +316,7 @@ def test_alt_text_contract_accepts_ability_schema_projection() -> None:
         {"input_schema": input_schema, "output_schema": output_schema},
         ensure_ascii=True,
         separators=(",", ":"),
+        sort_keys=True,
     ).replace("/", "\\/")
     request = {
         "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
