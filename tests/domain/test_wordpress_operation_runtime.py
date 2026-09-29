@@ -156,6 +156,76 @@ def test_editorial_updates_provider_input_forbids_process_explanations() -> None
     assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
 
 
+def test_content_rewrite_provider_input_preserves_scope_and_source_length() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="content_rewrite",
+            request={
+                "source_text": "这是一段需要改写的短内容。",
+                "system_instruction": "让表达更加清晰。",
+            },
+        )
+    )
+
+    assert "Return exactly one rewritten version" in provider_input["input"]
+    assert "Keep the result close to the source length" in provider_input["input"]
+    assert "do not expand a short paragraph into an explanation" in provider_input["input"]
+    assert (
+        "Preserve the original meaning, facts, names, numbers, links, and structure"
+        in provider_input["input"]
+    )
+
+
+def test_editorial_updates_provider_input_preserves_scope_and_source_length() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="editorial_updates",
+            request={
+                "source_text": "这是一段需要改写的短内容。",
+                "system_instruction": "编辑建议：让表达更加清晰。",
+            },
+        )
+    )
+
+    assert "Return only the final revised content" in provider_input["input"]
+    assert "Keep the result close to the source length" in provider_input["input"]
+    assert "do not expand a short paragraph into an explanation" in provider_input["input"]
+    assert "add background, product names, workflow claims" in provider_input["input"]
+    assert "Return the revised paragraph itself and retain its substantive words" in provider_input[
+        "input"
+    ]
+
+
+def test_editorial_updates_rejects_completion_statement_without_source_overlap() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph has been updated to provide clarity."},
+        input_payload={
+            "metadata": {"task": "editorial_updates", "task_constraints": ["single_value"]},
+            "text": "This paragraph needs a concise editorial update.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_unbounded_expansion() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph is clear. " * 20},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "This paragraph needs a concise editorial update.",
+        },
+    )
+
+    assert normalized == {}
+
+
 def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() -> None:
     runtime = _runtime()
     source_artifact = LoadedArtifactInput(

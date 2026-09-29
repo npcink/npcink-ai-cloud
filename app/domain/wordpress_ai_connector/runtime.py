@@ -124,7 +124,12 @@ class WordPressOperationRuntime:
                 '[{"term":"...","confidence":0.8,"is_new":false}]}. No markdown.'
             ),
             "content_rewrite": (
-                "Rewrite the content as requested. Return exactly one rewritten version."
+                "Rewrite only the supplied content according to the request. Return exactly "
+                "one rewritten version (one revised version) and nothing else. Preserve the "
+                "original meaning, facts, "
+                "names, numbers, links, and structure. Keep the result close to the source "
+                "length; do not expand a short paragraph into an explanation, add background, "
+                "product names, workflow claims, or administrative context."
             ),
             "content_summary": "Summarize the content. Return only the summary.",
             "editorial_notes": (
@@ -143,7 +148,12 @@ class WordPressOperationRuntime:
                 "the final revised content, with no preface, explanation, reasoning, labels, "
                 "or mention of the notes. Preserve the original facts and language. If a "
                 "note is vague, make the smallest clear grammatical improvement possible; "
-                "never say that the task is impossible and never describe your process."
+                "never say that the task is impossible and never describe your process. Keep "
+                "the result close to the source length; do not expand a short paragraph into "
+                "an explanation, add background, product names, workflow claims, or "
+                "administrative context. Return the revised paragraph itself and retain its "
+                "substantive words; do not replace the paragraph with a completion statement "
+                "such as 'updated', 'optimized', or 'ready for readers'."
             ),
             "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
             "image_prompt_generation": (
@@ -588,7 +598,7 @@ class WordPressOperationRuntime:
                 source_text=str(input_payload.get("text") or ""),
                 task=task,
             )
-        elif "single_value" in constraints:
+        elif task == "editorial_updates" or "single_value" in constraints:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit=(
@@ -603,6 +613,11 @@ class WordPressOperationRuntime:
 
         if not normalized_text and not strips_reasoning_noise:
             return output
+        if task == "editorial_updates" and not self._editorial_update_keeps_source_content(
+            source_text=str(input_payload.get("text") or ""),
+            output_text=normalized_text,
+        ):
+            return {}
 
         normalized = dict(output)
         normalized["output_text"] = normalized_text
@@ -613,6 +628,29 @@ class WordPressOperationRuntime:
         normalized.pop("output", None)
         normalized.pop("response_status", None)
         return normalized
+
+    @staticmethod
+    def _editorial_update_keeps_source_content(*, source_text: str, output_text: str) -> bool:
+        """Reject completion statements that replace the requested paragraph."""
+        source_plain = re.sub(r"<[^>]+>", " ", source_text).strip()
+        output_plain = re.sub(r"<[^>]+>", " ", output_text).strip()
+        if len(output_plain) > max(96, len(source_plain) * 3):
+            return False
+        token_pattern = r"[A-Za-z0-9][A-Za-z0-9'-]*|[\u3400-\u9fff]"
+        source_tokens = {
+            token.lower()
+            for token in re.findall(token_pattern, source_plain)
+            if len(token) > 1 or "\u3400" <= token <= "\u9fff"
+        }
+        output_tokens = {
+            token.lower()
+            for token in re.findall(token_pattern, output_plain)
+            if len(token) > 1 or "\u3400" <= token <= "\u9fff"
+        }
+        if not source_tokens or not output_tokens:
+            return False
+        overlap = len(source_tokens & output_tokens)
+        return overlap >= min(3, len(source_tokens)) and overlap / len(source_tokens) >= 0.5
 
     def _normalize_alt_text_provider_output(
         self,
