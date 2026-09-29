@@ -969,7 +969,10 @@ class OpenAIProviderAdapter:
                 tokens_in=normalized_usage.total_input_tokens,
                 tokens_out=normalized_usage.output_tokens,
                 cost=cost_estimate.total_cost,
-                finish_reason="stop" if response_json.get("done") is True else None,
+                finish_reason=str(
+                    response_json.get("done_reason")
+                    or ("stop" if response_json.get("done") is True else "unknown")
+                ),
                 reasoning_tokens=normalized_usage.reasoning_tokens,
                 cost_estimate_mode=cost_estimate.mode,
             )
