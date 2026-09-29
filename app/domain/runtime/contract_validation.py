@@ -448,7 +448,7 @@ class RuntimeContractValidator:
                 "whole_run_offload requires task_backend.enabled=true",
             )
 
-        return {
+        execution_contract: dict[str, object] = {
             "ability_name": request.ability_name,
             "contract_version": request.contract_version,
             "profile_id": resolution.profile_id,
@@ -461,6 +461,43 @@ class RuntimeContractValidator:
             "task_backend": task_backend,
             "callback_target": callback_target,
         }
+        ability_contract = self._wordpress_ai_contract_provenance(request)
+        if ability_contract:
+            execution_contract["ability_contract"] = ability_contract
+        return execution_contract
+
+    @staticmethod
+    def _wordpress_ai_contract_provenance(request: RuntimeRequest) -> dict[str, str]:
+        """Project bounded Ability provenance into durable runtime policy evidence.
+
+        The connector contract validator has already checked these values. Keep
+        only identifiers and hashes here; never copy the Ability schemas or
+        WordPress scene content into the policy snapshot.
+        """
+        if request.ability_name != "npcink-cloud/connector-runtime":
+            return {}
+        operation_contract = request.input_payload.get("operation_contract")
+        if not isinstance(operation_contract, dict):
+            return {}
+        scene_request = operation_contract.get("request")
+        if not isinstance(scene_request, dict):
+            return {}
+        task_contract = scene_request.get("task_contract")
+        if not isinstance(task_contract, dict):
+            return {}
+
+        provenance: dict[str, str] = {}
+        for key in (
+            "ability_id",
+            "contract_source",
+            "contract_version",
+            "schema_hash",
+            "verification_state",
+        ):
+            value = task_contract.get(key)
+            if isinstance(value, str) and value.strip():
+                provenance[key] = value.strip()
+        return provenance
 
     def apply_execution_contract(
         self,
@@ -498,7 +535,7 @@ class RuntimeContractValidator:
         policy["storage_mode"] = str(
             execution_contract.get("storage_mode") or RUNTIME_STORAGE_MODE_RESULT_ONLY
         )
-        policy["execution_contract"] = {
+        execution_policy_contract: dict[str, object] = {
             "ability_name": str(execution_contract.get("ability_name") or ""),
             "contract_version": str(execution_contract.get("contract_version") or ""),
             "profile_id": str(execution_contract.get("profile_id") or ""),
@@ -510,6 +547,14 @@ class RuntimeContractValidator:
             "retention_ttl": retention_ttl,
             "task_backend": task_backend if isinstance(task_backend, dict) else {},
         }
+        policy["execution_contract"] = execution_policy_contract
+        ability_contract = execution_contract.get("ability_contract")
+        if isinstance(ability_contract, dict) and ability_contract:
+            execution_policy_contract["ability_contract"] = {
+                str(key): str(value)
+                for key, value in ability_contract.items()
+                if isinstance(key, str) and isinstance(value, str) and value
+            }
         if callback_target:
             policy["runtime_callback"] = callback_target
             policy.pop("callback_url", None)
