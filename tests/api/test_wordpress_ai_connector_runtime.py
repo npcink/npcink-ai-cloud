@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1124,6 +1125,58 @@ def test_wordpress_ai_connector_accepts_php_compatible_schema_hash(
         response.json().get("error_code")
         != "wordpress_operation.ai_task_contract_schema_hash_mismatch"
     )
+    assert len(provider.requests) >= 1
+
+
+def test_wordpress_ai_connector_accepts_order_independent_schema_hash(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    schema = {
+        "input_schema": {
+            "properties": {
+                "body": {"type": "string"},
+                "title": {"type": "string"},
+            },
+            "type": "object",
+        },
+        "output_schema": {"minLength": 1, "type": "string"},
+    }
+    canonical = json.dumps(schema, ensure_ascii=True, separators=(",", ":"), sort_keys=True).replace(
+        "/", "\\/"
+    )
+    schema["input_schema"] = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+        },
+    }
+    schema["output_schema"] = {"type": "string", "minLength": 1}
+    payload = _payload(
+        {
+            "task": "title_generation",
+            "request": {
+                "source_text": "Generate a title.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value"],
+                    "input_schema": schema["input_schema"],
+                    "output_schema": schema["output_schema"],
+                    "schema_hash": "sha256:" + hashlib.sha256(canonical.encode()).hexdigest(),
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-schema-hash-order")
+
+    assert response.status_code == 200, response.text
     assert len(provider.requests) >= 1
 
 

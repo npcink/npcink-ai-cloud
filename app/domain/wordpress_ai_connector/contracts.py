@@ -461,13 +461,16 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "AI task contract schema_hash must be a sha256 digest when provided",
         )
     if schema_hash:
-        # Keep the digest byte-compatible with PHP's default wp_json_encode()
-        # used by the Addon: compact JSON, escaped Unicode, and escaped slashes.
-        canonical_schema_json = json.dumps(
+        # Keep the digest byte-compatible with Addon/Toolkit: recursively sort
+        # object keys, preserve array order, then use compact escaped JSON.
+        canonical_schema = _canonicalize_schema(
             {
                 "input_schema": input_schema if isinstance(input_schema, dict) else {},
                 "output_schema": output_schema,
-            },
+            }
+        )
+        canonical_schema_json = json.dumps(
+            canonical_schema,
             ensure_ascii=True,
             separators=(",", ":"),
         ).replace("/", "\\/")
@@ -479,6 +482,15 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
                 "wordpress_operation.ai_task_contract_schema_hash_mismatch",
                 "AI task contract schema_hash does not match its input and output schemas",
             )
+
+
+def _canonicalize_schema(value: Any) -> Any:
+    """Sort JSON object keys without changing array order."""
+    if isinstance(value, dict):
+        return {key: _canonicalize_schema(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_canonicalize_schema(item) for item in value]
+    return value
 
 
 def resolve_site_knowledge_reference_mode(
