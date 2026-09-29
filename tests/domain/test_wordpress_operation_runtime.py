@@ -198,7 +198,7 @@ def test_editorial_updates_provider_input_preserves_scope_and_source_length() ->
     ]
 
 
-def test_editorial_updates_rejects_completion_statement_without_source_overlap() -> None:
+def test_editorial_updates_accepts_bounded_completion_wording_for_manual_review() -> None:
     runtime = _runtime()
 
     normalized = runtime.normalize_provider_output(
@@ -209,14 +209,14 @@ def test_editorial_updates_rejects_completion_statement_without_source_overlap()
         },
     )
 
-    assert normalized == {}
+    assert normalized["output_text"] == "This paragraph has been updated to provide clarity."
 
 
 def test_editorial_updates_rejects_unbounded_expansion() -> None:
     runtime = _runtime()
 
     normalized = runtime.normalize_provider_output(
-        {"output_text": "This paragraph is clear. " * 20},
+        {"output_text": "This paragraph is clear. " * 40},
         input_payload={
             "metadata": {"task": "editorial_updates"},
             "text": "This paragraph needs a concise editorial update.",
@@ -224,6 +224,20 @@ def test_editorial_updates_rejects_unbounded_expansion() -> None:
     )
 
     assert normalized == {}
+
+
+def test_editorial_updates_accepts_bounded_revised_paragraph() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph now offers a concise editorial update."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "This paragraph needs a concise editorial update.",
+        },
+    )
+
+    assert normalized["output_text"] == "This paragraph now offers a concise editorial update."
 
 
 def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() -> None:

@@ -655,26 +655,12 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _editorial_update_keeps_source_content(*, source_text: str, output_text: str) -> bool:
-        """Reject completion statements that replace the requested paragraph."""
+        """Reject only extreme expansion while leaving editorial review to WordPress."""
         source_plain = re.sub(r"<[^>]+>", " ", source_text).strip()
         output_plain = re.sub(r"<[^>]+>", " ", output_text).strip()
-        if len(output_plain) > max(96, len(source_plain) * 3):
+        if len(output_plain) > max(512, len(source_plain) * 8):
             return False
-        token_pattern = r"[A-Za-z0-9][A-Za-z0-9'-]*|[\u3400-\u9fff]"
-        source_tokens = {
-            token.lower()
-            for token in re.findall(token_pattern, source_plain)
-            if len(token) > 1 or "\u3400" <= token <= "\u9fff"
-        }
-        output_tokens = {
-            token.lower()
-            for token in re.findall(token_pattern, output_plain)
-            if len(token) > 1 or "\u3400" <= token <= "\u9fff"
-        }
-        if not source_tokens or not output_tokens:
-            return False
-        overlap = len(source_tokens & output_tokens)
-        return overlap >= min(3, len(source_tokens)) and overlap / len(source_tokens) >= 0.5
+        return True
 
     def _normalize_alt_text_provider_output(
         self,
