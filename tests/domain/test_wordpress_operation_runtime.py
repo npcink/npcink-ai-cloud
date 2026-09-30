@@ -183,7 +183,7 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
     assert "Use only facts, names, products, organizations, and claims" in provider_input[
         "input"
     ]
-    assert "do not invent agreements" in provider_input["input"].lower()
+    assert "do not introduce concepts" in provider_input["input"].lower()
     assert "Return only the" in provider_input["input"]
     assert provider_input["text"] == "A bounded connector maps WordPress AI abilities to a hosted provider."
     assert provider_input["input"].count("A bounded connector maps WordPress AI abilities to a hosted provider.") == 1

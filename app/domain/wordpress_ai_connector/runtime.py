@@ -164,8 +164,11 @@ class WordPressOperationRuntime:
             "excerpt_generation": (
                 "Generate a concise excerpt from the supplied content. Use only facts, "
                 "names, products, organizations, and claims that appear in the source. "
-                "Preserve the source's concrete topic and do not invent agreements, "
-                "vendors, benefits, or marketing context. Return only the excerpt itself."
+                "Preserve the source's concrete topic and key nouns verbatim when possible. "
+                "Do not introduce concepts, relationships, audiences, benefits, or business "
+                "context that the source does not contain. If the source is short, extract or "
+                "lightly compress its own wording instead of expanding it. Return only the "
+                "excerpt itself."
             ),
             "image_prompt_generation": (
                 "Generate one concise image prompt. Return only the prompt text."
@@ -173,9 +176,11 @@ class WordPressOperationRuntime:
             "meta_description": (
                 "Generate one SEO meta description, 120 to 155 characters, from the "
                 "supplied content and title. Use only facts, names, products, "
-                "organizations, and claims present in that source. Do not invent "
-                "agreements, vendors, benefits, or generic business promises. Return "
-                "only the description itself."
+                "organizations, and claims present in that source. Preserve the source's "
+                "key nouns verbatim when possible. Do not introduce concepts, relationships, "
+                "audiences, benefits, or generic business promises absent from the source. "
+                "If the source is short, stay close to its wording rather than expanding it. "
+                "Return only the description itself."
             ),
             "title_generation": (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
