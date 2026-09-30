@@ -678,6 +678,12 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
     assert title["output_text"] == "云端连接器重构"
     assert summary["output_text"] == summary_source
     assert rewrite["output_text"] == "这段文字现在更加清晰。"
+    assert json.loads(classification["output_text"]) == {
+        "suggestions": [
+            {"term": "WordPress", "confidence": 1.0, "is_new": False},
+            {"term": "Cloud Runtime", "confidence": 0.4, "is_new": True},
+        ]
+    }
 
 
 def test_excerpt_replaces_unknown_source_boilerplate_with_source_sentence() -> None:
@@ -698,12 +704,6 @@ def test_excerpt_replaces_unknown_source_boilerplate_with_source_sentence() -> N
     )
 
     assert normalized["output_text"] == source
-    assert json.loads(classification["output_text"]) == {
-        "suggestions": [
-            {"term": "WordPress", "confidence": 1.0, "is_new": False},
-            {"term": "Cloud Runtime", "confidence": 0.4, "is_new": True},
-        ]
-    }
 
 
 def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
