@@ -41,7 +41,14 @@ def _operation_payload(
 ) -> dict[str, Any]:
     scene_text_field = (
         "source_text"
-        if task in {"title_generation", "content_summary", "content_rewrite", "editorial_updates"}
+        if task in {
+            "title_generation",
+            "content_summary",
+            "content_rewrite",
+            "editorial_updates",
+            "excerpt_generation",
+            "meta_description",
+        }
         else "prompt"
     )
     scene_request: dict[str, Any] = {
@@ -163,7 +170,8 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
         _operation_payload(
             task=task,
             request={
-                "prompt": "A bounded connector maps WordPress AI abilities to a hosted provider.",
+                "source_text": "A bounded connector maps WordPress AI abilities to a hosted provider.",
+                "system_instruction": "Generate a concise excerpt or SEO description.",
                 "task_contract": {
                     "task_family": "generation",
                     "constraints": ["single_value", "source_grounded", "no_new_numbers"],
@@ -177,6 +185,9 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
     ]
     assert "do not invent agreements" in provider_input["input"].lower()
     assert "Return only the" in provider_input["input"]
+    assert provider_input["text"] == "A bounded connector maps WordPress AI abilities to a hosted provider."
+    assert provider_input["input"].count("A bounded connector maps WordPress AI abilities to a hosted provider.") == 1
+    assert "Generate a concise excerpt or SEO description." in provider_input["input"]
 
 
 @pytest.mark.parametrize(
