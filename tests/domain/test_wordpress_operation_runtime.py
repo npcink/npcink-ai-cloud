@@ -309,7 +309,7 @@ def test_editorial_updates_provider_input_preserves_scope_and_source_length() ->
     ]
 
 
-def test_editorial_updates_accepts_bounded_completion_wording_for_manual_review() -> None:
+def test_editorial_updates_rejects_bounded_completion_wording_without_source_facts() -> None:
     runtime = _runtime()
 
     normalized = runtime.normalize_provider_output(
@@ -320,7 +320,167 @@ def test_editorial_updates_accepts_bounded_completion_wording_for_manual_review(
         },
     )
 
-    assert normalized["output_text"] == "This paragraph has been updated to provide clarity."
+    assert normalized == {}
+
+
+def test_editorial_updates_accepts_bounded_revised_paragraph_with_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "The connector sends a clear suggestion to WordPress, and the editor reviews "
+                "it before saving."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates", "task_constraints": ["single_value"]},
+            "text": (
+                "The connector sends a suggestion to WordPress. The editor reviews it "
+                "before saving."
+            ),
+        },
+    )
+
+    assert "WordPress" in normalized["output_text"]
+
+
+def test_content_rewrite_does_not_reject_common_instruction_word_with_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": "Use WordPress to send a concise suggestion before review.",
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized["output_text"] == "Use WordPress to send a concise suggestion before review."
+
+
+def test_content_rewrite_rejects_chinese_boilerplate_with_only_particle_overlap() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "该段落已完成优化，内容清晰易读。"},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "这是一个测试。",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_generic_summary_without_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This condensed paragraph eliminates repetition to produce a clear version "
+                "suitable for an article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<block-content>This paragraph repeats the same idea. The same idea is repeated "
+                "again for emphasis.</block-content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_explanation_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant sentence requires condensation into one concise statement. "
+                "To make it read well in print or on screen, we suggest removing unnecessary "
+                "repetition that only adds length and confusion to the piece."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<block-content>This paragraph repeats the same idea. The same idea is repeated "
+                "again for emphasis.</block-content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_concise_completion_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph has been concisely updated for clarity."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_replacement_instruction_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This sentence repeats itself; use a concise replacement instead."},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "This paragraph repeats the same idea for emphasis.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_reader_facing_summary_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This paragraph offers a clear and concise statement for readers to "
+                "understand easily."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_transformation_quality_reason_reports_missing_source_grounding() -> None:
+    runtime = _runtime()
+
+    reason = runtime.output_quality_reason(
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+        provider_output={
+            "output_text": "This paragraph has been revised for clarity.",
+        },
+    )
+
+    assert reason == "output_not_grounded"
 
 
 def test_editorial_updates_rejects_unbounded_expansion() -> None:
