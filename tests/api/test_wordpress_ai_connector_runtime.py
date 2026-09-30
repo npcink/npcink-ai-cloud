@@ -2241,7 +2241,14 @@ def test_wordpress_ai_connector_uses_task_bound_hidden_site_reference(
     )
     scene_field = (
         "source_text"
-        if task in {"title_generation", "content_summary", "content_rewrite"}
+        if task
+        in {
+            "title_generation",
+            "content_summary",
+            "content_rewrite",
+            "excerpt_generation",
+            "meta_description",
+        }
         else "prompt"
     )
     payload = _payload(
@@ -2295,7 +2302,14 @@ def test_wordpress_ai_connector_new_style_tasks_fall_back_when_retrieval_fails(
     monkeypatch.setattr(SiteKnowledgeService, "execute", fail_site_knowledge_retrieval)
     scene_field = (
         "source_text"
-        if task in {"title_generation", "content_summary", "content_rewrite"}
+        if task
+        in {
+            "title_generation",
+            "content_summary",
+            "content_rewrite",
+            "excerpt_generation",
+            "meta_description",
+        }
         else "prompt"
     )
     response = _execute(
@@ -3999,7 +4013,7 @@ def test_wordpress_ai_connector_runtime_normalizes_meta_description_scene(
         {
             "task": "meta_description",
             "request": {
-                "prompt": (
+                "source_text": (
                     "为这篇文章生成 SEO 描述：Npcink Cloud Addon 让 WordPress AI 插件"
                     "在固定能力场景中调用云端运行时，只提供建议式输出，不提供通用聊天入口。"
                 ),
@@ -4028,7 +4042,7 @@ def test_wordpress_ai_connector_runtime_falls_back_on_meta_boilerplate(
         {
             "task": "meta_description",
             "request": {
-                "prompt": (
+                "source_text": (
                     "为这篇文章生成 SEO 描述：meta boilerplate。Npcink Cloud Addon "
                     "让 WordPress AI 插件在固定能力场景中调用云端运行时，只提供"
                     "建议式输出，不提供通用聊天入口。"
