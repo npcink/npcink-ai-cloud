@@ -49,6 +49,71 @@ EmbeddingUsageCallback = Callable[
     None,
 ]
 
+_TRANSFORMATION_GENERIC_PATTERNS = (
+    re.compile(
+        r"\b(?:this|the)\s+(?:condensed|shortened|revised|rewritten|updated|improved)"
+        r"\s+(?:paragraph|content|text)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:has been|was|is now)(?:\s+\w+){0,2}\s+"
+        r"(?:revised|rewritten|updated|improved|optimized)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:to produce|suitable for)\s+(?:a|an|the)\s+"
+        r"(?:(?:clear|concise|short|revised|rewritten|updated)\s+)?"
+        r"(?:version|article|paragraph|text|result)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:requires|needs)\s+(?:condensation|shortening|rewriting|optimization)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bwe\s+suggest\s+(?:removing|replacing|rewriting|shortening|condensing)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(r"\bto\s+make\s+it\s+read\s+(?:well|better)\b", flags=re.IGNORECASE),
+    re.compile(
+        r"\b(?:use|suggest)\s+(?:a|an|the)\s+"
+        r"(?:(?:clear|concise|short|revised|rewritten|updated)\s+)?"
+        r"(?:replacement|rewrite|version|alternative)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:offers?|provides?)\s+(?:a|an|the)\s+"
+        r"(?:(?:clear|concise|short|useful|and)\s+){0,5}"
+        r"(?:statement|summary|overview)\s+(?:for|to)\s+readers\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:该|此)?(?:段落|内容|文本).*(?:已|已经|完成|更新|优化|改写|修订)",
+        flags=re.IGNORECASE | re.DOTALL,
+    ),
+)
+_TRANSFORMATION_LATIN_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'-]*")
+_TRANSFORMATION_CJK_RUN_RE = re.compile(r"[\u3400-\u9fff]+")
+_TRANSFORMATION_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "be",
+        "for",
+        "has",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "the",
+        "this",
+        "to",
+        "was",
+    }
+)
+
 
 class WordPressOperationRuntime:
     """Executes WordPress-specific provider preparation and result normalization."""
@@ -675,9 +740,10 @@ class WordPressOperationRuntime:
 
         if not normalized_text and not strips_reasoning_noise:
             return output
-        if task == "editorial_updates" and not self._editorial_update_keeps_source_content(
+        if self._transformation_quality_reason(
             source_text=str(input_payload.get("text") or ""),
             output_text=normalized_text,
+            task=task,
         ):
             return {}
 
@@ -693,12 +759,82 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _editorial_update_keeps_source_content(*, source_text: str, output_text: str) -> bool:
-        """Reject only extreme expansion while leaving editorial review to WordPress."""
+        """Reject completion statements that replace the requested paragraph."""
+        return WordPressOperationRuntime._transformation_output_keeps_source_content(
+            source_text=source_text,
+            output_text=output_text,
+            task="editorial_updates",
+        )
+
+    @staticmethod
+    def _rewrite_keeps_source_content(*, source_text: str, output_text: str) -> bool:
+        """Reject generic rewrite summaries that are not rewritten source content."""
+        return WordPressOperationRuntime._transformation_output_keeps_source_content(
+            source_text=source_text,
+            output_text=output_text,
+            task="content_rewrite",
+        )
+
+    @staticmethod
+    def _transformation_quality_reason(
+        *, source_text: str, output_text: str, task: str
+    ) -> str | None:
+        if task == "content_rewrite" and not (
+            WordPressOperationRuntime._rewrite_keeps_source_content(
+                source_text=source_text,
+                output_text=output_text,
+            )
+        ):
+            return "output_not_grounded"
+        if task == "editorial_updates" and not (
+            WordPressOperationRuntime._editorial_update_keeps_source_content(
+                source_text=source_text,
+                output_text=output_text,
+            )
+        ):
+            return "output_not_grounded"
+        return None
+
+    @staticmethod
+    def _transformation_output_keeps_source_content(
+        *, source_text: str, output_text: str, task: str
+    ) -> bool:
+        """Keep bounded transformations while rejecting unsupported completion prose."""
         source_plain = re.sub(r"<[^>]+>", " ", source_text).strip()
         output_plain = re.sub(r"<[^>]+>", " ", output_text).strip()
-        if len(output_plain) > max(512, len(source_plain) * 8):
+        if task == "editorial_updates" and len(output_plain) > max(512, len(source_plain) * 8):
             return False
-        return True
+        if not source_plain or not output_plain:
+            return False
+
+        looks_generic = any(
+            pattern.search(output_plain) for pattern in _TRANSFORMATION_GENERIC_PATTERNS
+        )
+        if not looks_generic:
+            return True
+
+        source_tokens = WordPressOperationRuntime._transformation_tokens(source_plain)
+        output_tokens = WordPressOperationRuntime._transformation_tokens(output_plain)
+        overlap = len(source_tokens & output_tokens)
+        # A generic completion is safe only when it still carries at least two
+        # substantive source terms. This catches provider boilerplate without
+        # rejecting a bounded paraphrase that retains the subject and action.
+        return overlap >= 2
+
+    @staticmethod
+    def _transformation_tokens(text: str) -> set[str]:
+        tokens = {
+            token.lower()
+            for token in _TRANSFORMATION_LATIN_TOKEN_RE.findall(text)
+            if token.lower() not in _TRANSFORMATION_STOP_WORDS and len(token) > 1
+        }
+        for match in _TRANSFORMATION_CJK_RUN_RE.finditer(text):
+            run = match.group(0)
+            if len(run) < 2:
+                continue
+            tokens.update((run,))
+            tokens.update(run[index : index + 2] for index in range(len(run) - 1))
+        return tokens
 
     def _normalize_alt_text_provider_output(
         self,
@@ -878,6 +1014,14 @@ class WordPressOperationRuntime:
         metadata = input_payload.get("metadata")
         metadata = metadata if isinstance(metadata, dict) else {}
         task = str(metadata.get("task") or "").strip()
+        source_text = str(input_payload.get("text") or "")
+        transformation_reason = self._transformation_quality_reason(
+            source_text=source_text,
+            output_text=output_text,
+            task=task,
+        )
+        if transformation_reason:
+            return transformation_reason
         constraints = {
             str(item).strip()
             for item in metadata.get("task_constraints", [])
