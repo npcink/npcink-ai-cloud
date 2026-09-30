@@ -74,3 +74,19 @@ def test_failure_evidence_respects_limit_and_serializes_missing_timestamp() -> N
     untimestamped[0][0].created_at = None
     evidence = provider_failure_evidence(untimestamped, limit=5)
     assert evidence[0]["occurred_at"] == ""
+
+
+def test_failure_evidence_does_not_project_provider_error_messages() -> None:
+    evidence = provider_failure_evidence(
+        [
+            _row(
+                error_code="provider.invalid_request",
+                error_message="provider-secret and private upstream payload",
+            )
+        ],
+        limit=5,
+    )
+
+    assert evidence[0]["reason"] == "invalid_request"
+    assert "provider-secret" not in str(evidence)
+    assert "private upstream payload" not in str(evidence)
