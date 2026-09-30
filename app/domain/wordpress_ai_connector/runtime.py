@@ -1274,6 +1274,10 @@ class WordPressOperationRuntime:
         if task in {"excerpt_generation", "content_summary"} and (
             self._is_boilerplate_output(text) or self._looks_like_title_bundle(raw_text)
         ):
+            if task == "excerpt_generation":
+                source_excerpt = self._extract_source_excerpt(source_text, limit=limit)
+                if source_excerpt:
+                    return source_excerpt
             cjk_fallback = self._extract_cjk_text(source_text, limit=limit)
             if cjk_fallback:
                 return cjk_fallback
@@ -1717,8 +1721,22 @@ class WordPressOperationRuntime:
                 "title suggestions",
                 "标题建议",
                 "多个版本",
+                "unknown source",
+                "no specific content",
+                "no specific facts",
+                "merely a description",
             )
         )
+
+    @classmethod
+    def _extract_source_excerpt(cls, source_text: str, *, limit: int) -> str:
+        """Return a bounded source sentence for an unusable excerpt response."""
+        plain = re.sub(r"(?is)<[^>]+>", " ", source_text)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if not plain:
+            return ""
+        sentence = re.split(r"(?<=[.!?。！？])\s+", plain, maxsplit=1)[0].strip()
+        return cls._trim_incomplete_tail(cls._truncate_text(sentence or plain, limit=limit))
 
     @staticmethod
     def _looks_like_title_bundle(text: str) -> bool:

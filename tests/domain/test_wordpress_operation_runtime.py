@@ -678,6 +678,26 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
     assert title["output_text"] == "云端连接器重构"
     assert summary["output_text"] == summary_source
     assert rewrite["output_text"] == "这段文字现在更加清晰。"
+
+
+def test_excerpt_replaces_unknown_source_boilerplate_with_source_sentence() -> None:
+    runtime = _runtime()
+    source = "A short article about reliable WordPress AI provider contracts."
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "The content provided is merely a description of an unknown source and "
+                "contains no specific facts."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "excerpt_generation"},
+            "text": source,
+        },
+    )
+
+    assert normalized["output_text"] == source
     assert json.loads(classification["output_text"]) == {
         "suggestions": [
             {"term": "WordPress", "confidence": 1.0, "is_new": False},
