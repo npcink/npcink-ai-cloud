@@ -24,8 +24,7 @@ baseline:
 	cd frontend && pnpm run lint
 
 bootstrap-dev:
-	uv venv --python 3.12 .venv
-	uv pip install --python .venv/bin/python -e '.[dev]'
+	uv sync --python 3.12 --extra dev --locked
 	pnpm --dir frontend install --frozen-lockfile
 
 dev:
