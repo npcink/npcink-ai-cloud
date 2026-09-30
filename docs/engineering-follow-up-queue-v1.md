@@ -37,12 +37,14 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 - 建议触发：任何触及站点密钥/登录码存储 schema 的任务时一并设计；单独迁移
   风险大于收益（当前无外部用户）。
 
-### 1.4 dev/CI 依赖安装消费 uv.lock
+### 1.4 dev/CI 依赖安装消费 uv.lock（已落实）
 
-- 事实：`make bootstrap-dev` 与 CI 用 `uv pip install -e '.[dev]'`（不消费
-  uv.lock）；仅生产镜像经 `uv export --locked` 真正锁版本。
-- 建议触发：出现一次"本地/CI 与生产依赖不一致"的实际故障时改为
-  `uv sync --locked`；预防性改动会拖慢所有 CI 引导，暂不做。
+- 触发事实：CI 的未锁定开发安装在同一提交的重跑中从 FastAPI 0.141.1
+  漂移到 0.142.1，导致现有 HTTP tracing 测试出现环境相关失败；本地锁定
+  环境和主分支此前的 CI 运行均通过。
+- 处理结果：`make bootstrap-dev`、后端 targeted lane 和 PostgreSQL
+  cutover lane 统一使用 `uv sync --python 3.12 --extra dev --locked`；
+  后续依赖解析由 `uv.lock` 统一决定，避免 CI 因最新发布包漂移。
 
 ### 1.5 RuntimeService / CommercialService 拆解
 

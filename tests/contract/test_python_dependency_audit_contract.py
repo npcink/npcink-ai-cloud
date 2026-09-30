@@ -83,6 +83,16 @@ def test_dependency_audit_is_locked_hashed_and_covers_production_variants() -> N
     )
 
 
+def test_development_bootstrap_consumes_the_locked_dependency_graph() -> None:
+    makefile = (ROOT / "Makefile").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert "uv sync --python 3.12 --extra dev --locked" in makefile
+    assert workflow.count("uv sync --python 3.12 --extra dev --locked") == 2
+    assert "uv pip install --python .venv/bin/python -e '.[dev]'" not in makefile
+    assert "uv pip install --python .venv/bin/python -e '.[dev]'" not in workflow
+
+
 def test_uv_toolchain_pin_is_coordinated_across_build_and_validation_paths() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

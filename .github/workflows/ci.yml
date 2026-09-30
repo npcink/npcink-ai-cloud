@@ -709,8 +709,7 @@ jobs:
 
       - name: Bootstrap backend test environment
         run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e '.[dev]'
+          uv sync --python 3.12 --extra dev --locked
 
       - name: Targeted backend ${{ matrix.lane }} lane
         run: bash scripts/check-pr-backend-gate.sh ${{ matrix.command }}
@@ -941,8 +940,7 @@ jobs:
 
       - name: Bootstrap backend test environment
         run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e '.[dev]'
+          uv sync --python 3.12 --extra dev --locked
 
       - name: Verify 0058-to-0068 cutover on PostgreSQL 16
         env:
