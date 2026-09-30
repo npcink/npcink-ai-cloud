@@ -161,13 +161,21 @@ class WordPressOperationRuntime:
                 "substantive words; do not replace the paragraph with a completion statement "
                 "such as 'updated', 'optimized', or 'ready for readers'."
             ),
-            "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
+            "excerpt_generation": (
+                "Generate a concise excerpt from the supplied content. Use only facts, "
+                "names, products, organizations, and claims that appear in the source. "
+                "Preserve the source's concrete topic and do not invent agreements, "
+                "vendors, benefits, or marketing context. Return only the excerpt itself."
+            ),
             "image_prompt_generation": (
                 "Generate one concise image prompt. Return only the prompt text."
             ),
             "meta_description": (
-                "Generate one SEO meta description, 120 to 155 characters. Return "
-                "only the description."
+                "Generate one SEO meta description, 120 to 155 characters, from the "
+                "supplied content and title. Use only facts, names, products, "
+                "organizations, and claims present in that source. Do not invent "
+                "agreements, vendors, benefits, or generic business promises. Return "
+                "only the description itself."
             ),
             "title_generation": (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "

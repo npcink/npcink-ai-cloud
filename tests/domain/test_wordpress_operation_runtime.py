@@ -156,6 +156,29 @@ def test_editorial_updates_provider_input_forbids_process_explanations() -> None
     assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
 
 
+@pytest.mark.parametrize("task", ["excerpt_generation", "meta_description"])
+def test_short_text_generation_provider_input_preserves_source_facts(task: str) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task=task,
+            request={
+                "prompt": "A bounded connector maps WordPress AI abilities to a hosted provider.",
+                "task_contract": {
+                    "task_family": "generation",
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                },
+            },
+        )
+    )
+
+    assert "Use only facts, names, products, organizations, and claims" in provider_input[
+        "input"
+    ]
+    assert "do not invent agreements" in provider_input["input"].lower()
+    assert "Return only the" in provider_input["input"]
+
+
 @pytest.mark.parametrize(
     "task",
     ["content_translation", "content_classification", "editorial_notes", "slug_generation"],
