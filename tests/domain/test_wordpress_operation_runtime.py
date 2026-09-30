@@ -170,7 +170,9 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
         _operation_payload(
             task=task,
             request={
-                "source_text": "A bounded connector maps WordPress AI abilities to a hosted provider.",
+                "source_text": (
+                    "A bounded connector maps WordPress AI abilities to a hosted provider."
+                ),
                 "system_instruction": "Generate a concise excerpt or SEO description.",
                 "task_contract": {
                     "task_family": "generation",
@@ -185,8 +187,9 @@ def test_short_text_generation_provider_input_preserves_source_facts(task: str) 
     ]
     assert "do not introduce concepts" in provider_input["input"].lower()
     assert "Return only the" in provider_input["input"]
-    assert provider_input["text"] == "A bounded connector maps WordPress AI abilities to a hosted provider."
-    assert provider_input["input"].count("A bounded connector maps WordPress AI abilities to a hosted provider.") == 1
+    expected_source = "A bounded connector maps WordPress AI abilities to a hosted provider."
+    assert provider_input["text"] == expected_source
+    assert provider_input["input"].count(expected_source) == 1
     assert "Generate a concise excerpt or SEO description." in provider_input["input"]
 
 
