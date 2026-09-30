@@ -85,6 +85,8 @@ WP_AI_CONNECTOR_SOURCE_TEXT_TASKS = frozenset(
         "content_summary",
         "content_translation",
         "editorial_updates",
+        "excerpt_generation",
+        "meta_description",
         "title_generation",
     }
 )

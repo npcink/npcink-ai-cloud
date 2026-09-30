@@ -145,6 +145,8 @@ def test_generation_context_honors_task_budget_and_never_renders_scores_or_chunk
     assert "generation_context.v1" in rendered
     assert "private chunk" not in rendered
     assert "0.89" not in rendered
+    assert "only factual source" in rendered
+    assert "Never copy or infer" in rendered
 
 
 def test_generation_context_ranks_existing_taxonomies_by_related_post_frequency() -> None:

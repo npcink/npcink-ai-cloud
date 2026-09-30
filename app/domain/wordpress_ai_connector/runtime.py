@@ -161,13 +161,26 @@ class WordPressOperationRuntime:
                 "substantive words; do not replace the paragraph with a completion statement "
                 "such as 'updated', 'optimized', or 'ready for readers'."
             ),
-            "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
+            "excerpt_generation": (
+                "Generate a concise excerpt from the supplied content. Use only facts, "
+                "names, products, organizations, and claims that appear in the source. "
+                "Preserve the source's concrete topic and key nouns verbatim when possible. "
+                "Do not introduce concepts, relationships, audiences, benefits, or business "
+                "context that the source does not contain. If the source is short, extract or "
+                "lightly compress its own wording instead of expanding it. Return only the "
+                "excerpt itself."
+            ),
             "image_prompt_generation": (
                 "Generate one concise image prompt. Return only the prompt text."
             ),
             "meta_description": (
-                "Generate one SEO meta description, 120 to 155 characters. Return "
-                "only the description."
+                "Generate one SEO meta description, 120 to 155 characters, from the "
+                "supplied content and title. Use only facts, names, products, "
+                "organizations, and claims present in that source. Preserve the source's "
+                "key nouns verbatim when possible. Do not introduce concepts, relationships, "
+                "audiences, benefits, or generic business promises absent from the source. "
+                "If the source is short, stay close to its wording rather than expanding it. "
+                "Return only the description itself."
             ),
             "title_generation": (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
@@ -1261,6 +1274,10 @@ class WordPressOperationRuntime:
         if task in {"excerpt_generation", "content_summary"} and (
             self._is_boilerplate_output(text) or self._looks_like_title_bundle(raw_text)
         ):
+            if task == "excerpt_generation":
+                source_excerpt = self._extract_source_excerpt(source_text, limit=limit)
+                if source_excerpt:
+                    return source_excerpt
             cjk_fallback = self._extract_cjk_text(source_text, limit=limit)
             if cjk_fallback:
                 return cjk_fallback
@@ -1704,8 +1721,22 @@ class WordPressOperationRuntime:
                 "title suggestions",
                 "标题建议",
                 "多个版本",
+                "unknown source",
+                "no specific content",
+                "no specific facts",
+                "merely a description",
             )
         )
+
+    @classmethod
+    def _extract_source_excerpt(cls, source_text: str, *, limit: int) -> str:
+        """Return a bounded source sentence for an unusable excerpt response."""
+        plain = re.sub(r"(?is)<[^>]+>", " ", source_text)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if not plain:
+            return ""
+        sentence = re.split(r"(?<=[.!?。！？])\s+", plain, maxsplit=1)[0].strip()
+        return cls._trim_incomplete_tail(cls._truncate_text(sentence or plain, limit=limit))
 
     @staticmethod
     def _looks_like_title_bundle(text: str) -> bool:
