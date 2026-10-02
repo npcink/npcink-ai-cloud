@@ -886,12 +886,16 @@ class WordPressOperationRuntime:
     @staticmethod
     def _transformation_source_plain(*, source_text: str, task: str) -> str:
         """Extract the editable content, excluding task notes and wrappers."""
-        tag = "block-content" if task == "editorial_updates" else "content"
-        matches = re.findall(
-            rf"<{tag}\b[^>]*>(.*?)</{tag}>",
-            source_text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
+        wrapper_names = "block-content" if task == "editorial_updates" else "block-content|content"
+        matches = [
+            match.group("value")
+            for match in re.finditer(
+                rf"<(?P<wrapper>{wrapper_names})\b[^>]*>"
+                rf"(?P<value>.*?)</(?P=wrapper)\s*>",
+                source_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        ]
         if matches:
             selected = " ".join(matches)
         elif task == "editorial_updates" and re.search(

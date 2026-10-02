@@ -430,6 +430,23 @@ def test_editorial_updates_preserves_legal_user_markup_without_block_wrapper() -
     assert normalized["output_text"] == "Quarterly release schedule requires review."
 
 
+def test_content_rewrite_extracts_block_content_before_control_wrappers() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Quarterly release schedule requires review."},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<block-content>Quarterly release schedule requires review.</block-content>"
+                "<notes>Make the paragraph concise.</notes>"
+            ),
+        },
+    )
+
+    assert normalized["output_text"] == "Quarterly release schedule requires review."
+
+
 def test_content_rewrite_does_not_reject_common_instruction_word_with_source_facts() -> None:
     runtime = _runtime()
 
