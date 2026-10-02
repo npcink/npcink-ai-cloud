@@ -448,6 +448,138 @@ def test_content_rewrite_rejects_replacement_instruction_from_real_acceptance() 
     assert normalized == {}
 
 
+def test_content_rewrite_rejects_generic_revision_without_editable_source_overlap() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This duplicate sentence requires a more concise revision suitable for "
+                "publication."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_generic_revision_with_only_context_words() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant paragraph requires a concise rewrite to clarify its single "
+                "main point within the article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_condensing_explanation_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant paragraph requires condensing into a concise version "
+                "suitable for publication."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_compound_revision_explanation_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This repetitive paragraph requires a more concise and clear revision "
+                "for the article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_condensed_instruction_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This paragraph needs to be condensed into a clear, concise note without "
+                "redundancy while retaining its meaning."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_should_be_shortened_instruction_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant paragraph states one idea unnecessarily and should be "
+                "shortened to improve clarity in the article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
 def test_editorial_updates_rejects_reader_facing_summary_from_real_acceptance() -> None:
     runtime = _runtime()
 
@@ -461,6 +593,31 @@ def test_editorial_updates_rejects_reader_facing_summary_from_real_acceptance() 
         input_payload={
             "metadata": {"task": "editorial_updates"},
             "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_long_reader_facing_completion() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This paragraph provides a concise and clear statement for readers to "
+                "understand easily, avoiding unnecessary words while maintaining clarity "
+                "throughout every sentence within each line presented here now without "
+                "extra details that might distract from what matters most right away."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "<block-type>core/paragraph</block-type>"
+                "<block-content>This paragraph needs a concise editorial update.</block-content>"
+                "<notes>Make the paragraph clearer.</notes>"
+            ),
         },
     )
 
