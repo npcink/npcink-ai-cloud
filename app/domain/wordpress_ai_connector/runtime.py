@@ -67,7 +67,22 @@ _TRANSFORMATION_GENERIC_PATTERNS = (
         flags=re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:requires|needs)\s+(?:condensation|shortening|rewriting|optimization)\b",
+        r"\b(?:requires|needs)\s+(?:condensation|condensing|shortening|rewriting|optimization)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:requires|needs)\s+to\s+be\s+"
+        r"(?:condensed|shortened|rewritten|optimized|revised|updated)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bshould\s+be\s+(?:condensed|shortened|rewritten|optimized|revised|updated)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:requires|needs)\s+(?:a\s+)?(?:more\s+)?"
+        r"(?:concise|short|clear)(?:\s+and\s+(?:concise|short|clear))?\s+"
+        r"(?:revision|version|rewrite)\b",
         flags=re.IGNORECASE,
     ),
     re.compile(
@@ -111,6 +126,27 @@ _TRANSFORMATION_STOP_WORDS = frozenset(
         "this",
         "to",
         "was",
+    }
+)
+_TRANSFORMATION_GENERIC_SOURCE_TERMS = frozenset(
+    {
+        "article",
+        "clear",
+        "clarify",
+        "concise",
+        "content",
+        "paragraph",
+        "point",
+        "readability",
+        "rewrite",
+        "revised",
+        "revision",
+        "short",
+        "shorter",
+        "text",
+        "updated",
+        "version",
+        "wording",
     }
 )
 
@@ -800,9 +836,12 @@ class WordPressOperationRuntime:
         *, source_text: str, output_text: str, task: str
     ) -> bool:
         """Keep bounded transformations while rejecting unsupported completion prose."""
-        source_plain = re.sub(r"<[^>]+>", " ", source_text).strip()
+        source_plain = WordPressOperationRuntime._transformation_source_plain(
+            source_text=source_text,
+            task=task,
+        )
         output_plain = re.sub(r"<[^>]+>", " ", output_text).strip()
-        if task == "editorial_updates" and len(output_plain) > max(512, len(source_plain) * 8):
+        if task == "editorial_updates" and len(output_plain) > max(256, len(source_plain) * 4):
             return False
         if not source_plain or not output_plain:
             return False
@@ -810,16 +849,68 @@ class WordPressOperationRuntime:
         looks_generic = any(
             pattern.search(output_plain) for pattern in _TRANSFORMATION_GENERIC_PATTERNS
         )
-        if not looks_generic:
-            return True
-
         source_tokens = WordPressOperationRuntime._transformation_tokens(source_plain)
         output_tokens = WordPressOperationRuntime._transformation_tokens(output_plain)
         overlap = len(source_tokens & output_tokens)
-        # A generic completion is safe only when it still carries at least two
+        if task == "editorial_updates":
+            # Editorial updates must still contain the block's own subject and
+            # facts. Notes often contain words such as "clear" or "concise";
+            # those are not source evidence and must not make boilerplate pass.
+            # A source made only of stop words or punctuation cannot ground an
+            # editorial update. Treat it as empty rather than allowing the
+            # ``min(3, 0) == 0`` comparison to pass.
+            if not source_tokens:
+                return False
+            # Require positive source grounding before considering whether the
+            # wording is generic. This allows a factual sentence such as
+            # "the schedule should be updated quarterly" when it retains the
+            # block's subject and facts, while still rejecting boilerplate.
+            if overlap < min(3, len(source_tokens)):
+                return False
+            if not looks_generic:
+                return True
+            substantive_source_tokens = source_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+            substantive_output_tokens = output_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+            return len(substantive_source_tokens & substantive_output_tokens) >= 2
+
+        if not looks_generic:
+            return True
+
+        # A generic rewrite is safe only when it still carries at least two
         # substantive source terms. This catches provider boilerplate without
         # rejecting a bounded paraphrase that retains the subject and action.
-        return overlap >= 2
+        substantive_source_tokens = source_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+        substantive_output_tokens = output_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+        return len(substantive_source_tokens & substantive_output_tokens) >= 2
+
+    @staticmethod
+    def _transformation_source_plain(*, source_text: str, task: str) -> str:
+        """Extract the editable content, excluding task notes and wrappers."""
+        wrapper_names = "block-content" if task == "editorial_updates" else "block-content|content"
+        matches = [
+            match.group("value")
+            for match in re.finditer(
+                rf"<(?P<wrapper>{wrapper_names})\b[^>]*>"
+                rf"(?P<value>.*?)</(?P=wrapper)\s*>",
+                source_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        ]
+        if matches:
+            selected = " ".join(matches)
+        elif task == "editorial_updates" and re.search(
+            r"<(?P<control>notes?|system-instruction|instructions?|available-terms)\b"
+            r"[^>]*>.*?</(?P=control)\s*>",
+            source_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            # Without the expected block wrapper, do not treat task notes or
+            # other control fields as editable source content. Plain text
+            # editorial requests remain supported by the fallback below.
+            selected = ""
+        else:
+            selected = source_text
+        return re.sub(r"<[^>]+>", " ", selected).strip()
 
     @staticmethod
     def _transformation_tokens(text: str) -> set[str]:
