@@ -397,6 +397,39 @@ def test_editorial_updates_does_not_ground_on_control_wrapper_content() -> None:
     assert normalized == {}
 
 
+def test_editorial_updates_grounds_on_all_block_content_sections() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Quarterly release schedule requires review."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "<block-content>The</block-content>"
+                "<block-content>Quarterly release schedule requires review.</block-content>"
+            ),
+        },
+    )
+
+    assert normalized["output_text"] == "Quarterly release schedule requires review."
+
+
+def test_editorial_updates_preserves_legal_user_markup_without_block_wrapper() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Quarterly release schedule requires review."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "<task-list><li>Quarterly release schedule requires review.</li></task-list>"
+            ),
+        },
+    )
+
+    assert normalized["output_text"] == "Quarterly release schedule requires review."
+
+
 def test_content_rewrite_does_not_reject_common_instruction_word_with_source_facts() -> None:
     runtime = _runtime()
 

@@ -887,18 +887,18 @@ class WordPressOperationRuntime:
     def _transformation_source_plain(*, source_text: str, task: str) -> str:
         """Extract the editable content, excluding task notes and wrappers."""
         tag = "block-content" if task == "editorial_updates" else "content"
-        match = re.search(
+        matches = re.findall(
             rf"<{tag}\b[^>]*>(.*?)</{tag}>",
             source_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
-        if match:
-            selected = match.group(1)
+        if matches:
+            selected = " ".join(matches)
         elif task == "editorial_updates" and re.search(
-            r"</?(?:notes?|system(?:-instruction)?|instructions?|task|context|"
-            r"available-terms)\b",
+            r"<(?P<control>notes?|system-instruction|instructions?|available-terms)\b"
+            r"[^>]*>.*?</(?P=control)\s*>",
             source_text,
-            flags=re.IGNORECASE,
+            flags=re.IGNORECASE | re.DOTALL,
         ):
             # Without the expected block wrapper, do not treat task notes or
             # other control fields as editable source content. Plain text
