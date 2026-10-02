@@ -345,6 +345,58 @@ def test_editorial_updates_accepts_bounded_revised_paragraph_with_source_facts()
     assert "WordPress" in normalized["output_text"]
 
 
+def test_editorial_updates_accepts_generic_wording_with_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "The plugin schedule should be updated quarterly, and the editor reviews "
+                "the report before saving."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "The plugin schedule changes quarterly, and the editor reviews the report "
+                "before saving."
+            ),
+        },
+    )
+
+    assert "updated quarterly" in normalized["output_text"]
+
+
+def test_editorial_updates_rejects_source_without_substantive_tokens() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "A revision improves clarity."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "the and of",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_does_not_ground_on_control_wrapper_content() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": "The report includes quarterly metrics and editor review.",
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "<notes>The report includes quarterly metrics and editor review.</notes>",
+        },
+    )
+
+    assert normalized == {}
+
+
 def test_content_rewrite_does_not_reject_common_instruction_word_with_source_facts() -> None:
     runtime = _runtime()
 

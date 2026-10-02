@@ -856,9 +856,22 @@ class WordPressOperationRuntime:
             # Editorial updates must still contain the block's own subject and
             # facts. Notes often contain words such as "clear" or "concise";
             # those are not source evidence and must not make boilerplate pass.
-            # Completion-style sentences are rejected even when they happen to
-            # repeat one or two generic source words.
-            return not looks_generic and overlap >= min(3, len(source_tokens))
+            # A source made only of stop words or punctuation cannot ground an
+            # editorial update. Treat it as empty rather than allowing the
+            # ``min(3, 0) == 0`` comparison to pass.
+            if not source_tokens:
+                return False
+            # Require positive source grounding before considering whether the
+            # wording is generic. This allows a factual sentence such as
+            # "the schedule should be updated quarterly" when it retains the
+            # block's subject and facts, while still rejecting boilerplate.
+            if overlap < min(3, len(source_tokens)):
+                return False
+            if not looks_generic:
+                return True
+            substantive_source_tokens = source_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+            substantive_output_tokens = output_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+            return len(substantive_source_tokens & substantive_output_tokens) >= 2
 
         if not looks_generic:
             return True
@@ -879,7 +892,20 @@ class WordPressOperationRuntime:
             source_text,
             flags=re.IGNORECASE | re.DOTALL,
         )
-        selected = match.group(1) if match else source_text
+        if match:
+            selected = match.group(1)
+        elif task == "editorial_updates" and re.search(
+            r"</?(?:notes?|system(?:-instruction)?|instructions?|task|context|"
+            r"available-terms)\b",
+            source_text,
+            flags=re.IGNORECASE,
+        ):
+            # Without the expected block wrapper, do not treat task notes or
+            # other control fields as editable source content. Plain text
+            # editorial requests remain supported by the fallback below.
+            selected = ""
+        else:
+            selected = source_text
         return re.sub(r"<[^>]+>", " ", selected).strip()
 
     @staticmethod
