@@ -417,12 +417,35 @@ Retained active authority:
 Historical evidence retained in place:
 
 - [Admin Account Governance Lightweight](admin-account-governance-lightweight-2026-06-12.md);
+- [AI Assisted Development Four Perspective Synthesis — 2026-09-07](ai-assisted-development-four-perspective-synthesis-2026-09-07.md);
+- [Background Evidence and Cron Handoff — 2026-09-09](background-evidence-and-cron-handoff-2026-09-09.md);
+- [Compat Budget Payment Session Retrospective — 2026-09-22](compat-budget-payment-session-retrospective-2026-09-22.md);
+- [Compat Stability Payment Follow-up Handoff — 2026-09-22](compat-stability-payment-follow-up-handoff-2026-09-22.md);
+- [Compliance Confirmation Checklist — 2026-09-23](compliance-confirmation-checklist-2026-09-23.md);
 - [Cloud Production Deployment History](cloud-production-deployment-history-2026-06-24.md);
+- [Development Session Notes — 2026-09-22](development-session-notes-2026-09-22.md);
+- [Development Session Notes — 2026-09-23](development-session-notes-2026-09-23.md);
+- [Domestic Latency Observation — 2026-09-22](domestic-latency-observation-2026-09-22.md);
+- [Domestic Latency Observation Supplement — 2026-09-22](domestic-latency-observation-supplement-2026-09-22.md);
 - [External Trial Capability Note](external-trial-capability-note-2026-06-10.md);
 - [External Trial Copy and Log](external-trial-copy-and-log-2026-06-11.md);
 - [External Trial Handoff Summary](external-trial-handoff-summary-2026-06-15.md);
 - [External Trial Readiness Checklist](external-trial-readiness-checklist-2026-06-10.md);
-- [Pre-release Legacy Debt and Development History](pre-release-legacy-debt-and-development-history-2026-07-10.md).
+- [Local-first Validation Stage — 2026-09-21](local-first-validation-stage-2026-09-21.md);
+- [M4 Compiled Preview and Login Retrospective — 2026-09-08](m4-compiled-preview-and-login-retrospective-2026-09-08.md);
+- [Next Stage Plan — 2026-09-22](next-stage-plan-2026-09-22.md);
+- [Payment and Domestic Readiness Note — 2026-09-22](payment-and-domestic-readiness-note-2026-09-22.md);
+- [Provider Budget Hard Cap Inventory — 2026-09-23](provider-budget-hard-cap-inventory-2026-09-23.md);
+- [Pre-release Legacy Debt and Development History](pre-release-legacy-debt-and-development-history-2026-07-10.md);
+- [Refund Gap Inventory — 2026-09-22](refund-gap-inventory-2026-09-22.md);
+- [Service Settings Projection Remediation — 2026-09-09](service-settings-projection-remediation-2026-09-09.md);
+- [Site Knowledge Inventory — 2026-09-21](site-knowledge-inventory-2026-09-21.md);
+- [Strategy Positioning v1 — 2026-09-21](strategy-positioning-v1-2026-09-21.md);
+- [Strategy Session Synthesis — 2026-09-22](strategy-session-synthesis-2026-09-22.md);
+- [Title Quality Observation — 2026-09](title-quality-observation-2026-09.md);
+- [WordPress AI Loop Verification Checklist — 2026-09-22](wordpress-ai-loop-verification-checklist-2026-09-22.md);
+- [WordPress AI Runtime Observation — 2026-09-21](wordpress-ai-runtime-observation-2026-09-21.md);
+- [WordPress AI Unified Delivery Plan — 2026-09-07](wordpress-ai-unified-delivery-plan-2026-09-07.md).
 
 Run `python3 scripts/report-maintainability-inventory.py` for the advisory,
 read-only large-file trend, source-text-contract, behavior-test, and document
