@@ -357,6 +357,8 @@ class WordPressAIConnectorTextProvider:
                 "WordPress - 流行的建站程序介绍与下载 摘要： "
                 "WordPress是一款能让您建立出色网站、博客或应用的开源软件"
             )
+        elif task == "title_generation" and "title generic boilerplate" in source_text:
+            output_text = "基于提供的信息构建的回答："
         elif task == "title_generation" and "title schema mismatch" in source_text:
             output_text = '{"headline":"This must not pass the title Ability schema"}'
         elif task == "title_generation" and "cjk reasoning title" in source_text:
@@ -3260,6 +3262,43 @@ def test_wordpress_ai_connector_runtime_strips_title_explanation_tail(
         data["result"]["output"]["output_text"]
         == "How to Verify a Hosted AI Runtime Connector: Essential Steps"
     )
+
+
+def test_wordpress_ai_connector_runtime_rejects_generic_title_boilerplate(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "request": {
+                "source_text": "<content>title generic boilerplate response content.</content>",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}},
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-connector-title-generic-boilerplate",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert response.json()["error_code"] == "provider.output_quality_rejected"
+    assert len(provider.requests) == 2
 
 
 def test_wordpress_ai_connector_runtime_extracts_single_title_from_title_bundle(

@@ -1071,6 +1071,8 @@ class WordPressOperationRuntime:
             return False
         if self._has_unbalanced_title_quote(output_text):
             return True
+        if self._is_boilerplate_output(output_text):
+            return True
         usage = provider_output.get("usage")
         usage = usage if isinstance(usage, dict) else {}
         completion_details = usage.get("completion_tokens_details")
@@ -1145,6 +1147,8 @@ class WordPressOperationRuntime:
                 return "title_schema_missing_title"
             if not parsed["title"].strip():
                 return "title_schema_empty_title"
+        if task == "title_generation" and self._is_boilerplate_output(output_text):
+            return "title_boilerplate"
         return "normalized_text_empty"
 
     @classmethod
@@ -1948,10 +1952,12 @@ class WordPressOperationRuntime:
                 "以下是基于",
                 "下面是",
                 "以下是",
+                "基于提供的信息构建的回答",
                 "如果你愿意",
                 "我还可以",
                 "here are",
                 "based on your",
+                "based on the provided information",
                 "i can also",
                 "title suggestions",
                 "标题建议",
