@@ -3298,7 +3298,7 @@ def test_wordpress_ai_connector_runtime_rejects_generic_title_boilerplate(
     assert response.status_code == 200
     assert response.json()["status"] == "error"
     assert response.json()["error_code"] == "provider.output_quality_rejected"
-    assert len(provider.requests) == 2
+    assert len(provider.requests) == 4
 
 
 def test_wordpress_ai_connector_runtime_extracts_single_title_from_title_bundle(
