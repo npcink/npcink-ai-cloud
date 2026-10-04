@@ -2873,8 +2873,10 @@ class RuntimeService:
             input_payload=input_payload,
             provider_output=provider_output,
         )
-        blocking_title_quality_reasons = tuple(
-            reason for reason in title_quality_reasons if reason != "title_mixed_language"
+        blocking_title_quality_reasons = (
+            self.wordpress_operation_runtime.blocking_title_quality_reasons(
+                title_quality_reasons
+            )
         )
         if blocking_title_quality_reasons or self.wordpress_operation_runtime.is_empty_text_output(
             input_payload=input_payload,

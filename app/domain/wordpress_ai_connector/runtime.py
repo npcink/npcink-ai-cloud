@@ -1095,10 +1095,7 @@ class WordPressOperationRuntime:
             input_payload=input_payload,
             provider_output=provider_output,
         )
-        if any(
-            reason != "title_mixed_language"
-            for reason in title_quality_reasons
-        ):
+        if self.blocking_title_quality_reasons(title_quality_reasons):
             return True
         usage = provider_output.get("usage")
         usage = usage if isinstance(usage, dict) else {}
@@ -1180,6 +1177,15 @@ class WordPressOperationRuntime:
             # such as WordPress and Typecho are legitimate in Chinese titles.
             reasons.append("title_mixed_language")
         return tuple(dict.fromkeys(reasons))
+
+    @staticmethod
+    def blocking_title_quality_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
+        """Drop evidence-only findings; the remainder justify retry or rejection.
+
+        Single source of truth shared by the retry predicate and the runtime
+        service decision so the evidence-only set can never drift apart.
+        """
+        return tuple(reason for reason in reasons if reason != "title_mixed_language")
 
     def _title_candidate_for_quality(
         self,
