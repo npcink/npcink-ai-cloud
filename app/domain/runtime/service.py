@@ -2899,7 +2899,7 @@ class RuntimeService:
                     "output_quality_reason": quality_reason,
                 },
             )
-        usage_context = (
+        usage_context: dict[str, object] = (
             {"title_quality_reasons": list(title_quality_reasons)}
             if title_quality_reasons
             else {}
