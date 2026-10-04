@@ -1123,6 +1123,30 @@ class WordPressOperationRuntime:
         provider_output: dict[str, Any],
     ) -> tuple[str, ...]:
         """Return bounded, deterministic title findings for runtime evidence."""
+        # One provider output is evaluated up to three times per decision cycle
+        # (retry predicate, service decision, rejection reason), and each
+        # evaluation is O(source length); memoize on the exact payload pair so
+        # repeated evaluations of the same output run the scans once.
+        cache = getattr(self, "_title_quality_cache", None)
+        if (
+            cache is not None
+            and cache[0] is input_payload
+            and cache[1] is provider_output
+        ):
+            return cache[2]
+        reasons = self._compute_title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        self._title_quality_cache = (input_payload, provider_output, reasons)
+        return reasons
+
+    def _compute_title_quality_reasons(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> tuple[str, ...]:
         metadata = self._dict_or_empty(input_payload.get("metadata"))
         if str(metadata.get("task") or "").strip() != "title_generation":
             return ()
@@ -1198,7 +1222,11 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _has_unsupported_title_claim(candidate: str, source_text: str) -> bool:
+        raw_source = source_text.casefold()
         source = re.sub(r"<[^>]+>", " ", source_text).casefold()
+        # Whitespace-insensitive comparison: titles routinely re-space CJK
+        # spans and bracket labels, so compare compacted forms, not raw text.
+        source_compact = re.sub(r"\s+", "", source)
         claims = re.findall(
             r"(?<![A-Za-z0-9])v?\d+(?:\.\d+){1,3}(?![A-Za-z0-9])|\b20\d{2}\b",
             candidate,
@@ -1208,7 +1236,27 @@ class WordPressOperationRuntime:
             match.group(1)
             for match in re.finditer(r"[\[【《「]([^\]】》」]{2,80})[\]】》」]", candidate)
         )
-        return any(claim.casefold() not in source for claim in claims)
+        for claim in claims:
+            claim_compact = re.sub(r"\s+", "", claim.casefold())
+            if claim_compact in source_compact:
+                continue
+            if re.fullmatch(r"v?\d+(?:\.\d+){1,3}", claim, re.I):
+                # A candidate may normalize a version ("3.5" -> "3.5.0");
+                # accept it while any prefix of the version stays grounded.
+                parts = re.sub(r"^v", "", claim, flags=re.I).split(".")
+                while len(parts) > 2:
+                    parts.pop()
+                    if ".".join(parts) in source_compact:
+                        break
+                else:
+                    return True
+                continue
+            if re.fullmatch(r"20\d{2}", claim) and claim.casefold() in raw_source:
+                # Years also live in tag attributes (alt text, hrefs) that the
+                # tag strip removes; a raw-source hit still grounds the claim.
+                continue
+            return True
+        return False
 
     @staticmethod
     def _is_mixed_language_title(candidate: str) -> bool:
@@ -1279,6 +1327,9 @@ class WordPressOperationRuntime:
             provider_output=provider_output,
         )
         if title_reasons:
+            # Mixed-language is ordered last and never blocks, so a reachable
+            # non-empty prefix here is always a rejection-grade reason; a
+            # mixed-language-only title is accepted before this path runs.
             return title_reasons[0]
         if task == "title_generation" and self._is_boilerplate_output(output_text):
             return "title_boilerplate"
@@ -2051,7 +2102,7 @@ class WordPressOperationRuntime:
 
     def _extract_first_list_item(self, output_text: str) -> str:
         for line in output_text.splitlines():
-            match = re.match(r"\s*(?:[-*]|\d+[.)、])\s*(.+?)\s*$", line)
+            match = re.match(r"\s*(?:[-*]|\d+[.)、](?!\d))\s*(.+?)\s*$", line)
             if match is None:
                 continue
             candidate = self._strip_markdown(match.group(1))
@@ -2059,7 +2110,7 @@ class WordPressOperationRuntime:
             if 4 <= len(candidate) <= 120:
                 return candidate
         match = re.search(
-            r"(?:^|\s)\d+[.)、]\s*(.+?)(?=\s+\d+[.)、]\s+|$)",
+            r"(?:^|\s)\d+[.)、](?!\d)\s*(.+?)(?=\s+\d+[.)、](?!\d)\s+|$)",
             output_text,
         )
         if match is not None:

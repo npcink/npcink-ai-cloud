@@ -249,10 +249,15 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
     if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
         normalized_request["source_text"] = validate_source_text_request(request)
         if "existing_title" in request:
-            if task != "title_generation" or not isinstance(request["existing_title"], str):
+            if task != "title_generation":
                 raise WordPressOperationContractViolation(
                     "wordpress_operation.existing_title_invalid",
                     "existing_title context is supported only for title_generation",
+                )
+            if not isinstance(request["existing_title"], str):
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_invalid",
+                    "existing_title context must be a string",
                 )
             existing_title = request["existing_title"].strip()
             if len(existing_title) > 160:

@@ -1250,6 +1250,47 @@ def test_title_generation_keeps_mixed_language_as_review_evidence() -> None:
 
 
 @pytest.mark.parametrize(
+    ("source_text", "title"),
+    [
+        # A candidate may normalize a version the source states more coarsely.
+        ("插件要求 Python 3.5 及以上版本。", "Python 3.5.0 环境配置指南"),
+        # Years that appear only inside tag attributes still ground the claim.
+        ('<img src="report.png" alt="2024 年度报告封面">', "2024 年度报告要点"),
+        # CJK spans tolerate re-spacing between candidate and source.
+        ("本次更新引入了若干新特性与修复。", "【新 特性】一文看懂本次更新"),
+        # Version prefix with a v- decoration in the source.
+        ("WordPress v6.5 is now available.", "Upgrading to WordPress 6.5"),
+    ],
+)
+def test_title_generation_accepts_grounded_claim_variants(
+    source_text: str,
+    title: str,
+) -> None:
+    runtime = _runtime()
+    input_payload = {"metadata": {"task": "title_generation"}, "text": source_text}
+
+    reasons = runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": title},
+    )
+    assert "title_unsupported_claim" not in reasons
+
+
+def test_title_generation_still_rejects_invented_claims() -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇笔记记录了本地开发环境的搭建过程。",
+    }
+
+    reasons = runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": "本地开发环境搭建指南（2024 版）"},
+    )
+    assert "title_unsupported_claim" in reasons
+
+
+@pytest.mark.parametrize(
     "provider_text",
     [
         "审核说明中使用建议改写为：作为标签示例。正文必须保持完整。",
