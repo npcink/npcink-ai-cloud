@@ -162,6 +162,13 @@ class WordPressOperationRuntime:
     ) -> None:
         self.settings = settings
         self.providers = providers
+        # Single-entry memo for title quality evaluation; deliberately holds
+        # references to the last evaluated payload pair so identity comparison
+        # cannot be fooled by object reuse, at the cost of retaining that one
+        # request's payloads until the next title evaluation replaces them.
+        self._title_quality_cache: (
+            tuple[dict[str, Any], dict[str, Any], tuple[str, ...]] | None
+        ) = None
 
     def source_artifact_id(self, input_payload: dict[str, Any]) -> str:
         operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
@@ -1124,7 +1131,7 @@ class WordPressOperationRuntime:
         # (retry predicate, service decision, rejection reason), and each
         # evaluation is O(source length); memoize on the exact payload pair so
         # repeated evaluations of the same output run the scans once.
-        cache = getattr(self, "_title_quality_cache", None)
+        cache = self._title_quality_cache
         if (
             cache is not None
             and cache[0] is input_payload
@@ -1332,11 +1339,12 @@ class WordPressOperationRuntime:
             input_payload=input_payload,
             provider_output=provider_output,
         )
-        if title_reasons:
-            # Mixed-language is ordered last and never blocks, so a reachable
-            # non-empty prefix here is always a rejection-grade reason; a
-            # mixed-language-only title is accepted before this path runs.
-            return title_reasons[0]
+        blocking_reasons = self.blocking_title_quality_reasons(title_reasons)
+        if blocking_reasons:
+            # Evidence-only findings (mixed language) are filtered here too:
+            # every consumer of this method gets a rejection-grade reason or
+            # none at all, independent of caller-side gating.
+            return blocking_reasons[0]
         if task == "title_generation" and self._is_boilerplate_output(output_text):
             return "title_boilerplate"
         if task == "title_generation" and self._title_matches_scene_heading(
