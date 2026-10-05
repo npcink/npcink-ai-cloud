@@ -91,6 +91,25 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 - 本机 Xcode 许可未签（系统 `/usr/bin/git` 不可用）：属操作者环境项，需
   `sudo xcodebuild -license`；会话内已用 Xcode 自带 git 绕过。
 
+### 1.9 2026-10-04/05 收尾会话延后项
+
+- provider-budget-closure 拆分：锁定 worktree `npcink-ai-cloud-provider-budget-closure`
+  持有约 57 个独有提交（公共内容 API、支付退款管理页 + Alipay 沙箱 smoke、
+  ADR-057 等），与 master 45+ 个修改文件交叠，需 hunk 级甄别拆三份 PR；其
+  标题守卫两提交已被 #1061 取代，拆分时应丢弃；ADR-057 编号与 master 的
+  057-wordpress-ai-quality-evidence 冲突需重编。触发=下次专项会话。
+- admin WIP 甄别：`codex/admin-troubleshooting-quality-scope-wip`（850f7dd8）
+  仅 quality_scope_note 一处独有功能，troubleshooting 页已经 #1030/#1012/#1015
+  大改，需按当前页重实现。触发=下次触碰 admin troubleshooting 页的任务；
+  若一个月无任务引用则废弃。
+- 镜像 CPython 3.14.7→3.14.8：CVE-2026-19445 影响 3.14.0–<3.14.8，镜像仍
+  固定 3.14.7；需镜像重建的独立发布包络。触发=下次生产发布前或上游再出
+  安全版时一并处理。
+- braces 告警处置（high，上游无修复版本，全部已发布版本在受影响区间）：
+  运营者风险决策——`@dependabot ignore` 附理由，或等上游补丁。触发=操作者。
+- eslint-config-next 与 next 16.3.6 配对升级（16.2.9 → 16.3.x）：advisory
+  评审在 #1058 上的建议。触发=下次前端依赖任务顺带。
+
 ## 2. 已完成（2026-09-21/22，防重复规划）
 
 - async 阻塞集群全关：路由层 #982、认证热路径与幂等管道 #983（PBKDF2 随
