@@ -2869,7 +2869,16 @@ class RuntimeService:
             provider_output,
             input_payload=input_payload,
         )
-        if self.wordpress_operation_runtime.is_empty_text_output(
+        title_quality_reasons = self.wordpress_operation_runtime.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        blocking_title_quality_reasons = (
+            self.wordpress_operation_runtime.blocking_title_quality_reasons(
+                title_quality_reasons
+            )
+        )
+        if blocking_title_quality_reasons or self.wordpress_operation_runtime.is_empty_text_output(
             input_payload=input_payload,
             provider_output=normalized_output,
         ):
@@ -2878,17 +2887,31 @@ class RuntimeService:
                 provider_output=provider_output,
             )
             self._record_wordpress_output_quality_diagnostic(run, quality_reason)
+            error_message = (
+                "provider returned the existing title instead of a new suggestion"
+                if "title_unchanged" in blocking_title_quality_reasons
+                else "provider returned no usable WordPress AI connector text"
+            )
             return ProviderOutputDecision(
                 accepted=False,
                 output=normalized_output,
                 error_code="provider.output_quality_rejected",
-                error_message="provider returned no usable WordPress AI connector text",
+                error_message=error_message,
                 usage_context={
                     "output_quality_reason": quality_reason,
                 },
             )
+        usage_context: dict[str, object] = (
+            {"title_quality_reasons": list(title_quality_reasons)}
+            if title_quality_reasons
+            else {}
+        )
         self._clear_wordpress_output_quality_diagnostic(run)
-        return ProviderOutputDecision(accepted=True, output=normalized_output)
+        return ProviderOutputDecision(
+            accepted=True,
+            output=normalized_output,
+            usage_context=usage_context,
+        )
 
     @staticmethod
     def _record_wordpress_output_quality_diagnostic(run: RunRecord, reason: str) -> None:

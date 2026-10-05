@@ -16,6 +16,7 @@ WP_AI_CONNECTOR_VISION_DATA_CLASSIFICATION = "internal"
 WP_AI_CONNECTOR_MAX_PROMPT_CHARS = 12000
 WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
 WP_AI_CONNECTOR_MAX_SYSTEM_INSTRUCTION_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
+WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS = 160
 WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS = 60
 WP_AI_CONNECTOR_SOURCE_ARTIFACT_ID_CHARS = 36
 WP_AI_CONNECTOR_SITE_KNOWLEDGE_REFERENCE_MODES_BY_TASK = {
@@ -248,6 +249,25 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
     normalized_request = dict(request)
     if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
         normalized_request["source_text"] = validate_source_text_request(request)
+        if "existing_title" in request:
+            if task != "title_generation":
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_invalid",
+                    "existing_title context is supported only for title_generation",
+                )
+            if not isinstance(request["existing_title"], str):
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_invalid",
+                    "existing_title context must be a string",
+                )
+            existing_title = request["existing_title"].strip()
+            if len(existing_title) > WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS:
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_too_large",
+                    "existing_title context exceeds the "
+                    f"{WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS} character limit",
+                )
+            normalized_request["existing_title"] = existing_title
         if "system_instruction" in request:
             normalized_request["system_instruction"] = validate_system_instruction(
                 request

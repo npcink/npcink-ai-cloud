@@ -129,6 +129,8 @@ def test_p2_text_provider_input_projects_source_text_once(
     assert provider_input["metadata"]["task"] == task
     assert provider_input["metadata"]["suggestion_only"] is True
     assert provider_input["max_tokens"] == expected_max_tokens
+    if task == "title_generation":
+        assert "Do not copy or return the exact wording" in provider_input["input"]
     assert "site_alpha" not in serialized
     assert "alpha.example.test" not in serialized
     assert "object_revision" not in serialized
@@ -1147,6 +1149,145 @@ def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
     )
 
     assert normalized == {}
+
+
+def test_title_generation_rejects_an_existing_scene_heading() -> None:
+    runtime = _runtime()
+    source = "# OneBlog - Typecho文字博客主题\n\n这是文章正文。"
+    provider_input = runtime.build_provider_input(
+        _operation_payload(task="title_generation", request={"source_text": source})
+    )
+
+    assert runtime.is_empty_text_output(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+    assert runtime.output_quality_reason(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    ) == "title_unchanged"
+
+
+def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="title_generation",
+            request={
+                "source_text": "这是文章正文。",
+                "existing_title": "OneBlog - Typecho文字博客主题",
+            },
+        )
+    )
+
+    assert "Existing WordPress title: OneBlog - Typecho文字博客主题" in provider_input["input"]
+    assert provider_input["metadata"]["existing_title"] == "OneBlog - Typecho文字博客主题"
+    assert runtime.is_empty_text_output(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+    empty_source_payload = dict(provider_input)
+    empty_source_payload["text"] = ""
+    assert runtime.is_empty_text_output(
+        input_payload=empty_source_payload,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider_text", "expected_reason"),
+    [
+        (
+            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。"
+            * 3,
+            "title_length_exceeded",
+        ),
+        ("云端标题！！？？", "title_repeated_punctuation"),
+        ("OneBlog 主题 V9.9 部署指南", "title_unsupported_claim"),
+        ("标题建议", "title_vague"),
+    ],
+)
+def test_title_generation_reports_deterministic_quality_reasons(
+    provider_text: str,
+    expected_reason: str,
+) -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+
+    assert runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    )[0] == expected_reason
+    assert runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    )
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    ) == expected_reason
+
+
+def test_title_generation_keeps_mixed_language_as_review_evidence() -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+    provider_output = {"output_text": "OneBlog Typecho Theme Deployment Guide 部署指南"}
+
+    assert runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == ("title_mixed_language",)
+    assert not runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_text", "title"),
+    [
+        # A candidate may normalize a version the source states more coarsely.
+        ("插件要求 Python 3.5 及以上版本。", "Python 3.5.0 环境配置指南"),
+        # Years that appear only inside tag attributes still ground the claim.
+        ('<img src="report.png" alt="2024 年度报告封面">', "2024 年度报告要点"),
+        # CJK spans tolerate re-spacing between candidate and source.
+        ("本次更新引入了若干新特性与修复。", "【新 特性】一文看懂本次更新"),
+        # Version prefix with a v- decoration in the source.
+        ("WordPress v6.5 is now available.", "Upgrading to WordPress 6.5"),
+    ],
+)
+def test_title_generation_accepts_grounded_claim_variants(
+    source_text: str,
+    title: str,
+) -> None:
+    runtime = _runtime()
+    input_payload = {"metadata": {"task": "title_generation"}, "text": source_text}
+
+    reasons = runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": title},
+    )
+    assert "title_unsupported_claim" not in reasons
+
+
+def test_title_generation_still_rejects_invented_claims() -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇笔记记录了本地开发环境的搭建过程。",
+    }
+
+    reasons = runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": "本地开发环境搭建指南（2024 版）"},
+    )
+    assert "title_unsupported_claim" in reasons
 
 
 @pytest.mark.parametrize(
