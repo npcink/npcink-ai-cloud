@@ -56,6 +56,9 @@ one text scene input shape:
   is trimmed before execution, may be empty after trimming, and is limited to
   12,000 characters after trimming. It carries the local Ability-owned
   instruction projection separately from the source text.
+- `request.existing_title` is optional and allowed only for `title_generation`;
+  it carries the current WordPress title as bounded read-only context so Cloud
+  can avoid returning the unchanged title.
 
 Contract failures use stable `wordpress_operation.*` errors:
 
@@ -68,6 +71,9 @@ Contract failures use stable `wordpress_operation.*` errors:
   `wordpress_operation.system_instruction_invalid`;
 - system instruction above the limit:
   `wordpress_operation.system_instruction_too_large`.
+- invalid or oversized existing title context:
+  `wordpress_operation.existing_title_invalid` or
+  `wordpress_operation.existing_title_too_large`.
 
 For title and summary tasks, WordPress projects the relevant current content as
 `source_text`. For a rewrite task, WordPress projects only the selected text.
@@ -90,6 +96,29 @@ write controls.
 
 Cloud returns `cloud_connector_result.v1` suggestion evidence. It never treats
 runtime success as approval or applies the result to WordPress.
+
+## Title Generation Quality Floor
+
+For `title_generation`, Cloud applies a small deterministic output floor after
+provider normalization. It rejects empty or unusable suggestions when they:
+
+- exceed the 80-character title boundary;
+- repeat the current title or a supplied scene heading;
+- contain boilerplate, only vague filler, or repeated punctuation;
+- introduce an explicit version or year claim that is absent from the scene
+  input; or
+- fail the declared title output schema.
+
+Mixed Chinese and Latin text is recorded as a review finding rather than
+rejected, because product and project names such as WordPress and Typecho are
+valid in Chinese titles. Rejection reasons use the existing
+`provider.output_quality_rejected` error and its `output_quality_reason`
+usage evidence. Accepted suggestions keep the official WordPress result shape
+unchanged; any non-blocking title finding is retained only in internal provider
+call evidence and is not added to the `title` result field.
+
+Cloud does not claim to decide whether a title is publish-worthy. WordPress
+continues to own the editable suggestion, human review, and final write.
 
 ## Change And Rollback Rule
 

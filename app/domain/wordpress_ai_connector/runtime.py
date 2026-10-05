@@ -162,6 +162,13 @@ class WordPressOperationRuntime:
     ) -> None:
         self.settings = settings
         self.providers = providers
+        # Single-entry memo for title quality evaluation; deliberately holds
+        # references to the last evaluated payload pair so identity comparison
+        # cannot be fooled by object reuse, at the cost of retaining that one
+        # request's payloads until the next title evaluation replaces them.
+        self._title_quality_cache: (
+            tuple[dict[str, Any], dict[str, Any], tuple[str, ...]] | None
+        ) = None
 
     def source_artifact_id(self, input_payload: dict[str, Any]) -> str:
         operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
@@ -194,6 +201,7 @@ class WordPressOperationRuntime:
             )
             or ""
         ).strip()
+        existing_title = str(scene_request.get("existing_title") or "").strip()
         raw_system_instruction = scene_request.get("system_instruction")
         if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
             system_instruction = (
@@ -286,7 +294,11 @@ class WordPressOperationRuntime:
             "title_generation": (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
                 "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Return only the title text."
+                "no more than 12 words. Do not copy or return the exact wording of any "
+                "existing title or heading in the scene input; write a meaningfully "
+                "different alternative. Keep the title under 80 characters, use normal "
+                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
+                "or numbers absent from the scene input. Return only the title text."
             ),
             "slug_generation": (
                 "Generate concise SEO-friendly slug suggestions and return strict JSON "
@@ -309,11 +321,22 @@ class WordPressOperationRuntime:
             task_instruction = (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
                 "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Return one strict JSON object with exactly one string "
-                "field named `title`. Do not return bare title text."
+                "no more than 12 words. Do not copy or return the exact wording of any "
+                "existing title or heading in the scene input; write a meaningfully "
+                "different alternative. Return one strict JSON object with exactly one "
+                "string field named `title`. Keep the title under 80 characters, use normal "
+                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
+                "or numbers absent from the scene input. Do not return bare title text."
             )
 
         fragments = [task_instruction]
+        if task == "title_generation" and existing_title:
+            fragments.append(
+                "Existing WordPress title: "
+                + existing_title
+                + ". Do not return this title or a trivially unchanged version; provide a "
+                "meaningfully different alternative."
+            )
         if task != "slug_generation":
             fragments.append(
                 "Use the same language as the scene input unless a WordPress ability "
@@ -438,6 +461,8 @@ class WordPressOperationRuntime:
             target_language = str(scene_request.get("target_language") or "").strip().lower()
             if target_language:
                 provider_input["metadata"]["target_language"] = target_language
+        if task == "title_generation" and existing_title:
+            provider_input["metadata"]["existing_title"] = existing_title
         if title_output_schema:
             provider_input["metadata"]["ability_output_schema"] = title_output_schema
             provider_input["response_format"] = {
@@ -1071,6 +1096,14 @@ class WordPressOperationRuntime:
             return False
         if self._has_unbalanced_title_quote(output_text):
             return True
+        if self._is_boilerplate_output(output_text):
+            return True
+        title_quality_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if self.blocking_title_quality_reasons(title_quality_reasons):
+            return True
         usage = provider_output.get("usage")
         usage = usage if isinstance(usage, dict) else {}
         completion_details = usage.get("completion_tokens_details")
@@ -1086,6 +1119,167 @@ class WordPressOperationRuntime:
             )
         )
         return reasoning_tokens > 0 and visible_unit_count <= 3
+
+    def title_quality_reasons(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Return bounded, deterministic title findings for runtime evidence."""
+        # One provider output is evaluated up to three times per decision cycle
+        # (retry predicate, service decision, rejection reason), and each
+        # evaluation is O(source length); memoize on the exact payload pair so
+        # repeated evaluations of the same output run the scans once.
+        cache = self._title_quality_cache
+        if (
+            cache is not None
+            and cache[0] is input_payload
+            and cache[1] is provider_output
+        ):
+            return cache[2]
+        reasons = self._compute_title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        self._title_quality_cache = (input_payload, provider_output, reasons)
+        return reasons
+
+    def _compute_title_quality_reasons(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> tuple[str, ...]:
+        metadata = self._dict_or_empty(input_payload.get("metadata"))
+        if str(metadata.get("task") or "").strip() != "title_generation":
+            return ()
+        candidate = self._title_candidate_for_quality(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if not candidate:
+            return ()
+
+        source_text = str(input_payload.get("text") or "")
+        reasons: list[str] = []
+        if len(candidate) > 80:
+            reasons.append("title_length_exceeded")
+        if self._is_vague_title(candidate):
+            reasons.append("title_vague")
+        elif self._is_boilerplate_output(candidate):
+            reasons.append("title_boilerplate")
+        if self._title_matches_scene_heading(
+            candidate,
+            source_text,
+            existing_title=str(metadata.get("existing_title") or ""),
+        ):
+            reasons.append("title_unchanged")
+        if re.search(r"([,，。！？!?；;：:、])\1+", candidate):
+            reasons.append("title_repeated_punctuation")
+        if self._has_unsupported_title_claim(candidate, source_text):
+            reasons.append("title_unsupported_claim")
+        if self._is_mixed_language_title(candidate):
+            # Mixed language is evidence for review, not a rejection: product names
+            # such as WordPress and Typecho are legitimate in Chinese titles.
+            reasons.append("title_mixed_language")
+        return tuple(dict.fromkeys(reasons))
+
+    @staticmethod
+    def blocking_title_quality_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
+        """Drop evidence-only findings; the remainder justify retry or rejection.
+
+        Single source of truth shared by the retry predicate and the runtime
+        service decision so the evidence-only set can never drift apart.
+        """
+        return tuple(reason for reason in reasons if reason != "title_mixed_language")
+
+    def _title_candidate_for_quality(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> str:
+        metadata = self._dict_or_empty(input_payload.get("metadata"))
+        raw = self._extract_provider_output_text(provider_output)
+        schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if schema:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return ""
+            raw = str(parsed.get("title") or "") if isinstance(parsed, dict) else ""
+        if not raw:
+            return ""
+        return self._normalize_plain_text_output(
+            raw,
+            limit=10_000,
+            strip_explanation=True,
+            source_text=str(input_payload.get("text") or ""),
+            task="title_generation",
+        ).strip()
+
+    @staticmethod
+    def _is_vague_title(candidate: str) -> bool:
+        normalized = re.sub(r"\s+", "", candidate).casefold()
+        return normalized in {
+            "文章标题",
+            "标题建议",
+            "内容介绍",
+            "相关文章介绍",
+            "一篇文章",
+            "thisarticle",
+            "anarticle",
+            "suggestedtitle",
+        }
+
+    @staticmethod
+    def _has_unsupported_title_claim(candidate: str, source_text: str) -> bool:
+        raw_source = source_text.casefold()
+        source = re.sub(r"<[^>]+>", " ", source_text).casefold()
+        # Whitespace-insensitive comparison: titles routinely re-space CJK
+        # spans and bracket labels, so compare compacted forms, not raw text.
+        source_compact = re.sub(r"\s+", "", source)
+        claims = re.findall(
+            r"(?<![A-Za-z0-9])v?\d+(?:\.\d+){1,3}(?![A-Za-z0-9])|\b20\d{2}\b",
+            candidate,
+            re.I,
+        )
+        claims.extend(
+            match.group(1)
+            for match in re.finditer(r"[\[【《「]([^\]】》」]{2,80})[\]】》」]", candidate)
+            # Bracketed labels are usually composed framing (【实用指南】),
+            # not copied claims; only spans carrying factual markers such as
+            # digits count as verifiable claims.
+            if re.search(r"\d", match.group(1))
+        )
+        for claim in claims:
+            claim_compact = re.sub(r"\s+", "", claim.casefold())
+            if claim_compact in source_compact:
+                continue
+            if re.fullmatch(r"v?\d+(?:\.\d+){1,3}", claim, re.I):
+                # A candidate may normalize a version ("3.5" -> "3.5.0");
+                # accept it while any prefix of the version stays grounded.
+                parts = re.sub(r"^v", "", claim, flags=re.I).split(".")
+                while len(parts) > 2:
+                    parts.pop()
+                    if ".".join(parts) in source_compact:
+                        break
+                else:
+                    return True
+                continue
+            if re.fullmatch(r"20\d{2}", claim) and claim.casefold() in raw_source:
+                # Years also live in tag attributes (alt text, hrefs) that the
+                # tag strip removes; a raw-source hit still grounds the claim.
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def _is_mixed_language_title(candidate: str) -> bool:
+        has_cjk = bool(re.search(r"[\u3400-\u9fff]", candidate))
+        english_words = re.findall(r"[A-Za-z]{2,}", candidate)
+        return has_cjk and len(english_words) >= 4
 
     def output_quality_reason(
         self,
@@ -1145,6 +1339,24 @@ class WordPressOperationRuntime:
                 return "title_schema_missing_title"
             if not parsed["title"].strip():
                 return "title_schema_empty_title"
+        title_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        blocking_reasons = self.blocking_title_quality_reasons(title_reasons)
+        if blocking_reasons:
+            # Evidence-only findings (mixed language) are filtered here too:
+            # every consumer of this method gets a rejection-grade reason or
+            # none at all, independent of caller-side gating.
+            return blocking_reasons[0]
+        if task == "title_generation" and self._is_boilerplate_output(output_text):
+            return "title_boilerplate"
+        if task == "title_generation" and self._title_matches_scene_heading(
+            output_text,
+            str(input_payload.get("text") or ""),
+            existing_title=str(metadata.get("existing_title") or ""),
+        ):
+            return "title_unchanged"
         return "normalized_text_empty"
 
     @classmethod
@@ -1298,6 +1510,43 @@ class WordPressOperationRuntime:
         if isinstance(enum, list) and value not in enum:
             return False
         return True
+
+    @classmethod
+    def _title_matches_scene_heading(
+        cls,
+        output_text: str,
+        source_text: str,
+        *,
+        existing_title: str = "",
+    ) -> bool:
+        """Reject a title suggestion that simply repeats a supplied heading."""
+        candidate = cls._comparable_title(output_text)
+        if not candidate or (not source_text.strip() and not existing_title.strip()):
+            return False
+
+        source = cls._strip_reasoning_noise(source_text)
+        headings = [existing_title] if existing_title.strip() else []
+        headings.extend(
+            match.group(2)
+            for match in re.finditer(r"(?is)<h([1-3])[^>]*>(.*?)</h\1>", source)
+        )
+        headings.extend(
+            match.group(1)
+            for match in re.finditer(r"(?m)^\s*#{1,3}\s+(.+?)\s*$", source)
+        )
+        plain_source = re.sub(r"<[^>]+>", " ", source)
+        plain_lines = [line.strip() for line in plain_source.splitlines() if line.strip()]
+        if len(plain_lines) == 1:
+            headings.append(plain_lines[0])
+        return any(candidate == cls._comparable_title(heading) for heading in headings)
+
+    @staticmethod
+    def _comparable_title(value: str) -> str:
+        value = re.sub(r"<[^>]+>", " ", value)
+        value = re.sub(r"^\s*#{1,6}\s+", "", value)
+        value = re.sub(r"[\"'“”‘’《》「」]+", "", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.strip().casefold()
 
     def apply_managed_policy(
         self,
@@ -1874,7 +2123,7 @@ class WordPressOperationRuntime:
 
     def _extract_first_list_item(self, output_text: str) -> str:
         for line in output_text.splitlines():
-            match = re.match(r"\s*(?:[-*]|\d+[.)、])\s*(.+?)\s*$", line)
+            match = re.match(r"\s*(?:[-*]|\d+[.)、](?!\d))\s*(.+?)\s*$", line)
             if match is None:
                 continue
             candidate = self._strip_markdown(match.group(1))
@@ -1882,7 +2131,7 @@ class WordPressOperationRuntime:
             if 4 <= len(candidate) <= 120:
                 return candidate
         match = re.search(
-            r"(?:^|\s)\d+[.)、]\s*(.+?)(?=\s+\d+[.)、]\s+|$)",
+            r"(?:^|\s)\d+[.)、](?!\d)\s*(.+?)(?=\s+\d+[.)、](?!\d)\s+|$)",
             output_text,
         )
         if match is not None:
@@ -1948,10 +2197,12 @@ class WordPressOperationRuntime:
                 "以下是基于",
                 "下面是",
                 "以下是",
+                "基于提供的信息构建的回答",
                 "如果你愿意",
                 "我还可以",
                 "here are",
                 "based on your",
+                "based on the provided information",
                 "i can also",
                 "title suggestions",
                 "标题建议",
