@@ -2889,7 +2889,7 @@ class RuntimeService:
             self._record_wordpress_output_quality_diagnostic(run, quality_reason)
             error_message = (
                 "provider returned the existing title instead of a new suggestion"
-                if quality_reason == "title_unchanged"
+                if "title_unchanged" in blocking_title_quality_reasons
                 else "provider returned no usable WordPress AI connector text"
             )
             return ProviderOutputDecision(
