@@ -704,6 +704,13 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Materialize pnpm store path
+        if: matrix.needs_node
+        # The targeted static lane may exit without any pnpm install; an absent
+        # store path makes setup-node's cache save fail the whole job with
+        # "Path Validation Error" whenever the lockfile cache key misses.
+        run: mkdir -p "$(pnpm store path)"
+
       - name: Install uv
         run: python -m pip install --upgrade uv
 
