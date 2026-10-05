@@ -1248,6 +1248,10 @@ class WordPressOperationRuntime:
         claims.extend(
             match.group(1)
             for match in re.finditer(r"[\[【《「]([^\]】》」]{2,80})[\]】》」]", candidate)
+            # Bracketed labels are usually composed framing (【实用指南】),
+            # not copied claims; only spans carrying factual markers such as
+            # digits count as verifiable claims.
+            if re.search(r"\d", match.group(1))
         )
         for claim in claims:
             claim_compact = re.sub(r"\s+", "", claim.casefold())
@@ -1522,7 +1526,10 @@ class WordPressOperationRuntime:
 
         source = cls._strip_reasoning_noise(source_text)
         headings = [existing_title] if existing_title.strip() else []
-        headings.extend(re.findall(r"(?is)<h[1-3][^>]*>(.*?)</h[1-3]>", source))
+        headings.extend(
+            match.group(2)
+            for match in re.finditer(r"(?is)<h([1-3])[^>]*>(.*?)</h\1>", source)
+        )
         headings.extend(
             match.group(1)
             for match in re.finditer(r"(?m)^\s*#{1,3}\s+(.+?)\s*$", source)
