@@ -267,3 +267,16 @@ monitoring=true，DISABLE_WP_CRON=false，hourly 任务已注册；下一次计�
 本轮 diff 检查、release-policy、报告相对链接和 documentation reachability
 495/495 通过；check:changed 维持 documentation-only / development /
 runtime none。未重跑 Cloud 大套件或模型测试。
+
+## 9. 发布准备核查与测试修复候选
+
+操作者同意继续后，已在当前 master 复现两项旧 Free 激活断言失败，修正后
+两个完整测试文件 80 passed / 8.65s；不改变业务源码。新断言确认 Admin 可见
+Free、注册无站点/密钥、登录与连接后只有原订阅和快照、周期保持不变。
+修复未合入 master 前，不把本地绿色写成 master CI 已恢复。
+
+源码核实表明本次 editor-assist 质量事件经观测通道投递，没有直接生成原生
+agent_feedback；自然上报与原生反馈缺口须分别处理，不以等待 Cron 冒充
+Done 6 完成。详细证据、部署范围、迁移和回滚准备见
+[生产发布准备清单](../../../production-release-readiness-plan-2026-10-06.md)。
+本轮仍是 development 候选，付费调用 0、完整大套件 0；生产未更新。
