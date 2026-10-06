@@ -254,3 +254,22 @@ API mocks 和锁文件同版 Playwright 1.59.1，第三方付费调用 0。
 集成测试、审查、发布及 M4 接收结果以之后的最终收口记录及 PR 为准；本次
 截图与文档提交尚不能证明代码已合并或 M4 accepted。预算、种子、六条 Done、
 告知/ICP 和 T+0 仍待操作者核实，试用未启动。
+
+### 关联标识及集成检查
+
+最终审查发现首页 public-onboarding-surface-contract 及服务端页面的激活标识
+仍指向 Addon 激活口径。提交 2e924637915cb3c1775a3239626de874d998d68a
+将页面 metadata、remote-smoke 的源码断言、对应契约统一为
+registration-verified-free-activation-v2，并在 ADR-058 留档。未执行生产烟测，
+未改变发布机制或配置；新增断言源码检查及 bash -n、变更 Python Ruff 通过。
+增量 OCR 审查 0 findings（session a2d152d2-6acd-4ea5-bf62-6b0fb7696579）。
+
+一次 M4 契约/领域集成检查覆盖 check:fast 的两个 suite：2125 passed、
+13 skipped，544.99 秒。它对应同步的 1dabae01；后续的截图和文档不改变业务
+代码，2e924637 只调整核验标识及相应单个契约断言，另做定向验证，不重复
+整套 9 分钟检查。skip 不计作有效运行证明；PostgreSQL 并发使用此前已实际
+通过的 disposable schema 验证，不能由这批 skip 推断通过。
+
+记录集成结果时与最终源码打包发生重叠，sync 在本地 clean-source 门禁停止：
+1 个文档脏路径，未传输或改动 M4。本次先提交记录再同步，不启用 dirty
+旁路。此为本会话操作顺序错误，不是网络或业务故障。
