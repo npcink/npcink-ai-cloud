@@ -419,10 +419,10 @@ test('a new account offers site connection before package review', async ({ page
   await expect(setupChecklist.getByRole('link')).toHaveCount(1);
   await expect(setupChecklist.locator('a[href="/portal/billing"]')).toHaveCount(0);
   await expect(setupChecklist).toContainText(
-    /Connect your first WordPress site|连接第一个 WordPress 站点|Site setup still needs attention|站点设置仍需处理/i
+    /Connect your first site|连接您的第一个站点/i
   );
   await expect(setupChecklist).toContainText(
-    /Open npcink-cloud-addon|在 WordPress 中打开 npcink-cloud-addon/i
+    /Review your account package and credits above|账户套餐和额度请查看上方信息/i
   );
   await expect(setupChecklist.locator('a[href="#sites"]')).toHaveCount(1);
   const overview = page.locator('[data-portal-home="operation-overview"]');
