@@ -1,7 +1,9 @@
 # 免费试用与注册 Free 开发候选记录（2026-10-06）
 
-Status: local implementation saved; backend verified; frontend and M4 gates
-incomplete. No PR, merge, production action or trial start is claimed.
+Status: Pgy candidate deployed; focused backend, frontend type and lint gates
+passed. PostgreSQL concurrency verification failed twice; browser verification
+not run. Stopped under the operator's two-failure rule. No PR, merge, accepted
+promotion, production action or trial start is claimed.
 
 ## 交付与来源
 
@@ -30,7 +32,7 @@ Addon 现有可信连接及历史无订阅兜底不修改。Portal 无站点仍�
 未新增 schema、公共 API、试用套餐、周配额、支付流程、埋点、报表后台、
 定时任务或参考图输入协议。开发付费调用：0。
 
-## 验证结果
+## 首次开发验证结果（恢复前历史）
 
 | 检查 | 结果 |
 | --- | --- |
@@ -89,3 +91,69 @@ pnpm-workspace.yaml 差异；本会话没有修改这些文件。runtime/fronten
   六条 Done、告知/ICP 与 T+0。当前没有真实周报或商业结论。
 
 M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_status+Tailscale_relay_attempt; sync=not completed; focused=not occurred; promotion=not occurred; operations=sync_attempts:2,status:1,runtime_mutations:0; stable_502=not measured; m4_only=not measured; coordination=not occurred
+
+## 蒲公英恢复尝试（2026-10-06）
+
+操作者明确要求尝试贝锐蒲公英，选择 ADR-052 的
+`muze@172.16.3.35` 与 `NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct`。
+未改脚本、网络配置、证书校验、依赖版本或锁文件。
+
+1. 只读 status 成功；仍是历史 accepted PR 1061。
+2. 当前 clean 候选 91c4bea72f9bcb47bb15b98a81f828000d8bd099 传输成功；
+   sync 被依赖指纹门禁阻止，exit 42，明确要求 deploy。
+3. 按门禁执行一次 deploy。Python 锁定依赖安装及 app import 检查通过；
+   Python builder 依赖层日志耗时 1414.2 秒，不把它当作完整部署耗时。
+   前端 frozen-lockfile 安装通过，445 个包复用缓存，日志耗时 3.4 秒。
+   候选容器健康、Alembic head 校验与 Ollama ownership postflight 通过。
+4. 在 M4 的 Python 3.14.7 上运行六个精确 pytest 节点，共 21 项：
+   邮箱注册、QQ 注册、历史登录及生命周期保护、禁用/撤销保护、事务回滚、
+   Addon 历史兜底，21 passed，5.32 秒。
+5. M4 frontend 容器中的 `pnpm run type-check` 和本次十个变更文件的
+   `pnpm exec eslint ... --max-warnings=0` 通过。未复用主工作树旧版 Next.js。
+
+### 并发验证的两次失败及停止
+
+现有 `m4:preview:test` 清除全部 `NPCINK_CLOUD_*` 环境变量，因此并发节点
+会跳过。单独在受 operation.lock 保护的 M4 临时 api 容器中运行该节点，
+保留已断言为 development / Docker postgres 的两个数据库环境值；未打印
+数据库凭据。测试仅建立唯一临时 schema，finally 清理自身 schema。
+
+最初的 stdin 运行器没有把 Python 脚本送入非交互容器，未运行 pytest，
+其 exit 0 不作为测试通过证据。改为 `python -c` 后实际进行了两次测试：
+
+- 第一次：1 failed，1.99 秒。四次登录均 authenticated，订阅和权益快照
+  均只有一份；失败在期待一次 `subscription.bind` 审计、实际为零。
+  `_audit_mixin.py::_record_service_audit_in_session` 在上下文为 None 时返回，
+  QQ 正常登录 resolver 未提供审计上下文。
+- 修正尝试本地提交 2e1e73e5f87cd94bacef223d1d5f239dd3c48bc0：给测试调用
+  添加 ServiceAuditContext。Ruff I/F/E9、diff 检查通过；再次 source sync
+  成功，全部镜像指纹相同、没有重建，frontend/worker/migration/proxy 操作跳过。
+- 第二次：1 failed，2.05 秒。该 resolver 的实际签名不接受 `audit_context`，
+  TypeError 发生在登录调用之前。此修正未核对方法签名，是开发会话的错误；
+  提交 2e1e73e5 不是已验证的最终修复。
+
+按操作者连续两次失败规则停止，不再修正或重试，不继续浏览器验收。
+下一会话先恢复符合真实 resolver 签名的测试调用，核对 QQ 登录既有审计
+契约，保留一份订阅/快照与额度、周期幂等的并发断言；若测试审计，应选择
+实际支持审计上下文的入口，不为通过测试扩大公开接口。
+
+### 当前证据与交接
+
+- 最终只读 status：`acceptance_state=candidate`、`promotion_pr=none`、
+  `source_revision=2e1e73e5f87cd94bacef223d1d5f239dd3c48bc0`、
+  `source_branch=codex/free-registration-trial`、`source_dirty=false`；
+  frontend_source_revision 仍为 91c4bea7，因 frontend 内容不变而复用。
+  API/frontend/PostgreSQL/Redis/proxy 健康，首页和 health/live 均 200。
+- 主工作树只读检查已安装 Playwright 1.59.1，与锁文件一致；仅在本工作树
+  的 ignored node_modules 中临时链接这一测试运行器。第一次 NODE_PATH
+  方式无法解析 ESM；链接后 `--list` 加载 16 个 Portal 用例，但没有执行
+  浏览器断言或截图对比，不能称为 PC 验收通过。
+- 本次创建的蒲公英前台 SSH 隧道已关闭，临时 Playwright 链接已移除；
+  测试临时容器退出，operation.lock 正常释放。未解锁交付工作树。
+- 本次记录修改仅为文档；M4 证据对应上述明确源码修订，未把记录提交
+  宣称为新的运行验证。网络传输阻塞已恢复，当前阻塞是并发测试不正确及
+  尚未执行的浏览器验收。本机完整依赖安装的 TLS 问题没有修复。
+- PR 未创建、未合并、没有 clean-master promotion；M4 保持候选状态。
+  开发付费调用 0，生产和支付配置未操作，T+0 未确定，试用未开始。
+
+M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=completed_not_measured; focused=21_cases_5.32s,concurrency_failed_twice; promotion=not occurred; operations=sync:2,deploy:1,status:2; stable_502=not measured; m4_only=concurrency_test_fixture_failure; coordination=not occurred
