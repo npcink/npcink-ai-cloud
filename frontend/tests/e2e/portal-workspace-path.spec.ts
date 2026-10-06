@@ -2028,9 +2028,9 @@ test('closed ticket makes the reopen-on-reply behavior explicit', async ({ page 
 
   await page.goto('/portal/support/ticket_portal_e2e_other_site');
   await expect(page.locator('[data-portal-support="reply-reopen-notice"]')).toContainText(
-    /Replying will reopen this ticket|回复将重新打开此工单/i
+    /Replying will reopen this support request|回复将重新打开此支持请求/i
   );
-  await expect(page.getByRole('button', { name: /Reopen and reply|重新打开并回复/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Reply and reopen|回复并重新打开/i })).toBeVisible();
 });
 
 test('single unavailable site keeps support explicitly account-scoped without a fake site selector', async ({ page }) => {
@@ -2041,7 +2041,7 @@ test('single unavailable site keeps support explicitly account-scoped without a 
   });
 
   await page.goto('/portal/support');
-  await expect(page.getByText(/Account-level support \(all sites\)|账号级支持（全部站点）/i)).toBeVisible();
+  await expect(page.getByText(/^Account scope$|^账户范围$/i)).toBeVisible();
   await expect(page.getByText(/^Select a site$|^选择站点$/i)).toHaveCount(0);
 });
 
