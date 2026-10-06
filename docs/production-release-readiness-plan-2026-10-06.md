@@ -165,7 +165,8 @@ bundle 与数据库规模给出估计。原始证据在任务 `.runtime/local-ac
   合入 master 的精确树，无生产独有业务修复，backport 已由树一致证明。
 - Portal 容量/上下文恢复已由 PR #865 合入，不重新开发；注册/无站点 Free、
   登录和移动/桌面四张截图复用 PR #1073 同日证据。现有 Portal 工作区
-  当前版本的多站点状态与响应式证据仍需核对，不将历史 25 项结果冒充当前。
+  当前版本的多站点状态与响应式证据已补核，见第 7 节；不将历史 25 项
+  结果冒充当前，也不将测试替身结果冒充真实 Provider 执行。
 - 资源预算：付费 Provider 0；生产部署 0；一份冻结候选的生产 CI 与镜像
   构建/扫描各一次。失败只诊断对应 seam；第二个独立阻塞停止扩项，连续
   两次相同传输失败停止重试。不为填证据新增测试调用。
@@ -177,3 +178,34 @@ bundle 与数据库规模给出估计。原始证据在任务 `.runtime/local-ac
 前一准备轮的两次文档补丁因行文匹配错误均未应用，按操作者止损规则停止，
 没有改变文件或生产环境。本轮先核对准确原文再恢复，不将此编辑失败视为
 产品或运行故障。
+
+## 7. 当前 Portal 发布恢复门禁补核
+
+复用已锁定的 Playwright 1.59.1 和本会话前台 SSH 隧道，对 M4 已编译页面
+运行仓库现有 Portal 工作区用例。只读 status 仍为 accepted / PR #1073 /
+master / source_dirty=false / `e3f4a5d56e26c281f04b57da6c3c25ace5e663f1`。
+已比较本候选与该修订的 frontend/app/deploy/migration/依赖输入，业务与
+运行源码相同。API 与支付页面为现有 mocks；无真实邮箱、QQ、支付或 Provider 调用。
+
+- 首次 27 项工作区套件：10 passed，1 failed，16 未运行；关闭支持请求的
+  提示与按钮断言仍使用旧“工单／Reopen and reply”名称。当前 i18n 和 DOM
+  均为“支持请求／Reply and reopen”，只修正双语断言，消息、按钮可见性保留。
+  单独重跑：1 passed / 2.6s。
+- 从未执行部分继续时，账户范围断言仍使用旧长名称；源码和 DOM 都显示
+  Account scope / 账户范围。只更新精确名称，仍断言没有虚构站点选择器。
+  单独重跑：1 passed / 2.2s。两次失败日志、截图与 trace 均保留。
+- 发布恢复必要的三个场景：多站点账号服务独立、1280/1440/1920px 的
+  中英文/明暗主题桌面表格及无页面溢出、390px 移动任务，3 passed / 1.3m。
+  共 15 个不同场景有当前成功证据；其余 12 个工作区场景未执行，不称整文件绿色。
+- 当前测试文件 ESLint 通过；复用锁文件同版 ESLint 9.39.4，配置与本候选
+  字节相同。React 自动探测缺少本任务本地 React 的警告不隐藏。
+- 当前测试文件 TypeScript 5.9.3 strict 检查通过，使用仓库 target/lib/module
+  选项。首次自定义 ES2020 默认 lib 不覆盖已有 at/replaceAll，失败属于
+  验证命令配置；未改业务或测试代码绕过，核对仓库 esnext lib 后正确运行。
+- 路由器将 frontend 测试路径泛化为 L1；本次只改测试三条预期和验收文档，
+  按 M4 标准第 4 节的 local-only 测试规则，不同步、部署或重建未变的运行源码。
+  原有应用类型/源码契约证据保留，GitHub 必需检查继续作为合并门禁。
+- 20:03:47 只读自然事件检查仍有 4 条 journey 在 WordPress 缓冲区，Cron
+  时间已到但没有新上传成功记录；未手动触发或 flush。原生反馈缺口也未关闭。
+
+M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_existing_foreground_tunnel; sync=not occurred; focused=portal_release_3_cases_1.3m,support_2.6s,scope_2.2s; promotion=not occurred; operations=status:1,sync:0,deploy:0; stable_502=not measured; m4_only=not occurred; coordination=not occurred
