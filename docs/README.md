@@ -118,7 +118,7 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
-- [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 基础连接就绪；编辑器被 Local 维护模式阻塞，连续两次浏览器失败后停止，完整功能验收仍待完成。
+- [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 维护恢复后五项编辑器替身场景和 272 项契约断言通过；真实模型/扣额/云端反馈及文生图仍待补证据，保留首轮阻塞历史。
 - [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 已确认正常自注册、复用 Free 和四周判据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，启动状态待操作者核实。
 - [ADR-058: Registration-Verified Account Free Entitlement](decisions/058-registration-verified-account-free-entitlement.md) — verified registration grants account-owned Free; Addon still owns proof of site connection, with legacy fallback preserved.
 - [Free Trial Development Candidate — 2026-10-06](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md) — local backend evidence and retained implementation; frontend dependency and M4 relay blockers, not merge or deployment evidence.

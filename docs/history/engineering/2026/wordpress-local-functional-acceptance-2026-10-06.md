@@ -1,8 +1,9 @@
 # 本地 WordPress 功能验收记录（2026-10-06）
 
-Status: blocked by local WordPress maintenance; full functional acceptance pending.
-本轮只验收开发环境，不授权生产发布或启动试用。浏览器连续两次失败后，
-按操作者确认的停止规则结束自动重试；不是功能通过报告。
+Status: local deterministic editor workflows verified; full real-provider acceptance pending.
+操作者确认维护恢复后继续：主流程、取消重载、并发标签页、权限拒绝及本地
+质量事件关联通过。真实第三方执行/扣额/云端反馈和完整六条 Done 尚未收齐。
+本文只验收开发环境，不授权生产发布或启动试用。下文保留首轮阻塞历史。
 
 ## 1. 范围、版本与预算
 
@@ -117,3 +118,89 @@ development` 判定 documentation-only、PR required=false；这仅验证记录�
 M4 status、只读历史查询、journey inspector、失败截图和浏览器日志。
 记录为本地 development lane 交付，不创建新 PR，不宣称已合并或生产可用。
 撤回本报告仅需移除本轮两处文档变更，不改变已授予权益或已有运行记录。
+
+## 7. 维护恢复后的继续验收（2026-10-06）
+
+操作者明确“本地 WordPress 已经正常了”后继续。只读检查确认维护模式未
+启用，未认证后台返回正常登录跳转 302，实际浏览器认证后可加载编辑器。
+WordPress 7.1.1 / AI 1.3.0 / Addon 0.2.0 未变。Addon 已为干净 master
+`5d8356f`（PR #229）；与首轮 `d60cce3` 文件内容无差异。
+Cloud 当前 master 与 M4 accepted 仍为 `e3f4a5d5`、PR #1073。
+Mac 与其他工作树源码未修改；本轮仍为付费调用 0、Cloud 完整大套件 0。
+
+### 7.1 真实编辑器、隔离 Provider 替身
+
+以下均复用原有浏览器脚本，每个场景独立临时草稿和登录会话，所有生成
+请求均 `transport_preempted=true`，没有到达真实 Cloud/第三方执行。
+
+| 场景 | 结果与耗时 | 关键证据 |
+| --- | --- | --- |
+| 标题/摘要/整段改写主流程 | 通过，11.10s，草稿 281286 | 标题模拟失败后重试、重新生成、人工修改再插入；摘要可见；改写可审阅 |
+| 取消后重载 | 通过，8.66s，草稿 281288 | 保存前写入 0、显式保存 0，重开恢复原始标题/内容，无 dirty |
+| 并发标签页 | 通过，15.33s，草稿 281289 | 两页均显示建议；三次隔离标题尝试，其中一页失败后重试；保存前写入 0 |
+| 无编辑权限 | 通过，3.42s，草稿 281290 | 临时作者被拒绝编辑管理员草稿；Ability 响应 0、替身事件 0、写入 0 |
+| 本地质量事件关联 | 通过，7.77s，草稿 281291 | 为验证本地展示/保存关联单独执行，不是重复大套件或原生云端采纳证明 |
+
+两个主流程的保存前写入均为 0，人工显式保存为 1，revision delta=1；
+标题、摘要与目标段落匹配预期，非目标 sentinel 块保持原样。
+人工检查 1280×720 的 review 与 saved 截图：替换原文/建议可读、接受与重新
+生成可操作、模态框未溢出；保存后显示“已保存”和人工修改后的标题。
+不据此扩大到所有媒体界面或 WordPress 移动端视觉验收。
+
+五个场景均确认临时草稿删除、会话销毁、替身插件和 option 移除；权限场景
+还删除临时作者。各场景分别清理 16/11/7/0/16 条本轮 journey 事件，
+保留原有队列。模拟事件不能进入真实试用指标或 Cloud 账单。
+
+本地质量关联结果：9 条事件、3 个任务会话，pending=0；4 presented、
+1 repeated、1 superseded、3 outcome.observed。摘要/改写为 saved_exact_output；
+人工编辑过的标题为 saved_after_generation_unmatched。invalid_content_storage=0、
+forbidden_fields=[]。这是本地分类和关联证据，不把“未匹配保存”当拒绝或
+原生采纳，也不证明 Cloud 接收或自然 Cron 上报。
+
+### 7.2 其他官方接口与确定性契约
+
+只读注册清单共 19 个官方 `ai/*` Ability，包括标题、摘要、改写、翻译、
+Slug、Excerpt、Meta description、分类、编辑建议、评论分析/回复、ALT、
+图片提示词、图片生成/import、post detail/terms 和 type-ahead。
+“已注册”只证明入口元数据，不宣称每项实际模型执行、UI 和导入均通过。
+
+现有 PHP 测试、HTTP/SDK 替身的聚焦证据：
+
+- connector-result 15 项、failure-projection 27 项断言通过；
+- 原 runner 的 performance-guards 公共启动步骤，加 connector-registration、
+  connector-runtime、request-log-bridge、provider-acceptance，共 193 项通过；
+- 隔离 alt-text-artifact-handoff 37 项通过。合计 272 项 `[ok]`，退出码均为 0。
+
+首次把 connector-registration 直接独立执行时缺少公共 plugin bootstrap，
+“renamed addon directory”断言失败。核对 tests/run.php 的真实依赖顺序后，
+使用其已有启动文件重跑相关模块通过；不改源码或断言来绕过失败。
+这些用例覆盖边界、结构/错误投影、输出契约及 ALT 来源交接；它们不能代替
+第三方生成的内容质量或实际原生图片导入。
+
+中央 `composer quality:matrix` 只读状态已保存。本轮无跨仓库代码交付，
+不执行全仓矩阵大套件；Cloud 精确版本的必需 CI 与账号/Portal 证据复用
+PR #1073。主工作树旧检出不代表 M4 当前已接收版本。
+
+### 7.3 本轮结论与剩余验收
+
+**本地确定性编辑主流程通过；尚不能签署“全部能力和六条 Done 完成”。**
+
+| 事项 | 本轮结论 |
+| --- | --- |
+| 注册即 Free、重复登录/连接保护 | 复用 PR #1073 的 API/PG/Portal 证据；不冒充新的真实邮箱/QQ 授权验收 |
+| 标题/摘要/改写、人工审阅保存、取消/并发/权限 | 当前 Local 浏览器替身验证通过 |
+| 空结果/超时/Provider 失败 | 确定性错误投影契约通过，浏览器证明模拟 Provider 失败后可重试；不是所有故障的实网复现 |
+| 实际 Cloud run、模型和扣额幂等 | 既有 API、历史记录可见；本轮没有真实生成调用，ai_credit_evidence=false |
+| 展示/保存观察 | 本地事件关联通过；原生反馈、Cloud 接收与自然上报仍单列 |
+| 真实标题使用不少于 10 次 | 正常写作样本仍待收齐，不用模拟请求或历史开发合计凑数 |
+| 文生图 / ALT / 参考图 | 新鲜快照文生图 no_eligible_model；视觉 configured 仅证明配置，ALT 实际执行未新增；参考图继续暂缓 |
+
+下一步优先核对正常写作中产生的真实第三方生成 → 审阅保存 → run/用量与
+反馈，补实际扣额和失败记录；不为凑样本制造付费调用。文生图应明确选择
+配置现有模型并验收，或暂停该入口；本轮未改 Provider 或 WordPress 功能
+开关。其余实际支持能力依据真实需求补对应证明，保持未知项显式可见。
+所有本地功能与配置门槛收齐后，才整理生产发布候选并另行取得发布授权。
+
+恢复轮证据保存在 `.runtime/local-acceptance/browser-resumed-*` 的 JSON、日志、
+截图及 readonly readiness/capability/19-Ability 清单。前台隧道在本轮结束
+时关闭；M4 无 sync/deploy/promote，继续维持已接收版本。
