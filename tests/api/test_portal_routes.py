@@ -6,6 +6,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -62,7 +63,6 @@ from app.core.models import (
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
-from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.identity import resolve_principal_allowed_actions
 from app.domain.commercial.mixins._portal_mixin import _hash_external_identity
@@ -5694,40 +5694,85 @@ def test_concurrent_verified_logins_grant_one_free_on_disposable_postgres() -> N
         session.commit()
     try:
         init_schema(isolated_url)
-        _seed_unsubscribed_trial_account(isolated_url)
-        service = CommercialService(isolated_url)
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(
-                pool.map(
-                    lambda attempt: service.resolve_portal_identity_provider_login(
-                        provider="qq",
-                        external_subject="trial-legacy-qq",
-                        audit_context=ServiceAuditContext(
-                            trace_id=f"trial-free-login-{attempt}",
-                            idempotency_key=f"trial-free-login-{attempt}",
-                            method="GET",
-                            path="/portal/v1/auth/qq/callback",
-                            actor_kind="user",
-                            actor_ref="prn_trial_legacy",
-                        ),
-                    ),
-                    range(4),
+        account_id, principal_id = _seed_unsubscribed_trial_account(isolated_url)
+        clock = {"now": datetime.now(UTC)}
+        service = CommercialService(isolated_url, now_factory=lambda: clock["now"])
+
+        def concurrent_logins() -> None:
+            barrier = Barrier(4)
+
+            def login(_: int) -> dict[str, object]:
+                barrier.wait(timeout=10)
+                return service.resolve_portal_identity_provider_login(
+                    provider="qq",
+                    external_subject="trial-legacy-qq",
                 )
-            )
-        assert all(result["status"] == "authenticated" for result in results)
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(login, range(4)))
+            assert all(result["status"] == "authenticated" for result in results)
+            assert all(result["principal_id"] == principal_id for result in results)
+
+        concurrent_logins()
         with get_session(isolated_url) as session:
-            assert len(list(session.scalars(select(AccountSubscription)))) == 1
-            assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
-            grants = list(
-                session.scalars(
-                    select(ServiceAuditEvent).where(
-                        ServiceAuditEvent.event_kind == "subscription.bind",
-                    )
-                )
+            subscriptions = list(session.scalars(select(AccountSubscription)))
+            snapshots = list(session.scalars(select(AccountEntitlementSnapshot)))
+            assert len(subscriptions) == len(snapshots) == 1
+            subscription, snapshot = subscriptions[0], snapshots[0]
+            assert subscription.account_id == account_id
+            assert subscription.plan_id == "free"
+            assert subscription.status == snapshot.status == "active"
+            first_period = (
+                subscription.current_period_start_at,
+                subscription.current_period_end_at,
             )
-            assert len(grants) == 1
+            assert first_period[1] - first_period[0] == timedelta(days=30)
+            snapshot_id = snapshot.id
+            assert snapshot.budgets_json["max_ai_credits_per_period"] == 300
+            assert list(session.scalars(select(CreditLedgerEntry))) == []
+            CommercialRepository(session).record_credit_ledger_entry(
+                account_id=account_id,
+                site_id=None,
+                subscription_id=subscription.subscription_id,
+                plan_version_id=subscription.plan_version_id,
+                run_id=None,
+                provider_call_id=None,
+                event_type="consume",
+                source_type="tokens_total",
+                source_id="trial-concurrent-existing-use",
+                ai_credit_delta=-50,
+                quantity=50,
+                unit="ai_credits",
+                rate=1,
+                rate_unit=None,
+                rate_version="ai-credit-ledger-v2",
+                idempotency_key="trial-concurrent-existing-use",
+                created_at=clock["now"],
+            )
+            session.commit()
+
+        clock["now"] += timedelta(days=3)
+        concurrent_logins()
+        with get_session(isolated_url) as session:
+            subscriptions = list(session.scalars(select(AccountSubscription)))
+            snapshots = list(session.scalars(select(AccountEntitlementSnapshot)))
+            assert len(subscriptions) == len(snapshots) == 1
+            subscription, snapshot = subscriptions[0], snapshots[0]
+            assert (
+                subscription.current_period_start_at,
+                subscription.current_period_end_at,
+            ) == first_period
+            assert snapshot.id == snapshot_id
+            assert snapshot.budgets_json["max_ai_credits_per_period"] == 300
+            ledger_entries = list(session.scalars(select(CreditLedgerEntry)))
+            assert len(ledger_entries) == 1
+            assert ledger_entries[0].ai_credit_delta == -50
             assert list(session.scalars(select(Site))) == []
             assert list(session.scalars(select(SiteApiKey))) == []
+            assert list(session.scalars(select(PaymentOrder))) == []
+        quota = service.get_portal_account_quota_summary(account_id)
+        assert quota["ai_credits"]["used"] == 50
+        assert quota["ai_credits"]["remaining"] == 250
     finally:
         dispose_engine(isolated_url)
         with get_session(raw_url) as session:
