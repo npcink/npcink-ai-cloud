@@ -4,7 +4,7 @@ Status: read-only inventory and operator-confirmed implementation recommendation
 本文盘点的是代码，不代表目标环境配置、M4 接收、生产发布或真人使用已验证。
 试用口径见[四周计划](trial-stage-commercial-validation-plan-2026-10-06.md)。
 
-本轮实施与未完成的门禁见[开发候选记录](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md)；Free 激活时机由 [ADR-058](decisions/058-registration-verified-account-free-entitlement.md)增补，不能据候选声明已经上线。
+本轮实施、验证结果与接收边界见[开发候选记录](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md)；Free 激活时机由 [ADR-058](decisions/058-registration-verified-account-free-entitlement.md)增补，不能据候选声明已经上线。
 
 ## 1. 免费试用的现成开户路径
 

@@ -1,10 +1,11 @@
 # 免费试用与注册 Free 开发候选记录（2026-10-06）
 
-Status: Pgy candidate deployed; backend and PostgreSQL concurrency gates passed.
-Fifteen functional Portal browser cases passed. Mobile registration screenshot
-baseline differs by 24px in height; visual gate incomplete. Stopped after two
-browser failures under the operator's rule. No PR, merge, accepted promotion,
-production action or trial start is claimed.
+Status: operator resumed closeout and authorized PR publication and merge.
+Backend and PostgreSQL concurrency gates passed; final registration copy,
+frontend types/lint, and all 16 Portal functional/visual browser cases passed.
+Only the reviewed mobile registration baseline was updated. Integration review,
+GitHub required checks and clean-master promotion remain separate evidence.
+No production action or trial start is claimed.
 
 ## 交付与来源
 
@@ -228,3 +229,28 @@ public-entitlement-copy-contract 的相关覆盖，再人工核验截图基线�
   等待 PR 发布确认。T+0 前的预算、种子、六条 Done、告知/ICP 仍待操作者核实。
 
 M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=completed_not_measured; focused=PG_concurrency_1.94s,15_browser_functional_cases_passed,mobile_visual_failed; promotion=not occurred; operations=sync:1,deploy:0,status:1; stable_502=not measured; m4_only=not occurred; coordination=not occurred
+
+## 最终文案与视觉收口（2026-10-06）
+
+操作者同意小范围收口并明确授权随后发布 PR、合并代码；不包含生产发布。
+请求验证码说明改为“填写邮箱获取验证码；验证成功后获得 Free，注册不创建
+站点”，中英文与 register 页兜底一致。验证码校验、公共会话及接口未改。
+文案契约新增请求阶段与完成验证阶段的区别检查，翻译完整性仍为 1808 keys。
+
+清洁候选 1dabae010d3475685bfcf60b946aa4d42d1dd3a8 经蒲公英 direct
+同步到 M4。镜像输入不变，无 deploy 或镜像重建；前端源码改变按现有机制
+更新 compiled frontend。M4 type-check 与所有变更前端源文件、测试的定向
+ESLint 通过。作者核对 390px 移动注册截图：新说明、邮箱框、验证码按钮、
+Free 提示及条款完整，scrollWidth 不大于 viewport，无溢出或遮挡。
+只更新 portal-register-current-mobile-darwin.png，其他三张基线未改。
+
+完整 portal-login.spec.ts 在 M4 页面经本会话 SSH 隧道执行：16 passed，
+57.5 秒；包括桌面/移动登录及注册四张截图，未放宽 2% 比较阈值。使用已有
+API mocks 和锁文件同版 Playwright 1.59.1，第三方付费调用 0。
+变更 Python Ruff/mypy、Cloud anti-drift、release-policy、494/494 文档可达
+检查通过。业务代码与已通过的 106 项 API、21 项 M4 focused 及真实 PostgreSQL
+并发验证相同，未重复这些门禁。此前停止记录保留为历史，不代表当前阻塞。
+
+集成测试、审查、发布及 M4 接收结果以之后的最终收口记录及 PR 为准；本次
+截图与文档提交尚不能证明代码已合并或 M4 accepted。预算、种子、六条 Done、
+告知/ICP 和 T+0 仍待操作者核实，试用未启动。
