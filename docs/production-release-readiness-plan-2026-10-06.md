@@ -1,6 +1,6 @@
 # Free 试用前生产发布准备（2026-10-06）
 
-Status: repair PR #1074 merged; production preflight documentation candidate; production not approved or dispatched.
+Status: repair PR #1074 merged; operator authorized production-candidate validation and promotion preparation; server deployment not approved or dispatched.
 
 操作者同意先修正 Free 回归测试、核验反馈，再准备生产候选。本记录是准备
 清单，不是部署完成、六条 Done 完成或试用启动声明。生产执行仍需针对最终
@@ -75,7 +75,8 @@ H3 ¥5–7 均不改；人工记录、保存观察及原生反馈分别列示，
 累计范围包含 Portal/Admin、runtime/worker、Provider/routing、usage、观测、
 Site Knowledge 和媒体等模块；本记录是清点，不是逐文件审查或全功能验收。
 原始路径清单保存在本任务忽略目录。正式冻结前必须确认这些累计变化都是
-本次有意发布的范围。当前暂停策略仍有效；本轮不创建 production PR。
+本次有意发布的范围。操作者同意继续生产候选验收及新的生产验证 PR；实际
+部署仍待最终版本、门禁结果和回滚方案的明确确认。
 
 Portal 旧暂停记录所述“仍未合入”的历史状态不能照搬：后续已有
 [PR #865 恢复记录](history/portal/2026/portal-ui-restoration-and-delivery-retrospective-2026-08-25.md)。
@@ -146,3 +147,33 @@ Portal 旧暂停记录所述“仍未合入”的历史状态不能照搬：后�
 
 本次没有镜像构建、上传、迁移或切换，故预计部署时长尚未测定；发布前按最终
 bundle 与数据库规模给出估计。原始证据在任务 `.runtime/local-acceptance/`。
+
+## 6. 恢复准备的执行边界（2026-10-06）
+
+操作者确认服务器、数据库都有快照，RDS 独立恢复已验证，随后同意继续
+“生产候选验收→部署后操作者验证→再找站长试用”的建议。授权覆盖发布准备
+及生产验证 PR，不替代最终 Deploy Production 的精确版本授权。
+
+- 先将本次只读结果和恢复状态作为独立 docs-only PR 合入 master，再冻结
+  当前 master；不在 promotion 开始后新增文档、业务或流程修复。
+- 当前 production/master 直接 merge-tree 只读检查发现 251 个冲突路径。
+  不逐个拼接或将 production 历史并入 master；使用既有恢复顺序的单父
+  promotion：父节点=current production，候选树=冻结的 master 树。正式
+  preflight 检查该真实候选与 production，必须无冲突且树一致。
+- master 已在独立 M4 operations 工作树检出，本任务不切换或修改该树。
+  promotion 使用标准 publisher 允许的 release-fix/* 名称；它只包装已经
+  合入 master 的精确树，无生产独有业务修复，backport 已由树一致证明。
+- Portal 容量/上下文恢复已由 PR #865 合入，不重新开发；注册/无站点 Free、
+  登录和移动/桌面四张截图复用 PR #1073 同日证据。现有 Portal 工作区
+  当前版本的多站点状态与响应式证据仍需核对，不将历史 25 项结果冒充当前。
+- 资源预算：付费 Provider 0；生产部署 0；一份冻结候选的生产 CI 与镜像
+  构建/扫描各一次。失败只诊断对应 seam；第二个独立阻塞停止扩项，连续
+  两次相同传输失败停止重试。不为填证据新增测试调用。
+- 正常证书 readiness 检查为只读，允许作为候选 preflight；不选择 refresh、
+  safe-prune、配置更改、数据恢复或部署动作。
+- 图像未配置、原生反馈缺口和第三方执行证据保持待核实；它们不通过源码
+  或 CI 绿色自动关闭，试用 T+0 仍未确定。
+
+前一准备轮的两次文档补丁因行文匹配错误均未应用，按操作者止损规则停止，
+没有改变文件或生产环境。本轮先核对准确原文再恢复，不将此编辑失败视为
+产品或运行故障。
