@@ -1,9 +1,10 @@
 # 免费试用与注册 Free 开发候选记录（2026-10-06）
 
-Status: Pgy candidate deployed; focused backend, frontend type and lint gates
-passed. PostgreSQL concurrency verification failed twice; browser verification
-not run. Stopped under the operator's two-failure rule. No PR, merge, accepted
-promotion, production action or trial start is claimed.
+Status: Pgy candidate deployed; backend and PostgreSQL concurrency gates passed.
+Fifteen functional Portal browser cases passed. Mobile registration screenshot
+baseline differs by 24px in height; visual gate incomplete. Stopped after two
+browser failures under the operator's rule. No PR, merge, accepted promotion,
+production action or trial start is claimed.
 
 ## 交付与来源
 
@@ -157,3 +158,73 @@ M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_status+Tailscale_relay_attempt
   开发付费调用 0，生产和支付配置未操作，T+0 未确定，试用未开始。
 
 M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=completed_not_measured; focused=21_cases_5.32s,concurrency_failed_twice; promotion=not occurred; operations=sync:2,deploy:1,status:2; stable_502=not measured; m4_only=concurrency_test_fixture_failure; coordination=not occurred
+
+## 并发恢复及 Portal 浏览器验收（2026-10-06）
+
+操作者同意继续修正并发测试、补齐浏览器验收；不包含发布 PR 的授权。
+未修改业务代码、公共接口、数据库 schema、套餐或额度规则。
+
+### 并发测试已通过
+
+测试修正提交 ce3d037263fcc4496c186cd6e0e26310b411dfbd：QQ 正常登录 resolver
+既不接收审计上下文，也没有必须生成 subscription.bind 审计的既有契约。
+移除错误调用参数和该审计断言，改用真实权益断言。Barrier 同步四个登录
+请求，重复两轮；两轮间模拟 50 credits 消耗，并将测试时钟推进三天。
+
+- 变更 Python 质量门禁通过；本地 API 模块 106 passed、1 skipped，18.98 秒。
+  唯一 skip 仍是本地没有 Docker PostgreSQL，不把它算作并发证明。
+- 蒲公英 direct source sync 成功，source_dirty=false；全部镜像及配置指纹
+  不变，没有重建，保留 frontend、worker、migration、proxy 的有效状态。
+- 同一受限的 disposable PostgreSQL 用例实际运行：1 passed，1.94 秒。
+  两轮全部登录 authenticated 且同一身份；仅一份 active Free、一份 active
+  额度快照，30 天周期不变，预算 300、模拟使用 50、剩余 250；没有重复
+  额度流水、Site、SiteApiKey 或 PaymentOrder。测试只清理自身临时 schema。
+
+### 浏览器结果及停止
+
+Playwright 1.59.1 与锁文件一致，仅复用其测试运行器；实际页面是 SSH
+隧道 http://127.0.0.1:18010 对应的 M4 compiled frontend。API 使用现有
+测试 mocks，不发起付费模型、付款、真实邮箱注册或 QQ 外部认证。
+
+第一次执行 portal-login.spec.ts，max-failures=1：10 passed、1 failed、
+5 did not run，48.1 秒。失败的无站点清单仍断言旧标题和旧说明，而当前
+双语文案为“连接您的第一个站点”与“账户套餐和额度请查看上方信息”。
+只更新这两条断言；站点连接链接、无付款要求、Free 与 300 可见断言保留。
+
+第二次只运行失败及尚未运行的六项，复用首轮十项的有效证据：5 passed、
+1 failed，28.3 秒。五项功能验证覆盖无站点 Free/300、Free 耗尽指向用量、
+过期 session、桌面 Addon 返回参数、移动连接及显式账户确认。
+共十五个不同功能用例通过，不能把两次命令称为全文件绿色。
+
+最后一个视觉用例的桌面登录、桌面注册、移动登录截图检查通过；移动
+注册截图失败：expected 390×1104，actual 390×1128。按连续两次失败规则
+停止，不更新截图基线、不继续运行，也不扩展页面实现。
+
+人工核对新旧图：Free 说明由两行变三行，新增 24px，未看到横向溢出或
+遮挡。仅说明已观察到的当前中文初始状态，不替代完整视觉门禁。
+审查同时发现 portal.register.request_desc 的旧措辞仍是“填写邮箱地址
+创建账号；此步骤不会创建站点或发放服务额度”。它显示在请求验证码
+阶段，该阶段确实不发额度，因此不是后端违约；但“创建账号”的措辞容易
+与完成验证注册混淆。建议下一段统一为“填写邮箱获取验证码；验证成功后
+获得 Free，注册不创建站点”，并更新 register 页的英文 fallback 和
+public-entitlement-copy-contract 的相关覆盖，再人工核验截图基线。
+
+### 当前交接
+
+- M4 status：source_revision=ce3d037263fcc4496c186cd6e0e26310b411dfbd、
+  source_branch=codex/free-registration-trial、source_dirty=false、
+  acceptance_state=candidate、promotion_pr=none；HTTP 首页/health/live 200，
+  容器健康。尚无 accepted/master/生产证据。
+- 本轮仅同步一次、没有 deploy；并发证明 1.94 秒。旧前端类型与 lint
+  证据对应未改变的页面及类型代码。最后两条浏览器断言在本地执行通过，
+  收口提交不被声称已经再次同步；下一段改文案后需重新 dispatch。
+- PNG 基线未改。新旧及 diff 图保存在本工作树 ignored 的
+  .runtime/trial-visual-evidence/2026-10-06/，供本地复核，不作为 Git 交付。
+  actual SHA-256：cda5243cb17bdae21a7fe309150b3406619fdabd2986c658c2afea9900ba24ba。
+- 本轮隧道关闭、临时测试运行器链接移除，工作树继续锁定。
+  PR 未创建、未合并，生产和支付配置未操作，付费调用 0，试用未启动。
+- 余项：验证码阶段文案统一与契约覆盖、人工核验后的移动注册截图基线、
+  当前最终修订重新同步及相关视觉用例通过；然后再提供最终差异/模板正文
+  等待 PR 发布确认。T+0 前的预算、种子、六条 Done、告知/ICP 仍待操作者核实。
+
+M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=completed_not_measured; focused=PG_concurrency_1.94s,15_browser_functional_cases_passed,mobile_visual_failed; promotion=not occurred; operations=sync:1,deploy:0,status:1; stable_502=not measured; m4_only=not occurred; coordination=not occurred
