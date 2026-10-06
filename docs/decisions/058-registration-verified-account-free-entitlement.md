@@ -42,6 +42,9 @@ or issue its runtime credentials.
   active-access, ownership, capacity and key checks. The historical
   no-subscription fallback remains; ordinary new accounts already have Free,
   so their exchange reports free_entitlement_activated=false.
+- The server-rendered Portal activation marker becomes
+  registration-verified-free-activation-v2; its release smoke and source
+  contracts use the same marker. No public session schema changes.
 - Portal shows account package and credits without a site, with a separate
   site-connection instruction. Free credit exhaustion points to usage and
   period recovery; it does not require payment.
