@@ -23,12 +23,18 @@ by that runtime.
 - `production` is the production release source.
 - feature and fix branches merge to `master` first.
 - production releases are promoted from `master` to `production`.
-- **Current release state (2026-09-20): production promotion is paused
-  indefinitely by operator decision.** No production promotion, deployment, or
-  release PR is authorized by this status. Resumption requires a new explicit
-  operator decision and must begin with the required Portal capacity/context
-  slice rebuild and the complete resume sequence in
-  `history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md` §7.
+- **Current release state (2026-10-06): the operator has authorized resuming
+  production-candidate validation and preparation of a fresh promotion PR.**
+  Actual server deployment remains separately gated by the final exact-SHA
+  operator confirmation; no server cutover is authorized by this status.
+  The Portal capacity/context restoration reached master through PR #865;
+  current registration/Free browser evidence reached master through PR #1073,
+  followed by test repair PR #1074 and green exact-master CI. Resume through
+  the remaining applicable gates in
+  `history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md` §7,
+  using fresh image security evidence instead of retired CVE exceptions.
+  Current scope and evidence limits are recorded in
+  [Production Release Readiness Plan](production-release-readiness-plan-2026-10-06.md).
 
 Do not directly edit production application code on the server. Production
 database credentials and runtime root secrets are authoritative only in the
@@ -87,7 +93,8 @@ This withdraws authorization; it does not establish that any image is fixed.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding
 must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol
 guards remain in force. A changed base-image digest still requires rebuilding,
-a fresh scan, and exact-bundle replay. Production promotion remains paused.
+a fresh scan, and exact-bundle replay. Actual deployment still requires fresh
+candidate validation and the final exact-SHA operator dispatch confirmation.
 Restoring any expired exception, using the historical controlled-validation
 receipt, or using the retired no-user internal-validation switch is not an
 ordinary recovery lane and does not authorize a release.
