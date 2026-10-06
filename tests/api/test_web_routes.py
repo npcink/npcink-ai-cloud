@@ -9,6 +9,7 @@ import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.adapters.notifications.base import PortalEmailSender
 from app.adapters.repositories.commercial_repository import CommercialRepository
@@ -18,7 +19,7 @@ from app.api.main import create_app
 from app.api.portal_session import set_portal_session_cookies
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import Site
+from app.core.models import AccountEntitlementSnapshot, AccountSubscription, Site, SiteApiKey
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService
@@ -1126,6 +1127,29 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
     addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
     assert addon_accounts_response.status_code == 200
     account_id = str(addon_accounts_response.json()["data"]["items"][0]["account_id"])
+    with get_session(database_url) as session:
+        subscriptions = list(session.scalars(
+            select(AccountSubscription).where(AccountSubscription.account_id == account_id)
+        ))
+        assert len(subscriptions) == 1
+        subscription = subscriptions[0]
+        assert subscription.plan_id == "free"
+        assert subscription.status == "active"
+        original_subscription = (
+            subscription.subscription_id,
+            subscription.current_period_start_at,
+            subscription.current_period_end_at,
+        )
+        snapshots = list(session.scalars(
+            select(AccountEntitlementSnapshot).where(
+                AccountEntitlementSnapshot.account_id == account_id
+            )
+        ))
+        assert len(snapshots) == 1
+        assert snapshots[0].budgets_json["max_ai_credits_per_period"] == 300
+        original_snapshot_id = snapshots[0].id
+        assert list(session.scalars(select(Site))) == []
+        assert list(session.scalars(select(SiteApiKey))) == []
     assert client.post("/portal/v1/logout").status_code == 200
 
     login_request_response = client.post(
@@ -1177,7 +1201,25 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
     exchange_data = exchange_response.json()["data"]
     assert exchange_data["site_id"] == site_id
     assert exchange_data["activation_state"] == "active"
-    assert exchange_data["free_entitlement_activated"] is True
+    assert exchange_data["free_entitlement_activated"] is False
     assert exchange_data["cloud_api_key"].startswith("mak1_")
+
+    with get_session(database_url) as session:
+        subscriptions = list(session.scalars(
+            select(AccountSubscription).where(AccountSubscription.account_id == account_id)
+        ))
+        assert len(subscriptions) == 1
+        assert (
+            subscriptions[0].subscription_id,
+            subscriptions[0].current_period_start_at,
+            subscriptions[0].current_period_end_at,
+        ) == original_subscription
+        snapshots = list(session.scalars(
+            select(AccountEntitlementSnapshot).where(
+                AccountEntitlementSnapshot.account_id == account_id
+            )
+        ))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == original_snapshot_id
 
     dispose_engine(database_url)
