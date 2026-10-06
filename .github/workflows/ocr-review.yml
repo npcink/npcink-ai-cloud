@@ -103,8 +103,8 @@ jobs:
             core.setOutput('head_sha', pullRequest.head.sha);
 
       - name: Run OpenCodeReview
-        # alibaba/open-code-review v1.12.10 (tag object b465046, commit
-        # 579b931; pinned by commit SHA because the action receives the LLM
+        # alibaba/open-code-review v1.12.11 (tag object ee83f151, commit
+        # a758d9cb; pinned by commit SHA because the action receives the LLM
         # auth token - bump deliberately and record the new tag->commit pair).
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
