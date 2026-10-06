@@ -1,11 +1,11 @@
 # 免费试用与注册 Free 开发候选记录（2026-10-06）
 
-Status: stopped after two consecutive final M4 sync failures, under the
-operator's explicit stop rule. The repeated translation keys are corrected;
-current c2abacdf compiled successfully but sync failed on an exited worker.
-M4 API/frontend/proxy/workers are stopped by the existing failure cleanup;
-PostgreSQL and Redis remain healthy. No PR, merge, accepted promotion,
-production action or trial start is claimed. Keep the task worktree locked.
+Status: operator-authorized recovery completed. Clean candidate 7e249c2a
+synced successfully; all M4 services running. Final type/lint, all frontend
+source contracts, Chinese Free usage action, four auth screenshots and v2
+activation marker checks passed. Ready for authorized PR publication/merge;
+GitHub merge and clean-master acceptance remain separate evidence. No production
+operation or trial start is claimed. Earlier stops are preserved below.
 
 ## 交付与来源
 
@@ -338,3 +338,30 @@ codex/free-registration-trial，locked codex:free-registration-trial；业务代
 本会话浏览器隧道和测试运行器链接已移除；未使用的临时接收 clone 删除。
 
 M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=final_failed_82.87s; focused=contract_domain_544.99s,browser_57.5s; promotion=not occurred; operations=sync_attempts:5,successful_sync:2,deploy:0,status:1; stable_502=not measured; m4_only=selective_sync_skips_stopped_workers_after_failure_cleanup; coordination=not occurred
+
+## 授权恢复后最终候选验收（2026-10-06）
+
+操作者同意恢复并继续既有 PR/合并授权。一次现成 recover 成功，40.40 秒，
+重启已有容器和命令所含的受管 Ollama；未调用模型、改配置、构建镜像或改
+运维代码。随后 clean 7e249c2a source sync 成功，83.74 秒；全部应用及三个
+worker 运行，首页与健康接口 200，数据库 head 不变，无 build/deploy。
+
+- 最终 M4 frontend type-check、所有变更 TS/TSX/MJS 的定向 ESLint 通过。
+- 容器内全量 frontend contracts 因 /app/docs 未挂载在第二项中断，不算通过。
+  它们是源码契约，改在作者 Mac 的完整源码运行现有 test:contracts，退出 0，
+  67 项 ok；未安装依赖、改容器挂载或修改 Admin 文件。
+- 现有额度耗尽与视觉用例对最终 M4 页面执行：2 passed，10.9 秒，中文
+  “查看用量”按钮可见，四张截图通过。其余功能沿用此前 16 项整文件成功
+  证据；2% 阈值及其他三张基线不变。
+- 新标识对应的 exact-release-bundle 单个契约在 M4 1 passed，0.10 秒；
+  实际 /portal/login HTML 包含 registration-verified-free-activation-v2。
+- 本轮不重复 106 API、实际 PG 并发、21 focused 和 2125 contract/domain
+  门禁；相关业务源码不变。付费 Provider 调用 0。试用尚未启动。
+
+既有选择性 sync 在失败 cleanup 后未启动未变更 worker 的发现留作单独
+运维任务，恢复已使用现成功能解决本轮阻塞，不将其混入本 PR。
+本记录的最后提交是 docs-only 验收收口；发布前按标准 fetch/rebase/publisher，
+保护检查合并后用本会话临时 clean-master checkout 做 M4 promotion/status。
+主工作树与其他会话工作树/分支保持不动；仅达到 merged/clean 后处理本任务树。
+
+M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=83.74s; focused=browser_10.9s,marker_0.10s; promotion=not occurred; operations=recover:1,sync:1,deploy:0,status:1; stable_502=not measured; m4_only=previous_selective_sync_recovery_gap; coordination=not occurred
