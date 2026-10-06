@@ -62,6 +62,7 @@ from app.core.models import (
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
+from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.identity import resolve_principal_allowed_actions
 from app.domain.commercial.mixins._portal_mixin import _hash_external_identity
@@ -5698,9 +5699,17 @@ def test_concurrent_verified_logins_grant_one_free_on_disposable_postgres() -> N
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(
                 pool.map(
-                    lambda _: service.resolve_portal_identity_provider_login(
+                    lambda attempt: service.resolve_portal_identity_provider_login(
                         provider="qq",
                         external_subject="trial-legacy-qq",
+                        audit_context=ServiceAuditContext(
+                            trace_id=f"trial-free-login-{attempt}",
+                            idempotency_key=f"trial-free-login-{attempt}",
+                            method="GET",
+                            path="/portal/v1/auth/qq/callback",
+                            actor_kind="user",
+                            actor_ref="prn_trial_legacy",
+                        ),
                     ),
                     range(4),
                 )
