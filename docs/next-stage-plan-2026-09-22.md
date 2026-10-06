@@ -3,6 +3,8 @@
 Status: operator-directed next-stage execution plan. 本文记录方向、顺序、出口标准
 与新会话提示词；不构成发布授权、完成声明或暂缓决定的变更。
 
+2026-10-06 增补：[阶段 1 免费试用计划](trial-stage-commercial-validation-plan-2026-10-06.md)确认正常自注册、注册验证即 Free、复用现有额度及全能力自然试用（参考图编辑暂缓）；本文原条目保留，试用执行以增补计划为准。
+
 依据：[strategy-positioning-v1-2026-09-21.md](strategy-positioning-v1-2026-09-21.md)、
 [local-first-validation-stage-2026-09-21.md](local-first-validation-stage-2026-09-21.md)、
 [site-knowledge-inventory-2026-09-21.md](site-knowledge-inventory-2026-09-21.md)，
