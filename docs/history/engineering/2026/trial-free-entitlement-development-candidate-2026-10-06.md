@@ -1,11 +1,11 @@
 # 免费试用与注册 Free 开发候选记录（2026-10-06）
 
-Status: operator resumed closeout and authorized PR publication and merge.
-Backend and PostgreSQL concurrency gates passed; final registration copy,
-frontend types/lint, and all 16 Portal functional/visual browser cases passed.
-Only the reviewed mobile registration baseline was updated. Integration review,
-GitHub required checks and clean-master promotion remain separate evidence.
-No production action or trial start is claimed.
+Status: stopped after two consecutive final M4 sync failures, under the
+operator's explicit stop rule. The repeated translation keys are corrected;
+current c2abacdf compiled successfully but sync failed on an exited worker.
+M4 API/frontend/proxy/workers are stopped by the existing failure cleanup;
+PostgreSQL and Redis remain healthy. No PR, merge, accepted promotion,
+production action or trial start is claimed. Keep the task worktree locked.
 
 ## 交付与来源
 
@@ -300,3 +300,41 @@ fallback（low）恢复为与既有翻译一致；已生效的注册权益说明
 差异复核及 M4 编译日志指出 TS1117；已在作者工作树移除重复，保留原值。
 这是源代码可复现错误，不是 M4 特有缺陷，不把 ce1b45d9 的同步视为有效
 前端证据。下一清洁候选须恢复 M4、通过类型/契约及中文耗尽按钮验证再发布。
+
+## 本轮停止与准确交接（2026-10-06）
+
+两次连续最终 sync 失败，按操作者确认的“同一阶段连续两次失败即停”停止。
+没有继续运行 recover/deploy 或修改 M4 脚本，也没有发布或合并 PR。
+
+1. ce1b45d9：重复翻译键导致 frontend TS1117、首页健康检查失败。已在作者
+   源码提交 c2abacdf3b5bc82cefb582a77d70efbf76a0b717 修正，无重复键。
+2. c2abacdf：蒲公英传输及 M4 Next production 编译成功，首页与 /health/live
+   门禁通过后，服务门禁报 missing service: worker，退出 1；82.87 秒。
+   前一次失败的 cleanup_remote 会停止 api/frontend/proxy 及三个 worker；
+   本次选择性 sync 因 worker 源码未变跳过其启动/重启，导致服务门禁失败。
+   这是 M4 选择性恢复路径的发现，不是 Free 业务缺陷；不在本轮修改运维脚本。
+
+失败 cleanup 再次停止应用服务。只读 status 确认 PostgreSQL、Redis healthy；
+api、frontend、proxy、worker、callback-worker、ops-worker 均 exited，HTTP
+8010 的首页及健康检查为 000。last-deploy 仍保存上一次成功的 2e7a9290
+candidate，不表示当前服务在运行。promotion_pr=none，不能宣称 accepted。
+Ollama 现有管理服务仍运行，未调用模型或改配置。生产不受本轮操作影响。
+
+恢复方案已是现成命令，不需要更改代码：[M4 runbook](../../../m4-preview-development-v1.md)
+的 m4:preview:recover 启动已有容器。本会话尚未执行；操作者允许恢复后，
+通过蒲公英执行一次 recover，核对健康，重新 dispatch 清洁候选，再完成新增
+中文耗尽按钮、视觉、最终 type/lint、frontend contracts 及 marker 的定向验证。
+复用通过的 106 API、真实 PG 并发、21 focused、2125 contract/domain 和此前
+16 browser 证据；不重跑整套集成、不产生付费调用。若有第二个恢复失败，停止。
+
+PR 发布/合并授权已存在，无需重复请求；待解除这次失败停止状态且最终候选
+验收成功后，按模板及标准 publisher 发布，受保护检查通过后合并，再做
+clean-master M4 接收。生产与 T+0 仍另行确认。
+
+交接：/Users/muze/.codex/worktrees/free-registration-trial/npcink-ai-cloud，
+codex/free-registration-trial，locked codex:free-registration-trial；业务代码、
+计划、机制、截图及审查处理已本地提交。当前记录追加后只做 docs-only 收口，
+不将该记录提交声称已经同步。未合并交付保留，不解锁或归档任务工作树。
+本会话浏览器隧道和测试运行器链接已移除；未使用的临时接收 clone 删除。
+
+M4_OBSERVATION_RECEIPT date=2026-10-06; route=Pgy_direct; sync=final_failed_82.87s; focused=contract_domain_544.99s,browser_57.5s; promotion=not occurred; operations=sync_attempts:5,successful_sync:2,deploy:0,status:1; stable_502=not measured; m4_only=selective_sync_skips_stopped_workers_after_failure_cleanup; coordination=not occurred
