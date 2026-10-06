@@ -76,4 +76,7 @@ for (const copy of [translations, registration]) {
   );
 }
 
+assert.match(translations, /'portal\.home\.usage_action': 'View usage'/, 'Free usage action must exist in English');
+assert.match(translations, /'portal\.home\.usage_action': '查看用量'/, 'Free usage action must exist in zh-CN');
+
 console.log('public_entitlement_copy_contract: ok');

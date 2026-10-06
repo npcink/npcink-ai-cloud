@@ -25,7 +25,9 @@ QQ 首次登录创建账户的路径。正常流程不需要管理员逐人开�
 
 复用[账户 Free 绑定 helper](../app/domain/commercial/mixins/_account_mixin.py)
 及[套餐绑定与快照机制](../app/domain/commercial/mixins/_billing_mixin.py)：
-固定账户级订阅标识、active Free、30 天周期和现有订阅审计；不另外充值
+固定账户级订阅标识、active Free、30 天周期；有 audit_context 的注册路径
+沿用订阅审计，现有 QQ/邮箱登录 resolver 的补齐没有 subscription.bind 审计。
+审计补齐另列后续任务，不把额度及并发证据冒充审计证据。不另外充值
 credit ledger、不批量发放。按账户加锁检查，已有任何订阅历史则跳过。
 
 [Addon exchange](../app/domain/commercial/mixins/_site_mixin.py) 保留站点

@@ -267,7 +267,7 @@ function LoginFormContent() {
             {t(
               'auth.no_password',
               undefined,
-              'Portal sign-in is passwordless. Verified registration includes Free service; site connection still requires the WordPress addon.'
+              'Portal sign-in is passwordless. Use QQ directly or continue with an email verification code.'
             )}
           </p>
         </>

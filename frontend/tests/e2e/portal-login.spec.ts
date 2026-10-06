@@ -432,11 +432,13 @@ test('a new account offers site connection before package review', async ({ page
 });
 
 test('exhausted Free credits lead to usage review without a payment requirement', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
   await installLoginFlowMocks(page, { initiallyLoggedIn: true, remainingFreeCredits: 0 });
   await page.goto('/portal');
   const followUp = page.locator('[data-portal-home="operation-overview"]');
   await expect(page.getByText(/Free credits for this period have been used|本周期 Free 额度已用完/i)).toBeVisible();
   await expect(followUp.locator('a[href="/portal/billing#package-options"]')).toHaveCount(0);
+  await expect(followUp.getByRole('link', { name: '查看用量', exact: true })).toBeVisible();
   await expect(page.locator('a[href="/portal/usage"]').first()).toBeVisible();
 });
 

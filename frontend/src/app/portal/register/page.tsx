@@ -242,7 +242,7 @@ function RegisterFormContent() {
                     { plan: requestedPlanLabel },
                     `Continue with ${requestedPlanLabel} after signup`
                   )
-                : t('portal.register.free_title', undefined, 'Start with Free')}
+                : t('portal.register.free_title', undefined, 'Create the account first')}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               {requestedPlan
