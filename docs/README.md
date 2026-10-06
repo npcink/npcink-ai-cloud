@@ -13,6 +13,7 @@ as current truth.
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
+| 查合规工作底稿方法（四列结构、来源分级、触发线分离） | [开发会话操作经验记录](development-session-notes-2026-09-26-compliance.md) |
 | 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
 | 查本地 WordPress 草稿闭环证据 | [本地草稿闭环验证记录](history/engineering/2026/local-wordpress-draft-closed-loop-validation-2026-09-23.md) — fake Provider、预览/插入/显式保存、回读一致性与精确清理；不是商业或用户验收证据 |
 | 查战略会话的讨论脉络与决定去向 | [战略会话综合纪要](strategy-session-synthesis-2026-09-22.md) — 时间线、七仓库总览、问题清单摘要 |
