@@ -32,8 +32,8 @@ assert.match(
 
 assert.match(
   terms,
-  /Free 套餐和额度属于 Cloud 账户，不属于 WordPress 站点[\s\S]*注册只创建账号[\s\S]*首次可信 Addon 连接完成后/,
-  'terms must retain account ownership and verified-Addon activation rules'
+  /Free 套餐和额度属于 Cloud 账户，不属于 WordPress 站点[\s\S]*注册验证成功后[\s\S]*站点及连接凭据仍须通过可信 Addon 连接建立/,
+  'terms must separate registration-time entitlement from verified site connection'
 );
 assert.match(
   terms,
@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   terms,
-  /Free service and credits belong to the Cloud account, not the WordPress site[\s\S]*Registration creates the account only[\s\S]*first verified Addon connection/,
-  'terms must retain the English account ownership and verified-Addon activation rules'
+  /Free service and credits belong to the Cloud account, not the WordPress site[\s\S]*Verified registration activates[\s\S]*sites and connection credentials still require a verified Addon connection/,
+  'terms must separate registration-time entitlement from verified site connection in English'
 );
 assert.match(
   terms,

@@ -1795,7 +1795,7 @@ export class PortalClient {
   }
 
   /**
-   * 验证注册验证码并创建账号；Free 权益在 WordPress Addon 完成真实连接后激活
+   * 验证注册验证码并创建账号及 Free 权益；站点与凭据由可信 WordPress Addon 连接建立
    * POST /portal/v1/register/verify
    */
   async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {

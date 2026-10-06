@@ -42,7 +42,7 @@ export default function HelpPage() {
       summary={zh ? '登录、连接 WordPress 站点，以及遇到异常时的最短路径。' : 'The shortest path for signing in, connecting WordPress, and handling service issues.'}
     >
       <DocumentSection title={zh ? '1. 登录服务中心' : '1. Sign in to the Portal'}>
-        <p>{zh ? '使用 QQ 可直接登录，邮箱用户也可以继续使用验证码。首次验证只创建账号；WordPress Addon 完成可信连接后，才会激活账户的 Free 服务。' : 'Use QQ to sign in directly, or keep using an email code. First-time verification creates the account only; Free service activates after the WordPress Addon completes a verified connection.'}</p>
+        <p>{zh ? '使用 QQ 可直接登录，邮箱用户也可以继续使用验证码。注册验证成功后即可获得账户的 Free 服务与额度；WordPress Addon 完成可信连接后即可在站点使用。' : 'Use QQ to sign in directly, or keep using an email code. Verified registration activates account-owned Free service and credits; a verified WordPress Addon connection enables use on the site.'}</p>
         <Link href="/portal/login" className="inline-flex font-bold text-[#2357ff] hover:underline">{zh ? '前往登录 →' : 'Go to sign in →'}</Link>
       </DocumentSection>
       <DocumentSection title={zh ? '2. 连接 WordPress' : '2. Connect WordPress'}>

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.engine import make_url
 
 from app.adapters.notifications.base import PortalEmailDeliveryError, PortalEmailSender
 from app.adapters.providers.base import (
@@ -59,6 +62,9 @@ from app.core.models import (
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
+from app.domain.commercial.errors import CommercialPermissionError
+from app.domain.commercial.identity import resolve_principal_allowed_actions
+from app.domain.commercial.mixins._portal_mixin import _hash_external_identity
 from app.domain.commercial.service import CommercialService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.site_compliance import SiteComplianceAdminService
@@ -1414,8 +1420,10 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
 
     with get_session(database_url) as session:
         assert session.get(Site, "site_primary-example-com") is None
-        assert list(session.scalars(select(AccountSubscription))) == []
-        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+        subscriptions = list(session.scalars(select(AccountSubscription)))
+        assert len(subscriptions) == 1
+        assert subscriptions[0].status == "active"
+        assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
         assert list(session.scalars(select(SiteApiKey))) == []
         oauth_state = session.scalar(
             select(PortalOAuthState).where(
@@ -1474,7 +1482,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert exchange_data["site_id"] == "site_primary-example-com"
     assert exchange_data["activation_state"] == "active"
     assert exchange_data["site_created"] is True
-    assert exchange_data["free_entitlement_activated"] is True
+    assert exchange_data["free_entitlement_activated"] is False
     assert exchange_data["subscription_id"]
     assert exchange_data["cloud_api_key"].startswith("mak1_")
     decoded_key = _decode_customer_key(exchange_data["cloud_api_key"])
@@ -1539,6 +1547,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     ) == {"action": ["npcink_cloud_addon_complete_auth"]}
 
     dispose_engine(database_url)
+
 
 
 def test_portal_addon_connection_rejects_cross_account_membership_escalation(
@@ -1696,7 +1705,7 @@ def test_portal_addon_connection_requires_provision_sites_action(
     dispose_engine(database_url)
 
 
-def test_portal_addon_exchange_revalidates_access_before_free_activation(
+def test_portal_addon_exchange_revalidates_access_before_site_activation(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
@@ -1733,9 +1742,7 @@ def test_portal_addon_exchange_revalidates_access_before_free_activation(
         headers={"Idempotency-Key": "exchange-revalidation-issue"},
     )
     assert issue_response.status_code == 200, issue_response.text
-    redirect_query = parse_qs(
-        urlsplit(str(issue_response.json()["data"]["redirect_url"])).query
-    )
+    redirect_query = parse_qs(urlsplit(str(issue_response.json()["data"]["redirect_url"])).query)
 
     with get_session(database_url) as session:
         membership = session.scalar(
@@ -1756,8 +1763,11 @@ def test_portal_addon_exchange_revalidates_access_before_free_activation(
     assert exchange_response.json()["error_code"] == "service.principal_access_required"
 
     with get_session(database_url) as session:
-        assert list(session.scalars(select(AccountSubscription))) == []
-        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+        subscriptions = list(session.scalars(select(AccountSubscription)))
+        assert len(subscriptions) == 1
+        assert subscriptions[0].status == "active"
+        assert subscriptions[0].plan_id == "free"
+        assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
         assert list(session.scalars(select(Site))) == []
         assert list(session.scalars(select(SiteApiKey))) == []
 
@@ -1802,21 +1812,16 @@ def test_portal_addon_exchange_rejects_inactive_subscription_history_before_free
         headers={"Idempotency-Key": "portal-addon-inactive-history"},
     )
     assert issue_response.status_code == 200, issue_response.text
-    redirect_query = parse_qs(
-        urlsplit(str(issue_response.json()["data"]["redirect_url"])).query
-    )
+    redirect_query = parse_qs(urlsplit(str(issue_response.json()["data"]["redirect_url"])).query)
     code = redirect_query["code"][0]
 
     with get_session(database_url) as session:
-        session.add(
-            AccountSubscription(
-                subscription_id=f"sub_{account_id}_canceled",
-                account_id=account_id,
-                plan_id="free",
-                plan_version_id="free_v1",
-                status="canceled",
-            )
-        )
+        subscription = session.scalar(select(AccountSubscription))
+        snapshot = session.scalar(select(AccountEntitlementSnapshot))
+        assert subscription is not None
+        assert snapshot is not None
+        subscription.status = "canceled"
+        snapshot.status = "inactive"
         session.commit()
 
     exchange_response = client.post(
@@ -1829,14 +1834,14 @@ def test_portal_addon_exchange_rejects_inactive_subscription_history_before_free
     with get_session(database_url) as session:
         subscriptions = list(
             session.scalars(
-                select(AccountSubscription).where(
-                    AccountSubscription.account_id == account_id
-                )
+                select(AccountSubscription).where(AccountSubscription.account_id == account_id)
             )
         )
         assert len(subscriptions) == 1
         assert subscriptions[0].status == "canceled"
-        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+        snapshots = list(session.scalars(select(AccountEntitlementSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].status == "inactive"
         assert list(session.scalars(select(Site))) == []
         assert list(session.scalars(select(SiteApiKey))) == []
         oauth_state = session.scalar(
@@ -2444,7 +2449,7 @@ def test_cross_account_addon_relink_waits_for_cooldown_and_keeps_free_account_ow
         idempotency_key="site-relink-second-connect",
     )
     assert exchange["site_transferred"] is True
-    assert exchange["free_entitlement_activated"] is True
+    assert exchange["free_entitlement_activated"] is False
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_transfer-example-com")
@@ -2485,6 +2490,7 @@ def test_cross_account_addon_relink_waits_for_cooldown_and_keeps_free_account_ow
         assert bindings[1].released_at is None
 
     dispose_engine(database_url)
+
 
 
 def test_site_relink_policy_change_is_prospective_until_site_reset(
@@ -4766,7 +4772,13 @@ def test_portal_qq_callback_registers_first_time_user(
         assert binding.external_subject_hash != "qq-openid-unbound"
         assert membership is not None
         assert membership.principal_id == principal.principal_id
-        assert subscription is None
+        assert subscription is not None
+        assert subscription.status == "active"
+        assert subscription.plan_id == "free"
+        first_period = (subscription.current_period_start_at, subscription.current_period_end_at)
+        assert list(session.scalars(select(Site))) == []
+        assert list(session.scalars(select(SiteApiKey))) == []
+        assert list(session.scalars(select(CreditLedgerEntry))) == []
 
     logout_response = client.post("/portal/v1/logout")
     assert logout_response.status_code == 200
@@ -4782,6 +4794,18 @@ def test_portal_qq_callback_registers_first_time_user(
     assert browser_callback.status_code == 303
     assert browser_callback.headers["location"] == "/portal/account"
     assert COOKIE_PORTAL_SESSION_TOKEN in browser_callback.cookies
+
+    with get_session(database_url) as session:
+        subscriptions = list(session.scalars(select(AccountSubscription)))
+        assert len(subscriptions) == 1
+        assert (
+            subscriptions[0].current_period_start_at,
+            subscriptions[0].current_period_end_at,
+        ) == first_period
+        assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
+    entitlements = client.get("/portal/v1/account/entitlements")
+    assert entitlements.status_code == 200, entitlements.text
+    assert entitlements.json()["data"]["quota_summary"]["ai_credits"]["remaining"] == 300
 
     dispose_engine(database_url)
 
@@ -5271,7 +5295,7 @@ def test_portal_login_code_request_masks_missing_principal_access(
     dispose_engine(database_url)
 
 
-def test_portal_self_registration_opens_account_without_free_entitlement(
+def test_portal_self_registration_opens_free_account_without_site(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(
@@ -5318,9 +5342,7 @@ def test_portal_self_registration_opens_account_without_free_entitlement(
 
     with get_session(database_url) as session:
         identity = session.scalar(
-            select(Principal).where(
-                Principal.email == "new-portal-user@example.com"
-            )
+            select(Principal).where(Principal.email == "new-portal-user@example.com")
         )
         assert identity is not None
         assert identity.status == PRINCIPAL_STATUS_ACTIVE
@@ -5338,18 +5360,33 @@ def test_portal_self_registration_opens_account_without_free_entitlement(
         site_count = len(list(session.scalars(select(Site))))
         assert site_count == 0
         subscription = session.scalar(
-            select(AccountSubscription).where(
-                AccountSubscription.account_id == account_id
-            )
+            select(AccountSubscription).where(AccountSubscription.account_id == account_id)
         )
-        assert subscription is None
+        assert subscription is not None
+        assert subscription.status == "active"
+        assert subscription.plan_id == "free"
+        first_period = (subscription.current_period_start_at, subscription.current_period_end_at)
+        assert first_period[1] - first_period[0] == timedelta(days=30)
+        assert list(session.scalars(select(SiteApiKey))) == []
+        assert list(session.scalars(select(CreditLedgerEntry))) == []
+        assert list(session.scalars(select(PaymentOrder))) == []
         entitlement_snapshot = session.scalar(
             select(AccountEntitlementSnapshot).where(
                 AccountEntitlementSnapshot.account_id == account_id,
                 AccountEntitlementSnapshot.status == "active",
             )
         )
-        assert entitlement_snapshot is None
+        assert entitlement_snapshot is not None
+        assert entitlement_snapshot.budgets_json["max_ai_credits_per_period"] == 300
+        CommercialRepository(session).record_credit_ledger_entry(
+            account_id=account_id, site_id=None, subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id, run_id=None, provider_call_id=None,
+            event_type="consume", source_type="tokens_total", source_id="trial-existing-use",
+            ai_credit_delta=-50, quantity=50, unit="ai_credits", rate=1,
+            rate_unit=None, rate_version="ai-credit-ledger-v2",
+            idempotency_key="trial-existing-use", created_at=datetime.now(UTC),
+        )
+        session.commit()
 
     second_request_data = _request_portal_registration_code(
         client,
@@ -5368,10 +5405,326 @@ def test_portal_self_registration_opens_account_without_free_entitlement(
     with get_session(database_url) as session:
         site_count = len(list(session.scalars(select(Site))))
         subscription_count = len(list(session.scalars(select(AccountSubscription))))
-    assert site_count == 0
-    assert subscription_count == 0
+        assert site_count == 0
+        assert subscription_count == 1
+        subscription = session.scalar(select(AccountSubscription))
+        assert subscription is not None
+        assert (
+            subscription.current_period_start_at,
+            subscription.current_period_end_at,
+        ) == first_period
+        assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
+
+    entitlements = client.get("/portal/v1/account/entitlements")
+    assert entitlements.status_code == 200, entitlements.text
+    data = entitlements.json()["data"]
+    assert data["current_subscription"]["plan_id"] == "free"
+    assert data["quota_summary"]["ai_credits"]["remaining"] == 250
 
     dispose_engine(database_url)
+
+
+def _seed_unsubscribed_trial_account(database_url: str) -> tuple[str, str]:
+    account_id, principal_id = "acct_trial_legacy", "prn_trial_legacy"
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        repository.upsert_account(
+            account_id=account_id,
+            name="Legacy trial",
+            status="active",
+            metadata_json={},
+        )
+        repository.upsert_principal_identity(
+            principal_id=principal_id,
+            email="legacy-trial@example.com",
+            status="active",
+            metadata_json={},
+        )
+        repository.upsert_account_user_membership(
+            membership_id="aum_trial_legacy",
+            principal_id=principal_id,
+            account_id=account_id,
+            role="owner",
+            status="active",
+            allowed_actions_json=resolve_principal_allowed_actions(),
+            metadata_json={},
+        )
+        repository.upsert_identity_provider_binding(
+            binding_id="pib_trial_legacy",
+            principal_id=principal_id,
+            provider="qq",
+            external_subject_hash=_hash_external_identity("qq", "trial-legacy-qq"),
+            unionid_hash=None,
+            status="active",
+            metadata_json={},
+        )
+        session.commit()
+    return account_id, principal_id
+
+
+@pytest.mark.parametrize("channel", ["email", "qq"])
+@pytest.mark.parametrize("history", [None, "active", "suspended", "canceled", "paid"])
+def test_verified_login_grants_legacy_free_once_without_overwriting_history(
+    tmp_path: Path,
+    channel: str,
+    history: str | None,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    account_id, _ = _seed_unsubscribed_trial_account(database_url)
+    service = CommercialService(database_url)
+    now = datetime.now(UTC)
+    if history is not None:
+        with get_session(database_url) as session:
+            repository = CommercialRepository(session)
+            plan_id = "plus" if history == "paid" else "free"
+            repository.upsert_plan(
+                plan_id=plan_id,
+                name=plan_id,
+                status="active",
+                description="Existing package",
+                metadata_json={},
+            )
+            repository.upsert_plan_version(
+                plan_version_id=f"{plan_id}_v1",
+                plan_id=plan_id,
+                version_label="v1",
+                status="published",
+                currency="CNY",
+                entitlements_json={},
+                budgets_json={"max_ai_credits_per_period": 777},
+                concurrency_json={},
+                policy_json={},
+                metadata_json={},
+            )
+            session.add(
+                AccountSubscription(
+                    subscription_id="sub_trial_original",
+                    account_id=account_id,
+                    plan_id=plan_id,
+                    plan_version_id=f"{plan_id}_v1",
+                    status="active" if history == "paid" else history,
+                    current_period_start_at=now - timedelta(days=2),
+                    current_period_end_at=now + timedelta(days=28),
+                )
+            )
+            session.commit()
+
+    def login() -> None:
+        if channel == "qq":
+            result = service.resolve_portal_identity_provider_login(
+                provider="qq",
+                external_subject="trial-legacy-qq",
+            )
+            assert result["status"] == "authenticated"
+        else:
+            issued = service.issue_portal_login_code(
+                email="legacy-trial@example.com",
+                ttl_seconds=300,
+            )
+            service.verify_portal_login_code(
+                email="legacy-trial@example.com",
+                code=str(issued["code"]),
+                max_attempts=5,
+            )
+
+    login()
+    with get_session(database_url) as session:
+        subscription = session.scalar(select(AccountSubscription))
+        assert subscription is not None
+        original = (
+            subscription.subscription_id,
+            subscription.plan_id,
+            subscription.status,
+            subscription.current_period_start_at,
+            subscription.current_period_end_at,
+        )
+        if history is None:
+            assert subscription.plan_id == "free"
+            assert subscription.status == "active"
+            assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
+        else:
+            assert subscription.subscription_id == "sub_trial_original"
+            assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+            assert session.get(PlanVersion, f"{subscription.plan_id}_v1").budgets_json == {
+                "max_ai_credits_per_period": 777,
+            }
+    login()
+    with get_session(database_url) as session:
+        subscriptions = list(session.scalars(select(AccountSubscription)))
+        assert len(subscriptions) == 1
+        subscription = subscriptions[0]
+        assert (
+            subscription.subscription_id,
+            subscription.plan_id,
+            subscription.status,
+            subscription.current_period_start_at,
+            subscription.current_period_end_at,
+        ) == original
+        assert list(session.scalars(select(Site))) == []
+        assert list(session.scalars(select(SiteApiKey))) == []
+        assert list(session.scalars(select(CreditLedgerEntry))) == []
+        assert list(session.scalars(select(PaymentOrder))) == []
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("channel", ["email", "qq"])
+@pytest.mark.parametrize("blocked", ["principal", "account", "membership"])
+def test_verified_login_cannot_grant_free_to_blocked_legacy_account(
+    tmp_path: Path,
+    channel: str,
+    blocked: str,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    account_id, principal_id = _seed_unsubscribed_trial_account(database_url)
+    service = CommercialService(database_url)
+    issued = service.issue_portal_login_code(email="legacy-trial@example.com", ttl_seconds=300)
+    with get_session(database_url) as session:
+        row = (
+            session.get(Principal, principal_id)
+            if blocked == "principal"
+            else session.get(Account, account_id)
+            if blocked == "account"
+            else session.get(AccountUserMembership, "aum_trial_legacy")
+        )
+        assert row is not None
+        row.status = "revoked" if blocked == "membership" else "disabled"
+        session.commit()
+    with pytest.raises(CommercialPermissionError):
+        if channel == "qq":
+            service.resolve_portal_identity_provider_login(
+                provider="qq",
+                external_subject="trial-legacy-qq",
+            )
+        else:
+            service.verify_portal_login_code(
+                email="legacy-trial@example.com",
+                code=str(issued["code"]),
+                max_attempts=5,
+            )
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(AccountSubscription))) == []
+        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("channel", ["email", "qq"])
+def test_registration_rolls_back_identity_when_free_binding_fails(
+    tmp_path: Path,
+    monkeypatch: Any,
+    channel: str,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    service = CommercialService(database_url)
+
+    def fail_binding(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("synthetic entitlement failure")
+
+    monkeypatch.setattr(CommercialService, "_bind_subscription_in_session", fail_binding)
+    with pytest.raises(RuntimeError, match="synthetic entitlement failure"):
+        if channel == "qq":
+            service.register_portal_identity_provider_login(
+                provider="qq",
+                external_subject="atomic-qq",
+            )
+        else:
+            issued = service.issue_portal_registration_code(
+                email="atomic@example.com", ttl_seconds=300
+            )
+            service.verify_portal_registration_code(
+                email="atomic@example.com",
+                code=str(issued["code"]),
+                max_attempts=5,
+            )
+    with get_session(database_url) as session:
+        for model in (
+            Principal,
+            Account,
+            AccountUserMembership,
+            IdentityProviderBinding,
+            AccountSubscription,
+            AccountEntitlementSnapshot,
+            Site,
+            SiteApiKey,
+        ):
+            assert list(session.scalars(select(model))) == []
+    dispose_engine(database_url)
+
+
+def test_legacy_addon_exchange_still_activates_free_without_registration_grant(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    account_id, principal_id = _seed_unsubscribed_trial_account(database_url)
+    client.headers.update(build_portal_headers(principal_id=principal_id, site_id=""))
+    _, exchange = _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://legacy-addon.example.com",
+        site_name="Legacy addon",
+        state="legacy-addon-state",
+        idempotency_key="legacy-addon-connect",
+    )
+    assert exchange["free_entitlement_activated"] is True
+    with get_session(database_url) as session:
+        assert len(list(session.scalars(select(AccountSubscription)))) == 1
+        assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
+    dispose_engine(database_url)
+
+
+def test_concurrent_verified_logins_grant_one_free_on_disposable_postgres() -> None:
+    raw_url = os.environ.get("NPCINK_CLOUD_DATABASE_URL", "")
+    # This runtime test is confined to the disposable M4 Docker database;
+    # ordinary SQLite/source checks must not connect to an operator database.
+    if (
+        not raw_url
+        or make_url(raw_url).get_backend_name() != "postgresql"
+        or make_url(raw_url).host != "postgres"
+        or os.environ.get("NPCINK_CLOUD_ENVIRONMENT") not in {"test", "development", "preview"}
+    ):
+        pytest.skip("disposable M4 PostgreSQL is not configured")
+    schema = f"trial_free_{uuid4().hex}"
+    isolated_url = (
+        make_url(raw_url)
+        .update_query_dict({"options": f"-csearch_path={schema}"})
+        .render_as_string(hide_password=False)
+    )
+    with get_session(raw_url) as session:
+        session.execute(text(f'CREATE SCHEMA "{schema}"'))
+        session.commit()
+    try:
+        init_schema(isolated_url)
+        _seed_unsubscribed_trial_account(isolated_url)
+        service = CommercialService(isolated_url)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(
+                pool.map(
+                    lambda _: service.resolve_portal_identity_provider_login(
+                        provider="qq",
+                        external_subject="trial-legacy-qq",
+                    ),
+                    range(4),
+                )
+            )
+        assert all(result["status"] == "authenticated" for result in results)
+        with get_session(isolated_url) as session:
+            assert len(list(session.scalars(select(AccountSubscription)))) == 1
+            assert len(list(session.scalars(select(AccountEntitlementSnapshot)))) == 1
+            grants = list(
+                session.scalars(
+                    select(ServiceAuditEvent).where(
+                        ServiceAuditEvent.event_kind == "subscription.bind",
+                    )
+                )
+            )
+            assert len(grants) == 1
+            assert list(session.scalars(select(Site))) == []
+            assert list(session.scalars(select(SiteApiKey))) == []
+    finally:
+        dispose_engine(isolated_url)
+        with get_session(raw_url) as session:
+            session.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            session.commit()
+        dispose_engine(raw_url)
 
 
 def test_portal_user_can_start_pro_trial_and_create_monthly_order(
@@ -5408,7 +5761,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     )
     selected_site_id = str(addon_exchange["site_id"])
     assert selected_site_id
-    assert addon_exchange["free_entitlement_activated"] is True
+    assert addon_exchange["free_entitlement_activated"] is False
 
     offers_response = client.get(
         "/portal/v1/account/plan-offers",
@@ -5639,6 +5992,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         assert payment_order.currency == "CNY"
 
     dispose_engine(database_url)
+
 
 
 def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> None:
@@ -6392,11 +6746,11 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
                 "capacity_scope": "scope_1",
                 "capacity": {
                     "active_count": 1,
-                    "active_limit": 5,
-                    "active_remaining": 4,
+                    "active_limit": 1,
+                    "active_remaining": 0,
                     "bound_count": 1,
-                    "bound_limit": 15,
-                    "bound_remaining": 14,
+                    "bound_limit": 3,
+                    "bound_remaining": 2,
                 },
                 "allowed_actions": [
                     "manage_billing",
@@ -6422,7 +6776,7 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     selected_context = select_response.json()["data"]["selected_context"]
     assert selected_context["site"]["site_id"] == "site_portal_session"
     assert "view_billing" in selected_context["allowed_actions"]
-    assert selected_context["current_subscription"] is None
+    assert selected_context["current_subscription"]["plan_id"] == "free"
 
     logout_response = client.post("/portal/v1/logout")
     assert logout_response.status_code == 200
@@ -6432,6 +6786,7 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     assert expired_session_response.json()["error_code"] == "auth.portal_session_required"
 
     dispose_engine(database_url)
+
 
 
 def test_portal_account_routes_use_selected_site_account_for_multi_account_session(

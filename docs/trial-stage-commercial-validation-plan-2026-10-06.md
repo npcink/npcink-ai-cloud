@@ -4,6 +4,8 @@ Status: operator-confirmed plan; development candidate preparation. 尚未启动
 T+0、招募名单、运行预算配置及真实链路验收待操作者提供。本文不构成 PR、
 合并、生产发布或真实付费调用授权。
 
+2026-10-06 实施指引：[开发候选与验证记录](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md)。文档及代码已本地保存，后端门禁通过；前端完整门禁与 M4 候选验证受阻，试用仍未启动。
+
 ## 1. 目标与确认口径
 
 用四周、3–5 位实际写文章的站长验证使用价值、留存和成本，为是否进入邀请

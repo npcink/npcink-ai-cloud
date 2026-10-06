@@ -242,7 +242,7 @@ function RegisterFormContent() {
                     { plan: requestedPlanLabel },
                     `Continue with ${requestedPlanLabel} after signup`
                   )
-                : t('portal.register.free_title', undefined, 'Start with one WordPress site')}
+                : t('portal.register.free_title', undefined, 'Start with Free')}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               {requestedPlan
@@ -254,7 +254,7 @@ function RegisterFormContent() {
                 : t(
                     'portal.register.desc',
                     undefined,
-                    'Use QQ or email verification to create your account, then connect the WordPress addon to activate Free service.'
+                    'Use QQ or email verification to receive account-owned Free service, then connect the WordPress addon to use it.'
                   )}
             </p>
           </PortalCard>

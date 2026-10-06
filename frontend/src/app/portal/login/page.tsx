@@ -247,7 +247,7 @@ function LoginFormContent() {
         <>
           <PortalCard className="bg-white/70 dark:bg-slate-950/35">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-300">
-              {t('portal.register.free_label', undefined, 'Free after connection')}
+              {t('portal.register.free_label', undefined, 'Free after verification')}
             </p>
             <h2 className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
               {t('portal.login.new_title', undefined, 'No account yet?')}
@@ -256,7 +256,7 @@ function LoginFormContent() {
               {t(
                 'portal.login.new_desc',
                 undefined,
-                'Create your account, then connect from the WordPress addon to activate Free service.'
+                'Verify your account to receive Free service, then connect a site from the WordPress addon to use it.'
               )}
             </p>
             <Link href="/portal/register" className="btn btn-secondary mt-4 w-full justify-center">
@@ -267,7 +267,7 @@ function LoginFormContent() {
             {t(
               'auth.no_password',
               undefined,
-              'Portal sign-in is passwordless. Account creation does not provision a site or issue service credit.'
+              'Portal sign-in is passwordless. Verified registration includes Free service; site connection still requires the WordPress addon.'
             )}
           </p>
         </>

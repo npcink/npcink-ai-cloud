@@ -4,6 +4,8 @@ Status: read-only inventory and operator-confirmed implementation recommendation
 本文盘点的是代码，不代表目标环境配置、M4 接收、生产发布或真人使用已验证。
 试用口径见[四周计划](trial-stage-commercial-validation-plan-2026-10-06.md)。
 
+本轮实施与未完成的门禁见[开发候选记录](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md)；Free 激活时机由 [ADR-058](decisions/058-registration-verified-account-free-entitlement.md)增补，不能据候选声明已经上线。
+
 ## 1. 免费试用的现成开户路径
 
 用户访问 /portal/register，通过邮箱验证码验证完成注册；/portal/login 也有
@@ -126,6 +128,8 @@ Admin/Portal 适合快速查看，周报完整性必须核验分页、窗口和�
 
 - 参考图输入：Addon 当前在 request 前拒绝 file 输入；更换模型不能单独
   解决。若恢复该能力，另立 Addon/Cloud 输入协议、支持声明和确定性测试任务。
+  跨仓库只读依据：npcink-cloud-addon/includes/class-cloud-wordpress-ai-image-model.php
+  的 prompt_text() 返回 reference_image_not_supported。
 - H1 覆盖不足：先用真实使用查明展示与采纳链路缺口，再决定最小修复；
   不先建通用埋点平台，不修改本轮判据。
 - 周取数便利性：只读查询足够时不做后台；若实际取数成为持续阻碍，
