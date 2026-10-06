@@ -1,8 +1,9 @@
 # 本地 WordPress 功能验收记录（2026-10-06）
 
-Status: local deterministic editor workflows verified; full real-provider acceptance pending.
-操作者确认维护恢复后继续：主流程、取消重载、并发标签页、权限拒绝及本地
-质量事件关联通过。真实第三方执行/扣额/云端反馈和完整六条 Done 尚未收齐。
+Status: local deterministic workflows and one real Ollama title/save/credit chain verified; third-party and Cloud feedback acceptance pending.
+操作者正常使用文章 6261 的标题建议，确认有帮助并采纳；本地保存匹配和实际
+扣额已关联到同一 Cloud run。此前主流程、取消重载、并发标签页、权限拒绝及
+本地质量事件关联通过。第三方执行、自然反馈上报和完整六条 Done 尚未收齐。
 本文只验收开发环境，不授权生产发布或启动试用。下文保留首轮阻塞历史。
 
 ## 1. 范围、版本与预算
@@ -204,3 +205,65 @@ PR #1073。主工作树旧检出不代表 M4 当前已接收版本。
 恢复轮证据保存在 `.runtime/local-acceptance/browser-resumed-*` 的 JSON、日志、
 截图及 readonly readiness/capability/19-Ability 清单。前台隧道在本轮结束
 时关闭；M4 无 sync/deploy/promote，继续维持已接收版本。
+
+## 8. 操作者真实标题使用核验（2026-10-06）
+
+操作者报告文章 6261、标题生成、约 20 秒，“有帮助，采纳了”。这里的
+20 秒是主观耗时估计，不是操作时刻。核验沿用前台 Pgy 隧道和既有签名额度
+读取，Cloud 仅执行限站点、固定起点的只读事务；未生成、保存或修改原文章，
+未调整 Provider、额度、Cron 或支付配置。新增代理 Provider dispatch 为 0。
+
+### 8.1 同一运行的执行、保存与扣额
+
+关联 run：`run_3cb8764a3ae74647acce7246a40403e9`。
+
+| 证据 | 本次事实 |
+| --- | --- |
+| Cloud 执行 | connector-runtime succeeded，error_code=null；北京时间 19:11:03.251 至 19:11:31.571，约 28.32 秒 |
+| 实际生成模型 | M4 本地 `ollama-m4/qwen3.5:9b`；输入 1573、输出 28 token，模型调用 23954ms，retry_count=0 |
+| 附属调用 | 同一 run 的 `qwen3-embedding:0.6b` 输入 284 token、输出 0，3920ms；这是 embedding 调用，不是第二次标题生成 |
+| 展示证据 | 本地 generation.presented，task_key=title_generation；19:11:31，关联同一 run 和 generation_id |
+| 保存证据 | 本地 outcome.observed=saved_exact_output、evidence_type=exact_hash_match；19:12:45；文章 modified_gmt 与该时间一致，pending 已清空 |
+| 用户判断 | 操作者明确“有帮助，采纳了”，作为独立人工记录保留 |
+| 实际扣额 | used 524→528、remaining 9776→9772；该 run 账本为运行 1 + embedding token 1 + 生成 token 2，共 4 credits |
+
+账本三条消费对应不同收费单位，不把它们当成重复扣额；本次样本不能替代
+并发/重试扣额幂等的完整验收。观察窗口内另有 site-knowledge-status 成功
+run，未见对应 Provider 调用或消费条目，不计为标题生成。
+
+这是原有测试账号，当前额度总量 10300；不以该历史账号证明新注册 Free
+默认 300 credits。该默认值继续沿用 PR #1073 的专项证据。本次两项模型
+记录成本均为 0，实际使用的是本地 Ollama，因此不证明第三方平台执行、
+账单成本或试用 H3；不把 Cloud 记录成本当第三方账单。
+
+### 8.2 自然上报及 H1 的证据边界
+
+截至北京时间 19:13:56，本地有 2 条 editor-assist 事件，以及 4 条 journey
+事件（标题 started/succeeded/accepted、save succeeded）。其中展示与保存
+事件关联同一 generation_id，成功/保存事件关联同一 run；Cloud 当前窗口
+尚未收到对应 editor/journey 事件，原生 agent_feedback 也无对应记录。
+
+monitoring=true，DISABLE_WP_CRON=false，hourly 任务已注册；下一次计划时刻
+为 19:52:21。上次成功上传在 19:10:29，早于本次生成，不能用于证明本次
+事件已上传。计划时刻不等于实际执行时刻，仍须正常站点访问触发。
+本轮没有手动 Cron/flush，不用主动上报替代自然上报验收。
+
+本地 exact_hash_match 与人工确认支持“这次标题被保存且用户认可”的结论，
+但不把 journey accepted 或保存观察冒充原生 agent_feedback；不据此宣布
+试用 H1=100% 或达标。后续自然上报完成后，应按 run_id 和预期云端 event_id
+核对接收及去重，另行判定当前原生采纳统计是否有缺口。
+
+### 8.3 本轮收口与剩余工作
+
+**真实本地标题生成 → 展示 → 人工保存 → Cloud 扣额已验证一例。**
+第三方模型/账单、自然上报、原生采纳证据、其他能力和完整六条 Done 仍待
+收齐。本次不启动四周试用、不修改 H1/H2/H3，不为凑次数制造生成请求。
+
+原始只读证据保存于 `.runtime/local-acceptance/real-use-{before,after}.json`、
+`real-use-cloud-evidence.json`、`real-use-wordpress.json` 和
+`real-use-journey-inspector.json`。不记录文章内容或凭据。
+前台隧道暂保留供操作者正常本地使用与后续自然上报；无新 sync/deploy/promote。
+本轮只补录本报告，完成 docs-only 检查后本地提交；无新 PR 或生产发布。
+本轮 diff 检查、release-policy、报告相对链接和 documentation reachability
+495/495 通过；check:changed 维持 documentation-only / development /
+runtime none。未重跑 Cloud 大套件或模型测试。
