@@ -184,8 +184,8 @@ export default function HomePage() {
               </h2>
               <p className="mt-4 max-w-3xl leading-7 text-slate-600 [text-wrap:pretty] dark:text-slate-300">
                 {zh
-                  ? '支持 QQ 快捷登录和邮箱验证码；创建账号后，从 WordPress Addon 连接即可激活 Free 服务。'
-                  : 'Registration supports QQ quick sign-in and email codes. Connect from the WordPress addon afterward to activate Free service.'}
+                  ? '支持 QQ 快捷登录和邮箱验证码；验证成功即可获得 Free 服务，再从 WordPress Addon 连接站点开始使用。'
+                  : 'Registration supports QQ quick sign-in and email codes. Free service starts after verification; connect a site from the WordPress addon to use it.'}
               </p>
             </div>
             <div className="flex flex-col items-start gap-4 xl:items-end">

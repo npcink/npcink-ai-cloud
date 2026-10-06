@@ -174,6 +174,8 @@ export default function PortalPage() {
   const currentSubscription = accountEntitlements?.current_subscription
     || session.selected_context?.current_subscription
     || null;
+  const isFreePackage = currentSubscription?.plan_kind === 'default_free'
+    || currentSubscription?.plan_id === 'free';
   const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
   const contextLabel = selectedSite
     ? getPortalSiteDisplayName(selectedSite)
@@ -207,7 +209,7 @@ export default function PortalPage() {
           detail: t(
             'portal.home.no_sites_empty_desc',
             {},
-            'Open npcink-cloud-addon in WordPress and start the connection there. After binding, this page will show your package, usage, and site status.'
+            'Open npcink-cloud-addon in WordPress and start the connection there. Account package and credits are shown separately; binding adds site status and service access.'
           ),
         },
       ];
@@ -234,7 +236,7 @@ export default function PortalPage() {
         ? t(
             'portal.home.onboarding_first_site_desc',
             {},
-            '1. Open npcink-cloud-addon in WordPress. 2. Start the connection from the addon. 3. Return here to confirm the connected site and activate Free service.'
+            '1. Open npcink-cloud-addon in WordPress. 2. Start the connection from the addon. 3. Return here to confirm the connected site. Account entitlement is shown separately.'
           )
         : !selectedSite && hasVisibleSites
         ? t(
@@ -366,13 +368,19 @@ export default function PortalPage() {
       ? [{
           tone: 'warn' as const,
           label: t('portal.home.credit_attention_title', {}, 'AI credits need attention'),
-          detail: t(
+          detail: isFreePackage ? t(
+            'portal.home.free_credit_attention_desc',
+            {},
+            'The Free credits for this period have been used. Review usage and the next period date.'
+          ) : t(
             'portal.home.credit_attention_desc',
             {},
             'The current package has no AI credits available. Buy AI credits or change the package before continuing.'
           ),
-          href: '/portal/billing#package-options',
-          action: t('portal.home.billing_action', {}, 'Review package'),
+          href: isFreePackage ? '/portal/usage' : '/portal/billing#package-options',
+          action: isFreePackage
+            ? t('portal.home.usage_action', {}, 'View usage')
+            : t('portal.home.billing_action', {}, 'Review package'),
         }]
       : []),
     ...(overLimitResource

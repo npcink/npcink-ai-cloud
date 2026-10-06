@@ -2443,7 +2443,7 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "dist/worker.tar.gz" not in bundle
     assert "deploy-bundle.tgz.sha256" in bundle
     assert 'name="npcink-portal-activation-contract"' in remote_smoke
-    assert 'content="addon-verified-free-activation-v1"' in remote_smoke
+    assert 'content="registration-verified-free-activation-v2"' in remote_smoke
     assert 'INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-1}"' in bundle
     assert "must include every locked external image" in bundle
     assert "must include the frontend image" in bundle
