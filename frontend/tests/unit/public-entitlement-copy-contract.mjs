@@ -6,6 +6,8 @@ const read = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const pricing = read('src/components/public/PublicPricingSection.tsx');
 const help = read('src/app/help/page.tsx');
 const terms = read('src/app/terms/page.tsx');
+const registration = read('src/app/portal/register/page.tsx');
+const translations = read('src/lib/i18n.ts');
 const publicPolicyCopy = `${pricing}\n${help}\n${terms}`;
 
 assert.match(
@@ -56,5 +58,22 @@ assert.doesNotMatch(
   /(?:联系|请求|要求).{0,12}(?:管理员|客服).{0,12}(?:提前解除|跳过冷却)|(?:operator|support).{0,24}(?:bypass|manual unlock)/i,
   'public policy copy must not advertise an operator bypass as a normal customer path'
 );
+
+assert.match(
+  translations,
+  /'portal\.register\.request_desc': '填写邮箱获取验证码；验证成功后获得 Free，注册不创建站点。'/,
+  'registration must separate the email-code request from verified Free activation in zh-CN'
+);
+for (const copy of [translations, registration]) {
+  assert.ok(
+    copy.includes('Enter your email to get a verification code. Verified registration activates Free without creating a site.'),
+    'English registration and its fallback must distinguish requesting a code from verified activation'
+  );
+  assert.doesNotMatch(
+    copy,
+    /create an account\. No site or service credit is created at this step/,
+    'registration must not describe the unverified code-request step as completed account creation'
+  );
+}
 
 console.log('public_entitlement_copy_contract: ok');

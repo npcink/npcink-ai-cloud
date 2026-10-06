@@ -226,7 +226,7 @@ function RegisterFormContent() {
         form.step === 'request' ? 'portal.register.request_desc' : 'portal.register.verify_desc',
         undefined,
         form.step === 'request'
-          ? 'Enter your email address to create an account. No site or service credit is created at this step.'
+          ? 'Enter your email to get a verification code. Verified registration activates Free without creating a site.'
           : 'Enter the code from your email to finish registration.'
       )}
       aside={(
