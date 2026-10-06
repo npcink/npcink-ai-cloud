@@ -105,12 +105,18 @@ Status: active engineering backlog. 记录已判断为"低收益/收益递减、
 - 镜像 CPython 3.14.7→3.14.8：CVE-2026-19445 影响 3.14.0–<3.14.8，镜像仍
   固定 3.14.7；需镜像重建的独立发布包络。触发=下次生产发布前或上游再出
   安全版时一并处理。
-- braces 告警处置（high，上游无修复版本，全部已发布版本在受影响区间）：
-  运营者风险决策——`@dependabot ignore` 附理由，或等上游补丁。触发=操作者。
 - eslint-config-next 与 next 16.3.6 配对升级（16.2.9 → 16.3.x）：advisory
   评审在 #1058 上的建议。触发=下次前端依赖任务顺带。
 
 ## 2. 已完成（2026-09-21/22，防重复规划）
+
+2026-10-05 会话补充完成项：
+
+- braces 告警（alert #98）已关闭：依赖链为 tailwindcss（devDependency）
+  → fast-glob/micromatch/chokidar → braces，生产前端镜像仅含 Next standalone
+  输出、不含构建期工具链，ReDoS 路径运行时不可达；以 `not_used` + 证据
+  dismissed。复审条件：tailwindcss 移入运行时依赖或镜像打包方式变化。
+- source-map-js 告警（alert #99）已修复：override 钉 1.2.2（#1069）。
 
 - async 阻塞集群全关：路由层 #982、认证热路径与幂等管道 #983（PBKDF2 随
   #982 路由包装覆盖）。
