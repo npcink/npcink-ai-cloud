@@ -276,6 +276,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Operations and Release
 
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
+- [Production Host DNS and Certificate Recovery — 2026-10-07](history/production/2026/production-host-dns-and-certificate-recovery-2026-10-07.md) — dated host recovery evidence; original application version remains deployed, not Free trial release approval
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Production Release Optimization and Formal Smoke Handoff](production-release-optimization-and-formal-smoke-handoff-v1.md)
 - [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](history/production/2026/production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
