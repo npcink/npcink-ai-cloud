@@ -11,7 +11,7 @@ from app.core.models import SiteApiKey
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
-from app.domain.usage.value_helpers import _calculate_percentile
+from app.domain.usage.value_helpers import _calculate_percentile, _safe_rate
 
 
 class SiteMonitoringOverviewService:
@@ -61,12 +61,12 @@ class SiteMonitoringOverviewService:
                 end_at=current_time,
             )
         runs_total = int(cast(int, metrics.get("runs_total") or 0))
-        success_total = float(cast(float, metrics.get("success_total") or 0))
+        success_total = int(cast(int, metrics.get("success_total") or 0))
         usage_summary: dict[str, object] = {
             "windows": {
                 "rolling_24h": {
                     "runs_total": runs_total,
-                    "success_rate": success_total / runs_total if runs_total else 0.0,
+                    "success_rate": _safe_rate(success_total, runs_total),
                     "latency_ms_p95": _calculate_percentile(latencies, 95),
                     "last_seen_at": self._format_datetime(metrics.get("last_seen_at")),
                 }

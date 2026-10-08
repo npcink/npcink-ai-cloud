@@ -278,6 +278,8 @@ def test_runtime_activity_preserves_24_hours_when_other_evidence_window_is_short
     with get_session(database_url) as session:
         session.add_all([
             _run_record("run-within-24h", site_id, now=now - timedelta(hours=2), status="failed"),
+            _run_record("run-success-24h", site_id, now=now - timedelta(hours=3)),
+            _run_record("run-failed-24h", site_id, now=now - timedelta(hours=4), status="failed"),
             _run_record("run-outside-24h", site_id, now=now - timedelta(hours=26)),
         ])
         session.commit()
@@ -285,5 +287,5 @@ def test_runtime_activity_preserves_24_hours_when_other_evidence_window_is_short
         site_id=site_id, commercial_policy=_policy(database_url, site_id), window_hours=1, now=now,
     )
     assert summary["window"]["hours"] == 1
-    assert summary["activity"]["runtime_runs_total"] == 1
-    assert summary["activity"]["runtime_success_rate"] == 0.0
+    assert summary["activity"]["runtime_runs_total"] == 3
+    assert summary["activity"]["runtime_success_rate"] == 0.3333

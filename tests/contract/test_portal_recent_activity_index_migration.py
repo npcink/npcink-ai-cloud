@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -60,6 +61,24 @@ def assert_activity_index_round_trip(engine: Engine) -> None:
             "ix_service_audit_events_account_recent",
         }
         connection.commit()
+        if connection.dialect.name == "postgresql":
+            # Simulate the first index succeeding before the second build completes.
+            subjects.op.drop_index("ix_service_audit_events_account_recent")
+            connection.commit()
+            subjects.upgrade()
+            subjects.upgrade()
+            # A colliding name with a wrong definition must never be silently accepted.
+            subjects.op.drop_index("ix_service_audit_events_site_recent")
+            subjects.op.create_index(
+                "ix_service_audit_events_site_recent", "service_audit_events", ["id"],
+            )
+            connection.commit()
+            with pytest.raises(RuntimeError, match="unexpected definition"):
+                subjects.upgrade()
+            subjects.op.drop_index("ix_service_audit_events_site_recent")
+            connection.commit()
+            subjects.upgrade()
+            connection.commit()
         subjects.downgrade()
         cleanup.downgrade()
         migration.downgrade()
