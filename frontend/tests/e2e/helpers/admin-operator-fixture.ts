@@ -76,6 +76,10 @@ export async function installAdminMocks(
   };
   let primaryAccountCoverageFollowUp = true;
   let primaryIdentityDisabled = false;
+  const secondaryIdentities = new Map([
+    ['acct_free_primary', 'free-owner@example.com'],
+    ['acct_uncovered', 'uncovered-owner@example.com'],
+  ]);
   let accountItems = [
     {
       account: {
@@ -1280,7 +1284,10 @@ export async function installAdminMocks(
       });
       await fulfillJson(route, {
         total: filteredItems.length,
-        items: filteredItems,
+        items: filteredItems.map(item => ({
+          ...item,
+          identity_relationship_state: secondaryIdentities.has(item.account.account_id) ? 'healthy' : 'missing',
+        })),
       });
       return;
     }
@@ -2097,9 +2104,13 @@ export async function installAdminMocks(
       return;
     }
     if (pathname === '/api/admin/portal-users/prn_mvp_owner/audit' && route.request().method() === 'GET') {
+      const items = [
+        ...(primaryIdentityDisabled ? [{ event_id: 2, event_kind: 'portal_user.disable', outcome: 'success', created_at: '2026-04-08T01:00:00Z' }] : []),
+        { event_id: 1, event_kind: 'portal_user.register', outcome: 'success', created_at: '2026-04-08T00:00:00Z' },
+      ];
       await fulfillJson(route, {
-        summary: { events: 1, registration_events: 1, disable_events: 0, failed: 0 },
-        items: [{ event_id: 1, event_kind: 'portal_user.register', outcome: 'success', created_at: '2026-04-08T00:00:00Z' }],
+        summary: { events: items.length, registration_events: 1, disable_events: primaryIdentityDisabled ? 1 : 0, failed: 0 },
+        items,
       });
       return;
     }
@@ -2112,7 +2123,20 @@ export async function installAdminMocks(
     if (route.request().method() === 'GET' && /^\/api\/admin\/accounts\/[^/]+$/.test(pathname)) {
       const knownAccount = accountItems.find(item => item.account.account_id === pathname.split('/').at(-1));
       if (knownAccount) {
-        await fulfillJson(route, { account: knownAccount.account, primary_identity: null, identity_relationship_state: 'missing', memberships: [], sites: [], subscriptions: [], trial_readiness: { status: 'action_required', next_action: 'apply_package_coverage', blocking_codes: ['package_coverage'] } });
+        const accountId = knownAccount.account.account_id;
+        const email = secondaryIdentities.get(accountId);
+        const identity = email ? {
+          principal_id: `prn_${accountId}`, email, status: 'active', session_version: 1,
+          membership_id: `aum_${accountId}`, membership_role: 'owner', membership_status: 'active',
+          qq_bound: false, qq_binding_count: 0,
+        } : null;
+        await fulfillJson(route, {
+          account: knownAccount.account, primary_identity: identity,
+          identity_relationship_state: identity ? 'healthy' : 'missing',
+          memberships: identity ? [{ member_ref: `user:${email}`, identity_type: 'user', role: 'user', status: 'active' }] : [],
+          sites: [], subscriptions: [],
+          trial_readiness: { status: 'action_required', next_action: 'apply_package_coverage', blocking_codes: ['package_coverage'] },
+        });
         return;
       }
     }

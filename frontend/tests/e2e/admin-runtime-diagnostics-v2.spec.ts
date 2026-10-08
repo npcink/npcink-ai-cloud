@@ -698,3 +698,25 @@ test('diagnostic help remains inside a short viewport and flips above its trigge
   await trigger.press('Escape');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
+
+for (const width of [1280, 480]) {
+  test(`diagnostic help measures its width with enlarged root text at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 600 });
+    await installAdminMocks(page);
+    await page.goto('/admin/troubleshooting');
+    const trigger = page.locator('[data-ui="runtime-issue-evidence"] thead button');
+    await trigger.evaluate(element => {
+      document.documentElement.style.fontSize = '24px';
+      // Place the real shared help trigger against the edge to exercise clamping.
+      Object.assign(element.style, { position: 'fixed', right: '8px', top: '200px', zIndex: '60' });
+    });
+    await trigger.focus();
+    await expect(page.getByRole('tooltip')).toBeVisible();
+    const tip = (await page.getByRole('tooltip').boundingBox())!;
+    expect(tip.width).toBeGreaterThan(320);
+    expect(tip.x).toBeGreaterThanOrEqual(8);
+    expect(tip.x + tip.width).toBeLessThanOrEqual(width - 8);
+    await trigger.press('Escape');
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  });
+}

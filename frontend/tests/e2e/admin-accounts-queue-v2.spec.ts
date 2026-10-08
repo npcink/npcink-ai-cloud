@@ -307,4 +307,26 @@ test('customer identity audit and access disable live in the specified customer 
   await disableDialog.getByLabel(/Reason|原因/i).fill('Customer requested access hold');
   await disableDialog.getByRole('button', { name: /Confirm disable|确认禁用/i }).click();
   await expect(page.getByText(/access was disabled|访问已禁用/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Disable login access|禁用登录访问/i })).toHaveCount(0);
+  await page.getByRole('button', { name: /Identity audit|身份审计/i }).click();
+  await expect(auditDialog.getByText('portal_user.disable', { exact: true })).toBeVisible();
+  await expect(auditDialog.locator('dl > div').filter({ hasText: /^Disables|^禁用/i }).locator('dd')).toHaveText('1');
+
+  // Disabling the primary customer must not leak into a different fixture identity.
+  const secondary = await page.evaluate(async () => {
+    const response = await fetch('/api/admin/accounts/acct_free_primary');
+    return (await response.json()).data;
+  });
+  expect(secondary.account.account_id).toBe('acct_free_primary');
+  expect(secondary.primary_identity).toMatchObject({
+    principal_id: 'prn_acct_free_primary', email: 'free-owner@example.com', status: 'active', session_version: 1,
+  });
+  expect(secondary.identity_relationship_state).toBe('healthy');
+  expect(secondary.memberships[0].member_ref).toBe('user:free-owner@example.com');
+  const directory = await page.evaluate(async () => {
+    const response = await fetch('/api/admin/accounts');
+    return (await response.json()).data;
+  });
+  expect(directory.items.find((item: { account: { account_id: string } }) => item.account.account_id === 'acct_free_primary').identity_relationship_state)
+    .toBe(secondary.identity_relationship_state);
 });

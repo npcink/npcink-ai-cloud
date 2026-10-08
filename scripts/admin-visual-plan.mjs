@@ -16,6 +16,8 @@ export function changedAdminVisualSpecs(manifest, paths) {
   const pilots = Object.entries(manifest.visualGovernance.pilotRoutes);
   const shared = paths.some(path => /^frontend\/src\/(components\/(admin|backoffice)\/|features\/admin\/|lib\/i18n\.ts$|app\/(globals\.css|admin\/layout\.tsx)$)/.test(path) || ['frontend/admin-ui-manifest.json', 'scripts/admin-visual-plan.mjs', 'scripts/run-admin-visual-checks.mjs', 'frontend/tests/e2e/helpers/admin-operator-fixture.ts', 'frontend/tests/e2e/helpers/admin-route-fixtures.ts', 'frontend/tests/e2e/helpers/admin-visual-receipt.ts'].includes(path));
   if (shared) return allSpecs;
+  // Routes without a dedicated pilot still need the registered PC regression lane.
+  if (paths.some(path => path.startsWith('frontend/src/app/admin/') && !pilots.some(([route]) => path.startsWith(`frontend/src/app${route}/`)))) return allSpecs;
   const supplemental = manifest.visualGovernance.supplementalSpecs.filter(spec => paths.includes(`frontend/${spec}`));
   return [...new Set([...supplemental, ...pilots.filter(([route, pilot]) => paths.some(path => path.startsWith(`frontend/src/app${route}/`) || path === `frontend/${pilot.browserSpec}`)).map(([, pilot]) => pilot.browserSpec)])];
 }
