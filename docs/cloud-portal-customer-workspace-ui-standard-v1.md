@@ -400,3 +400,51 @@ A Portal UI rollback should revert the focused frontend, translations, tests,
 and this standard update through Git. Do not patch M4 directly, weaken Portal
 authorization, restore removed internal details, or create compatibility API
 fields solely to reproduce an older layout.
+
+## Pre-test customer usability closeout (2026-10-07)
+
+- Credit history keeps ADR-031's selected principal-owned site boundary. The
+  usage selector and browser session must agree before requesting trends or
+  records; an unselected account shows a site-choice prompt, not a failed read.
+- Credit records show service events directly, with one detail step. Time-bucket
+  aggregation is not a default customer task.
+- The usage balance loads account entitlements directly. An unused runtime
+  summary must not block credits, trends or records; explicit site context
+  changes complete before account-scoped reads start.
+- Customer recent activity is bounded to the latest 200 matching records. Its
+  counts and groups describe that bounded set, not lifetime audit totals. The
+  operator audit surface keeps its existing all-history contract.
+- Support lists are account-scoped. A current-site selector appears only when
+  an explicit account-context recovery is required, never as a list filter.
+- Loading, failed reads, successful empty results and unavailable capabilities
+  have distinct presentations. No failed read may show a normal status or zero.
+- Automatic knowledge updates are conditional on enabling content updates in
+  the WordPress plugin. The Portal must not infer that the setting is enabled.
+
+## 15. Ordinary Site Owner Acceptance and Handoff
+
+- Review each route through the customer's immediate job: understand current
+  package/credits/capacity, connect or recover a site, inspect usage, or request
+  support. Default views must keep those facts and actions direct; internal
+  evidence stays behind the owning detail surface.
+- Verify existing account snapshots separately from current package offers.
+  Do not reset historical credits or site allowances merely to make a test
+  account match a newly advertised Free package.
+- Preserve successful mutations when a subsequent refresh fails. Prevent
+  duplicate confirmation while busy and give an explicit recovery path.
+- Bounded activity counts describe the returned window. Optimize the
+  customer-owned query and indexes without silently changing operator audit
+  semantics or mixing runtime and evidence time windows.
+- Distinguish template rendering, real SMTP delivery, configured Provider spend
+  protection, a real Provider run, observed editor saves, and native
+  `agent.feedback`. Evidence for one must not be reported as another.
+- When real-world tests are deferred by the operator, record their target
+  environment, prerequisites, owner, and observable completion criteria.
+  Unimplemented source behavior remains a separate source task. Deferral does
+  not satisfy release gates or authorize deployment or paid calls.
+- Closeout must identify merged PRs, accepted runtime revision when applicable,
+  retained branches/worktrees, and uncommitted work. A successful focused task
+  does not imply that the entire repository is clean.
+
+The dated evidence and remaining work for this acceptance model are recorded in
+[Portal Stationmaster Closeout - 2026-10-08](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md).

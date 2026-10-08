@@ -132,7 +132,7 @@ export function PortalWorkspaceHeader({
       {metrics.length ? (
         <PortalMetricStrip items={metrics} columnsClassName={metricsColumnsClassName} variant="header" />
       ) : null}
-      {onSiteChange && getVisiblePortalSites(sites).length > 1 ? (
+      {onSiteChange && (getVisiblePortalSites(sites).length > 1 || Boolean(selectedSiteId) || siteSelectorMode === 'filter') ? (
         <div className="max-w-md">
           <label htmlFor={`portal-${currentPage}-site-selector`} className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
             {siteSelectorMode === 'filter'
@@ -153,6 +153,9 @@ export function PortalWorkspaceHeader({
               <option value="" disabled>
                 {t('portal.select_site_placeholder', {}, 'Select a site')}
               </option>
+            ) : null}
+            {selectedSiteId && !getVisiblePortalSites(sites).some((site) => site.site_id === selectedSiteId) ? (
+              <option value={selectedSiteId}>{t('portal.site_filter_unavailable', {}, 'Selected site is unavailable')}</option>
             ) : null}
             {getVisiblePortalSites(sites).map((site) => (
               <option key={site.site_id} value={site.site_id}>

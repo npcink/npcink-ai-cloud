@@ -225,7 +225,9 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
                     currency="USD",
                     dedupe_key=f"model-gov-{run_id}-{meter_key}",
                     payload_json={},
-                    created_at=now - timedelta(minutes=120 if meter_load == "outside_window" else 4),
+                    created_at=now - timedelta(
+                        minutes=120 if meter_load == "outside_window" else 4
+                    ),
                 )
             )
         if meter_load == "over_limit":

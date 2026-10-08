@@ -1782,6 +1782,19 @@ async def finish_qq_login_callback(
     return response
 
 
+@router.get("/auth/login-options")
+async def get_portal_login_options(request: Request) -> Any:
+    qq_config = _portal_qq_config(request)
+    configured = all(
+        str(qq_config.get(key) or "").strip()
+        for key in ("client_id", "client_secret", "redirect_uri")
+    )
+    return _portal_route_envelope(
+        message="portal login options loaded",
+        data={"qq_available": configured},
+    )
+
+
 @router.get("/auth/identity-providers")
 async def list_portal_identity_providers(request: Request) -> Any:
     auth = await resolve_portal_request_context(
@@ -5226,9 +5239,10 @@ async def get_portal_account_audit_summary(
     scoped_site_ids = [resolved_site_id] if resolved_site_id else site_ids
     try:
         summary = await run_in_threadpool(
-            _get_commercial_service(request).summarize_service_audit_events,
+            _get_commercial_service(request).get_portal_recent_activity,
             account_id=account_id,
             site_ids=scoped_site_ids,
+            site_id=resolved_site_id,
             limit=200,
         )
     except CommercialServiceError as error:
@@ -5282,9 +5296,10 @@ async def list_portal_account_audit_events(
     scoped_site_ids = [resolved_site_id] if resolved_site_id else site_ids
     try:
         events = await run_in_threadpool(
-            _get_commercial_service(request).list_service_audit_events,
+            _get_commercial_service(request).get_portal_recent_activity,
             account_id=account_id,
             site_ids=scoped_site_ids,
+            site_id=resolved_site_id,
             event_kind=event_kind,
             outcome=outcome,
             limit=limit,

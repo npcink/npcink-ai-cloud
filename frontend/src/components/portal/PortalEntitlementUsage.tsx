@@ -232,10 +232,10 @@ export function PortalEntitlementUsage({
                 <div className="mt-4 flex items-end justify-between gap-3">
                   <div>
                     <p className="text-2xl font-semibold text-slate-950 dark:text-white">
-                      {limitLabel}
+                      {usedLabel} <span className="text-base font-normal text-slate-500">/ {limitLabel}</span>
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {t('portal.usage.included_label', {}, 'Included')}
+                      {t('portal.usage.used_of_limit_label', {}, 'Used / included')}
                     </p>
                   </div>
                   <p className="text-right text-sm text-slate-600 dark:text-slate-300">

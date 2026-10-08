@@ -10,7 +10,6 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
   getPortalSiteUrl,
   getPortalSiteDisplayName,
-  getPortalSiteSecondaryLabel,
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
@@ -182,11 +181,6 @@ export default function PortalPage() {
     : hasVisibleSites
       ? t('portal.home.account_context_label', {}, 'Account overview')
       : t('portal.home.no_site_context_label', {}, 'Account overview · no connected sites');
-  const contextDetail = selectedSite
-    ? getPortalSiteSecondaryLabel(selectedSite)
-    : hasVisibleSites
-      ? t('portal.home.account_context_detail', {}, 'Package, usage, and tickets belong to this account. Site details are listed below.')
-      : t('portal.home.no_site_context_detail', {}, 'Connect a WordPress site to unlock site status and service actions.');
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
     planVersionId: currentSubscription?.plan_version_id,
@@ -272,7 +266,7 @@ export default function PortalPage() {
   const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
-  const remainingCredits = Number(accountEntitlements?.quota_summary?.ai_credits?.remaining ?? 0);
+  const remainingCredits = Number(accountEntitlements?.quota_summary?.ai_credits?.total_remaining ?? accountEntitlements?.quota_summary?.ai_credits?.remaining ?? 0);
   const accountEntitlementsUnavailable = accountEntitlementsState === 'error';
   const accountEntitlementsPending = (
     accountEntitlementsState === 'idle' || accountEntitlementsState === 'loading'
@@ -324,7 +318,7 @@ export default function PortalPage() {
       size: 'compact' as const,
     },
     {
-      label: t('portal.usage.remaining_ai_credits', {}, 'Remaining'),
+      label: t('portal.usage.total_remaining_label', {}, 'Available AI credits'),
       value: accountEntitlementsUnavailable ? (
         <button
           type="button"
@@ -344,7 +338,7 @@ export default function PortalPage() {
             {},
             'Package usage could not be loaded. Retry before relying on the service status.'
           )
-        : t('portal.home.account_points_detail', {}, 'Account package AI credits remaining this period.'),
+        : t('portal.home.account_points_detail', {}, 'Available package and paid AI credits in this account.'),
       size: 'compact' as const,
     },
     {
@@ -442,9 +436,7 @@ export default function PortalPage() {
       <section className="space-y-5" data-portal-home="operation-overview">
         <PortalWorkspaceHeader
           title={t('portal.home.title', {}, 'My service')}
-          description={currentServiceStatusToken === 'active'
-            ? t('portal.home.account_status_ok_desc', {}, 'This account can use the hosted service normally.')
-            : t('portal.home.account_status_issue_desc', {}, 'This account has setup, package, site, or support items that need attention.')}
+          description={t('portal.home.concise_desc')}
           currentPage="home"
           titleAccessory={!primaryOperationFocusItem ? (
             <PortalStatusBadge
@@ -456,7 +448,7 @@ export default function PortalPage() {
           metadata={(
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-portal-home="context-summary">
               <span className="font-semibold text-slate-700 dark:text-slate-200">{contextLabel}</span>
-              <span className="text-slate-500 dark:text-slate-400">{contextDetail}</span>
+
             </div>
           )}
           contextPanel={primaryOperationFocusItem ? (

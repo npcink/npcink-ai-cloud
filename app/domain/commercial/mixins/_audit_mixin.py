@@ -448,6 +448,53 @@ class CommercialServiceAuditMixin:
             session.commit()
             return self._serialize_service_audit_event(event)
 
+    def get_portal_recent_activity(
+        self,
+        *,
+        account_id: str,
+        site_ids: list[str],
+        site_id: str = "",
+        event_kind: str | None = None,
+        outcome: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, object]:
+        """Customer activity is the latest 200 records, not an all-history audit scan."""
+        with get_session(self.database_url) as session:
+            events = CommercialServiceAuditRepository(session).list_portal_activity_events(
+                account_id=account_id,
+                site_ids=site_ids,
+                site_id=site_id,
+                event_kind=event_kind,
+                outcome=outcome,
+            )
+            groups: dict[tuple[str, str], dict[str, object]] = {}
+            totals = {"events": len(events)}
+            for event in reversed(events):
+                key = (event.event_kind, event.outcome)
+                group = groups.setdefault(
+                    key,
+                    {
+                        "event_kind": event.event_kind,
+                        "outcome": event.outcome,
+                        "count": 0,
+                        "first_seen_at": self._serialize_datetime(event.created_at),
+                    },
+                )
+                group["count"] = self._coerce_int(group["count"]) + 1
+                group["last_seen_at"] = self._serialize_datetime(event.created_at)
+                totals[event.outcome] = totals.get(event.outcome, 0) + 1
+            return {
+                "generated_at": self._serialize_datetime(self.now_factory()),
+                "totals": totals,
+                "groups": list(groups.values()),
+                "total": len(events),
+                "filters": {"event_kind": event_kind or "", "outcome": outcome or ""},
+                "items": [
+                    self._serialize_service_audit_event(event, include_payload=False)
+                    for event in events[: max(1, min(200, limit))]
+                ],
+            }
+
     def summarize_service_audit_events(
         self,
         *,

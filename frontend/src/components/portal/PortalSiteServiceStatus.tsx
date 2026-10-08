@@ -51,6 +51,18 @@ export function PortalSiteServiceStatus({
   const hasQuotaPressure = Boolean(overview && hasPortalQuotaPressure(overview));
   const serviceStatus = overview ? getPortalServiceOperationStatus(overview) : 'inactive';
   const currentStatusLabel = statusLabel(serviceStatus, serviceIssueCount, hasQuotaPressure, t);
+  let badgeStatus = 'unknown';
+  let badgeLabel = t('common.not_available');
+  if (isLoading) {
+    badgeStatus = 'loading';
+    badgeLabel = t('common.loading');
+  } else if (error) {
+    badgeStatus = 'error';
+    badgeLabel = t('error.failed_load');
+  } else if (overview) {
+    badgeStatus = statusTone(serviceStatus, serviceIssueCount, hasQuotaPressure);
+    badgeLabel = currentStatusLabel;
+  }
   const latestActivityAt = overview?.activity.last_seen_at || overview?.generated_at || '';
 
   const serviceOperationStatus = overview
@@ -84,8 +96,8 @@ export function PortalSiteServiceStatus({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PortalStatusBadge
-            status={statusTone(serviceStatus, serviceIssueCount, hasQuotaPressure)}
-            label={overview ? currentStatusLabel : t('common.loading')}
+            status={badgeStatus}
+            label={badgeLabel}
           />
           {showRefresh ? (
             <button type="button" className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={isLoading}>
