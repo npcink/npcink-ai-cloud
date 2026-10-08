@@ -42,10 +42,10 @@ const SUPPORT_TOPICS = ['billing', 'payment', 'site', 'usage', 'account', 'gener
 const SUPPORT_STATUSES: Array<PortalSupportRequestStatus | ''> = ['', 'open', 'in_progress', 'resolved', 'closed'];
 const PAGE_SIZE = 10;
 
-function statusTone(status: string): 'ok' | 'warning' | 'neutral' | 'danger' {
+function statusTone(status: string): string {
   if (status === 'open') return 'warning';
   if (status === 'in_progress') return 'neutral';
-  if (status === 'resolved') return 'ok';
+  if (status === 'resolved') return 'active';
   if (status === 'closed') return 'neutral';
   return 'neutral';
 }
@@ -419,6 +419,7 @@ function PortalSupportContent() {
           </p>
         </div>
         <div className="mb-4 flex flex-col gap-3 border-y border-slate-200/75 py-3 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
+          {listErrorCode === 'portal.site_selection_required' ? (
           <div className="w-full max-w-sm">
             <label htmlFor="portal-support-site-selector" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
               {t('portal.current_site', {}, 'Current site')}
@@ -453,6 +454,7 @@ function PortalSupportContent() {
               </p>
             )}
           </div>
+          ) : <p className="text-sm text-slate-500">{t('portal.support_account_scope_label')}</p>}
           <div className="flex flex-wrap gap-2" aria-label={t('portal.support_status_rules_title', {}, 'Ticket status')}>
             {SUPPORT_STATUSES.map((status) => (
               <button
@@ -473,7 +475,7 @@ function PortalSupportContent() {
 
         {isListLoading ? (
           <LoadingFallback />
-        ) : items.length ? (
+        ) : listError ? null : items.length ? (
           <>
             <div className="hidden overflow-x-auto lg:block" data-portal-support="tickets-table">
               <table className="w-full min-w-[980px] text-left text-sm">
@@ -567,23 +569,23 @@ function PortalSupportContent() {
           </>
         ) : (
           <PortalEmptyState
-            title={t('portal.support_request_empty_title', {}, 'No tickets yet')}
-            description={t('portal.support_request_empty_desc', {}, 'Submit a ticket when package, payment, site, or usage information needs support review.')}
+            title={statusFilter ? t('portal.support_filter_empty_title') : t('portal.support_request_empty_title', {}, 'No tickets yet')}
+            description={statusFilter ? t('portal.support_filter_empty_desc') : t('portal.support_request_empty_desc', {}, 'Submit a ticket when package, payment, site, or usage information needs support review.')}
             actionButton={
-              <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
-                {t('portal.support_request_new_action', {}, 'Submit ticket')}
+              <button type="button" className="btn btn-primary" onClick={() => statusFilter ? setStatusFilter('') : setShowForm(true)}>
+                {statusFilter ? t('portal.support_clear_filter') : t('portal.support_request_new_action', {}, 'Submit ticket')}
               </button>
             }
           />
         )}
-        <ListPagination
+        {!listError ? <ListPagination
           offset={offset}
           limit={PAGE_SIZE}
           total={total}
           isLoading={isListLoading}
           onOffsetChange={setOffset}
           className="mt-4 px-0 pb-0"
-        />
+        /> : null}
       </PortalSection>
 
       <details className="rounded-[1rem] border border-slate-200/80 bg-white/70 dark:border-slate-800 dark:bg-slate-950/35" data-portal-support="status-rules">

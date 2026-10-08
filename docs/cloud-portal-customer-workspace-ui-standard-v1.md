@@ -400,3 +400,23 @@ A Portal UI rollback should revert the focused frontend, translations, tests,
 and this standard update through Git. Do not patch M4 directly, weaken Portal
 authorization, restore removed internal details, or create compatibility API
 fields solely to reproduce an older layout.
+
+## Pre-test customer usability closeout (2026-10-07)
+
+- Credit history keeps ADR-031's selected principal-owned site boundary. The
+  usage selector and browser session must agree before requesting trends or
+  records; an unselected account shows a site-choice prompt, not a failed read.
+- Credit records show service events directly, with one detail step. Time-bucket
+  aggregation is not a default customer task.
+- The usage balance loads account entitlements directly. An unused runtime
+  summary must not block credits, trends or records; explicit site context
+  changes complete before account-scoped reads start.
+- Customer recent activity is bounded to the latest 200 matching records. Its
+  counts and groups describe that bounded set, not lifetime audit totals. The
+  operator audit surface keeps its existing all-history contract.
+- Support lists are account-scoped. A current-site selector appears only when
+  an explicit account-context recovery is required, never as a list filter.
+- Loading, failed reads, successful empty results and unavailable capabilities
+  have distinct presentations. No failed read may show a normal status or zero.
+- Automatic knowledge updates are conditional on enabling content updates in
+  the WordPress plugin. The Portal must not infer that the setting is enabled.

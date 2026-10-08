@@ -267,51 +267,6 @@ export function PortalPackageChangePanel({
         })}
       </div>
 
-      <div className="mt-4 flex flex-col gap-4 rounded-[18px] border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {selectedChoice
-              ? t(
-                  'portal.billing.package_change_path',
-                  { from: currentChoiceLabel, to: selectedChoice.label },
-                  `${currentChoiceLabel} to ${selectedChoice.label}`
-                )
-              : t('portal.billing.package_select_hint', {}, 'Select a package above to continue.')}
-          </p>
-          {selectedComparison ? (
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{changeDetail}</p>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          className="btn btn-primary shrink-0 whitespace-nowrap"
-          disabled={selectionDisabled}
-          onClick={onConfirm}
-        >
-          {pendingAction ? t('common.saving', {}, 'Saving...') : actionLabel}
-        </button>
-      </div>
-      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-        <p>
-          {t(
-            'portal.billing.purchase_readiness_notice',
-            {},
-            'Payment is available only for a currently published offer. Package access changes only after payment confirmation.'
-          )}
-        </p>
-        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-          <Link href="/terms" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
-            {t('auth.terms_link', {}, 'Terms')}
-          </Link>
-          <Link href="/privacy" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
-            {t('auth.privacy_link', {}, 'Privacy')}
-          </Link>
-          <Link href="/portal/support?new=1&topic=billing" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
-            {t('portal.nav_support_requests', {}, 'Tickets')}
-          </Link>
-        </p>
-      </div>
-
       <section className="mt-5" aria-labelledby="portal-package-comparison-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -404,6 +359,52 @@ export function PortalPackageChangePanel({
           </div>
         )}
       </section>
+      <div className="mt-4 flex flex-col gap-4 rounded-[18px] border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-950 dark:text-white">
+            {selectedChoice
+              ? t(
+                  'portal.billing.package_change_path',
+                  { from: currentChoiceLabel, to: selectedChoice.label },
+                  `${currentChoiceLabel} to ${selectedChoice.label}`
+                )
+              : t('portal.billing.package_select_hint', {}, 'Select a package above to continue.')}
+          </p>
+          {selectedComparison ? (
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{changeDetail}</p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary shrink-0 whitespace-nowrap"
+          disabled={selectionDisabled}
+          onClick={onConfirm}
+        >
+          {pendingAction ? t('common.saving', {}, 'Saving...') : actionLabel}
+        </button>
+      </div>
+      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+        <p>
+          {t(
+            'portal.billing.purchase_readiness_notice',
+            {},
+            'Payment is available only for a currently published offer. Package access changes only after payment confirmation.'
+          )}
+        </p>
+        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+          <Link href="/terms" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+            {t('auth.terms_link', {}, 'Terms')}
+          </Link>
+          <Link href="/privacy" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+            {t('auth.privacy_link', {}, 'Privacy')}
+          </Link>
+          <Link href="/portal/support?new=1&topic=billing" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+            {t('portal.nav_support_requests', {}, 'Tickets')}
+          </Link>
+        </p>
+      </div>
+
+
 
       <div className="mt-5 flex flex-col gap-4 rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
         <div>

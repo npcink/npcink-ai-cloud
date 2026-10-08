@@ -59,6 +59,7 @@ function PortalSitesWorkspaceContent() {
   const routeSearchQuery = searchParams.get('q') || '';
   const [searchQuery, setSearchQuery] = useState(() => routeSearchQuery);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [addonAccounts, setAddonAccounts] = useState<PortalAddonConnectionAccount[]>([]);
   const [addonAccountsError, setAddonAccountsError] = useState('');
   const [isLoadingAddonAccounts, setIsLoadingAddonAccounts] = useState(false);
@@ -73,6 +74,8 @@ function PortalSitesWorkspaceContent() {
   const [lifecycleError, setLifecycleError] = useState('');
   const [lifecycleNotice, setLifecycleNotice] = useState('');
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
+  const [siteRefreshFailed, setSiteRefreshFailed] = useState(() => searchParams.get('site_refresh') === 'failed');
+  const [isRefreshingSites, setIsRefreshingSites] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const sites = session?.sites || EMPTY_SITES;
@@ -119,6 +122,13 @@ function PortalSitesWorkspaceContent() {
   useEffect(() => {
     setSearchQuery(routeSearchQuery);
   }, [routeSearchQuery]);
+
+  useEffect(() => {
+    if (searchParams.get('site_refresh') !== 'failed') return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('site_refresh');
+    router.replace(`${pathname}${params.size ? `?${params.toString()}` : ''}#sites`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     setPendingLifecycleSite((pendingSite) => {
@@ -238,16 +248,28 @@ function PortalSitesWorkspaceContent() {
     setRemoveError('');
   };
 
+  const refreshAfterSiteChange = async () => {
+    setIsRefreshingSites(true);
+    try {
+      await refresh();
+      setSiteRefreshFailed(false);
+    } catch {
+      setSiteRefreshFailed(true);
+    } finally {
+      setIsRefreshingSites(false);
+    }
+  };
+
   const handleRemoveSite = async () => {
-    if (!pendingRemoveSite) return;
+    if (!pendingRemoveSite || siteRefreshFailed || isRefreshingSites) return;
     setIsRemovingSite(true);
     setRemoveError('');
     setRemoveNotice('');
     try {
       const response = await portalClient.removeSite(pendingRemoveSite.site_id);
-      await refresh();
       setRemoveNotice(siteRemovalNotice(t, response.data.relink_policy.relink_available_at));
       setPendingRemoveSite(null);
+      await refreshAfterSiteChange();
     } catch (error) {
       setRemoveError(
         formatPortalErrorMessage(
@@ -262,6 +284,7 @@ function PortalSitesWorkspaceContent() {
   };
 
   const openLifecycleModal = (site: Site, status: 'active' | 'inactive') => {
+    if (siteRefreshFailed || isRefreshingSites) return;
     setPendingLifecycleSite(site);
     setPendingLifecycleStatus(status);
     setReplacementSiteIds([]);
@@ -276,7 +299,7 @@ function PortalSitesWorkspaceContent() {
   };
 
   const handleLifecycleUpdate = async () => {
-    if (!pendingLifecycleSite) return;
+    if (!pendingLifecycleSite || siteRefreshFailed || isRefreshingSites) return;
     if (activationNeedsSwap && replacementSiteIds.length !== requiredReleaseCount) {
       setLifecycleError(
         t(
@@ -296,7 +319,6 @@ function PortalSitesWorkspaceContent() {
         pendingLifecycleStatus,
         activationNeedsSwap ? replacementSiteIds : []
       );
-      await refresh();
       setLifecycleNotice(
         response.data.site.status === 'active'
           ? t('portal.site_activate_success', {}, 'Site activated.')
@@ -304,6 +326,7 @@ function PortalSitesWorkspaceContent() {
       );
       setPendingLifecycleSite(null);
       setReplacementSiteIds([]);
+      await refreshAfterSiteChange();
     } catch (error) {
       if (error instanceof ApiError && error.statusCode === 409) {
         await refresh().catch(() => undefined);
@@ -378,6 +401,12 @@ function PortalSitesWorkspaceContent() {
           </div>
         </div>
 
+        {visibleSites.length > 0 ? (
+          <details className="border-b border-slate-200 py-3 text-sm dark:border-slate-800" data-portal-sites="connect-guide">
+            <summary className="cursor-pointer font-medium text-blue-700 dark:text-blue-300">{t('portal.sites.connect_hint_title')}</summary>
+            <p className="mt-2 text-slate-600 dark:text-slate-300">{t('portal.sites.connect_hint_desc')}</p>
+          </details>
+        ) : null}
         {visibleSites.length === 0 && !searchQuery.trim() ? (
           <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
             <p className="font-semibold">
@@ -404,6 +433,15 @@ function PortalSitesWorkspaceContent() {
         {lifecycleNotice ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
             {lifecycleNotice}
+          </div>
+        ) : null}
+
+        {siteRefreshFailed ? (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+            <p>{t('portal.site_change_refresh_failed')}</p>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={isRefreshingSites} onClick={() => void refreshAfterSiteChange()}>
+              {isRefreshingSites ? t('common.loading') : t('portal.site_refresh_action')}
+            </button>
           </div>
         ) : null}
 
@@ -461,35 +499,39 @@ function PortalSitesWorkspaceContent() {
                           {t('portal.site_record', {}, 'Open site')}
                         </Link>
                         {site.allowed_actions?.includes('provision_sites')
-                          && site.status !== 'suspended'
-                          && site.status !== 'archived' ? (
+                          && site.status === 'inactive' ? (
                           <button
                             type="button"
-                            onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                            onClick={() => openLifecycleModal(site, 'active')}
+                      disabled={siteRefreshFailed || isRefreshingSites}
                             className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                           >
-                            {site.status === 'active'
-                              ? t('portal.deactivate_site_action', {}, 'Deactivate')
-                              : t('portal.activate_site_action', {}, 'Activate')}
+                            {t('portal.activate_site_action', {}, 'Activate')}
                           </button>
                         ) : null}
-                        {site.allowed_actions?.includes('remove_sites')
+                        {(site.allowed_actions?.includes('remove_sites') || (site.status === 'active' && site.allowed_actions?.includes('provision_sites')))
                           && site.status !== 'suspended' ? (
                           <details className="relative inline-block text-right" data-portal-sites="desktop-actions">
                             <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
                               {t('portal.site_other_actions', {}, 'Other actions')}
                             </summary>
                             <div className="mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                              {site.status === 'active' && site.allowed_actions?.includes('provision_sites') ? (
+                                <button type="button" className="btn btn-secondary btn-sm" disabled={siteRefreshFailed || isRefreshingSites} onClick={() => openLifecycleModal(site, 'inactive')}>{t('portal.deactivate_site_action')}</button>
+                              ) : null}
+                              {site.allowed_actions?.includes('remove_sites') ? (
                               <button
                                 type="button"
                                 onClick={() => {
                                   setRemoveError('');
                                   setPendingRemoveSite(site);
                                 }}
+                                disabled={siteRefreshFailed || isRefreshingSites}
                                 className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
                               >
                                 {t('portal.remove_site_action', {}, 'Remove site')}
                               </button>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -542,35 +584,39 @@ function PortalSitesWorkspaceContent() {
                     {t('portal.site_record', {}, 'Site record')}
                   </Link>
                   {site.allowed_actions?.includes('provision_sites')
-                    && site.status !== 'suspended'
-                    && site.status !== 'archived' ? (
+                    && site.status === 'inactive' ? (
                     <button
                       type="button"
-                      onClick={() => openLifecycleModal(site, site.status === 'active' ? 'inactive' : 'active')}
+                      onClick={() => openLifecycleModal(site, 'active')}
+                      disabled={siteRefreshFailed || isRefreshingSites}
                       className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                     >
-                      {site.status === 'active'
-                        ? t('portal.deactivate_site_action', {}, 'Deactivate')
-                        : t('portal.activate_site_action', {}, 'Activate')}
+                      {t('portal.activate_site_action', {}, 'Activate')}
                     </button>
                   ) : null}
-                  {site.allowed_actions?.includes('remove_sites')
+                  {(site.allowed_actions?.includes('remove_sites') || (site.status === 'active' && site.allowed_actions?.includes('provision_sites')))
                     && site.status !== 'suspended' ? (
                     <details className="relative" data-portal-sites="mobile-actions">
                       <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
                         {t('portal.site_other_actions', {}, 'Other actions')}
                       </summary>
                       <div className="absolute right-0 z-10 mt-2 flex min-w-max flex-col items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        {site.status === 'active' && site.allowed_actions?.includes('provision_sites') ? (
+                          <button type="button" className="btn btn-secondary btn-sm" disabled={siteRefreshFailed || isRefreshingSites} onClick={() => openLifecycleModal(site, 'inactive')}>{t('portal.deactivate_site_action')}</button>
+                        ) : null}
+                        {site.allowed_actions?.includes('remove_sites') ? (
                         <button
                           type="button"
                           onClick={() => {
                             setRemoveError('');
                             setPendingRemoveSite(site);
                           }}
+                          disabled={siteRefreshFailed || isRefreshingSites}
                           className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
                         >
                           {t('portal.remove_site_action', {}, 'Remove site')}
                         </button>
+                        ) : null}
                       </div>
                     </details>
                   ) : null}
@@ -583,7 +629,7 @@ function PortalSitesWorkspaceContent() {
 
       <Modal
         isOpen={addonConnectMode && showConnectModal}
-        onClose={() => setShowConnectModal(false)}
+        onClose={() => { if (!isConnecting) setShowConnectModal(false); }}
         closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')}
         description={t('portal.connect_site_addon_desc', undefined, 'Confirm this site connection, then return to WordPress to finish setup.')}
@@ -591,11 +637,12 @@ function PortalSitesWorkspaceContent() {
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
       >
         <PortalSiteConnectPanel
+          onSubmittingChange={setIsConnecting}
           accounts={addonAccounts}
           accountsError={addonAccountsError}
           isLoadingAccounts={isLoadingAddonAccounts}
           onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}
-          onClose={() => setShowConnectModal(false)}
+          onClose={() => { if (!isConnecting) setShowConnectModal(false); }}
           initialSiteUrl={addonSiteUrl}
           initialSiteName={addonSiteName}
           addonReturnUrl={addonReturnUrl}

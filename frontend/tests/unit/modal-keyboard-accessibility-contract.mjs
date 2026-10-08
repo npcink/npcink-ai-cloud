@@ -29,6 +29,6 @@ assert.match(source, /previousOverflow[\s\S]*document\.body\.style\.overflow = p
 assert.match(dialogHookSource, /previousFocus\?\.focus\(\)/, 'custom dialogs must restore trigger focus');
 assert.match(dialogHookSource, /event\.key !== 'Tab'/, 'custom dialogs must contain Tab focus');
 assert.match(siteDrawerSource, /useDialogFocusManagement/, 'site inspector must use shared focus management');
-assert.match(usageSource, /creditBucketDrawerRef[\s\S]*creditEventDrawerRef/, 'usage detail drawers must use shared focus management');
+assert.match(usageSource, /useDialogFocusManagement[\s\S]*creditEventDrawerRef/, 'usage detail drawers must use shared focus management');
 
 console.log('modal_keyboard_accessibility_contract: ok');
