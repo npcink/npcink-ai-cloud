@@ -542,7 +542,7 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_health_snapshots()
+            health_snapshots = repository.list_latest_health_snapshots()
             sites_total = repository.count_sites()
             profiles_total = repository.count_profiles()
             today_run_metrics = repository.aggregate_runs_window(

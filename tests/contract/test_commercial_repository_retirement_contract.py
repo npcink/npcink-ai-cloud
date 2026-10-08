@@ -181,7 +181,8 @@ def test_audit_mixin_uses_explicit_audit_and_decision_repositories() -> None:
         }
     ]
     assert constructions.count("CommercialDecisionRepository") == 2
-    assert constructions.count("CommercialServiceAuditRepository") == 4
+    # The bounded Portal activity projection has its own explicit audit repository.
+    assert constructions.count("CommercialServiceAuditRepository") == 5
     assert not any(
         isinstance(node, ast.Name) and node.id == "CommercialRepository"
         for node in ast.walk(tree)
