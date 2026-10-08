@@ -447,3 +447,17 @@ No Cloud Docker build or runtime was moved to the authoring Mac.
   per-account daily/monthly USD caps, target environment and matched restore
   point evidence remain operator inputs. No production application deploy,
   migration or paid Provider call was executed.
+
+Subsequent read-only inventory observed primary checkout commit `dc58be21`
+and a rebase/abort reflog, created outside this task's actions. That primary
+checkout is now clean; hashes confirm all 93 earlier preserved files match
+the new commit's working files. Its exact commit was separately bundled and
+verified. The initial dirty-checkout evidence above is historical, not its
+current status. Keep this branch protected pending ownership/coordination
+confirmation; this task did not commit, rebase or overwrite the primary.
+
+The central Toolbox matrix was run once for clean Addon master `ce5208cc`
+after PR #243 merged: its configured source gate passed in 4.6 seconds,
+zero failures, zero dirty paths. Cloud's current-revision central source gate
+remains pending the Admin PR's protected merge; do not report the two-repository
+milestone complete from the Addon result alone.
