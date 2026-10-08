@@ -166,6 +166,57 @@ worktree only after its owning PRs are merged, accepted runtime evidence is
 current, ignored evidence is preserved and a fresh exact-path audit permits
 non-force removal. No production operation is authorized by this checkpoint.
 
+## Preparation while Portal closeout owns the shared lane
+
+On 2026-10-08, a bounded local preparation checkpoint compared Admin commit
+`4e7a84743229e999fc85201a796ec5faf4e99eb0` with Portal backend commit
+`619082a67ace9cfea2492e024ee296499b98d6e0` and Portal UI commit
+`dc4f9e91fad6ea0d41a4f1b2ba8504c93afca3d2`. Their common base was
+`c61982b2cf90735d5b3340bfd511c870029dd6d9`.
+
+Both `git merge-tree --write-tree --name-only --messages` comparisons exited
+zero. The only overlapping path was `frontend/src/lib/i18n.ts`; neither had
+textual conflicts. This created synthetic Git trees without merging a branch,
+changing an index, publishing a PR or switching M4.
+
+The UI integration tree was
+`b2b84ce09b67b4ab99ef8e6c81d80b2be945a912`. A disposable archive of that tree
+passed frontend `type-check` and nine focused contracts: Admin navigation,
+Admin window capabilities, referenced Admin/Portal translations, dynamic
+translation families, modal keyboard accessibility, Portal customer
+correctness, Portal usage simplification, Portal professional information
+simplification and Advisor actions. Existing dependency links and previously
+generated Next route types were reused. This was not a new build, browser
+acceptance or runtime test.
+
+AST comparison verified that every translation changed by either owner was
+retained: 85 Admin and 28 Portal English changes, and 87 Admin and 28 Portal
+Chinese changes. There were no new asymmetric keys. A broader equal-key-set
+probe failed on 335 pre-existing Chinese-only keys; explicit English fallback
+is supported, so that probe does not establish 335 new user-facing defects.
+
+The historical F6 fix is **not fully delivered**. The original mixed worktree
+still contains the `PortalNavbar.tsx` change assigning `/portal/audit` to the
+account menu and declaring `aria-current` on desktop and mobile links. Neither
+Portal commit above contains that change. Its exact patch was preserved as a
+Portal-owner handoff item, without editing the owner's active worktree or
+adding Portal source to the Admin candidate. Patch indentation should be
+normalized when the owner incorporates it; account highlighting and keyboard
+current-page semantics then need focused browser verification.
+
+Overlap metadata, merge-tree output, translation checks, the type-check log
+and the F6 patch are retained privately outside the worktree under
+`/Users/muze/.codex/task-backups/runtime-closeout-20261008/waiting-portal-20261008`.
+The disposable integration snapshot can be reconstructed from the recorded
+tree. No paid OCR or shared-runtime operation was used for this preparation.
+
+After the Portal owner finishes, fetch the final merged master and repeat the
+affected comparison against that revision. Confirm F6's disposition before
+calling the historical list complete. Then resume the scoped runtime and
+Admin publication gates, required checks, coordinated clean-master M4
+promotion and smoke. These local static results cannot substitute for those
+gates or authorize taking over the active owner's shared lane.
+
 ## Evidence limits and pending work
 
 The preceding development candidate passed 18 focused unit tests, the
