@@ -1387,6 +1387,15 @@ class RuntimeService:
                     ).limit(10000)
                 )
             )
+            # Coverage belongs to the bounded run cohort, not the latest 10,000
+            # event rows. Multiple meters per run must not hide older associations.
+            metered_cohort_run_ids = set(
+                session.scalars(
+                    select(UsageMeterEvent.run_id)
+                    .where(UsageMeterEvent.run_id.in_([run.run_id for run in runs]))
+                    .distinct()
+                )
+            )
 
         run_ids = {run.run_id for run in runs}
         ai_evidence_required_run_ids = {
@@ -1397,9 +1406,7 @@ class RuntimeService:
         provider_call_run_ids = {
             call.run_id for call, _run in provider_call_rows if call.run_id in run_ids
         }
-        meter_run_ids = {
-            str(event.run_id or "") for event in meter_events if str(event.run_id or "") in run_ids
-        }
+        meter_run_ids = {str(run_id) for run_id in metered_cohort_run_ids if run_id}
         run_groups: dict[str, dict[str, object]] = {}
         profile_groups: dict[str, dict[str, object]] = {}
         execution_kind_groups: dict[str, dict[str, object]] = {}
@@ -1627,6 +1634,7 @@ class RuntimeService:
                 )
             elif issue_code == "hosted_model.unmetered_runs":
                 statement = statement.where(
+                    RunRecord.execution_kind.not_in(NON_AI_ZERO_CREDIT_EXECUTION_KINDS),
                     ~exists(
                         select(UsageMeterEvent.id).where(
                             UsageMeterEvent.run_id == RunRecord.run_id,
