@@ -533,3 +533,39 @@ At revision `57aa26b8`, CI passed all 48 critical operator scenarios and 84 of
 different pixels. This is retained as a failed gate until the exact rendered
 state difference is reproduced; the other ten new Linux goldens compared
 successfully. Neither pixel tolerance nor the required merge gate was relaxed.
+
+### Exact screenshot cause and source reconciliation (2026-10-08)
+
+The remaining 566-pixel CI difference was reproduced on M4 using the same
+Linux browser image and a loopback frontend URL. Every differing pixel was in
+the Portal URL row's origin-dependent detail: the Docker hostname candidate
+showed "Use current URL", while CI's loopback address correctly showed the
+callback-address source explanation. The rest of the image was identical.
+The corrected candidate passed a normal comparison and the complete settings
+interaction scenario in 5.1 seconds, without `--update-snapshots`. Its exact
+SHA-256 is `70c31c4008cec13939d5bf658bdd29973f0e780112c33c51cfd65c073235702f`.
+Explicit human acceptance for this corrected image is requested and pending;
+the earlier approval of 11 candidates does not silently approve a replacement.
+
+Reusable rule: golden generation and comparison must agree on origin class,
+locale, viewport and browser version, as well as fixture data. A production
+frontend accessed through an internal Docker hostname can render a legitimate
+action absent from the loopback CI context. Reproduce and inspect the exact
+pixel region before changing a baseline; do not hide the action, weaken pixel
+tolerance or claim an architectural browser difference without evidence.
+
+A fresh comparison against local candidate `1e9eb614` confirmed that all 93
+original primary-checkout file hashes remain unchanged: 50 match this newer
+candidate exactly, 11 match preserved historical variants and 32 retain manual
+residual dispositions. Eight candidate files changed since the earlier
+comparison, all accounted for by recorded contract, validation, test or Advisor
+corrections. This remains candidate reconciliation, not merged-master proof.
+The primary checkout and exact `dc58be21` bundle remain protected.
+
+The newly registered `codex/m4-resource-baseline` auxiliary belongs to the
+active "服务器资源占用监测" task. Its declared lane prepares a standalone
+sampling tool and performs bounded read-only M4 sampling, without deployment,
+limits changes or paid model traffic. It is retained separately. Before the
+next M4 promotion, inspect the live sampling state so container recreation
+does not invalidate an observation still in progress. This evidence does not
+declare a parallel merge queue or authorize messaging another task.
