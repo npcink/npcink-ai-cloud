@@ -461,3 +461,29 @@ after PR #243 merged: its configured source gate passed in 4.6 seconds,
 zero failures, zero dirty paths. Cloud's current-revision central source gate
 remains pending the Admin PR's protected merge; do not report the two-repository
 milestone complete from the Addon result alone.
+
+### Operator closeout query (2026-10-08)
+
+Fresh GitHub inspection still reports PR #1086 open and blocked: 22 checks
+passed, one frontend check failed and seven lanes were skipped. Local test
+corrections and documentation are committed but not pushed, and the 11 Linux
+golden candidates remain untracked pending explicit human visual acceptance.
+The original shared-layout acceptance does not itself approve newly generated
+platform goldens. Preserve the locked auxiliary until protected merge and
+clean-master M4 acceptance complete.
+
+Addon PR #243 is merged, its primary master is clean and its central quality
+gate passed. A fresh remote inventory found the merged topic still present.
+After verifying its exact PR head, archive ref, bundle and absence from all
+Addon worktrees, the remote ref was removed with an expected-SHA lease;
+fresh remote inventory now contains only master. Cloud retains its active
+Admin topic, protected primary branch and old unmerged production candidate.
+Do not report all local/remote branches or worktrees clean merely because
+historical closed topics were archived.
+
+The updated Portal closeout addendum distinguishes implemented native feedback
+from a future real writing-loop delivery, lists merged follow-ups and records
+the remaining budget, release, operator-owned tests and F8 evidence limit.
+Existing UI standards, this retrospective and the Addon producer contract
+provide the local development record; these final Cloud documentation updates
+are still part of the unmerged Admin closeout.
