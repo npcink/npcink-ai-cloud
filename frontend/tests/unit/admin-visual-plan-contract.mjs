@@ -17,6 +17,14 @@ assert.equal(specs.length, new Set(specs).size);
 
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/src/app/admin/plugin-observability/page.tsx']), ['tests/e2e/admin-plugin-observability-v2.spec.ts']);
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['docs/example.md']), []);
+for (const route of ['accounts', 'accounts/[accountId]', 'credit-packs', 'plans']) {
+  assert.deepEqual(changedAdminVisualSpecs(manifest, [`frontend/src/app/admin/${route}/page.tsx`]), specs);
+}
+assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/src/app/admin/new-route/page.tsx']), specs);
+assert.deepEqual(changedAdminVisualSpecs(manifest, [
+  'frontend/src/app/admin/plugin-observability/page.tsx',
+  'frontend/src/app/admin/accounts/page.tsx',
+]), specs);
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/admin-ui-manifest.json']), specs);
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/src/components/admin/AdminHelpTip.tsx']), specs);
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/tests/e2e/helpers/admin-route-fixtures.ts']), specs);

@@ -3,9 +3,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-function helpPosition(rect: DOMRect) {
+function helpPosition(rect: DOMRect, width: number) {
   return {
-    left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(320, window.innerWidth - 16) - 8)),
+    left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
     top: rect.bottom + 8,
   };
 }
@@ -24,7 +24,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
   const show = () => {
     cancelHide();
     const rect = trigger.current?.getBoundingClientRect();
-    if (rect) setPosition(helpPosition(rect));
+    if (rect) setPosition(helpPosition(rect, bubble.current?.getBoundingClientRect().width || 0));
   };
   const scheduleHide = () => {
     cancelHide();
@@ -36,10 +36,11 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
   useLayoutEffect(() => {
     if (!position || !trigger.current || !bubble.current) return;
     const rect = trigger.current.getBoundingClientRect();
-    const height = bubble.current.getBoundingClientRect().height;
+    const { width, height } = bubble.current.getBoundingClientRect();
+    const { left } = helpPosition(rect, width);
     const below = rect.bottom + 8;
     const top = below + height > window.innerHeight - 8 ? Math.max(8, rect.top - height - 8) : below;
-    if (top !== position.top) setPosition({ ...position, top });
+    if (left !== position.left || top !== position.top) setPosition({ left, top });
   }, [position]);
   useEffect(() => {
     if (!open) return;
@@ -54,7 +55,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
       // Keyboard focus may scroll the trigger into view after onFocus opens help.
       // Keep focused, visible help anchored; ordinary scrolling still dismisses it.
       if (document.activeElement === trigger.current && rect && rect.bottom > 0 && rect.top < window.innerHeight) {
-        setPosition(previous => previous ? helpPosition(rect) : null);
+        setPosition(previous => previous ? helpPosition(rect, bubble.current?.getBoundingClientRect().width || 0) : null);
       } else {
         pinned.current = false; setPosition(null);
       }
@@ -78,7 +79,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
       <span aria-hidden="true">ⓘ</span>
     </button>
     {position ? createPortal(<div ref={bubble} id={id} role="tooltip" onMouseEnter={cancelHide} onMouseLeave={scheduleHide}
-      style={{ ...position, width: 'min(20rem, calc(100vw - 1rem))' }}
+      style={{ ...position, width: 'min(20rem, calc(100vw - 16px))' }}
       className="fixed z-50 max-h-[calc(100vh-1rem)] overflow-y-auto rounded-[var(--admin-compact-radius)] border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600 shadow-md dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
       {children}
     </div>, document.body) : null}
