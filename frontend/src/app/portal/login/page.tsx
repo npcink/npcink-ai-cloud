@@ -246,9 +246,6 @@ function LoginFormContent() {
       aside={(
         <>
           <PortalCard className="bg-white/70 dark:bg-slate-950/35">
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-300">
-              {t('portal.register.free_label', undefined, 'Free after verification')}
-            </p>
             <h2 className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
               {t('portal.login.new_title', undefined, 'No account yet?')}
             </h2>
@@ -263,13 +260,7 @@ function LoginFormContent() {
               {t('auth.create_free_account', undefined, 'Create an account')}
             </Link>
           </PortalCard>
-          <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t(
-              'auth.no_password',
-              undefined,
-              'Portal sign-in is passwordless. Use QQ directly or continue with an email verification code.'
-            )}
-          </p>
+
         </>
       )}
     >

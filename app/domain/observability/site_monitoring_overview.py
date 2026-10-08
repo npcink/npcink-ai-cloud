@@ -5,12 +5,13 @@ from typing import Any, cast
 
 from sqlalchemy import func, select
 
+from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.db import get_session
 from app.core.models import SiteApiKey
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
-from app.domain.usage.service import UsageService
+from app.domain.usage.value_helpers import _calculate_percentile
 
 
 class SiteMonitoringOverviewService:
@@ -44,10 +45,33 @@ class SiteMonitoringOverviewService:
             window_hours=bounded_hours,
             now=current_time,
         )
-        usage_summary = UsageService(
-            self.database_url,
-            now_factory=lambda: current_time,
-        ).get_usage_summary(site_id=site_id)
+        # This projection only needs the selected site's runtime evidence.
+        # Avoid the global catalog, profile counts and provider-health scan in UsageService.
+        with get_session(self.database_url) as session:
+            stats = StatsRepository(session)
+            metrics = stats.aggregate_runs_window(
+                site_id=site_id,
+                start_at=start_at,
+                end_at=current_time,
+            )
+            latencies = stats.list_run_latency_values_window(
+                site_id=site_id,
+                start_at=start_at,
+                end_at=current_time,
+            )
+        runs_total = int(metrics.get("runs_total") or 0)
+        usage_summary: dict[str, object] = {
+            "windows": {
+                "rolling_24h": {
+                    "runs_total": runs_total,
+                    "success_rate": float(metrics.get("success_total") or 0) / runs_total
+                    if runs_total
+                    else 0.0,
+                    "latency_ms_p95": _calculate_percentile(latencies, 95),
+                    "last_seen_at": self._format_datetime(metrics.get("last_seen_at")),
+                }
+            }
+        }
         key_state = self._build_key_state(site_id=site_id, current_time=current_time)
         quota = self._build_quota(commercial_policy)
         activity = self._build_activity(

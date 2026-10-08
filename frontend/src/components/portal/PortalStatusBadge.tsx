@@ -19,5 +19,5 @@ function portalStatusClassName(status: string): string {
 }
 
 export function PortalStatusBadge({ label, status, className }: PortalStatusBadgeProps) {
-  return <span data-ui="portal-status-badge" className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em]', portalStatusClassName(status), className)}>{label}</span>;
+  return <span data-ui="portal-status-badge" className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-medium', portalStatusClassName(status), className)}>{label}</span>;
 }

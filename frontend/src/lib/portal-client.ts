@@ -1806,6 +1806,10 @@ export class PortalClient {
    * 获取当前账号的第三方登录绑定状态
    * GET /portal/v1/auth/identity-providers
    */
+  async getLoginOptions() {
+    return this.request<{ qq_available: boolean }>('GET', '/auth/login-options', undefined);
+  }
+
   async getIdentityProviders(): Promise<PortalEnvelope<PortalIdentityProvidersResponse>> {
     return this.request('GET', '/auth/identity-providers', undefined);
   }

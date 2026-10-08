@@ -84,8 +84,8 @@ export function PortalSiteServiceStatus({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PortalStatusBadge
-            status={statusTone(serviceStatus, serviceIssueCount, hasQuotaPressure)}
-            label={overview ? currentStatusLabel : t('common.loading')}
+            status={isLoading ? 'loading' : error ? 'error' : overview ? statusTone(serviceStatus, serviceIssueCount, hasQuotaPressure) : 'unknown'}
+            label={isLoading ? t('common.loading') : error ? t('error.failed_load') : overview ? currentStatusLabel : t('common.not_available')}
           />
           {showRefresh ? (
             <button type="button" className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={isLoading}>
