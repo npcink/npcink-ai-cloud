@@ -503,7 +503,7 @@ function PortalSitesWorkspaceContent() {
                           <button
                             type="button"
                             onClick={() => openLifecycleModal(site, 'active')}
-                      disabled={siteRefreshFailed || isRefreshingSites}
+                            disabled={siteRefreshFailed || isRefreshingSites}
                             className="text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                           >
                             {t('portal.activate_site_action', {}, 'Activate')}

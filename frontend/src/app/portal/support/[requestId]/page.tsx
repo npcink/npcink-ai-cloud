@@ -30,9 +30,9 @@ import {
 } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
-function statusTone(status: string): 'ok' | 'warning' | 'neutral' | 'danger' {
+function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger' {
   if (status === 'open') return 'warning';
-  if (status === 'resolved') return 'ok';
+  if (status === 'resolved') return 'active';
   return 'neutral';
 }
 

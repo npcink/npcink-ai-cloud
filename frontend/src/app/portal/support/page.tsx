@@ -42,7 +42,7 @@ const SUPPORT_TOPICS = ['billing', 'payment', 'site', 'usage', 'account', 'gener
 const SUPPORT_STATUSES: Array<PortalSupportRequestStatus | ''> = ['', 'open', 'in_progress', 'resolved', 'closed'];
 const PAGE_SIZE = 10;
 
-function statusTone(status: string): string {
+function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger' {
   if (status === 'open') return 'warning';
   if (status === 'in_progress') return 'neutral';
   if (status === 'resolved') return 'active';

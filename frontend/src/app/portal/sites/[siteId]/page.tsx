@@ -311,6 +311,19 @@ function PortalSiteRecordContent() {
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
+  const renderAttentionAction = () => {
+    if (site.status === 'inactive') {
+      return <Link href="/portal#sites" className="btn btn-secondary btn-sm mt-3">{t('portal.activate_site_action')}</Link>;
+    }
+    if (!siteUrl) {
+      return <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm mt-3">{t('portal.support_request_new_action')}</Link>;
+    }
+    if (primaryIssueCategory === 'quota') {
+      return <Link href="/portal/billing" className="btn btn-secondary btn-sm mt-3">{t('portal.nav_billing')}</Link>;
+    }
+    return <button type="button" className="btn btn-secondary btn-sm mt-3" disabled={siteMonitoring.isLoading} onClick={siteMonitoring.refresh}>{t('common.retry')}</button>;
+  };
+
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
@@ -348,16 +361,7 @@ function PortalSiteRecordContent() {
               <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">{attentionTitle}</p>
               <p className="mt-1 text-sm leading-5 text-amber-800 dark:text-amber-200">{attentionDetail}</p>
             </div>
-            {site.status === 'inactive' ? (
-              <Link href="/portal#sites" className="btn btn-secondary btn-sm mt-3">{t('portal.activate_site_action')}</Link>
-            ) : !siteUrl ? (
-              <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm mt-3">{t('portal.support_request_new_action')}</Link>
-            ) : primaryIssueCategory === 'quota' ? (
-              <Link href="/portal/billing" className="btn btn-secondary btn-sm mt-3">{t('portal.nav_billing')}</Link>
-            ) : (
-              <button type="button" className="btn btn-secondary btn-sm mt-3" disabled={siteMonitoring.isLoading} onClick={siteMonitoring.refresh}>{t('common.retry')}</button>
-            )}
-
+            {renderAttentionAction()}
           </div>
         ) : undefined}
       />
