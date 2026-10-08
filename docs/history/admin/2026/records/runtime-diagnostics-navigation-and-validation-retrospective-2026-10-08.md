@@ -217,6 +217,39 @@ Admin publication gates, required checks, coordinated clean-master M4
 promotion and smoke. These local static results cannot substitute for those
 gates or authorize taking over the active owner's shared lane.
 
+### Operator-selected resumption and checklist
+
+The operator will notify this session when Portal closeout is complete.
+Shared publication and M4 operations wait for that notification. Preparation
+does not create a background monitor or send messages to the Portal session.
+
+Resume in this order:
+
+1. Verify the Portal owner's final merged PRs, the relevant executed CI lanes
+   and its clean-master M4 acceptance receipt. Fetch `origin/master`; replace
+   the dated comparison inputs above with the final revisions.
+2. Inspect the final `PortalNavbar.tsx` for F6. If the fix is still absent,
+   resolve implementation ownership, incorporate the preserved patch with
+   normalized indentation and verify desktop/mobile account highlighting and
+   `aria-current` on `/portal/audit` before marking F6 complete.
+3. Integrate the scoped runtime and Admin commits in the isolated locked
+   checkout. Preserve the mixed primary worktree. Recheck overlap and retain
+   both owners' translation changes; do not blindly replay already-merged
+   fixes from the runtime-only predecessor.
+4. Recompute the `merge`-lane changed-file plan. Reuse only evidence valid for
+   the resulting source fingerprints; run affected static, browser and M4
+   candidate gates. Record OCR's incomplete coverage and use bounded file
+   groups if completing the advisory review.
+5. Publish focused PRs through `pr:publish` with the repository template,
+   resolve required checks/review threads and confirm merge. Promote clean
+   current master with the owning merged PR, then verify accepted revision
+   and the actual diagnostics/navigation consumer paths.
+6. Update this record with exact delivery states. Preserve ignored evidence
+   and unique commits before the final worktree/ref audit. Remove only eligible
+   task resources after their closure conditions hold; keep protected or
+   independently active worktrees. Report F8's historical root-cause limit
+   separately from delivery completion.
+
 ## Evidence limits and pending work
 
 The preceding development candidate passed 18 focused unit tests, the
