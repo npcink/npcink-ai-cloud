@@ -686,7 +686,9 @@ def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
 
 
 def test_window_capability_owners_select_frontend_contracts_without_browser_lane() -> None:
-    registry = json.loads((ROOT / "frontend/src/features/admin/observability/window-capabilities.json").read_text())
+    registry = json.loads(
+        (ROOT / "frontend/src/features/admin/observability/window-capabilities.json").read_text()
+    )
     owners = {entry["runtimeSource"] for entry in registry.values()}
     owners.update({"app/api/routes/service.py", "scripts/check-admin-window-capabilities.py"})
     for path in sorted(owners):
