@@ -45,7 +45,7 @@ assert.doesNotMatch(homeSource, /role="button"[\s\S]{0,900}href=\{`\/portal\/sit
 assert.match(
   usageSource,
   /const siteFilterId = searchParams\.get\('site'\) \|\| session\?\.selected_context/,
-  'account usage must default to all sites and derive an optional site filter from the URL'
+  'account usage must use the URL site filter or fall back to the selected session context'
 );
 assert.match(usageSource, /creditEventWindow[\s\S]*creditEventFeature/);
 assert.match(
