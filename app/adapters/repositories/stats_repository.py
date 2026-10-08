@@ -416,7 +416,10 @@ class StatsRepository:
     def list_latest_health_snapshots(
         self,
         instance_ids: list[str] | None = None,
+        *,
+        earliest_on_tie: bool = False,
     ) -> list[HealthSnapshot]:
+        """Select one row per instance; preserve legacy first-row ties when requested."""
         if instance_ids is not None and not instance_ids:
             return []
 
@@ -432,8 +435,11 @@ class StatsRepository:
             HealthSnapshot.instance_id
         ).subquery()
 
+        selected_id = (
+            func.min(HealthSnapshot.id) if earliest_on_tie else func.max(HealthSnapshot.id)
+        )
         latest_ids = (
-            select(func.max(HealthSnapshot.id))
+            select(selected_id)
             .join(
                 latest_timestamps,
                 and_(

@@ -142,7 +142,9 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_health_snapshots([instance_id])
+            health_snapshots = repository.list_latest_health_snapshots(
+                [instance_id], earliest_on_tie=True
+            )
             today_metrics = repository.aggregate_provider_calls_window(
                 start_at=windows["today"]["start_at"],
                 end_at=windows["today"]["end_at"],
@@ -284,7 +286,9 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_health_snapshots(candidate_instance_ids)
+            health_snapshots = repository.list_latest_health_snapshots(
+                candidate_instance_ids, earliest_on_tie=True
+            )
             today_metrics = repository.aggregate_runs_window(
                 start_at=windows["today"]["start_at"],
                 end_at=windows["today"]["end_at"],
@@ -1163,8 +1167,10 @@ class UsageService:
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
             instances = repository.list_instances()
-            provider_calls = repository.list_provider_calls(site_id)
-            health_snapshots = repository.list_health_snapshots()
+            provider_calls = repository.list_provider_calls(site_id, start_at=start_at, end_at=now)
+            health_snapshots = repository.list_latest_health_snapshots(
+                [instance.instance_id for instance in instances], earliest_on_tie=True
+            )
 
         instances_by_id = {instance.instance_id: instance for instance in instances}
         latest_health_by_instance = self._latest_health_by_instance(health_snapshots)
