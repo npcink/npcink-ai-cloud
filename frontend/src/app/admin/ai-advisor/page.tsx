@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { advisorActionCatalog, advisorActionHref, advisorMetrics, advisorScope } from '@/features/admin/ai-advisor/advisor-presentation';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
@@ -75,6 +77,16 @@ function humanizeKey(value: string): string {
 
 function advisorHeadlineText(value: string, t: Translator): string {
   const known: Record<string, [string, string]> = {
+    'No routing change candidate is available': ['admin.ai_advisor.diagnosis_routing_healthy', 'No routing change candidate is available'],
+    'Provider degradation may affect routing': ['admin.ai_advisor.diagnosis_routing_degradation', 'Provider degradation may affect routing'],
+    'Routing profile candidates are available': ['admin.ai_advisor.diagnosis_routing_candidates', 'Routing profile candidates are available'],
+    'Commercial posture is stable': ['admin.ai_advisor.diagnosis_commercial_healthy', 'Commercial posture is stable'],
+    'Subscriptions are expiring soon': ['admin.ai_advisor.diagnosis_subscription_expiry', 'Subscriptions are expiring soon'],
+    'Subscriptions need operator review': ['admin.ai_advisor.diagnosis_subscription_attention', 'Subscriptions need operator review'],
+    'Runtime summary is healthy': ['admin.ai_advisor.diagnosis_runtime_healthy', 'Runtime summary is healthy'],
+    'Runtime guard events need operator review': ['admin.ai_advisor.diagnosis_guard_attention', 'Runtime guard events need operator review'],
+    'Runtime queue needs operator review': ['admin.ai_advisor.diagnosis_queue_attention', 'Runtime queue needs operator review'],
+    'Callback delivery needs operator review': ['admin.ai_advisor.diagnosis_callback_attention', 'Callback delivery needs operator review'],
     'Operations posture is stable': ['admin.ai_advisor.diagnosis_operations_stable', 'Operations posture is stable'],
     'Runtime failures need operations review': ['admin.ai_advisor.diagnosis_runtime_failures', 'Runtime failures need operations review'],
     'Provider reliability needs review': ['admin.ai_advisor.diagnosis_provider_reliability', 'Provider reliability needs review'],
@@ -88,6 +100,16 @@ function advisorHeadlineText(value: string, t: Translator): string {
 
 function advisorSummaryText(value: string, t: Translator): string {
   const known: Record<string, [string, string]> = {
+    'Callback failures or pressure are present in the selected window.': ['admin.ai_advisor.diagnosis_callback_attention_desc', 'Callback failures or pressure are present in the selected window.'],
+    'Queued or backlogged runs are present in the selected window.': ['admin.ai_advisor.diagnosis_queue_attention_desc', 'Queued or backlogged runs are present in the selected window.'],
+    'Recent guard events may indicate policy, throttle, or auth pressure.': ['admin.ai_advisor.diagnosis_guard_attention_desc', 'Recent guard events may indicate policy, throttle, or auth pressure.'],
+    'Current runtime diagnostics do not show an immediate operator blocker.': ['admin.ai_advisor.diagnosis_runtime_healthy_desc', 'Current runtime diagnostics do not show an immediate operator blocker.'],
+    'Past-due or suspended subscriptions are present in the admin overview.': ['admin.ai_advisor.diagnosis_subscription_attention_desc', 'Past-due or suspended subscriptions are present in the admin overview.'],
+    'One or more active subscriptions expire within 7 days.': ['admin.ai_advisor.diagnosis_subscription_expiry_desc', 'One or more active subscriptions expire within 7 days.'],
+    'No immediate usage, entitlement, or subscription attention item is present.': ['admin.ai_advisor.diagnosis_commercial_healthy_desc', 'No immediate usage, entitlement, or subscription attention item is present.'],
+    'Provider usage evidence maps to one or more hosted routing profiles.': ['admin.ai_advisor.diagnosis_routing_candidates_desc', 'Provider usage evidence maps to one or more hosted routing profiles.'],
+    'Provider degradation evidence is present for this site.': ['admin.ai_advisor.diagnosis_routing_degradation_desc', 'Provider degradation evidence is present for this site.'],
+    'Current site-scoped routing evidence does not produce a review candidate.': ['admin.ai_advisor.diagnosis_routing_healthy_desc', 'Current site-scoped routing evidence does not produce a review candidate.'],
     'Recent usage, runtime, provider, and knowledge signals do not show a high-priority operator action.': ['admin.ai_advisor.diagnosis_operations_stable_desc', 'Recent usage, runtime, provider, and knowledge signals do not show a high-priority operator action.'],
     'Recent run failures are visible in the selected operations window.': ['admin.ai_advisor.diagnosis_runtime_failures_desc', 'Recent run failures are visible in the selected operations window.'],
     'Provider errors or fallback pressure are present in recent traffic.': ['admin.ai_advisor.diagnosis_provider_reliability_desc', 'Provider errors or fallback pressure are present in recent traffic.'],
@@ -461,14 +483,18 @@ function HistoryRow({ item }: { item: AdvisorHistoryItem }) {
   );
 }
 
-function OperationsWorkPanel({ data }: { data: AdvisorPreviewData }) {
+function confidenceLabel(value: string, t: Translator): string {
+  if (value === 'high') return t('admin.ai_advisor.confidence_high', {}, 'High confidence');
+  if (value === 'medium') return t('admin.ai_advisor.confidence_medium', {}, 'Medium confidence');
+  if (value === 'low') return t('admin.ai_advisor.confidence_low', {}, 'Low confidence');
+  return t('admin.ai_advisor.confidence_unknown', {}, 'Confidence unknown');
+}
+
+function OperationsWorkPanel({ data, siteId }: { data: AdvisorPreviewData; siteId: string }) {
   const { t } = useLocale();
   const branch = data.ai;
   const advisor = branch.source_context.advisor;
-  const runtime = getSignal(branch, 'ops.runtime_quality');
-  const provider = getSignal(branch, 'ops.provider_quality');
-  const knowledge = getSignal(branch, 'ops.knowledge_quality');
-  const usage = getSignal(branch, 'ops.usage_cost');
+  const metrics = advisorMetrics(branch);
   const actions = advisor.recommendedActions.length
     ? advisor.recommendedActions
     : [{ action: branch.operator_next_step || 'continue_operations_monitoring', requiresOperator: true }];
@@ -476,16 +502,16 @@ function OperationsWorkPanel({ data }: { data: AdvisorPreviewData }) {
   const severity = advisor.severity || branch.severity || 'info';
 
   return (
-    <BackofficeSectionPanel className="space-y-5" data-ui="advisor-current-diagnosis">
+    <BackofficeSectionPanel className="min-w-0 space-y-5" data-ui="advisor-current-diagnosis">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
             {t('admin.ai_advisor.current_diagnosis', {}, 'Current diagnosis')}
           </p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+          <h2 className="mt-2 break-words text-xl font-semibold text-slate-950 dark:text-white">
             {advisorHeadlineText(branch.headline, t)}
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <p className="mt-2 max-w-3xl break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
             {advisorSummaryText(advisor.summary || branch.operator_summary, t)}
           </p>
         </div>
@@ -497,71 +523,36 @@ function OperationsWorkPanel({ data }: { data: AdvisorPreviewData }) {
 
       <BackofficeMetricStrip
         columnsClassName="md:grid-cols-2 xl:grid-cols-4"
-        items={[
-          {
-            label: t('admin.ai_advisor.metric_failed_runs', {}, 'Failed runs'),
-            value: formatNumber(Number(runtime.failed_runs || 0)),
-            detail: t(
-              'admin.ai_advisor.detail_total_runs',
-              { total: formatNumber(Number(runtime.total_runs || 0)) },
-              '{{total}} total runs'
-            ),
-            toneClassName: Number(runtime.failed_runs || 0) > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
-          },
-          {
-            label: t('admin.ai_advisor.metric_provider_errors', {}, 'Provider errors'),
-            value: formatNumber(Number(provider.provider_errors || 0)),
-            detail: t(
-              'admin.ai_advisor.detail_provider_calls',
-              { rate: formatRatio(provider.provider_error_rate), calls: formatNumber(Number(provider.provider_calls || 0)) },
-              '{{rate}} · {{calls}} calls'
-            ),
-            toneClassName: Number(provider.provider_errors || 0) > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
-          },
-          {
-            label: t('admin.ai_advisor.metric_knowledge_no_hits', {}, 'Knowledge no-hits'),
-            value: formatNumber(Number(knowledge.knowledge_no_hits || 0)),
-            detail: t(
-              'admin.ai_advisor.detail_knowledge_searches',
-              { rate: formatRatio(knowledge.knowledge_no_hit_rate), searches: formatNumber(Number(knowledge.knowledge_searches || 0)) },
-              '{{rate}} · {{searches}} searches'
-            ),
-            toneClassName: Number(knowledge.knowledge_no_hits || 0) > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
-          },
-          {
-            label: t('admin.ai_advisor.metric_usage_cost', {}, 'Usage cost'),
-            value: formatCost(Number(usage.provider_cost || 0)),
-            detail: t(
-              'admin.ai_advisor.detail_usage_events',
-              { events: formatNumber(Number(usage.usage_events || 0)) },
-              '{{events}} usage events'
-            ),
-            size: 'compact',
-          },
-        ]}
+        items={metrics.map(metric => ({
+          label: t(`admin.ai_advisor.metric_${metric.key}`, {}, metric.key.replaceAll('_', ' ')),
+          value: metric.value === null ? '—' : metric.key === 'usage_cost' ? formatCost(metric.value) : formatNumber(metric.value),
+          detail: metric.value === null ? t('admin.ai_advisor.metric_unavailable', {}, 'Not provided in this summary') : undefined,
+          toneClassName: metric.value !== null && metric.value > 0 && metric.key !== 'usage_cost' ? 'text-amber-600 dark:text-amber-300' : undefined,
+          size: 'compact' as const,
+        }))}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
-        <div className="rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
-          <div className="flex items-center justify-between gap-3">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+        <div className="min-w-0 rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-semibold text-slate-950 dark:text-white">
               {t('admin.ai_advisor.recommended_actions', {}, 'Recommended actions')}
             </p>
             <BackofficeStatusBadge
-              label={advisor.confidence || t('admin.ai_advisor.confidence_unknown', {}, 'confidence unknown')}
+              label={confidenceLabel(advisor.confidence, t)}
               status={advisor.confidence === 'high' ? 'success' : 'inactive'}
             />
           </div>
           <div className="mt-3 space-y-3">
             {actions.map((item, index) => {
-              const action = actionDisplay(item.action, t);
+              const action = actionDisplay(item.action, t, siteId);
               return (
                 <div key={`${item.action}-${index}`} className="flex items-start gap-3 rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/45">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white dark:bg-blue-500 dark:text-slate-950">
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{action.label}</p>
+                    <p className="break-words text-sm font-medium text-slate-900 dark:text-slate-100">{action.label}</p>
                     <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">{action.detail}</p>
                     {action.href ? (
                       <Link href={action.href} className="mt-2 inline-flex text-xs font-semibold text-blue-700 underline-offset-4 hover:underline dark:text-blue-300">
@@ -575,7 +566,7 @@ function OperationsWorkPanel({ data }: { data: AdvisorPreviewData }) {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+        <div className="min-w-0 rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
           <p className="text-sm font-semibold text-slate-950 dark:text-white">
             {t('admin.ai_advisor.evidence_entry', {}, 'Evidence entry')}
           </p>
@@ -583,7 +574,7 @@ function OperationsWorkPanel({ data }: { data: AdvisorPreviewData }) {
             {advisor.evidence.length ? (
               advisor.evidence.slice(0, 5).map((item) => (
                 <div key={`${item.kind}-${item.ref}`} className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/45">
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{advisorEvidenceLabel(item.kind, item.label, t)}</p>
+                  <p className="break-words text-sm font-medium text-slate-900 dark:text-slate-100">{advisorEvidenceLabel(item.kind, item.label, t)}</p>
                   <p className="mt-1 truncate font-mono text-[0.7rem] text-slate-500 dark:text-slate-400">{item.ref || item.kind}</p>
                 </div>
               ))
@@ -659,55 +650,16 @@ function severityLabel(severity: string, t: Translate): string {
   }
 }
 
-function actionDisplay(action: string, t: Translate): { label: string; detail: string; href?: string } {
-  switch (action) {
-    case 'inspect_failed_runs_by_site_and_ability':
-      return {
-        label: t('admin.ai_advisor.action_inspect_failed_runs', {}, 'Inspect failed runs'),
-        detail: t('admin.ai_advisor.action_inspect_failed_runs_detail', {}, 'Locate failed runs by site, ability, and error code, then decide whether the issue is runtime, provider, or contract related.'),
-        href: '/admin/ai-resources',
-      };
-    case 'inspect_provider_errors_latency_and_fallbacks':
-      return {
-        label: t('admin.ai_advisor.action_inspect_provider_errors', {}, 'Inspect provider errors and latency'),
-        detail: t('admin.ai_advisor.action_inspect_provider_errors_detail', {}, 'Check provider error rate, fallback behavior, latency, and recent model-call evidence.'),
-        href: '/admin/ai-resources',
-      };
-    case 'review_site_knowledge_no_hit_queries_and_index_coverage':
-      return {
-        label: t('admin.ai_advisor.action_review_knowledge_no_hits', {}, 'Review Site Knowledge no-hits'),
-        detail: t('admin.ai_advisor.action_review_knowledge_no_hits_detail', {}, 'Review no-hit queries, index coverage, and intent distribution before deciding whether indexing or local content coverage needs work.'),
-        href: '/admin/vector-observability',
-      };
-    case 'review_subscription_attention_and_expiry_coverage':
-      return {
-        label: t('admin.ai_advisor.action_review_subscription_risk', {}, 'Review subscription and coverage risk'),
-        detail: t('admin.ai_advisor.action_review_subscription_risk_detail', {}, 'Check customers needing follow-up, expiring subscriptions, and service coverage state.'),
-        href: '/admin/coverage',
-      };
-    case 'inspect_queue_worker_and_callback_delivery':
-      return {
-        label: t('admin.ai_advisor.action_inspect_queue_callbacks', {}, 'Inspect queue and callback delivery'),
-        detail: t('admin.ai_advisor.action_inspect_queue_callbacks_detail', {}, 'Confirm whether queued/running pressure, worker handling, or callback failures need operator intervention.'),
-        href: '/admin/ai-resources',
-      };
-    case 'inspect_commercial_entitlement_and_runtime_guard':
-      return {
-        label: t('admin.ai_advisor.action_inspect_entitlement_guard', {}, 'Inspect entitlement and runtime guard'),
-        detail: t('admin.ai_advisor.action_inspect_entitlement_guard_detail', {}, 'Check commercial coverage, runtime denials, and guard events to confirm whether a plan or rate limit triggered the issue.'),
-        href: '/admin/coverage',
-      };
-    case 'continue_operations_monitoring':
-      return {
-        label: t('admin.ai_advisor.action_continue_monitoring', {}, 'Continue monitoring'),
-        detail: t('admin.ai_advisor.action_continue_monitoring_detail', {}, 'No high-priority blocker is visible in the current window. Keep watching for new failure, cost, or coverage signals.'),
-      };
-    default:
-      return {
-        label: humanizeKey(action || 'continue_operations_monitoring'),
-        detail: t('admin.ai_advisor.action_unknown_detail', {}, 'This is a read-only recommendation. An operator still needs to judge it against the evidence.'),
-      };
-  }
+function actionDisplay(action: string, t: Translate, siteId: string): { label: string; detail: string; href?: string } {
+  const entry = advisorActionCatalog[action];
+  if (!entry) return {
+    label: t('admin.ai_advisor.action_unknown', {}, 'Review additional evidence'),
+    detail: t('admin.ai_advisor.action_unknown_detail', {}, 'This is a read-only recommendation. An operator still needs to judge it against the evidence.'),
+  };
+  let detail = t(`admin.ai_advisor.action_${entry.copy}_detail`);
+  if (entry.windowChanged) detail += ` ${t('admin.ai_advisor.evidence_window_changed', {}, 'The evidence page opens with a 14-day window; its counts may differ from this summary.')}`;
+  if (entry.href === '/admin#runtime-attention') detail += ` ${t('admin.ai_advisor.platform_runtime_destination', {}, 'The overview shows platform runtime evidence, without the site filter.')}`;
+  return { label: t(`admin.ai_advisor.action_${entry.copy}`), detail, href: advisorActionHref(action, siteId) };
 }
 
 function EffectComparisonPanel({ data }: { data: AdvisorPreviewData }) {
@@ -1287,6 +1239,7 @@ function ValueMetricsPanel({ valueMetrics }: { valueMetrics: AdvisorValueMetrics
 function AdminAiAdvisorContent() {
   const { t } = useLocale();
   const [data, setData] = useState<AdvisorPreviewData | null>(null);
+  const [loadedScopeKey, setLoadedScopeKey] = useState('');
   const [historyItems, setHistoryItems] = useState<AdvisorHistoryItem[]>([]);
   const [valueMetrics, setValueMetrics] = useState<AdvisorValueMetrics | null>(null);
   const [evaluationDetailsOpen, setEvaluationDetailsOpen] = useState(false);
@@ -1295,9 +1248,21 @@ function AdminAiAdvisorContent() {
   const [loadedEvaluationDetailsKey, setLoadedEvaluationDetailsKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [scope, setScope] = useState('operations');
-  const [siteIdInput, setSiteIdInput] = useState('');
-  const [siteId, setSiteId] = useState('');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const scope = advisorScope(searchParams.get('scope'));
+  const siteId = searchParams.get('site') || '';
+  const [siteIdInput, setSiteIdInput] = useState(siteId);
+  useEffect(() => { setSiteIdInput(siteId); }, [siteId]);
+  const applyScope = (nextScope: string, nextSite: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('scope', advisorScope(nextScope));
+    if (nextSite) params.set('site', nextSite); else params.delete('site');
+    router.push(`${pathname}?${params}`);
+  };
+  const setScope = (nextScope: string) => applyScope(nextScope, siteId);
+  const setSiteId = (nextSite: string) => applyScope(scope, nextSite);
   const [providerIdInput, setProviderIdInput] = useState('');
   const [providerId, setProviderId] = useState('');
   const [modelIdInput, setModelIdInput] = useState('');
@@ -1338,7 +1303,7 @@ function AdminAiAdvisorContent() {
   }, [historyScope, siteId]);
 
   const loadValueMetrics = useCallback(
-    async (resolvedScope = scope) => {
+    async (resolvedScope: string = scope) => {
       const valueParams = new URLSearchParams();
       valueParams.set('window_days', '7');
       valueParams.set('limit', '10');
@@ -1396,6 +1361,7 @@ function AdminAiAdvisorContent() {
         const nextData = normalizePreview(response.data ?? {});
         if (sequence === previewRequestSequenceRef.current) {
           setData(nextData);
+          setLoadedScopeKey(JSON.stringify([scope, siteId.trim()]));
         }
       } catch (previewError) {
         if (sequence === previewRequestSequenceRef.current) {
@@ -1627,6 +1593,7 @@ function AdminAiAdvisorContent() {
               key={option.value}
               type="button"
               onClick={() => setScope(option.value)}
+              aria-pressed={scope === option.value}
               className={cn(
                 'h-8 rounded-full border px-3 text-xs font-semibold transition',
                 scope === option.value
@@ -1665,6 +1632,7 @@ function AdminAiAdvisorContent() {
             {loading ? t('common.loading', {}, 'Loading...') : t('admin.ai_advisor.action_run_diagnosis', {}, 'Run diagnosis')}
           </button>
         </div>
+        {scope === 'commercial' ? <p className="mt-3 text-xs text-slate-500">{t('admin.ai_advisor.commercial_platform_scope', {}, 'Commercial summaries cover the platform; the site filter does not apply.')}</p> : null}
         <details className="mt-4 rounded-xl border border-slate-200/80 bg-white/65 dark:border-slate-800 dark:bg-slate-950/30">
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-900/60">
             {t('admin.ai_advisor.advanced_params', {}, 'Advanced evaluation parameters')}
@@ -1733,9 +1701,9 @@ function AdminAiAdvisorContent() {
         </BackofficeSectionPanel>
       ) : null}
 
-      {data ? (
+      {data && loadedScopeKey === JSON.stringify([scope, siteId.trim()]) ? (
         <>
-          <OperationsWorkPanel data={data} />
+          <OperationsWorkPanel data={data} siteId={siteId} />
 
           <AdvisorEvaluationDetails onToggle={setEvaluationDetailsOpen}>
             <SignalPanel branch={data.ai} />

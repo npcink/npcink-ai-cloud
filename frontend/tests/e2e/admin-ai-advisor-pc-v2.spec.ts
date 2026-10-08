@@ -42,7 +42,6 @@ const advisorBranch = {
 async function installAdvisorMocks(page: Parameters<typeof installAdminMocks>[0]) {
   const requestedPaths: string[] = [];
   await installAdminMocks(page);
-  await page.unroute('**/api/admin/**');
   await page.route('**/api/admin/advisor/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     requestedPaths.push(pathname);
@@ -97,4 +96,52 @@ test('Operations Advisor keeps the current PC diagnosis primary and technical AI
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
+});
+
+test('advisor scope metrics, site deep links and evidence destinations survive reload', async ({ page }, testInfo) => {
+  await installAdminMocks(page);
+  const requests: string[] = [];
+  const cases = {
+    operations: { scope: 'operations_analysis', headline: 'Runtime failures need operations review', summary: 'Recent run failures are visible in the selected operations window.', signals: [{ code: 'ops.runtime_quality', failed_runs: 3, total_runs: 20 }], action: 'inspect_failed_runs_by_site_and_ability', label: /^失败运行$|^Failed runs$/i, value: '3' },
+    runtime: { scope: 'runtime_operations', headline: 'Runtime queue needs operator review', summary: 'Queued or backlogged runs are present in the selected window.', signals: [{ code: 'runtime.queue_pressure', queued_runs: 4 }], action: 'inspect_runtime_queue_and_worker', label: /排队运行数|Queued runs/i, value: '4' },
+    commercial: { scope: 'commercial_operations', headline: 'Subscriptions are expiring soon', summary: 'One or more active subscriptions expire within 7 days.', signals: [{ code: 'commercial.subscription_expiring_soon', within_7_days: 2 }], action: 'review_expiring_subscription_coverage', label: /7 天内到期订阅|Expiring within 7 days/i, value: '2' },
+    routing: { scope: 'routing_operations', headline: 'Routing profile candidates are available', summary: 'Provider usage evidence maps to one or more hosted routing profiles.', signals: [{ code: 'routing.profile_candidates', recommended_profile_ids: ['profile-a', 'profile-b'] }], action: 'review_hosted_routing_profile_candidates', label: /配置候选数|Profile candidates/i, value: '2' },
+  };
+  await page.route('**/api/admin/advisor/ops-summary-preview?*', route => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(route.request().url());
+    const selected = cases[(params.get('scope') || 'operations') as keyof typeof cases];
+    const branch = { ...advisorBranch, scope: selected.scope, headline: selected.headline, source_context: { advisor: { ...advisorBranch.source_context.advisor, scope: selected.scope, summary: selected.summary, signals: selected.signals, recommended_actions: [{ action: selected.action, requires_operator: true }] } } };
+    return route.fulfill({ json: buildAdminApiEnvelope({ baseline: branch, ai: branch, comparison: { ai_used: false, ai_called: false } }) });
+  });
+  for (const [scope, selected] of Object.entries(cases)) {
+    await page.goto(`/admin/ai-advisor?scope=${scope}&site=site_mvp`);
+    const diagnosis = page.locator('[data-ui="advisor-current-diagnosis"]');
+    await expect(diagnosis).toBeVisible();
+    await expect(diagnosis.getByText(selected.label, { exact: true })).toBeVisible();
+    await expect(diagnosis).toContainText(selected.value);
+    await expect(diagnosis).toContainText(/此摘要未提供|Not provided/);
+    await expect(page.getByRole('textbox', { name: /^站点 ID$|^Site ID$/i })).toHaveValue('site_mvp');
+    await expect.poll(() => requests.some(url => url.includes(`scope=${scope}`) && url.includes('site_id=site_mvp'))).toBe(true);
+    const evidence = diagnosis.getByRole('link', { name: /打开证据|Open evidence/i }).first();
+    if (scope === 'operations') {
+      await expect(evidence).toHaveAttribute('href', '/admin/troubleshooting?focus=hosted_model.failed_runs&window=336&site=site_mvp');
+      await evidence.click();
+      await expect(page).toHaveURL(/troubleshooting\?focus=hosted_model.failed_runs&window=336&site=site_mvp/);
+      await page.goBack();
+      await expect(page).toHaveURL(/ai-advisor\?scope=operations&site=site_mvp/);
+    }
+    if (scope === 'runtime') {
+      await expect(evidence).toHaveAttribute('href', '/admin#runtime-attention');
+      await evidence.click();
+      await expect(page.locator('details').filter({ has: page.locator('#runtime-attention') })).toHaveAttribute('open', '');
+      await page.goBack();
+    }
+    if (scope === 'commercial') await expect(page.getByText(/商业摘要覆盖整个平台|Commercial summaries cover/)).toBeVisible();
+    await page.reload();
+    await expect(page.locator('[data-ui="ai-advisor-scope-workbench"] button[aria-pressed="true"]')).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`advisor-${scope}-1440.png`), fullPage: true });
+  }
+  expect(requests.some(url => url.includes('provider_id=') || url.includes('model_id='))).toBe(false);
 });
