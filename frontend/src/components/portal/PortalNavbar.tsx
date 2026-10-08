@@ -40,6 +40,11 @@ export function PortalNavbar() {
     [pathname]
   );
 
+  const ariaCurrent = (href: string): 'page' | 'true' | undefined => {
+    if (!isActive(href)) return undefined;
+    return pathname === href ? 'page' : 'true';
+  };
+
   const handleLogout = useCallback(async () => {
     await logout();
     router.push('/portal/login');
@@ -72,7 +77,7 @@ export function PortalNavbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  aria-current={isActive(item.href) ? (pathname === item.href ? 'page' : 'true') : undefined}
+                  aria-current={ariaCurrent(item.href)}
                   className={cn(
                     'rounded-full px-3 py-2 text-sm font-medium transition-all',
                     isActive(item.href)
@@ -137,7 +142,7 @@ export function PortalNavbar() {
                     <Link
                       key={item.href}
                       href={item.href}
-                      aria-current={isActive(item.href) ? (pathname === item.href ? 'page' : 'true') : undefined}
+                      aria-current={ariaCurrent(item.href)}
                       className={cn(
                         'rounded-full px-3 py-2 text-sm font-medium transition-all',
                         isActive(item.href)
@@ -170,7 +175,7 @@ export function PortalNavbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={isActive(item.href) ? (pathname === item.href ? 'page' : 'true') : undefined}
+                aria-current={ariaCurrent(item.href)}
                 className={cn(
                   'block rounded-2xl px-4 py-3 text-sm font-medium transition-colors',
                   isActive(item.href)
