@@ -38,7 +38,7 @@ function destinationWindows(href: string): readonly number[] {
 
 function resolvedWindow(href: string, current: string | null): number {
   const capability = observationCapability(href);
-  return capability ? normalizeObservationWindow(current, 336, capability) : 336;
+  return capability ? normalizeObservationWindow(current, undefined, capability) : 336;
 }
 
 export function adminNavigationWindowHours(href: string, params: ScopeParams): number | null {

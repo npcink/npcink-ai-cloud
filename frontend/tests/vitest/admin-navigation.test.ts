@@ -56,7 +56,20 @@ describe('Admin navigation scope contracts', () => {
 
   it('ignores invalid windows and unrelated external-looking parameters', () => {
     expect(adminScopedNavigationHref('/admin/plugin-observability', new URLSearchParams('window=999999&return_to=https://evil.example&focus=secret')))
-      .toBe('/admin/plugin-observability?window=336');
+      .toBe('/admin/plugin-observability?window=24');
+  });
+
+  it.each([null, '', 'invalid', '999999'])('uses the destination default for an absent or invalid window (%s)', raw => {
+    const source = new URLSearchParams({ site: 'site-a' });
+    if (raw !== null) source.set('window', raw);
+    expect(adminScopedNavigationHref('/admin/plugin-observability', source)).toBe('/admin/plugin-observability?window=24&site=site-a');
+    expect(adminScopedNavigationHref('/admin/agent-feedback', source)).toBe('/admin/agent-feedback?window=24&site=site-a');
+    expect(adminScopedNavigationHref('/admin/troubleshooting', source)).toBe('/admin/troubleshooting?window=336&site=site-a');
+  });
+
+  it('preserves an explicitly chosen 14-day plugin window', () => {
+    expect(adminScopedNavigationHref('/admin/plugin-observability', new URLSearchParams('window=336&site=site-a')))
+      .toBe('/admin/plugin-observability?window=336&site=site-a');
   });
 
   it('assigns evidence pages to the correct parent without claiming unrelated routes', () => {

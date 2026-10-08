@@ -592,3 +592,31 @@ GitHub checks on the final pushed revision must still pass before protected
 merge, clean-current-master M4 promotion, relevant smoke and exact-topic
 cleanup. Human image acceptance does not itself prove these later states or
 authorize production deployment.
+
+### Destination default-window correction (2026-10-08)
+
+Final review exposed one additional navigation defect: when an incoming window
+was absent or invalid, the shared link helper used 336 hours whenever that value
+was supported. Plugin observability supports 336 but declares a 24-hour default,
+so the fallback overrode its owner. This supersedes the earlier advisory
+disposition that treated the redundant fallback as optional cleanup.
+
+The helper now delegates absent/invalid input to the destination capability's
+declared default. Explicit valid windows and known incompatible-window
+narrowing retain their behavior, along with site scope. Five regression
+assertions failed against the previous implementation; all 20 focused navigation
+cases passed after the one-line correction. Targeted lint, Admin contracts and
+TypeScript passed. No golden image changed.
+
+Reusable rule: a supported window and a default window are different facts.
+Shared navigation must inherit a source window only when one is explicitly
+supplied, otherwise use the destination's default. Final CI must bind to this
+new source checkpoint; the preceding `a511257f` CI passed 247 unit cases,
+48 critical paths and 85 visual cases, but is not final-source merge evidence.
+
+Other late high-severity claims were checked across their actual consumers:
+the Advisor normalizer guards signal arrays and object members before metrics;
+both navigation-adjustment translations exist; provider failure evidence comes
+from an inner join to existing run records. Native history is integrated by
+the installed Next.js App Router and covered by navigation browser scenarios.
+Individual dispositions and bounded test-fixture follow-ups remain in PR #1086.
