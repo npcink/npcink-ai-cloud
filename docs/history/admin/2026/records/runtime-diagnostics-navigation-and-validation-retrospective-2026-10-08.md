@@ -487,3 +487,22 @@ the remaining budget, release, operator-owned tests and F8 evidence limit.
 Existing UI standards, this retrospective and the Addon producer contract
 provide the local development record; these final Cloud documentation updates
 are still part of the unmerged Admin closeout.
+
+### Accepted Linux baseline checkpoint (2026-10-08)
+
+The operator agreed to the recommended sequence of Linux baseline acceptance,
+final CI, PR #1086 merge, clean-master M4 acceptance and exact-topic cleanup
+("同意，按您的建议落实"). This supersedes the pending visual acceptance in
+the preceding dated checkpoint. The 11 previously displayed Linux candidates
+were rehashed against their preserved manifest and accepted without
+regeneration, changes to existing Darwin goldens or relaxed pixel assertions.
+They cover customer credits/mobile navigation/quota/top-up, external services,
+providers, runtime profiles and service settings. The candidates were generated
+on M4 with the pinned official Linux arm64 Playwright image; GitHub's Linux
+runner remains the final cross-platform comparison gate.
+
+Only existing test corrections, the accepted goldens and dated handoff records
+are included in this checkpoint. The shared page models, action hierarchy,
+API/URL state ownership and product boundaries are unchanged. Publication,
+protected merge and post-merge M4 acceptance must still be verified separately.
+No production deployment or paid Provider call is authorized by this checkpoint.
