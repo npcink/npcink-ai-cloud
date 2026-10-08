@@ -109,6 +109,63 @@ Portal-only guard changes were removed from this Admin candidate and remain
 with the Portal owner. Any final OCR retry must reuse unchanged coverage and
 review changed or previously failed files with bounded concurrency and budget.
 
+## Local closeout checkpoint
+
+The isolated branch is `codex/admin-diagnostics-closeout`, in
+`/Users/muze/.codex/worktrees/diagnostics-closeout/npcink-ai-cloud`, locked as
+`codex:runtime-closeout-20261008`. The runtime-only predecessor is retained as
+`codex/runtime-meter-coverage-closeout`. Code checkpoint
+`b4f481178aa80b0ba0b8f45a33a63a61a5d8a511` includes the review repairs and a
+consistent Advisor destination fixture. This record is local committed
+preparation, not a published or merged PR.
+
+Current local evidence:
+
+- Admin source/static gate, TypeScript and targeted ESLint passed.
+- Twenty focused Vitest cases and 25 CI-efficiency contracts passed.
+- Frontend unit contracts initially stopped at unregistered dynamic Advisor
+  translation families. The missing families were registered; that seam and
+  the remaining contracts passed. The initial failure is retained.
+- The final shared visual matrix passed 85 tests across 15 unique specs at
+  `24c0e10893a1aeb6bce7e974802bfe429a38a483`, with nine pilot receipts.
+  Receipt dirty paths contain only the Next-generated `next-env.d.ts` import,
+  restored afterward. No changed golden baseline was committed. Human
+  acceptance remains pending for material shared patterns.
+- Ten navigation browser cases passed. Advisor had one pass and one failure
+  because the test claimed failed runs while its destination fixture was
+  healthy. The destination fixture was corrected, actual selected-issue
+  content was asserted, and the failed case passed on a focused retry.
+  The production frontend did not change after the 85-test matrix.
+- Documentation reachability passed: 498 of 498 documents indexed.
+
+The bounded final OCR attempt reviewed the exact `24c0e108` input with
+concurrency one. Three unchanged completed files from the initial review
+were verified and excluded for reuse. Same-session resume rejected the changed
+HEAD, so a new session was necessary. The 16k prompt limit skipped the large
+troubleshooting page, and grouped review hit context-compression limits.
+At the declared 10:17 local deadline, the session was interrupted gracefully.
+Its final result is **failed**, with zero of 41 selected files completed,
+421,476 reported tokens and no new findings. This does not certify the final
+Admin revision. Session `72cd6ed9-3712-4adc-bddd-432d7c534686` and earlier
+partial findings are preserved privately. Any later attempt must narrow the
+file group and supply sufficient context instead of replaying the broad run.
+
+Six stale local remote-tracking refs were pruned only after a verified Git
+bundle. No live remote head, local branch or worktree was deleted. All task
+commits, mixed original source, pilot receipts and screenshots are preserved
+outside the worktree. Primary, Portal-owner, M4 operations and unique-unmerged
+historical worktrees remain protected.
+
+Remaining delivery gates are the shared merge/M4 owner assignment, scoped M4
+API and relevant quality gates, protected PR checks and merge, human visual
+acceptance where required, then clean-current-master promotion and smoke.
+Portal PR #1079 was still open with a required backend check failing at this
+checkpoint; it is owned by the separate Portal session. Do not publish or
+replace its shared candidate while ownership is unresolved. Release this
+worktree only after its owning PRs are merged, accepted runtime evidence is
+current, ignored evidence is preserved and a fresh exact-path audit permits
+non-force removal. No production operation is authorized by this checkpoint.
+
 ## Evidence limits and pending work
 
 The preceding development candidate passed 18 focused unit tests, the
