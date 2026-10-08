@@ -75,6 +75,7 @@ export async function installAdminMocks(
     current_period_end: '2026-04-12T00:00:00Z',
   };
   let primaryAccountCoverageFollowUp = true;
+  let primaryIdentityDisabled = false;
   let accountItems = [
     {
       account: {
@@ -623,6 +624,11 @@ export async function installAdminMocks(
         ],
         read_only: true,
       });
+      return;
+    }
+
+    if (pathname === '/api/admin/runtime-telemetry/runs') {
+      await fulfillJson(route, { items: [], sampled: false, truncated: false });
       return;
     }
 
@@ -1393,8 +1399,8 @@ export async function installAdminMocks(
         primary_identity: {
           principal_id: 'prn_mvp_owner',
           email: 'admin@example.com',
-          status: 'active',
-          session_version: 1,
+          status: primaryIdentityDisabled ? 'disabled' : 'active',
+          session_version: primaryIdentityDisabled ? 2 : 1,
           last_login_at: '2026-04-08T00:00:00Z',
           created_at: '2026-02-01T00:00:00Z',
           membership_id: 'aum_mvp_owner',
@@ -2057,17 +2063,72 @@ export async function installAdminMocks(
       return;
     }
 
+    if (pathname === '/api/admin/service-settings' && route.request().method() === 'GET') {
+      await fulfillJson(route, { settings: {
+        platform_preferences: { setting_id: 'platform_preferences', enabled: true, status: 'ready', config: { timezone: 'Asia/Shanghai' } },
+        media_recognition_policy: { setting_id: 'media_recognition_policy', enabled: false, status: 'disabled', config: { window_start: '01:00', window_end: '06:00', daily_limit: 100 } },
+      } });
+      return;
+    }
+    if (pathname === '/api/admin/runtime-profiles/capability-probes/summary' && route.request().method() === 'GET') {
+      await fulfillJson(route, { window_minutes: 10080, generated_at: '2026-10-07T06:00:00Z', totals: { attempts: 0, verified: 0, failed: 0, success_rate: 0 }, by_capability: [], by_instance: [], recent_failures: [] });
+      return;
+    }
+    if (pathname === '/api/admin/plugin-observability' && route.request().method() === 'GET') {
+      await fulfillJson(route, {
+        generated_at: '2026-10-07T06:00:00Z',
+        window: { hours: Number(searchParams.get('window_hours') || 24), start_at: new Date(Date.parse('2026-10-07T06:00:00Z') - Number(searchParams.get('window_hours') || 24) * 3600000).toISOString(), end_at: '2026-10-07T06:00:00Z' },
+        totals: { events_total: 0, ok_total: 0, error_total: 0, success_rate: 0, avg_latency_ms: 0, active_site_count: 0, active_plugin_count: 0 },
+        health: { status: 'inactive', score: 0, summary: 'No plugin events in this window.', reasons: [] },
+        attention: [], timeline: [], sites: [], plugins: [], errors: [], recent_events: [],
+      });
+      return;
+    }
+    if (pathname === '/api/admin/ai-resources' && route.request().method() === 'GET') {
+      await fulfillJson(route, { surface: 'admin_ai_resources', connections: [], provider_model_health: { default_window_id: 'last_24h', windows: [{ window_id: 'last_24h', label: 'Last 24h', rows: [] }] }, capabilities: [], capability_matrix: [], runtime_resolution: [], feature_model_usage: [], runtime_profiles: [], boundary: { direct_wordpress_write: false, final_writes: 'excluded', secret_exposure: 'masked', not_a_control_plane: true } });
+      return;
+    }
+    if (pathname === '/api/admin/model-references/sync' && route.request().method() === 'POST') {
+      await fulfillJson(route, { surface: 'admin_model_reference_sync', source_id: 'models.dev', source_url: 'https://models.dev/api.json', synced_at: '2026-10-07T06:00:00Z', provider_count: 0, model_count: 0, price_unit: 'usd_per_1m_tokens', billing_truth: false, boundary: { owner: 'cloud_hosted_metadata', reference_only: true, billing_truth: false, routing_truth: false, direct_wordpress_write: false, not_a_control_plane: true } });
+      return;
+    }
+    if (pathname === '/api/admin/model-references' && route.request().method() === 'GET') {
+      await fulfillJson(route, { items: [], total: 0, source_summary: [] });
+      return;
+    }
+    if (pathname === '/api/admin/portal-users/prn_mvp_owner/audit' && route.request().method() === 'GET') {
+      await fulfillJson(route, {
+        summary: { events: 1, registration_events: 1, disable_events: 0, failed: 0 },
+        items: [{ event_id: 1, event_kind: 'portal_user.register', outcome: 'success', created_at: '2026-04-08T00:00:00Z' }],
+      });
+      return;
+    }
+    if (pathname === '/api/admin/portal-users/prn_mvp_owner/disable' && route.request().method() === 'POST') {
+      primaryIdentityDisabled = true;
+      await fulfillJson(route, { receipt: { event_kind: 'portal_user.disable', scope_kind: 'principal', scope_id: 'prn_mvp_owner', outcome: 'succeeded', effective_summary: 'Customer login disabled and sessions revoked.' } });
+      return;
+    }
+
+    if (route.request().method() === 'GET' && /^\/api\/admin\/accounts\/[^/]+$/.test(pathname)) {
+      const knownAccount = accountItems.find(item => item.account.account_id === pathname.split('/').at(-1));
+      if (knownAccount) {
+        await fulfillJson(route, { account: knownAccount.account, primary_identity: null, identity_relationship_state: 'missing', memberships: [], sites: [], subscriptions: [], trial_readiness: { status: 'action_required', next_action: 'apply_package_coverage', blocking_codes: ['package_coverage'] } });
+        return;
+      }
+    }
+
     const requestKey = `${route.request().method()} ${pathname}${url.search}`;
-    if (!options.unhandledAdminRequests || options.allowedEmptyAdminRequests?.includes(requestKey)) {
+    if (options.allowedEmptyAdminRequests?.includes(requestKey)) {
       await fulfillJson(route, {});
       return;
     }
 
-    options.unhandledAdminRequests.push(requestKey);
+    options.unhandledAdminRequests?.push(requestKey);
     await route.fulfill({
       status: 501,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiErrorEnvelope('Unhandled Admin acceptance request', 'admin.e2e_unhandled_request')),
     });
+    if (!options.unhandledAdminRequests) throw new Error(`Unhandled Admin fixture request: ${requestKey}`);
   });
 }

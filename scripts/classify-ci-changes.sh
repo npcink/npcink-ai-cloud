@@ -35,7 +35,7 @@ for changed_file in "$@"; do
 	fi
 
 	case "${changed_file}" in
-		app/domain/commercial/mixins/_account_mixin.py|app/domain/commercial/mixins/_admin_mixin.py)
+		app/domain/commercial/mixins/_account_mixin.py|app/domain/commercial/mixins/_admin_mixin.py|app/api/routes/service.py|app/domain/runtime/service.py|app/domain/observability/plugin_event_history.py|app/domain/observability/plugin_events.py|app/domain/media_derivatives/metrics.py|app/domain/site_knowledge/metrics.py|app/domain/observability/editor_assist_quality.py|app/domain/agent_feedback/service.py|scripts/check-admin-window-capabilities.py)
 			frontend_backend_contracts_required=true
 			;;
 	esac
@@ -57,7 +57,7 @@ for changed_file in "$@"; do
 	esac
 
 	case "${changed_file}" in
-		.github/workflows/ci.yml|frontend/*|package.json|pnpm-lock.yaml|scripts/run-cloud-frontend-playwright.js)
+		.github/workflows/ci.yml|frontend/*|package.json|pnpm-lock.yaml|scripts/run-cloud-frontend-playwright.js|scripts/admin-visual-plan.mjs|scripts/run-admin-visual-checks.mjs)
 			deploy_required=true
 			static_terms_only=false
 			docs_only=false

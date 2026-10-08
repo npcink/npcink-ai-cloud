@@ -682,3 +682,33 @@ def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
     assert '"threshold": None' in report
     assert '"scope": "app/**/*.py"' in report
     assert "does not block merging" in report
+
+
+def test_window_capability_owners_select_frontend_contracts_without_browser_lane() -> None:
+    for path in (
+        "app/api/routes/service.py", "app/domain/runtime/service.py",
+        "app/domain/observability/plugin_event_history.py", "app/domain/observability/plugin_events.py",
+        "app/domain/media_derivatives/metrics.py", "app/domain/site_knowledge/metrics.py",
+        "app/domain/observability/editor_assist_quality.py", "app/domain/agent_feedback/service.py",
+        "scripts/check-admin-window-capabilities.py",
+    ):
+        result = _classify(path)
+        assert result["frontend_backend_contracts_required"] == "true"
+        assert result["frontend_e2e_required"] == "false"
+    assert "python3 scripts/check-admin-window-capabilities.py" in CI_WORKFLOW.read_text()
+
+
+def test_navigation_and_route_matrix_are_executed_without_title_filters_in_ci() -> None:
+    section = CI_WORKFLOW.read_text().split("Critical frontend paths", 1)[1]
+    for spec in ("admin-navigation.spec.ts", "admin-acceptance-matrix.spec.ts"):
+        lines = [line for line in section.splitlines() if f"tests/e2e/{spec}" in line]
+        assert lines and all("--grep" not in line for line in lines)
+        assert _classify(f"frontend/tests/e2e/{spec}")["frontend_e2e_required"] == "true"
+
+
+def test_manifest_visual_selection_and_advisor_paths_are_executed() -> None:
+    section = CI_WORKFLOW.read_text().split("Critical frontend paths", 1)[1]
+    assert "node scripts/run-admin-visual-checks.mjs --ci-changed" in section
+    assert "tests/e2e/admin-ai-advisor-pc-v2.spec.ts" in section
+    for path in ("scripts/admin-visual-plan.mjs", "scripts/run-admin-visual-checks.mjs"):
+        assert _classify(path)["frontend_e2e_required"] == "true"

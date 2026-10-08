@@ -31,45 +31,10 @@ const expectedRuleIds = [
   'context-stability',
   'browser-runtime-errors',
 ];
-const pilotRoutes = {
-  '/admin/ai-resources': {
-    pageModel: 'queue',
-    states: ['ready', 'selected', 'filtered', 'operation_error', 'dialog'],
-    spec: 'tests/e2e/admin-provider-directory-v2.spec.ts',
-  },
-  '/admin/coverage': {
-    pageModel: 'queue',
-    states: ['ready', 'filtered', 'paginated', 'selected', 'refresh_error'],
-    spec: 'tests/e2e/admin-service-queue-v2.spec.ts',
-  },
-  '/admin/service-settings': {
-    pageModel: 'configuration',
-    states: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog'],
-    spec: 'tests/e2e/admin-service-settings-v2.spec.ts',
-  },
-  '/admin/troubleshooting': {
-    pageModel: 'diagnostic',
-    states: ['ready', 'selected', 'partial_error', 'disclosure'],
-    spec: 'tests/e2e/admin-runtime-diagnostics-v2.spec.ts',
-  },
-  '/admin/audit': {
-    pageModel: 'diagnostic',
-    states: ['ready', 'filtered', 'selected', 'refresh_error'],
-    spec: 'tests/e2e/admin-audit-workspace.spec.ts',
-  },
-  '/admin/support-requests': {
-    pageModel: 'queue',
-    states: ['ready', 'filtered', 'selected', 'returned'],
-    spec: 'tests/e2e/admin-support-request-operator-closure.spec.ts',
-    artifact: 'support-request-queue',
-  },
-  '/admin/support-requests/[requestId]': {
-    pageModel: 'detail',
-    states: ['ready', 'action_error', 'action_success', 'return_context'],
-    spec: 'tests/e2e/admin-support-request-operator-closure.spec.ts',
-    artifact: 'support-request-detail',
-  },
-};
+const pilotRoutes = Object.fromEntries(Object.entries(manifest.visualGovernance.pilotRoutes).map(([route, pilot]) => [route, {
+  pageModel: pilot.pageModel, states: pilot.requiredStates, spec: pilot.browserSpec,
+  artifact: route === '/admin/support-requests' ? 'support-request-queue' : route === '/admin/support-requests/[requestId]' ? 'support-request-detail' : undefined,
+}]));
 
 assert.equal(manifest.version, 9, 'visual governance must use the reviewed v9 manifest');
 assert.equal(manifest.visualGovernance.version, 1);
@@ -86,6 +51,7 @@ for (const [route, expected] of Object.entries(pilotRoutes)) {
   assert.deepEqual(pilot.requiredStates, expected.states);
   assert.match(pilot.workingSurface, /^\[data-ui=/);
 
+  assert.match(expected.spec || '', /^tests\/e2e\/admin-[\w-]+\.spec\.ts$/, `${route} must register an executable browser spec`);
   const spec = readFileSync(fromFrontendRoot(expected.spec), 'utf8');
   assert.match(spec, /observeAdminBrowserEvidence/, `${route} must observe console and network failures`);
   assert.match(spec, /writeAdminVisualReceipt/, `${route} must emit a structured browser receipt`);
@@ -146,6 +112,6 @@ assert.match(helper, /status[\s\S]*trimEnd\(\)/, 'porcelain parsing must preserv
 assert.match(helper, /artifactId[\s\S]*artifactSuffix/, 'one workflow must support multiple receipt artifacts');
 assert.match(helper, /testInfo\.outputPath[\s\S]*testInfo\.attach/);
 assert.match(packageSource, /admin-visual-governance-contract\.mjs/);
-assert.match(packageSource, /admin-runtime-diagnostics-v2\.spec\.ts/);
+assert.match(packageSource, /run-admin-visual-checks\.mjs/);
 
 console.log(`admin_visual_governance_contract: ok (12 rules, ${Object.keys(pilotRoutes).length} pilot routes, structured receipts)`);

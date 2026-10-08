@@ -3,6 +3,13 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
+function helpPosition(rect: DOMRect) {
+  return {
+    left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(320, window.innerWidth - 16) - 8)),
+    top: rect.bottom + 8,
+  };
+}
+
 /** Short, non-interactive help; long evidence belongs in AdminInspectorDrawer. */
 export function AdminHelpTip({ label, children }: { label: string; children: ReactNode }) {
   const id = useId();
@@ -16,7 +23,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
   const show = () => {
     cancelHide();
     const rect = trigger.current?.getBoundingClientRect();
-    if (rect) setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(320, window.innerWidth - 16) - 8)), top: rect.bottom + 8 });
+    if (rect) setPosition(helpPosition(rect));
   };
   const scheduleHide = () => {
     cancelHide();
@@ -46,7 +53,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
       // Keyboard focus may scroll the trigger into view after onFocus opens help.
       // Keep focused, visible help anchored; ordinary scrolling still dismisses it.
       if (document.activeElement === trigger.current && rect && rect.bottom > 0 && rect.top < window.innerHeight) {
-        setPosition(previous => previous ? { ...previous, top: rect.bottom + 8 } : null);
+        setPosition(previous => previous ? helpPosition(rect) : null);
       } else {
         pinned.current = false; setPosition(null);
       }

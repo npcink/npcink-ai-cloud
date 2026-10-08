@@ -166,6 +166,17 @@ async function installAccountsQueueMocks(page: Page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ account_id: generatedAccountId })) });
   });
 
+  await page.route('**/api/admin/accounts/acct_generated_new_customer', async route => {
+    const item = accounts.find(account => account.account.account_id === 'acct_generated_new_customer');
+    if (!item) throw new Error('Created account fixture must exist before loading detail');
+    await route.fulfill({ json: buildAdminApiEnvelope({
+      account: item.account, primary_identity: item.primary_identity,
+      identity_relationship_state: item.identity_relationship_state,
+      memberships: [], sites: [], subscriptions: [],
+      trial_readiness: { status: 'ready', next_action: 'invite_trial_site', summary: { site_count: 0 } },
+    }) });
+  });
+
   return {
     getRequestCount: () => requestCount,
     getCreateRequestCount: () => createRequestCount,

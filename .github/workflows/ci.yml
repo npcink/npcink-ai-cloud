@@ -1135,6 +1135,8 @@ jobs:
       - name: Checkout
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
@@ -1175,6 +1177,7 @@ jobs:
         run: |
           node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs
           node frontend/tests/unit/admin-coverage-workspace-contract.mjs
+          python3 scripts/check-admin-window-capabilities.py
 
       - name: Install Playwright Chromium
         if: needs.classify.outputs.frontend_e2e_required == 'true'
@@ -1184,14 +1187,18 @@ jobs:
 
       # The admin operator-path spec runs in full: title-filter selection hid
       # return-context link drift from CI for seven weeks until #1020.
+      # Manifest-selected pilot states are included.
       # The portal spec stays title-filtered for runtime; the CI efficiency
       # contract keeps every grep alternative matched to a real test title.
       - name: Critical frontend paths
         if: needs.classify.outputs.frontend_e2e_required == 'true'
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
+          NPCINK_CLOUD_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          NPCINK_CLOUD_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts tests/e2e/admin-navigation.spec.ts tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/admin-ai-advisor-pc-v2.spec.ts
+          node scripts/run-admin-visual-checks.mjs --ci-changed
           node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-workspace-path.spec.ts --grep 'portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
 
       - name: Unchanged frontend acknowledgement
