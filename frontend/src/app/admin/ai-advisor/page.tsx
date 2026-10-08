@@ -527,7 +527,7 @@ function OperationsWorkPanel({ data, siteId }: { data: AdvisorPreviewData; siteI
           label: t(`admin.ai_advisor.metric_${metric.key}`, {}, metric.key.replaceAll('_', ' ')),
           value: advisorMetricValue(metric.value, metric.key),
           detail: metric.value === null ? t('admin.ai_advisor.metric_unavailable', {}, 'Not provided in this summary') : undefined,
-          toneClassName: metric.value !== null && metric.value > 0 && metric.key !== 'usage_cost' ? 'text-amber-600 dark:text-amber-300' : undefined,
+          toneClassName: metric.tone === 'warning' && metric.value !== null && metric.value > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
           size: 'compact' as const,
         }))}
       />
@@ -1265,7 +1265,7 @@ function AdminAiAdvisorContent() {
     const params = new URLSearchParams(searchParams.toString());
     params.set('scope', advisorScope(nextScope));
     if (nextSite) params.set('site', nextSite); else params.delete('site');
-    router.push(`${pathname}?${params}`);
+    router.replace(`${pathname}?${params}`, { scroll: false });
   };
   const setScope = (nextScope: string) => applyScope(nextScope, siteId);
   const setSiteId = (nextSite: string) => applyScope(scope, nextSite);

@@ -12,7 +12,8 @@ export function advisorScope(value: string | null | undefined): AdvisorScope {
 export function advisorNumeric(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
-export function advisorMetrics(branch: SummaryBranch) {
+type AdvisorMetric = { key: string; value: number | null; tone: 'neutral' | 'warning' };
+export function advisorMetrics(branch: SummaryBranch): AdvisorMetric[] {
   const signals = branch.source_context.advisor.signals as Record<string, unknown>[];
   const field = (code: string, key: string) => signals.find(s => s.code === code)?.[key];
   const count = (code: string, key: string) => advisorNumeric(field(code, key));
@@ -22,25 +23,25 @@ export function advisorMetrics(branch: SummaryBranch) {
   };
   const scope = advisorScope(branch.source_context.advisor.scope || branch.scope);
   if (scope === 'runtime') return [
-    { key: 'callback_failed', value: count('runtime.callback_pressure', 'failed') },
-    { key: 'queued_runs', value: count('runtime.queue_pressure', 'queued_runs') },
-    { key: 'guard_events', value: count('runtime.guard_events', 'recent_events') },
+    { key: 'callback_failed', value: count('runtime.callback_pressure', 'failed'), tone: 'warning' },
+    { key: 'queued_runs', value: count('runtime.queue_pressure', 'queued_runs'), tone: 'warning' },
+    { key: 'guard_events', value: count('runtime.guard_events', 'recent_events'), tone: 'warning' },
   ];
   if (scope === 'commercial') return [
-    { key: 'attention_subscriptions', value: count('commercial.subscription_attention', 'count') },
-    { key: 'expiring_7d', value: count('commercial.subscription_expiring_soon', 'within_7_days') },
-    { key: 'recent_decisions', value: count('commercial.recent_decisions', 'count') },
+    { key: 'attention_subscriptions', value: count('commercial.subscription_attention', 'count'), tone: 'warning' },
+    { key: 'expiring_7d', value: count('commercial.subscription_expiring_soon', 'within_7_days'), tone: 'warning' },
+    { key: 'recent_decisions', value: count('commercial.recent_decisions', 'count'), tone: 'neutral' },
   ];
   if (scope === 'routing') return [
-    { key: 'profile_candidates', value: list('routing.profile_candidates', 'recommended_profile_ids') },
-    { key: 'degraded_providers', value: list('routing.provider_degradation', 'avoid_provider_ids') },
-    { key: 'avoided_profiles', value: list('routing.provider_degradation', 'avoid_profile_ids') },
+    { key: 'profile_candidates', value: list('routing.profile_candidates', 'recommended_profile_ids'), tone: 'neutral' },
+    { key: 'degraded_providers', value: list('routing.provider_degradation', 'avoid_provider_ids'), tone: 'warning' },
+    { key: 'avoided_profiles', value: list('routing.provider_degradation', 'avoid_profile_ids'), tone: 'warning' },
   ];
   return [
-    { key: 'failed_runs', value: count('ops.runtime_quality', 'failed_runs') },
-    { key: 'provider_errors', value: count('ops.provider_quality', 'provider_errors') },
-    { key: 'knowledge_no_hits', value: count('ops.knowledge_quality', 'knowledge_no_hits') },
-    { key: 'usage_cost', value: count('ops.usage_cost', 'provider_cost') },
+    { key: 'failed_runs', value: count('ops.runtime_quality', 'failed_runs'), tone: 'warning' },
+    { key: 'provider_errors', value: count('ops.provider_quality', 'provider_errors'), tone: 'warning' },
+    { key: 'knowledge_no_hits', value: count('ops.knowledge_quality', 'knowledge_no_hits'), tone: 'warning' },
+    { key: 'usage_cost', value: count('ops.usage_cost', 'provider_cost'), tone: 'neutral' },
   ];
 }
 

@@ -25,4 +25,17 @@ describe('Advisor evidence semantics', () => {
     expect(advisorActionHref('continue_runtime_monitoring', 'a')).toBeUndefined();
     expect(advisorActionHref('inspect_attention_subscriptions', 'a')).toBe('/admin/subscriptions');
   });
+  it('keeps routing availability and commercial activity neutral while failures warn', () => {
+    const routing = advisorMetrics(branch('routing_operations', [
+      { code: 'routing.profile_candidates', recommended_profile_ids: ['available'] },
+      { code: 'routing.provider_degradation', avoid_provider_ids: ['degraded'], avoid_profile_ids: ['avoid'] },
+    ]));
+    expect(routing.map(metric => [metric.value, metric.tone])).toEqual([[1, 'neutral'], [1, 'warning'], [1, 'warning']]);
+    const commercial = advisorMetrics(branch('commercial_operations', [
+      { code: 'commercial.subscription_attention', count: 1 },
+      { code: 'commercial.subscription_expiring_soon', within_7_days: 1 },
+      { code: 'commercial.recent_decisions', count: 1 },
+    ]));
+    expect(commercial.map(metric => [metric.value, metric.tone])).toEqual([[1, 'warning'], [1, 'warning'], [1, 'neutral']]);
+  });
 });

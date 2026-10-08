@@ -506,3 +506,30 @@ are included in this checkpoint. The shared page models, action hierarchy,
 API/URL state ownership and product boundaries are unchanged. Publication,
 protected merge and post-merge M4 acceptance must still be verified separately.
 No production deployment or paid Provider call is authorized by this checkpoint.
+
+### Final advisory review and focused correction (2026-10-08)
+
+The second advisory review added 25 threads after the earlier dispositions.
+Each was inspected against current source and preserved test evidence. Two
+bounded Advisor defects were corrected: routing candidate availability and
+commercial decision activity now keep a neutral tone, while attention/failure
+metrics retain warning semantics; scope/site filters replace the shareable URL
+with `scroll: false` instead of adding history entries. Evidence destination
+links and browser return paths remain covered. Four focused unit cases,
+targeted lint, the complete Admin contract/type gate and both Advisor browser
+scenarios passed (M4 assets, 31.2 seconds). The browser regression verifies
+neutral routing counts, retained site scope and stable history length.
+
+The other 23 findings were optional refactors, diagnostic wording improvements
+or false positives; individual dispositions are recorded in PR #1086. Examples
+include the intentional serialized scope key for stale-response isolation,
+the aggregation `then` rejection handled by `catch`, exact query fixtures and
+the fail-closed unmocked-request policy. These findings do not authorize
+unrelated provider/API/state-library work. A fresh required CI run remains
+necessary after the two actual source fixes.
+
+At revision `57aa26b8`, CI passed all 48 critical operator scenarios and 84 of
+85 visual scenarios. Only the service-settings screenshot failed, with 566
+different pixels. This is retained as a failed gate until the exact rendered
+state difference is reproduced; the other ten new Linux goldens compared
+successfully. Neither pixel tolerance nor the required merge gate was relaxed.

@@ -131,6 +131,10 @@ test('advisor scope metrics, site deep links and evidence destinations survive r
     await expect(diagnosis).toBeVisible();
     await expect(diagnosis.getByText(selected.label, { exact: true })).toBeVisible();
     await expect(diagnosis).toContainText(selected.value);
+    if (scope === 'routing') {
+      const value = diagnosis.getByText(selected.label, { exact: true }).locator('..').locator('..').getByText('2', { exact: true });
+      await expect(value).not.toHaveClass(/text-amber/);
+    }
     await expect(diagnosis).toContainText(/此摘要未提供|Not provided/);
     await expect(page.getByRole('textbox', { name: /^站点 ID$|^Site ID$/i })).toHaveValue('site_mvp');
     await expect.poll(() => requests.some(url => url.includes(`scope=${scope}`) && url.includes('site_id=site_mvp'))).toBe(true);
@@ -155,5 +159,11 @@ test('advisor scope metrics, site deep links and evidence destinations survive r
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`advisor-${scope}-1440.png`), fullPage: true });
   }
+  const historyLength = await page.evaluate(() => window.history.length);
+  await page.locator('[data-ui="ai-advisor-scope-workbench"]').getByRole('button', { name: /^商业状态$|^Commercial$/ }).click();
+  await expect(page).toHaveURL(/scope=commercial&site=site_mvp/);
+  await expect(page.locator('[data-ui="advisor-current-diagnosis"]')).toContainText('2');
+  expect(await page.evaluate(() => window.history.length)).toBe(historyLength);
+  await expect(page.getByRole('textbox', { name: /^站点 ID$|^Site ID$/i })).toHaveValue('site_mvp');
   expect(requests.some(url => url.includes('provider_id=') || url.includes('model_id='))).toBe(false);
 });
