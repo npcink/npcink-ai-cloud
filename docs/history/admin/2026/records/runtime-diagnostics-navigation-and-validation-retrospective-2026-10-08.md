@@ -366,3 +366,24 @@ trial calls remain zero. Production preparation must freeze the final master
 revision, prove executed CI/bundle/DB/rollback gates and obtain the exact-SHA
 host-dispatch authorization prescribed by the release policy. The original
 “no production outcome requested” statement above describes its earlier stage.
+
+
+### PR #1086 CI and advisory follow-up
+
+The first PR frontend run executed 48 operator/acceptance scenarios: 47 passed
+and one expected the old identifier-derived new-customer heading. The stricter
+fixture now returns the actual submitted operator display name. The failure
+reproduced on M4, whose DOM showed `New Customer Display`; updating the exact
+heading assertion preserved the behavior check. The focused scenario passed
+in 15.9 seconds. This was a stale test expectation, not a product change or a
+reason to restore lenient empty fixture success. Backend required lanes passed.
+
+CI advisory findings were reviewed separately from local incomplete OCR. The
+unsupported-window comment now states the minimum-window fallback explicitly;
+existing consumer hints and tests already disclose that fallback. A cross-file
+visual-plan assertion protects the missing-base manifest fallback selecting
+the full matrix. The remaining suggestions are documented as bounded design
+choices, non-defects or optional future refactoring; no unrelated API batching,
+logging or visual restructuring was added. In particular, Python AST defaults
+are an empty list rather than `None`, and a synchronous guarded render cannot
+interleave another render between its condition and value expression.

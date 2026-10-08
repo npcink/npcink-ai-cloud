@@ -319,7 +319,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
   await expect(page).toHaveURL(/\/admin\/accounts\/acct_new_customer_free\?return_to=%2Fadmin%2Faccounts$/);
-  await expect(page.getByRole('heading', { name: /New Customer Free/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New Customer Display', exact: true })).toBeVisible();
 
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
   const proPackageRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Pro' });

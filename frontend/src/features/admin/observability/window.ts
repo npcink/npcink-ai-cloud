@@ -24,7 +24,7 @@ export function observationWindows(capability: ObservationCapability): readonly 
   return capabilities[capability].hours as ObservationWindow[];
 }
 
-/** Known unsupported windows narrow to the nearest supported scope; unknown input uses the default. */
+/** Known windows use the nearest supported scope at/below the request, or its minimum; unknown input uses the default. */
 export function normalizeObservationWindow(value: string | null, fallback?: ObservationWindow, capability: ObservationCapability = 'runtime'): ObservationWindow {
   const supported = observationWindows(capability);
   const hours = Number(value);
