@@ -107,9 +107,22 @@ parent-child navigation.
 - Vector settings (`/admin/vector-settings`)
 - Runtime diagnostics (`/admin/troubleshooting`)
 
-Plugin, media, vector, Agent feedback, and Operations Advisor routes are
-diagnostic views under Runtime diagnostics. They are not independent top-level
-products.
+Runtime observation (`/admin/usage-statistics`) owns the shared navigation for
+usage statistics, plugin observation, media observation, vector observation,
+and editorial-quality evidence. Plugin observation is a separate investigation
+surface from the plugin activity mode inside usage statistics.
+
+Runtime diagnostics (`/admin/troubleshooting`) owns the shared navigation for
+anomaly inspection, audit evidence, Agent feedback quality, and Operations
+Advisor. These evidence pages are not independent top-level products. Keep
+diagnostic shortcuts into observation pages where an investigation needs them.
+
+Every non-authentication route must resolve to exactly one active primary
+navigation parent. Detail pages remain accessible from their owning queue or
+object, and standalone secondary pages remain accessible through the global
+quick switcher and their visible navigation family. A secondary page must not
+silently inherit Overview. Its header parent link provides a stable return
+entrance; the page's existing queue return preserves detailed queue context.
 
 Audit evidence (`/admin/audit`) is the persistent read-only service-operation
 workspace under Runtime diagnostics. It is a contextual destination for exact
@@ -246,14 +259,14 @@ consolidation.
 | `/admin/credit-packs` | Customer Operations | `configuration` | AI credit packs | Independent purchasable credit-pack directory; edit one pack at a time |
 | `/admin/ai-resources` | Runtime Operations | `queue` | Model suppliers | Keep model-provider connections and model visibility together |
 | `/admin/external-services` | Runtime Operations | `configuration` | Search and images | Fixed Cloud runtime service directory for web search and stock-image sources |
-| `/admin/vector-settings` | Runtime Operations | `configuration` | Providers | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
+| `/admin/vector-settings` | Runtime Operations | `configuration` | Site vector service | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
 | `/admin/runtime-profiles` | Runtime Operations | `configuration` | Runtime profiles | Keep only platform-tagged Cloud hosted candidate-chain configuration; candidate selection renders only inside edit flow |
 | `/admin/troubleshooting` | Runtime Operations | `diagnostic` | Runtime diagnostics | Canonical diagnostic index |
-| `/admin/usage-statistics` | Runtime Operations | `diagnostic` | Usage statistics | Windowed runtime trends, site/function groups, separate plugin reports and editorial outcomes |
+| `/admin/usage-statistics` | Runtime Operations | `diagnostic` | Runtime observation | Windowed runtime trends, site/function groups, separate plugin reports and editorial outcomes |
 | `/admin/audit` | Runtime Operations | `diagnostic` | Runtime diagnostics | Persistent exact service-operation evidence; no raw payload or mutation authority |
-| `/admin/plugin-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
-| `/admin/media-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
-| `/admin/vector-observability` | Runtime Operations | `diagnostic` | Runtime diagnostics | Shared observability frame |
+| `/admin/plugin-observability` | Runtime Operations | `diagnostic` | Runtime observation | Shared observation navigation; plugin investigation |
+| `/admin/media-observability` | Runtime Operations | `diagnostic` | Runtime observation | Shared observation navigation |
+| `/admin/vector-observability` | Runtime Operations | `diagnostic` | Runtime observation | Shared observation navigation |
 | `/admin/agent-feedback` | Runtime Operations | `diagnostic` | Runtime diagnostics | Read-only quality view |
 | `/admin/ai-advisor` | Runtime Operations | `diagnostic` | Runtime diagnostics | Current conclusion first; AI evaluation advanced |
 | `/admin/service-settings` | System | `configuration` | Service settings | Keep; one active configuration group at a time |
@@ -505,3 +518,18 @@ the results as test records. Totals, distinct sites, plugin rows and timeline
 share the same server-side scope. Existing API callers retain `record_scope=all`
 by default. This classification does not claim to detect every possible test
 event, and reporting capability is not proof that a site has enabled reporting.
+
+### Diagnostic advisor scope and destinations
+
+`/admin/ai-advisor` persists its applied `scope` and `site` in the URL; input
+changes remain drafts until applied. Render metrics from the returned scope.
+Missing/redacted values are unknown, not zero. Commercial summaries remain
+platform-wide and must say that the site filter does not apply. Actions use
+the backend action catalog, transfer only supported destination filters, and
+state when an evidence destination uses a different time window or platform
+scope. Unknown action codes retain technical identifiers in advanced detail
+and use a localized generic recommendation.
+
+Important cross-page window adjustments show a compact target period beside
+the link. Their reason must be reachable with keyboard focus or touch, rather
+than relying on a native hover title alone.

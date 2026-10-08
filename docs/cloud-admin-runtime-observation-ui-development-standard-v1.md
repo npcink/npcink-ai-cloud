@@ -34,6 +34,30 @@ Every link into the next step preserves the selected time window and identity
 (scope). A chart must remain a runtime chart; plugin event timelines must not be
 presented as runtime execution trends.
 
+Observation navigation includes Usage Statistics, Plugin Observability, Media
+Observability, Vector Observability, and Editorial Quality Evidence. Each view
+shows the same family and selects one entry. Plugin investigation keeps its
+existing time controls; do not add a second time selector just to share tabs.
+
+Diagnostic navigation includes Runtime Diagnostics, Audit Evidence, Agent
+Feedback Quality, and Operations Advisor. The diagnostic index keeps its direct
+tool footer; only its secondary evidence pages add the shared family row, so
+the index does not repeat the same entrances at the top and bottom.
+All standalone pages are discoverable
+from the quick switcher; secondary pages highlight their real sidebar parent
+and expose a parent return link. Queue-owned account, site, subscription, and
+ticket details keep their object entrances and filtered return paths.
+
+Transfer only destination-supported scope fields. Runtime statistics and plugin
+event history offer 14/30/90 days. Media, vector and editorial-quality summaries
+offer 14/30 days. Plugin summaries support 24 hours through 30 days;
+Agent feedback supports 24 hours or 7 days. Match actual runtime limits and
+identify the destination window in a link hint whenever the scope changes.
+Do not display unsupported windows or imply an ignored filter is active. Audit uses `site_id` and independent date filters, not `window`; the
+advisor's locally applied scope must not be fabricated from ignored URL fields.
+Never transfer a selected problem, record, or unrelated sorting state between
+different evidence pages.
+
 ## Layout rules
 
 - Use the existing Admin primitives and `--admin-*` tokens.
@@ -123,3 +147,11 @@ name the operator question, then remove any text or region that does not help
 answer it, group repeated data, and verify the result in a real browser at the
 actual PC width. A passing test is necessary; screenshot review is required for
 layout claims.
+
+### Navigation and observation-window regression prevention
+
+Every standalone admin business page must be declared in `frontend/admin-ui-manifest.json`, have a primary or visible family entrance, a correct parent/return path, and a global quick-switch entry. `admin-navigation-contract.mjs` rejects orphan pages; CI runs the full `admin-navigation.spec.ts` and 26-route acceptance matrix without title filters. Navigation tests cover desktop, browser history, errors, keyboard reachability, and the whole 390 px document after populated diagnosis content has loaded. A family row fitting its container is not evidence that the page fits the viewport.
+
+`frontend/src/features/admin/observability/window-capabilities.json` is the UI capability table. Controls, URL normalization, navigation transfer, and request parsers consume it. Runtime statistics and plugin event history support 90 days; plugin/media/vector/editor-quality summaries support 30 days; feedback summaries support 7 days. These describe existing runtime behavior and do not authorize extending retention or backend limits. Unsupported known windows narrow to a supported scope; navigation hints explain the transition, and a directly opened unsupported URL is replaced with the effective window.
+
+`scripts/check-admin-window-capabilities.py` checks each advertised choice against the API query ceiling and the owning runtime clamp without executing services. CI selects this contract when the owning API/domain source changes, including backend-only changes. A backend capability change must reconcile this table, controls, parsers, and browser assertions together. New data sources need an explicit owner entry and regression coverage; do not infer runtime capability solely from a permissive query parameter.

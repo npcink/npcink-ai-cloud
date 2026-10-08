@@ -222,6 +222,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Admin Information Architecture](cloud-admin-information-architecture-v2.md)
 - [Admin UI Standard](cloud-admin-ui-standard-v1.md)
 - [Admin Diagnostics Density Tier Session Retrospective — 2026-09-22](history/admin/2026/records/admin-diagnostics-density-tier-retrospective-2026-09-22.md) — closed session record for the compact density tier rollout (PR #1012): decisions, lessons for future AI sessions, and the densification backlog
+- [Runtime Diagnostics, Navigation and Validation Retrospective — 2026-10-08](history/admin/2026/records/runtime-diagnostics-navigation-and-validation-retrospective-2026-10-08.md) — dated interface and navigation decisions, regression controls, evidence limits and the unresolved historical Portal read failure; current merge/M4 acceptance remains separate
 - [Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)
 - [Admin UI Review and Delivery Playbook](cloud-admin-ui-review-and-delivery-playbook-v1.md)
 - [Admin Customer Operations Workspace Standard](cloud-admin-customer-operations-workspace-standard-v1.md)
