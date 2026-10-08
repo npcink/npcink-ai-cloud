@@ -33,6 +33,7 @@ export function PortalNavbar() {
         return pathname === '/portal' || pathname.startsWith('/portal/sites');
       }
 
+      // Recent activity is reached from Account and belongs to that section.
       if (baseHref === '/portal/account' && pathname === '/portal/audit') return true;
       return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
     },
@@ -71,7 +72,7 @@ export function PortalNavbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  aria-current={isActive(item.href) ? 'page' : undefined}
+                  aria-current={isActive(item.href) ? (pathname === item.href ? 'page' : 'true') : undefined}
                   className={cn(
                     'rounded-full px-3 py-2 text-sm font-medium transition-all',
                     isActive(item.href)
@@ -136,7 +137,7 @@ export function PortalNavbar() {
                     <Link
                       key={item.href}
                       href={item.href}
-                      aria-current={isActive(item.href) ? 'page' : undefined}
+                      aria-current={isActive(item.href) ? (pathname === item.href ? 'page' : 'true') : undefined}
                       className={cn(
                         'rounded-full px-3 py-2 text-sm font-medium transition-all',
                         isActive(item.href)
@@ -169,7 +170,7 @@ export function PortalNavbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={isActive(item.href) ? 'page' : undefined}
+                aria-current={isActive(item.href) ? (pathname === item.href ? 'page' : 'true') : undefined}
                 className={cn(
                   'block rounded-2xl px-4 py-3 text-sm font-medium transition-colors',
                   isActive(item.href)

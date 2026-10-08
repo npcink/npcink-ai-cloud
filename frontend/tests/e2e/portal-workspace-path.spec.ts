@@ -2358,8 +2358,9 @@ for (const navigation of [
     }
     const nav = page.locator(navigation.selector);
     await expect(nav).toBeVisible();
-    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(1);
-    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
+    await expect(nav.locator('a[aria-current]')).toHaveCount(1);
+    await expect(nav.locator('a[aria-current="true"]')).toHaveAttribute('href', '/portal/account');
+    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
 
     await page.goto('/portal/usage');
     await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
@@ -2372,6 +2373,10 @@ for (const navigation of [
     await nav.locator('a[href="/portal/account"]').focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/portal\/account$/);
+    if (navigation.name === 'mobile') {
+      await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+    }
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
   });
 }
 
