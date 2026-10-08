@@ -29,6 +29,7 @@ production acceptance evidence.
   customer does not change the secondary identity or session version. This is
   bounded identity evidence, not full secondary-account commercial lifecycle
   acceptance.
+  Directory and detail fixtures also share the same secondary identity status.
 - Reflect a successful primary identity disable in the audit event list and
   disable/event counts. Reopen the real shared audit dialog and assert the new
   event and count; the removed disable action also proves the UI refreshed state.
@@ -46,6 +47,12 @@ Local evidence: `check:admin-ui`, focused lint, i18n completeness, visual-plan
 contract, and four focused Chromium cases passed. The merge uses protected
 GitHub checks. Runtime-bearing source requires a candidate sync and clean-master
 promotion with relevant smoke; production and paid calls remain separate.
+The first coherent checkpoint passed all 87 Linux/M4 visual cases. Local OCR
+reviewed five selected files and returned three low-severity suggestions; the
+final follow-up deduplicates width measurement, derives audit event count from
+the event list, and aligns directory/detail secondary identity status. Final
+required CI and relevant M4 smoke validate that follow-up; no broad M4 replay
+is needed for these bounded consistency changes.
 
 ## Reusable lessons
 

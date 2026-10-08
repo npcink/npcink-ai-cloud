@@ -323,4 +323,10 @@ test('customer identity audit and access disable live in the specified customer 
   });
   expect(secondary.identity_relationship_state).toBe('healthy');
   expect(secondary.memberships[0].member_ref).toBe('user:free-owner@example.com');
+  const directory = await page.evaluate(async () => {
+    const response = await fetch('/api/admin/accounts');
+    return (await response.json()).data;
+  });
+  expect(directory.items.find((item: { account: { account_id: string } }) => item.account.account_id === 'acct_free_primary').identity_relationship_state)
+    .toBe(secondary.identity_relationship_state);
 });

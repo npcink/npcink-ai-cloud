@@ -19,12 +19,14 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
   const pinned = useRef(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const open = position !== null;
+  // First open has no bubble yet; the layout effect measures and clamps before paint.
+  const bubbleWidth = () => bubble.current?.getBoundingClientRect().width || 0;
   const cancelHide = () => { if (timer.current) clearTimeout(timer.current); };
   const hide = () => { cancelHide(); pinned.current = false; setPosition(null); };
   const show = () => {
     cancelHide();
     const rect = trigger.current?.getBoundingClientRect();
-    if (rect) setPosition(helpPosition(rect, bubble.current?.getBoundingClientRect().width || 0));
+    if (rect) setPosition(helpPosition(rect, bubbleWidth()));
   };
   const scheduleHide = () => {
     cancelHide();
@@ -55,7 +57,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
       // Keyboard focus may scroll the trigger into view after onFocus opens help.
       // Keep focused, visible help anchored; ordinary scrolling still dismisses it.
       if (document.activeElement === trigger.current && rect && rect.bottom > 0 && rect.top < window.innerHeight) {
-        setPosition(previous => previous ? helpPosition(rect, bubble.current?.getBoundingClientRect().width || 0) : null);
+        setPosition(previous => previous ? helpPosition(rect, bubbleWidth()) : null);
       } else {
         pinned.current = false; setPosition(null);
       }

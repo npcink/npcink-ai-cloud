@@ -1284,7 +1284,10 @@ export async function installAdminMocks(
       });
       await fulfillJson(route, {
         total: filteredItems.length,
-        items: filteredItems,
+        items: filteredItems.map(item => ({
+          ...item,
+          identity_relationship_state: secondaryIdentities.has(item.account.account_id) ? 'healthy' : 'missing',
+        })),
       });
       return;
     }
@@ -2101,12 +2104,13 @@ export async function installAdminMocks(
       return;
     }
     if (pathname === '/api/admin/portal-users/prn_mvp_owner/audit' && route.request().method() === 'GET') {
+      const items = [
+        ...(primaryIdentityDisabled ? [{ event_id: 2, event_kind: 'portal_user.disable', outcome: 'success', created_at: '2026-04-08T01:00:00Z' }] : []),
+        { event_id: 1, event_kind: 'portal_user.register', outcome: 'success', created_at: '2026-04-08T00:00:00Z' },
+      ];
       await fulfillJson(route, {
-        summary: { events: primaryIdentityDisabled ? 2 : 1, registration_events: 1, disable_events: primaryIdentityDisabled ? 1 : 0, failed: 0 },
-        items: [
-          ...(primaryIdentityDisabled ? [{ event_id: 2, event_kind: 'portal_user.disable', outcome: 'success', created_at: '2026-04-08T01:00:00Z' }] : []),
-          { event_id: 1, event_kind: 'portal_user.register', outcome: 'success', created_at: '2026-04-08T00:00:00Z' },
-        ],
+        summary: { events: items.length, registration_events: 1, disable_events: primaryIdentityDisabled ? 1 : 0, failed: 0 },
+        items,
       });
       return;
     }
