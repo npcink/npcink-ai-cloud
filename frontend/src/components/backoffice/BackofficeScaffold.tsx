@@ -70,6 +70,7 @@ type BackofficePageHeaderProps = Pick<
   primaryAction?: React.ReactNode;
   secondaryAction?: React.ReactNode;
   summaryAside?: React.ReactNode;
+  toolbarControls?: React.ReactNode;
 };
 
 type BackofficeConfigurationHeaderProps = BackofficePageHeaderProps & {
@@ -245,6 +246,7 @@ export function BackofficePageHeader({
   primaryAction,
   secondaryAction,
   summaryAside,
+  toolbarControls,
 }: BackofficePageHeaderProps & { density?: 'default' | 'compact' }) {
   if (density === 'compact') {
     return (
@@ -256,8 +258,9 @@ export function BackofficePageHeader({
               <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
             ) : null}
           </div>
-          {primaryAction || secondaryAction ? (
+          {primaryAction || secondaryAction || toolbarControls ? (
             <div className="flex flex-wrap items-center gap-3">
+              {toolbarControls}
               {secondaryAction}
               {primaryAction}
             </div>

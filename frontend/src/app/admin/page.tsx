@@ -2,6 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
 import { useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -384,6 +385,7 @@ function AdminOverviewContent() {
   const router = useRouter();
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const runtimeEvidenceRef = useFragmentDisclosure('runtime-attention', Boolean(overview));
   const [error, setError] = useState<string | null>(null);
   const [supportQuery, setSupportQuery] = useState('');
   const requestControllerRef = useRef<AbortController | null>(null);
@@ -925,7 +927,7 @@ function AdminOverviewContent() {
             </BackofficeStackCard>
       </BackofficeSectionPanel>
 
-      <details className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
+      <details ref={runtimeEvidenceRef} className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
         <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-900/60">
           {t('admin.home_extended_evidence_title', {}, 'Platform usage and extended evidence')}
           <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
@@ -954,6 +956,7 @@ function AdminOverviewContent() {
             {statusLabel}
           </span>
         </div>
+        <span id="runtime-attention" />
         <BackofficeMetricStrip items={evidenceWindowMetrics} columnsClassName="grid-cols-2 md:grid-cols-4" />
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {runtimeStatusItems.map((item) => (

@@ -1,7 +1,10 @@
 'use client';
 
+import { normalizeObservationWindow, observationWindows, type ObservationWindow } from '@/features/admin/observability/window';
+
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -324,21 +327,14 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
   };
 }
 
-type WindowOption = 24 | 72 | 168 | 336 | 720 | 2160;
+type WindowOption = ObservationWindow;
 type PluginFilter = string;
 type AttentionWorkflowFilter = 'active' | 'acknowledged' | 'muted' | 'resolved' | 'all';
 type AttentionSeverityFilter = 'all' | 'warning' | 'error';
 type AttentionStateAction = 'acknowledge' | 'mute' | 'resolve' | 'clear';
 type TranslationFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-const WINDOW_OPTIONS: { value: WindowOption; label: string }[] = [
-  { value: 24, label: '24h' },
-  { value: 72, label: '72h' },
-  { value: 168, label: '168h' },
-  { value: 336, label: '336h' },
-  { value: 720, label: '720h' },
-  { value: 2160, label: '2160h' },
-];
+const WINDOW_OPTIONS = observationWindows('plugin').map(value => ({ value }));
 
 const PLUGIN_FILTER_OPTIONS: { value: PluginFilter; labelKey: string; fallback: string }[] = [
   { value: 'all', labelKey: 'admin.plugin_obs_filter_all', fallback: 'All plugins' },
@@ -467,8 +463,7 @@ function healthReason(t: TranslationFn, code: string) {
 }
 
 function normalizeWindowOption(value: string | null): WindowOption {
-  const parsed = Number(value);
-  return parsed === 72 || parsed === 168 ? parsed : 24;
+  return normalizeObservationWindow(value, 24, 'plugin');
 }
 
 function normalizePluginFilter(value: string | null): PluginFilter {
@@ -704,8 +699,9 @@ function AdminPluginObservabilityContent() {
           { label: t('admin.plugin_obs_affected_sites'), value: formatInteger(data.sites.filter(site => site.errorTotal > 0).length) },
           { label: t('admin.plugin_obs_record_count'), value: formatInteger(data.totals.eventsTotal) },
         ] : []} />
+      <AdminObservabilityTabs showWindow={false} />
       <div className="flex flex-wrap items-center gap-3">
-        {WINDOW_OPTIONS.map(opt => <BackofficeFilterPill key={opt.value} active={windowHours === opt.value} onClick={() => updateUrl({window: opt.value, focus: null})}>{t(`admin.plugin_obs_window_${opt.value}`)}</BackofficeFilterPill>)}
+        {WINDOW_OPTIONS.map(opt => <BackofficeFilterPill key={opt.value} active={windowHours === opt.value} aria-pressed={windowHours === opt.value} onClick={() => updateUrl({window: opt.value, focus: null})}>{t(`admin.plugin_obs_window_${opt.value}`)}</BackofficeFilterPill>)}
         <label className="text-sm">{t('admin.plugin_obs_plugin')}<select className="input ml-2 w-auto" aria-label={t('admin.plugin_obs_plugin')} value={pluginFilter} onChange={event => updateUrl({plugin: event.target.value as PluginFilter, focus: null})}>{PLUGIN_FILTER_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>)}{extraPlugins.map(slug => <option key={slug} value={slug}>{pluginLabel(t, slug)} · {slug}</option>)}</select></label>
         <label className="text-sm">{t('admin.plugin_obs_site')}<input list="plugin-sites" className="input ml-2 w-auto" aria-label={t('admin.plugin_obs_site_filter')} value={siteIdInput} onChange={event => setSiteIdInput(event.target.value)} onKeyDown={handleSiteIdKeyDown} placeholder={t('admin.plugin_obs_all_sites')} /><datalist id="plugin-sites">{data?.sites.map(site => <option key={site.siteId} value={site.siteId}>{site.siteName || site.siteId}</option>)}</datalist></label>
         <button className="btn btn-secondary btn-sm" onClick={handleSiteIdSubmit}>{t('common.apply')}</button>

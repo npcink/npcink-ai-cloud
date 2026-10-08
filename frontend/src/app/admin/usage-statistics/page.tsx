@@ -11,7 +11,7 @@ import { PluginHistory } from '@/features/admin/observability/PluginHistory';
 import { createApiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
 import { useLocale } from '@/contexts/LocaleContext';
-import { normalizeObservationWindow } from '@/features/admin/observability/window';
+import { normalizeObservationWindow, observationCapability } from '@/features/admin/observability/window';
 import { AdminObservabilityTabs } from '@/components/admin/AdminObservabilityTabs';
 
 const client = createApiClient({ idempotencyPrefix: 'admin_usage_statistics' });
@@ -24,7 +24,7 @@ export default function UsageStatisticsPage() {
   const { locale } = useLocale();
   const c = (zh: string, en: string) => locale === 'zh-CN' ? zh : en;
   const params = useSearchParams();
-  const hours = normalizeObservationWindow(params.get('window'));
+  const hours = normalizeObservationWindow(params.get('window'), 336, observationCapability(`/admin/usage-statistics?${params}`) ?? 'runtime');
   const qualityView = params.get('view') === 'quality';
   const dimension = ['sites', 'functions', 'plugins'].includes(params.get('group') || '') ? params.get('group')! : 'sites';
   const recordScope = params.get('records') === 'test' ? 'test' : 'operational';
