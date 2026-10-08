@@ -68,7 +68,7 @@ jobs:
     # 45 minutes covers the retry design's worst case: up to three review
     # attempts (the standard records 8.5-10 minute rounds and 600s provider
     # timeouts) plus the 45s/90s pauses and checkout. A timeout-killed job
-    # ends cancelled, which skips the if: failure() marker step below, so
+    # may end cancelled, which skips the if: failure() marker step below, so
     # the ceiling must exceed the legitimate worst case.
     timeout-minutes: 45
     # PR events, or human-authored comments starting with the trigger keyword.
@@ -90,6 +90,24 @@ jobs:
         )
       )
     steps:
+      - name: Refuse a misconfigured enrollment
+        # Layer 2 steps 2-3 are prerequisites: without all four values the
+        # three review attempts below burn their retries on guaranteed
+        # provider failures that look exactly like an outage. Values are
+        # checked in run: the previous if-form failed the whole workflow
+        # at start for every event in observed behavior (zero-job runs,
+        # no review rounds registering) until this env form replaced it.
+        env:
+          OCR_LLM_URL: ${{ secrets.OCR_LLM_URL }}
+          OCR_LLM_AUTH_TOKEN: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          OCR_LLM_MODEL: ${{ vars.OCR_LLM_MODEL }}
+          OCR_LLM_USE_ANTHROPIC: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
+        run: |
+          if [ -z "$OCR_LLM_URL" ] || [ -z "$OCR_LLM_AUTH_TOKEN" ] || [ -z "$OCR_LLM_MODEL" ] || [ -z "$OCR_LLM_USE_ANTHROPIC" ]; then
+            echo "::error::OpenCodeReview is misconfigured for this repository: OCR_LLM_URL and OCR_LLM_AUTH_TOKEN secrets plus OCR_LLM_MODEL and OCR_LLM_USE_ANTHROPIC variables must all be set (AI Code Review Standard v1, Layer 2 steps 2-3)."
+            exit 1
+          fi
+
       - name: Get PR context
         id: pr-context
         if: github.event_name == 'issue_comment'
@@ -107,7 +125,19 @@ jobs:
             core.setOutput('base_ref', pullRequest.base.ref);
             core.setOutput('head_sha', pullRequest.head.sha);
 
-      - name: Run OpenCodeReview
+      # Transient provider/transport failures cost the whole review round
+      # when a single step fails (npcink-ai-client-adapter run 37268559643
+      # died in 12s on a git fetch, exit 128, and its pull request merged
+      # with no review delivered). GitHub Actions has no native step retry
+      # and no YAML anchors, so the review step is duplicated deliberately:
+      # attempts 1-2 continue-on-error with growing pauses, attempt 3 is
+      # allowed to fail the job so the failure-marker step below still
+      # fires. A partially delivered earlier attempt can leave near-
+      # duplicate inline comments with the same run ids; triage consumers
+      # dedupe by finding id.
+      - name: Run OpenCodeReview (attempt 1 of 3)
+        id: ocr_review_1
+        continue-on-error: true
         # alibaba/open-code-review v1.12.11 (tag object ee83f151, commit
         # a758d9cb; pinned by commit SHA because the action receives the LLM
         # auth token - bump deliberately and record the new tag->commit pair).
@@ -118,6 +148,41 @@ jobs:
           llm_model: ${{ vars.OCR_LLM_MODEL }}
           llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
           # Review-comment language; switch to Chinese if preferred.
+          language: English
+          base_ref: ${{ steps.pr-context.outputs.base_ref }}
+          head_sha: ${{ steps.pr-context.outputs.head_sha }}
+
+      - name: Pause before the second review attempt
+        if: steps.ocr_review_1.outcome == 'failure'
+        run: sleep 45
+
+      - name: Run OpenCodeReview (attempt 2 of 3)
+        id: ocr_review_2
+        if: steps.ocr_review_1.outcome == 'failure'
+        continue-on-error: true
+        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+        with:
+          llm_url: ${{ secrets.OCR_LLM_URL }}
+          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          llm_model: ${{ vars.OCR_LLM_MODEL }}
+          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
+          language: English
+          base_ref: ${{ steps.pr-context.outputs.base_ref }}
+          head_sha: ${{ steps.pr-context.outputs.head_sha }}
+
+      - name: Pause before the final review attempt
+        if: steps.ocr_review_2.outcome == 'failure'
+        run: sleep 90
+
+      - name: Run OpenCodeReview (attempt 3 of 3)
+        id: ocr_review_3
+        if: steps.ocr_review_2.outcome == 'failure'
+        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+        with:
+          llm_url: ${{ secrets.OCR_LLM_URL }}
+          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          llm_model: ${{ vars.OCR_LLM_MODEL }}
+          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
           language: English
           base_ref: ${{ steps.pr-context.outputs.base_ref }}
           head_sha: ${{ steps.pr-context.outputs.head_sha }}
