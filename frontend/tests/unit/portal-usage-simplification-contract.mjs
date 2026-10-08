@@ -49,7 +49,7 @@ assert.doesNotMatch(
 assert.match(source, /updated_at_inline/, 'latest update time must remain as subtle inline context');
 assert.match(
   headerDefinition,
-  /titleAccessory=\{!usageNeedsAttention[\s\S]*metadata=[\s\S]*contextPanel=\{usageNeedsAttention/,
+  /titleAccessory=\{!bundleLoading[\s\S]*!usageNeedsAttention[\s\S]*metadata=[\s\S]*contextPanel=\{!bundleError[\s\S]*usageNeedsAttention/,
   'portal usage header must keep normal status and period compact while reserving the right panel for attention states'
 );
 assert.doesNotMatch(
@@ -73,17 +73,17 @@ assert.match(
 
 assert.match(
   source,
-  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getUsageBundle\(\{ siteId: requestSiteFilterId \|\| undefined \}\)/,
-  'portal usage must default to the account bundle and optionally pass an explicit site filter'
+  /siteFilterId = searchParams\.get\('site'\)[\s\S]*getAccountEntitlements\(\)/,
+  'portal usage must load account entitlements without an unused runtime summary dependency'
 );
 assert.match(
   source,
-  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="filter"/,
-  'portal usage must expose the shared all-sites or single-site filter'
+  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="context"/,
+  'portal usage must expose the shared current-site selector'
 );
 assert.match(
   source,
-  /useLayoutEffect\([\s\S]*setUsage\(null\)[\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditEventBuckets\(null\)[\s\S]*setCreditTrend\(null\)/,
+  /useLayoutEffect\([\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditTrend\(null\)/,
   'usage must clear account projections and subresources when the site filter changes'
 );
 assert.match(
@@ -120,23 +120,15 @@ assert.doesNotMatch(
   /entry\.explanation|entry\.unit|formatSignedCreditDelta/,
   'customer point ledger must not render raw backend explanations, units, or signed technical deltas'
 );
-assert.match(
-  source,
-  /top_feature_key[\s\S]*credit_ledger_feature_[\s\S]*formatCreditPoints/,
-  'customer point summaries must show the main feature and total points'
-);
+assert.match(source, /eventFeatureText\(entry, 'title'\)[\s\S]*formatCreditPoints\(entry.consumed_ai_credits\)/);
 assert.match(
   source,
   /data-portal-usage="records-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*common\.view_details/,
   'PC usage records must use a semantic table with an explicit detail action'
 );
-assert.match(
-  source,
-  /getAccountCreditEventBuckets\([\s\S]*offset: nextOffset[\s\S]*<ListPagination[\s\S]*total=\{creditEventCount\}/,
-  'customer point summaries must expose filtered history through pagination'
-);
-assert.match(source, /creditEventBucketSize[\s\S]*'30m'[\s\S]*selectedCreditBucket/);
-assert.match(source, /startAt: bucket\.start_at[\s\S]*endAt: bucket\.end_at/);
+assert.match(source, /getAccountCreditEvents\([\s\S]*offset: nextOffset[\s\S]*<ListPagination[\s\S]*total=\{creditEventCount\}/);
+assert.doesNotMatch(source, /selectedCreditBucket|getAccountCreditEventBuckets/);
+assert.match(source, /siteContextReady[\s\S]*selectSite\(siteFilterId\)/);
 assert.match(source, /component_count[\s\S]*support_reference/);
 assert.match(
   source,
@@ -231,3 +223,5 @@ assert.doesNotMatch(
 );
 
 console.log('portal_usage_simplification_contract: ok');
+
+assert.doesNotMatch(source, /getUsageBundle|getAccountUsageSummary/);

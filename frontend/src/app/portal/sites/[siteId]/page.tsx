@@ -260,8 +260,7 @@ function PortalSiteRecordContent() {
           'The latest service evidence is incomplete or needs review. Refresh the service status before contacting support.'
         );
   const canRemoveThisSite = Boolean(
-    session.selected_context?.site.site_id === siteId
-    && session.selected_context.allowed_actions.includes('remove_sites')
+    sessionSite?.allowed_actions?.includes('remove_sites')
     && site.status !== 'archived'
     && site.status !== 'suspended'
   );
@@ -278,8 +277,9 @@ function PortalSiteRecordContent() {
     setRemoveError('');
     try {
       await portalClient.removeSite(site.site_id);
-      await refresh();
-      router.push(`/portal?removed_site=${encodeURIComponent(site.site_id)}#sites`);
+      let refreshFailed = false;
+      await refresh().catch(() => { refreshFailed = true; });
+      router.push(`/portal?removed_site=${encodeURIComponent(site.site_id)}${refreshFailed ? '&site_refresh=failed' : ''}#sites`);
     } catch (err) {
       setRemoveError(
         formatPortalErrorMessage(
@@ -342,22 +342,22 @@ function PortalSiteRecordContent() {
             </span>
           </div>
         )}
-        contextPanel={siteNeedsAttention ? (
+        contextPanel={siteNeedsAttention && !error ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">{attentionTitle}</p>
               <p className="mt-1 text-sm leading-5 text-amber-800 dark:text-amber-200">{attentionDetail}</p>
             </div>
-            <Link
-              href={primaryIssueCategory === 'quota'
-                ? '/portal/billing'
-                : `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`}
-              className="btn btn-secondary btn-sm mt-3"
-            >
-              {primaryIssueCategory === 'quota'
-                ? t('portal.nav_billing', {}, 'View package')
-                : t('portal.support_request_new_action', {}, 'Submit ticket')}
-            </Link>
+            {site.status === 'inactive' ? (
+              <Link href="/portal#sites" className="btn btn-secondary btn-sm mt-3">{t('portal.activate_site_action')}</Link>
+            ) : !siteUrl ? (
+              <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm mt-3">{t('portal.support_request_new_action')}</Link>
+            ) : primaryIssueCategory === 'quota' ? (
+              <Link href="/portal/billing" className="btn btn-secondary btn-sm mt-3">{t('portal.nav_billing')}</Link>
+            ) : (
+              <button type="button" className="btn btn-secondary btn-sm mt-3" disabled={siteMonitoring.isLoading} onClick={siteMonitoring.refresh}>{t('common.retry')}</button>
+            )}
+
           </div>
         ) : undefined}
       />

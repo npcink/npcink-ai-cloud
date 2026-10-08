@@ -278,8 +278,8 @@ assert.match(
 );
 
 for (const expectedCopy of [
-  "'portal.billing.customer_title': 'Package and rights'",
-  "'portal.billing.customer_title': '套餐与权益'",
+  "'portal.billing.customer_title': 'Package'",
+  "'portal.billing.customer_title': '套餐'",
   "'portal.site_record_current_label': 'Site record'",
   "'portal.site_record_current_label': '站点记录'",
   "'portal.audit.recent_desc': 'Only recent customer-readable activity is shown here.'",
