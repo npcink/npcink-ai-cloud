@@ -29,6 +29,7 @@ class SiteMonitoringOverviewService:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
         bounded_hours = min(168, max(1, int(window_hours or 24)))
         start_at = current_time - timedelta(hours=bounded_hours)
+        runtime_start_at = current_time - timedelta(hours=24)
 
         plugin_summary = PluginObservabilityService(self.database_url).get_summary(
             site_id=site_id,
@@ -51,12 +52,12 @@ class SiteMonitoringOverviewService:
             stats = StatsRepository(session)
             metrics = stats.aggregate_runs_window(
                 site_id=site_id,
-                start_at=start_at,
+                start_at=runtime_start_at,
                 end_at=current_time,
             )
             latencies = stats.list_run_latency_values_window(
                 site_id=site_id,
-                start_at=start_at,
+                start_at=runtime_start_at,
                 end_at=current_time,
             )
         runs_total = int(cast(int, metrics.get("runs_total") or 0))
