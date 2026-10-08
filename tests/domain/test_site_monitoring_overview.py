@@ -266,3 +266,26 @@ def test_site_monitoring_overview_flags_missing_active_key(tmp_path: Path) -> No
     assert "site_monitoring.connection_credential_missing" in codes
     assert not _json_contains(summary, "secret_hash")
     assert not _json_contains(summary, "key_default")
+
+
+def test_runtime_activity_preserves_24_hours_when_other_evidence_window_is_shorter(
+    tmp_path: Path,
+) -> None:
+    database_url = _database_url(tmp_path)
+    site_id = "site-monitoring-custom-window"
+    now = datetime.now(UTC)
+    seed_site_auth(database_url, site_id=site_id, scopes=["runtime:execute"])
+    with get_session(database_url) as session:
+        session.add_all([
+            _run_record("run-within-24h", site_id, now=now - timedelta(hours=2), status="failed"),
+            _run_record("run-success-24h", site_id, now=now - timedelta(hours=3)),
+            _run_record("run-failed-24h", site_id, now=now - timedelta(hours=4), status="failed"),
+            _run_record("run-outside-24h", site_id, now=now - timedelta(hours=26)),
+        ])
+        session.commit()
+    summary = SiteMonitoringOverviewService(database_url).get_summary(
+        site_id=site_id, commercial_policy=_policy(database_url, site_id), window_hours=1, now=now,
+    )
+    assert summary["window"]["hours"] == 1
+    assert summary["activity"]["runtime_runs_total"] == 3
+    assert summary["activity"]["runtime_success_rate"] == 0.3333

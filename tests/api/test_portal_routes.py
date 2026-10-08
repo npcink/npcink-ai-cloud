@@ -8495,3 +8495,27 @@ def test_portal_identity_providers_answers_concurrent_requests_identically(
         assert payload == baseline_payload
 
     dispose_engine(database_url)
+
+
+def test_portal_public_login_options_expose_only_availability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api.routes import portal
+
+    database_url, client = _build_client(tmp_path)
+    monkeypatch.setattr(
+        portal,
+        "_portal_qq_config",
+        lambda request: {
+            "client_id": "id",
+            "client_secret": "private",
+            "redirect_uri": "https://cloud.example.com/callback",
+        },
+    )
+    response = client.get("/portal/v1/auth/login-options")
+    assert response.status_code == 200
+    assert response.json()["data"] == {"qq_available": True}
+    assert "private" not in response.text
+    monkeypatch.setattr(portal, "_portal_qq_config", lambda request: {})
+    assert client.get("/portal/v1/auth/login-options").json()["data"] == {"qq_available": False}
+    dispose_engine(database_url)

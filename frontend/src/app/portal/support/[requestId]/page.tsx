@@ -30,9 +30,9 @@ import {
 } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
-function statusTone(status: string): 'ok' | 'warning' | 'neutral' | 'danger' {
+function statusTone(status: string): 'active' | 'warning' | 'neutral' | 'danger' {
   if (status === 'open') return 'warning';
-  if (status === 'resolved') return 'ok';
+  if (status === 'resolved') return 'active';
   return 'neutral';
 }
 
@@ -411,7 +411,11 @@ export default function PortalSupportRequestDetailPage() {
         </div>
       </PortalSection>
 
+
       <PortalSection>
+        <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800" data-portal-support="optional-attachments">
+        <summary className="cursor-pointer text-sm font-semibold">{t('portal.support_attachments_title')} ({attachments.length})</summary>
+        <div className="mt-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-semibold text-slate-950 dark:text-white">
             {t('portal.support_attachments_title', {}, 'Attachments')}
@@ -458,10 +462,11 @@ export default function PortalSupportRequestDetailPage() {
               : t('portal.support_attachment_upload_action', {}, 'Upload attachment')}
           </button>
         </div>
-      </PortalSection>
+      </div>
+      </details>
 
-      <PortalSection>
-        {supportRequest?.status === 'resolved' || supportRequest?.status === 'closed' ? (
+
+      {supportRequest?.status === 'resolved' || supportRequest?.status === 'closed' ? (
           <div
             className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200"
             data-portal-support="reply-reopen-notice"

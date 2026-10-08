@@ -1995,6 +1995,14 @@ class BillingSnapshot(Base):
 
 class ServiceAuditEvent(Base):
     __tablename__ = "service_audit_events"
+    __table_args__ = (
+        Index("ix_service_audit_events_recent", "created_at", "id"),
+        Index("ix_service_audit_events_site_recent", "site_id", "created_at", "id"),
+        Index(
+            "ix_service_audit_events_account_recent", "account_id", "created_at", "id",
+            postgresql_where=text("site_id IS NULL"), sqlite_where=text("site_id IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str | None] = mapped_column(String(191), index=True)
@@ -2017,7 +2025,6 @@ class ServiceAuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        index=True,
     )
 
 

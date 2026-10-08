@@ -15,6 +15,8 @@ Current authority remains the
   - missing branch-only UI diagnosis, protected restoration PR `#865`, review
     corrections, complete contract/browser evidence, and clean-`master` M4
     acceptance
+- [普通站长 Portal 整改收尾与开发复盘](portal-stationmaster-closeout-2026-10-08.md)
+  - PR `#1079` / `#1080` / `#1081`、M4 接受证据、上线后待办和工作区保留清单
 
 These records preserve their original status, commands, revisions, production
 evidence, and acceptance limits. Recheck current source and active standards

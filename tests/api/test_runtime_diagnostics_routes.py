@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy import select
 
 from app.adapters.callbacks.http import HttpRuntimeCallbackDispatcher
@@ -36,8 +37,10 @@ RUNTIME_CALLBACK_TEST_SECRET = "callback-fixture-" + ("x" * 32)
 MISSING_ACTIVATE_IDEMPOTENCY_KEY = "diag-activate-1"
 
 
+@pytest.mark.parametrize("meter_load", ["normal", "outside_window", "over_limit"])
 def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     tmp_path: Path,
+    meter_load: str,
 ) -> None:
     database_url, client = _build_client(tmp_path)
     site_id = "site_model_gov"
@@ -154,6 +157,11 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
             model_id="gpt-5.5",
             instance_id="openai-global-gpt-5-5-text",
         )
+        add_run(
+            run_id="run-non-ai-upload", ability_family="uncovered_text",
+            execution_kind="media_upload", profile_id="media.upload",
+            provider_id="", model_id="", instance_id="",
+        )
         session.flush()
         session.add_all(
             [
@@ -217,9 +225,27 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
                     currency="USD",
                     dedupe_key=f"model-gov-{run_id}-{meter_key}",
                     payload_json={},
-                    created_at=now - timedelta(minutes=4),
+                    created_at=now - timedelta(
+                        minutes=120 if meter_load == "outside_window" else 4
+                    ),
                 )
             )
+        if meter_load == "over_limit":
+            # More than the event-directory cap, all associated with one run.
+            # Earlier knowledge/vision meters must still establish coverage.
+            session.add_all([
+                UsageMeterEvent(
+                    account_id=subscription.account_id, site_id=site_id,
+                    subscription_id=subscription.subscription_id,
+                    plan_version_id=subscription.plan_version_id,
+                    run_id="run-model-gov-text", event_kind="meter", meter_key="runs",
+                    quantity=1, ability_family="text", channel="openapi",
+                    execution_kind="text", execution_tier="cloud",
+                    data_classification="internal", currency="USD",
+                    dedupe_key=f"coverage-overflow-{index}", payload_json={},
+                    created_at=now - timedelta(minutes=1),
+                ) for index in range(10001)
+            ])
         session.commit()
 
     unauthenticated = client.get("/internal/service/runtime/diagnostics/runtime-telemetry")
@@ -266,13 +292,13 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert legacy_response.status_code == 404
     assert legacy_admin_alias_response.status_code == 404
     data = response.json()["data"]
-    assert admin_alias_response.json()["data"]["totals"]["runs"] == 4
+    assert admin_alias_response.json()["data"]["totals"]["runs"] == 5
     assert admin_alias_response.json()["data"]["filters"]["recent_minutes"] == 10080
-    assert data["totals"]["runs"] == 4
-    assert data["usage_statistics"]["runs"] == 4
+    assert data["totals"]["runs"] == 5
+    assert data["usage_statistics"]["runs"] == 5
     assert data["usage_statistics"]["active_sites"] == 1
     assert data["totals"]["ai_evidence_required_runs"] == 4
-    assert data["totals"]["non_ai_zero_credit_runs"] == 0
+    assert data["totals"]["non_ai_zero_credit_runs"] == 1
     assert data["totals"]["provider_calls"] == 2
     assert data["totals"]["provider_call_run_coverage_rate"] == 0.5
     assert data["totals"]["metered_run_coverage_rate"] == 0.75
@@ -301,6 +327,12 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert data["governance_gaps"]["unmetered_capabilities"] == ["uncovered_text"]
     assert data["governance_gaps"]["missing_provider_call_capabilities"] == ["uncovered_text"]
     assert data["governance_gaps"]["unmetered_run_count"] == 1
+    missing = client.get(
+        f"/internal/service/admin/runtime-telemetry/runs?site_id={site_id}"
+        "&issue_code=hosted_model.unmetered_runs&recent_minutes=60&limit=25",
+        headers=build_internal_headers(),
+    ).json()["data"]["items"]
+    assert [run["run_id"] for run in missing] == ["run-model-gov-uncovered-text"]
     assert data["governance_gaps"]["runs_without_provider_call_count"] == 2
     assert data["alert_summary"]["status"] == "error"
     assert any(

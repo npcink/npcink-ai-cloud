@@ -13,6 +13,7 @@ as current truth.
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
+| 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
 | 查合规工作底稿方法（四列结构、来源分级、触发线分离） | [开发会话操作经验记录](development-session-notes-compliance-2026-09-26.md) |
 | 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
 | 查本地 WordPress 草稿闭环证据 | [本地草稿闭环验证记录](history/engineering/2026/local-wordpress-draft-closed-loop-validation-2026-09-23.md) — fake Provider、预览/插入/显式保存、回读一致性与精确清理；不是商业或用户验收证据 |

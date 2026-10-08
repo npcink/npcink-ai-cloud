@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from app.adapters.providers.openai import OpenAIProviderAdapter
@@ -182,6 +183,48 @@ def test_usage_service_aggregates_instance_profile_and_summary_windows(tmp_path:
     assert usage_summary["health"]["avg_score"] == 0.9444
 
     dispose_engine(database_url)
+
+def test_usage_summary_reads_latest_health_without_history_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    fixed_now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)
+    _seed_runtime_activity(database_url, fixed_now)
+    with get_session(database_url) as session:
+        session.add_all(
+            HealthSnapshot(
+                provider_id="openai",
+                instance_id="openai-us-east-text-balanced",
+                status="healthy",
+                reason="historical fixture",
+                measured_at=fixed_now - timedelta(days=1, seconds=index),
+            )
+            for index in range(500)
+        )
+        session.add(
+            HealthSnapshot(
+                provider_id="openai",
+                instance_id="openai-us-east-text-balanced",
+                status="degraded",
+                reason="latest fixture",
+                measured_at=fixed_now,
+            )
+        )
+        session.commit()
+
+    def forbidden_history(*args: object, **kwargs: object) -> None:
+        raise AssertionError("summary must not load health history")
+
+    monkeypatch.setattr(StatsRepository, "list_health_snapshots", forbidden_history)
+    result = UsageService(database_url, now_factory=lambda: fixed_now).get_usage_summary()
+    assert result["health"]["degraded_total"] == 1
+    assert result["health"]["instances_total"] == 6
+    assert datetime.fromisoformat(result["health"]["last_measured_at"]).replace(
+        tzinfo=UTC
+    ) == fixed_now
+    dispose_engine(database_url)
+
 
 def test_usage_service_window_aggregations_avoid_full_history_list_scans(
     tmp_path: Path,
