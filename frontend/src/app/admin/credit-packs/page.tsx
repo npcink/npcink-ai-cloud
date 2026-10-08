@@ -110,6 +110,7 @@ export default function AdminCreditPacksPage() {
       else params.delete(key);
     });
     const query = params.toString();
+    if (query === searchParams.toString()) return;
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 

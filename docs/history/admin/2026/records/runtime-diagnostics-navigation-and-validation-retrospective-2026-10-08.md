@@ -284,3 +284,85 @@ receipts to the delivered revision.
 Cloud remains the hosted runtime enhancement layer. These changes do not
 create WordPress write ownership, a local ability/workflow registry, approval
 truth or a second deployment controller. No production outcome is requested.
+
+
+## 2026-10-08 operator-authorized closeout checkpoint
+
+The operator delegated the remaining source, native-feedback, budget, release
+preparation and cleanup tasks to this session, retaining SMTP/account trials,
+real writing, payment and stationmaster trials. This is a single active delivery
+lane. The earlier parallel-session hold above is historical, not current.
+
+### Delivered dependencies
+
+- Portal F6: Cloud PR #1083 merged as
+  `95f126fab721b3ad3a02a080c29fddc564d18936`. Desktop/tablet/mobile
+  account highlighting and `aria-current` passed. Clean-master M4 promotion
+  confirmed acceptance; actual authenticated account/activity navigation passed.
+- Runtime metering: Cloud PR #1084 merged as
+  `b8887d657c85889879043d57870d9a7303a78452`. Six focused tests passed
+  locally and on M4, including meters outside the old 10,000-row slice;
+  clean-master promotion confirmed acceptance.
+- Advisory CI: Cloud PR #1078 merged as
+  `9944f621cf60fa1b9b098fa3764c8fab218a219c`. The workflow has three
+  bounded attempts, enrollment checks and configuration-specific failure
+  guidance. It remains advisory; permissions/action versions were retained.
+- Addon native producer: PR #243 merged as
+  `ce5208cc2aac43b873cb7329b0a4d928e4c879eb`. Exact local adoption queues
+  metadata for the original run, with opt-in, expiry, stable retry identity and
+  Cloud dedupe. The controlled real-WordPress smoke made zero Provider calls,
+  Cloud submissions, post writes or persistent option writes. The option buffer
+  is best effort across processes and is not adoption/approval truth. Natural
+  adoption remains the operator's real writing trial.
+
+### Current Admin candidate evidence
+
+The isolated candidate integrates the delivered master dependencies and only
+adds Admin diagnostics/navigation/shared primitives, test governance and these
+records. Runtime metering and Portal changes are not duplicated in its PR diff.
+
+- Human visual acceptance: the operator explicitly replied
+  “接受，继续合并验收” to the displayed shared-layout candidate. No golden
+  baseline was regenerated. This is visual acceptance, not production dispatch.
+- Static evidence: Admin UI, Agent feedback quality and editor-assist quality
+  gates passed. The new Python checker/tests passed full Ruff and 36 contract
+  tests. Frontend contracts and 20 focused Vitest tests passed. An earlier
+  combined changed-file command stopped on missing Python selection; its
+  successful sub-gates were retained and the affected gates rerun with explicit
+  interpreter paths. Do not relabel that whole earlier command as green.
+- M4: direct candidate deployment built only the frontend image because root
+  package scripts changed the image fingerprint; runtime image/migrations were
+  not rebuilt. Actual authenticated diagnostics rendered current evidence,
+  opened failure records and navigated to the operational advisor. Screenshots
+  and deployment identity are retained outside Git.
+- One complete current browser matrix: **84 passed, 1 failed (6.5 minutes)**.
+  The credit-pack save notice failure reproduced in its focused diagnosis.
+  Trace showed redundant same-URL navigation when opening the already selected
+  pack. A no-op URL guard preserves the mounted page and its save notice.
+  After focused ESLint and another M4 source checkpoint, both credit-pack
+  tests passed in **9.1 seconds**. The other 84 passes and nine pilot receipts
+  remain valid; no repeated full matrix was needed for that isolated guard.
+- Local OCR on the new window checker failed to complete: 80,060 tokens,
+  5m16s, budget exceeded, zero delivered findings. Earlier partial review
+  remains partial. Manual review, deterministic gates and GitHub required
+  checks remain the acceptance authority; do not claim complete AI coverage.
+
+The Admin PR and clean-master M4 promotion still have to close this candidate.
+Their exact merged/accepted revisions must be reported in the task receipt.
+F8 remains an unresolved historical root-cause question without the old failed
+response/request ID; current successful reads do not retroactively prove a fix.
+
+### Preserved source and remaining operator inputs
+
+The primary worktree's 93 dirty/untracked paths and local refs were preserved in
+a verified Git bundle, source archive and hash manifest before reconciliation.
+Do not clear the protected primary worktree with generic cleanup. Compare
+source against delivered master and report genuine residual paths separately;
+only proven closed auxiliary resources are eligible for removal.
+
+Provider budget configuration requires the operator's selected paid connections,
+per-account daily/monthly USD caps and target environment. Until supplied, paid
+trial calls remain zero. Production preparation must freeze the final master
+revision, prove executed CI/bundle/DB/rollback gates and obtain the exact-SHA
+host-dispatch authorization prescribed by the release policy. The original
+“no production outcome requested” statement above describes its earlier stage.
