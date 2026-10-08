@@ -65,11 +65,10 @@ jobs:
     # ubuntu-latest migration (actions/runner-images#14748). Re-run the
     # canary before bumping further.
     runs-on: ubuntu-26.04
-    # 45 minutes covers the retry design's worst case: up to three review
-    # attempts (the standard records 8.5-10 minute rounds and 600s provider
-    # timeouts) plus the 45s/90s pauses and checkout. A timeout-killed job
-    # may end cancelled, which skips the if: failure() marker step below, so
-    # the ceiling must exceed the legitimate worst case.
+    # Three 12-minute attempt ceilings plus the 45s/90s pauses leave room
+    # for context lookup and failure reporting inside the 45-minute job.
+    # Bound each attempt so a hung transport cannot consume the whole job
+    # and prevent the retry ladder or failure marker from running.
     timeout-minutes: 45
     # PR events, or human-authored comments starting with the trigger keyword.
     # Bot comments and non-MEMBER/OWNER/COLLABORATOR users cannot spend quota.
@@ -91,6 +90,7 @@ jobs:
       )
     steps:
       - name: Refuse a misconfigured enrollment
+        id: config_guard
         # Layer 2 steps 2-3 are prerequisites: without all four values the
         # three review attempts below burn their retries on guaranteed
         # provider failures that look exactly like an outage. Values are
@@ -133,11 +133,12 @@ jobs:
       # attempts 1-2 continue-on-error with growing pauses, attempt 3 is
       # allowed to fail the job so the failure-marker step below still
       # fires. A partially delivered earlier attempt can leave near-
-      # duplicate inline comments with the same run ids; triage consumers
-      # dedupe by finding id.
+      # duplicate inline comments; reviewers must resolve those duplicates
+      # manually alongside the original finding.
       - name: Run OpenCodeReview (attempt 1 of 3)
         id: ocr_review_1
         continue-on-error: true
+        timeout-minutes: 12
         # alibaba/open-code-review v1.12.11 (tag object ee83f151, commit
         # a758d9cb; pinned by commit SHA because the action receives the LLM
         # auth token - bump deliberately and record the new tag->commit pair).
@@ -160,6 +161,7 @@ jobs:
         id: ocr_review_2
         if: steps.ocr_review_1.outcome == 'failure'
         continue-on-error: true
+        timeout-minutes: 12
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
           llm_url: ${{ secrets.OCR_LLM_URL }}
@@ -177,6 +179,7 @@ jobs:
       - name: Run OpenCodeReview (attempt 3 of 3)
         id: ocr_review_3
         if: steps.ocr_review_2.outcome == 'failure'
+        timeout-minutes: 12
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
           llm_url: ${{ secrets.OCR_LLM_URL }}
@@ -196,6 +199,8 @@ jobs:
         # single existing marker comment (found by its tag) instead of
         # adding one comment per failed attempt.
         if: failure()
+        env:
+          OCR_CONFIG_FAILED: ${{ steps.config_guard.outcome == 'failure' }}
         uses: actions/github-script@v9
         with:
           script: |
@@ -206,13 +211,16 @@ jobs:
               return;
             }
             const marker = '<!-- ocr-review-failed -->';
+            const configFailed = process.env.OCR_CONFIG_FAILED === 'true';
             const body = [
               marker,
-              '**Advisory OpenCodeReview run failed - no AI review was delivered.**',
+              configFailed
+                ? '**Advisory OpenCodeReview enrollment is incomplete - no AI review was delivered.**'
+                : '**Advisory OpenCodeReview run failed - no AI review was delivered.**',
               '',
-              'This check is advisory, so nothing is blocked. Before merging,',
-              're-run it with a `/open-code-review` comment, or record why this',
-              'change merges without an AI review.',
+              configFailed
+                ? 'A maintainer must configure the two OCR_LLM secrets and two variables named in the run annotation before requesting another review.'
+                : 'This check is advisory. Before merging, re-run it with a `/open-code-review` comment, or record why this change merges without an AI review.',
               '',
               `Latest failed run (attempt ${context.runAttempt}): ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             ].join('\n');
