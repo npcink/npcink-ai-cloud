@@ -18,12 +18,16 @@ def assert_activity_index_round_trip(engine: Engine) -> None:
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     cleanup_path = path.with_name("20261008_0086_portal_activity_redundant_index.py")
-    cleanup_spec = importlib.util.spec_from_file_location("portal_activity_index_0086", cleanup_path)
+    cleanup_spec = importlib.util.spec_from_file_location(
+        "portal_activity_index_0086", cleanup_path
+    )
     assert cleanup_spec is not None and cleanup_spec.loader is not None
     cleanup = importlib.util.module_from_spec(cleanup_spec)
     cleanup_spec.loader.exec_module(cleanup)
     subject_path = path.with_name("20261008_0087_portal_activity_subject_indexes.py")
-    subject_spec = importlib.util.spec_from_file_location("portal_activity_index_0087", subject_path)
+    subject_spec = importlib.util.spec_from_file_location(
+        "portal_activity_index_0087", subject_path
+    )
     assert subject_spec is not None and subject_spec.loader is not None
     subjects = importlib.util.module_from_spec(subject_spec)
     subject_spec.loader.exec_module(subjects)
