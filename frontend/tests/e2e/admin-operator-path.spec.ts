@@ -53,8 +53,8 @@ test('admin session bootstrap preserves context on transport failure and redirec
   });
 
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await page.goto('/admin/troubleshooting?window=72');
-  await expect(page).toHaveURL(/\/admin\/troubleshooting\?window=72$/);
+  await page.goto('/admin/troubleshooting?window=720');
+  await expect(page).toHaveURL(/\/admin\/troubleshooting\?window=720/);
   await expect(page.getByRole('heading', { name: /Runtime diagnostics|运行诊断|運行診斷/i })).toBeVisible();
 
   await page.unroute('**/admin/session');
@@ -213,12 +213,14 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('heading', { name: /Runtime diagnostics|运行诊断|運行診斷/i })).toBeVisible();
   await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toBeVisible();
   const runtimeEvidenceSection = page.locator('#runtime-evidence');
-  await expect(runtimeEvidenceSection).not.toHaveAttribute('open', '');
-  await runtimeEvidenceSection.locator('summary').click();
-  await expect(runtimeEvidenceSection.getByText(/Runtime resolution|运行时解析/i).first()).toBeVisible();
+  await runtimeEvidenceSection.click();
+  await expect(page.getByRole('dialog').getByText(/Runtime resolution|运行时解析/i).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(runtimeEvidenceSection).toBeFocused();
   const evidenceLanesSection = page.locator('#evidence-lanes');
-  await expect(evidenceLanesSection.locator('[data-ui="runtime-evidence-lane-list"]')).toBeVisible();
-  await expect(page.locator('a[href="/admin/plugin-observability"]').first()).toBeVisible();
+  await expect(evidenceLanesSection).toBeVisible();
+  await expect(evidenceLanesSection.locator('a[href="/admin/plugin-observability?window=336"]')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('a[href="/admin/hosted-models"]')).toHaveCount(0);
 
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
@@ -317,7 +319,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
   await expect(page).toHaveURL(/\/admin\/accounts\/acct_new_customer_free\?return_to=%2Fadmin%2Faccounts$/);
-  await expect(page.getByRole('heading', { name: /New Customer Free/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New Customer Display', exact: true })).toBeVisible();
 
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
   const proPackageRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Pro' });

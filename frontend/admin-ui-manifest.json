@@ -90,7 +90,17 @@
       }
     ],
     "pilotRoutes": {
-      "/admin/usage-statistics": {"pageModel": "diagnostic", "riskTier": "material", "workingSurface": "[data-ui=\"usage-statistics-workspace\"]", "requiredStates": ["ready", "filtered", "partial_error"]},
+      "/admin/usage-statistics": {
+        "pageModel": "diagnostic",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"usage-statistics-workspace\"]",
+        "requiredStates": [
+          "ready",
+          "filtered",
+          "partial_error"
+        ],
+        "browserSpec": "tests/e2e/admin-usage-statistics.spec.ts"
+      },
       "/admin/plugin-observability": {
         "pageModel": "diagnostic",
         "riskTier": "material",
@@ -100,7 +110,8 @@
           "selected",
           "partial_error",
           "disclosure"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-plugin-observability-v2.spec.ts"
       },
       "/admin/ai-resources": {
         "pageModel": "queue",
@@ -112,7 +123,8 @@
           "filtered",
           "operation_error",
           "dialog"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-provider-directory-v2.spec.ts"
       },
       "/admin/coverage": {
         "pageModel": "queue",
@@ -124,7 +136,8 @@
           "paginated",
           "selected",
           "refresh_error"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-service-queue-v2.spec.ts"
       },
       "/admin/service-settings": {
         "pageModel": "configuration",
@@ -137,7 +150,8 @@
           "save_error",
           "saved",
           "dialog"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-service-settings-v2.spec.ts"
       },
       "/admin/troubleshooting": {
         "pageModel": "diagnostic",
@@ -148,7 +162,8 @@
           "selected",
           "partial_error",
           "disclosure"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-runtime-diagnostics-v2.spec.ts"
       },
       "/admin/audit": {
         "pageModel": "diagnostic",
@@ -159,7 +174,8 @@
           "filtered",
           "selected",
           "refresh_error"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-audit-workspace.spec.ts"
       },
       "/admin/support-requests": {
         "pageModel": "queue",
@@ -170,7 +186,8 @@
           "filtered",
           "selected",
           "returned"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-support-request-operator-closure.spec.ts"
       },
       "/admin/support-requests/[requestId]": {
         "pageModel": "detail",
@@ -181,14 +198,24 @@
           "action_error",
           "action_success",
           "return_context"
-        ]
+        ],
+        "browserSpec": "tests/e2e/admin-support-request-operator-closure.spec.ts"
       }
     },
     "browserLanes": {
       "local": "required for every material or shared Admin visual change",
       "m4": "required for a new reference pattern, Admin shell, shared primitive, or major cross-route visual change"
     },
-    "humanAcceptance": "required for new golden baselines and material shared visual patterns"
+    "humanAcceptance": "required for new golden baselines and material shared visual patterns",
+    "supplementalSpecs": [
+      "tests/e2e/admin-accounts-queue-v2.spec.ts",
+      "tests/e2e/admin-credit-packs-directory-v2.spec.ts",
+      "tests/e2e/admin-customer-detail-v2.spec.ts",
+      "tests/e2e/admin-external-services.spec.ts",
+      "tests/e2e/admin-vector-settings.spec.ts",
+      "tests/e2e/admin-runtime-profiles-workspace.spec.ts",
+      "tests/e2e/admin-site-compliance-workspace.spec.ts"
+    ]
   },
   "pageModels": [
     "overview",

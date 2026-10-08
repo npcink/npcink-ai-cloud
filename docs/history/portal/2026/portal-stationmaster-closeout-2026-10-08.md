@@ -92,6 +92,43 @@ migration_head=0087
 现有支付和发布清单。最新目标环境状态必须重新检查，不能沿用本表的 M4
 缺省配置为生产事实。
 
+### 后续收尾更新（2026-10-08）
+
+上表保留本记录初次验收时的历史状态，以下更新不能反向改写当时的证据：
+
+- 原生 `agent.feedback` 生产者已通过 Addon
+  [PR #243](https://github.com/npcink/npcink-cloud-addon/pull/243) 合并到
+  `master`（`ce5208cc`），实现关联、去重键、隐私最小化和有限重试。
+  单元、受控 WordPress 验证和中央质量门禁已通过；队列是明确记录的
+  best-effort 投递，不保证跨 WordPress 进程的原子交付。真实用户的自然投递
+  仍需随写作闭环验证，不能从模拟事件推导。
+- Portal 导航归属修复、运行用量覆盖修复和 CI 审查重试模板分别已通过
+  [#1083](https://github.com/npcink/npcink-ai-cloud/pull/1083)、
+  [#1084](https://github.com/npcink/npcink-ai-cloud/pull/1084) 和
+  [#1078](https://github.com/npcink/npcink-ai-cloud/pull/1078) 合并。
+- 后台共享界面 [#1086](https://github.com/npcink/npcink-ai-cloud/pull/1086)
+  仍未合并；跨平台测试修正已在隔离分支提交，11 张新增 Linux 截图基准
+  等待明确人工验收。最终 CI、合并、当前干净 master 的 M4 promotion 和
+  Cloud 中央质量门禁仍需完成。
+  后续操作者已同意按建议完成 Linux 基准验收、最终 CI、合并及 M4 验收；
+  11 张已展示的候选基准经哈希复核后获准纳入，原等待验收状态已被替代。
+  此授权不等于最终 CI、合并或生产发布已经完成。
+- 16 条 Cloud 历史本地分支和一条 Addon 本地分支已转入可恢复归档，并校验
+  私有备份。Addon 已合并功能分支的远端引用已按精确 SHA 清理。Cloud 主
+  工作区、M4 运维工作区、未关闭后台工作区和旧发布候选继续保留，不能称为
+  全部清理完成。主工作区另有未合并提交 `dc58be21`，原 93 份文件内容均已
+  保全，且本任务未覆盖该工作区。
+- 生产数据库和归属盘点的两次只读核查通过。付费连接、日/月 USD 上限、
+  目标环境、匹配的 RDS 恢复点及服务器备份信息尚待操作者提供；没有执行
+  生产部署或付费测试。SMTP、真实写作、真实支付及站长试用由操作者负责。
+- F8 的历史读取失败根因仍未证实：缺失原失败响应和请求 ID。当前成功
+  读取证明当前行为，不等于补齐历史故障的根因证据。
+
+本会话可在接受未完成项交接后结束；关闭聊天不等于验收完成，也不授权删除
+仍保护交付的工作区。建议先完成 #1086 的合并和 M4 验收再按完工关闭。
+详细经验及验证边界见
+[后台诊断与验证复盘](../../admin/2026/records/runtime-diagnostics-navigation-and-validation-retrospective-2026-10-08.md)。
+
 生产流程见 [Cloud Production Release Policy](../../../cloud-production-release-policy-v1.md)
 及 [Release Checklist](../../../../deploy/RELEASE_CHECKLIST.md)。
 预算设计和实现见

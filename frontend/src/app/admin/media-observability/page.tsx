@@ -280,7 +280,7 @@ function AdminMediaObservabilityContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const windowHours = normalizeObservationWindow(searchParams.get('window'));
+  const windowHours = normalizeObservationWindow(searchParams.get('window'), 336, 'media');
   const targetFormat = normalizeTargetFormat(searchParams.get('format'));
   const siteIdFilter = searchParams.get('site') || '';
   const focusedRunId = searchParams.get('focus') || '';

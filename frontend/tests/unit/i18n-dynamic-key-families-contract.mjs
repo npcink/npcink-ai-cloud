@@ -26,6 +26,10 @@ import { frontendRoot } from './_paths.mjs';
 // dead-key analysis and the catalog in sync with one source of truth.
 
 export const FAMILY_SOURCES = {
+  'admin.ai_advisor.metric_':
+    'src/app/admin/ai-advisor/page.tsx; bounded metric keys from src/features/admin/ai-advisor/advisor-presentation.ts',
+  'admin.ai_advisor.action_':
+    'src/app/admin/ai-advisor/page.tsx; bounded ADVISOR_ACTIONS copy tokens from src/features/admin/ai-advisor/advisor-presentation.ts, with explicit unknown fallback',
   'status.':
     'src/lib/status-display.ts translateStatusLabel and direct pages; normalizeStatusToken over backend status/health/severity/workflow tokens plus "unknown"',
   'portal.usage.credit_ledger_feature_':

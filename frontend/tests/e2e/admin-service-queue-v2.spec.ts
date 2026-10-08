@@ -108,7 +108,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
 
   await page.getByRole('link', { name: 'Uncovered Account' }).click();
   await expect(page).toHaveURL('/admin/accounts/acct_uncovered');
-  await expect(page.getByRole('heading', { name: /^Uncovered$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Uncovered Account$/i })).toBeVisible();
 });
 
 test('service status pagination is server-backed and preserved in the URL', async ({ page }) => {

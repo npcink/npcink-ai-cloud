@@ -10,6 +10,7 @@ type AdminDataTableFrameProps = {
   headerActions?: ReactNode;
   density?: 'standard' | 'compact';
   headerVisibility?: 'visible' | 'sr-only';
+  placement?: 'stack' | 'adjacent';
 };
 
 export function AdminDataTableFrame({
@@ -22,13 +23,14 @@ export function AdminDataTableFrame({
   headerActions,
   density = 'standard',
   headerVisibility = 'visible',
+  placement = 'stack',
 }: AdminDataTableFrameProps) {
   return (
     <section
       data-ui={dataUi}
       data-density={density}
       className={`overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 ${
-        density === 'compact' ? 'admin-compact-surface mt-2' : 'mt-4 rounded-xl'
+        density === 'compact' ? `admin-compact-surface ${placement === 'adjacent' ? '' : 'mt-2'}` : 'mt-4 rounded-xl'
       }`}
     >
       {headerVisibility === 'sr-only' ? (
@@ -39,7 +41,7 @@ export function AdminDataTableFrame({
       ) : (
         <div className={`flex border-b border-slate-200 dark:border-slate-800 ${
           density === 'compact'
-            ? 'min-h-9 items-center justify-between gap-2 bg-white px-3 py-1.5 dark:bg-slate-950'
+            ? `${placement === 'adjacent' ? 'min-h-[var(--admin-compact-row-height)]' : 'min-h-9'} items-center justify-between gap-2 bg-white px-3 py-1.5 dark:bg-slate-950`
             : headerActions
               ? 'flex-col gap-3 bg-slate-50/80 px-4 py-3 dark:bg-slate-900/40 xl:flex-row xl:items-center xl:justify-between'
               : 'items-center justify-between gap-3 bg-slate-50/80 px-4 py-3 dark:bg-slate-900/40'

@@ -23,6 +23,9 @@
   --admin-workbench-max-width: 72rem;
   --admin-workbench-compact-max-width: 60rem;
   --admin-diagnostic-queue-max-height: 32rem;
+  --admin-diagnostic-queue-width: 20rem;
+  --admin-diagnostic-number-column: 8rem;
+  --admin-diagnostic-table-min-width: 24rem;
   --admin-compact-control-height: 2rem;
   --admin-compact-row-height: 2.5rem;
   --admin-compact-radius: 0.25rem;
@@ -194,6 +197,38 @@ h4,
 
 .admin-compact-surface {
   border-radius: var(--admin-compact-radius);
+}
+
+[data-ui="runtime-diagnostic-issue-grid"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+[data-ui="runtime-diagnostic-overview-grid"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  [data-ui="runtime-diagnostic-issue-grid"][data-selected="true"] {
+    grid-template-columns: var(--admin-diagnostic-queue-width) minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1600px) {
+  [data-ui="runtime-diagnostic-overview-grid"] {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  [data-ui="runtime-diagnostic-overview-grid"] [data-ui="runtime-investigation-actions"] {
+    border-top-width: 0;
+    border-left: 1px solid var(--line);
+    padding-top: 0;
+    padding-left: 1rem;
+  }
 }
 
 /* Diagnostic density tier v2 material tokens (cloud-admin-ui-standard

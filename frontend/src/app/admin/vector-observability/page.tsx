@@ -223,7 +223,7 @@ function AdminVectorObservabilityContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const windowHours = normalizeObservationWindow(searchParams.get('window'));
+  const windowHours = normalizeObservationWindow(searchParams.get('window'), 336, 'vector');
   const siteIdFilter = searchParams.get('site') || '';
   const focusedErrorCode = searchParams.get('focus') || '';
   const [data, setData] = useState<VectorObservabilityData | null>(null);

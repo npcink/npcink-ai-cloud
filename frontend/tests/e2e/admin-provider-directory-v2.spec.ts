@@ -1070,7 +1070,10 @@ test('provider model health stays a collapsed read-only evidence panel', async (
     healthPanel.getByRole('button', { name: /Save|保存|Test|测试|Delete|删除|Configure|配置/i })
   ).toHaveCount(0);
 
-  await healthPanel.getByRole('button', { name: /Last 7d|最近 7 天/i }).click();
+  await healthPanel.getByRole('button', { name: /Last 7d|Last 7 days|最近 7 天|近 7 天/i }).click();
   await expect(healthPanel.locator('tbody tr')).toHaveCount(3);
   await expect(healthPanel.getByText(/gpt-5\.4-mini/)).toBeVisible();
+  await page.goto('/admin/ai-resources#provider-model-health');
+  await expect(healthPanel).toHaveAttribute('open', '');
+  await expect(healthPanel.locator('table')).toBeVisible();
 });

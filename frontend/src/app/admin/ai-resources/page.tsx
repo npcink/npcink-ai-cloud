@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
@@ -193,6 +194,7 @@ type ProviderModelHealthPanelProps = {
 
 function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPanelProps) {
   const [windowId, setWindowId] = useState(health.default_window_id);
+  const evidenceRef = useFragmentDisclosure('provider-model-health');
   const activeWindow = health.windows.find((entry) => entry.window_id === windowId)
     || health.windows[0];
   const rows = activeWindow ? activeWindow.rows : [];
@@ -205,7 +207,7 @@ function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPane
     : '';
 
   return (
-    <details data-ui="provider-model-health" className="mt-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+    <details data-ui="provider-model-health" ref={evidenceRef} className="mt-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
         <span>{translate('health_title', 'Model health')}</span>
         <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
@@ -216,7 +218,7 @@ function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPane
         </span>
       </summary>
       <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-800">
-        <div className="flex flex-wrap items-center gap-2" data-ui="provider-model-health-window">
+        <div className="flex flex-wrap items-center gap-2" id="provider-model-health" data-ui="provider-model-health-window">
           {health.windows.map((entry) => (
             <button
               key={entry.window_id}

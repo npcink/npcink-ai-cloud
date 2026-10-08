@@ -108,6 +108,9 @@ test('administrator investigates errors and sites, preserves filters and manages
   await expect(page).toHaveURL(/focus=attention-plugin-errors/);
   await page.locator('#plugin-attention-inspector').getByRole('button', {name:/Acknowledge|确认/}).click();
   await expect.poll(() => harness.getStatePostCount()).toBe(1);
+  // The acknowledgement also refreshes the scope before showing success.
+  // Wait for that request to finish before arming the refresh-only failure.
+  await expect(page.getByText(/Watch item state updated\.|关注项状态已更新。/)).toBeVisible();
   await page.keyboard.press('Escape');
   harness.failNextRequest();
   await page.getByRole('button', {name:/^Refresh$|^刷新$/}).click();

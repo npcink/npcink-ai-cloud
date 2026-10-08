@@ -114,26 +114,43 @@ metadata inline, and reserve secondary identifiers for tooltips or
 low-frequency evidence. Other routes remain on standard density until their
 own operator workflow is reviewed and accepted.
 
-`/admin/troubleshooting` is the accepted PC reference for a `diagnostic`
-page:
+`/admin/troubleshooting` is the PC reference for a `diagnostic` page.
+The operator-authorized refinement on 2026-10-07 replaces the earlier
+three-card grid and nested disclosure pattern; visual acceptance of the
+new candidate remains separate from this target contract:
 
-1. one compact scope, time-window control, and independently fresh remote
-   sources;
-2. one explicit runtime conclusion before the evidence surfaces;
-3. one bounded anomaly queue rendered as an issue-card grid — three cards
-   per row on PC, each card carrying the severity badge, count, scope plus
-   owner, and two-line guidance, with the whole card acting as the select
-   action;
-4. one contextual inspector for evidence code, affected runs, scope, and the
-   next diagnostic step, nested inside the queue frame as an indented
-   detail panel (left rule plus tinted surface) rather than a second
-   standalone card;
-5. one compact quality summary that keeps sample sufficiency separate from
-   the presence or absence of a review candidate;
-6. low-frequency quality detail, evidence lanes, and runtime guidance behind
-   default-collapsed disclosures;
-7. no mutation, routing, provider, prompt, approval, or WordPress write
-   authority.
+1. a compact two-row toolbar: title/freshness and the time window/actions on
+   the first row; factual metrics and the runtime conclusion on the second.
+   Scoped filters may occupy an additional row when present;
+2. the runtime conclusion shares the metric row rather than an empty banner;
+3. one bounded anomaly list carrying severity, count with its unit, and scope;
+4. one adjacent inspector that selects the first anomaly when no valid focus is
+   provided. Keep valid URL focus on refresh; selecting another anomaly opens
+   its overview. The inspector has one task tab row: Overview, Run records,
+   and Daily trend. Overview includes function totals and the next action;
+5. Run records initially shows five returned records, loading, partial/total
+   failure, empty state, and retry. Complete metadata opens in the shared
+   inspector drawer with focus containment and recovery;
+6. Daily trend shows only the selected anomaly with its actual calls/runs
+   unit. No nested disclosure or repeated inner title;
+7. auxiliary definitions use the bounded shared help tip, available by hover,
+   keyboard focus, and touch click. Operational errors, empty states, recovery
+   status, and next actions remain visible in their task panel. Overall trends
+   and editorial quality stay in Usage Statistics. Secondary diagnostic tools
+   appear as direct, wrapping links in the page footer; do not place a plain
+   navigation directory behind an extra drawer. Long help and record detail
+   reuse the shared inspector drawer;
+8. the short anomaly list ends at its own height. Both adjacent frames start
+   at the same top edge, with matched compact headers and surface boundaries.
+   At desktop widths the queue uses the shared 20rem width token; below the
+   desktop breakpoint the panels stack. From 1600px the overview places its
+   function table and next action side by side; narrower screens stack them.
+   Numeric columns align to the right. Recovery status belongs in the inspector
+   header; investigation export sits with the other actions. Help tips flip
+   above the trigger near the viewport bottom;
+9. no mutation, routing, provider, prompt, approval, or WordPress write
+   authority. Function totals and anomaly counts have different denominators;
+   never derive missing counts from rounded completeness percentages.
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
@@ -150,18 +167,13 @@ per-route exception:
   refresh action — rendered by the shared primitive instead of the
   padded header card, plus the shared `BackofficePageStack` compact
   spacing;
-- one bounded KPI tile row above the evidence queue and 13px queue row
-  type across the full content width; the reference route renders its
-  anomaly queue as a three-per-row issue-card grid (contrast-ring
-  selection) whose inspector nests inside the queue frame as an indented
-  detail panel;
-- a window trend panel with a chart/table toggle fed by the telemetry
-  usage timeline — standalone under the KPI row when no anomaly is
-  selected, and the inspector's fourth tab once one is; that tab plots
-  every alert's own daily series (alert `daily_counts`) as one line per
-  issue with the selected issue emphasized; the tab row is
-  a single four-column strip (breakdown, run evidence, actions,
-  trend); evidence-lane links sit adjacent to the queue.
+- a compact factual metric row above the evidence surface. The current
+  `/admin/troubleshooting` reference uses an adjacent bounded queue and
+  inspector with Overview, Run records, and Daily trend task tabs;
+- a selected-anomaly trend with a chart/table toggle and the actual calls/runs
+  unit. Overall usage trends and editorial quality remain in Usage Statistics.
+  Other diagnostic routes adopt only the applicable density primitives; they
+  do not inherit the historical nested-card or four-tab composition.
 
 Queue, detail, and configuration routes keep the default header card
 and quiet-surface rules. The tier also carries its own material tokens
@@ -591,6 +603,15 @@ primitives, documentation/AI entry points, and the bounded legacy-dialog and
 credential allowlists. The visual gate verifies the accepted queue, detail,
 configuration, diagnostic, and cross-route workflow pilots at the fixed PC
 viewport and writes structured receipts into Playwright test results.
+
+Each visual pilot declares `browserSpec` next to its `requiredStates` in
+`frontend/admin-ui-manifest.json`. The standard executor generates its spec
+list from that registration; a missing spec is an error, not a skipped pilot.
+CI uses the same registration to select changed route pilots. Shared Admin
+primitives, state models, and translations select every registered pilot.
+Browser fixtures reject unknown APIs by default. Successful empty responses
+require an exact request allowlist; route fixtures must use real action codes
+and a valid projection shape.
 
 Also run type, lint, i18n, contract, M4, and repository gates required by the
 actual changed seam. A screenshot is supporting evidence, not proof of API,

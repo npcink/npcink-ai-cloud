@@ -10,6 +10,8 @@ import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
+import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
+import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
@@ -335,6 +337,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const isPathMatch = (targetPath: string) => pathname === targetPath || pathname.startsWith(`${targetPath}/`);
 
   const isActive = (item: AdminNavItem) => {
+    const secondaryParent = adminSecondaryParentHref(pathname);
+    if (secondaryParent) return item.href === secondaryParent;
     const href = item.href;
     if (href === '/admin') {
       return pathname === '/admin';
@@ -552,7 +556,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
+            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
               <button
                 type="button"
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
@@ -576,9 +580,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {t('admin.operator_surface', {}, 'Operator surface')}
               </span>
               <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                {activeNavLabel}
-              </span>
+              {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
+                <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
+              </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
             </div>
 
             <div className="flex items-center gap-2">
@@ -730,6 +734,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <main className="flex-1 bg-transparent">
           <AdminQueryProvider>
             <AdminRouteTransition>
+              <React.Suspense fallback={null}><AdminDiagnosticNavigation /></React.Suspense>
               {children}
             </AdminRouteTransition>
           </AdminQueryProvider>

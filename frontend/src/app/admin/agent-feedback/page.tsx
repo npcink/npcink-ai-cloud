@@ -1,5 +1,7 @@
 'use client';
 
+import { normalizeObservationWindow, observationWindows } from '@/features/admin/observability/window';
+
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BackofficeDiagnosticNotice, BackofficeDisclosure, BackofficeEmptyState, BackofficeMetricStrip, BackofficePageHeader, BackofficePageStack, BackofficeSectionPanel, BackofficeStackCard } from '@/components/backoffice/BackofficeScaffold';
@@ -119,10 +121,7 @@ type AgentFeedbackSummary = {
 
 type TranslationFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-const WINDOW_OPTIONS = [
-  { label: '24h', value: 24 },
-  { label: '7d', value: 168 },
-];
+const WINDOW_OPTIONS = observationWindows('feedback').map(value => ({ value, label: value === 24 ? '24h' : `${value / 24}d` }));
 
 const LABEL_FALLBACKS: Record<string, { key: string; fallback: string }> = {
   already_handled: { key: 'admin.agent_feedback.label_already_handled', fallback: 'Already handled' },
@@ -331,7 +330,7 @@ function metricWindowDetail(t: TranslationFn, data: AgentFeedbackSummary): strin
 }
 
 function normalizeFeedbackWindow(value: string | null): number {
-  return Number(value) === 168 ? 168 : 24;
+  return normalizeObservationWindow(value, 24, 'feedback');
 }
 
 function AgentFeedbackQualityDashboard() {

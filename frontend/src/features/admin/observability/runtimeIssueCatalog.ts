@@ -96,6 +96,7 @@ export function scopeLabel(capabilities: string[], t: TranslationFn): string {
       text: 'admin.troubleshooting.scope_text',
       knowledge: 'admin.troubleshooting.scope_knowledge',
       image: 'admin.troubleshooting.scope_image',
+      vision: 'admin.troubleshooting.scope_vision',
       audio: 'admin.troubleshooting.scope_audio',
     };
     return labels[capability] ? t(labels[capability], {}, capability) : capability;
@@ -169,7 +170,7 @@ export type IssueBreakdownMetric = {
 };
 
 // The capability-group table carries generic function totals; each issue
-// type only owns one of them, so the breakdown tab ranks and highlights
+// type only owns one of them, so the breakdown ranks and highlights
 // the column that actually moves with the selected issue.
 export function issueBreakdownMetric(issue: { code: string }, t: TranslationFn): IssueBreakdownMetric | null {
   if (issue.code === 'hosted_model.provider_errors') {

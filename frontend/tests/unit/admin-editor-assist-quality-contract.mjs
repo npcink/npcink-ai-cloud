@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const pageSource = readFileSync(
-  resolve(process.cwd(), 'src/app/admin/troubleshooting/page.tsx'),
+  resolve(process.cwd(), 'src/app/admin/usage-statistics/page.tsx'),
   'utf8'
 );
 const panelSource = readFileSync(
@@ -14,8 +14,8 @@ const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8
 
 assert.match(
   pageSource,
-  /<EditorAssistQualityPanel[\s\S]*?windowHours=\{windowHours\}/,
-  'Runtime Diagnostics must host the bounded editor-assist quality section'
+  /<EditorAssistQualityPanel[\s\S]*?windowHours=\{hours\}/,
+  'Usage Statistics quality view must host the bounded editor-assist quality section'
 );
 assert.match(
   panelSource,
