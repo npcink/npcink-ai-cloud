@@ -18,6 +18,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinned = useRef(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const open = position !== null;
   const cancelHide = () => { if (timer.current) clearTimeout(timer.current); };
   const hide = () => { cancelHide(); pinned.current = false; setPosition(null); };
   const show = () => {
@@ -41,7 +42,7 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
     if (top !== position.top) setPosition({ ...position, top });
   }, [position]);
   useEffect(() => {
-    if (!position) return;
+    if (!open) return;
     const dismiss = (event: KeyboardEvent) => { if (event.key === 'Escape') { pinned.current = false; setPosition(null); } };
     const outside = (event: MouseEvent) => {
       if (!trigger.current?.contains(event.target as Node) && !bubble.current?.contains(event.target as Node)) {
@@ -68,9 +69,9 @@ export function AdminHelpTip({ label, children }: { label: string; children: Rea
       window.removeEventListener('scroll', move, true);
       window.removeEventListener('resize', move);
     };
-  }, [position]);
+  }, [open]);
   return <>
-    <button ref={trigger} type="button" aria-label={label} aria-describedby={position ? id : undefined}
+    <button ref={trigger} type="button" aria-label={label} aria-expanded={open} aria-describedby={open ? id : undefined}
       data-ui="admin-help-tip-trigger" onMouseEnter={show} onMouseLeave={scheduleHide} onFocus={show}
       onBlur={scheduleHide} onClick={() => { if (pinned.current) hide(); else { pinned.current = true; show(); } }}
       className="ml-1 inline-flex h-6 w-6 shrink-0 cursor-help items-center justify-center rounded align-middle text-xs font-normal leading-none text-slate-400 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:text-slate-200">

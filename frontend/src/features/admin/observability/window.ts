@@ -2,7 +2,7 @@ import capabilities from './window-capabilities.json';
 
 export type ObservationWindow = 24 | 72 | 168 | 336 | 720 | 2160;
 export type ObservationCapability = keyof typeof capabilities;
-export const OBSERVATION_WINDOWS = capabilities.runtime.hours as ObservationWindow[];
+export const OBSERVATION_WINDOWS = Object.freeze([...capabilities.runtime.hours]) as readonly ObservationWindow[];
 const knownWindows = [...new Set(Object.values(capabilities).flatMap(capability => capability.hours))];
 
 export function observationCapability(href: string): ObservationCapability | null {

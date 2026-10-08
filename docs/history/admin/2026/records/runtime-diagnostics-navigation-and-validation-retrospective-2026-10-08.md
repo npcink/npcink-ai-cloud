@@ -72,6 +72,43 @@ The active rules live in
 [Runtime Observation UI Development Standard](../../../../cloud-admin-runtime-observation-ui-development-standard-v1.md)
 and [Admin Frontend Engineering Standard](../../../../cloud-admin-frontend-engineering-standard-v1.md).
 
+## OCR closeout findings and dispositions
+
+The runtime-only review at `41281ee040d65994728aad7f9357d35ace431d13`
+completed its one selected production file with no findings. The initial
+Admin review at `97f182751bdec2f34a46445abb7e800ba33a0295` was partial:
+20 of 45 selected files completed, 25 failed due to provider rate limits or
+the token budget, and 27 comments were returned. This is useful defect evidence,
+not a complete clean review. Private raw reports retain exact revision,
+coverage, provider and session identifiers without copying tool reasoning into
+repository documentation.
+
+Corrections from that review include:
+
+- Preserve toolbar-only controls in both shared header densities.
+- Validate run identifiers and timestamps; malformed evidence must finish in
+  an error state that can be retried instead of leaving loading unresolved.
+- Keep existing disclosure contract selectors valid and expose help expanded
+  state without rebinding viewport listeners for every position update.
+- Select all registered pilot and supplemental browser specs after shared
+  Admin or fixture changes; report subprocess errors explicitly.
+- Make required visual states independent of the manifest being checked,
+  consolidate fixture ownership, and derive supported fixture periods.
+- Register Advisor dynamic translation families, cover dynamic generic action
+  fallbacks, localize navigation scope hints and preserve explicit unknowns.
+- Derive CI window owners from the capability registry and report successful
+  contract completion only after its assertions pass.
+
+Accepted advisory observations: the pinned 14-day navigation default is an
+intentional cross-page contract, while unsupported periods remain visibly
+adjusted; filter history entries intentionally allow Back to restore scope;
+the strict fixture's known identity is deliberate and unknown endpoints still
+fail closed; compatibility window exports remain immutable; compact table
+class selection is bounded presentational branching, not independent state.
+Portal-only guard changes were removed from this Admin candidate and remain
+with the Portal owner. Any final OCR retry must reuse unchanged coverage and
+review changed or previously failed files with bounded concurrency and budget.
+
 ## Evidence limits and pending work
 
 The preceding development candidate passed 18 focused unit tests, the

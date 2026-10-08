@@ -1,4 +1,5 @@
 import { normalizeObservationWindow, observationCapability, observationWindows } from '@/features/admin/observability/window';
+import { translate } from '@/lib/i18n';
 
 export type AdminNavigationItem = {
   href: string;
@@ -36,8 +37,12 @@ function destinationWindows(href: string): readonly number[] {
 }
 
 function resolvedWindow(href: string, current: string | null): number {
-  const capability = observationCapability(href)!;
-  return normalizeObservationWindow(current, 336, capability);
+  const capability = observationCapability(href);
+  return capability ? normalizeObservationWindow(current, 336, capability) : 336;
+}
+
+export function adminNavigationWindowHours(href: string, params: ScopeParams): number | null {
+  return observationCapability(href) ? resolvedWindow(href, params.get('window')) : null;
 }
 
 export function adminNavigationWindowAdjusted(href: string, params: ScopeParams): boolean {
@@ -49,9 +54,7 @@ export function adminNavigationWindowAdjusted(href: string, params: ScopeParams)
 export function adminNavigationWindowHint(href: string, params: ScopeParams, locale: string): string | undefined {
   if (!adminNavigationWindowAdjusted(href, params)) return undefined;
   const hours = resolvedWindow(href, params.get('window'));
-  return locale === 'zh-CN'
-    ? `目标页面不支持当前时间窗，将使用近 ${hours / 24} 天。`
-    : `This page does not support the current window; it opens with the last ${hours / 24} days.`;
+  return translate(locale === 'zh-CN' ? 'zh-CN' : 'en', 'admin.navigation.window_adjusted', { days: String(hours / 24) });
 }
 
 /** Transfer only scope fields actually consumed by the destination. */

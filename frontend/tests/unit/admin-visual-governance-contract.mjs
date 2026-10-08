@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
+import { adminVisualSpecPattern } from '../../../scripts/admin-visual-plan.mjs';
 
 const manifest = JSON.parse(readFileSync(fromFrontendRoot('admin-ui-manifest.json'), 'utf8'));
 const receiptSchema = JSON.parse(readFileSync(fromFrontendRoot('admin-visual-receipt.schema.json'), 'utf8'));
@@ -31,10 +32,27 @@ const expectedRuleIds = [
   'context-stability',
   'browser-runtime-errors',
 ];
-const pilotRoutes = Object.fromEntries(Object.entries(manifest.visualGovernance.pilotRoutes).map(([route, pilot]) => [route, {
-  pageModel: pilot.pageModel, states: pilot.requiredStates, spec: pilot.browserSpec,
-  artifact: route === '/admin/support-requests' ? 'support-request-queue' : route === '/admin/support-requests/[requestId]' ? 'support-request-detail' : undefined,
-}]));
+const routeArtifacts = {
+  '/admin/support-requests': 'support-request-queue',
+  '/admin/support-requests/[requestId]': 'support-request-detail',
+};
+const minimumStates = {
+  diagnostic: ['ready'],
+  queue: ['ready', 'filtered', 'selected'],
+  configuration: ['ready', 'invalid', 'dirty', 'save_error', 'saved'],
+  detail: ['ready', 'action_error', 'action_success', 'return_context'],
+};
+function assertPilotStates(pilot) {
+  for (const state of minimumStates[pilot.pageModel] || ['ready']) {
+    assert.ok(pilot.requiredStates.includes(state), `${pilot.pageModel} must require ${state}`);
+  }
+  if (pilot.pageModel === 'diagnostic') {
+    assert.ok(pilot.requiredStates.some(state => ['selected', 'filtered'].includes(state)), 'diagnostic needs an interaction state');
+    assert.ok(pilot.requiredStates.some(state => ['partial_error', 'refresh_error'].includes(state)), 'diagnostic needs a source-error state');
+  }
+}
+assert.throws(() => assertPilotStates({ pageModel: 'diagnostic', requiredStates: ['ready', 'selected'] }), /source-error/);
+assert.throws(() => assertPilotStates({ pageModel: 'configuration', requiredStates: ['ready'] }), /require invalid/);
 
 assert.equal(manifest.version, 9, 'visual governance must use the reviewed v9 manifest');
 assert.equal(manifest.visualGovernance.version, 1);
@@ -43,15 +61,14 @@ assert.deepEqual(manifest.visualGovernance.resultStates, expectedStatuses);
 assert.deepEqual(manifest.visualGovernance.rules.map((rule) => rule.id), expectedRuleIds);
 assert.ok(manifest.visualGovernance.rules.every((rule) => rule.authority === 'hard_gate'));
 
-for (const [route, expected] of Object.entries(pilotRoutes)) {
-  const pilot = manifest.visualGovernance.pilotRoutes[route];
-  assert.equal(manifest.routes[route], expected.pageModel, `${route} manifest model must remain authoritative`);
-  assert.equal(pilot.pageModel, expected.pageModel, `${route} visual model must match the route manifest`);
+for (const [route, pilot] of Object.entries(manifest.visualGovernance.pilotRoutes)) {
+  const expected = { spec: pilot.browserSpec, states: pilot.requiredStates, artifact: routeArtifacts[route] };
+  assert.equal(manifest.routes[route], pilot.pageModel, `${route} manifest model must remain authoritative`);
   assert.equal(pilot.riskTier, 'material');
-  assert.deepEqual(pilot.requiredStates, expected.states);
+  assertPilotStates(pilot);
   assert.match(pilot.workingSurface, /^\[data-ui=/);
 
-  assert.match(expected.spec || '', /^tests\/e2e\/admin-[\w-]+\.spec\.ts$/, `${route} must register an executable browser spec`);
+  assert.match(expected.spec || '', adminVisualSpecPattern, `${route} must register an executable browser spec`);
   const spec = readFileSync(fromFrontendRoot(expected.spec), 'utf8');
   assert.match(spec, /observeAdminBrowserEvidence/, `${route} must observe console and network failures`);
   assert.match(spec, /writeAdminVisualReceipt/, `${route} must emit a structured browser receipt`);
@@ -114,4 +131,4 @@ assert.match(helper, /testInfo\.outputPath[\s\S]*testInfo\.attach/);
 assert.match(packageSource, /admin-visual-governance-contract\.mjs/);
 assert.match(packageSource, /run-admin-visual-checks\.mjs/);
 
-console.log(`admin_visual_governance_contract: ok (12 rules, ${Object.keys(pilotRoutes).length} pilot routes, structured receipts)`);
+console.log(`admin_visual_governance_contract: ok (12 rules, ${Object.keys(manifest.visualGovernance.pilotRoutes).length} pilot routes, structured receipts)`);

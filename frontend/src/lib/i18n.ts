@@ -15,6 +15,9 @@ export const localeOptions: Array<{ value: Locale; label: string; shortLabel: st
 
 export const translations: Record<Locale, TranslationMap> = {
   en: {
+    'admin.navigation.related_diagnostics': 'Related diagnostic pages',
+    'admin.navigation.window_period': 'Last {{days}} days',
+    'admin.navigation.window_adjusted': 'This page does not support the current window; it opens with the last {{days}} days.',
     'admin.ai_advisor.metric_callback_failed': 'Callback failures',
     'admin.ai_advisor.metric_queued_runs': 'Queued runs',
     'admin.ai_advisor.metric_guard_events': 'Guard events',
@@ -5811,6 +5814,9 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.account_detail.key_coverage_gap_status': 'Key coverage gap',
   },
   'zh-CN': {
+    'admin.navigation.related_diagnostics': '相关诊断页面',
+    'admin.navigation.window_period': '近 {{days}} 天',
+    'admin.navigation.window_adjusted': '目标页面不支持当前时间窗，将使用近 {{days}} 天。',
     'admin.ai_advisor.metric_callback_failed': '回调失败数',
     'admin.ai_advisor.metric_queued_runs': '排队运行数',
     'admin.ai_advisor.metric_guard_events': '运行保护事件',

@@ -437,6 +437,7 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
   const requests: URL[] = [];
   let failKnowledge = true;
   let failAll = false;
+  let malformed = false;
   const summary = {
     generated_at: '2026-10-07T10:00:00Z',
     totals: { runs: 211, provider_call_run_coverage_rate: 0.66, metered_run_coverage_rate: 1 },
@@ -461,6 +462,10 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
     const scope = url.searchParams.get('capability')!;
     if (failAll || (scope === 'knowledge' && failKnowledge)) {
       await route.fulfill({ status: 503, json: buildAdminApiErrorEnvelope('evidence source unavailable') });
+      return;
+    }
+    if (malformed) {
+      await route.fulfill({ json: buildAdminApiEnvelope({ items: [{ run_id: null }, { run_id: null }] }) });
       return;
     }
     await route.fulfill({ json: buildAdminApiEnvelope({ items: [{
@@ -498,6 +503,15 @@ test('multi-function evidence retains successful scopes, distinguishes failures,
   await expect(evidence).not.toContainText('inspect-text');
   await expect(evidence).not.toContainText(/No related run records|未返回相关运行记录/);
   failAll = false;
+  await evidence.getByRole('button', { name: /Retry records|重试加载记录/ }).click();
+  await expect(evidence).toContainText('inspect-text');
+  await expect(evidence.getByRole('alert')).toHaveCount(0);
+  malformed = true;
+  await page.getByRole('button', { name: /Call records missing|调用记录缺失/ }).click();
+  await selectPanel(page, 'records');
+  await expect(evidence.getByRole('alert')).toContainText(/Run records could not load|运行记录加载失败/);
+  await expect(evidence).not.toContainText('inspect-text');
+  malformed = false;
   await evidence.getByRole('button', { name: /Retry records|重试加载记录/ }).click();
   await expect(evidence).toContainText('inspect-text');
   await expect(evidence.getByRole('alert')).toHaveCount(0);

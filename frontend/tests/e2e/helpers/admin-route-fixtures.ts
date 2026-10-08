@@ -7,11 +7,11 @@ export async function installRouteAcceptanceMocks(page: Page, routePattern: stri
   if (routePattern === '/admin/media-observability' || routePattern === '/admin/vector-observability') {
     const media = routePattern === '/admin/media-observability';
     await page.route(`**/api${routePattern}?*`, async (route) => {
-      const hours = Number(new URL(route.request().url()).searchParams.get('window_hours'));
+      const hours = Number(new URL(route.request().url()).searchParams.get('window_hours') || 336);
       await route.fulfill({ json: buildAdminApiEnvelope({
         ...(media ? { contract_version: 'magick-media-observability-summary-v2', workflow_metadata: {} } : {}),
         generated_at: '2026-10-07T06:00:00Z',
-        window: { hours, start_at: '2026-09-23T06:00:00Z', end_at: '2026-10-07T06:00:00Z' },
+        window: { hours, start_at: new Date(Date.parse('2026-10-07T06:00:00Z') - hours * 3600000).toISOString(), end_at: '2026-10-07T06:00:00Z' },
         totals: media
           ? { jobs_total: 0, succeeded_total: 0, failed_total: 0, success_rate: 0 }
           : { index_jobs_total: 0, index_failed_total: 0, search_queries_total: 0, search_failed_total: 0 },
@@ -33,14 +33,7 @@ export async function installRouteAcceptanceMocks(page: Page, routePattern: stri
       profiles: [],
       boundary: { public_runtime_accepts_raw_model_instance: false, results_write_posture: 'suggestion_only', admin_surface: 'platform_admin_only', direct_wordpress_write: false },
     }) }));
-    await page.route('**/api/admin/service-settings', route => route.fulfill({ json: buildAdminApiEnvelope({
-      settings: { platform_preferences: { setting_id: 'platform_preferences', enabled: true, status: 'ready', config: { timezone: 'Asia/Shanghai' } } },
-    }) }));
-    await page.route('**/api/admin/runtime-profiles/capability-probes/summary?*', route => route.fulfill({ json: buildAdminApiEnvelope({
-      window_minutes: 10080, generated_at: '2026-10-07T06:00:00Z',
-      totals: { attempts: 0, verified: 0, failed: 0, success_rate: 0 },
-      by_capability: [], by_instance: [], recent_failures: [],
-    }) }));
+
   }
 
   if (routePattern === '/admin/vector-settings') {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -685,13 +686,10 @@ def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
 
 
 def test_window_capability_owners_select_frontend_contracts_without_browser_lane() -> None:
-    for path in (
-        "app/api/routes/service.py", "app/domain/runtime/service.py",
-        "app/domain/observability/plugin_event_history.py", "app/domain/observability/plugin_events.py",
-        "app/domain/media_derivatives/metrics.py", "app/domain/site_knowledge/metrics.py",
-        "app/domain/observability/editor_assist_quality.py", "app/domain/agent_feedback/service.py",
-        "scripts/check-admin-window-capabilities.py",
-    ):
+    registry = json.loads((ROOT / "frontend/src/features/admin/observability/window-capabilities.json").read_text())
+    owners = {entry["runtimeSource"] for entry in registry.values()}
+    owners.update({"app/api/routes/service.py", "scripts/check-admin-window-capabilities.py"})
+    for path in sorted(owners):
         result = _classify(path)
         assert result["frontend_backend_contracts_required"] == "true"
         assert result["frontend_e2e_required"] == "false"

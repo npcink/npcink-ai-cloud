@@ -40,7 +40,10 @@ export function useRuntimeRunEvidence({ issueCode, capabilities, site, capabilit
       const response = await client.request<{ items: RuntimeRunEvidence[]; sampled?: boolean; truncated?: boolean }>(
         `/api/admin/runtime-telemetry/runs?${params}`, { signal: controller.signal },
       );
-      if (!Array.isArray(response.data.items)) throw new Error('Invalid runtime evidence response');
+      if (!Array.isArray(response.data.items) || response.data.items.some(run =>
+        !run || typeof run.run_id !== 'string' || !run.run_id.trim() ||
+        (run.started_at != null && typeof run.started_at !== 'string')
+      )) throw new Error('Invalid runtime evidence response');
       return response.data;
     })).then((results) => {
       if (controller.signal.aborted) return;
@@ -49,6 +52,8 @@ export function useRuntimeRunEvidence({ issueCode, capabilities, site, capabilit
         .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '') || b.run_id.localeCompare(a.run_id));
       setSnapshot({ key, items: rows.slice(0, sampleLimit), failedScopes: results.length - fulfilled.length,
         truncated: rows.length > sampleLimit || fulfilled.some((result) => result.sampled || result.truncated) });
+    }).catch(() => {
+      if (!controller.signal.aborted) setSnapshot({ key, items: [], truncated: false, failedScopes: scopes.length });
     });
     return () => controller.abort();
   }, [key]);

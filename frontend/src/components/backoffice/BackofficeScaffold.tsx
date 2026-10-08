@@ -272,8 +272,9 @@ export function BackofficePageHeader({
       </div>
     );
   }
-  const actions = primaryAction || secondaryAction ? (
+  const actions = primaryAction || secondaryAction || toolbarControls ? (
     <>
+      {toolbarControls}
       {secondaryAction}
       {primaryAction}
     </>

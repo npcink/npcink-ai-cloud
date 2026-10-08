@@ -121,7 +121,7 @@ type AgentFeedbackSummary = {
 
 type TranslationFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
-const WINDOW_OPTIONS = observationWindows('feedback').map(value => ({ value, label: value === 24 ? '24h' : '7d' }));
+const WINDOW_OPTIONS = observationWindows('feedback').map(value => ({ value, label: value === 24 ? '24h' : `${value / 24}d` }));
 
 const LABEL_FALLBACKS: Record<string, { key: string; fallback: string }> = {
   already_handled: { key: 'admin.agent_feedback.label_already_handled', fallback: 'Already handled' },

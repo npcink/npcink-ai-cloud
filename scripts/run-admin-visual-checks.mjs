@@ -15,7 +15,7 @@ if (process.argv.includes('--ci-changed')) {
   else {
     if (!/^[0-9a-f]{40}$/.test(base)) throw new Error('Invalid CI visual base revision');
     const diff = spawnSync('git', ['diff', '--name-only', base, head], { cwd: root, encoding: 'utf8' });
-    if (diff.status !== 0) throw new Error(`Unable to select changed Admin visuals: ${diff.stderr}`);
+    if (diff.status !== 0) throw new Error(`Unable to select changed Admin visuals: ${diff.error?.message || diff.stderr || `git exited ${diff.status}`}`);
     paths = diff.stdout.trim().split('\n');
   }
   specs = changedAdminVisualSpecs(manifest, paths);

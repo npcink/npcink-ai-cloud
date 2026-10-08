@@ -14,8 +14,12 @@ const extra = structuredClone(manifest);
 extra.visualGovernance.pilotRoutes['/admin/new-pilot'] = { browserSpec: 'tests/e2e/admin-new-pilot.spec.ts' };
 assert.ok(adminVisualSpecs(extra).includes('tests/e2e/admin-new-pilot.spec.ts'));
 assert.equal(specs.length, new Set(specs).size);
-console.log(`admin_visual_plan_contract: ok (${Object.keys(manifest.visualGovernance.pilotRoutes).length} pilots; ${specs.length} unique specs; missing registration rejected)`);
 
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/src/app/admin/plugin-observability/page.tsx']), ['tests/e2e/admin-plugin-observability-v2.spec.ts']);
 assert.deepEqual(changedAdminVisualSpecs(manifest, ['docs/example.md']), []);
-assert.equal(changedAdminVisualSpecs(manifest, ['frontend/src/components/admin/AdminHelpTip.tsx']).length, new Set(Object.values(manifest.visualGovernance.pilotRoutes).map(p => p.browserSpec)).size);
+assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/src/components/admin/AdminHelpTip.tsx']), specs);
+assert.deepEqual(changedAdminVisualSpecs(manifest, ['frontend/tests/e2e/helpers/admin-route-fixtures.ts']), specs);
+for (const spec of manifest.visualGovernance.supplementalSpecs) {
+  assert.ok(changedAdminVisualSpecs(manifest, [`frontend/${spec}`]).includes(spec));
+}
+console.log(`admin_visual_plan_contract: ok (${Object.keys(manifest.visualGovernance.pilotRoutes).length} pilots; ${specs.length} unique specs; missing registration rejected)`);

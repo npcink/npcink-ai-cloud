@@ -207,7 +207,7 @@ function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPane
     : '';
 
   return (
-    <details ref={evidenceRef} data-ui="provider-model-health" className="mt-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+    <details data-ui="provider-model-health" ref={evidenceRef} className="mt-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
         <span>{translate('health_title', 'Model health')}</span>
         <span className="text-xs font-normal text-slate-500 dark:text-slate-400">

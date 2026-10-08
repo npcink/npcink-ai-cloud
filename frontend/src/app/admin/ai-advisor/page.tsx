@@ -525,7 +525,7 @@ function OperationsWorkPanel({ data, siteId }: { data: AdvisorPreviewData; siteI
         columnsClassName="md:grid-cols-2 xl:grid-cols-4"
         items={metrics.map(metric => ({
           label: t(`admin.ai_advisor.metric_${metric.key}`, {}, metric.key.replaceAll('_', ' ')),
-          value: metric.value === null ? '—' : metric.key === 'usage_cost' ? formatCost(metric.value) : formatNumber(metric.value),
+          value: advisorMetricValue(metric.value, metric.key),
           detail: metric.value === null ? t('admin.ai_advisor.metric_unavailable', {}, 'Not provided in this summary') : undefined,
           toneClassName: metric.value !== null && metric.value > 0 && metric.key !== 'usage_cost' ? 'text-amber-600 dark:text-amber-300' : undefined,
           size: 'compact' as const,
@@ -650,16 +650,22 @@ function severityLabel(severity: string, t: Translate): string {
   }
 }
 
+function advisorMetricValue(value: number | null, key: string): string {
+  if (value === null) return '—';
+  if (key === 'usage_cost') return formatCost(value);
+  return formatNumber(value);
+}
+
 function actionDisplay(action: string, t: Translate, siteId: string): { label: string; detail: string; href?: string } {
   const entry = advisorActionCatalog[action];
   if (!entry) return {
     label: t('admin.ai_advisor.action_unknown', {}, 'Review additional evidence'),
     detail: t('admin.ai_advisor.action_unknown_detail', {}, 'This is a read-only recommendation. An operator still needs to judge it against the evidence.'),
   };
-  let detail = t(`admin.ai_advisor.action_${entry.copy}_detail`);
+  let detail = t(`admin.ai_advisor.action_${entry.copy}_detail`, {}, t('admin.ai_advisor.action_unknown_detail', {}, 'Review this recommendation against the evidence.'));
   if (entry.windowChanged) detail += ` ${t('admin.ai_advisor.evidence_window_changed', {}, 'The evidence page opens with a 14-day window; its counts may differ from this summary.')}`;
   if (entry.href === '/admin#runtime-attention') detail += ` ${t('admin.ai_advisor.platform_runtime_destination', {}, 'The overview shows platform runtime evidence, without the site filter.')}`;
-  return { label: t(`admin.ai_advisor.action_${entry.copy}`), detail, href: advisorActionHref(action, siteId) };
+  return { label: t(`admin.ai_advisor.action_${entry.copy}`, {}, t('admin.ai_advisor.action_unknown', {}, 'Review additional evidence')), detail, href: advisorActionHref(action, siteId) };
 }
 
 function EffectComparisonPanel({ data }: { data: AdvisorPreviewData }) {
