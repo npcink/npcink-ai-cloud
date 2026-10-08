@@ -167,4 +167,3 @@ export async function installRouteAcceptanceMocks(page: Page, routePattern: stri
     });
   }
 }
-
