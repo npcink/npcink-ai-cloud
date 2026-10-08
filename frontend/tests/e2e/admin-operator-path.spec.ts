@@ -53,8 +53,8 @@ test('admin session bootstrap preserves context on transport failure and redirec
   });
 
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await page.goto('/admin/troubleshooting?window=72');
-  await expect(page).toHaveURL(/\/admin\/troubleshooting\?window=72/);
+  await page.goto('/admin/troubleshooting?window=720');
+  await expect(page).toHaveURL(/\/admin\/troubleshooting\?window=720/);
   await expect(page.getByRole('heading', { name: /Runtime diagnostics|运行诊断|運行診斷/i })).toBeVisible();
 
   await page.unroute('**/admin/session');

@@ -387,3 +387,63 @@ choices, non-defects or optional future refactoring; no unrelated API batching,
 logging or visual restructuring was added. In particular, Python AST defaults
 are an empty list rather than `None`, and a synchronous guarded render cannot
 interleave another render between its condition and value expression.
+
+### Cross-platform CI checkpoint
+
+The next frontend run reached the newly registered Linux visual matrix:
+75 scenarios passed, nine failed and one passed on retry. Eight failures
+were missing Linux goldens (11 images); the repository previously contained
+Darwin goldens for those states. Those missing images are not evidence of a
+layout regression and must not be bypassed or silently accepted.
+
+The ninth failure assumed keyboard focus always places a help trigger close
+enough to the bottom to force an above-trigger bubble. Linux font geometry
+left sufficient room below instead. The test now explicitly scrolls the
+trigger to the bottom and waits for the anchored geometry. The session test
+now uses a supported 720-hour diagnostic window; an unsupported 72-hour
+diagnostic window was canonically replaced by the advertised minimum. The
+plugin refresh test waits for acknowledgement and its accompanying refresh
+to complete before injecting the next refresh failure. These are test
+preconditions, not relaxed product assertions. All three focused scenarios
+passed against M4 frontend assets in 17.3 seconds.
+
+Linux golden candidates were generated in one bounded disposable Docker
+container on M4 using Playwright 1.59.1, the locked repository version. Its
+official arm64 image digest was
+`sha256:040190be07ce081a025d95f2aeab57b588bed4f19165c1c93cb765372d368463`.
+The bounded run reported eight missing-baseline scenarios and two passes
+(24.7 seconds); its only errors were the 11 intentionally unaccepted images.
+Playwright's `missing` mode writes candidates while retaining the failing
+status, so this generation run is not reported as a green browser gate.
+All 11 candidate dimensions match the existing Darwin images. Font and
+timezone presentation differences were inspected in three comparison sheets.
+Human acceptance remains required before committing new golden baselines.
+No Cloud Docker build or runtime was moved to the authoring Mac.
+
+### Independent closeout evidence
+
+- Sixteen historical Cloud local branches were migrated to dated archive refs
+  with verified mode-600 bundles. Four contain unmerged historical work and
+  are preserved, not claimed delivered. The merged CI auxiliary worktree was
+  removed without force after preserving relevant ignored evidence and
+  confirming its complete tree matched current master. The Addon native
+  feedback topic was also archived after PR #243 merged; its primary checkout
+  is clean master. Remote deletion was not inferred from local cleanup.
+- The primary Cloud checkout remains protected with all 93 paths preserved.
+  Against candidate `e681b933` before these test corrections, 53 match exactly,
+  11 match preserved historical
+  heads and 29 have manual residual dispositions. Most residuals are newer
+  validation, accessibility, localization, fixtures or formatting. The unique
+  original design brief and proposal for two additional Portal CI selections
+  remain recoverable. Rehash against final accepted master before closeout;
+  generic cleanup must not discard this primary checkout.
+- Two production maintenance runs were deliberately read-only:
+  [database readiness #37743477533](https://github.com/npcink/npcink-ai-cloud/actions/runs/37743477533)
+  and [ownership inventory #37743481231](https://github.com/npcink/npcink-ai-cloud/actions/runs/37743481231).
+  Both passed. The inventory reported zero violations and warnings, excluding
+  credentials, content and email addresses. Database readiness applies to the
+  currently running release; it does not prove the future candidate's
+  migrations, bundle, rollback or deployment. Paid connection selection,
+  per-account daily/monthly USD caps, target environment and matched restore
+  point evidence remain operator inputs. No production application deploy,
+  migration or paid Provider call was executed.

@@ -681,7 +681,15 @@ test('diagnostic help remains inside a short viewport and flips above its trigge
   await page.goto('/admin/troubleshooting');
   const trigger = page.locator('[data-ui="runtime-issue-evidence"] thead button');
   await trigger.focus();
+  // Put the trigger at the bottom explicitly: native focus scrolling differs
+  // across browser platforms and may leave enough room below for the help.
+  await trigger.evaluate(element => element.scrollIntoView({ block: 'end' }));
   await expect(page.getByRole('tooltip')).toBeVisible();
+  await expect.poll(async () => {
+    const tip = (await page.getByRole('tooltip').boundingBox())!;
+    const anchor = (await trigger.boundingBox())!;
+    return tip.y + tip.height <= anchor.y;
+  }).toBe(true);
   const triggerBox = (await trigger.boundingBox())!;
   const tipBox = (await page.getByRole('tooltip').boundingBox())!;
   expect(tipBox.y).toBeGreaterThanOrEqual(8);
