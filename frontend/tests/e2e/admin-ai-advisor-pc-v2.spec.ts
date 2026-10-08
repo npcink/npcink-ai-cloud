@@ -100,6 +100,17 @@ test('Operations Advisor keeps the current PC diagnosis primary and technical AI
 
 test('advisor scope metrics, site deep links and evidence destinations survive reload', async ({ page }, testInfo) => {
   await installAdminMocks(page);
+  // The destination snapshot must agree with the Advisor's three failed runs.
+  // The general fixture is healthy and would correctly fall back to its first issue.
+  await page.route('**/api/admin/runtime-telemetry?*', route => route.fulfill({ json: buildAdminApiEnvelope({
+    generated_at: '2026-04-08T10:00:00Z',
+    totals: { runs: 20, provider_calls: 20, usage_meter_events: 20, provider_call_run_coverage_rate: 1, metered_run_coverage_rate: 1 },
+    usage_statistics: { runs: 20, succeeded: 17, failed: 3, timeline: [] },
+    capability_groups: [{ group_id: 'text', runs_total: 20, failed: 3 }],
+    alert_summary: { status: 'warning', alerts: [{
+      code: 'hosted_model.failed_runs', severity: 'warning', count: 3, capabilities: ['text'],
+    }] },
+  }) }));
   const requests: string[] = [];
   const cases = {
     operations: { scope: 'operations_analysis', headline: 'Runtime failures need operations review', summary: 'Recent run failures are visible in the selected operations window.', signals: [{ code: 'ops.runtime_quality', failed_runs: 3, total_runs: 20 }], action: 'inspect_failed_runs_by_site_and_ability', label: /^失败运行$|^Failed runs$/i, value: '3' },
@@ -128,6 +139,7 @@ test('advisor scope metrics, site deep links and evidence destinations survive r
       await expect(evidence).toHaveAttribute('href', '/admin/troubleshooting?focus=hosted_model.failed_runs&window=336&site=site_mvp');
       await evidence.click();
       await expect(page).toHaveURL(/troubleshooting\?focus=hosted_model.failed_runs&window=336&site=site_mvp/);
+      await expect(page.locator('[data-ui="runtime-inspector-header"]')).toContainText(/运行任务失败|Run failures/i);
       await page.goBack();
       await expect(page).toHaveURL(/ai-advisor\?scope=operations&site=site_mvp/);
     }
