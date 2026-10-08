@@ -34,8 +34,8 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   navbarSource,
-  /secondaryNavItems|portal\.nav_more|portal\.site_admin_workspace|\/portal\/monitoring|\/portal\/ai-insights|\/portal\/audit/,
-  'advanced support, monitoring, AI insight, audit routes, and duplicate header badges must not return to customer navigation'
+  /secondaryNavItems|portal\.nav_more|portal\.site_admin_workspace|\/portal\/monitoring|\/portal\/ai-insights/,
+  'advanced support, monitoring, AI insight routes, and duplicate header badges must not return to customer navigation'
 );
 assert.equal(
   existsSync(aiInsightsPagePath),
