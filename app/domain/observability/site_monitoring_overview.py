@@ -59,14 +59,13 @@ class SiteMonitoringOverviewService:
                 start_at=start_at,
                 end_at=current_time,
             )
-        runs_total = int(metrics.get("runs_total") or 0)
+        runs_total = int(cast(int, metrics.get("runs_total") or 0))
+        success_total = float(cast(float, metrics.get("success_total") or 0))
         usage_summary: dict[str, object] = {
             "windows": {
                 "rolling_24h": {
                     "runs_total": runs_total,
-                    "success_rate": float(metrics.get("success_total") or 0) / runs_total
-                    if runs_total
-                    else 0.0,
+                    "success_rate": success_total / runs_total if runs_total else 0.0,
                     "latency_ms_p95": _calculate_percentile(latencies, 95),
                     "last_seen_at": self._format_datetime(metrics.get("last_seen_at")),
                 }
