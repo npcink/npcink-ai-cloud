@@ -420,3 +420,31 @@ fields solely to reproduce an older layout.
   have distinct presentations. No failed read may show a normal status or zero.
 - Automatic knowledge updates are conditional on enabling content updates in
   the WordPress plugin. The Portal must not infer that the setting is enabled.
+
+## 15. Ordinary Site Owner Acceptance and Handoff
+
+- Review each route through the customer's immediate job: understand current
+  package/credits/capacity, connect or recover a site, inspect usage, or request
+  support. Default views must keep those facts and actions direct; internal
+  evidence stays behind the owning detail surface.
+- Verify existing account snapshots separately from current package offers.
+  Do not reset historical credits or site allowances merely to make a test
+  account match a newly advertised Free package.
+- Preserve successful mutations when a subsequent refresh fails. Prevent
+  duplicate confirmation while busy and give an explicit recovery path.
+- Bounded activity counts describe the returned window. Optimize the
+  customer-owned query and indexes without silently changing operator audit
+  semantics or mixing runtime and evidence time windows.
+- Distinguish template rendering, real SMTP delivery, configured Provider spend
+  protection, a real Provider run, observed editor saves, and native
+  `agent.feedback`. Evidence for one must not be reported as another.
+- When real-world tests are deferred by the operator, record their target
+  environment, prerequisites, owner, and observable completion criteria.
+  Unimplemented source behavior remains a separate source task. Deferral does
+  not satisfy release gates or authorize deployment or paid calls.
+- Closeout must identify merged PRs, accepted runtime revision when applicable,
+  retained branches/worktrees, and uncommitted work. A successful focused task
+  does not imply that the entire repository is clean.
+
+The dated evidence and remaining work for this acceptance model are recorded in
+[Portal Stationmaster Closeout - 2026-10-08](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md).
