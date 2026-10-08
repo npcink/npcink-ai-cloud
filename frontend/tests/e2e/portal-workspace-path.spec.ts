@@ -2343,6 +2343,38 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
   }
 });
 
+for (const navigation of [
+  { name: 'desktop', width: 1440, selector: '[data-ui="portal-primary-nav"]' },
+  { name: 'tablet', width: 900, selector: '[data-ui="portal-tablet-nav"]' },
+  { name: 'mobile', width: 390, selector: '#portal-mobile-nav' },
+]) {
+  test(`portal recent activity retains account navigation ownership on ${navigation.name}`, async ({ page }) => {
+    await installPortalMocks(page);
+    await page.setViewportSize({ width: navigation.width, height: 900 });
+    await page.goto('/portal/audit');
+    await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
+    if (navigation.name === 'mobile') {
+      await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+    }
+    const nav = page.locator(navigation.selector);
+    await expect(nav).toBeVisible();
+    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(1);
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
+
+    await page.goto('/portal/usage');
+    await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+    if (navigation.name === 'mobile') {
+      await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+    }
+    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(1);
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/usage');
+    await expect(nav.locator('a[href="/portal/account"]')).not.toHaveAttribute('aria-current', 'page');
+    await nav.locator('a[href="/portal/account"]').focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/portal\/account$/);
+  });
+}
+
 test('portal purchase and support tasks stay usable on a 390px viewport', async ({ page }) => {
   await installPortalMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });

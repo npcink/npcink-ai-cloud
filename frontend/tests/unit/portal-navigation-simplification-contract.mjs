@@ -34,7 +34,7 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   navbarSource,
-  /secondaryNavItems|portal\.nav_more|portal\.site_admin_workspace|\/portal\/monitoring|\/portal\/ai-insights|\/portal\/audit/,
+  /secondaryNavItems|portal\.nav_more|portal\.site_admin_workspace|\/portal\/monitoring|\/portal\/ai-insights/,
   'advanced support, monitoring, AI insight, audit routes, and duplicate header badges must not return to customer navigation'
 );
 assert.equal(
