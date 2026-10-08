@@ -569,3 +569,26 @@ limits changes or paid model traffic. It is retained separately. Before the
 next M4 promotion, inspect the live sampling state so container recreation
 does not invalidate an observation still in progress. This evidence does not
 declare a parallel merge queue or authorize messaging another task.
+
+### Corrected Linux golden accepted by operator (2026-10-08)
+
+After the corrected service-settings screenshot and its exact origin-dependent
+difference were shown, the operator explicitly replied "可以，继续合并".
+This accepts the replacement image with SHA-256
+`70c31c4008cec13939d5bf658bdd29973f0e780112c33c51cfd65c073235702f`
+and supersedes only the pending acceptance in the preceding checkpoint.
+The other ten reviewed Linux goldens and all Darwin goldens are unchanged.
+
+The accepted image represents the loopback origin used by GitHub CI. Its
+normal M4 Linux comparison and full settings interaction passed in 5.1 seconds.
+The exact 566-pixel reproduction, original candidate and comparison evidence
+remain preserved. No product control was hidden and no screenshot tolerance,
+test assertion or required merge protection was weakened.
+
+This checkpoint also publishes the two already-tested Advisor corrections.
+Their four unit cases, Admin contracts/type-check, targeted lint and two
+M4-asset browser scenarios remain valid for the unchanged source. Required
+GitHub checks on the final pushed revision must still pass before protected
+merge, clean-current-master M4 promotion, relevant smoke and exact-topic
+cleanup. Human image acceptance does not itself prove these later states or
+authorize production deployment.
