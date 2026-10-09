@@ -49,6 +49,8 @@ export async function proxyPortalBackendPath(
   );
   const requestReference = isActivityRead ? randomUUID().replaceAll('-', '') : '';
   if (requestReference) {
+    // Activity reads use a proxy-owned support reference, independent of caller
+    // trace context. Redacted failure logs work without forcing trace sampling.
     const spanId = randomUUID().replaceAll('-', '').slice(0, 16);
     headers.traceparent = `00-${requestReference}-${spanId}-00`;
   }
@@ -113,10 +115,11 @@ export async function proxyPortalBackendPath(
   }
 
   try {
+    const forwardedResponse = await forwardBackendJson(response);
     if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
       logActivityReadFailure(response.status, 'backend_response');
     }
-    return withRequestReference(await forwardBackendJson(response));
+    return withRequestReference(forwardedResponse);
   } catch (error) {
     if (!isActivityRead) throw error;
     logActivityReadFailure(502, 'unreadable_response');

@@ -29,7 +29,7 @@ describe('Portal activity request evidence', () => {
   it.each([
     ['unreachable', () => Promise.reject(new Error('private connection detail')), 502],
     ['timeout', () => Promise.reject(new DOMException('private timeout detail', 'TimeoutError')), 504],
-    ['invalid JSON', () => Promise.resolve(new Response('{private', { headers: { 'content-type': 'application/json' } })), 502],
+    ['invalid JSON', () => Promise.resolve(new Response('{private', { status: 502, headers: { 'content-type': 'application/json' } })), 502],
   ])('keeps a reference and redacts %s failures', async (_name, result, status) => {
     const fetchMock = vi.fn().mockImplementation(result);
     vi.stubGlobal('fetch', fetchMock);
@@ -43,6 +43,7 @@ describe('Portal activity request evidence', () => {
     expect(body.status).toBe('error');
     expect(JSON.stringify(body)).not.toContain('private');
     expect(log).toHaveBeenCalledWith('[portal-activity-read]', expect.objectContaining({ request_reference: reference }));
+    expect(log).toHaveBeenCalledOnce();
     expect(JSON.stringify(log.mock.calls)).not.toContain('private');
   });
 

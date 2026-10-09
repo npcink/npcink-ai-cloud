@@ -232,6 +232,10 @@ backend route, HTTP status, and bounded failure category. It must not log
 cookies, headers, query values, response bodies, or exception messages. This
 provides a correlation point even when backend trace export is disabled or
 unsampled; the Portal must not force tracing configuration or sampling changes.
+These two browser-owned activity reads intentionally start a proxy-owned trace
+instead of adopting caller-supplied trace context. Other Portal requests retain
+their existing forwarding behavior. The proxy reference is diagnostic evidence,
+never authorization or customer identity.
 
 F8's historical cause remains unconfirmed until comparable
 original evidence is available.
