@@ -56,6 +56,13 @@ export async function proxyPortalBackendPath(
     if (requestReference) response.headers.set('X-Request-ID', requestReference);
     return response;
   };
+  const logActivityReadFailure = (status: number, failure: string): void => {
+    if (requestReference) {
+      console.warn('[portal-activity-read]', {
+        request_reference: requestReference, route: backendPath, status, failure,
+      });
+    }
+  };
 
   headers.Origin = request.headers.get('origin') || requestOrigin;
   headers.Referer = request.headers.get('referer') || `${requestOrigin}/`;
@@ -97,6 +104,7 @@ export async function proxyPortalBackendPath(
     });
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+    logActivityReadFailure(timedOut ? 504 : 502, timedOut ? 'timeout' : 'unreachable');
     return withRequestReference(buildErrorResponse(
       timedOut ? 504 : 502,
       timedOut ? 'proxy.portal_backend_timeout' : options.unreachableCode,
@@ -105,9 +113,13 @@ export async function proxyPortalBackendPath(
   }
 
   try {
+    if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
+      logActivityReadFailure(response.status, 'backend_response');
+    }
     return withRequestReference(await forwardBackendJson(response));
   } catch (error) {
     if (!isActivityRead) throw error;
+    logActivityReadFailure(502, 'unreadable_response');
     return withRequestReference(buildErrorResponse(
       502,
       'proxy.portal_backend_invalid_response',

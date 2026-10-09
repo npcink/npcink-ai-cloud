@@ -33,6 +33,7 @@ describe('Portal activity request evidence', () => {
   ])('keeps a reference and redacts %s failures', async (_name, result, status) => {
     const fetchMock = vi.fn().mockImplementation(result);
     vi.stubGlobal('fetch', fetchMock);
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const response = await proxyPortalBackendPath(new NextRequest('http://localhost/api/portal/account/audit-summary'), '/portal/v1/account/audit-summary', options);
     expect(response.status).toBe(status);
     const reference = response.headers.get('x-request-id');
@@ -41,10 +42,13 @@ describe('Portal activity request evidence', () => {
     const body = await response.json();
     expect(body.status).toBe('error');
     expect(JSON.stringify(body)).not.toContain('private');
+    expect(log).toHaveBeenCalledWith('[portal-activity-read]', expect.objectContaining({ request_reference: reference }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private');
   });
 
   it('preserves a real backend authorization rejection and its envelope evidence', async () => {
     const denied = { ...envelope, status: 'error', error_code: 'auth.site_not_found', meta: { trace_id: 'backend-trace', revision: 'm6' } };
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(denied, { status: 403 })));
     const response = await proxyPortalBackendPath(new NextRequest('http://localhost/api/portal/account/audit-events'), '/portal/v1/account/audit-events', options);
     expect(response.status).toBe(403);

@@ -187,6 +187,10 @@ export function PortalAuditClient() {
     return t('portal.audit.generic_activity', {}, 'Account activity');
   };
 
+  const loadMoreLabel = loadMoreError
+    ? t('common.retry')
+    : t('portal.audit.load_more', {}, 'Load more activity');
+
   if (sessionLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
@@ -407,8 +411,7 @@ export function PortalAuditClient() {
             >
               {isLoadingMore
                 ? t('common.loading', {}, 'Loading...')
-                : loadMoreError ? t('common.retry')
-                : t('portal.audit.load_more', {}, 'Load more activity')}
+                : loadMoreLabel}
             </button>
           </div>
         ) : null}

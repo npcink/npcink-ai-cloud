@@ -227,6 +227,12 @@ their authorization or exposing raw error bodies. A nonempty envelope trace
 ID takes precedence over the response-header fallback. Requests that never
 reach that proxy may still have no reference.
 
+The activity proxy's failure log records only the request reference, fixed
+backend route, HTTP status, and bounded failure category. It must not log
+cookies, headers, query values, response bodies, or exception messages. This
+provides a correlation point even when backend trace export is disabled or
+unsampled; the Portal must not force tracing configuration or sampling changes.
+
 F8's historical cause remains unconfirmed until comparable
 original evidence is available.
 
