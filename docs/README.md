@@ -455,6 +455,7 @@ Historical evidence retained in place:
 - [Refund Gap Inventory — 2026-09-22](refund-gap-inventory-2026-09-22.md);
 - [Service Settings Projection Remediation — 2026-09-09](service-settings-projection-remediation-2026-09-09.md);
 - [Site Knowledge Inventory — 2026-09-21](site-knowledge-inventory-2026-09-21.md);
+- [Site-Owner AI Product Commercial Brainstorm — 2026-10-08](history/strategy/2026/site-owner-ai-product-commercial-brainstorm-2026-10-08.md);
 - [Strategy Positioning v1 — 2026-09-21](strategy-positioning-v1-2026-09-21.md);
 - [Strategy Session Synthesis — 2026-09-22](strategy-session-synthesis-2026-09-22.md);
 - [Title Quality Observation — 2026-09](title-quality-observation-2026-09.md);
