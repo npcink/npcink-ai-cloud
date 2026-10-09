@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from app.adapters.repositories.stats_repository import StatsRepository
@@ -28,6 +29,7 @@ def _sqlite_url(tmp_path: Path) -> str:
 
 def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
@@ -76,6 +78,10 @@ def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
         expected_profile_rollups = len(repository.list_profiles()) * 2
         expected_instance_rollups = len(repository.list_instances()) * 2
 
+    def forbidden_history(*_args, **_options):
+        raise AssertionError("hourly rollup must not materialize health history")
+
+    monkeypatch.setattr(StatsRepository, "list_health_snapshots", forbidden_history)
     result = service.generate_rollups(site_ids=["site_alpha"], include_global=True)
 
     assert result["counts"] == {
