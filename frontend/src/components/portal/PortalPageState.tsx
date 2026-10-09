@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
+import { PortalIdentifier } from './PortalIdentifier';
 
 type PortalLoadingStateProps = {
   message: string;
@@ -21,6 +22,7 @@ type PortalErrorStateProps = {
   onRetry: () => void;
   recoveryLabel?: string;
   recoveryHref?: string;
+  supportReference?: string;
 };
 
 type PortalEmptyStateProps = {
@@ -75,6 +77,7 @@ export function PortalErrorState({
   onRetry,
   recoveryLabel,
   recoveryHref,
+  supportReference,
 }: PortalErrorStateProps) {
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
@@ -95,8 +98,22 @@ export function PortalErrorState({
             {retryLabel}
           </button>
         </div>
+        <PortalErrorReference reference={supportReference} />
       </div>
     </div>
+  );
+}
+
+export function PortalErrorReference({ reference }: { reference?: string }) {
+  const { t } = useLocale();
+  if (!reference) return null;
+  return (
+    <details className="mt-4 text-sm" data-portal-error="support-reference">
+      <summary className="cursor-pointer font-medium">
+        {t('portal.support_information', {}, 'Support information')}
+      </summary>
+      <PortalIdentifier value={reference} full className="mt-2 block break-all" />
+    </details>
   );
 }
 

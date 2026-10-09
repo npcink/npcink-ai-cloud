@@ -20,16 +20,17 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
-async function fulfillError(route: Route, errorCode: string, status = 503) {
+async function fulfillError(route: Route, errorCode: string, status = 503, traceId = 'portal-workspace-error-trace', responseReference = '') {
   await route.fulfill({
     status,
     contentType: 'application/json',
+    headers: responseReference ? { 'X-Request-ID': responseReference } : {},
     body: JSON.stringify({
       status: 'error',
       error_code: errorCode,
       message: 'internal backend detail',
       data: {},
-      meta: { trace_id: 'portal-workspace-error-trace', revision: 'm6' },
+      meta: { trace_id: traceId, revision: 'm6' },
     }),
   });
 }
@@ -2436,6 +2437,130 @@ test('portal read failures retain context and retry without showing empty result
   await page.goto('/portal/support');
   await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /No tickets yet|暂无工单/i })).toHaveCount(0);
+});
+
+for (const endpoint of ['audit-summary', 'audit-events'] as const) {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`portal activity ${endpoint} failure keeps evidence and recovers in ${theme}`, async ({ page }, testInfo) => {
+      await installPortalMocks(page);
+      await page.emulateMedia({ colorScheme: theme });
+      await page.addInitScript((value) => window.localStorage.setItem('theme', value), theme);
+      let failed = true;
+      const reference = `portal-read-${endpoint}-${theme}-${'a'.repeat(128)}`;
+      await page.route(`**/api/portal/account/${endpoint}**`, async (route) => {
+        if (failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, theme === 'dark' ? '' : 'different-backend-trace', reference);
+        else await route.fallback();
+      });
+      const failedResponse = page.waitForResponse((response) =>
+        response.url().includes(`/account/${endpoint}`) && response.status() === 504
+      );
+      await page.goto('/portal/audit?site=site_attention');
+      const response = await failedResponse;
+      await testInfo.attach('activity-read-failure-fixture.json', {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify({
+          evidence_kind: 'injected_fixture',
+          url: response.url(),
+          status: response.status(),
+          response_reference: response.headers()['x-request-id'] || '',
+          response: await response.json(),
+        }, null, 2)),
+      });
+      const filter = page.getByRole('combobox', { name: /Site filter|站点筛选/i });
+      await expect(filter).toHaveValue('site_attention');
+      await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+      await expect(page.locator('[data-portal-audit="records-table"]')).not.toBeVisible();
+      await expect(page.getByText(/No activity in this view|当前视图里还没有活动/i)).toHaveCount(0);
+      await expect(page.getByText(/internal backend detail|proxy.portal_backend_timeout/i)).toHaveCount(0);
+      const support = page.locator('[data-portal-error="support-reference"]');
+      await expect(support).not.toHaveAttribute('open', '');
+      await support.locator('summary').focus();
+      await page.keyboard.press('Enter');
+      await expect(support.getByText(reference, { exact: true })).toBeVisible();
+      await expect(support.getByText('different-backend-trace', { exact: true })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+      failed = false;
+      await page.getByRole('button', { name: /Retry|重试/i }).click();
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+      await expect(filter).toHaveValue('site_attention');
+      await expect(support).toHaveCount(0);
+      await page.getByRole('button', { name: /Load more activity|加载更多活动/i }).click();
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(12);
+      await filter.selectOption('');
+      await expect(page).toHaveURL(/\/portal\/audit$/);
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+      await page.locator('[data-ui="portal-primary-nav"] a[href="/portal/account"]').click();
+      await expect(page).toHaveURL(/\/portal\/account$/);
+    });
+  }
+}
+
+test('portal activity load-more failure retains rows and retries the same limit', async ({ page }) => {
+  await installPortalMocks(page);
+  let failed = true;
+  const requestedLimits: number[] = [];
+  await page.route('**/api/portal/account/audit-events**', async (route) => {
+    const limit = Number(new URL(route.request().url()).searchParams.get('limit'));
+    requestedLimits.push(limit);
+    if (limit > 10 && failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, 'activity-more-failure');
+    else await route.fallback();
+  });
+  await page.goto('/portal/audit');
+  const rows = page.locator('[data-portal-audit="records-table"] tbody tr');
+  await expect(rows).toHaveCount(10);
+  await page.getByRole('button', { name: /Load more activity|加载更多活动/i }).click();
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(rows).toHaveCount(10);
+  const support = page.locator('[data-portal-error="support-reference"]');
+  await support.locator('summary').click();
+  await expect(support.getByText('activity-more-failure', { exact: true })).toBeVisible();
+  failed = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(rows).toHaveCount(12);
+  expect(requestedLimits).toEqual([10, 30, 30]);
+  await expect(support).toHaveCount(0);
+});
+
+test('portal activity ignores a late failure after switching site filters', async ({ page }) => {
+  await installPortalMocks(page);
+  let releaseFailure!: () => void;
+  const pendingFailure = new Promise<void>((resolve) => { releaseFailure = resolve; });
+  let markRequested!: () => void;
+  const requested = new Promise<void>((resolve) => { markRequested = resolve; });
+  await page.route('**/api/portal/account/audit-summary**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('site_id') === 'site_attention') {
+      markRequested();
+      await pendingFailure;
+      await fulfillError(route, 'proxy.portal_backend_timeout', 504, 'obsolete-site-failure');
+    } else await route.fallback();
+  });
+  await page.goto('/portal/audit?site=site_attention');
+  await requested;
+  await page.getByRole('combobox', { name: /Site filter|站点筛选/i }).selectOption('site_clear');
+  await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+  const lateResponse = page.waitForResponse((response) => response.status() === 504 && response.url().includes('/account/audit-summary'));
+  releaseFailure();
+  await lateResponse;
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('site_clear');
+  await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+  await expect(page.locator('[data-portal-error="support-reference"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
+});
+
+test('portal activity without a response identifier recovers without inventing one', async ({ page }) => {
+  await installPortalMocks(page);
+  let failed = true;
+  await page.route('**/api/portal/account/audit-events**', async (route) => {
+    if (failed) await route.fulfill({ status: 502, contentType: 'text/html', body: '<h1>private upstream detail</h1>' });
+    else await route.fallback();
+  });
+  await page.goto('/portal/audit');
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(page.locator('[data-portal-error="support-reference"]')).toHaveCount(0);
+  await expect(page.getByText(/private upstream detail|client.non_json_response/i)).toHaveCount(0);
+  failed = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
 });
 
 test('identity provider failures have a retry state', async ({ page }) => {

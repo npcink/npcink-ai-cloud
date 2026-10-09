@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import {
   buildBackendUrl,
   buildErrorResponse,
@@ -42,6 +43,28 @@ export async function proxyPortalBackendPath(
   const headers = buildForwardedRequestHeaders(request, {
     Accept: accept || 'application/json',
   });
+  const isActivityRead = method === 'GET' && (
+    backendPath === '/portal/v1/account/audit-summary'
+    || backendPath === '/portal/v1/account/audit-events'
+  );
+  const requestReference = isActivityRead ? randomUUID().replaceAll('-', '') : '';
+  if (requestReference) {
+    // Activity reads use a proxy-owned support reference, independent of caller
+    // trace context. Redacted failure logs work without forcing trace sampling.
+    const spanId = randomUUID().replaceAll('-', '').slice(0, 16);
+    headers.traceparent = `00-${requestReference}-${spanId}-00`;
+  }
+  const withRequestReference = (response: NextResponse): NextResponse => {
+    if (requestReference) response.headers.set('X-Request-ID', requestReference);
+    return response;
+  };
+  const logActivityReadFailure = (status: number, failure: string): void => {
+    if (requestReference) {
+      console.warn('[portal-activity-read]', {
+        request_reference: requestReference, route: backendPath, status, failure,
+      });
+    }
+  };
 
   headers.Origin = request.headers.get('origin') || requestOrigin;
   headers.Referer = request.headers.get('referer') || `${requestOrigin}/`;
@@ -83,14 +106,29 @@ export async function proxyPortalBackendPath(
     });
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
-    return buildErrorResponse(
+    logActivityReadFailure(timedOut ? 504 : 502, timedOut ? 'timeout' : 'unreachable');
+    return withRequestReference(buildErrorResponse(
       timedOut ? 504 : 502,
       timedOut ? 'proxy.portal_backend_timeout' : options.unreachableCode,
       timedOut ? 'Portal backend request timed out' : options.unreachableMessage
-    );
+    ));
   }
 
-  return forwardBackendJson(response);
+  try {
+    const forwardedResponse = await forwardBackendJson(response);
+    if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
+      logActivityReadFailure(response.status, 'backend_response');
+    }
+    return withRequestReference(forwardedResponse);
+  } catch (error) {
+    if (!isActivityRead) throw error;
+    logActivityReadFailure(502, 'unreadable_response');
+    return withRequestReference(buildErrorResponse(
+      502,
+      'proxy.portal_backend_invalid_response',
+      'Portal backend response could not be read'
+    ));
+  }
 }
 
 export async function proxyPortalPathSegments(
