@@ -245,11 +245,13 @@ export class ApiClient {
     }
 
     const contentType = response.headers.get('content-type') || '';
+    const responseReference = response.headers.get('x-request-id') || '';
     const rawText = await response.text();
     if (!contentType.toLowerCase().includes('json')) {
       throw new ApiError({
         statusCode: response.status,
         errorCode: 'client.non_json_response',
+        traceId: responseReference,
         message: `Expected a JSON response but received ${contentType || 'unknown content type'}`,
         details: rawText,
         rawBody: rawText,
@@ -263,6 +265,7 @@ export class ApiClient {
       throw new ApiError({
         statusCode: response.status,
         errorCode: 'client.invalid_json_response',
+        traceId: responseReference,
         message: 'API response body is not valid JSON',
         details: rawText,
         rawBody: rawText,
@@ -280,7 +283,7 @@ export class ApiClient {
           response_error_code: evidence.errorCode,
           response_data: evidence.details,
         },
-        traceId: evidence.traceId,
+        traceId: evidence.traceId || responseReference,
         revision: evidence.revision,
         rawBody,
       });
@@ -292,7 +295,7 @@ export class ApiClient {
         errorCode: rawBody.error_code || `http.${response.status}`,
         message: rawBody.message || `API request failed with HTTP ${response.status}`,
         details: rawBody.data,
-        traceId: rawBody.meta.trace_id,
+        traceId: rawBody.meta.trace_id || responseReference,
         revision: rawBody.meta.revision,
         rawBody,
       });

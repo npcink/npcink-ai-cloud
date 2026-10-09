@@ -202,6 +202,34 @@ Every async section must provide:
 - an explicit empty state when the projection is valid but contains no data;
 - no fabricated zero, normal, or ready status when the request failed.
 
+Recent-activity read recovery must also preserve the active account/site filter,
+hide summary metrics on a failed initial read, and retain already loaded rows
+when only loading more fails. Retry a failed load-more request at the same
+limit; do not silently advance the pagination window.
+
+If the failed API response contains a real `meta.trace_id` or `X-Request-ID`, keep it behind
+`Support information` using the shared Portal error-reference disclosure. A
+record's trace ID is not the failed read's request reference. Do not invent a
+reference when a network failure or non-JSON proxy response provides none, and
+never render raw error bodies, backend messages, or private request data in
+that disclosure.
+
+For a recurring read failure, collect the timestamp, affected route and filter,
+HTTP status, response reference, and a redacted response through the browser's
+Network panel; correlate it with governed API/proxy logs. Preserve response
+evidence before retrying. Never save cookies, authorization headers, a complete
+unredacted HAR, or customer payloads in Git. A passing injected-failure test
+proves recovery behavior, not the root cause of a past incident without its
+original response. The activity-read proxy assigns a fresh `X-Request-ID` to
+each summary/list GET and forwards its W3C `traceparent` to the backend. Keep
+this reference on proxy timeouts and unreadable responses without changing
+their authorization or exposing raw error bodies. A nonempty envelope trace
+ID takes precedence over the response-header fallback. Requests that never
+reach that proxy may still have no reference.
+
+F8's historical cause remains unconfirmed until comparable
+original evidence is available.
+
 When no site context is selected:
 
 - continue showing account package, account AI credits, account usage, payment,
