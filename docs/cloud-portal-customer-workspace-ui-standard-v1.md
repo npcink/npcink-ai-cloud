@@ -223,9 +223,12 @@ proves recovery behavior, not the root cause of a past incident without its
 original response. The activity-read proxy assigns a fresh `X-Request-ID` to
 each summary/list GET and forwards its W3C `traceparent` to the backend. Keep
 this reference on proxy timeouts and unreadable responses without changing
-their authorization or exposing raw error bodies. A nonempty envelope trace
-ID takes precedence over the response-header fallback. Requests that never
-reach that proxy may still have no reference.
+their authorization or exposing raw error bodies. API errors retain the backend
+trace ID and response-header request ID separately. This activity page prefers
+the proxy request ID so the displayed support reference always matches the
+proxy failure log, with the backend trace ID as a fallback when the header is
+absent. Other API consumers retain their existing backend-trace precedence.
+Requests that never reach that proxy may still have no reference.
 
 The activity proxy's failure log records only the request reference, fixed
 backend route, HTTP status, and bounded failure category. It must not log

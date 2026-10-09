@@ -112,7 +112,7 @@ export function PortalAuditClient() {
         t,
         t('audit.load_error', {}, 'Failed to load audit data')
       );
-      const failure = { message, reference: err instanceof ApiError ? err.traceId : '' };
+      const failure = { message, reference: err instanceof ApiError ? err.requestId || err.traceId : '' };
       if (loadingMore) {
         setLoadMoreError(failure);
       } else {

@@ -2448,7 +2448,7 @@ for (const endpoint of ['audit-summary', 'audit-events'] as const) {
       let failed = true;
       const reference = `portal-read-${endpoint}-${theme}-${'a'.repeat(128)}`;
       await page.route(`**/api/portal/account/${endpoint}**`, async (route) => {
-        if (failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, theme === 'dark' ? '' : reference, theme === 'dark' ? reference : '');
+        if (failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, theme === 'dark' ? '' : 'different-backend-trace', reference);
         else await route.fallback();
       });
       const failedResponse = page.waitForResponse((response) =>
@@ -2477,6 +2477,7 @@ for (const endpoint of ['audit-summary', 'audit-events'] as const) {
       await support.locator('summary').focus();
       await page.keyboard.press('Enter');
       await expect(support.getByText(reference, { exact: true })).toBeVisible();
+      await expect(support.getByText('different-backend-trace', { exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
       failed = false;
       await page.getByRole('button', { name: /Retry|重试/i }).click();
