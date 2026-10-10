@@ -265,7 +265,10 @@ class ProviderBudgetService:
         for provider_id in sorted(provider_ids):
             policy = self._resolve_policy(session, config, provider_id)
             if policy is None:
-                if provider_id in active_ids and bool(config.get("require_provider_configuration", True)):
+                requires_config = bool(
+                    config.get("require_provider_configuration", True)
+                )
+                if provider_id in active_ids and requires_config:
                     missing_ids.append(provider_id)
                 continue
             account_class = str(policy.get("account_class") or "paid")
@@ -285,7 +288,11 @@ class ProviderBudgetService:
                     ),
                     None,
                 )
-                reserved = self._positive_float(counter.reserved_cost_usd) if counter is not None else 0.0
+                reserved = (
+                    self._positive_float(counter.reserved_cost_usd)
+                    if counter is not None
+                    else 0.0
+                )
                 ratio = reserved / limit
                 items.append(
                     {

@@ -1273,7 +1273,12 @@ def test_admin_provider_account_spend_budget_save_and_runtime_projection(
             "conservative_unpriced_cost_usd": 0.02,
             "require_provider_configuration": False,
             "providers": [
-                {"provider_id": "openai", "account_class": "paid", "daily_usd": 5, "monthly_usd": 100}
+                {
+                    "provider_id": "openai",
+                    "account_class": "paid",
+                    "daily_usd": 5,
+                    "monthly_usd": 100,
+                }
             ],
         },
         headers=build_internal_headers(
