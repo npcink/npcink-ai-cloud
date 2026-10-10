@@ -547,8 +547,8 @@ export function PlanManagementWorkbench({
                     {},
                     'Internal monitoring only. Set 0 to disable this plan-level threshold; it does not change the customer price or credits.'
                   )}
-                  statusLabel={form.max_cost_cny_per_period === '0' ? t('common.disabled', {}, 'Disabled') : t('common.enabled', {}, 'Enabled')}
-                  statusTone={form.max_cost_cny_per_period === '0' ? 'neutral' : 'configured'}
+                  statusLabel={Number(form.max_cost_cny_per_period) === 0 ? t('common.disabled', {}, 'Disabled') : t('common.enabled', {}, 'Enabled')}
+                  statusTone={Number(form.max_cost_cny_per_period) === 0 ? 'neutral' : 'configured'}
                 >
                   <ParameterField
                     label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}

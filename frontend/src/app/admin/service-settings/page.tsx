@@ -108,8 +108,20 @@ function providerBudgetRuntimeStatus(status: string, t: Translator): string {
   return t('admin.service_settings.status_disabled', {}, '未启用');
 }
 
+function providerBudgetRuntimeTone(status: string | undefined): 'neutral' | 'configured' | 'attention' {
+  if (status === 'exceeded') return 'attention';
+  if (status === 'warning' || status === 'missing_config') return 'attention';
+  return 'neutral';
+}
+
 function providerBudgetPercent(value: number): string {
-  return `${Math.round(Math.max(0, value) * 100)}%`;
+  if (!Number.isFinite(value) || value < 0) return '—';
+  return `${Math.round(value * 100)}%`;
+}
+
+function providerBudgetUsd(value: number | undefined | null): string {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(4) : '0.0000';
 }
 
 function fieldClassName(): string {
@@ -1014,8 +1026,10 @@ export default function AdminServiceSettingsPage() {
         const daily = Number(provider.daily_usd);
         const monthly = Number(provider.monthly_usd);
         if (!providerId) issues.push(t('admin.service_settings.validation_provider_budget_provider_id', {}, '每个预算行都需要 Provider ID。'));
-        if (seen.has(providerId)) issues.push(t('admin.service_settings.validation_provider_budget_duplicate', {}, 'Provider ID 不能重复。'));
-        if (providerId) seen.add(providerId);
+        if (providerId) {
+          if (seen.has(providerId)) issues.push(t('admin.service_settings.validation_provider_budget_duplicate', {}, 'Provider ID 不能重复。'));
+          seen.add(providerId);
+        }
         if (!Number.isFinite(daily) || daily < 0 || !Number.isFinite(monthly) || monthly < 0) {
           issues.push(t('admin.service_settings.validation_provider_budget_limits', {}, '日上限和月上限必须是非负数字。'));
         }
@@ -1680,7 +1694,7 @@ export default function AdminServiceSettingsPage() {
                 title={t('admin.service_settings.provider_budget_runtime_title', {}, '当前周期使用情况')}
                 description={t('admin.service_settings.provider_budget_runtime_desc', {}, '只读显示当前 UTC 日/月的预留金额；修改上限不会清除已经发生的使用。')}
                 statusLabel={providerBudgetRuntimeStatus(data?.settings.provider_budget.runtime?.status || 'disabled', t)}
-                statusTone={data?.settings.provider_budget.runtime?.status === 'exceeded' ? 'attention' : data?.settings.provider_budget.runtime?.status === 'warning' ? 'attention' : 'neutral'}
+                statusTone={providerBudgetRuntimeTone(data?.settings.provider_budget.runtime?.status)}
               >
                 {data?.settings.provider_budget.runtime?.missing_provider_ids?.length ? (
                   <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -1704,8 +1718,8 @@ export default function AdminServiceSettingsPage() {
                           <tr key={`${item.provider_id}-${item.period_kind}`} className="border-t border-slate-100 dark:border-slate-800">
                             <td className="py-2 pr-3 font-medium text-slate-800 dark:text-slate-100">{item.provider_id}</td>
                             <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">{item.period_kind === 'day' ? t('admin.service_settings.provider_budget_day', {}, '日') : t('admin.service_settings.provider_budget_month', {}, '月')}</td>
-                            <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${item.reserved_cost_usd.toFixed(4)} / ${item.limit_cost_usd.toFixed(4)}</td>
-                            <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${item.remaining_cost_usd.toFixed(4)}</td>
+                            <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${providerBudgetUsd(item.reserved_cost_usd)} / ${providerBudgetUsd(item.limit_cost_usd)}</td>
+                            <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${providerBudgetUsd(item.remaining_cost_usd)}</td>
                             <td className={`py-2 text-right font-semibold ${item.exceeded ? 'text-rose-700 dark:text-rose-300' : item.warning ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{providerBudgetPercent(item.utilization_ratio)}</td>
                           </tr>
                         ))}

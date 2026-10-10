@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   projectServiceSettingsForms,
+  type ProviderBudgetSetting,
   type ServiceSetting,
   type ServiceSettingsData,
 } from '@/features/admin/service-settings/service-settings-model';
@@ -166,6 +167,32 @@ describe('service settings response projection', () => {
       require_provider_configuration: true,
       providers: [],
     });
+  });
+
+  it('keeps the warning-ratio form input numeric-safe for partial or noisy configs', () => {
+    const partial = response({
+      provider_budget: {
+        ...setting('provider_account_spend_budget', {}, { enabled: false, status: 'disabled' }),
+        setting_kind: 'runtime',
+        config: null as unknown as ProviderBudgetSetting['config'],
+      },
+    });
+
+    expect(projectServiceSettingsForms(partial).savedForms.providerBudget.warning_ratio).toBe('80');
+    expect(projectServiceSettingsForms(partial).savedForms.providerBudget.conservative_unpriced_cost_usd).toBe('0.05');
+
+    const noisy = response({
+      provider_budget: {
+        ...setting(
+          'provider_account_spend_budget',
+          { warning_ratio: 0.855, conservative_unpriced_cost_usd: 0.02, providers: [] },
+          { enabled: true, status: 'ready' },
+        ),
+        setting_kind: 'runtime',
+      },
+    });
+
+    expect(projectServiceSettingsForms(noisy).savedForms.providerBudget.warning_ratio).toBe('85.5');
   });
 
   it('supplies the accepted accounting fallback when an older response omits it', () => {

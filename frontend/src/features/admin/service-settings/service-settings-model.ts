@@ -203,6 +203,13 @@ function fallbackProviderBudget(): ProviderBudgetSetting {
   };
 }
 
+function providerBudgetWarningPercent(config: unknown): string {
+  const raw = (config as { warning_ratio?: unknown } | null | undefined)?.warning_ratio;
+  const parsed = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0.8;
+  const bounded = Math.min(1, Math.max(0.01, parsed));
+  return String(Math.round(bounded * 1000) / 10);
+}
+
 function fallbackAccountingFx(): ServiceSetting {
   return {
     setting_id: 'commercial_accounting_fx',
@@ -289,10 +296,16 @@ export function projectServiceSettingsForms(
     },
     providerBudget: {
       enabled: providerBudget.enabled,
-      warning_ratio: stringValue(providerBudget.config.warning_ratio * 100) || '80',
-      conservative_unpriced_cost_usd: stringValue(providerBudget.config.conservative_unpriced_cost_usd) || '0.05',
-      require_provider_configuration: boolValue(providerBudget.config.require_provider_configuration, true),
-      providers: providerBudgetProviders(providerBudget.config.providers),
+      warning_ratio: providerBudgetWarningPercent(providerBudget.config),
+      conservative_unpriced_cost_usd:
+        stringValue((providerBudget.config as { conservative_unpriced_cost_usd?: unknown } | null | undefined)?.conservative_unpriced_cost_usd) || '0.05',
+      require_provider_configuration: boolValue(
+        (providerBudget.config as { require_provider_configuration?: unknown } | null | undefined)?.require_provider_configuration,
+        true,
+      ),
+      providers: providerBudgetProviders(
+        (providerBudget.config as { providers?: unknown } | null | undefined)?.providers,
+      ),
     },
   };
 
