@@ -159,7 +159,7 @@ function normalizeOverview(raw: any): AdminOverview {
   const operatorPrimaryActionFallbacks = {
     readiness: '/admin/troubleshooting',
     runtime_telemetry: '/admin/troubleshooting',
-    provider_budget: '/admin/ai-resources',
+    provider_budget: '/admin/service-settings?tab=provider-budget',
     coverage: '/admin/coverage',
     accounts: '/admin/accounts',
   } as const;

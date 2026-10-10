@@ -136,6 +136,8 @@ class ProviderBudgetService:
                     "provider spend budget counter could not be initialized",
                     retryable=False,
                 )
+            # Policy edits apply to the current period without resetting usage.
+            counter.limit_cost_usd = limit
             counters.append(counter)
 
         if any(
@@ -230,6 +232,107 @@ class ProviderBudgetService:
             claim.status = "reconciled"
             claim.reconciled_at = now
         session.flush()
+
+    def admin_projection(self, *, session: Session) -> dict[str, Any]:
+        row = session.get(ServiceSetting, SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET)
+        config = (
+            row.config_json
+            if row is not None and isinstance(row.config_json, dict)
+            else {}
+        )
+        enabled = bool(row is not None and row.enabled)
+        now = self.now_factory().astimezone(UTC)
+        connections = list(
+            session.scalars(
+                select(ProviderConnection).order_by(ProviderConnection.connection_id)
+            )
+        )
+        raw_providers = config.get("providers")
+        provider_ids = set(raw_providers) if isinstance(raw_providers, dict) else set()
+        provider_ids.update(connection.connection_id for connection in connections)
+        counters = list(
+            session.scalars(
+                select(ProviderBudgetCounter).where(
+                    ProviderBudgetCounter.period_start_at <= now,
+                    ProviderBudgetCounter.period_end_at > now,
+                )
+            )
+        )
+        warning_ratio = self._warning_ratio(config)
+        items: list[dict[str, Any]] = []
+        missing_ids: list[str] = []
+        active_ids = {connection.connection_id for connection in connections if connection.enabled}
+        for provider_id in sorted(provider_ids):
+            policy = self._resolve_policy(session, config, provider_id)
+            if policy is None:
+                if provider_id in active_ids and bool(config.get("require_provider_configuration", True)):
+                    missing_ids.append(provider_id)
+                continue
+            account_class = str(policy.get("account_class") or "paid")
+            for kind, key in (("day", "daily_usd"), ("month", "monthly_usd")):
+                limit = self._positive_float(policy.get(key))
+                if limit <= 0:
+                    if account_class == "paid" and provider_id not in missing_ids:
+                        missing_ids.append(provider_id)
+                    continue
+                counter = next(
+                    (
+                        candidate
+                        for candidate in counters
+                        if candidate.provider_id == provider_id
+                        and candidate.account_class == account_class
+                        and candidate.period_kind == kind
+                    ),
+                    None,
+                )
+                reserved = self._positive_float(counter.reserved_cost_usd) if counter is not None else 0.0
+                ratio = reserved / limit
+                items.append(
+                    {
+                        "provider_id": provider_id,
+                        "account_class": account_class,
+                        "period_kind": kind,
+                        "period_start_at": (
+                            counter.period_start_at.isoformat() if counter is not None else ""
+                        ),
+                        "period_end_at": (
+                            counter.period_end_at.isoformat() if counter is not None else ""
+                        ),
+                        "limit_cost_usd": round(limit, 6),
+                        "reserved_cost_usd": round(reserved, 6),
+                        "remaining_cost_usd": round(max(0.0, limit - reserved), 6),
+                        "utilization_ratio": round(ratio, 6),
+                        "warning": enabled and ratio >= warning_ratio,
+                        "exceeded": enabled and ratio >= 1,
+                    }
+                )
+        status = "disabled" if not enabled else "ok"
+        if enabled:
+            if missing_ids:
+                status = "missing_config"
+            if any(item["exceeded"] for item in items):
+                status = "exceeded"
+            elif any(item["warning"] for item in items) and status == "ok":
+                status = "warning"
+        return {
+            "status": status,
+            "warning_ratio": warning_ratio,
+            "configured_provider_count": len(
+                raw_providers if isinstance(raw_providers, dict) else {}
+            ),
+            "missing_provider_ids": sorted(missing_ids),
+            "items": items,
+            "connections": [
+                {
+                    "provider_id": connection.connection_id,
+                    "display_name": connection.display_name,
+                    "enabled": bool(connection.enabled),
+                }
+                for connection in connections
+            ],
+            "generated_at": now.isoformat(),
+            "period_timezone": "UTC",
+        }
 
     @staticmethod
     def _resolve_policy(

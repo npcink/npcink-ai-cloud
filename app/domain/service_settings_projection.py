@@ -6,6 +6,7 @@ from typing import Any
 
 from app.core.models import ServiceSetting
 from app.domain.commercial.currency import SERVICE_SETTING_ACCOUNTING_FX, resolve_accounting_fx_rate
+from app.domain.runtime.provider_budget import SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET
 from app.domain.service_settings_values import (
     DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
     DEFAULT_MEDIA_RECOGNITION_WINDOW_END,
@@ -162,6 +163,77 @@ def serialize_platform_preferences(
         "last_error_message": "",
         "credential_value_exposure": "none",
     }
+
+
+def serialize_provider_account_spend_budget(
+    row: ServiceSetting | None,
+) -> dict[str, Any]:
+    """Expose the operator budget policy without exposing provider credentials."""
+    default_config = {
+        "warning_ratio": 0.8,
+        "conservative_unpriced_cost_usd": 0.05,
+        "require_provider_configuration": True,
+        "providers": [],
+    }
+    if row is None:
+        return {
+            "setting_id": SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+            "setting_kind": SERVICE_SETTING_KIND_RUNTIME,
+            "enabled": False,
+            "configured": False,
+            "status": STATUS_DISABLED,
+            "config": default_config,
+            "secrets": {},
+            "last_tested_at": "",
+            "last_error_code": "",
+            "last_error_message": "",
+            "credential_value_exposure": "none",
+        }
+
+    raw_config = _dict(row.config_json)
+
+    def _bounded_float(value: Any, *, default: float, minimum: float = 0.0) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        if parsed != parsed or parsed in (float("inf"), float("-inf")):
+            return default
+        return max(minimum, parsed)
+
+    raw_providers = _dict(raw_config.get("providers"))
+    providers: list[dict[str, Any]] = []
+    for provider_id, raw_policy in sorted(raw_providers.items()):
+        if not isinstance(raw_policy, dict):
+            continue
+        providers.append(
+            {
+                "provider_id": str(provider_id),
+                "account_class": _string(raw_policy.get("account_class")) or "paid",
+                "daily_usd": _bounded_float(raw_policy.get("daily_usd"), default=0),
+                "monthly_usd": _bounded_float(raw_policy.get("monthly_usd"), default=0),
+            }
+        )
+    serialized = serialize(row)
+    serialized["config"] = {
+        "warning_ratio": min(
+            1.0,
+            max(0.01, _bounded_float(raw_config.get("warning_ratio"), default=0.8)),
+        ),
+        "conservative_unpriced_cost_usd": _bounded_float(
+            raw_config.get("conservative_unpriced_cost_usd"),
+            default=0.05,
+            minimum=0.000001,
+        ),
+        "require_provider_configuration": bool(
+            raw_config.get("require_provider_configuration", True)
+        ),
+        "providers": providers,
+    }
+    if row.enabled and not providers:
+        serialized["configured"] = False
+        serialized["status"] = STATUS_MISSING_CONFIG
+    return serialized
 
 
 def _public_config(config: dict[str, Any]) -> dict[str, Any]:

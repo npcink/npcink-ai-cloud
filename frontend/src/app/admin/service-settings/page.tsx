@@ -14,6 +14,7 @@ import {
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
 import { AdminSettingsWorkbench } from '@/components/admin/AdminSettingsWorkbench';
+import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
@@ -27,6 +28,8 @@ import {
   type AlipayForm,
   type EmailForm,
   type PlatformPreferencesForm,
+  type ProviderBudgetForm,
+  type ProviderBudgetProviderForm,
   type NormalizedServiceSettingsData,
   type PortalPublicForm,
   type QQForm,
@@ -36,13 +39,14 @@ import {
   type SiteRelinkPolicyForm,
 } from '@/features/admin/service-settings/service-settings-model';
 
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'site-relink' | 'system';
+type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'provider-budget' | 'site-relink' | 'system';
 const SERVICE_SETTINGS_TAB_IDS: readonly ServiceSettingsTab[] = [
   'portal',
   'qq',
   'email',
   'payment',
   'accounting',
+  'provider-budget',
   'site-relink',
   'system',
 ];
@@ -94,6 +98,18 @@ function statusTone(status: SettingStatus): string {
   if (status === 'error') return 'text-rose-700 dark:text-rose-300';
   if (status === 'disabled') return 'text-slate-500 dark:text-slate-400';
   return 'text-amber-700 dark:text-amber-300';
+}
+
+function providerBudgetRuntimeStatus(status: string, t: Translator): string {
+  if (status === 'ok') return t('admin.service_settings.provider_budget_runtime_ok', {}, '正常');
+  if (status === 'warning') return t('admin.service_settings.provider_budget_runtime_warning', {}, '接近上限');
+  if (status === 'exceeded') return t('admin.service_settings.provider_budget_runtime_exceeded', {}, '已停止新调用');
+  if (status === 'missing_config') return t('admin.service_settings.provider_budget_runtime_missing', {}, '待配置');
+  return t('admin.service_settings.status_disabled', {}, '未启用');
+}
+
+function providerBudgetPercent(value: number): string {
+  return `${Math.round(Math.max(0, value) * 100)}%`;
 }
 
 function fieldClassName(): string {
@@ -274,6 +290,7 @@ export default function AdminServiceSettingsPage() {
   });
   const [pendingTab, setPendingTab] = useState<ServiceSettingsTab | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
+  const [providerBudgetDisableConfirmOpen, setProviderBudgetDisableConfirmOpen] = useState(false);
   const [data, setData] = useState<NormalizedServiceSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState('');
@@ -335,6 +352,13 @@ export default function AdminServiceSettingsPage() {
   const [platformPreferencesForm, setPlatformPreferencesForm] = useState<PlatformPreferencesForm>({
     timezone: 'Asia/Shanghai',
   });
+  const [providerBudgetForm, setProviderBudgetForm] = useState<ProviderBudgetForm>({
+    enabled: false,
+    warning_ratio: '80',
+    conservative_unpriced_cost_usd: '0.05',
+    require_provider_configuration: true,
+    providers: [],
+  });
   const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
   const settingsMountedRef = useRef(false);
@@ -384,6 +408,7 @@ export default function AdminServiceSettingsPage() {
       setAccountingFxForm(nextSavedForms.accounting);
       setSiteRelinkPolicyForm(nextSavedForms.siteRelink);
       setPlatformPreferencesForm(nextSavedForms.platformPreferences);
+      setProviderBudgetForm(nextSavedForms.providerBudget);
       setQqCredentialRevealed(false);
       setEmailCredentialRevealed(false);
       setAlipayPrivateKeyRevealed(false);
@@ -455,6 +480,12 @@ export default function AdminServiceSettingsPage() {
         toneClassName: settings?.site_relink_policy.enabled
           ? 'text-emerald-700 dark:text-emerald-300'
           : 'text-slate-500 dark:text-slate-400',
+        size: 'compact' as const,
+      },
+      {
+        label: t('admin.service_settings.metric_provider_budget', {}, 'Provider budget'),
+        value: statusLabel(settings?.provider_budget.status || 'disabled', t),
+        toneClassName: statusTone(settings?.provider_budget.status || 'disabled'),
         size: 'compact' as const,
       },
     ];
@@ -667,6 +698,74 @@ export default function AdminServiceSettingsPage() {
     );
   }
 
+  function addProviderBudgetRow() {
+    setProviderBudgetForm((current) => ({
+      ...current,
+      providers: [
+        ...current.providers,
+        {
+          row_id: `provider-budget-row-new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          provider_id: '',
+          account_class: 'paid',
+          daily_usd: '5',
+          monthly_usd: '100',
+        },
+      ],
+    }));
+  }
+
+  function updateProviderBudgetRow(
+    index: number,
+    patch: Partial<ProviderBudgetProviderForm>,
+  ) {
+    setProviderBudgetForm((current) => ({
+      ...current,
+      providers: current.providers.map((provider, providerIndex) => (
+        providerIndex === index ? { ...provider, ...patch } : provider
+      )),
+    }));
+  }
+
+  function removeProviderBudgetRow(index: number) {
+    setProviderBudgetForm((current) => ({
+      ...current,
+      providers: current.providers.filter((_, providerIndex) => providerIndex !== index),
+    }));
+  }
+
+  function saveProviderBudget() {
+    void saveJson(
+      '/api/admin/service-settings/provider-account-spend-budget',
+      {
+        enabled: providerBudgetForm.enabled,
+        warning_ratio: Number(providerBudgetForm.warning_ratio) / 100,
+        conservative_unpriced_cost_usd: Number(providerBudgetForm.conservative_unpriced_cost_usd),
+        require_provider_configuration: providerBudgetForm.require_provider_configuration,
+        providers: providerBudgetForm.providers.map((provider) => ({
+          provider_id: provider.provider_id.trim(),
+          account_class: provider.account_class,
+          daily_usd: Number(provider.daily_usd),
+          monthly_usd: Number(provider.monthly_usd),
+        })),
+      },
+      'provider-budget',
+      t('admin.service_settings.provider_budget_saved', {}, 'Provider budget saved.')
+    );
+  }
+
+  function submitProviderBudget(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setError(activeValidationIssues[0]);
+      return;
+    }
+    if (savedForms?.providerBudget.enabled && !providerBudgetForm.enabled) {
+      setProviderBudgetDisableConfirmOpen(true);
+      return;
+    }
+    saveProviderBudget();
+  }
+
   function submitQq(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
@@ -779,6 +878,9 @@ export default function AdminServiceSettingsPage() {
     }
     if (activeTab === 'accounting') {
       return JSON.stringify(accountingFxForm) !== JSON.stringify(savedForms.accounting);
+    }
+    if (activeTab === 'provider-budget') {
+      return JSON.stringify(providerBudgetForm) !== JSON.stringify(savedForms.providerBudget);
     }
     if (activeTab === 'system') {
       return platformPreferencesForm.timezone !== savedForms.platformPreferences.timezone;
@@ -897,6 +999,34 @@ export default function AdminServiceSettingsPage() {
         );
       }
     }
+    if (activeTab === 'provider-budget') {
+      const warningRatio = Number(providerBudgetForm.warning_ratio);
+      const conservativeCost = Number(providerBudgetForm.conservative_unpriced_cost_usd);
+      if (!Number.isFinite(warningRatio) || warningRatio < 1 || warningRatio > 100) {
+        issues.push(t('admin.service_settings.validation_provider_budget_warning_ratio', {}, '预警比例必须在 1% 到 100% 之间。'));
+      }
+      if (!Number.isFinite(conservativeCost) || conservativeCost <= 0) {
+        issues.push(t('admin.service_settings.validation_provider_budget_conservative_cost', {}, '未定价模型的保守预留成本必须大于 0。'));
+      }
+      const seen = new Set<string>();
+      providerBudgetForm.providers.forEach((provider) => {
+        const providerId = provider.provider_id.trim();
+        const daily = Number(provider.daily_usd);
+        const monthly = Number(provider.monthly_usd);
+        if (!providerId) issues.push(t('admin.service_settings.validation_provider_budget_provider_id', {}, '每个预算行都需要 Provider ID。'));
+        if (seen.has(providerId)) issues.push(t('admin.service_settings.validation_provider_budget_duplicate', {}, 'Provider ID 不能重复。'));
+        if (providerId) seen.add(providerId);
+        if (!Number.isFinite(daily) || daily < 0 || !Number.isFinite(monthly) || monthly < 0) {
+          issues.push(t('admin.service_settings.validation_provider_budget_limits', {}, '日上限和月上限必须是非负数字。'));
+        }
+        if (provider.account_class === 'paid' && (daily <= 0 || monthly <= 0)) {
+          issues.push(t('admin.service_settings.validation_provider_budget_paid_limits', {}, '付费 Provider 必须同时填写正数日上限和月上限。'));
+        }
+      });
+      if (providerBudgetForm.enabled && providerBudgetForm.providers.length === 0) {
+        issues.push(t('admin.service_settings.validation_provider_budget_provider_required', {}, '启用保护前至少添加一个 Provider 预算。'));
+      }
+    }
     if (activeTab === 'system') {
       if (!platformPreferencesForm.timezone) {
         issues.push(t('admin.service_settings.validation_platform_timezone', {}, 'Select a platform timezone.'));
@@ -915,6 +1045,7 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
     if (activeTab === 'accounting') setAccountingFxForm(saved.accounting);
     if (activeTab === 'system') setPlatformPreferencesForm(saved.platformPreferences);
+    if (activeTab === 'provider-budget') setProviderBudgetForm(saved.providerBudget);
     if (activeTab === 'qq') setQqCredentialRevealed(false);
     if (activeTab === 'email') setEmailCredentialRevealed(false);
     if (activeTab === 'payment') {
@@ -1029,6 +1160,16 @@ export default function AdminServiceSettingsPage() {
       tone: activeTab === 'accounting' && activeGroupDirty
         ? 'attention'
         : settingTone(data?.settings.accounting_fx.status || 'missing_config'),
+    },
+    {
+      id: 'provider-budget',
+      label: t('admin.service_settings.tab_provider_budget', {}, 'Provider 预算'),
+      description: activeTab === 'provider-budget' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : statusLabel(data?.settings.provider_budget.status || 'disabled', t),
+      tone: activeTab === 'provider-budget' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.provider_budget.status || 'disabled'),
     },
     {
       id: 'site-relink',
@@ -1360,6 +1501,227 @@ export default function AdminServiceSettingsPage() {
                   {saving === 'accounting-fx'
                     ? t('admin.service_settings.saving', {}, 'Saving')
                     : t('admin.service_settings.save_accounting_fx', {}, 'Save accounting rate')}
+                </button>
+              </div>
+            </form>
+          </div>
+      ) : null}
+
+      {activeTab === 'provider-budget' ? (
+          <div id="service-settings-provider-budget" className="grid gap-3" role="tabpanel">
+            <div className="flex min-w-0 items-baseline gap-3">
+              <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
+                {t('admin.service_settings.provider_budget_title', {}, 'Provider 账户预算')}
+              </h2>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                {t('admin.service_settings.provider_budget_desc', {}, '控制 Cloud 发起的 Provider 调用总额；不改变套餐价格或用户积分。')}
+              </p>
+            </div>
+            {activeStateNotice}
+            <form className="grid gap-3" onSubmit={submitProviderBudget}>
+              <AdminConfigurationTable
+                ariaLabel={t('admin.service_settings.provider_budget_title', {}, 'Provider 账户预算')}
+                itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
+                valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
+                detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
+                density="compact"
+              >
+                <AdminConfigurationRow
+                  rowId="provider-budget-enabled"
+                  label={t('admin.service_settings.provider_budget_enabled_label', {}, '预算保护')}
+                  value={providerBudgetForm.enabled
+                    ? t('common.enabled', {}, 'Enabled')
+                    : t('common.disabled', {}, 'Disabled')}
+                  detail={<button
+                    type="button"
+                    role="switch"
+                    aria-label={t('admin.service_settings.provider_budget_toggle_label', {}, '启用 Provider 预算保护')}
+                    aria-checked={providerBudgetForm.enabled}
+                    className={switchButtonClassName(providerBudgetForm.enabled)}
+                    disabled={loading}
+                    onClick={() => setProviderBudgetForm((current) => ({ ...current, enabled: !current.enabled }))}
+                  >
+                    <span className={switchKnobClassName(providerBudgetForm.enabled)} />
+                  </button>}
+                />
+                <AdminConfigurationRow
+                  rowId="provider-budget-warning-ratio"
+                  label={t('admin.service_settings.provider_budget_warning_ratio_label', {}, '预警比例')}
+                  value={<div className="flex items-center gap-2">
+                    <input
+                      className="input w-full"
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      value={providerBudgetForm.warning_ratio}
+                      aria-label={t('admin.service_settings.provider_budget_warning_ratio_label', {}, '预警比例')}
+                      onChange={(event) => setProviderBudgetForm((current) => ({ ...current, warning_ratio: event.target.value }))}
+                    />
+                    <span className="text-xs text-slate-500">%</span>
+                  </div>}
+                  detail={t('admin.service_settings.provider_budget_warning_ratio_detail', {}, '达到此比例后在后台提示，默认 80%。')}
+                />
+                <AdminConfigurationRow
+                  rowId="provider-budget-conservative-cost"
+                  label={t('admin.service_settings.provider_budget_conservative_cost_label', {}, '未定价模型预留')}
+                  value={<div className="flex items-center gap-2">
+                    <input
+                      className="input w-full"
+                      type="number"
+                      min="0.000001"
+                      max="1000"
+                      step="0.000001"
+                      value={providerBudgetForm.conservative_unpriced_cost_usd}
+                      aria-label={t('admin.service_settings.provider_budget_conservative_cost_label', {}, '未定价模型预留')}
+                      onChange={(event) => setProviderBudgetForm((current) => ({ ...current, conservative_unpriced_cost_usd: event.target.value }))}
+                    />
+                    <span className="text-xs text-slate-500">USD</span>
+                  </div>}
+                  detail={t('admin.service_settings.provider_budget_conservative_cost_detail', {}, '模型没有价格资料时，按这个保守金额预留。')}
+                />
+                <AdminConfigurationRow
+                  rowId="provider-budget-require-configuration"
+                  label={t('admin.service_settings.provider_budget_require_configuration_label', {}, '缺少配置时停止')}
+                  value={providerBudgetForm.require_provider_configuration
+                    ? t('common.enabled', {}, 'Enabled')
+                    : t('common.disabled', {}, 'Disabled')}
+                  detail={<button
+                    type="button"
+                    role="switch"
+                    aria-label={t('admin.service_settings.provider_budget_require_configuration_toggle', {}, '缺少配置时停止 Provider 调用')}
+                    aria-checked={providerBudgetForm.require_provider_configuration}
+                    className={switchButtonClassName(providerBudgetForm.require_provider_configuration)}
+                    disabled={loading}
+                    onClick={() => setProviderBudgetForm((current) => ({ ...current, require_provider_configuration: !current.require_provider_configuration }))}
+                  >
+                    <span className={switchKnobClassName(providerBudgetForm.require_provider_configuration)} />
+                  </button>}
+                />
+              </AdminConfigurationTable>
+
+              <AdminSettingsDisclosure
+                dataUi="provider-budget-provider-list"
+                title={t('admin.service_settings.provider_budget_provider_list_title', {}, 'Provider 上限')}
+                description={t('admin.service_settings.provider_budget_provider_list_desc', {}, '付费连接必须同时填写日上限和月上限；这里不保存或显示 Provider 密钥。')}
+                statusLabel={`${providerBudgetForm.providers.length} ${t('admin.service_settings.provider_budget_provider_count', {}, '个')}`}
+                statusTone={providerBudgetForm.providers.length > 0 ? 'configured' : 'attention'}
+              >
+                <div className="flex justify-end">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={addProviderBudgetRow}>
+                    {t('admin.service_settings.provider_budget_add_provider', {}, '添加 Provider')}
+                  </button>
+                </div>
+                {providerBudgetForm.providers.length === 0 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">
+                    {t('admin.service_settings.provider_budget_empty', {}, '还没有 Provider 预算。启用保护前先添加一行。')}
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {providerBudgetForm.providers.map((provider, index) => (
+                      <div key={provider.row_id} className="grid gap-3 border-b border-slate-200 pb-3 last:border-b-0 last:pb-0 dark:border-slate-800 lg:grid-cols-[1.2fr_0.8fr_1fr_1fr_auto] lg:items-end">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')}
+                          <input
+                            className="input mt-1 w-full"
+                            value={provider.provider_id}
+                            maxLength={64}
+                            aria-label={`${t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')} ${index + 1}`}
+                            onChange={(event) => updateProviderBudgetRow(index, { provider_id: event.target.value })}
+                          />
+                        </label>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {t('admin.service_settings.provider_budget_account_class', {}, '账户类型')}
+                          <select
+                            className="input mt-1 w-full"
+                            value={provider.account_class}
+                            aria-label={`${t('admin.service_settings.provider_budget_account_class', {}, '账户类型')} ${index + 1}`}
+                            onChange={(event) => updateProviderBudgetRow(index, { account_class: event.target.value as 'paid' | 'test' })}
+                          >
+                            <option value="paid">{t('admin.service_settings.provider_budget_paid', {}, '付费')}</option>
+                            <option value="test">{t('admin.service_settings.provider_budget_test', {}, '测试')}</option>
+                          </select>
+                        </label>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {t('admin.service_settings.provider_budget_daily_limit', {}, '日上限 USD')}
+                          <input
+                            className="input mt-1 w-full"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={provider.daily_usd}
+                            aria-label={`${t('admin.service_settings.provider_budget_daily_limit', {}, '日上限 USD')} ${index + 1}`}
+                            onChange={(event) => updateProviderBudgetRow(index, { daily_usd: event.target.value })}
+                          />
+                        </label>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {t('admin.service_settings.provider_budget_monthly_limit', {}, '月上限 USD')}
+                          <input
+                            className="input mt-1 w-full"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={provider.monthly_usd}
+                            aria-label={`${t('admin.service_settings.provider_budget_monthly_limit', {}, '月上限 USD')} ${index + 1}`}
+                            onChange={(event) => updateProviderBudgetRow(index, { monthly_usd: event.target.value })}
+                          />
+                        </label>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeProviderBudgetRow(index)}>
+                          {t('common.remove', {}, '移除')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </AdminSettingsDisclosure>
+
+              <AdminSettingsDisclosure
+                dataUi="provider-budget-runtime-state"
+                title={t('admin.service_settings.provider_budget_runtime_title', {}, '当前周期使用情况')}
+                description={t('admin.service_settings.provider_budget_runtime_desc', {}, '只读显示当前 UTC 日/月的预留金额；修改上限不会清除已经发生的使用。')}
+                statusLabel={providerBudgetRuntimeStatus(data?.settings.provider_budget.runtime?.status || 'disabled', t)}
+                statusTone={data?.settings.provider_budget.runtime?.status === 'exceeded' ? 'attention' : data?.settings.provider_budget.runtime?.status === 'warning' ? 'attention' : 'neutral'}
+              >
+                {data?.settings.provider_budget.runtime?.missing_provider_ids?.length ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                    {t('admin.service_settings.provider_budget_missing_detail', { ids: data.settings.provider_budget.runtime.missing_provider_ids.join(', ') }, '以下启用连接还没有预算：{{ids}}')}
+                  </p>
+                ) : null}
+                {data?.settings.provider_budget.runtime?.items?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-slate-500 dark:text-slate-400">
+                        <tr>
+                          <th className="py-2 pr-3 font-medium">{t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')}</th>
+                          <th className="py-2 pr-3 font-medium">{t('admin.service_settings.provider_budget_period', {}, '周期')}</th>
+                          <th className="py-2 pr-3 text-right font-medium">{t('admin.service_settings.provider_budget_used', {}, '已预留')}</th>
+                          <th className="py-2 pr-3 text-right font-medium">{t('admin.service_settings.provider_budget_remaining', {}, '剩余')}</th>
+                          <th className="py-2 text-right font-medium">{t('admin.service_settings.provider_budget_utilization', {}, '使用率')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.settings.provider_budget.runtime.items.map((item) => (
+                          <tr key={`${item.provider_id}-${item.period_kind}`} className="border-t border-slate-100 dark:border-slate-800">
+                            <td className="py-2 pr-3 font-medium text-slate-800 dark:text-slate-100">{item.provider_id}</td>
+                            <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">{item.period_kind === 'day' ? t('admin.service_settings.provider_budget_day', {}, '日') : t('admin.service_settings.provider_budget_month', {}, '月')}</td>
+                            <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${item.reserved_cost_usd.toFixed(4)} / ${item.limit_cost_usd.toFixed(4)}</td>
+                            <td className="py-2 pr-3 text-right text-slate-600 dark:text-slate-300">${item.remaining_cost_usd.toFixed(4)}</td>
+                            <td className={`py-2 text-right font-semibold ${item.exceeded ? 'text-rose-700 dark:text-rose-300' : item.warning ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{providerBudgetPercent(item.utilization_ratio)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{t('admin.service_settings.provider_budget_runtime_empty', {}, '当前周期还没有 Provider 预算使用记录。')}</p>
+                )}
+              </AdminSettingsDisclosure>
+
+              <div className="flex justify-end">
+                <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'provider-budget' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                  {saving === 'provider-budget'
+                    ? t('admin.service_settings.saving', {}, 'Saving')
+                    : t('admin.service_settings.provider_budget_save', {}, '保存 Provider 预算')}
                 </button>
               </div>
             </form>
@@ -2244,6 +2606,32 @@ export default function AdminServiceSettingsPage() {
           restoreActiveGroup();
           setPendingNavigationHref('');
           if (href) router.push(href);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={providerBudgetDisableConfirmOpen}
+        title={t(
+          'admin.service_settings.provider_budget_disable_title',
+          {},
+          'Disable Provider budget protection?'
+        )}
+        message={t(
+          'admin.service_settings.provider_budget_disable_desc',
+          {},
+          'New Provider calls will no longer be stopped by this account budget. Existing usage records and limits remain available for review.'
+        )}
+        confirmLabel={t(
+          'admin.service_settings.provider_budget_disable_confirm',
+          {},
+          'Disable protection'
+        )}
+        cancelLabel={t('common.cancel', {}, 'Cancel')}
+        variant="danger"
+        onClose={() => setProviderBudgetDisableConfirmOpen(false)}
+        onConfirm={() => {
+          setProviderBudgetDisableConfirmOpen(false);
+          saveProviderBudget();
         }}
       />
     </BackofficePageStack>

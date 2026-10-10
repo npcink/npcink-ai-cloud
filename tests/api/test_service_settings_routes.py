@@ -1130,3 +1130,168 @@ def test_admin_service_settings_email_test_can_send_repeatedly(
     ]
 
     dispose_engine(database_url)
+
+
+def test_admin_provider_account_spend_budget_save_and_runtime_projection(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    initial = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    provider_budget = initial.json()["data"]["settings"]["provider_budget"]
+    assert provider_budget["setting_id"] == "provider_account_spend_budget"
+    assert provider_budget["setting_kind"] == "runtime"
+    assert provider_budget["enabled"] is False
+    assert provider_budget["configured"] is False
+    assert provider_budget["status"] == "disabled"
+    assert provider_budget["config"] == {
+        "warning_ratio": 0.8,
+        "conservative_unpriced_cost_usd": 0.05,
+        "require_provider_configuration": True,
+        "providers": [],
+    }
+    assert provider_budget["runtime"]["status"] == "disabled"
+    assert provider_budget["runtime"]["items"] == []
+    assert provider_budget["runtime"]["connections"] == []
+    assert provider_budget["runtime"]["period_timezone"] == "UTC"
+
+    saved = client.patch(
+        "/internal/service/admin/service-settings/provider-account-spend-budget",
+        json={
+            "enabled": True,
+            "warning_ratio": 0.9,
+            "conservative_unpriced_cost_usd": 0.02,
+            "require_provider_configuration": False,
+            "providers": [
+                {
+                    "provider_id": "openai",
+                    "account_class": "paid",
+                    "daily_usd": 5,
+                    "monthly_usd": 100,
+                }
+            ],
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-provider-budget-001"
+        ),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["enabled"] is True
+    assert saved.json()["data"]["status"] == "ready"
+    assert saved.json()["data"]["config"] == {
+        "warning_ratio": 0.9,
+        "conservative_unpriced_cost_usd": 0.02,
+        "require_provider_configuration": False,
+        "providers": [
+            {
+                "provider_id": "openai",
+                "account_class": "paid",
+                "daily_usd": 5.0,
+                "monthly_usd": 100.0,
+            }
+        ],
+    }
+
+    reloaded = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert reloaded.status_code == 200, reloaded.text
+    runtime = reloaded.json()["data"]["settings"]["provider_budget"]["runtime"]
+    assert runtime["status"] == "ok"
+    assert runtime["warning_ratio"] == 0.9
+    assert runtime["configured_provider_count"] == 1
+    assert runtime["missing_provider_ids"] == []
+    assert {(item["provider_id"], item["period_kind"]) for item in runtime["items"]} == {
+        ("openai", "day"),
+        ("openai", "month"),
+    }
+    assert all(item["reserved_cost_usd"] == 0.0 for item in runtime["items"])
+
+    invalid_cases = (
+        (
+            "service-settings-provider-budget-ratio-invalid",
+            {"warning_ratio": 1.5},
+            None,
+        ),
+        (
+            "service-settings-provider-budget-paid-limits",
+            {"providers": [{"provider_id": "openai", "daily_usd": 0, "monthly_usd": 100}]},
+            "service_settings.provider_budget_paid_limits_required",
+        ),
+        (
+            "service-settings-provider-budget-duplicate",
+            {
+                "providers": [
+                    {"provider_id": "openai", "daily_usd": 1, "monthly_usd": 10},
+                    {"provider_id": "openai", "daily_usd": 2, "monthly_usd": 20},
+                ]
+            },
+            "service_settings.provider_budget_provider_duplicate",
+        ),
+        (
+            "service-settings-provider-budget-empty",
+            {"providers": []},
+            "service_settings.provider_budget_provider_required",
+        ),
+        (
+            "service-settings-provider-budget-unknown-field",
+            {"timezone": "UTC"},
+            None,
+        ),
+    )
+    valid_payload = {
+        "enabled": True,
+        "warning_ratio": 0.9,
+        "conservative_unpriced_cost_usd": 0.02,
+        "require_provider_configuration": False,
+        "providers": [
+            {"provider_id": "openai", "account_class": "paid", "daily_usd": 5, "monthly_usd": 100}
+        ],
+    }
+    for idempotency_key, override, error_code in invalid_cases:
+        response = client.patch(
+            "/internal/service/admin/service-settings/provider-account-spend-budget",
+            json={**valid_payload, **override},
+            headers=build_internal_headers(idempotency_key=idempotency_key),
+        )
+        if error_code is None:
+            assert response.status_code == 422, response.text
+        else:
+            assert response.status_code == 400, response.text
+            assert response.json()["error_code"] == error_code
+
+    disabled = client.patch(
+        "/internal/service/admin/service-settings/provider-account-spend-budget",
+        json={
+            "enabled": False,
+            "warning_ratio": 0.9,
+            "conservative_unpriced_cost_usd": 0.02,
+            "require_provider_configuration": False,
+            "providers": [
+                {"provider_id": "openai", "account_class": "paid", "daily_usd": 5, "monthly_usd": 100}
+            ],
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-provider-budget-disabled"
+        ),
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["data"]["enabled"] is False
+
+    with get_session(database_url) as session:
+        events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "provider_account_spend_budget"
+                )
+            )
+        )
+    assert {event.outcome for event in events} == {"succeeded", "error"}
+    assert all(event.event_kind == "service_setting.save" for event in events)
+
+    dispose_engine(database_url)
