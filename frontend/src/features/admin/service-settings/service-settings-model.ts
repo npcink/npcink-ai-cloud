@@ -2,6 +2,7 @@ export type SettingStatus = 'ready' | 'disabled' | 'missing_config' | 'error' | 
 
 export type ServiceSetting = {
   setting_id: string;
+  setting_kind?: string;
   enabled: boolean;
   configured: boolean;
   status: SettingStatus;
@@ -22,7 +23,50 @@ export type ServiceSettingsData = {
     site_relink_policy: ServiceSetting;
     platform_preferences: ServiceSetting;
     media_recognition_policy: ServiceSetting;
+    provider_budget: ProviderBudgetSetting;
   };
+};
+
+export type ProviderBudgetProvider = {
+  provider_id: string;
+  account_class: 'paid' | 'test' | string;
+  daily_usd: number;
+  monthly_usd: number;
+};
+
+export type ProviderBudgetRuntimeItem = {
+  provider_id: string;
+  account_class: string;
+  period_kind: 'day' | 'month' | string;
+  period_start_at?: string;
+  period_end_at?: string;
+  limit_cost_usd: number;
+  reserved_cost_usd: number;
+  remaining_cost_usd: number;
+  utilization_ratio: number;
+  warning: boolean;
+  exceeded: boolean;
+};
+
+export type ProviderBudgetRuntime = {
+  status: string;
+  warning_ratio: number;
+  configured_provider_count: number;
+  missing_provider_ids: string[];
+  items: ProviderBudgetRuntimeItem[];
+  connections: Array<{ provider_id: string; display_name: string; enabled: boolean }>;
+  generated_at: string;
+  period_timezone: string;
+};
+
+export type ProviderBudgetSetting = ServiceSetting & {
+  config: {
+    warning_ratio: number;
+    conservative_unpriced_cost_usd: number;
+    require_provider_configuration: boolean;
+    providers: ProviderBudgetProvider[];
+  };
+  runtime?: ProviderBudgetRuntime;
 };
 
 export type NormalizedServiceSettingsData = ServiceSettingsData & {
@@ -90,6 +134,23 @@ export type SavedServiceSettingsForms = {
   accounting: AccountingFxForm;
   siteRelink: SiteRelinkPolicyForm;
   platformPreferences: PlatformPreferencesForm;
+  providerBudget: ProviderBudgetForm;
+};
+
+export type ProviderBudgetForm = {
+  enabled: boolean;
+  warning_ratio: string;
+  conservative_unpriced_cost_usd: string;
+  require_provider_configuration: boolean;
+  providers: ProviderBudgetProviderForm[];
+};
+
+export type ProviderBudgetProviderForm = {
+  row_id: string;
+  provider_id: string;
+  account_class: 'paid' | 'test';
+  daily_usd: string;
+  monthly_usd: string;
 };
 
 export type ServiceSettingsProjection = {
@@ -104,6 +165,49 @@ function stringValue(value: unknown): string {
 
 function boolValue(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function providerBudgetProviders(value: unknown): ProviderBudgetProviderForm[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const accountClass = stringValue(record.account_class) === 'test' ? 'test' : 'paid';
+    return [{
+      row_id: `provider-budget-row-${index}`,
+      provider_id: stringValue(record.provider_id),
+      account_class: accountClass,
+      daily_usd: stringValue(record.daily_usd) || '0',
+      monthly_usd: stringValue(record.monthly_usd) || '0',
+    }];
+  });
+}
+
+function fallbackProviderBudget(): ProviderBudgetSetting {
+  return {
+    setting_id: 'provider_account_spend_budget',
+    setting_kind: 'runtime',
+    enabled: false,
+    configured: false,
+    status: 'disabled',
+    config: {
+      warning_ratio: 0.8,
+      conservative_unpriced_cost_usd: 0.05,
+      require_provider_configuration: true,
+      providers: [],
+    },
+    secrets: {},
+    last_tested_at: '',
+    last_error_code: '',
+    last_error_message: '',
+  };
+}
+
+function providerBudgetWarningPercent(config: unknown): string {
+  const raw = (config as { warning_ratio?: unknown } | null | undefined)?.warning_ratio;
+  const parsed = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0.8;
+  const bounded = Math.min(1, Math.max(0.01, parsed));
+  return String(Math.round(bounded * 1000) / 10);
 }
 
 function fallbackAccountingFx(): ServiceSetting {
@@ -137,6 +241,7 @@ export function projectServiceSettingsForms(
   const accountingFx = source.settings.accounting_fx || fallbackAccountingFx();
   const siteRelinkPolicy = source.settings.site_relink_policy;
   const platformPreferences = source.settings.platform_preferences;
+  const providerBudget = source.settings.provider_budget || fallbackProviderBudget();
   const emailSmtpUsername = stringValue(email.config.smtp_username);
   const emailFromAddress = stringValue(email.config.from_email);
   const emailUsernameSameAsFromEmail =
@@ -189,6 +294,19 @@ export function projectServiceSettingsForms(
     platformPreferences: {
       timezone: stringValue(platformPreferences.config.timezone) || 'Asia/Shanghai',
     },
+    providerBudget: {
+      enabled: providerBudget.enabled,
+      warning_ratio: providerBudgetWarningPercent(providerBudget.config),
+      conservative_unpriced_cost_usd:
+        stringValue((providerBudget.config as { conservative_unpriced_cost_usd?: unknown } | null | undefined)?.conservative_unpriced_cost_usd) || '0.05',
+      require_provider_configuration: boolValue(
+        (providerBudget.config as { require_provider_configuration?: unknown } | null | undefined)?.require_provider_configuration,
+        true,
+      ),
+      providers: providerBudgetProviders(
+        (providerBudget.config as { providers?: unknown } | null | undefined)?.providers,
+      ),
+    },
   };
 
   return {
@@ -197,6 +315,7 @@ export function projectServiceSettingsForms(
       settings: {
         ...source.settings,
         accounting_fx: accountingFx,
+        provider_budget: providerBudget,
       },
     },
     savedForms,

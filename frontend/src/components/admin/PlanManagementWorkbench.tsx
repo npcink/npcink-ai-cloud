@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -529,14 +530,6 @@ export function PlanManagementWorkbench({
                       onChange={(value) => updateField('max_batch_items', value)}
                     />
                     <ParameterField
-                      label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
-                      detail={t('admin.period_cost_budget_detail', {}, 'Internal provider-cost monitoring threshold; it does not change the sales price.')}
-                      unit={t('admin.plans.unit_cny_period', {}, 'CNY / period')}
-                      value={form.max_cost_cny_per_period}
-                      step={0.01}
-                      onChange={(value) => updateField('max_cost_cny_per_period', value)}
-                    />
-                    <ParameterField
                       label={t('admin.grace_period_label', {}, 'Grace period')}
                       detail={t('admin.plans.grace_period_detail', {}, 'Days the subscription may remain available after the current period ends.')}
                       unit={t('admin.plans.unit_days', {}, 'days')}
@@ -545,6 +538,32 @@ export function PlanManagementWorkbench({
                     />
                   </div>
                 </section>
+
+                <AdminSettingsDisclosure
+                  dataUi="plan-cost-monitoring"
+                  title={t('admin.plans.cost_monitoring_title', {}, 'Advanced cost monitoring')}
+                  description={t(
+                    'admin.plans.cost_monitoring_desc',
+                    {},
+                    'Internal monitoring only. Set 0 to disable this plan-level threshold; it does not change the customer price or credits.'
+                  )}
+                  statusLabel={Number(form.max_cost_cny_per_period) === 0 ? t('common.disabled', {}, 'Disabled') : t('common.enabled', {}, 'Enabled')}
+                  statusTone={Number(form.max_cost_cny_per_period) === 0 ? 'neutral' : 'configured'}
+                >
+                  <ParameterField
+                    label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
+                    detail={t(
+                      'admin.period_cost_budget_detail',
+                      {},
+                      'Internal provider-cost monitoring threshold. Set 0 to disable monitoring; it does not change the sales price.'
+                    )}
+                    unit={t('admin.plans.unit_cny_period', {}, 'CNY / period')}
+                    value={form.max_cost_cny_per_period}
+                    min={0}
+                    step={0.01}
+                    onChange={(value) => updateField('max_cost_cny_per_period', value)}
+                  />
+                </AdminSettingsDisclosure>
               </div>
 
               {lastReceipt ? (

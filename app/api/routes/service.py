@@ -790,6 +790,25 @@ class AccountingFxServiceSettingsPayload(BaseModel):
     note: str = Field(default="", max_length=500)
 
 
+class ProviderBudgetProviderPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str = Field(min_length=1, max_length=64)
+    account_class: Literal["paid", "test"] = "paid"
+    daily_usd: float = Field(default=0, ge=0, le=1_000_000)
+    monthly_usd: float = Field(default=0, ge=0, le=1_000_000)
+
+
+class ProviderAccountSpendBudgetPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    warning_ratio: float = Field(default=0.8, ge=0.01, le=1)
+    conservative_unpriced_cost_usd: float = Field(default=0.05, gt=0, le=1000)
+    require_provider_configuration: bool = True
+    providers: list[ProviderBudgetProviderPayload] = Field(default_factory=list)
+
+
 class ServiceSettingsEmailTestPayload(BaseModel):
     recipient_email: str = Field(min_length=3, max_length=320)
 
@@ -4444,6 +4463,56 @@ async def get_admin_service_settings(request: Request) -> Any:
     return build_envelope(
         status="ok",
         message="service settings loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/provider-account-spend-budget")
+async def update_admin_provider_account_spend_budget(
+    request: Request,
+    payload: ProviderAccountSpendBudgetPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = await run_in_threadpool(
+            ServiceSettingsAdminService(
+                services.settings.database_url,
+                services.settings,
+            ).save_provider_account_spend_budget,
+            payload=payload.model_dump(mode="json"),
+        )
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="provider_account_spend_budget",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="provider_account_spend_budget",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="provider account spend budget saved",
         data=result,
         revision="m6",
     )

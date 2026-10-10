@@ -23,12 +23,17 @@ from app.domain.commercial.currency import (
 from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
 from app.domain.routing.errors import RoutingError
 from app.domain.routing.service import RoutingService
+from app.domain.runtime.provider_budget import (
+    SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+    ProviderBudgetService,
+)
 from app.domain.service_settings_projection import (
     _boundary,
     serialize,
     serialize_accounting_fx,
     serialize_media_recognition_policy,
     serialize_platform_preferences,
+    serialize_provider_account_spend_budget,
     serialize_site_relink_policy,
 )
 from app.domain.service_settings_values import (
@@ -93,11 +98,13 @@ class ServiceSettingsAdminService:
                                 SERVICE_SETTING_ACCOUNTING_FX,
                                 SERVICE_SETTING_PLATFORM_PREFERENCES,
                                 SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+                                SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
                             ]
                         )
                     )
                 )
             }
+            provider_budget_runtime = ProviderBudgetService().admin_projection(session=session)
         return {
             "surface": "admin_service_settings",
             "settings": {
@@ -129,6 +136,12 @@ class ServiceSettingsAdminService:
                 "media_recognition_policy": serialize_media_recognition_policy(
                     rows.get(SERVICE_SETTING_MEDIA_RECOGNITION_POLICY),
                 ),
+                "provider_budget": {
+                    **serialize_provider_account_spend_budget(
+                        rows.get(SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET),
+                    ),
+                    "runtime": provider_budget_runtime,
+                },
             },
             "env_fallback": "disabled",
             "boundary": _boundary(),
@@ -251,6 +264,110 @@ class ServiceSettingsAdminService:
             required_secret_keys=[],
         )
         return serialize_platform_preferences(row)
+
+    def save_provider_account_spend_budget(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        enabled = bool(payload.get("enabled", False))
+        try:
+            warning_ratio = float(payload.get("warning_ratio", 0.8))
+        except (TypeError, ValueError) as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_warning_ratio_invalid",
+                "provider budget warning ratio must be a number between 0.01 and 1",
+            ) from error
+        if not 0.01 <= warning_ratio <= 1:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_warning_ratio_invalid",
+                "provider budget warning ratio must be between 0.01 and 1",
+            )
+        try:
+            conservative_cost = float(
+                payload.get("conservative_unpriced_cost_usd", 0.05)
+            )
+        except (TypeError, ValueError) as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_conservative_cost_invalid",
+                "conservative unpriced cost must be greater than zero",
+            ) from error
+        if not 0 < conservative_cost <= 1000:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_conservative_cost_invalid",
+                "conservative unpriced cost must be greater than zero and no greater than 1000",
+            )
+
+        raw_providers = payload.get("providers")
+        if not isinstance(raw_providers, list):
+            raw_providers = []
+        providers: dict[str, dict[str, Any]] = {}
+        for raw_provider in raw_providers:
+            if not isinstance(raw_provider, dict):
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_provider_invalid",
+                    "each provider budget entry must be an object",
+                )
+            provider_id = _string(raw_provider.get("provider_id"))
+            if not provider_id or len(provider_id) > 64:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_provider_invalid",
+                    "provider ID is required and must be no longer than 64 characters",
+                )
+            if provider_id in providers:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_provider_duplicate",
+                    f"provider budget is duplicated for {provider_id}",
+                )
+            account_class = _string(raw_provider.get("account_class")) or "paid"
+            if account_class not in {"paid", "test"}:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_account_class_invalid",
+                    "provider account class must be paid or test",
+                )
+            try:
+                daily_usd = float(raw_provider.get("daily_usd", 0))
+                monthly_usd = float(raw_provider.get("monthly_usd", 0))
+            except (TypeError, ValueError) as error:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_limit_invalid",
+                    "provider daily and monthly limits must be numbers",
+                ) from error
+            if not 0 <= daily_usd <= 1_000_000 or not 0 <= monthly_usd <= 1_000_000:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_limit_invalid",
+                    "provider daily and monthly limits must be between 0 and 1000000 USD",
+                )
+            if account_class == "paid" and (daily_usd <= 0 or monthly_usd <= 0):
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_paid_limits_required",
+                    f"paid provider {provider_id} requires positive daily and monthly limits",
+                )
+            providers[provider_id] = {
+                "account_class": account_class,
+                "daily_usd": round(daily_usd, 6),
+                "monthly_usd": round(monthly_usd, 6),
+            }
+        if enabled and not providers:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_provider_required",
+                "add at least one provider budget before enabling the guard",
+            )
+        row = self._save(
+            setting_id=SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+            setting_kind=SERVICE_SETTING_KIND_RUNTIME,
+            config={
+                "warning_ratio": round(warning_ratio, 6),
+                "conservative_unpriced_cost_usd": round(conservative_cost, 6),
+                "require_provider_configuration": bool(
+                    payload.get("require_provider_configuration", True)
+                ),
+                "providers": providers,
+            },
+            secrets={},
+            enabled=enabled,
+            required_secret_keys=[],
+        )
+        return serialize_provider_account_spend_budget(row)
 
     def save_accounting_fx(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:

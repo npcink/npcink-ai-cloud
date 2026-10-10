@@ -114,6 +114,25 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
               'disabled',
               mediaRecognitionConfig
             ),
+            provider_budget: {
+              ...setting('provider_account_spend_budget', 'disabled', {
+                warning_ratio: 0.8,
+                conservative_unpriced_cost_usd: 0.05,
+                require_provider_configuration: true,
+                providers: [],
+              }),
+              setting_kind: 'runtime',
+              runtime: {
+                status: 'disabled',
+                warning_ratio: 0.8,
+                configured_provider_count: 0,
+                missing_provider_ids: [],
+                items: [],
+                connections: [],
+                generated_at: '2026-07-12T06:00:00Z',
+                period_timezone: 'UTC',
+              },
+            },
           },
         })),
       });
@@ -157,7 +176,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
 
   await page.goto('/admin/service-settings');
   await expect(page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(7);
+  await expect(page.getByRole('tab')).toHaveCount(8);
   await expect(page.locator('form:visible')).toHaveCount(1);
   expect(settingsReadCount).toBe(1);
   const compactGeometry = await page.evaluate(() => {
@@ -446,6 +465,25 @@ test('payment configuration stays disabled until the operator saves a public bas
           site_relink_policy: setting('site_relink_policy', 'disabled', { cooldown_days: 90 }),
           platform_preferences: setting('platform_preferences', 'disabled', { timezone: 'Asia/Shanghai' }),
           media_recognition_policy: setting('media_recognition_policy', 'disabled', {}),
+          provider_budget: {
+            ...setting('provider_account_spend_budget', 'disabled', {
+              warning_ratio: 0.8,
+              conservative_unpriced_cost_usd: 0.05,
+              require_provider_configuration: true,
+              providers: [],
+            }),
+            setting_kind: 'runtime',
+            runtime: {
+              status: 'disabled',
+              warning_ratio: 0.8,
+              configured_provider_count: 0,
+              missing_provider_ids: [],
+              items: [],
+              connections: [],
+              generated_at: '2026-07-12T06:00:00Z',
+              period_timezone: 'UTC',
+            },
+          },
         },
       })),
     });
