@@ -108,7 +108,7 @@ function providerBudgetRuntimeStatus(status: string, t: Translator): string {
   return t('admin.service_settings.status_disabled', {}, '未启用');
 }
 
-function providerBudgetRuntimeTone(status: string | undefined): 'neutral' | 'configured' | 'attention' {
+function providerBudgetRuntimeTone(status: string | undefined): 'neutral' | 'attention' {
   if (status === 'exceeded') return 'attention';
   if (status === 'warning' || status === 'missing_config') return 'attention';
   return 'neutral';
@@ -121,7 +121,7 @@ function providerBudgetPercent(value: number): string {
 
 function providerBudgetUsd(value: number | undefined | null): string {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed.toFixed(4) : '0.0000';
+  return Number.isFinite(parsed) ? parsed.toFixed(4) : '—';
 }
 
 function fieldClassName(): string {
