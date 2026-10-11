@@ -53,7 +53,9 @@ from app.domain.site_knowledge.internal_link_search_quality import (
     rank_internal_link_search_results,
 )
 from app.domain.site_knowledge.maintenance import (
+    merge_maintenance_manifest_sources,
     project_site_maintenance,
+    prune_unmanifested_sources,
     record_maintenance_batch,
     validate_maintenance_batch,
 )
@@ -322,6 +324,7 @@ class SiteKnowledgeService:
         skipped_due_to_quota = 0
         unchanged_documents = 0
         processed_documents = 0
+        delivered_sources: list[tuple[str, int]] = []
         site_document_count = self.repository.count_documents(site_id)
         account_document_count = (
             self.repository.count_documents_for_account(
@@ -373,6 +376,13 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
+            if maintenance is not None:
+                delivered_sources.append(
+                    (
+                        str(normalized["source_type"]),
+                        _coerce_int(normalized.get("source_id"), default=0),
+                    )
+                )
             if (
                 normalized["source_type"] == "comment"
                 and not self.settings.site_knowledge_comments_enabled
@@ -643,6 +653,19 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
+
+        if maintenance is not None:
+            merge_maintenance_manifest_sources(
+                self.repository.session,
+                site_id=site_id,
+                delivered_sources=delivered_sources,
+            )
+            if bool(maintenance["is_final"]):
+                prune_unmanifested_sources(
+                    self.repository.session,
+                    site_id=site_id,
+                    repository=self.repository,
+                )
 
         progress = self._sync_progress(
             status="completed",

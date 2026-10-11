@@ -4,10 +4,11 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_STALE_POST_STATUS
 
 
 class SiteKnowledgeRepository:
@@ -86,6 +87,65 @@ class SiteKnowledgeRepository:
         )
         self.session.flush()
         return self._rowcount(chunk_result) + self._rowcount(document_result)
+
+    def mark_unmanifested_sources_stale(
+        self,
+        site_id: str,
+        *,
+        keep_sources: set[tuple[str, int]],
+        source_types: set[str],
+    ) -> int:
+        """Mark still-public documents absent from a completed sync manifest stale.
+
+        Only source types that the manifest actually delivered are considered,
+        so indexes holding source kinds the manifest never covers are left
+        untouched. Rows keep their content: the stale marker removes them from
+        every public-status-filtered read path while preserving audit evidence.
+        """
+        normalized_source_types = sorted(
+            {
+                str(source_type or "").strip()
+                for source_type in source_types
+                if str(source_type or "").strip()
+            }
+        )
+        if not normalized_source_types:
+            return 0
+        documents = list(
+            self.session.scalars(
+                select(SiteKnowledgeDocument).where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status == "publish",
+                    SiteKnowledgeDocument.source_type.in_(normalized_source_types),
+                )
+            )
+        )
+        stale_ids_by_type: dict[str, list[int]] = {}
+        for document in documents:
+            source_type = str(document.source_type or "")
+            try:
+                source_id = int(document.source_id)
+            except (TypeError, ValueError):
+                continue
+            if (source_type, source_id) in keep_sources:
+                continue
+            document.post_status = SITE_KNOWLEDGE_STALE_POST_STATUS
+            stale_ids_by_type.setdefault(source_type, []).append(source_id)
+        for source_type, source_ids in stale_ids_by_type.items():
+            for offset in range(0, len(source_ids), 500):
+                self.session.execute(
+                    update(SiteKnowledgeChunk)
+                    .where(
+                        SiteKnowledgeChunk.site_id == site_id,
+                        SiteKnowledgeChunk.source_type == source_type,
+                        SiteKnowledgeChunk.source_id.in_(
+                            source_ids[offset : offset + 500]
+                        ),
+                    )
+                    .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
+                )
+        self.session.flush()
+        return sum(len(source_ids) for source_ids in stale_ids_by_type.values())
 
     def upsert_document_with_chunks(
         self,
@@ -182,7 +242,10 @@ class SiteKnowledgeRepository:
             self.session.scalar(
                 select(func.count())
                 .select_from(SiteKnowledgeDocument)
-                .where(SiteKnowledgeDocument.site_id == site_id)
+                .where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+                )
             )
             or 0
         )
@@ -201,7 +264,10 @@ class SiteKnowledgeRepository:
             select(func.count())
             .select_from(SiteKnowledgeDocument)
             .join(Site, Site.site_id == SiteKnowledgeDocument.site_id)
-            .where(Site.account_id == normalized_account_id)
+            .where(
+                Site.account_id == normalized_account_id,
+                SiteKnowledgeDocument.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+            )
         )
         if source_type is not None:
             statement = statement.where(SiteKnowledgeDocument.source_type == source_type)
@@ -271,7 +337,10 @@ class SiteKnowledgeRepository:
             self.session.scalar(
                 select(func.count())
                 .select_from(SiteKnowledgeChunk)
-                .where(SiteKnowledgeChunk.site_id == site_id)
+                .where(
+                    SiteKnowledgeChunk.site_id == site_id,
+                    SiteKnowledgeChunk.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+                )
             )
             or 0
         )
@@ -377,6 +446,7 @@ class SiteKnowledgeRepository:
                     SiteKnowledgeChunk.site_id == site_id,
                     SiteKnowledgeChunk.source_type == source_type,
                     SiteKnowledgeChunk.source_id == source_id,
+                    SiteKnowledgeChunk.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
                 )
             )
             or 0
