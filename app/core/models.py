@@ -124,6 +124,7 @@ PAYMENT_ORDER_STATUS_CANCELED = "canceled"
 PAYMENT_ORDER_STATUS_REFUNDED = "refunded"
 
 PAYMENT_REFUND_STATUS_REQUESTED = "requested"
+PAYMENT_REFUND_STATUS_UNKNOWN = "unknown"
 PAYMENT_REFUND_STATUS_SUCCEEDED = "succeeded"
 PAYMENT_REFUND_STATUS_FAILED = "failed"
 
@@ -1337,6 +1338,34 @@ class CatalogInstance(Base):
     )
 
 
+class CatalogCapabilityEvidence(Base):
+    """Per-route capability verification evidence; never replace catalog truth."""
+
+    __tablename__ = "catalog_capability_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "instance_id",
+            "capability",
+            "route_fingerprint",
+            name="uq_catalog_capability_evidence_route",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        ForeignKey("catalog_instances.instance_id", ondelete="CASCADE"),
+        index=True,
+    )
+    capability: Mapped[str] = mapped_column(String(32), index=True)
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    route_fingerprint: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(191))
+    revision: Mapped[str] = mapped_column(String(191))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(96))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+
+
 class ModelReferenceSource(Base):
     __tablename__ = "model_reference_sources"
 
@@ -1568,6 +1597,9 @@ class RunRecord(Base):
         server_default=func.now(),
     )
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    worker_eligible_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retention_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1593,6 +1625,58 @@ class ProviderCallRecord(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+class ProviderBudgetCounter(Base):
+    """Atomic reserved spend for one provider/account-class period."""
+
+    __tablename__ = "provider_budget_counters"
+
+    scope_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(64), index=True)
+    account_class: Mapped[str] = mapped_column(String(32), index=True)
+    period_kind: Mapped[str] = mapped_column(String(16), index=True)
+    period_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    period_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    limit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    reserved_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    warning_emitted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ProviderBudgetClaim(Base):
+    """Idempotent reservation for one provider dispatch attempt."""
+
+    __tablename__ = "provider_budget_claims"
+    __table_args__ = (
+        UniqueConstraint("dispatch_key", name="uq_provider_budget_claims_dispatch"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    dispatch_key: Mapped[str] = mapped_column(String(255), index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), index=True)
+    run_id: Mapped[str] = mapped_column(String(191), index=True)
+    account_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    provider_id: Mapped[str] = mapped_column(String(64), index=True)
+    account_class: Mapped[str] = mapped_column(String(32), index=True)
+    period_kind: Mapped[str] = mapped_column(String(16), index=True)
+    reserved_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    actual_cost_usd: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(32), default="claimed", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class UsageMeterEvent(Base):
@@ -1911,6 +1995,14 @@ class BillingSnapshot(Base):
 
 class ServiceAuditEvent(Base):
     __tablename__ = "service_audit_events"
+    __table_args__ = (
+        Index("ix_service_audit_events_recent", "created_at", "id"),
+        Index("ix_service_audit_events_site_recent", "site_id", "created_at", "id"),
+        Index(
+            "ix_service_audit_events_account_recent", "account_id", "created_at", "id",
+            postgresql_where=text("site_id IS NULL"), sqlite_where=text("site_id IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str | None] = mapped_column(String(191), index=True)
@@ -1933,7 +2025,6 @@ class ServiceAuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        index=True,
     )
 
 

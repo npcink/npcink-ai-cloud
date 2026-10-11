@@ -6,6 +6,8 @@ const read = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const pricing = read('src/components/public/PublicPricingSection.tsx');
 const help = read('src/app/help/page.tsx');
 const terms = read('src/app/terms/page.tsx');
+const registration = read('src/app/portal/register/page.tsx');
+const translations = read('src/lib/i18n.ts');
 const publicPolicyCopy = `${pricing}\n${help}\n${terms}`;
 
 assert.match(
@@ -32,8 +34,8 @@ assert.match(
 
 assert.match(
   terms,
-  /Free 套餐和额度属于 Cloud 账户，不属于 WordPress 站点[\s\S]*注册只创建账号[\s\S]*首次可信 Addon 连接完成后/,
-  'terms must retain account ownership and verified-Addon activation rules'
+  /Free 套餐和额度属于 Cloud 账户，不属于 WordPress 站点[\s\S]*注册验证成功后[\s\S]*站点及连接凭据仍须通过可信 Addon 连接建立/,
+  'terms must separate registration-time entitlement from verified site connection'
 );
 assert.match(
   terms,
@@ -42,8 +44,8 @@ assert.match(
 );
 assert.match(
   terms,
-  /Free service and credits belong to the Cloud account, not the WordPress site[\s\S]*Registration creates the account only[\s\S]*first verified Addon connection/,
-  'terms must retain the English account ownership and verified-Addon activation rules'
+  /Free service and credits belong to the Cloud account, not the WordPress site[\s\S]*Verified registration activates[\s\S]*sites and connection credentials still require a verified Addon connection/,
+  'terms must separate registration-time entitlement from verified site connection in English'
 );
 assert.match(
   terms,
@@ -56,5 +58,25 @@ assert.doesNotMatch(
   /(?:联系|请求|要求).{0,12}(?:管理员|客服).{0,12}(?:提前解除|跳过冷却)|(?:operator|support).{0,24}(?:bypass|manual unlock)/i,
   'public policy copy must not advertise an operator bypass as a normal customer path'
 );
+
+assert.match(
+  translations,
+  /'portal\.register\.request_desc': '填写邮箱获取验证码；验证成功后获得 Free，注册不创建站点。'/,
+  'registration must separate the email-code request from verified Free activation in zh-CN'
+);
+for (const copy of [translations, registration]) {
+  assert.ok(
+    copy.includes('Enter your email to get a verification code. Verified registration activates Free without creating a site.'),
+    'English registration and its fallback must distinguish requesting a code from verified activation'
+  );
+  assert.doesNotMatch(
+    copy,
+    /create an account\. No site or service credit is created at this step/,
+    'registration must not describe the unverified code-request step as completed account creation'
+  );
+}
+
+assert.match(translations, /'portal\.home\.usage_action': 'View usage'/, 'Free usage action must exist in English');
+assert.match(translations, /'portal\.home\.usage_action': '查看用量'/, 'Free usage action must exist in zh-CN');
 
 console.log('public_entitlement_copy_contract: ok');

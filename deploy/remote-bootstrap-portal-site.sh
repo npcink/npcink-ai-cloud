@@ -125,7 +125,7 @@ from __future__ import annotations
 import os
 import sys
 
-from app.dev.bootstrap_portal_site import main
+from app.ops.bootstrap_portal_site import main
 
 secret = os.environ.pop("NPCINK_CLOUD_BOOTSTRAP_SITE_SECRET", "")
 if secret:
@@ -138,7 +138,7 @@ else
 		-- "${BOOTSTRAP_ARGS[@]}" <<'PY' || bootstrap_status=$?
 from __future__ import annotations
 
-from app.dev.bootstrap_portal_site import main
+from app.ops.bootstrap_portal_site import main
 
 main()
 PY

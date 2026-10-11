@@ -14,6 +14,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
 
 from app.adapters.providers.base import (
+    CatalogInstanceSeed,
+    CatalogModelSeed,
     ProviderCatalogSnapshot,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -39,9 +41,15 @@ from app.domain.image_generation.provider_fetch import (
     ProviderImageFetchError,
     fetch_provider_image_url,
 )
+from app.domain.provider_connections.projection import (
+    public_config,
+    public_image_evidence,
+    sanitize_config,
+)
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS,
 )
@@ -130,7 +138,14 @@ class ProviderConnectionAdminService:
                     )
                 )
             )
-        connections = [self._serialize(row) for row in rows]
+        runtime_projection = self._runtime_effective_projection(rows)
+        connections = [
+            self._serialize(
+                row,
+                runtime_projection=runtime_projection.get(row.connection_id),
+            )
+            for row in rows
+        ]
         connections.sort(
             key=lambda item: (
                 not bool(item.get("enabled")),
@@ -255,14 +270,10 @@ class ProviderConnectionAdminService:
             alternative_connections: list[dict[str, Any]] = []
             covered_profiles: set[str] = set()
             for candidate_row in session.scalars(
-                select(ProviderConnection).where(
-                    ProviderConnection.connection_id != normalized_id
-                )
+                select(ProviderConnection).where(ProviderConnection.connection_id != normalized_id)
             ):
                 candidate = self._serialize(candidate_row)
-                candidate_profiles = set(
-                    _normalize_id_list(candidate.get("runtime_profile_ids"))
-                )
+                candidate_profiles = set(_normalize_id_list(candidate.get("runtime_profile_ids")))
                 shared_profiles = sorted(target_profiles & candidate_profiles)
                 if (
                     not shared_profiles
@@ -296,9 +307,7 @@ class ProviderConnectionAdminService:
                 "provider_id": str(connection.get("provider_id") or ""),
                 "display_name": str(connection.get("display_name") or ""),
                 "enabled": enabled,
-                "configuration_status": str(
-                    connection.get("configuration_status") or ""
-                ),
+                "configuration_status": str(connection.get("configuration_status") or ""),
             },
             "expected_updated_at": str(connection.get("updated_at") or ""),
             "impact": {
@@ -540,18 +549,57 @@ class ProviderConnectionAdminService:
                 policy={"allow_fallback": False},
                 timeout_ms=_image_delivery_probe_timeout_ms(adapter),
             )
+            budget_guard = ProviderBudgetService()
+            budget_run = RunRecord(
+                run_id=probe_id,
+                site_id="admin_provider_connection_probe",
+                ability_name="admin.provider_image_delivery_probe",
+                profile_id="admin.image_delivery_probe",
+                execution_kind="image_generation",
+                policy_json={"allow_fallback": False},
+            )
+            budget_claim_ids: tuple[str, ...] = ()
             try:
+                budget_claim = budget_guard.claim_before_dispatch(
+                    session=session,
+                    run=budget_run,
+                    provider_id=provider_id,
+                    model_id=model.model_id,
+                    request=request,
+                )
+                if budget_claim is not None:
+                    budget_claim_ids = budget_claim.claim_ids
                 execution_result = adapter.execute(request)
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=execution_result.cost,
+                    )
                 probe_result = _inspect_image_delivery_probe_candidate(
                     execution_result.media_candidates,
                 )
             except ProviderExecutionError as error:
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=None,
+                    )
+                    session.commit()
                 raise ProviderConnectionAdminError(
                     _map_test_error_code(error),
                     "provider image delivery probe failed",
                     status_code=502,
                 ) from error
             except (ImageGenerationArtifactMaterializationError, ProviderImageFetchError) as error:
+                if budget_claim_ids:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim_ids,
+                        actual_cost_usd=None,
+                    )
+                    session.commit()
                 reason_code = _string(getattr(error, "reason_code", ""))
                 raise ProviderConnectionAdminError(
                     "provider_connection.image_delivery_probe_failed",
@@ -789,8 +837,8 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
-        models = list(snapshot.models or [])
-        if not models:
+        upstream_models = list(snapshot.models or [])
+        if not upstream_models:
             return _test_result(
                 connection=serialized,
                 status="catalog_empty",
@@ -800,6 +848,8 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
+        snapshot = _merge_configured_catalog_candidates(row, snapshot)
+        models = list(snapshot.models or [])
         catalog_sync = self._store_model_provider_catalog(row, snapshot)
         if catalog_sync.get("status") != "synced":
             return _test_result(
@@ -823,6 +873,7 @@ class ProviderConnectionAdminService:
                 "display_name": str(snapshot.display_name or ""),
                 "adapter_type": str(snapshot.adapter_type or ""),
                 "model_count": len(models),
+                "upstream_model_count": len(upstream_models),
                 "sample_model_ids": [str(model.model_id) for model in models[:5]],
                 "sync": catalog_sync,
             },
@@ -879,13 +930,30 @@ class ProviderConnectionAdminService:
             "direct_wordpress_write": False,
         }
         try:
-            result = WebSearchService(test_settings).execute(
-                site_id="admin_provider_connection_test",
-                ability_name=WEB_SEARCH_ABILITY,
-                contract_version=WEB_SEARCH_CONTRACT,
-                input_payload=input_payload,
-                run_id=f"provider-connection-test-{row.connection_id}-{int(now.timestamp())}",
-            )
+            with get_session(self.database_url) as session:
+                test_run = RunRecord(
+                    run_id=f"provider-connection-test-{row.connection_id}-{int(now.timestamp())}",
+                    site_id="admin_provider_connection_test",
+                    ability_name=WEB_SEARCH_ABILITY,
+                    profile_id="admin.web_search_probe",
+                    execution_kind="web_search",
+                    policy_json={"provider": provider_id},
+                )
+                try:
+                    result = WebSearchService(test_settings).execute(
+                        site_id="admin_provider_connection_test",
+                        ability_name=WEB_SEARCH_ABILITY,
+                        contract_version=WEB_SEARCH_CONTRACT,
+                        input_payload=input_payload,
+                        run_id=test_run.run_id,
+                        budget_guard=ProviderBudgetService(),
+                        budget_session=session,
+                        budget_run=test_run,
+                    )
+                except Exception:
+                    session.commit()
+                    raise
+                session.commit()
         except Exception as error:
             error_code = _map_test_error_code(error)
             return _test_result(
@@ -1027,13 +1095,13 @@ class ProviderConnectionAdminService:
                 "base_url must be 500 characters or less",
             )
         config = _dict(payload.get("config"))
-        config = _sanitize_config(config)
+        config = sanitize_config(config, _SECRET_CONFIG_KEY_PARTS)
         config = _normalize_image_delivery_config(config)
         for key in SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS:
             config.pop(key, None)
         capability_ids = _normalize_id_list(payload.get("capability_ids"))
         runtime_profile_ids = _normalize_id_list(payload.get("runtime_profile_ids"))
-        metadata = _sanitize_config(_dict(payload.get("metadata")))
+        metadata = sanitize_config(_dict(payload.get("metadata")), _SECRET_CONFIG_KEY_PARTS)
         for key in _SERVER_OWNED_PROVIDER_METADATA_KEYS:
             metadata.pop(key, None)
         metadata.pop("note", None)
@@ -1070,14 +1138,45 @@ class ProviderConnectionAdminService:
             "credential": normalized_credential,
         }
 
-    def _serialize(self, row: ProviderConnection) -> dict[str, Any]:
+    def _serialize(
+        self,
+        row: ProviderConnection,
+        *,
+        runtime_projection: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         config = _dict(row.config_json)
         kind = _string(config.get("kind") or row.provider_type)
         capability_ids = _effective_capability_ids(config, kind)
         runtime_profile_ids = _normalize_id_list(config.get("runtime_profile_ids"))
         metadata = dict(_dict(row.metadata_json))
-        image_delivery_repair = _public_image_delivery_repair(metadata)
-        image_delivery_probe = _public_image_delivery_probe(metadata)
+        image_delivery_repair = public_image_evidence(
+            metadata,
+            "image_delivery_repair",
+            (
+                "status",
+                "reason_code",
+                "detected_host",
+                "evidence_kind",
+                "probe_id",
+                "run_id",
+                "observed_at",
+                "approved_at",
+            ),
+        )
+        image_delivery_probe = public_image_evidence(
+            metadata,
+            "image_delivery_probe",
+            (
+                "probe_id",
+                "status",
+                "provider_id",
+                "model_id",
+                "delivery_format",
+                "detected_host",
+                "tested_at",
+                "host_approved_at",
+            ),
+        )
         metadata.pop("image_delivery_repair", None)
         metadata.pop("image_delivery_probe", None)
         metadata.pop("note", None)
@@ -1133,7 +1232,7 @@ class ProviderConnectionAdminService:
                     "display": _credential_display(configured, credential_error),
                 }
             },
-            "config": _public_config(config),
+            "config": public_config(config, _SECRET_CONFIG_KEY_PARTS),
             "metadata": metadata,
             "image_delivery_probe": image_delivery_probe,
             "image_delivery_repair": image_delivery_repair,
@@ -1142,10 +1241,99 @@ class ProviderConnectionAdminService:
             "last_error_code": row.last_error_code or "",
             "last_error_message": row.last_error_message or "",
             "updated_at": _iso(row.updated_at),
+            "runtime_effective": bool((runtime_projection or {}).get("effective")),
+            "runtime_effective_reason": _string(
+                (runtime_projection or {}).get("reason") or "not_selected"
+            ),
+            "runtime_selection_slot": _string((runtime_projection or {}).get("slot")),
             "detail_href": "/admin/ai-resources",
             "managed_by": "cloud_provider_connections",
             "boundary": _boundary(),
         }
+
+    def _runtime_effective_projection(
+        self,
+        rows: list[ProviderConnection],
+    ) -> dict[str, dict[str, Any]]:
+        """Expose the same effective-runtime choice used by the runtime bridge.
+
+        This is deliberately a read-only projection. It does not change which
+        connection runs, and it keeps the admin surface from inventing a second
+        provider-priority source of truth.
+        """
+
+        projection: dict[str, dict[str, Any]] = {}
+        primary_seen = False
+        singleton_slots_seen: set[str] = set()
+        primary_provider_ids = {
+            "tavily",
+            "bocha",
+            "doubao_search",
+            "apify",
+            "zhihu",
+            "anysearch",
+        }
+        supported_image_ids = {"unsplash", "pixabay", "pexels"}
+        singleton_kinds = {
+            "embedding_provider",
+            "rerank_provider",
+            "vector_store_provider",
+        }
+
+        for row in sorted(rows, key=lambda item: item.connection_id):
+            config = _dict(row.config_json)
+            kind = _string(config.get("kind") or row.provider_type).lower()
+            provider_id = _string(config.get("provider_id") or row.connection_id).lower()
+            slot = _runtime_selection_slot(kind=kind, provider_id=provider_id)
+            item = {"effective": False, "reason": "not_selected", "slot": slot}
+            projection[row.connection_id] = item
+
+            if not row.enabled:
+                item["reason"] = "disabled"
+                continue
+            configured, credential_error = _credential_readiness(
+                self.settings,
+                row,
+                config=config,
+                provider_id=provider_id,
+            )
+            if not configured:
+                item["reason"] = credential_error or "unavailable"
+                continue
+
+            if kind == "web_search_provider":
+                if provider_id == "jina_reader":
+                    item.update(effective=True, reason="enhancer", slot="web_search_reader")
+                elif provider_id in primary_provider_ids:
+                    if primary_seen:
+                        item["reason"] = "secondary"
+                    else:
+                        item.update(effective=True, reason="primary", slot="web_search_primary")
+                        primary_seen = True
+                else:
+                    item["reason"] = "unsupported"
+                continue
+
+            if kind == "image_source_provider":
+                if provider_id in supported_image_ids:
+                    item.update(effective=True, reason="parallel", slot="image_source")
+                else:
+                    item["reason"] = "unsupported"
+                continue
+
+            if kind in singleton_kinds:
+                singleton_slot = kind
+                item["slot"] = singleton_slot
+                if singleton_slot in singleton_slots_seen:
+                    item["reason"] = "secondary"
+                else:
+                    item.update(effective=True, reason="primary")
+                    singleton_slots_seen.add(singleton_slot)
+                continue
+
+            item["reason"] = "unsupported"
+
+        return projection
 
 
 def _image_delivery_probe_verification_inputs(row: ProviderConnection) -> dict[str, Any]:
@@ -1223,6 +1411,170 @@ def _provider_model_identity_keys(model_id: str, provider_id: str) -> set[str]:
     if normalized_provider_id and not normalized_model_id.startswith(f"{normalized_provider_id}/"):
         keys.add(f"{normalized_provider_id}/{normalized_model_id}")
     return keys
+
+
+def _merge_configured_catalog_candidates(
+    row: ProviderConnection,
+    snapshot: ProviderCatalogSnapshot,
+) -> ProviderCatalogSnapshot:
+    """Keep enabled models visible when an upstream catalog response is partial."""
+
+    config = _dict(row.config_json)
+    metadata = _dict(row.metadata_json)
+    selected_model_ids = _normalize_id_list(config.get("model_ids"))
+    if not selected_model_ids:
+        selected_model_ids = _normalize_id_list(metadata.get("model_ids"))
+    if not selected_model_ids:
+        return snapshot
+
+    provider_id = _string(snapshot.provider_id or config.get("provider_id") or row.connection_id)
+    upstream_models = list(snapshot.models or [])
+    upstream_keys = {
+        key
+        for model in upstream_models
+        for key in _provider_model_identity_keys(model.model_id, provider_id)
+    }
+    preview = _dict(metadata.get("model_catalog_preview"))
+    preview_models = (
+        {
+            _string(item.get("model_id")): item
+            for item in preview.get("models", [])
+            if isinstance(item, dict) and _string(item.get("model_id"))
+        }
+        if isinstance(preview.get("models"), list)
+        else {}
+    )
+
+    configured_candidates: list[CatalogModelSeed] = []
+    for selected_model_id in selected_model_ids:
+        identity_keys = _provider_model_identity_keys(selected_model_id, provider_id)
+        if identity_keys.intersection(upstream_keys):
+            continue
+        catalog_model_id = _configured_catalog_model_id(
+            selected_model_id,
+            provider_id=provider_id,
+            config=config,
+        )
+        preview_model = next(
+            (
+                item
+                for preview_model_id, item in preview_models.items()
+                if _provider_model_identity_keys(preview_model_id, provider_id).intersection(
+                    identity_keys
+                )
+            ),
+            {},
+        )
+        feature = _configured_candidate_feature(selected_model_id, preview_model)
+        configured_candidates.append(
+            CatalogModelSeed(
+                model_id=catalog_model_id,
+                family=_string(preview_model.get("family"))
+                or selected_model_id.split("/", 1)[-1].split("-", 1)[0],
+                feature=feature,
+                status="available",
+                context_window=_optional_int(preview_model.get("context_window")),
+                price_input=None,
+                price_output=None,
+                is_deprecated=bool(preview_model.get("is_deprecated")),
+                fallback_candidate=False,
+                raw_json={
+                    "catalog_source": "configured_selection",
+                    "upstream_status": "missing_from_latest_catalog",
+                    "upstream_model_id": selected_model_id,
+                    "reference_source": "saved_provider_catalog_preview"
+                    if preview_model
+                    else "configured_model_id",
+                },
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id=(
+                            f"{_catalog_slug(provider_id)}-global-{_catalog_slug(catalog_model_id)}"
+                        ),
+                        endpoint_variant=_configured_candidate_endpoint(feature),
+                        region="global",
+                        capability_tags=[
+                            feature,
+                            "configured_candidate",
+                            "upstream_missing",
+                        ],
+                        health_status="unknown",
+                        is_default=False,
+                        weight=50,
+                    )
+                ],
+            )
+        )
+
+    if not configured_candidates:
+        return snapshot
+    return ProviderCatalogSnapshot(
+        provider_id=snapshot.provider_id,
+        display_name=snapshot.display_name,
+        adapter_type=snapshot.adapter_type,
+        models=[*upstream_models, *configured_candidates],
+    )
+
+
+def _configured_catalog_model_id(
+    model_id: str,
+    *,
+    provider_id: str,
+    config: dict[str, Any],
+) -> str:
+    kind = _string(config.get("kind")).lower()
+    if "model_namespace_prefix" in config:
+        prefix = _string(config.get("model_namespace_prefix")).strip("/")
+    elif kind in {"openai", "openai_compatible", "openai-compatible"} and provider_id != "openai":
+        prefix = provider_id
+    else:
+        prefix = ""
+    return model_id if not prefix or model_id.startswith(f"{prefix}/") else f"{prefix}/{model_id}"
+
+
+def _configured_candidate_feature(model_id: str, preview_model: dict[str, Any]) -> str:
+    preview_feature = _string(preview_model.get("feature")).lower()
+    if preview_feature in {"text", "vision", "embedding", "image_generation", "audio_generation"}:
+        return preview_feature
+    model_key = model_id.lower()
+    if any(
+        keyword in model_key
+        for keyword in (
+            "grok-imagine",
+            "gpt-image",
+            "image-quality",
+            "kolors",
+            "qwen-image",
+            "image-generation",
+        )
+    ):
+        return "image_generation"
+    return "text"
+
+
+def _configured_candidate_endpoint(feature: str) -> str:
+    if feature == "image_generation":
+        return "image_generations"
+    if feature == "embedding":
+        return "embeddings"
+    if feature == "audio_generation":
+        return "audio_speech"
+    return "responses"
+
+
+def _catalog_slug(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return normalized or "model"
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
 
 
 def _image_delivery_probe_input(provider_id: str) -> dict[str, Any]:
@@ -1521,38 +1873,6 @@ def _effective_capability_ids(config: dict[str, Any], kind: str) -> list[str]:
     return capability_ids
 
 
-def _public_image_delivery_repair(metadata: dict[str, Any]) -> dict[str, Any]:
-    evidence = _dict(metadata.get("image_delivery_repair"))
-    if not evidence:
-        return {}
-    return {
-        "status": _string(evidence.get("status")),
-        "reason_code": _string(evidence.get("reason_code")),
-        "detected_host": _string(evidence.get("detected_host")),
-        "evidence_kind": _string(evidence.get("evidence_kind")) or "runtime_run",
-        "probe_id": _string(evidence.get("probe_id")),
-        "run_id": _string(evidence.get("run_id")),
-        "observed_at": _string(evidence.get("observed_at")),
-        "approved_at": _string(evidence.get("approved_at")),
-    }
-
-
-def _public_image_delivery_probe(metadata: dict[str, Any]) -> dict[str, Any]:
-    evidence = _dict(metadata.get("image_delivery_probe"))
-    if not evidence:
-        return {}
-    return {
-        "probe_id": _string(evidence.get("probe_id")),
-        "status": _string(evidence.get("status")),
-        "provider_id": _string(evidence.get("provider_id")),
-        "model_id": _string(evidence.get("model_id")),
-        "delivery_format": _string(evidence.get("delivery_format")),
-        "detected_host": _string(evidence.get("detected_host")),
-        "tested_at": _string(evidence.get("tested_at")),
-        "host_approved_at": _string(evidence.get("host_approved_at")),
-    }
-
-
 def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(config)
     response_format = _string(normalized.get("image_response_format")).lower()
@@ -1664,45 +1984,6 @@ def _runtime_selection_slot(*, kind: str, provider_id: str) -> str:
     if normalized_kind in {"embedding_provider", "rerank_provider", "vector_store_provider"}:
         return normalized_kind
     return ""
-
-
-def _public_config(config: dict[str, Any]) -> dict[str, Any]:
-    hidden_keys = {
-        "provider_id",
-        "kind",
-        "capability_ids",
-        "runtime_profile_ids",
-        "group_id",
-    }
-    return {
-        key: value
-        for key, value in _sanitize_config(config).items()
-        if key not in hidden_keys and key != "secretless"
-    }
-
-
-def _sanitize_config(config: dict[str, Any]) -> dict[str, Any]:
-    sanitized: dict[str, Any] = {}
-    for key, value in config.items():
-        normalized_key = str(key)
-        if _is_secret_key(normalized_key):
-            continue
-        if isinstance(value, dict):
-            sanitized[normalized_key] = _sanitize_config(value)
-        elif isinstance(value, list):
-            sanitized[normalized_key] = [
-                _sanitize_config(item) if isinstance(item, dict) else item for item in value
-            ]
-        else:
-            sanitized[normalized_key] = value
-    return sanitized
-
-
-def _is_secret_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    if normalized in {"api_key_label", "api_key_labels", "key_label", "key_labels"}:
-        return False
-    return any(part in normalized for part in _SECRET_CONFIG_KEY_PARTS)
 
 
 def _dict(value: object) -> dict[str, Any]:

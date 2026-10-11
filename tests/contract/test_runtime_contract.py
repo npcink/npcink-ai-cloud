@@ -105,7 +105,7 @@ def _runtime_callback_metadata(callback_url: str) -> dict[str, object]:
                     "runtime-callback-secret-for-tests-32b",
                     settings=settings,
                 ),
-                "callback_id": "runtime_terminal_contract",
+                "registration_id": "runtime_terminal_contract",
             }
         }
     }
@@ -219,6 +219,7 @@ def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
         "execution_context",
         "task_backend",
         "run_lifecycle",
+        "run_state",
         "result",
     }
     assert payload["data"]["canonical_run_id"] == "wp_run_contract_execute_001"
@@ -247,6 +248,7 @@ def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
         "phase",
         "queue_mode",
         "requested_at",
+        "worker_eligible_at",
         "processing_started_at",
         "terminal_at",
         "terminal_status",
@@ -363,6 +365,7 @@ def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
         "phase",
         "queue_mode",
         "requested_at",
+        "worker_eligible_at",
         "processing_started_at",
         "terminal_at",
         "terminal_status",
@@ -488,6 +491,20 @@ def test_runtime_resolve_response_shape_includes_execution_context(tmp_path: Pat
         set(payload["data"]["policy"]["routing_candidates"][0].keys())
         == expected_candidate_fields
     )
+    assert payload["data"]["policy"]["routing_explainability"] == {
+        "router_version": "hosted_router.v1",
+        "profile_id": payload["data"]["profile_id"],
+        "execution_kind": payload["data"]["execution_kind"],
+        "profile_revision": payload["data"]["revision"],
+        "selection_policy": {
+            "strategy": "ordered",
+            "ordered_tiers": ["balanced", "economy", "quality"],
+        },
+        "candidate_order": [
+            candidate["instance_id"] for candidate in payload["data"]["candidates"]
+        ],
+        "selection_basis": "resolved_candidate_order",
+    }
 
     dispose_engine(database_url)
 

@@ -9,6 +9,7 @@ from typing import cast
 import httpx
 import pytest
 from redis import Redis
+from redis.retry import Retry
 from sqlalchemy import select
 
 from app.adapters.callbacks.base import RuntimeCallbackDispatchRequest
@@ -22,6 +23,7 @@ from app.core.secrets import encrypt_runtime_terminal_callback_secret
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.errors import (
     RuntimeCallbackConfigurationError,
+    RuntimeExecutionContractError,
     RuntimeResultExpiredError,
     RuntimeSiteInactiveError,
     RuntimeSiteNotProvisionedError,
@@ -78,7 +80,7 @@ def _register_runtime_callback(database_url: str, callback_url: str) -> None:
                         "runtime-callback-test-secret-32b",
                         settings=settings,
                     ),
-                    "callback_id": "runtime_terminal",
+                    "registration_id": "runtime_terminal",
                 }
             }
         }
@@ -356,6 +358,23 @@ def test_claim_next_queued_run_uses_atomic_update_returning(tmp_path: Path) -> N
     assert queued.status == "queued"
 
     with get_session(database_url) as session:
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.worker_eligible_at = datetime.now(UTC) + timedelta(hours=1)
+        session.commit()
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        assert repository.claim_run_if_queued(queued.run_id) is None
+        assert repository.claim_next_queued_run() is None
+
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.worker_eligible_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+    with get_session(database_url) as session:
         repository = RuntimeRepository(session)
 
         def _unexpected_scalar(*args: object, **kwargs: object) -> None:
@@ -368,6 +387,52 @@ def test_claim_next_queued_run_uses_atomic_update_returning(tmp_path: Path) -> N
         assert claimed is not None
         assert claimed.run_id == queued.run_id
         assert claimed.status == "running"
+
+    dispose_engine(database_url)
+
+
+def test_claim_run_refreshes_preloaded_identity_map_record(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    queued = _runtime_service(database_url).execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            skill_id="media_nightly_optimize",
+            workflow_id="media_nightly_image_optimize",
+            contract_version="v1",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            execution_tier="cloud",
+            execution_pattern="whole_run_offload",
+            data_classification="internal",
+            timeout_seconds=1800,
+            retry_max=2,
+            retention_ttl=86400,
+            task_backend={"enabled": True},
+            input_payload={"messages": [{"role": "user", "content": "refresh claim"}]},
+            idempotency_key="queue-domain-refresh-claim-001",
+            trace_id="trace-queue-domain-refresh-claim-001",
+        )
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        preloaded = repository.get_run(queued.run_id)
+        assert preloaded is not None
+        assert preloaded.status == "queued"
+        assert preloaded.processing_started_at is None
+
+        claimed = repository.claim_run_if_queued(queued.run_id)
+
+        assert claimed is preloaded
+        assert claimed.status == "running"
+        assert claimed.processing_started_at is not None
 
     dispose_engine(database_url)
 
@@ -789,6 +854,84 @@ def test_bounded_auto_repairs_requeue_stale_queued_runs_and_audit_worker_actor(
         assert audit_event.actor_kind == "system_worker"
         assert audit_event.actor_ref == "runtime_queue"
         assert audit_event.scope_id == queued.run_id
+
+    dispose_engine(database_url)
+
+
+def test_bounded_auto_repairs_ignore_stale_queued_runs_deferred_until_future(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(database_url, site_id="site_queue")
+
+    service = _runtime_service(database_url)
+    queued = service.execute(
+        RuntimeRequest(
+            site_id="site_queue",
+            ability_name="workflow/media_nightly_image_optimize",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            execution_pattern="whole_run_offload",
+            task_backend={"enabled": True, "mode": "polling"},
+            idempotency_key="queue-domain-auto-repair-future-001",
+            trace_id="trace-queue-domain-auto-repair-future-001",
+            input_payload={"messages": [{"role": "user", "content": "future run"}]},
+        )
+    )
+
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.status = "queued"
+        run.started_at = datetime.now(UTC) - timedelta(minutes=12)
+        run.processing_started_at = None
+        run.finished_at = None
+        run.worker_eligible_at = datetime.now(UTC) + timedelta(hours=1)
+        session.commit()
+
+    repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=5,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=0,
+    )
+
+    assert repair["requeued_stale_queued_total"] == 0
+    assert repair["requeued_stale_queued"] == []
+    with pytest.raises(RuntimeExecutionContractError) as caught:
+        service.repair_run(
+            run_id=queued.run_id,
+            action="requeue_stale_queued",
+            audit_context=None,
+        )
+    assert caught.value.error_code == "runtime.repair_not_allowed"
+
+    with get_session(database_url) as session:
+        audit_event = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "runtime.repair.requeue_stale_queued",
+                ServiceAuditEvent.scope_id == queued.run_id,
+            )
+        )
+        assert audit_event is None
+
+        run = session.get(RunRecord, queued.run_id)
+        assert run is not None
+        run.worker_eligible_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+    due_repair = service.run_bounded_auto_repairs(
+        worker_id="runtime_queue",
+        max_stale_queued=5,
+        max_callback_overdue=0,
+        max_running_stale_suggestions=0,
+    )
+    assert due_repair["requeued_stale_queued_total"] == 1
+    assert due_repair["requeued_stale_queued"][0]["run_id"] == queued.run_id
 
     dispose_engine(database_url)
 
@@ -1222,9 +1365,19 @@ def test_redis_runtime_queue_reuses_one_client_across_publish_and_consume(
 
     instances: list[FakeRedisClient] = []
 
-    def fake_from_url(redis_url: str, decode_responses: bool) -> FakeRedisClient:
+    def fake_from_url(
+        redis_url: str,
+        decode_responses: bool,
+        socket_connect_timeout: float,
+        socket_timeout: float,
+        retry: Retry,
+    ) -> FakeRedisClient:
         assert redis_url == "redis://example"
         assert decode_responses is True
+        assert socket_connect_timeout == 5.0
+        assert socket_timeout == 10.0
+        assert isinstance(retry, Retry)
+        assert retry._retries == 0
         client = FakeRedisClient()
         instances.append(client)
         return client
@@ -1241,6 +1394,16 @@ def test_redis_runtime_queue_reuses_one_client_across_publish_and_consume(
 
     assert len(instances) == 1
     assert instances[0].closed is True
+
+
+def test_redis_runtime_queue_socket_timeout_exceeds_blocking_poll_window() -> None:
+    queue = RedisRuntimeQueue(
+        "redis://example",
+        "runtime:test",
+        blocking_timeout_seconds=12,
+    )
+
+    assert queue.socket_timeout_seconds == 17.0
 
 
 def test_redis_runtime_queue_zero_timeout_uses_nonblocking_rpop_and_preserves_fifo() -> None:
@@ -1271,14 +1434,35 @@ def test_http_callback_dispatcher_reuses_one_client_across_dispatches(
             self.kwargs = kwargs
             self.closed = False
 
-        def post(self, url: str, *, content: bytes, headers: dict[str, str]) -> httpx.Response:
-            assert url == "https://example.com/reuse"
-            assert headers["X-Npcink-Run-Id"] in {"run-1", "run-2"}
-            assert cast(dict[str, object], json.loads(content.decode("utf-8")))["run_id"] in {
+        def build_request(
+            self,
+            method: str,
+            url: str,
+            *,
+            content: bytes,
+            headers: dict[str, str],
+        ) -> httpx.Request:
+            return httpx.Request(method, url, content=content, headers=headers)
+
+        def send(
+            self,
+            request: httpx.Request,
+            *,
+            follow_redirects: bool,
+        ) -> httpx.Response:
+            assert str(request.url) == "https://93.184.216.34/reuse"
+            assert request.headers["host"] == "example.com"
+            assert request.headers["connection"] == "close"
+            assert request.extensions["sni_hostname"] == "example.com"
+            assert follow_redirects is False
+            assert request.headers["X-Npcink-Run-Id"] in {"run-1", "run-2"}
+            assert cast(dict[str, object], json.loads(request.content.decode("utf-8")))[
+                "run_id"
+            ] in {
                 "run-1",
                 "run-2",
             }
-            return httpx.Response(204)
+            return httpx.Response(204, request=request)
 
         def close(self) -> None:
             self.closed = True

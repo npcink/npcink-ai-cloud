@@ -38,7 +38,7 @@ Current WordPress AI Connector routing groups are:
 | `content.short_text` | `wp-ai.short-text` | `text` | `excerpt_generation`, `meta_description`, `title_generation`, `audio_summary_script` |
 | `content.editorial` | `wp-ai.editorial` | `text` | `comment_reply_suggest`, `content_rewrite`, `content_summary` |
 | `content.classification` | `wp-ai.classification` | `text` | `comment_moderation`, `content_classification` |
-| `media.alt_text_vision` | `wp-ai.alt-text-vision` | `vision` | `alt_text_suggest` |
+| `media.alt_text_vision` | `vision.ai` | `vision` | `alt_text_suggest` |
 | `media.image_generation` | `wp-ai.image-generation` | `image_generation` | `image_generation` |
 
 The WordPress AI alt-text ability needs a real image reference plus bounded

@@ -143,7 +143,8 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
             transport=self.transport,
         )
 
-    def _build_client(self, request_timeout_ms: int) -> httpx.Client:
+    def _build_client(self, request_timeout_ms: int, endpoint_variant: str = "") -> httpx.Client:
+        del endpoint_variant
         timeout_seconds = min(
             max(request_timeout_ms / 1000, 0.001),
             max(self.timeout_seconds, 0.001),

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy import event, inspect
 from sqlalchemy.exc import OperationalError
 
 from app.core import db as db_module
@@ -11,6 +12,81 @@ from app.core import db as db_module
 
 def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{tmp_path / 'db-core.sqlite3'}"
+
+
+def test_sqlite_schema_ddl_runs_in_one_database_transaction(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    engine = db_module.get_engine(database_url)
+    transactions: list[bool] = []
+    commits: list[None] = []
+
+    def capture_ddl(connection: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        if statement.lstrip().startswith("CREATE "):
+            transactions.append(connection.connection.driver_connection.in_transaction)
+
+    def capture_commit(_connection: Any) -> None:
+        commits.append(None)
+
+    event.listen(engine, "before_cursor_execute", capture_ddl)
+    event.listen(engine, "commit", capture_commit)
+    try:
+        db_module.init_schema(database_url)
+        assert transactions and all(transactions)
+        assert len(commits) == 1
+        assert set(inspect(engine).get_table_names()) == set(db_module.Base.metadata.tables)
+        for table in db_module.Base.metadata.sorted_tables:
+            assert {index["name"] for index in inspect(engine).get_indexes(table.name)} == {
+                index.name for index in table.indexes
+            }
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_ddl)
+        event.remove(engine, "commit", capture_commit)
+        db_module.dispose_engine(database_url)
+
+
+def test_sqlite_schema_failure_rolls_back_partial_ddl(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    engine = db_module.get_engine(database_url)
+    created = 0
+
+    def fail_second_table(_connection: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        nonlocal created
+        if statement.lstrip().startswith("CREATE TABLE"):
+            created += 1
+            if created == 2:
+                raise RuntimeError("injected schema failure")
+
+    event.listen(engine, "before_cursor_execute", fail_second_table)
+    try:
+        with pytest.raises(RuntimeError, match="injected schema failure"):
+            db_module.init_schema(database_url)
+        assert created == 2
+        assert inspect(engine).get_table_names() == []
+    finally:
+        event.remove(engine, "before_cursor_execute", fail_second_table)
+        db_module.dispose_engine(database_url)
+
+
+def test_sqlite_schema_reinitialization_preserves_data_and_database_isolation(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    other_url = f"sqlite+pysqlite:///{tmp_path / 'other.sqlite3'}"
+    try:
+        db_module.init_schema(database_url)
+        with db_module.get_engine(database_url).begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE isolation_probe (value TEXT)")
+            connection.exec_driver_sql("INSERT INTO isolation_probe VALUES ('preserved')")
+        db_module.init_schema(database_url)
+        db_module.init_schema(other_url)
+        with db_module.get_engine(database_url).connect() as connection:
+            assert connection.exec_driver_sql("SELECT value FROM isolation_probe").scalar() == (
+                "preserved"
+            )
+        assert "isolation_probe" not in inspect(db_module.get_engine(other_url)).get_table_names()
+    finally:
+        db_module.dispose_engine(database_url)
+        db_module.dispose_engine(other_url)
 
 
 def test_get_engine_hides_sql_parameters(tmp_path: Path) -> None:

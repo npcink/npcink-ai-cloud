@@ -4,7 +4,7 @@ import json
 from argparse import Namespace
 from types import SimpleNamespace
 
-from app.dev import seed_runtime
+from app.ops import seed_runtime
 
 
 def test_seed_runtime_uses_provider_registry(monkeypatch, capsys) -> None:

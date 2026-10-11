@@ -264,10 +264,14 @@ def _collect_records(
     receipt_query = select(PortalMutationIdempotencyReceipt).order_by(
         PortalMutationIdempotencyReceipt.receipt_id
     )
-    run_query = select(RunRecord).order_by(RunRecord.run_id)
     # This maintenance command intentionally runs against the historical 0068
     # cutover schema. Load only the columns owned by that contract so later
-    # additive Site fields do not make the offline recovery path unreadable.
+    # additive model fields do not make the offline recovery path unreadable.
+    run_query = (
+        select(RunRecord)
+        .options(load_only(RunRecord.run_id, RunRecord.execution_input_ciphertext))
+        .order_by(RunRecord.run_id)
+    )
     site_query = (
         select(Site)
         .options(load_only(Site.site_id, Site.metadata_json))

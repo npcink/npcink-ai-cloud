@@ -11,7 +11,7 @@ def test_default_free_plan_is_the_current_bootstrap_posture() -> None:
     billing_code = (
         root / "app/domain/commercial/mixins/_billing_mixin.py"
     ).read_text()
-    seed_runtime_code = (root / "app/dev/seed_runtime.py").read_text()
+    seed_runtime_code = (root / "app/ops/seed_runtime.py").read_text()
 
     assert "plan_dev_unlimited" not in service_code
     assert "plan_dev_unlimited" not in seed_runtime_code

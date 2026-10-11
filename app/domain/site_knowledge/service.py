@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -42,14 +42,20 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
     coerce_positive_int,
+    normalize_source_passages,
     validate_site_knowledge_runtime_contract,
 )
 from app.domain.site_knowledge.embedding import (
     cosine_similarity,
     embed_text_deterministic,
 )
+from app.domain.site_knowledge.internal_link_search_quality import (
+    rank_internal_link_search_results,
+)
 from app.domain.site_knowledge.maintenance import (
+    merge_maintenance_manifest_sources,
     project_site_maintenance,
+    prune_unmanifested_sources,
     record_maintenance_batch,
     validate_maintenance_batch,
 )
@@ -57,7 +63,17 @@ from app.domain.site_knowledge.media_search_quality import (
     collapse_media_search_duplicates,
     rank_media_search_results,
 )
+from app.domain.site_knowledge.recommendation_quality import (
+    apply_recommendation_quality_controls,
+)
+from app.domain.site_knowledge.related_content_search_quality import (
+    rank_related_content_search_results,
+)
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+
+if TYPE_CHECKING:
+    from app.core.models import RunRecord
+    from app.domain.runtime.provider_execution import ProviderBudgetGuard
 from app.domain.site_knowledge.rerankers import (
     SiteKnowledgeReranker,
     SiteKnowledgeRerankError,
@@ -75,6 +91,31 @@ MAX_FALLBACK_SEARCH_CHUNKS = 5000
 DEFAULT_EVIDENCE_MIN_SCORE = 0.45
 DEFAULT_REQUIRED_EVIDENCE_SOURCES = 1
 ALLOWED_NO_HIT_POLICIES = frozenset({"abstain", "fallback_to_general", "return_empty"})
+GENERIC_INTERNAL_LINK_ANCHORS = frozenset(
+    {
+        "主题",
+        "文章",
+        "内容",
+        "这里",
+        "本文",
+        "本页",
+        "文章内容",
+        "相关内容",
+        "更多内容",
+        "相关主题",
+        "topic",
+        "article",
+        "content",
+        "here",
+        "this",
+        "post",
+        "page",
+        "link",
+        "readmore",
+        "wordpress",
+        "cloud",
+    }
+)
 ProgressCallback = Callable[[dict[str, Any]], None]
 EmbeddingUsageCallback = Callable[
     [str, ProviderExecutionRequest, ProviderExecutionResult | None, ProviderExecutionError | None],
@@ -101,11 +142,21 @@ class SiteKnowledgeService:
         providers: dict[str, ProviderAdapter] | None = None,
         progress_callback: ProgressCallback | None = None,
         embedding_usage_callback: EmbeddingUsageCallback | None = None,
+        account_id: str = '',
+        account_vector_document_limit: int | None = None,
+        account_media_image_limit: int | None = None,
+        budget_guard: ProviderBudgetGuard | None = None,
+        budget_run: RunRecord | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.providers = providers or {}
         self.progress_callback = progress_callback
         self.embedding_usage_callback = embedding_usage_callback
+        self.account_id = str(account_id or '').strip()
+        self.account_vector_document_limit = account_vector_document_limit
+        self.account_media_image_limit = account_media_image_limit
+        self.budget_guard = budget_guard
+        self.budget_run = budget_run
         self.repository = SiteKnowledgeRepository(session)
         self.vector_backend = build_vector_backend(self.settings)
         self.reranker = build_site_knowledge_reranker(self.settings)
@@ -273,7 +324,26 @@ class SiteKnowledgeService:
         skipped_due_to_quota = 0
         unchanged_documents = 0
         processed_documents = 0
+        delivered_sources: list[tuple[str, int]] = []
         site_document_count = self.repository.count_documents(site_id)
+        account_document_count = (
+            self.repository.count_documents_for_account(
+                self.account_id,
+                exclude_source_type="media",
+            )
+            if self.account_id and self.account_vector_document_limit is not None
+            else None
+        )
+        account_document_limit = int(self.account_vector_document_limit or 0)
+        account_media_image_count = (
+            self.repository.count_documents_for_account(
+                self.account_id,
+                source_type="media",
+            )
+            if self.account_id and self.account_media_image_limit is not None
+            else None
+        )
+        account_media_image_limit = int(self.account_media_image_limit or 0)
         site_chunk_count = self.repository.count_chunks(site_id)
         remaining_run_documents = int(self.settings.site_knowledge_max_sync_documents_per_run)
         remaining_run_chunks = int(self.settings.site_knowledge_max_sync_chunks_per_run)
@@ -306,6 +376,13 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
+            if maintenance is not None:
+                delivered_sources.append(
+                    (
+                        str(normalized["source_type"]),
+                        _coerce_int(normalized.get("source_id"), default=0),
+                    )
+                )
             if (
                 normalized["source_type"] == "comment"
                 and not self.settings.site_knowledge_comments_enabled
@@ -354,6 +431,38 @@ class SiteKnowledgeService:
                 quota_limited = True
                 processed_documents += 1
                 continue
+            if (
+                not existing_document
+                and source_type != "media"
+                and account_document_count is not None
+                and account_document_limit > 0
+            ):
+                account_document_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    exclude_source_type="media",
+                )
+                if account_document_count >= account_document_limit:
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
+            if (
+                not existing_document
+                and source_type == "media"
+                and account_media_image_count is not None
+                and account_media_image_limit > 0
+            ):
+                account_media_image_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    source_type="media",
+                )
+                if account_media_image_count >= account_media_image_limit:
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
             available_site_chunks = int(
                 self.settings.site_knowledge_max_indexed_chunks_per_site
             ) - max(0, site_chunk_count - existing_chunks)
@@ -412,6 +521,47 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
+            if not existing_document and source_type != "media" and (
+                account_document_count is not None and account_document_limit > 0
+            ):
+                account_document_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    exclude_source_type="media",
+                )
+                existing_document = self.repository.document_exists(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                if not existing_document and account_document_count >= account_document_limit:
+                    accepted_documents -= 1
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
+            if not existing_document and source_type == "media" and (
+                account_media_image_count is not None and account_media_image_limit > 0
+            ):
+                account_media_image_count = self.repository.lock_account_and_count_documents(
+                    self.account_id,
+                    source_type="media",
+                )
+                existing_document = self.repository.document_exists(
+                    site_id=site_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                )
+                if (
+                    not existing_document
+                    and account_media_image_count >= account_media_image_limit
+                ):
+                    accepted_documents -= 1
+                    skipped_documents += 1
+                    skipped_due_to_quota += 1
+                    quota_limited = True
+                    processed_documents += 1
+                    continue
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
@@ -482,6 +632,10 @@ class SiteKnowledgeService:
             remaining_run_chunks = max(0, remaining_run_chunks - len(chunks))
             if not existing_document:
                 site_document_count += 1
+                if source_type != "media" and account_document_count is not None:
+                    account_document_count += 1
+                if source_type == "media" and account_media_image_count is not None:
+                    account_media_image_count += 1
             site_chunk_count = max(0, site_chunk_count - existing_chunks) + len(chunks)
             processed_documents += 1
             self._emit_sync_progress(
@@ -499,6 +653,20 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
+
+        if maintenance is not None:
+            merge_maintenance_manifest_sources(
+                self.repository.session,
+                site_id=site_id,
+                request_id=str(maintenance["request_id"]),
+                delivered_sources=delivered_sources,
+            )
+            if bool(maintenance["is_final"]):
+                prune_unmanifested_sources(
+                    self.repository.session,
+                    site_id=site_id,
+                    repository=self.repository,
+                )
 
         progress = self._sync_progress(
             status="completed",
@@ -604,12 +772,26 @@ class SiteKnowledgeService:
         elif indexed_chunks == 0 and self.repository.latest_failed_sync(site_id) is not None:
             status = "failed"
 
+        coverage_evidence = self.repository.coverage_evidence(site_id)
+        post_type_counts = coverage_evidence["post_type_counts"]
+        source_type_counts = coverage_evidence["source_type_counts"]
+        stale_count = int(coverage_evidence["stale_document_count"])
+        comparable_count = int(
+            coverage_evidence["staleness_comparable_document_count"]
+        )
         coverage = {
             "indexed_posts": indexed_posts,
             "indexed_chunks": indexed_chunks,
             "truncated_documents": self.repository.count_truncated_documents(site_id),
             "last_sync_at": _serialize_datetime(last_sync_at),
-            "has_stale_content": False,
+            "has_stale_content": (
+                stale_count > 0 if comparable_count > 0 else None
+            ),
+            "stale_document_count": stale_count,
+            "staleness_comparable_document_count": comparable_count,
+            "coverage_basis": "cloud_index_counts_without_whole_site_denominator",
+            "post_type_counts": post_type_counts,
+            "source_type_counts": source_type_counts,
             "post_type_coverage": {},
             "source_type_coverage": {},
             "comments_enabled": bool(self.settings.site_knowledge_comments_enabled),
@@ -619,12 +801,14 @@ class SiteKnowledgeService:
             indexed_chunks=indexed_chunks,
         )
         if include_coverage:
+            # A ratio needs the WordPress-side total as denominator.  Returning
+            # null here is intentional until that manifest is supplied; the
+            # indexed counts above remain useful and auditable.
             coverage["post_type_coverage"] = {
-                post_type: 1.0 for post_type in sorted(self.repository.post_type_counts(site_id))
+                post_type: None for post_type in sorted(post_type_counts)
             }
             coverage["source_type_coverage"] = {
-                source_type: 1.0
-                for source_type in sorted(self.repository.source_type_counts(site_id))
+                source_type: None for source_type in sorted(source_type_counts)
             }
         if requested_post_ids:
             coverage["indexed_post_ids"] = self.repository.indexed_post_ids(
@@ -682,9 +866,9 @@ class SiteKnowledgeService:
             default=8,
             maximum=20,
         )
-        result_granularity = _normalize_result_granularity(
-            input_payload.get("result_granularity")
-        )
+        result_granularity = _normalize_result_granularity(input_payload.get("result_granularity"))
+        if intent == "related_content":
+            result_granularity = "document"
         evidence_policy = _resolve_evidence_policy(input_payload.get("evidence_policy"))
         filters = input_payload.get("filters")
         filters = filters if isinstance(filters, dict) else {}
@@ -698,6 +882,7 @@ class SiteKnowledgeService:
         else:
             source_types = [source_type for source_type in source_types if source_type != "comment"]
         current_post_id = _coerce_int(input_payload.get("current_post_id"), default=0)
+        source_passages = normalize_source_passages(input_payload.get("source_passages"))
 
         indexed_embedding_models = self.repository.list_embedding_models(
             site_id,
@@ -744,11 +929,7 @@ class SiteKnowledgeService:
                     "returned_count": 0,
                     "duplicate_chunks_collapsed": 0,
                     "duplicate_media_collapsed": 0,
-                    "ranking_strategy": (
-                        "semantic_plus_bounded_lexical"
-                        if intent == "media_library_search"
-                        else "semantic"
-                    ),
+                    "ranking_strategy": _ranking_strategy_for_intent(intent),
                 },
                 "results": [],
                 "write_posture": "suggestion_only",
@@ -773,6 +954,12 @@ class SiteKnowledgeService:
             query=query,
         )
         if results is not None:
+            results = self._enrich_search_reference_metadata(
+                site_id=site_id,
+                intent=intent,
+                results=results,
+                source_passages=source_passages,
+            )
             results, rerank, result_grouping = self._prepare_search_results(
                 intent=intent,
                 query=query,
@@ -818,7 +1005,12 @@ class SiteKnowledgeService:
             score = cosine_similarity(query_embedding, [float(value) for value in embedding])
             lexical_bonus = (
                 0.0
-                if intent == "media_library_search"
+                if intent
+                in {
+                    "media_library_search",
+                    "internal_links",
+                    "related_content",
+                }
                 else _lexical_bonus(query, chunk.chunk_text, chunk.title)
             )
             scored.append((min(1.0, score + lexical_bonus), chunk))
@@ -840,6 +1032,12 @@ class SiteKnowledgeService:
             )
             for score, chunk in scored
         ]
+        results = self._enrich_search_reference_metadata(
+            site_id=site_id,
+            intent=intent,
+            results=results,
+            source_passages=source_passages,
+        )
         results, rerank, result_grouping = self._prepare_search_results(
             intent=intent,
             query=query,
@@ -989,14 +1187,45 @@ class SiteKnowledgeService:
             policy={"storage_mode": "result_only"},
             timeout_ms=max(1, int(self._embedding_timeout_seconds() * 1000)),
         )
+        budget_claim_ids: tuple[str, ...] = ()
+        if self.budget_guard is not None:
+            if self.budget_run is None:
+                raise SiteKnowledgeBackendError(
+                    "site_knowledge.embedding_budget_context_missing",
+                    "site knowledge embedding budget context is not configured",
+                )
+            try:
+                budget_claim = self.budget_guard.claim_before_dispatch(
+                    session=self.repository.session,
+                    run=self.budget_run,
+                    provider_id=self.embedding_provider_id,
+                    model_id=model_id,
+                    request=provider_request,
+                )
+            except ProviderExecutionError as error:
+                raise SiteKnowledgeBackendError(error.error_code, error.message) from error
+            if budget_claim is not None:
+                budget_claim_ids = budget_claim.claim_ids
         try:
             result = provider.execute(provider_request)
         except ProviderExecutionError as error:
+            if self.budget_guard is not None and budget_claim_ids:
+                self.budget_guard.reconcile(
+                    session=self.repository.session,
+                    claim_ids=budget_claim_ids,
+                    actual_cost_usd=None,
+                )
             self._record_embedding_usage(provider_request, provider_error=error)
             raise SiteKnowledgeBackendError(
                 error.error_code,
                 "site knowledge embedding provider request failed",
             ) from error
+        if self.budget_guard is not None and budget_claim_ids:
+            self.budget_guard.reconcile(
+                session=self.repository.session,
+                claim_ids=budget_claim_ids,
+                actual_cost_usd=result.cost,
+            )
         self._record_embedding_usage(provider_request, provider_result=result)
 
         embedding = result.output.get("embedding")
@@ -1051,30 +1280,79 @@ class SiteKnowledgeService:
         if intent == "media_library_search":
             ranked = rank_media_search_results(query, ranked)
         reranked, rerank = self._maybe_rerank_results(query=query, results=ranked)
+        if intent == "internal_links":
+            reranked = rank_internal_link_search_results(query, reranked)
+        if intent == "related_content":
+            reranked = rank_related_content_search_results(query, reranked)
         candidate_count = len(reranked)
         collapsed_count = 0
         duplicate_media_count = 0
+        recommendation_quality = {
+            "document_duplicates_collapsed": 0,
+            "weak_candidates_suppressed": 0,
+            "strong_or_review_candidates": 0,
+        }
+        if intent in {"internal_links", "related_content"}:
+            reranked, recommendation_quality = apply_recommendation_quality_controls(
+                reranked,
+                max_results=max_results,
+            )
         if result_granularity == "document":
             reranked, collapsed_count = _collapse_search_results_by_document(reranked)
         if intent == "media_library_search":
             reranked, duplicate_media_count = collapse_media_search_duplicates(reranked)
         returned = reranked[:max_results]
-        return returned, rerank, {
-            "strategy": (
-                "best_ranked_chunk_per_document"
-                if result_granularity == "document"
-                else "ranked_chunks"
-            ),
-            "candidate_count": candidate_count,
-            "returned_count": len(returned),
-            "duplicate_chunks_collapsed": collapsed_count,
-            "duplicate_media_collapsed": duplicate_media_count,
-            "ranking_strategy": (
-                "semantic_plus_bounded_lexical"
-                if intent == "media_library_search"
-                else "semantic"
-            ),
-        }
+        return (
+            returned,
+            rerank,
+            {
+                "strategy": (
+                    "best_ranked_chunk_per_document"
+                    if result_granularity == "document"
+                    else "ranked_chunks"
+                ),
+                "candidate_count": candidate_count,
+                "returned_count": len(returned),
+                "duplicate_chunks_collapsed": collapsed_count,
+                "duplicate_media_collapsed": duplicate_media_count,
+                "recommendation_quality": recommendation_quality,
+                "ranking_strategy": _ranking_strategy_for_intent(intent),
+            },
+        )
+
+    def _enrich_search_reference_metadata(
+        self,
+        *,
+        site_id: str,
+        intent: str,
+        results: list[dict[str, object]],
+        source_passages: list[str],
+    ) -> list[dict[str, object]]:
+        if intent not in {"internal_links", "related_content"}:
+            return results
+        metadata_by_post_id = self.repository.reference_metadata_for_post_ids(
+            site_id=site_id,
+            post_ids=[_coerce_int(result.get("post_id"), default=0) for result in results],
+        )
+        enriched: list[dict[str, object]] = []
+        candidates = (
+            _attach_source_anchor_evidence(
+                results,
+                intent=intent,
+                source_passages=source_passages,
+            )
+            if intent == "internal_links"
+            else results
+        )
+        for result in candidates:
+            candidate = dict(result)
+            post_id = _coerce_int(candidate.get("post_id"), default=0)
+            metadata = metadata_by_post_id.get(post_id, {})
+            candidate["taxonomies"] = _normalize_public_taxonomies(
+                metadata.get("taxonomies") if isinstance(metadata, dict) else None
+            )
+            enriched.append(candidate)
+        return enriched
 
     def _maybe_rerank_results(
         self,
@@ -1271,6 +1549,7 @@ class SiteKnowledgeService:
         backend: SiteKnowledgeVectorBackend | None = self.vector_backend
         if backend is None:
             return None
+        initial_limit = min(max(1, max_results * 4), 80)
         hits = backend.search(
             site_id=site_id,
             query_embedding=query_embedding,
@@ -1278,8 +1557,33 @@ class SiteKnowledgeService:
             statuses=statuses,
             source_types=source_types,
             current_post_id=current_post_id,
-            limit=min(max(1, max_results * 4), 80),
+            limit=initial_limit,
         )
+        initial_document_count = len(
+            {(hit.source_type, hit.post_id) for hit in hits}
+        )
+        if (
+            intent == "related_content"
+            and initial_limit < 80
+            and initial_document_count < max_results
+        ):
+            try:
+                expanded_hits = backend.search(
+                    site_id=site_id,
+                    query_embedding=query_embedding,
+                    post_types=post_types,
+                    statuses=statuses,
+                    source_types=source_types,
+                    current_post_id=current_post_id,
+                    limit=80,
+                )
+            except SiteKnowledgeBackendError:
+                expanded_hits = []
+            if (
+                len({(hit.source_type, hit.post_id) for hit in expanded_hits})
+                > initial_document_count
+            ):
+                hits = expanded_hits
         return [_serialize_vector_hit(hit, intent=intent, query=query) for hit in hits]
 
     def _sync_response(
@@ -1881,6 +2185,16 @@ def _normalize_result_granularity(value: Any) -> str:
     return normalized if normalized in ALLOWED_RESULT_GRANULARITIES else "chunk"
 
 
+def _ranking_strategy_for_intent(intent: str) -> str:
+    if intent == "media_library_search":
+        return "semantic_plus_bounded_lexical"
+    if intent == "internal_links":
+        return "semantic_plus_bounded_lexical_topic_anchor"
+    if intent == "related_content":
+        return "semantic_plus_bounded_title_topic"
+    return "semantic"
+
+
 def _embedding_space_readiness(
     *,
     indexed_embedding_models: list[str],
@@ -2095,6 +2409,7 @@ def _serialize_vector_hit(
     *,
     intent: str,
     query: str = "",
+    source_passages: list[str] | None = None,
 ) -> dict[str, object]:
     return _serialize_search_result(
         post_id=hit.post_id,
@@ -2108,6 +2423,7 @@ def _serialize_vector_hit(
         score=hit.score,
         intent=intent,
         query=query,
+        source_passages=source_passages,
     )
 
 
@@ -2124,6 +2440,7 @@ def _serialize_search_result(
     score: float,
     intent: str,
     query: str = "",
+    source_passages: list[str] | None = None,
 ) -> dict[str, object]:
     match = _query_match_info(query, chunk_text)
     result: dict[str, object] = {
@@ -2144,6 +2461,11 @@ def _serialize_search_result(
         "suggested_use": _suggested_use_for_intent(intent),
     }
     if intent == "internal_links":
+        anchor_evidence = _source_anchor_evidence(
+            source_passages or [],
+            title=title,
+            chunk_text=chunk_text,
+        )
         result.update(
             {
                 "anchor_text_candidates": _anchor_text_candidates(title, chunk_text),
@@ -2156,6 +2478,9 @@ def _serialize_search_result(
                 "insert_mode": "wordpress_local_only",
             }
         )
+        if anchor_evidence:
+            result["anchor_or_context"] = anchor_evidence["anchor_or_context"]
+            result["anchor_evidence"] = anchor_evidence
     elif intent == "writing_context":
         result.update(
             {
@@ -2481,6 +2806,144 @@ def _anchor_text_candidates(title: str, chunk_text: str) -> list[str]:
         if phrase and phrase not in candidates:
             candidates.append(phrase[:80])
     return candidates[:3]
+
+
+def _attach_source_anchor_evidence(
+    results: list[dict[str, object]],
+    *,
+    intent: str,
+    source_passages: list[str],
+) -> list[dict[str, object]]:
+    if intent != "internal_links" or not source_passages:
+        return results
+    projected: list[dict[str, object]] = []
+    for item in results:
+        result = dict(item)
+        anchor_evidence = _source_anchor_evidence(
+            source_passages,
+            title=str(result.get("title") or ""),
+            chunk_text=str(result.get("chunk") or ""),
+        )
+        if anchor_evidence:
+            result["anchor_or_context"] = anchor_evidence["anchor_or_context"]
+            result["anchor_evidence"] = anchor_evidence
+        projected.append(result)
+    return projected
+
+
+def _source_anchor_evidence(
+    source_passages: list[str],
+    *,
+    title: str,
+    chunk_text: str,
+) -> dict[str, object]:
+    candidates: list[tuple[int, int, int, str, str]] = []
+    normalized_title = _normalize_anchor_comparison(title)
+    for target_priority, target_field, target_text in (
+        (2, "title", title),
+        (1, "chunk", chunk_text),
+    ):
+        target = " ".join(str(target_text or "").split())
+        if not target:
+            continue
+        for passage_index, passage in enumerate(source_passages):
+            for phrase in _exact_shared_anchor_phrases(passage, target):
+                normalized_phrase = _normalize_anchor_comparison(phrase)
+                if not _is_specific_anchor_phrase(phrase) or normalized_phrase == normalized_title:
+                    continue
+                candidates.append(
+                    (
+                        target_priority,
+                        len(normalized_phrase),
+                        -passage_index,
+                        phrase,
+                        target_field,
+                    )
+                )
+
+    if not candidates:
+        return {}
+    _, _, negative_passage_index, phrase, target_field = max(candidates)
+    return {
+        "anchor_or_context": phrase,
+        "basis": "exact_source_target_phrase",
+        "source_passage_index": -negative_passage_index,
+        "target_field": target_field,
+        "exact_source_passage_match": True,
+    }
+
+
+def _exact_shared_anchor_phrases(source: str, target: str) -> list[str]:
+    phrases: list[str] = []
+    source_lower = source.lower()
+    for size in range(min(48, len(target)), 3, -1):
+        seen: set[str] = set()
+        for start in range(0, len(target) - size + 1):
+            raw = target[start : start + size]
+            phrase = raw.strip(" \t\n\r,.;:!?，。；：！？、()[]{}<>\"'")
+            if len(phrase) < 4 or phrase in seen:
+                continue
+            # Most target windows do not occur in the source. Reject those with
+            # a cheap substring lookup before checking ASCII word boundaries.
+            if phrase.lower() not in source_lower:
+                continue
+            phrase_start = start + raw.find(phrase)
+            if _splits_ascii_word(target, phrase_start, len(phrase)):
+                continue
+            seen.add(phrase)
+            offset = _exact_anchor_offset(source_lower, phrase.lower())
+            if offset < 0:
+                continue
+            exact = source[offset : offset + len(phrase)]
+            if _is_specific_anchor_phrase(exact):
+                phrases.append(exact)
+        if phrases:
+            break
+    return phrases
+
+
+def _exact_anchor_offset(source: str, phrase: str) -> int:
+    offset = source.find(phrase)
+    while offset >= 0:
+        if not _splits_ascii_word(source, offset, len(phrase)):
+            return offset
+        offset = source.find(phrase, offset + 1)
+    return -1
+
+
+def _splits_ascii_word(text: str, start: int, length: int) -> bool:
+    end = start + length
+    starts_inside_word = (
+        start > 0
+        and bool(re.match(r"[A-Za-z0-9_]", text[start : start + 1]))
+        and bool(re.match(r"[A-Za-z0-9_]", text[start - 1 : start]))
+    )
+    ends_inside_word = (
+        end < len(text)
+        and bool(re.match(r"[A-Za-z0-9_]", text[end - 1 : end]))
+        and bool(re.match(r"[A-Za-z0-9_]", text[end : end + 1]))
+    )
+    return starts_inside_word or ends_inside_word
+
+
+def _normalize_anchor_comparison(value: str) -> str:
+    return re.sub(r"[^\w\u3400-\u9fff]+", "", str(value or "").lower(), flags=re.UNICODE)
+
+
+def _is_specific_anchor_phrase(value: str) -> bool:
+    phrase = " ".join(str(value or "").split()).strip()
+    normalized = _normalize_anchor_comparison(phrase)
+    if not 4 <= len(normalized) <= 48:
+        return False
+    if normalized in GENERIC_INTERNAL_LINK_ANCHORS:
+        return False
+    if re.search(r"[。！？!?；;\n\r]", phrase):
+        return False
+    ascii_words = re.findall(r"[A-Za-z0-9]+", phrase)
+    has_cjk = bool(re.search(r"[\u3400-\u9fff]", phrase))
+    if not has_cjk and len(ascii_words) < 2 and len(normalized) < 6:
+        return False
+    return True
 
 
 def _duplicate_risk_for_score(score: float) -> str:

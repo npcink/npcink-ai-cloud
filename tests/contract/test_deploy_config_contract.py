@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,23 @@ RUNTIME_DATA_KEY_ID = "runtime-data-v1"
 
 def _cloud_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _workflow_action_refs(action_name: str) -> list[str]:
+    workflow_root = _cloud_root() / ".github" / "workflows"
+    workflow_paths = sorted([*workflow_root.glob("*.yml"), *workflow_root.glob("*.yaml")])
+    refs: list[str] = []
+    for workflow_path in workflow_paths:
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        for job in workflow.get("jobs", {}).values():
+            if not isinstance(job, dict):
+                continue
+            for step in job.get("steps", []):
+                if isinstance(step, dict) and str(step.get("uses", "")).startswith(
+                    f"{action_name}@"
+                ):
+                    refs.append(str(step["uses"]))
+    return refs
 
 
 def test_small_customer_preflight_accepts_application_or_edge_fail_closed_ready_status() -> None:
@@ -160,7 +178,6 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         ".env.example",
         "docker-compose.dev.yml",
         "docker-compose.pg18-proof.yml",
-        "docker-compose.p5-b4-runtime-proof.yml",
         "docker-compose.prod.yml",
         "docker-compose.runtime.yml",
         "package.json",
@@ -2001,7 +2018,7 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "ops-worker:" in dev_compose_text
     assert "python -m app.workers.ops_cadence" in dev_compose_text
     assert "npcink-ai-cloud-ops-worker:dev" in dev_compose_text
-    assert "python -m app.dev.baseline_status" in baseline_script
+    assert "python -m app.ops.baseline_status" in baseline_script
     assert "/internal/service/observability/summary" in release_smoke_script
     assert "/health/operational-ready" in release_smoke_script
     assert "deploy/remote-smoke.sh" in release_smoke_script
@@ -2472,8 +2489,14 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "artifacts/pytest-files-shard-${{ matrix.shard }}.txt" in ci_workflow
     assert "python3 scripts/report-junit-timing.py" in ci_workflow
     assert "actions/checkout@v6" in ci_workflow
-    assert "actions/setup-node@v6" in ci_workflow
-    assert "actions/setup-python@v6" in ci_workflow
+    setup_node_refs = _workflow_action_refs("actions/setup-node")
+    setup_python_refs = _workflow_action_refs("actions/setup-python")
+    assert setup_node_refs
+    assert setup_python_refs
+    assert all(re.fullmatch(r"actions/setup-node@v[1-9]\d*", ref) for ref in setup_node_refs)
+    assert all(
+        re.fullmatch(r"actions/setup-python@v[1-9]\d*", ref) for ref in setup_python_refs
+    )
     assert "pnpm/action-setup@v6" in ci_workflow
     assert "docker/setup-buildx-action@v4" in ci_workflow
     assert "gitleaks/gitleaks-action@v3" in ci_workflow
@@ -2703,18 +2726,6 @@ def test_lightweight_release_policy_gate_is_documented(tmp_path: Path) -> None:
                     "timezone": "Asia/Shanghai",
                 },
                 "open-pull-requests-limit": 2,
-                "labels": ["dependencies"],
-            },
-            {
-                "package-ecosystem": "docker",
-                "directory": "/",
-                "schedule": {
-                    "interval": "weekly",
-                    "day": "monday",
-                    "time": "10:30",
-                    "timezone": "Asia/Shanghai",
-                },
-                "open-pull-requests-limit": 1,
                 "labels": ["dependencies"],
             },
         ],

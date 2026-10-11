@@ -91,7 +91,7 @@ export function AdminInspectorDrawer({
         ref={drawerRef}
         className="flex h-full w-full flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:max-w-[32rem]"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
           <div className="min-w-0">
             {eyebrow ? (
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -121,7 +121,7 @@ export function AdminInspectorDrawer({
             <span aria-hidden="true">×</span>
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">{children}</div>
         {footer ? (
           <footer className="border-t border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-950">
             {footer}

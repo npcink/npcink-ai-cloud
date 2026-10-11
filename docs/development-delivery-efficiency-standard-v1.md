@@ -170,6 +170,23 @@ Timing receipts must separate at least:
 - health and smoke;
 - operator or approval wait when known.
 
+For local consumer acceptance, use the repository's bounded command recorder:
+
+```bash
+pnpm run timing:acceptance -- \
+  --receipt .tmp/acceptance-timing.json \
+  --stage wordpress_readiness \
+  --question "Are WordPress, Addon, Toolbox, and Cloud ready?" \
+  -- env NPCINK_WP_ROOT="/path/to/public" python3 scripts/wordpress_editor_readiness.py --json
+```
+
+Each invocation appends one `npcink.acceptance_timing.v1` event with UTC
+timestamps, monotonic duration, exit code, status, and the bounded command.
+The recorder does not capture stdout/stderr or inspect the child process
+environment separately; the command list is retained in the receipt, including
+any inline `env` assignments. Do not put secrets in command arguments. A failed
+command remains a useful failed-stage receipt and is not automatically retried.
+
 For production, distinguish total workflow duration from the recorded mutation
 sequence and from the sum of non-duplicated phases. For CI, record the executed
 job set, shard topology, critical-path job, and selected versus full test scope.

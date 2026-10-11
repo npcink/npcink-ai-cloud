@@ -212,6 +212,22 @@ def test_commercial_repository_preserves_runtime_and_knowledge_query_semantics(
                     metadata_json=None,
                     last_indexed_at=now,
                 ),
+                SiteKnowledgeDocument(
+                    site_id="site_runtime_primary",
+                    post_id=3,
+                    source_type="media",
+                    source_id=3,
+                    parent_post_id=None,
+                    post_type="attachment",
+                    post_status="publish",
+                    title="Media",
+                    url="https://primary.example.test/media.jpg",
+                    modified_gmt=None,
+                    content_hash="hash-media",
+                    last_sync_run_id="run_succeeded",
+                    metadata_json=None,
+                    last_indexed_at=now,
+                ),
                 SiteKnowledgeChunk(
                     site_id="site_runtime_primary",
                     post_id=1,
@@ -254,9 +270,9 @@ def test_commercial_repository_preserves_runtime_and_knowledge_query_semantics(
         assert repository.summarize_site_knowledge_current_counts(
             site_ids=["site_runtime_primary", "site_runtime_other", "missing"]
         ) == {
-            "site_runtime_primary": {"documents": 1, "chunks": 2},
-            "site_runtime_other": {"documents": 1, "chunks": 0},
-            "missing": {"documents": 0, "chunks": 0},
+            "site_runtime_primary": {"documents": 2, "media_documents": 1, "chunks": 2},
+            "site_runtime_other": {"documents": 1, "media_documents": 0, "chunks": 0},
+            "missing": {"documents": 0, "media_documents": 0, "chunks": 0},
         }
 
         session.add_all(

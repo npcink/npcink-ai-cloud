@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   projectServiceSettingsForms,
+  type ProviderBudgetSetting,
   type ServiceSetting,
   type ServiceSettingsData,
 } from '@/features/admin/service-settings/service-settings-model';
@@ -52,6 +53,40 @@ function response(overrides: Partial<ServiceSettingsData['settings']> = {}): Ser
         note: 'August rate',
       }),
       site_relink_policy: setting('site_relink_policy', { cooldown_days: 120 }),
+      platform_preferences: setting('platform_preferences', {
+        timezone: 'Asia/Shanghai',
+      }),
+      media_recognition_policy: setting('media_recognition_policy', {
+        model_id: 'vision-model',
+        window_start: '23:30',
+        window_end: '05:15',
+        daily_limit: 250,
+      }),
+      provider_budget: {
+        ...setting(
+          'provider_account_spend_budget',
+          {
+            warning_ratio: 0.85,
+            conservative_unpriced_cost_usd: 0.05,
+            require_provider_configuration: true,
+            providers: [
+              { provider_id: 'openai', account_class: 'paid', daily_usd: 5, monthly_usd: 100 },
+            ],
+          },
+          { enabled: false, configured: false, status: 'disabled' }
+        ),
+        setting_kind: 'runtime',
+        runtime: {
+          status: 'ok',
+          warning_ratio: 0.85,
+          configured_provider_count: 1,
+          missing_provider_ids: [],
+          items: [],
+          connections: [],
+          generated_at: '2026-08-15T00:00:00Z',
+          period_timezone: 'UTC',
+        },
+      },
       ...overrides,
     },
   };
@@ -93,8 +128,71 @@ describe('service settings response projection', () => {
         note: 'August rate',
       },
       siteRelink: { enabled: true, cooldown_days: '120' },
+      platformPreferences: { timezone: 'Asia/Shanghai' },
+      providerBudget: {
+        enabled: false,
+        warning_ratio: '85',
+        conservative_unpriced_cost_usd: '0.05',
+        require_provider_configuration: true,
+        providers: [
+          {
+            row_id: 'provider-budget-row-0',
+            provider_id: 'openai',
+            account_class: 'paid',
+            daily_usd: '5',
+            monthly_usd: '100',
+          },
+        ],
+      },
     });
     expect(projection.emailConfigExpanded).toBe(false);
+  });
+
+  it('supplies the disabled provider budget fallback when an older response omits it', () => {
+    const source = response();
+    delete (source.settings as Record<string, unknown>).provider_budget;
+
+    const projection = projectServiceSettingsForms(source);
+
+    expect(projection.data.settings.provider_budget).toMatchObject({
+      setting_id: 'provider_account_spend_budget',
+      enabled: false,
+      configured: false,
+      status: 'disabled',
+    });
+    expect(projection.savedForms.providerBudget).toEqual({
+      enabled: false,
+      warning_ratio: '80',
+      conservative_unpriced_cost_usd: '0.05',
+      require_provider_configuration: true,
+      providers: [],
+    });
+  });
+
+  it('keeps the warning-ratio form input numeric-safe for partial or noisy configs', () => {
+    const partial = response({
+      provider_budget: {
+        ...setting('provider_account_spend_budget', {}, { enabled: false, status: 'disabled' }),
+        setting_kind: 'runtime',
+        config: null as unknown as ProviderBudgetSetting['config'],
+      },
+    });
+
+    expect(projectServiceSettingsForms(partial).savedForms.providerBudget.warning_ratio).toBe('80');
+    expect(projectServiceSettingsForms(partial).savedForms.providerBudget.conservative_unpriced_cost_usd).toBe('0.05');
+
+    const noisy = response({
+      provider_budget: {
+        ...setting(
+          'provider_account_spend_budget',
+          { warning_ratio: 0.855, conservative_unpriced_cost_usd: 0.02, providers: [] },
+          { enabled: true, status: 'ready' },
+        ),
+        setting_kind: 'runtime',
+      },
+    });
+
+    expect(projectServiceSettingsForms(noisy).savedForms.providerBudget.warning_ratio).toBe('85.5');
   });
 
   it('supplies the accepted accounting fallback when an older response omits it', () => {
@@ -144,5 +242,17 @@ describe('service settings response projection', () => {
       from_email: 'sender@example.com',
     });
     expect(projection.emailConfigExpanded).toBe(true);
+  });
+
+  it('uses the platform timezone default when the preference is empty', () => {
+    const projection = projectServiceSettingsForms(
+      response({
+        platform_preferences: setting('platform_preferences', { timezone: '' }),
+      })
+    );
+
+    expect(projection.savedForms.platformPreferences).toEqual({
+      timezone: 'Asia/Shanghai',
+    });
   });
 });

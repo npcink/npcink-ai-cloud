@@ -4,6 +4,7 @@ export interface ApiErrorInit {
   message: string;
   details?: unknown;
   traceId?: string;
+  requestId?: string;
   revision?: string;
   rawBody?: unknown;
   cause?: unknown;
@@ -14,6 +15,7 @@ export class ApiError extends Error {
   readonly errorCode: string;
   readonly details: unknown;
   readonly traceId: string;
+  readonly requestId: string;
   readonly revision: string;
   readonly rawBody: unknown;
   override readonly cause: unknown;
@@ -25,6 +27,7 @@ export class ApiError extends Error {
     this.errorCode = init.errorCode;
     this.details = init.details;
     this.traceId = init.traceId || '';
+    this.requestId = init.requestId || '';
     this.revision = init.revision || '';
     this.rawBody = init.rawBody;
     this.cause = init.cause;

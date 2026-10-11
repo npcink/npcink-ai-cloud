@@ -634,6 +634,7 @@ def test_candidate_engine_canonicalizes_vision_provider_errors_before_persistenc
 def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
     primary = SequenceProvider("primary", [provider_success("reject")])
     fallback = SequenceProvider("fallback", [provider_success("accept")])
+    usage_recorder = RecordingUsageRecorder()
 
     def prepare_output(run: RunRecord, **kwargs: Any) -> ProviderOutputDecision:
         output = kwargs["provider_output"]
@@ -643,6 +644,7 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
                 output=output,
                 error_code="provider.output_quality_rejected",
                 error_message="empty output",
+                usage_context={"output_quality_reason": "test_rejected_shape"},
             )
         return ProviderOutputDecision(accepted=True, output=output)
 
@@ -650,6 +652,7 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
         providers={"primary": primary, "fallback": fallback},
         controller=RecordingRunController(),
         output_preparer=prepare_output,
+        usage_recorder=usage_recorder,
     )
     with get_session(database_url) as session:
         repository = RuntimeRepository(session)
@@ -675,6 +678,47 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
             None,
         ]
         assert calls[1].fallback_used is True
+        assert usage_recorder.calls[0]["usage_context"] == {
+            "output_quality_reason": "test_rejected_shape",
+        }
+
+
+def test_candidate_engine_rejected_output_retries_before_success(database_url: str) -> None:
+    primary = SequenceProvider(
+        "primary",
+        [provider_success("reject"), provider_success("accept")],
+    )
+    service = execution_service(
+        providers={"primary": primary},
+        controller=RecordingRunController(),
+        output_preparer=lambda run, **kwargs: ProviderOutputDecision(
+            accepted=kwargs["provider_output"]["output_text"] == "accept",
+            output=kwargs["provider_output"],
+            error_code="provider.output_quality_rejected",
+            error_message="empty output",
+        ),
+    )
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_rejected_retry",
+            policy={"allow_fallback": False, "max_retries": 1},
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "model-primary", "instance-primary")],
+            input_payload={},
+        )
+
+        assert run.status == "succeeded"
+        calls = repository.list_provider_calls(run.run_id)
+        assert len(calls) == 2
+        assert calls[0].error_code == "provider.output_quality_rejected"
+        assert calls[0].retry_count == 0
+        assert calls[1].error_code is None
+        assert calls[1].retry_count == 1
 
 
 def test_finalization_failure_follows_success_evidence_and_cancel_stops_attempts(
@@ -849,7 +893,7 @@ def test_provider_execution_module_and_service_keep_the_extraction_boundary() ->
 
     assert direct_repository_calls == 0
     assert direct_commercial_calls == 0
-    assert extracted_calls == 12
+    assert extracted_calls == 14
     assert {"_execute_existing_run", "_execute_candidate_chain"} <= service_function_names
     assert service_provider_execute_calls == 0
     assert any(

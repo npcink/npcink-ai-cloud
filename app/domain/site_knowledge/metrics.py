@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, desc, func, select
+from sqlalchemy import case, delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_usage_repository import CommercialUsageRepository
@@ -24,6 +24,41 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_SYNC_ABILITY,
 )
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
+
+
+def cleanup_site_knowledge_observability(
+    database_url: str,
+    *,
+    retention_days: int,
+    batch_size: int,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Prune bounded Site Knowledge telemetry while preserving index truth."""
+    cutoff = (now or datetime.now(UTC)).astimezone(UTC) - timedelta(
+        days=max(1, int(retention_days or 1))
+    )
+    limit = max(1, int(batch_size or 1))
+    with get_session(database_url) as session:
+        deleted: dict[str, int] = {}
+        for model, timestamp_column, label in (
+            (SiteKnowledgeSearchMetric, SiteKnowledgeSearchMetric.created_at, "search_metrics"),
+            (SiteKnowledgeIndexJobMetric, SiteKnowledgeIndexJobMetric.created_at, "index_metrics"),
+            (SiteKnowledgeIndexSnapshot, SiteKnowledgeIndexSnapshot.captured_at, "snapshots"),
+        ):
+            ids = list(
+                session.scalars(
+                    select(model.id)
+                    .where(timestamp_column < cutoff)
+                    .order_by(timestamp_column.asc(), model.id.asc())
+                    .limit(limit)
+                )
+            )
+            if ids:
+                result = session.execute(delete(model).where(model.id.in_(ids)))
+                deleted[label] = int(getattr(result, "rowcount", 0) or 0)
+            else:
+                deleted[label] = 0
+        return deleted
 
 
 def record_site_knowledge_run_metric(
@@ -121,7 +156,7 @@ class SiteKnowledgeObservabilityService:
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
-        bounded_hours = min(168, max(1, int(window_hours or 24)))
+        bounded_hours = min(720, max(1, int(window_hours or 24)))
         start_at = current_time - timedelta(hours=bounded_hours)
 
         with get_session(self.database_url) as session:
@@ -261,6 +296,16 @@ class SiteKnowledgeObservabilityService:
                 self._snapshot_summary(snapshot) for snapshot in latest_snapshots.values()
             ],
             "errors": [self._error_summary(row) for row in error_rows],
+        }
+
+    def get_account_document_breakdown(self, *, site_ids: list[str]) -> dict[str, object]:
+        with get_session(self.database_url) as session:
+            sites = SiteKnowledgeRepository(session).list_document_counts_by_site(site_ids)
+        return {
+            "sites": sites,
+            "total_indexed_document_count": sum(
+                _coerce_int(site.get("indexed_document_count"), default=0) for site in sites
+            ),
         }
 
     def _latest_snapshots(

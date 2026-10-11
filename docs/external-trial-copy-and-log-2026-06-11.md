@@ -1,6 +1,7 @@
 # External Trial Copy And Log - 2026-06-11
 
-Status: active controlled-trial template.
+Status: historical controlled-trial template. Revalidate copy against
+`docs/early-product-validation-and-minimal-telemetry-standard-v1.md` before reuse.
 
 Purpose: keep first-batch trial messaging and evidence capture consistent while
 Npcink AI Cloud remains pre-release and operator-managed.

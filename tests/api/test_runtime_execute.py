@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -82,6 +83,7 @@ from tests.conftest import (
     merge_json_headers,
     seed_provider_model_allowlist,
     seed_site_auth,
+    seed_verified_capability_evidence_for_catalog,
 )
 
 
@@ -102,6 +104,7 @@ def _build_client(
     init_schema(database_url)
     if bootstrap_catalog:
         CatalogService(database_url, providers=providers).refresh_catalog()
+        seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -145,7 +148,7 @@ def _runtime_service_settings(database_url: str) -> Settings:
 def _runtime_callback_metadata(
     callback_url: str,
     *,
-    callback_id: str = "runtime_terminal",
+    registration_id: str = "runtime_terminal",
 ) -> dict[str, object]:
     settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
     return {
@@ -158,7 +161,7 @@ def _runtime_callback_metadata(
                     "runtime-callback-secret-for-tests-32b",
                     settings=settings,
                 ),
-                "callback_id": callback_id,
+                "registration_id": registration_id,
             }
         }
     }
@@ -238,6 +241,7 @@ def test_runtime_auto_web_search_enriches_provider_input(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -259,7 +263,9 @@ def test_runtime_auto_web_search_enriches_provider_input(
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        **kwargs: Any,
     ) -> WebSearchExecutionResult:
+        del kwargs
         assert input_payload["query"] == "latest WordPress AI search trends"
         assert input_payload["intent"] == "news"
         return WebSearchExecutionResult(
@@ -366,6 +372,7 @@ def test_runtime_auto_web_search_preserves_zhihu_deepsearch_credit_lane(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -381,7 +388,9 @@ def test_runtime_auto_web_search_preserves_zhihu_deepsearch_credit_lane(
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        **kwargs: Any,
     ) -> WebSearchExecutionResult:
+        del kwargs
         captured_input.update(input_payload)
         return WebSearchExecutionResult(
             result_json={
@@ -471,6 +480,7 @@ def test_runtime_auto_web_search_is_included_in_budget_preflight(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -516,6 +526,7 @@ def test_runtime_auto_web_search_provider_failure_is_metered_explicitly(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -592,6 +603,7 @@ def test_runtime_auto_web_search_dry_run_does_not_call_search(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -648,6 +660,7 @@ def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
     provider = RecordingProviderAdapter()
     init_schema(database_url)
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
     seed_site_auth(
         database_url,
         site_id="site_alpha",
@@ -670,7 +683,9 @@ def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
         contract_version: str,
         input_payload: dict[str, Any],
         run_id: str,
+        **kwargs: Any,
     ) -> WebSearchExecutionResult:
+        del kwargs
         captured_input.update(input_payload)
         return WebSearchExecutionResult(
             result_json={
@@ -1253,7 +1268,7 @@ def test_image_generation_provider_errors_never_publish_upstream_bodies(
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
         site_metadata=_runtime_callback_metadata(
             "https://example.com/runtime",
-            callback_id=f"image-generation-error-{status_code}",
+            registration_id=f"image-generation-error-{status_code}",
         ),
     )
     payload = {
@@ -3451,7 +3466,7 @@ def test_callback_delivery_worker_dispatches_terminal_run_payload(
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
         site_metadata=_runtime_callback_metadata(
             "https://example.com/runtime",
-            callback_id="runtime-terminal-dispatch",
+            registration_id="runtime-terminal-dispatch",
         ),
     )
     payload = {
@@ -3513,9 +3528,13 @@ def test_callback_delivery_worker_dispatches_terminal_run_payload(
         }
     ]
     assert len(callback_requests) == 1
-    assert callback_requests[0]["url"] == "https://example.com/runtime"
+    assert callback_requests[0]["url"] == "https://93.184.216.34/runtime"
+    assert callback_requests[0]["headers"]["host"] == "example.com"
     assert callback_requests[0]["headers"]["x-npcink-cloud-event"] == "runtime.run.terminal"
-    assert callback_requests[0]["headers"]["x-npcink-callback-id"] == "runtime-terminal-dispatch"
+    expected_callback_id = "runtime_delivery_" + hashlib.sha256(
+        f"runtime-terminal-dispatch|{run_id}|runtime.run.terminal".encode()
+    ).hexdigest()
+    assert callback_requests[0]["headers"]["x-npcink-callback-id"] == expected_callback_id
     assert callback_requests[0]["headers"]["x-npcink-signature"] != ""
     assert callback_requests[0]["headers"]["x-npcink-timestamp"] != ""
     assert callback_requests[0]["payload"]["run_id"] == run_id
@@ -3572,7 +3591,7 @@ def test_callback_delivery_worker_retries_retryable_failures(
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
         site_metadata=_runtime_callback_metadata(
             "https://example.com/retry",
-            callback_id="runtime-terminal-retry",
+            registration_id="runtime-terminal-retry",
         ),
     )
     payload = {
@@ -4065,7 +4084,7 @@ def test_execute_route_rejects_plaintext_registered_callback_secret_without_ciph
                     "callback_url": "https://example.com/runtime",
                     "key_id": "runtime_callback_key",
                     "secret": "legacy-plaintext-secret",
-                    "callback_id": "runtime_terminal",
+                    "registration_id": "runtime_terminal",
                 }
             }
         },
@@ -5188,3 +5207,307 @@ def test_openclaw_write_like_analysis_returns_proposal_input_envelope(tmp_path: 
         assert result["requires_local_approval"] is True
     finally:
         dispose_engine(database_url)
+
+
+def test_image_generation_translates_reviewed_chinese_prompt_before_provider_call(
+    tmp_path: Path,
+) -> None:
+    class TranslatingImageProvider(OpenAIProviderAdapter):
+        def __init__(self) -> None:
+            super().__init__(sample_catalog_profile="free-gpt55")
+            self.requests: list[ProviderExecutionRequest] = []
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            self.requests.append(request)
+            if request.execution_kind == "text":
+                return ProviderExecutionResult(
+                    output={
+                        "output_text": (
+                            "Create a quiet editorial workspace with natural light, "
+                            "a laptop, research notes, and no visible text or logos."
+                        )
+                    },
+                    latency_ms=18,
+                    tokens_in=20,
+                    tokens_out=18,
+                    cost=0.0,
+                )
+            return super().execute(request)
+
+    provider = TranslatingImageProvider()
+    database_url, client = _build_client(tmp_path, providers={"openai": provider})
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "自然光下的安静工作空间，不要文字和 Logo。",
+            "aspect_ratio": "16:9",
+            "resolution": "medium",
+            "review": {
+                "source_prompt_reviewed_by_operator": True,
+                "source_prompt_locale": "zh_CN",
+                "prompt_translation_mode": "required",
+                "provider_prompt_reviewed_by_operator": False,
+            },
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-translate-001",
+            nonce="nonce-image-translate-001",
+            trace_id="traceimagetranslate001000000000",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+    replay_headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-translate-001",
+            nonce="nonce-image-translate-002",
+            trace_id="traceimagetranslate002000000000",
+            body=body,
+        )
+    )
+    replay = client.post("/v1/runtime/execute", content=body, headers=replay_headers)
+
+    assert response.status_code == 200, response.text
+    assert replay.status_code == 200, replay.text
+    assert response.json()["data"]["status"] == "succeeded"
+    assert replay.json()["data"]["idempotent_replay"] is True
+    assert [request.execution_kind for request in provider.requests] == ["text", "image_generation"]
+    translation_messages = provider.requests[0].input_payload["messages"]
+    assert translation_messages[1]["content"] == payload["input"]["prompt"]
+    generated_prompt = provider.requests[1].input_payload["prompt"]
+    assert generated_prompt.startswith("Create a quiet editorial workspace")
+    assert "自然光" not in provider.requests[1].input_payload["prompt"]
+    with get_session(database_url) as session:
+        provider_call_events = list(
+            session.scalars(
+                select(UsageMeterEvent)
+                .where(UsageMeterEvent.meter_key == "provider_calls")
+                .order_by(UsageMeterEvent.id)
+            )
+        )
+    assert len(provider_call_events) == 2
+    assert provider_call_events[0].payload_json["source_type"] == "image_prompt_translation"
+    assert "source_type" not in provider_call_events[1].payload_json
+
+    dispose_engine(database_url)
+
+
+def test_image_generation_stops_when_reviewed_prompt_translation_fails(
+    tmp_path: Path,
+) -> None:
+    class FailingTranslationProvider(OpenAIProviderAdapter):
+        def __init__(self) -> None:
+            super().__init__(sample_catalog_profile="free-gpt55")
+            self.requests: list[ProviderExecutionRequest] = []
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            self.requests.append(request)
+            if request.execution_kind == "text":
+                raise ProviderExecutionError(
+                    "provider.upstream_error",
+                    "sensitive upstream translation response",
+                    retryable=True,
+                )
+            return super().execute(request)
+
+    provider = FailingTranslationProvider()
+    database_url, client = _build_client(tmp_path, providers={"openai": provider})
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "自然光下的安静工作空间。",
+            "aspect_ratio": "16:9",
+            "resolution": "medium",
+            "review": {
+                "source_prompt_reviewed_by_operator": True,
+                "source_prompt_locale": "zh_CN",
+                "prompt_translation_mode": "required",
+                "provider_prompt_reviewed_by_operator": False,
+            },
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-translate-fail-001",
+            nonce="nonce-image-translate-fail-001",
+            trace_id="traceimagetranslatefail00100000",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+    replay_headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-translate-fail-001",
+            nonce="nonce-image-translate-fail-002",
+            trace_id="traceimagetranslatefail00200000",
+            body=body,
+        )
+    )
+    replay = client.post("/v1/runtime/execute", content=body, headers=replay_headers)
+
+    assert response.status_code == 200, response.text
+    assert replay.status_code == 200, replay.text
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert data["error_code"] == "image_generation.prompt_translation_failed"
+    assert data["error_message"] == "image prompt translation failed before generation"
+    assert "sensitive upstream translation response" not in response.text
+    assert [request.execution_kind for request in provider.requests] == ["text"]
+    assert replay.json()["data"]["idempotent_replay"] is True
+
+    unreviewed_payload = {
+        **payload,
+        "input": {
+            **payload["input"],
+            "review": {
+                **payload["input"]["review"],
+                "source_prompt_reviewed_by_operator": False,
+            },
+        },
+    }
+    unreviewed_body = json.dumps(unreviewed_payload).encode("utf-8")
+    unreviewed = client.post(
+        "/v1/runtime/execute",
+        content=unreviewed_body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key="idem-image-translate-unreviewed-001",
+                nonce="nonce-image-translate-unreviewed-001",
+                trace_id="traceimagetranslateunreviewed001",
+                body=unreviewed_body,
+            )
+        ),
+    )
+    assert unreviewed.status_code == 200, unreviewed.text
+    assert unreviewed.json()["data"]["status"] == "failed"
+    assert unreviewed.json()["data"]["error_code"] == (
+        "image_generation.prompt_translation_review_invalid"
+    )
+    assert [request.execution_kind for request in provider.requests] == ["text"]
+
+    dispose_engine(database_url)
+
+
+def test_image_generation_retries_prompt_translation_before_generation(
+    tmp_path: Path,
+) -> None:
+    class RetryTranslationProvider(OpenAIProviderAdapter):
+        def __init__(self) -> None:
+            super().__init__(sample_catalog_profile="free-gpt55")
+            self.requests: list[ProviderExecutionRequest] = []
+
+        def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+            self.requests.append(request)
+            text_attempts = sum(
+                item.execution_kind == "text" for item in self.requests
+            )
+            if request.execution_kind == "text" and text_attempts == 1:
+                raise ProviderExecutionError(
+                    "provider.rate_limited",
+                    "retry translation",
+                    retryable=True,
+                )
+            if request.execution_kind == "text":
+                return ProviderExecutionResult(
+                    output={"output_text": "Create a quiet editorial workspace."},
+                    latency_ms=12,
+                    tokens_in=10,
+                    tokens_out=8,
+                    cost=0.0,
+                )
+            return super().execute(request)
+
+    provider = RetryTranslationProvider()
+    database_url, client = _build_client(tmp_path, providers={"openai": provider})
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "retry_max": 1,
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "安静的编辑工作空间。",
+            "aspect_ratio": "16:9",
+            "resolution": "medium",
+            "review": {
+                "source_prompt_reviewed_by_operator": True,
+                "source_prompt_locale": "zh_CN",
+                "prompt_translation_mode": "required",
+                "provider_prompt_reviewed_by_operator": False,
+            },
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    response = client.post(
+        "/v1/runtime/execute",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key="idem-image-translate-retry-001",
+                nonce="nonce-image-translate-retry-001",
+                trace_id="traceimagetranslateretry0010000",
+                body=body,
+            )
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["status"] == "succeeded"
+    assert [request.execution_kind for request in provider.requests] == [
+        "text",
+        "text",
+        "image_generation",
+    ]
+    with get_session(database_url) as session:
+        provider_calls = list(
+            session.scalars(
+                select(ProviderCallRecord)
+                .where(ProviderCallRecord.run_id == response.json()["data"]["run_id"])
+                .order_by(ProviderCallRecord.created_at.asc())
+            )
+        )
+    assert [call.retry_count for call in provider_calls[:2]] == [0, 1]
+
+    dispose_engine(database_url)

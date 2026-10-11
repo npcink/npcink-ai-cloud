@@ -71,7 +71,13 @@ def get_session(database_url: str) -> Iterator[Session]:
 
 def init_schema(database_url: str) -> None:
     # Test-only helper for sqlite fixtures and focused local harnesses.
-    Base.metadata.create_all(bind=get_engine(database_url))
+    engine = get_engine(database_url)
+    with engine.begin() as connection:
+        if engine.dialect.name == "sqlite":
+            # sqlite3's legacy transaction mode does not BEGIN for DDL. Without
+            # this, every table/index is committed separately on the test disk.
+            connection.exec_driver_sql("BEGIN")
+        Base.metadata.create_all(bind=connection)
 
 
 def dispose_engine(database_url: str) -> None:

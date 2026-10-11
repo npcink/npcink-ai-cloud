@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -49,11 +49,16 @@ ARTIFACT_MIN_TTL_MINUTES = 15
 ARTIFACT_MAX_TTL_MINUTES = 60
 BATCH_CONTEXT_MAX_ITEMS = 1000
 BATCH_CONTEXT_MAX_CHUNK_SIZE = 20
+MEDIA_GOVERNANCE_CANARY_MAX_ITEMS = 10
+MEDIA_GOVERNANCE_CANARY_REQUEST_CONTRACT = "media_governance_canary.v1"
+MEDIA_GOVERNANCE_CANARY_RESULT_CONTRACT = "media_governance_canary_result.v1"
+MEDIA_GOVERNANCE_MINIMUM_SAVINGS_BASIS_POINTS = 1500
 
 MEDIA_UPLOAD_ARTIFACT_TYPE = "media_upload_artifact"
 MEDIA_UPLOAD_RESULT_CONTRACT = "media_upload_result.v1"
 MEDIA_DERIVATIVE_ARTIFACT_TYPE = "media_derivative_artifact"
-MEDIA_DERIVATIVE_RESULT_CONTRACT = "media_derivative_result.v1"
+MEDIA_DERIVATIVE_RESULT_CONTRACT = "media_derivative_result.v3"
+AUTO_SAFE_OPTIMIZATION_PROFILE = "auto_safe.v1"
 
 BLOCKED_RESPONSE_FIELDS = frozenset(
     {
@@ -108,15 +113,34 @@ class CropPayload(BaseModel):
     position: str = "center"
 
 
-class ImageTransformPayload(BaseModel):
+class ManualImageTransformPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    mode: Literal["manual"]
     target_format: str
     max_width: int = 1200
+    resize_mode: Literal["fit", "preserve"] = "fit"
     quality: int = 82
     source_media_type: str = "image"
     crop: CropPayload | None = None
     watermark: WatermarkPayload | None = None
+
+
+class AutoSafeImageTransformPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["auto_safe"]
+    optimization_profile: Literal["auto_safe.v1"]
+    target_format: Literal["webp"] = "webp"
+    max_width: Literal[1920] = 1920
+    resize_mode: Literal["fit", "preserve"] = "preserve"
+    source_media_type: Literal["image"] = "image"
+
+
+ImageTransformPayload = Annotated[
+    ManualImageTransformPayload | AutoSafeImageTransformPayload,
+    Field(discriminator="mode"),
+]
 
 
 class BatchContextPayload(BaseModel):
@@ -127,6 +151,20 @@ class BatchContextPayload(BaseModel):
     item_count: int = 1
     chunk_size: int = 10
     explicit_avif: bool = False
+
+
+class MediaGovernanceCanaryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["media_governance_canary.v1"]
+    candidate_id: str = Field(pattern=r"^mgc_[0-9a-f]{24}$")
+    snapshot_id: str = Field(min_length=1, max_length=160)
+    source_sha256: str = Field(pattern=r"^(?:sha256:)?[0-9a-fA-F]{64}$")
+    evidence_revision: str = Field(min_length=1, max_length=160)
+    minimum_savings_basis_points: int = MEDIA_GOVERNANCE_MINIMUM_SAVINGS_BASIS_POINTS
+    require_dimensions_unchanged: Literal[True] = True
+    skip_if_not_beneficial: Literal[True] = True
+    retain_originals: Literal[True] = True
 
 
 class MediaUploadRequest(BaseModel):
@@ -155,6 +193,7 @@ class MediaJobRequest(BaseModel):
     watermark_artifact_id: str | None = Field(default=None, min_length=1, max_length=191)
     params: ImageTransformPayload
     batch_context: BatchContextPayload | None = None
+    governance: MediaGovernanceCanaryPayload | None = None
     result_ttl_minutes: int = ARTIFACT_DEFAULT_TTL_MINUTES
 
     @model_validator(mode="after")
@@ -164,11 +203,11 @@ class MediaJobRequest(BaseModel):
             raise ValueError(f"target_format '{payload.target_format}' is not supported")
         if payload.source_media_type not in ALLOWED_SOURCE_MEDIA_TYPES:
             raise ValueError(f"source_media_type '{payload.source_media_type}' is not supported")
-        if not (1 <= payload.quality <= 100):
+        if isinstance(payload, ManualImageTransformPayload) and not (1 <= payload.quality <= 100):
             raise ValueError("quality must be between 1 and 100")
         if not (1 <= payload.max_width <= 10000):
             raise ValueError("max_width must be between 1 and 10000")
-        if payload.crop is not None:
+        if isinstance(payload, ManualImageTransformPayload) and payload.crop is not None:
             crop = payload.crop
             if crop.type not in ALLOWED_CROP_TYPES:
                 raise ValueError(f"crop.type '{crop.type}' is not supported")
@@ -202,7 +241,35 @@ class MediaJobRequest(BaseModel):
                     "target_format 'avif' requires batch_context.explicit_avif=true "
                     "for batch requests"
                 )
-        if payload.watermark is not None:
+        if self.governance is not None:
+            governance = self.governance
+            if payload.target_format != "webp":
+                raise ValueError("governance canaries require target_format 'webp'")
+            if payload.resize_mode != "preserve":
+                raise ValueError("governance canaries require resize_mode 'preserve'")
+            if isinstance(payload, ManualImageTransformPayload) and payload.crop is not None:
+                raise ValueError("governance canaries do not allow crop")
+            if (
+                isinstance(payload, ManualImageTransformPayload)
+                and payload.watermark is not None
+            ) or self.watermark_artifact_id:
+                raise ValueError("governance canaries do not allow watermark")
+            if (
+                governance.minimum_savings_basis_points
+                != MEDIA_GOVERNANCE_MINIMUM_SAVINGS_BASIS_POINTS
+            ):
+                raise ValueError(
+                    "governance canaries require minimum_savings_basis_points=1500"
+                )
+            if (
+                self.batch_context is not None
+                and self.batch_context.item_count > MEDIA_GOVERNANCE_CANARY_MAX_ITEMS
+            ):
+                raise ValueError(
+                    "governance canaries may contain at most "
+                    f"{MEDIA_GOVERNANCE_CANARY_MAX_ITEMS} items"
+                )
+        if isinstance(payload, ManualImageTransformPayload) and payload.watermark is not None:
             watermark = payload.watermark
             if watermark.type not in ALLOWED_WATERMARK_TYPES:
                 raise ValueError(f"watermark.type '{watermark.type}' is not supported")

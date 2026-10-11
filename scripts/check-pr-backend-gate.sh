@@ -169,6 +169,10 @@ echo "[info] Running targeted PR backend gate."
 run_targeted_static() {
 	bash scripts/check-release-policy.sh
 	pnpm run test:anti-drift
+	# Whole-repo full-rule ruff: the changed-file lane below only checks the
+	# correctness/import subset, which let style debt (E501) merge unseen in
+	# #991 and block every later PR. Full ruff over the repository is cheap.
+	.venv/bin/ruff check .
 	bash scripts/check-changed-python-quality.sh
 }
 

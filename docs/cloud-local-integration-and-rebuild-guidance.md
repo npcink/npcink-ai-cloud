@@ -1,6 +1,14 @@
 # Cloud Local Integration And Rebuild Guidance
 
-Status: active guidance
+Status: historical integration and rebuild guidance; not current transport authority.
+
+2026-09-11 navigation review: the Adapter-direct-to-Cloud topology below is a
+2026-05-30 proposal snapshot. Current transport belongs to Cloud Addon; use the
+[current WordPress entry-to-feedback flow](current-wordpress-ai-entry-to-feedback-flow-v1.md)
+and [content-generation boundary](cloud-content-generation-boundary-v1.md).
+The historical no-full-rewrite reasoning is retained; current structural work
+follows the [structural remediation standard](structural-remediation-delivery-standard-v1.md).
+
 Date: 2026-05-30
 
 ## Purpose

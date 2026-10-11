@@ -1,6 +1,7 @@
 # External Trial Handoff Summary - 2026-06-15
 
-Status: active handoff summary.
+Status: historical handoff summary. Current readiness authority is
+`docs/internal-new-user-readiness-gate-v1.md`.
 
 Purpose: summarize the recent Cloud positioning, content-risk boundary,
 external-trial preparation work, and next required action so another engineer or
@@ -153,7 +154,7 @@ Committed and pushed:
 Main files:
 
 - `docs/history/trials/2026/external-trial-record-magick-ai-local-2026-06-10.md`
-- `docs/external-trial-user-briefing-copy-zh-2026-06-10.md`
+- `history/trials/2026/external-trial-user-briefing-copy-zh-2026-06-10.md`
 
 Purpose:
 
@@ -182,7 +183,7 @@ Committed and pushed:
 
 Main file:
 
-- `docs/ai-credit-ledger-detail-summary-2026-06-13.md`
+- `history/engineering/2026/ai-credit-ledger-detail-summary-2026-06-13.md`
 
 Purpose:
 

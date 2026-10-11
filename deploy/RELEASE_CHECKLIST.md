@@ -147,7 +147,7 @@ evidence.
 
 - [ ] all eight Provider Connection ciphertexts and four Service Setting secret
   entries were migrated losslessly by
-  `python -m app.dev.reencrypt_service_secrets`; migration preserved credential
+  `python -m app.ops.reencrypt_service_secrets`; migration preserved credential
   values without manual entry or a replacement save operation
 
 #### Current first-install secret checks resume
@@ -273,7 +273,7 @@ the unchecked evidence above is not authoritative for current deployment.
 Complete these items before migrating an existing user/site dataset or enabling
 real-user Portal access. A fresh empty database may satisfy the inventory with
 zero-row counts. Follow the evidence boundary and rationale in
-[User Identity, Membership, and Site Authorization Closeout](../docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md#131-read-only-inventory-result-and-its-limit)
+[User Identity, Membership, and Site Authorization Closeout](../docs/history/engineering/2026/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md#131-read-only-inventory-result-and-its-limit)
 and the normative ownership contract in
 [ADR-031](../docs/decisions/031-principal-owned-portal-site-authorization.md)
 plus its fail-closed bootstrap correction in
@@ -313,11 +313,12 @@ private runtime configuration or expand the receipt with customer fields.
 
 - [ ] the exact release canonical CVE allowlist matches the reviewed active
   exception state and the four-part allowlist change discipline above is
-  complete; the current OpenSSL `CVE-2026-14456` exception contains exactly six
-  `libcrypto3`/`libssl3` version `3.5.7-r0` entries for `api`, `frontend`, and
-  `nginx`, expires on `2026-09-19`, and is used only while production has no
-  QUIC, HTTP/3, or UDP listener; quoted and unquoted Compose UDP protocols must
-  both fail the release-policy gate
+  complete; the canonical CVE allowlist is empty. The six OpenSSL
+  `CVE-2026-14456` exceptions for `libcrypto3`/`libssl3` version `3.5.7-r0`
+  expired on `2026-09-19` and were retired on 2026-09-20. Retirement is not
+  evidence that images are fixed; remaining blocking findings require repaired
+  images and a fresh scan. QUIC, HTTP/3, and UDP remain prohibited;
+  quoted and unquoted Compose UDP protocols must both fail the release-policy gate
 - [ ] the exact release binds the clean production source to a fresh passed
   Linux/AMD64 scan with zero unallowlisted blocking findings; an expired or
   retired controlled-validation receipt, no-user switch, or historical CVE ID
@@ -664,8 +665,8 @@ initialization.
 - [ ] the same process accepted the operator's receipt, completed the
   independent PostgreSQL 16 restore/rehearsal, then recorded successful
   production `inventory`, `dry-run`, `apply`, and new-key-only `verify` phases
-  from both `python -m app.dev.reencrypt_runtime_data` and
-  `python -m app.dev.reencrypt_service_secrets`; evidence proved Runtime Data
+  from both `python -m app.ops.reencrypt_runtime_data` and
+  `python -m app.ops.reencrypt_service_secrets`; evidence proved Runtime Data
   `18 = 17 + 1`, Service Settings `12 = 8 + 4`, and `30` total rows
 - [ ] the canonical-JSON row-identifier SHA-256 values matched the reviewed
   Runtime Data `675cce444dbbf801bc8ab7fb35b717888c878e062097e5fb7f2f5f110e5a764c`

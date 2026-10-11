@@ -16,6 +16,7 @@ interface PortalSiteConnectPanelProps {
   isLoadingAccounts?: boolean;
   onRetryAccounts?: () => void;
   onClose?: () => void;
+  onSubmittingChange?: (busy: boolean) => void;
   initialSiteUrl?: string;
   initialSiteName?: string;
   addonReturnUrl?: string;
@@ -28,6 +29,7 @@ export function PortalSiteConnectPanel({
   isLoadingAccounts = false,
   onRetryAccounts,
   onClose,
+  onSubmittingChange,
   initialSiteUrl = '',
   initialSiteName = '',
   addonReturnUrl = '',
@@ -77,6 +79,7 @@ export function PortalSiteConnectPanel({
     }
 
     setIsSubmitting(true);
+    onSubmittingChange?.(true);
     try {
       const response = await portalClient.createAddonConnection({
         account_id: selectedAccountId,
@@ -103,6 +106,7 @@ export function PortalSiteConnectPanel({
       );
     } finally {
       setIsSubmitting(false);
+      onSubmittingChange?.(false);
     }
   };
 

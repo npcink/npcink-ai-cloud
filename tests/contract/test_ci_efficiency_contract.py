@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -402,11 +404,45 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "tests/e2e/admin-operator-path.spec.ts" in workflow
     assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
     assert (
-        "admin operator path smoke|portal workspace interaction path|"
-        "Alipay return polls|account projections remain available|"
-        "account-level support stays available"
+        "portal workspace interaction path|Alipay return polls|"
+        "account projections remain available|account-level support stays available"
     ) in workflow
     assert workflow.count("if: needs.classify.outputs.frontend_e2e_required == 'true'") == 2
+
+
+def test_critical_frontend_paths_run_admin_operator_spec_without_title_filter() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    section = workflow.split("Critical frontend paths", 1)[1]
+    admin_lines = [
+        line.strip()
+        for line in section.splitlines()
+        if "tests/e2e/admin-operator-path.spec.ts" in line
+    ]
+    assert admin_lines, "the critical e2e lane must invoke the admin operator-path spec"
+    # The admin operator-path spec runs in full. A --grep title filter on this
+    # invocation hid return-context link drift from CI for seven weeks until
+    # #1020 aligned the assertions.
+    assert all("--grep" not in line for line in admin_lines)
+
+
+def test_portal_workspace_critical_grep_alternatives_match_real_test_titles() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    grep_lines = [
+        line
+        for line in workflow.splitlines()
+        if "portal workspace interaction path|" in line
+    ]
+    assert grep_lines, "the portal workspace spec must stay behind a title grep"
+    pattern_match = re.search(r"'([^']*portal workspace interaction path[^']*)'", grep_lines[0])
+    assert pattern_match is not None
+    spec = (ROOT / "frontend" / "tests" / "e2e" / "portal-workspace-path.spec.ts").read_text(
+        encoding="utf-8"
+    )
+    titles = re.findall(r"^test\('([^']+)'", spec, re.MULTILINE)
+    for alternative in pattern_match.group(1).split("|"):
+        assert any(alternative in title for title in titles), (
+            f"portal critical grep alternative {alternative!r} matches no test title"
+        )
 
 
 @pytest.mark.skipif(
@@ -448,10 +484,24 @@ def test_targeted_backend_gate_parallelizes_contracts_and_selects_impacted_tests
     assert "mapfile" not in source
     assert '$(<"${TMP_CONTRACTS}")' not in source
     assert source.count("--diff-filter=ACMRD") == 6
+    # The targeted static lane must lint the whole repository with full ruff
+    # rules; the changed-file correctness subset alone let style debt merge
+    # unseen (#991) and block every later PR.
+    targeted_static_body = source.split("run_targeted_static() {", 1)[1].split("}", 1)[0]
+    assert ".venv/bin/ruff check ." in targeted_static_body
     assert source.count("--no-renames") == 6
     assert "--diff-filter=ACMR " not in source
     assert "select-pr-backend-tests.py" in source
     assert "select-pr-contract-tests.py" in source
+    # service.py route changes must pull in the cross-module observation window
+    # contract tests: #1012 widened the window limits, the impacted selection
+    # missed these two files, and the deterministic failures only surfaced on
+    # full master push runs (#1023).
+    assert '"tests/api/test_admin_observation_windows.py"' in selector
+    assert '"tests/api/test_plugin_event_history.py"' in selector
+    service_mapping = selector.split('"app/api/routes/service.py"', 1)[1].split("),", 1)[0]
+    assert "test_admin_observation_windows.py" in service_mapping
+    assert "test_plugin_event_history.py" in service_mapping
     assert "selected contract lanes cover contract impacts" in source
     assert "GLOBAL_APP_SCAN_CONTRACTS" in contract_selector
     assert "non-ordinary backend path requires all contracts" in contract_selector
@@ -633,3 +683,32 @@ def test_changed_code_coverage_reuses_shards_and_remains_advisory() -> None:
     assert '"threshold": None' in report
     assert '"scope": "app/**/*.py"' in report
     assert "does not block merging" in report
+
+
+def test_window_capability_owners_select_frontend_contracts_without_browser_lane() -> None:
+    registry = json.loads(
+        (ROOT / "frontend/src/features/admin/observability/window-capabilities.json").read_text()
+    )
+    owners = {entry["runtimeSource"] for entry in registry.values()}
+    owners.update({"app/api/routes/service.py", "scripts/check-admin-window-capabilities.py"})
+    for path in sorted(owners):
+        result = _classify(path)
+        assert result["frontend_backend_contracts_required"] == "true"
+        assert result["frontend_e2e_required"] == "false"
+    assert "python3 scripts/check-admin-window-capabilities.py" in CI_WORKFLOW.read_text()
+
+
+def test_navigation_and_route_matrix_are_executed_without_title_filters_in_ci() -> None:
+    section = CI_WORKFLOW.read_text().split("Critical frontend paths", 1)[1]
+    for spec in ("admin-navigation.spec.ts", "admin-acceptance-matrix.spec.ts"):
+        lines = [line for line in section.splitlines() if f"tests/e2e/{spec}" in line]
+        assert lines and all("--grep" not in line for line in lines)
+        assert _classify(f"frontend/tests/e2e/{spec}")["frontend_e2e_required"] == "true"
+
+
+def test_manifest_visual_selection_and_advisor_paths_are_executed() -> None:
+    section = CI_WORKFLOW.read_text().split("Critical frontend paths", 1)[1]
+    assert "node scripts/run-admin-visual-checks.mjs --ci-changed" in section
+    assert "tests/e2e/admin-ai-advisor-pc-v2.spec.ts" in section
+    for path in ("scripts/admin-visual-plan.mjs", "scripts/run-admin-visual-checks.mjs"):
+        assert _classify(path)["frontend_e2e_required"] == "true"

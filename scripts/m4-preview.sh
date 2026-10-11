@@ -3,8 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
-M4_SSH_HOST="${NPCINK_CLOUD_M4_SSH_HOST:-muze@100.102.170.79}"
+M4_SSH_HOST="${NPCINK_CLOUD_M4_SSH_HOST:-muze@172.16.3.35}"
 M4_LAN_SSH_HOST="${NPCINK_CLOUD_M4_LAN_SSH_HOST:-muze@192.168.10.200}"
+M4_TAILSCALE_SSH_HOST="${NPCINK_CLOUD_M4_TAILSCALE_SSH_HOST:-muze@100.102.170.79}"
 M4_REMOTE_DIR="${NPCINK_CLOUD_M4_REMOTE_DIR:-/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev}"
 M4_PROJECT_NAME="${NPCINK_CLOUD_M4_PROJECT_NAME:-npcink-ai-cloud-m4-dev}"
 M4_PORT="${NPCINK_CLOUD_M4_PORT:-8010}"
@@ -14,14 +15,24 @@ M4_TUNNEL_LOCAL_PORT="${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18010}"
 M4_OLLAMA_PORT="${NPCINK_CLOUD_M4_OLLAMA_PORT:-11434}"
 M4_OLLAMA_LABEL="top.mqzj.npcink-ollama-preview"
 M4_OLLAMA_PLIST="${ROOT_DIR}/deploy/${M4_OLLAMA_LABEL}.plist"
-M4_SOURCE_TRANSFER_MODE="${NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE:-relay}"
+M4_SOURCE_TRANSFER_MODE="${NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE:-direct}"
 M4_RELAY_SSH_HOST="${NPCINK_CLOUD_M4_RELAY_SSH_HOST:-root@100.90.87.36}"
+M4_RELAY_SSH_IDENTITY_FILE="${NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE:-}"
 M4_RELAY_TAILSCALE_IP="${NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP:-100.90.87.36}"
 M4_RELAY_HTTP_PORT="${NPCINK_CLOUD_M4_RELAY_HTTP_PORT:-18080}"
-M4_RELAY_BASE_DIR="/var/tmp/npcink-ai-cloud-m4-source-relay"
+M4_RELAY_HTTP_MODE="${NPCINK_CLOUD_M4_RELAY_HTTP_MODE:-transient}"
+M4_RELAY_HTTP_GROUP="${NPCINK_CLOUD_M4_RELAY_HTTP_GROUP:-nginx}"
+if [ "${M4_RELAY_HTTP_MODE}" = "nginx" ]; then
+	M4_RELAY_BASE_DIR="/var/lib/npcink-ai-cloud-m4-source-relay"
+else
+	M4_RELAY_BASE_DIR="/var/tmp/npcink-ai-cloud-m4-source-relay"
+fi
 M4_TUNNEL_READY_TIMEOUT_SECONDS="${NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS:-120}"
 M4_BROWSER_PREFLIGHT_SAMPLE_BYTES=262144
 M4_BROWSER_PREFLIGHT_MIN_BYTES_PER_SECOND=65536
+M4_ALLOW_NON_MASTER_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE:-0}"
+M4_ALLOW_DIRTY_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE:-0}"
+M4_FRONTEND_MODE="${NPCINK_CLOUD_M4_FRONTEND_MODE:-production}"
 
 DRY_RUN=0
 TMP_DIR=""
@@ -38,6 +49,8 @@ TUNNEL_PID=""
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
 SCP_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
+RELAY_SSH_ARGS=("${SSH_ARGS[@]}")
+RELAY_SCP_ARGS=("${SCP_ARGS[@]}")
 TUNNEL_PROBE_SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 ALLOWED_SERVICES="postgres redis api frontend proxy worker callback-worker ops-worker"
 
@@ -67,6 +80,7 @@ local machine, synchronized to the M4, and built/run only by M4 Docker.
 Environment overrides:
   NPCINK_CLOUD_M4_SSH_HOST
   NPCINK_CLOUD_M4_LAN_SSH_HOST
+  NPCINK_CLOUD_M4_TAILSCALE_SSH_HOST
   NPCINK_CLOUD_M4_REMOTE_DIR
   NPCINK_CLOUD_M4_PROJECT_NAME
   NPCINK_CLOUD_M4_PORT
@@ -77,8 +91,14 @@ Environment overrides:
   NPCINK_CLOUD_M4_OLLAMA_PORT
   NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE
   NPCINK_CLOUD_M4_RELAY_SSH_HOST
+  NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE
   NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP
   NPCINK_CLOUD_M4_RELAY_HTTP_PORT
+  NPCINK_CLOUD_M4_RELAY_HTTP_MODE
+  NPCINK_CLOUD_M4_RELAY_HTTP_GROUP
+  NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1 (explicit feature-branch candidate preview)
+  NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1 (explicit dirty-worktree candidate preview)
+  NPCINK_CLOUD_M4_FRONTEND_MODE=production|development (default: production)
 EOF
 }
 
@@ -119,6 +139,10 @@ validate_ssh_host() {
 }
 
 validate_target() {
+	case "${M4_FRONTEND_MODE}" in
+		production|development) ;;
+		*) fail "M4 frontend mode must be production or development" ;;
+	esac
 	case "${M4_PROJECT_NAME}" in
 		npcink-ai-cloud-m4-preview)
 			fail "legacy project name is forbidden"
@@ -152,6 +176,7 @@ validate_target() {
 	validate_port "M4 Ollama port" "${M4_OLLAMA_PORT}"
 	validate_ssh_host "M4 SSH host" "${M4_SSH_HOST}"
 	validate_ssh_host "M4 LAN SSH host" "${M4_LAN_SSH_HOST}"
+	validate_ssh_host "M4 Tailscale SSH host" "${M4_TAILSCALE_SSH_HOST}"
 	case "${M4_SOURCE_TRANSFER_MODE}" in
 		relay|direct)
 			;;
@@ -167,6 +192,33 @@ validate_target() {
 			fail "M4 relay SSH host contains unsupported characters"
 			;;
 	esac
+	if [ -n "${M4_RELAY_SSH_IDENTITY_FILE}" ]; then
+		case "${M4_RELAY_SSH_IDENTITY_FILE}" in
+		/*)
+			;;
+		*)
+			fail "M4 relay SSH identity file must be an absolute path"
+			;;
+		esac
+		[ -f "${M4_RELAY_SSH_IDENTITY_FILE}" ] ||
+			fail "M4 relay SSH identity file must be a regular file"
+		[ ! -L "${M4_RELAY_SSH_IDENTITY_FILE}" ] ||
+			fail "M4 relay SSH identity file must not be a symlink"
+		RELAY_SSH_ARGS+=(-o IdentitiesOnly=yes -i "${M4_RELAY_SSH_IDENTITY_FILE}")
+		RELAY_SCP_ARGS+=(-o IdentitiesOnly=yes -i "${M4_RELAY_SSH_IDENTITY_FILE}")
+	fi
+	case "${M4_RELAY_HTTP_MODE}" in
+		transient|nginx)
+			;;
+		*)
+			fail "M4 relay HTTP mode must be transient or nginx"
+			;;
+	esac
+	case "${M4_RELAY_HTTP_GROUP}" in
+		''|*[!A-Za-z0-9_-]*)
+			fail "M4 relay HTTP group contains unsupported characters"
+			;;
+	esac
 	validate_port "M4 relay HTTP port" "${M4_RELAY_HTTP_PORT}"
 }
 
@@ -174,19 +226,21 @@ cleanup_source_relay() {
 	if [ "${SOURCE_RELAY_ACTIVE}" != "1" ]; then
 		return 0
 	fi
-	if ssh "${SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+	if ssh "${RELAY_SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+		"${M4_RELAY_HTTP_MODE}" \
 		"${SOURCE_RELAY_UNIT}" \
 		"${SOURCE_RELAY_BUNDLE}" \
 		"${SOURCE_RELAY_DIR}" \
 		"${SOURCE_RELAY_LOCK_DIR}" \
 		"${M4_RELAY_BASE_DIR}" <<'REMOTE_RELAY_CLEANUP' >/dev/null 2>&1
 set -euo pipefail
-unit="$1"
-bundle="$2"
-run_dir="$3"
-lock_dir="$4"
-base_dir="$5"
-if [ -n "${unit}" ]; then
+http_mode="$1"
+unit="$2"
+bundle="$3"
+run_dir="$4"
+lock_dir="$5"
+base_dir="$6"
+if [ "${http_mode}" = "transient" ] && [ -n "${unit}" ]; then
 	systemctl stop "${unit}" >/dev/null 2>&1 || true
 fi
 if [ -n "${bundle}" ]; then
@@ -197,7 +251,9 @@ if [ -n "${run_dir}" ]; then
 fi
 rm -f "${lock_dir}/owner.txt"
 rmdir "${lock_dir}"
-rmdir "${base_dir}"
+if [ "${http_mode}" = "transient" ]; then
+	rmdir "${base_dir}"
+fi
 test ! -e "${bundle}"
 test ! -e "${run_dir}"
 test ! -e "${lock_dir}"
@@ -397,14 +453,21 @@ select_auto_tunnel_host() {
 		return 0
 	fi
 
-	log "LAN preview route unavailable; checking Tailscale (${M4_SSH_HOST})"
+	log "LAN preview route unavailable; checking Pgy (${M4_SSH_HOST})"
 	if probe_tunnel_host "${M4_SSH_HOST}" 5 3; then
-		TUNNEL_SELECTED_ROUTE="tailscale"
+		TUNNEL_SELECTED_ROUTE="pgy"
 		TUNNEL_SELECTED_HOST="${M4_SSH_HOST}"
 		return 0
 	fi
 
-	fail "M4 preview is unavailable through both LAN and Tailscale; verify M4 power, SSH, Docker, and Tailscale"
+	log "Pgy preview route unavailable; checking Tailscale (${M4_TAILSCALE_SSH_HOST})"
+	if probe_tunnel_host "${M4_TAILSCALE_SSH_HOST}" 5 3; then
+		TUNNEL_SELECTED_ROUTE="tailscale"
+		TUNNEL_SELECTED_HOST="${M4_TAILSCALE_SSH_HOST}"
+		return 0
+	fi
+
+	fail "M4 preview is unavailable through LAN, Pgy, and Tailscale; verify M4 power, SSH, Docker, Pgy, and Tailscale"
 }
 
 ensure_local_tunnel_port_available() {
@@ -470,7 +533,7 @@ classify_tailscale_path() {
 	local ping_output=""
 
 	if [ "${selected_route}" != "tailscale" ] &&
-		{ [ "${selected_route}" != "configured" ] || [ "${ssh_host}" != "${M4_SSH_HOST}" ]; }; then
+		[ "${ssh_host}" != "${M4_TAILSCALE_SSH_HOST}" ]; then
 		printf 'not-applicable\n'
 		return 0
 	fi
@@ -605,7 +668,7 @@ open_tunnel() {
 
 	log "local_url=http://127.0.0.1:${local_port}"
 	if [ "${auto_route}" = "1" ]; then
-		log "route_order=lan:${M4_LAN_SSH_HOST},tailscale:${M4_SSH_HOST}"
+		log "route_order=lan:${M4_LAN_SSH_HOST},pgy:${M4_SSH_HOST},tailscale:${M4_TAILSCALE_SSH_HOST}"
 		if [ "${tunnel_dry_run}" = "1" ]; then
 			ssh_host="${M4_LAN_SSH_HOST}"
 			log "dry-run uses the first candidate; no network probe is performed"
@@ -1416,20 +1479,30 @@ prepare_source_relay() {
 	source_bytes="$(wc -c < "${source_bundle}" | tr -d ' ')"
 	SOURCE_RELAY_DIR="${M4_RELAY_BASE_DIR}/${RUN_ID}"
 	SOURCE_RELAY_BUNDLE="${SOURCE_RELAY_DIR}/source-${source_sha}.tgz"
-	SOURCE_RELAY_UNIT="npcink-m4-source-${RUN_ID}.service"
-	SOURCE_RELAY_URL="http://${M4_RELAY_TAILSCALE_IP}:${M4_RELAY_HTTP_PORT}/$(basename "${SOURCE_RELAY_BUNDLE}")"
+	if [ "${M4_RELAY_HTTP_MODE}" = "nginx" ]; then
+		# SSH flattens remote argv; use a non-empty sentinel so later args keep position.
+		SOURCE_RELAY_UNIT="none"
+		SOURCE_RELAY_URL="http://${M4_RELAY_TAILSCALE_IP}:${M4_RELAY_HTTP_PORT}/${RUN_ID}/$(basename "${SOURCE_RELAY_BUNDLE}")"
+	else
+		SOURCE_RELAY_UNIT="npcink-m4-source-${RUN_ID}.service"
+		SOURCE_RELAY_URL="http://${M4_RELAY_TAILSCALE_IP}:${M4_RELAY_HTTP_PORT}/$(basename "${SOURCE_RELAY_BUNDLE}")"
+	fi
 
 	log "acquiring private source-relay lock at ${M4_RELAY_SSH_HOST}"
-	ssh "${SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+	ssh "${RELAY_SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
 		"${M4_RELAY_BASE_DIR}" \
 		"${SOURCE_RELAY_LOCK_DIR}" \
 		"${SOURCE_RELAY_DIR}" \
-		"${RUN_ID}" <<'REMOTE_RELAY_PREPARE'
+		"${RUN_ID}" \
+		"${M4_RELAY_HTTP_MODE}" \
+		"${M4_RELAY_HTTP_GROUP}" <<'REMOTE_RELAY_PREPARE'
 set -euo pipefail
 base_dir="$1"
 lock_dir="$2"
 run_dir="$3"
 run_id="$4"
+http_mode="$5"
+http_group="$6"
 lock_acquired=0
 
 cleanup_prepare() {
@@ -1439,17 +1512,29 @@ cleanup_prepare() {
 		rm -f "${lock_dir}/owner.txt"
 		rmdir "${lock_dir}" >/dev/null 2>&1 || true
 		rmdir "${run_dir}" >/dev/null 2>&1 || true
-		rmdir "${base_dir}" >/dev/null 2>&1 || true
+		if [ "${http_mode}" = "transient" ]; then
+			rmdir "${base_dir}" >/dev/null 2>&1 || true
+		fi
 	fi
 	exit "${status}"
 }
 trap cleanup_prepare EXIT
 
-command -v curl >/dev/null
-command -v python3 >/dev/null
 command -v sha256sum >/dev/null
-command -v systemd-run >/dev/null
-install -d -m 700 "${base_dir}"
+if [ "${http_mode}" = "nginx" ]; then
+	command -v getent >/dev/null
+	getent group "${http_group}" >/dev/null
+	if [ -e "${base_dir}" ] || [ -L "${base_dir}" ]; then
+		test -d "${base_dir}"
+		test ! -L "${base_dir}"
+	fi
+	install -d -m 710 -o root -g "${http_group}" "${base_dir}"
+else
+	command -v curl >/dev/null
+	command -v python3 >/dev/null
+	command -v systemd-run >/dev/null
+	install -d -m 700 "${base_dir}"
+fi
 if ! mkdir "${lock_dir}" 2>/dev/null; then
 	echo "[m4-preview] another source transfer holds ${lock_dir}" >&2
 	if [ -f "${lock_dir}/owner.txt" ]; then
@@ -1462,21 +1547,29 @@ lock_acquired=1
 	printf 'run_id=%s\n' "${run_id}"
 	printf 'started_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "${lock_dir}/owner.txt"
-mkdir "${run_dir}"
-chmod 700 "${run_dir}"
+if [ "${http_mode}" = "nginx" ]; then
+	test ! -e "${run_dir}"
+	test ! -L "${run_dir}"
+	install -d -m 700 -o root -g root "${run_dir}"
+else
+	mkdir "${run_dir}"
+	chmod 700 "${run_dir}"
+fi
 REMOTE_RELAY_PREPARE
 	SOURCE_RELAY_ACTIVE=1
 
 	log "uploading source bundle to the private Tailscale relay"
 	upload_started="${SECONDS}"
-	scp "${SCP_ARGS[@]}" "${source_bundle}" \
+	scp "${RELAY_SCP_ARGS[@]}" "${source_bundle}" \
 		"${M4_RELAY_SSH_HOST}:${SOURCE_RELAY_BUNDLE}"
 	log "source relay upload complete in $((SECONDS - upload_started))s"
 
-	ssh "${SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+	ssh "${RELAY_SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
 		"${SOURCE_RELAY_BUNDLE}" \
 		"${source_bytes}" \
 		"${source_sha}" \
+		"${M4_RELAY_HTTP_MODE}" \
+		"${M4_RELAY_HTTP_GROUP}" \
 		"${SOURCE_RELAY_UNIT}" \
 		"${M4_RELAY_HTTP_PORT}" \
 		"${M4_RELAY_TAILSCALE_IP}" \
@@ -1486,17 +1579,30 @@ set -euo pipefail
 bundle="$1"
 expected_bytes="$2"
 expected_sha="$3"
-unit="$4"
-port="$5"
-bind_ip="$6"
-run_dir="$7"
-url="$8"
+http_mode="$4"
+http_group="$5"
+unit="$6"
+port="$7"
+bind_ip="$8"
+run_dir="$9"
+url="${10}"
 
 actual_bytes="$(stat -c '%s' "${bundle}")"
 actual_sha="$(sha256sum "${bundle}" | awk '{print $1}')"
 if [ "${actual_bytes}" != "${expected_bytes}" ] || [ "${actual_sha}" != "${expected_sha}" ]; then
 	echo '[m4-preview] source relay bundle integrity mismatch' >&2
 	exit 65
+fi
+if [ "${http_mode}" = "nginx" ]; then
+	chown root:"${http_group}" "${bundle}"
+	chmod 640 "${bundle}"
+	chown root:"${http_group}" "${run_dir}"
+	chmod 710 "${run_dir}"
+	if ! systemctl is-active --quiet nginx; then
+		echo '[m4-preview] managed relay Nginx service is not active' >&2
+		exit 69
+	fi
+	exit 0
 fi
 systemd-run --quiet --collect --unit="${unit}" --property=Restart=no \
 	/usr/bin/python3 -m http.server "${port}" --bind "${bind_ip}" --directory "${run_dir}"
@@ -1513,7 +1619,7 @@ done
 echo '[m4-preview] source relay HTTP service did not become ready' >&2
 exit 69
 REMOTE_RELAY_SERVE
-	log "source relay ready on its Tailscale-only address"
+	log "source relay ${M4_RELAY_HTTP_MODE} service ready on its Tailscale-only address"
 }
 
 upload_and_apply() {
@@ -1541,6 +1647,14 @@ upload_and_apply() {
 	source_branch="$(git -C "${ROOT_DIR}" symbolic-ref --quiet --short HEAD || printf 'detached')"
 	source_dirty="$(source_dirty_state)"
 	dirty_count="$(source_dirty_count)"
+	if [ "${acceptance_state}" = "candidate" ]; then
+		if [ "${source_branch}" != "master" ] && [ "${M4_ALLOW_NON_MASTER_CANDIDATE}" != "1" ]; then
+			fail "candidate source branch is ${source_branch}; set NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1 for an explicit feature-branch preview"
+		fi
+		if [ "${source_dirty}" = "true" ] && [ "${M4_ALLOW_DIRTY_CANDIDATE}" != "1" ]; then
+			fail "candidate source worktree is dirty (${dirty_count} paths); set NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1 for an explicit dirty preview"
+		fi
+	fi
 	runtime_image_input_sha="$(runtime_image_fingerprint)"
 	frontend_image_input_sha="$(frontend_image_fingerprint)"
 	deployment_orchestration_sha="$(deployment_orchestration_fingerprint)"
@@ -1563,6 +1677,7 @@ upload_and_apply() {
 	log "worker source SHA256: ${worker_source_sha}"
 	log "migration source SHA256: ${migration_source_sha}"
 	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
+	log "frontend mode: ${M4_FRONTEND_MODE}"
 
 	if [ "${DRY_RUN}" = "1" ]; then
 		if [ "${M4_SOURCE_TRANSFER_MODE}" = "relay" ]; then
@@ -1580,7 +1695,7 @@ upload_and_apply() {
 	if [ "${M4_SOURCE_TRANSFER_MODE}" = "relay" ]; then
 		prepare_source_relay "${source_bundle}" "${source_sha}"
 	else
-		log "uploading source bundle directly to M4 by explicit fallback"
+		log "uploading source bundle directly to M4 via primary direct path"
 		scp "${SCP_ARGS[@]}" "${source_bundle}" "${M4_SSH_HOST}:${REMOTE_SOURCE_BUNDLE}"
 		SOURCE_RELAY_URL="none"
 	fi
@@ -1610,7 +1725,8 @@ upload_and_apply() {
 		"${acceptance_state}" \
 		"${promotion_pr}" \
 		"${M4_SOURCE_TRANSFER_MODE}" \
-		"${SOURCE_RELAY_URL}" <<'REMOTE_APPLY'
+		"${SOURCE_RELAY_URL}" \
+		"${M4_FRONTEND_MODE}" <<'REMOTE_APPLY'
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -1639,6 +1755,7 @@ acceptance_state="${21}"
 promotion_pr="${22}"
 source_transfer_mode="${23}"
 source_relay_url="${24}"
+export NPCINK_CLOUD_M4_FRONTEND_MODE="${25}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -2155,8 +2272,9 @@ case "${source_transfer_mode}" in
 			--retry 3 \
 			--retry-all-errors \
 			--retry-delay 1 \
+			--continue-at - \
 			--connect-timeout 10 \
-			--max-time 120 \
+			--max-time 900 \
 			--speed-limit 1024 \
 			--speed-time 20 \
 			--output "${source_bundle_partial}" \
@@ -2393,16 +2511,18 @@ else
 		--exclude 'frontend/test-results' \
 		--exclude 'deploy/nginx.m4-preview.conf' \
 		"${staging}/" "${remote_dir}/"
-	nginx_config_incoming="${remote_dir}/deploy/.nginx.m4-preview.conf.${run_id}.incoming"
-	test ! -e "${nginx_config_incoming}"
-	install -m 644 \
-		"${staging}/deploy/nginx.m4-preview.conf" \
-		"${nginx_config_incoming}"
-	test "$(shasum -a 256 "${nginx_config_incoming}" | awk '{print $1}')" = \
-		"$(shasum -a 256 "${staging}/deploy/nginx.m4-preview.conf" | awk '{print $1}')"
-	mv -f "${nginx_config_incoming}" \
-		"${remote_dir}/deploy/nginx.m4-preview.conf"
-	nginx_config_incoming=""
+	if [ "${nginx_config_changed}" = "1" ]; then
+		nginx_config_incoming="${remote_dir}/deploy/.nginx.m4-preview.conf.${run_id}.incoming"
+		test ! -e "${nginx_config_incoming}"
+		install -m 644 \
+			"${staging}/deploy/nginx.m4-preview.conf" \
+			"${nginx_config_incoming}"
+		test "$(shasum -a 256 "${nginx_config_incoming}" | awk '{print $1}')" = \
+			"$(shasum -a 256 "${staging}/deploy/nginx.m4-preview.conf" | awk '{print $1}')"
+		mv -f "${nginx_config_incoming}" \
+			"${remote_dir}/deploy/nginx.m4-preview.conf"
+		nginx_config_incoming=""
+	fi
 	# END atomic M4 source commit
 	work_dir="${remote_dir}"
 fi
@@ -2421,6 +2541,16 @@ compose=(
 )
 
 "${compose[@]}" config --quiet
+
+proxy_id="$("${compose[@]}" ps -a -q proxy)"
+if [ -n "${proxy_id}" ]; then
+	proxy_state="$(docker inspect -f '{{.State.Status}}' "${proxy_id}")"
+	if [ "${proxy_state}" != "running" ] ||
+		! docker exec "${proxy_id}" test -f /etc/nginx/conf.d/default.conf; then
+		nginx_config_changed=1
+		echo '[m4-preview] proxy config mount is unavailable; recreate required'
+	fi
+fi
 frontend_resolved_config_sha="$(
 	"${compose[@]}" config --format json |
 		python3 -c '
@@ -2622,19 +2752,19 @@ prefetch_base_image() {
 # BEGIN M4 runtime image build recipe
 prefetch_python_base_image() {
 	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc' \
+		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc' \
 		"${python_base_image}" \
 		python \
-		'sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc'
+		'sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc'
 }
 
 prefetch_runtime_base_images() {
 	prefetch_python_base_image
 	prefetch_base_image \
-		'ghcr.nju.edu.cn/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc' \
+		'ghcr.nju.edu.cn/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500' \
 		"${uv_base_image}" \
 		uv \
-		'sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc'
+		'sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500'
 }
 
 build_runtime_image() {
@@ -2647,14 +2777,14 @@ build_runtime_image() {
 			return 1
 			;;
 	esac
-	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc AS uv' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc AS builder' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc AS runtime' Dockerfile
+	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 AS uv' Dockerfile
+	grep -Fq 'FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS builder' Dockerfile
+	grep -Fq 'FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS runtime' Dockerfile
 	echo '[m4-preview] using verified M4-local base aliases; pinned source digests remain unchanged'
 	tail -n +2 Dockerfile |
 		sed \
-			-e "s#ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc#${uv_base_image}#" \
-			-e "s#python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc#${python_base_image}#" \
+			-e "s#ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500#${uv_base_image}#" \
+			-e "s#python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc#${python_base_image}#" \
 			-e 's#--timeout 60#--timeout 300#' |
 		docker build \
 			--pull=false \
@@ -2822,11 +2952,7 @@ else
 	fi
 	if [ "${nginx_config_changed}" = "1" ]; then
 		stack_touched=1
-		proxy_id="$("${compose[@]}" ps -q proxy)"
-		if [ -n "${proxy_id}" ]; then
-			"${compose[@]}" exec --interactive=false -T proxy nginx -s reload >/dev/null 2>&1 ||
-				"${compose[@]}" restart proxy
-		fi
+		"${compose[@]}" up -d --no-build --pull never --force-recreate proxy
 	else
 		echo '[m4-preview] proxy config is unchanged; proxy reload skipped'
 	fi
@@ -2836,9 +2962,10 @@ fi
 wait_for_http() {
 	url="$1"
 	expected="$2"
+	max_attempts="${3:-60}"
 	attempt=0
-	while [ "${attempt}" -lt 60 ]; do
-		code="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" || true)"
+	while [ "${attempt}" -lt "${max_attempts}" ]; do
+		code="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "${url}" || true)"
 		if [ "${code}" = "${expected}" ]; then
 			return 0
 		fi
@@ -2850,7 +2977,8 @@ wait_for_http() {
 }
 
 wait_for_http "http://127.0.0.1:${preview_port}/health/live" 200
-wait_for_http "http://127.0.0.1:${preview_port}/" 200
+# A compiled preview needs a bounded build window before serving its first page.
+wait_for_http "http://127.0.0.1:${preview_port}/" 200 150
 
 for service in postgres redis api frontend proxy worker callback-worker ops-worker; do
 	container_id="$("${compose[@]}" ps -q "${service}")"
@@ -2922,6 +3050,7 @@ printf '%s\n' "${migration_source_sha}" > "${deployed_migration_source_marker}"
 	printf 'frontend_source_sha256=%s\n' "${frontend_source_sha}"
 	printf 'frontend_source_revision=%s\n' "${frontend_runtime_revision}"
 	printf 'frontend_config_sha256=%s\n' "${frontend_resolved_config_sha}"
+	printf 'frontend_mode=%s\n' "${NPCINK_CLOUD_M4_FRONTEND_MODE}"
 	printf 'worker_source_sha256=%s\n' "${worker_source_sha}"
 	printf 'migration_source_sha256=%s\n' "${migration_source_sha}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"

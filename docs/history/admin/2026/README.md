@@ -1,4 +1,5 @@
 # Admin Acceptance Evidence - 2026
+Status: historical evidence index.
 
 This collection preserves dated Admin UI acceptance evidence. These records
 describe the state accepted at the time and do not replace current standards

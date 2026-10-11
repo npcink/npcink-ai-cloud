@@ -4,6 +4,11 @@
 
 Accepted.
 
+2026-10-06: Free activation timing is superseded by
+[ADR-058](058-registration-verified-account-free-entitlement.md).
+The original record below is retained; verified Addon site connection,
+capacity, one-time exchange and runtime-key rules remain applicable.
+
 ## Date
 
 2026-07-26.

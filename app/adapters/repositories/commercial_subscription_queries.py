@@ -2,10 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.models import AccountSubscription, Site
+from app.core.models import (
+    ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+    Account,
+    AccountSubscription,
+    AccountUserMembership,
+    Principal,
+    Site,
+)
 
 
 class CommercialSubscriptionQueries:
@@ -34,6 +41,7 @@ class CommercialSubscriptionQueries:
         status: str | None = None,
         statuses: list[str] | None = None,
         account_id: str | None = None,
+        customer_query: str | None = None,
         account_ids: list[str] | None = None,
         site_id: str | None = None,
         site_ids: list[str] | None = None,
@@ -54,6 +62,33 @@ class CommercialSubscriptionQueries:
                 return []
             statement = statement.where(AccountSubscription.account_id.in_(account_ids))
         joined_sites = False
+        joined_customer = False
+        normalized_customer_query = str(customer_query or "").strip().casefold()
+        if normalized_customer_query:
+            pattern = f"%{normalized_customer_query}%"
+            statement = (
+                statement
+                .join(Account, Account.account_id == AccountSubscription.account_id)
+                .outerjoin(
+                    AccountUserMembership,
+                    and_(
+                        AccountUserMembership.account_id == Account.account_id,
+                        AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                    ),
+                )
+                .outerjoin(
+                    Principal,
+                    Principal.principal_id == AccountUserMembership.principal_id,
+                )
+                .where(
+                    or_(
+                        func.lower(Account.name).like(pattern),
+                        func.lower(Account.account_id).like(pattern),
+                        func.lower(Principal.email).like(pattern),
+                    )
+                )
+            )
+            joined_customer = True
         if site_id:
             statement = statement.join(
                 Site,
@@ -79,7 +114,7 @@ class CommercialSubscriptionQueries:
             AccountSubscription.created_at.desc(),
             AccountSubscription.subscription_id.desc(),
         )
-        if joined_sites:
+        if joined_sites or joined_customer:
             statement = statement.distinct()
         if offset > 0:
             statement = statement.offset(offset)
@@ -93,16 +128,42 @@ class CommercialSubscriptionQueries:
         status: str | None = None,
         statuses: list[str] | None = None,
         account_id: str | None = None,
+        customer_query: str | None = None,
         plan_id: str | None = None,
         current_period_end_before: datetime | None = None,
     ) -> int:
-        statement = select(func.count(AccountSubscription.subscription_id))
+        statement = select(func.count(func.distinct(AccountSubscription.subscription_id)))
         if status:
             statement = statement.where(AccountSubscription.status == status)
         if statuses:
             statement = statement.where(AccountSubscription.status.in_(statuses))
         if account_id:
             statement = statement.where(AccountSubscription.account_id == account_id)
+        normalized_customer_query = str(customer_query or "").strip().casefold()
+        if normalized_customer_query:
+            pattern = f"%{normalized_customer_query}%"
+            statement = (
+                statement
+                .join(Account, Account.account_id == AccountSubscription.account_id)
+                .outerjoin(
+                    AccountUserMembership,
+                    and_(
+                        AccountUserMembership.account_id == Account.account_id,
+                        AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                    ),
+                )
+                .outerjoin(
+                    Principal,
+                    Principal.principal_id == AccountUserMembership.principal_id,
+                )
+                .where(
+                    or_(
+                        func.lower(Account.name).like(pattern),
+                        func.lower(Account.account_id).like(pattern),
+                        func.lower(Principal.email).like(pattern),
+                    )
+                )
+            )
         if plan_id:
             statement = statement.where(AccountSubscription.plan_id == plan_id)
         if current_period_end_before is not None:

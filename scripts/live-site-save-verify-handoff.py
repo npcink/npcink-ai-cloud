@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from app.dev.live_site_save_verify_handoff import main
+from app.ops.live_site_save_verify_handoff import main
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+
 WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID = "wp-ai.short-text"
 WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID = "wp-ai.editorial"
 WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID = "wp-ai.classification"
-WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID = "wp-ai.alt-text-vision"
 WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID = "wp-ai.image-generation"
 WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID = "wp-ai.audio-generation"
 
@@ -14,7 +15,7 @@ WP_AI_CONNECTOR_PROFILE_IDS = (
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
-    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
+    VISION_AI_PROFILE_ID,
     WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
 )
@@ -44,8 +45,11 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         label="Short text",
         execution_kind="text",
         tasks=(
+            "content_translation",
             "excerpt_generation",
+            "image_prompt_generation",
             "meta_description",
+            "slug_generation",
             "title_generation",
             "audio_summary_script",
         ),
@@ -53,7 +57,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         timeout_ms=45_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
-        max_retries=0,
+        max_retries=1,
         description=(
             "Low-latency WordPress AI suggestions for titles, SEO text, excerpts, "
             "and audio summary scripts."
@@ -69,12 +73,13 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
             "comment_reply_suggest",
             "content_rewrite",
             "content_summary",
+            "editorial_updates",
         ),
         ordered_tiers=("free-gpt55", "hosted-free", "balanced", "economy", "quality"),
-        timeout_ms=45_000,
+        timeout_ms=60_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
-        max_retries=0,
+        max_retries=1,
         description=(
             "Bounded editorial suggestions for summaries, rewrites, and reviewable "
             "replies."
@@ -89,29 +94,30 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         tasks=(
             "comment_moderation",
             "content_classification",
+            "editorial_notes",
         ),
         ordered_tiers=("free-gpt55", "hosted-free", "balanced", "economy"),
         timeout_ms=25_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
-        max_retries=0,
+        max_retries=1,
         description="Structured taxonomy and moderation suggestions for WordPress AI tasks.",
     ),
     WordPressAIConnectorProfileSpec(
-        profile_id=WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
+        profile_id=VISION_AI_PROFILE_ID,
         group_id="alt_text_vision",
         routing_intent="media.alt_text_vision",
-        label="Alt text vision",
+        label="Vision understanding",
         execution_kind="vision",
         tasks=("alt_text_suggest",),
         ordered_tiers=("default", "quality"),
-        timeout_ms=45_000,
+        timeout_ms=60_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
         max_retries=0,
         description=(
-            "Vision model used to generate reviewable WordPress media alt text "
-            "suggestions from a bounded image reference."
+            "Understands image subjects, scenes, and visible text for WordPress alt text, "
+            "site media recognition, and image semantic search."
         ),
     ),
     WordPressAIConnectorProfileSpec(

@@ -91,6 +91,7 @@ from app.domain.commercial.mixins._billing_mixin import (
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 
 AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
     CREDIT_LEDGER_EVENT_CONSUME,
@@ -367,6 +368,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             usage_summary = usage_repository.summarize_usage_meter_events_for_admin(
                 since=usage_since
             )
+            provider_budget_projection = ProviderBudgetService().admin_projection(
+                session=session
+            )
             expiring_subscriptions = subscription_repository.list_subscriptions(
                 statuses=active_subscription_statuses,
                 current_period_end_before=now + timedelta(days=30),
@@ -486,6 +490,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "event_count": usage_event_count,
                 "totals": usage_totals if isinstance(usage_totals, dict) else {},
             },
+            "provider_budget": provider_budget_projection,
             "recent_audit_summary": {
                 "window_minutes": max(1, audit_window_minutes),
                 "items": recent_audit,
@@ -2259,8 +2264,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             for runs_by_site in (interactive_runs_by_site, background_runs_by_site)
             for value in runs_by_site.values()
         )
-        indexed_document_count = sum(
+        indexed_total_document_count = sum(
             int(item.get("documents") or 0) for item in knowledge_counts.values()
+        )
+        indexed_media_image_count = sum(
+            int(item.get("media_documents") or 0) for item in knowledge_counts.values()
+        )
+        indexed_document_count = max(
+            0,
+            indexed_total_document_count - indexed_media_image_count,
         )
         indexed_chunk_count = sum(
             int(item.get("chunks") or 0) for item in knowledge_counts.values()
@@ -2278,6 +2290,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             * 2
         )
         vector_document_limit = cast(Any, self)._resolve_account_vector_documents_limit(
+            snapshot=None,
+            plan_version=plan_version,
+        )
+        media_image_limit = cast(Any, self)._resolve_account_media_images_limit(
             snapshot=None,
             plan_version=plan_version,
         )
@@ -2369,6 +2385,13 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 used=indexed_document_count,
                 limit=vector_document_limit,
                 unit="document",
+            ),
+            self._quota_metric(
+                key="media_images",
+                label="Media images",
+                used=indexed_media_image_count,
+                limit=media_image_limit,
+                unit="image",
             ),
             self._quota_metric(
                 key="vector_chunks",
@@ -2764,7 +2787,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         }
         resource_limits = [
             resource_by_key[key]
-            for key in ("bound_sites", "active_sites", "vector_documents")
+            for key in ("bound_sites", "active_sites", "vector_documents", "media_images")
             if key in resource_by_key
         ]
         visible_statuses = [

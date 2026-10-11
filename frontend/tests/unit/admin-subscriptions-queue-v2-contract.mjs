@@ -21,7 +21,7 @@ assert.match(source, /isShowingRetainedResults = Boolean\(error && hasLoaded\)[\
 
 assert.match(source, /operator_risk[\s\S]*reason_code[\s\S]*payload\.summary/, 'the queue must consume backend-owned risk reasons and full-filter summary counts');
 assert.match(source, /normalizeRiskFilter[\s\S]*'needs_action'[\s\S]*params\.set\('risk', appliedRisk\)/, 'the queue must default to the server-owned needs-action risk view');
-assert.match(source, /data-ui="subscription-filter-toolbar"[\s\S]*risk_filter_label[\s\S]*status_filter_label[\s\S]*account_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'risk, lifecycle, customer, package, expiry, and sort controls must share one toolbar');
+assert.match(source, /data-ui="subscription-filter-toolbar"[\s\S]*risk_filter_label[\s\S]*status_filter_label[\s\S]*customer_filter_placeholder[\s\S]*plan_filter_placeholder[\s\S]*admin\.expires_before[\s\S]*sort_label/, 'risk, lifecycle, customer, package, expiry, and sort controls must share one toolbar');
 assert.doesNotMatch(source, /function subscriptionRiskLevel|function subscriptionPriority|subscriptions\]\.sort|subscriptions\)\.sort/, 'the browser must not rebuild subscription risk or global ordering');
 assert.match(source, /role="list"[\s\S]*data-ui="subscription-queue-item"/, 'subscriptions must render as a responsive task list');
 assert.doesNotMatch(source, /<table/, 'the primary subscription queue must not depend on a desktop table');

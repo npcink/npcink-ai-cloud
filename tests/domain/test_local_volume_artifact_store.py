@@ -1206,6 +1206,7 @@ def test_metadata_flush_failure_rollback_removes_new_store_object(
         height=1,
         checksum="sha256:ignored",
         processing_warnings=[],
+        transform_facts={},
     )
     with Session(engine) as session:
         def fail_flush() -> None:

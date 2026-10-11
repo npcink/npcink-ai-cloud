@@ -75,6 +75,7 @@ class RuntimeRunCreationCommand:
     selected_provider_id: str | None = None
     selected_model_id: str | None = None
     selected_instance_id: str | None = None
+    worker_eligible_at: datetime | None = None
 
 
 class RuntimeRunLifecycleService:
@@ -134,6 +135,7 @@ class RuntimeRunLifecycleService:
             selected_provider_id=command.selected_provider_id,
             selected_model_id=command.selected_model_id,
             selected_instance_id=command.selected_instance_id,
+            worker_eligible_at=command.worker_eligible_at,
         )
 
     def succeed_run(

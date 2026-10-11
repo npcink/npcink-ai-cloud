@@ -110,6 +110,26 @@ describe('ApiClient', () => {
     });
   });
 
+  it.each([
+    ['error envelope', () => jsonResponse({ status: 'error', error_code: 'proxy.portal_backend_timeout', message: 'private', data: {}, meta: { trace_id: '', revision: 'm6' } }, { status: 504, headers: { 'X-Request-ID': 'proxy-reference' } })],
+    ['non-JSON', () => new Response('private', { status: 502, headers: { 'content-type': 'text/html', 'X-Request-ID': 'proxy-reference' } })],
+    ['invalid JSON', () => new Response('{', { status: 502, headers: { 'content-type': 'application/json', 'X-Request-ID': 'proxy-reference' } })],
+    ['invalid envelope', () => jsonResponse({}, { status: 502, headers: { 'X-Request-ID': 'proxy-reference' } })],
+  ])('preserves the real response header reference for %s', async (_name, response) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    await expect(new ApiClient().request('/api/portal/account/audit-events')).rejects.toMatchObject({ traceId: 'proxy-reference', requestId: 'proxy-reference' });
+  });
+
+  it('preserves backend trace evidence separately from the proxy request reference', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      status: 'error', error_code: 'auth.portal_session_required', message: 'denied', data: {},
+      meta: { trace_id: 'backend-reference', revision: 'm6' },
+    }, { status: 401, headers: { 'X-Request-ID': 'proxy-reference' } })));
+    await expect(new ApiClient().request('/api/portal/account/audit-summary')).rejects.toMatchObject({
+      statusCode: 401, traceId: 'backend-reference', requestId: 'proxy-reference',
+    });
+  });
+
   it('fails closed for non-JSON responses', async () => {
     vi.stubGlobal(
       'fetch',

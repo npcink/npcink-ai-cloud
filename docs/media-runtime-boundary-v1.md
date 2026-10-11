@@ -30,7 +30,7 @@ was `run_ea365c8ef6fb4b1dbe721338208d9aee`, with derivative artifact
 `art_9ea7725f20914e819ba17d7d2ecc60ff` and explicit receive delivery
 `mdl_ae8fc3d7e06c49fc90d1872314323e50`. P3-B5 subsequently completed the exact
 package and fresh-environment release validation recorded in
-[Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md).
+[Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md).
 Production cleanup remains disabled. P3-B5 is a bounded media milestone, not
 the global P5 refactor milestone and not authorization to enable production
 orphan cleanup.
@@ -40,6 +40,31 @@ B4D smoke intentionally bypasses presentation code and calls only the stable
 Addon PHP transport seams plus Adapter generic read and Core proposal paths so
 it can freeze the cross-layer contract. It does not recreate an Adapter-owned
 media run, result, preview, or proposal-payload facade.
+
+### 1.1 Media Governance MVP
+
+The bounded media-governance runtime adds two contracts without changing that
+ownership boundary:
+
+- `media_governance_audit_request.v1` accepts a metadata-only inventory and
+  reference-evidence snapshot through `npcink-toolbox/audit-media-governance`.
+  Cloud classifies evidence gaps and low-risk static JPG/PNG candidates, then
+  returns a read-only `media_governance_audit.v1` result.
+- `media_governance_canary.v1` extends `image.transform.v1` for at most 10
+  preview candidates. It requires preserve-size WebP output, a 15 percent
+  minimum saving, unchanged dimensions, retained originals, and exact
+  snapshot/checksum/revision binding. A non-beneficial result is skipped and
+  exposes no derivative artifact.
+
+Audit snapshots and canary results are runtime evidence, not WordPress media
+truth. Cloud does not scan a customer host, infer that an unmatched file is
+safe to delete, update attachment metadata, replace files, or approve cleanup.
+The local connector must revalidate the current source and evidence revision;
+WordPress retains proposal review, final writes, rollback, and any separately
+authorized cleanup.
+
+The MVP intentionally excludes animated GIF conversion, video, log or backup
+governance, automatic source deletion, and a second task engine.
 
 ## 2. Stable Markers
 
@@ -254,7 +279,7 @@ suggestion-only visual evidence and never stores the transient data URL.
 
 Historical run-result metadata remains a creation-time snapshot. P3-B4A now
 projects current `expired`/`purged` state across run-result reads, execution
-responses, idempotent replay, and delayed callbacks without rewriting that
+responses, and idempotent replay without rewriting that
 snapshot. P3-B4B1 adds nonce-protected same-site HMAC pull, dedicated
 `public_pull_*` replay/rate/rejection scopes, exact metadata preflight,
 non-buffered verified streaming, independent `MediaArtifactDelivery` evidence,
@@ -267,12 +292,13 @@ purge and delivery coordination. P3-B4C2a adds the independent read-only
 inventory scanner and aggregate cadence evidence. Persistent orphan deletion
 and broader media kinds remain later work.
 
-The three B4A public projection outlets are run-result reads; initial,
-transient, and idempotent execution responses; and delayed terminal callback
-payloads. The durable creation-time snapshot is never rewritten by projection.
+The B4A public projection outlets are run-result reads and initial, transient,
+and idempotent execution responses. The durable creation-time snapshot is never
+rewritten by projection. WordPress continuation polls `GET /v1/runs/{run_id}`
+and `GET /v1/runs/{run_id}/result`.
 Projection recognizes only four exact type/version marker pairs:
 `media_upload_artifact` / `media_upload_result.v1`,
-`media_derivative_artifact` / `media_derivative_result.v1`,
+`media_derivative_artifact` / `media_derivative_result.v3`,
 `image_generation_artifacts` / `image_generation_result.v1`, and
 `audio_generation_candidates` / `audio_generation_result.v1`. Missing or
 unknown markers are unrelated result JSON and remain untouched.
@@ -667,7 +693,7 @@ capability.
   transient, and absent from public and durable contracts. Addon upload handoff
   and real WordPress evidence completed through P3-B4D and P3-B5.
 - **P3-B4A/B4B1/B4B2/B4C1/B4C2a/B4C2b/B4C3:** Current lifecycle is projected
-  at public media envelopes except `media_derivative_result.v1`, whose artifact
+  at public media envelopes except `media_derivative_result.v3`, whose artifact
   remains the immutable exact 12-field WordPress descriptor. Signed pull and
   ACK enforce its live availability without adding `status` or `purged_at` to
   that descriptor. Signed pull, verified stream completion,
@@ -681,7 +707,7 @@ capability.
   proof is complete without enabling production cleanup.
 - **P3-B4D:** Complete on 2026-07-16. The fail-closed smoke passed against the
   npcink local site and live development Cloud with artifact-only
-  `media_derivative_result.v1`, Addon upload/job/signed-pull/ACK evidence, Core
+  `media_derivative_result.v3`, Addon upload/job/signed-pull/ACK evidence, Core
   proposal/audit, exact local adopt/reference/HTTP/restore facts, and complete
   WordPress fixture cleanup. This is acceptance evidence, not production
   cleanup authorization.
@@ -690,7 +716,7 @@ capability.
   cross-site/expiry/replay security, upgrade/rollback/store recovery, media
   alias removal, the six-repository central matrix, and independent review
   passed. Its durable evidence record is
-  [Media Runtime B5 Closeout 2026-07-16](media-runtime-b5-closeout-2026-07-16.md).
+  [Media Runtime B5 Closeout 2026-07-16](history/media/2026/media-runtime-b5-closeout-2026-07-16.md).
   It does not enable production orphan cleanup and it is not the global P5
   milestone.
 - **P3 target:** The four target resources, typed image contracts, security

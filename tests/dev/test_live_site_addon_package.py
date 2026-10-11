@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from zipfile import ZipFile
 
-from app.dev.live_site_addon_package import (
+from app.ops.live_site_addon_package import (
     ADDON_OPTION_NAMES,
     ADDON_PLUGIN_BASENAME,
     find_local_mysql_bin_dir,
@@ -11,7 +11,7 @@ from app.dev.live_site_addon_package import (
     redact_addon_settings,
     wp_command,
 )
-from app.dev.live_site_preflight import SiteTarget
+from app.ops.live_site_preflight import SiteTarget
 
 
 def test_inspect_addon_zip_reports_main_plugin_header(tmp_path: Path) -> None:
@@ -102,6 +102,6 @@ def test_find_local_mysql_bin_dir_uses_matching_version(
     bin_dir.mkdir(parents=True)
     (bin_dir / "mysql").write_text("")
     (bin_dir / "mysqldump").write_text("")
-    monkeypatch.setattr("app.dev.live_site_addon_package.LOCAL_APP_SUPPORT", support_dir)
+    monkeypatch.setattr("app.ops.live_site_addon_package.LOCAL_APP_SUPPORT", support_dir)
 
     assert find_local_mysql_bin_dir("8.4.0") == str(bin_dir)

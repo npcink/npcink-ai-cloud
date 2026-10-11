@@ -375,7 +375,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Download exact production release plan
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: production-release-plan-${{ github.sha }}
           path: ${{ runner.temp }}/production-release-plan
@@ -395,7 +395,7 @@ jobs:
       - name: Restore exact API application image
         id: api_application_image_cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/api
           key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
@@ -405,7 +405,7 @@ jobs:
       - name: Restore exact frontend application image
         id: frontend_application_image_cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/frontend
           key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
@@ -415,7 +415,7 @@ jobs:
       - name: Restore disposable production image scan evidence
         id: production_scan_cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
           key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
@@ -447,7 +447,7 @@ jobs:
       - name: Save exact API application image
         if: steps.build_bundle.outputs.api_cache_save == 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/api
           key: production-application-image-v1-linux-amd64-api-${{ steps.application_image_inputs.outputs.api_fingerprint }}-${{ github.run_id }}
@@ -455,14 +455,14 @@ jobs:
       - name: Save exact frontend application image
         if: steps.build_bundle.outputs.frontend_cache_save == 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/production-application-image-cache/frontend
           key: production-application-image-v1-linux-amd64-frontend-${{ steps.application_image_inputs.outputs.frontend_fingerprint }}-${{ github.run_id }}
 
       - name: Save disposable production image scan evidence
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/production-image-scan-cache/evidence
           key: production-image-scan-v1-linux-amd64-${{ hashFiles('deploy/image-lock/production-images.json', 'deploy/image-lock/cve-allowlist.json', 'deploy/image-lock/authoritative-not-affected.json') }}-${{ github.run_id }}
@@ -555,7 +555,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -565,7 +565,7 @@ jobs:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "pnpm"
@@ -623,12 +623,12 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install uv
-        run: python -m pip install uv==0.11.29
+        run: python -m pip install uv==0.12.10
 
       - name: Audit locked production Python dependencies
         run: bash scripts/check-python-dependency-audit.sh
@@ -643,7 +643,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Python for pinned uvx
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -651,7 +651,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Install pinned uv
-        run: python -m pip install uv==0.11.29
+        run: python -m pip install uv==0.12.10
 
       - name: Build and verify Python 3.14 Alpine production images
         run: bash scripts/production-python-extras-smoke.sh
@@ -686,7 +686,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -698,22 +698,42 @@ jobs:
 
       - name: Setup Node
         if: matrix.needs_node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Materialize pnpm store path
+        if: matrix.needs_node
+        # The targeted static lane may exit without any pnpm install; an absent
+        # store path makes setup-node's cache save fail the whole job with
+        # "Path Validation Error" whenever the lockfile cache key misses.
+        run: mkdir -p "$(pnpm store path)"
 
       - name: Install uv
         run: python -m pip install --upgrade uv
 
       - name: Bootstrap backend test environment
         run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e '.[dev]'
+          uv sync --python 3.12 --extra dev --locked
 
       - name: Targeted backend ${{ matrix.lane }} lane
         run: bash scripts/check-pr-backend-gate.sh ${{ matrix.command }}
+
+  doc-reachability:
+    name: Documentation reachability
+    needs: [classify]
+    if: (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify every document is reachable from docs/README.md
+        run: python3 scripts/check_doc_reachability.py
 
   backend-docs:
     needs: [classify, backend-scope]
@@ -742,7 +762,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -752,7 +772,7 @@ jobs:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "pnpm"
@@ -789,7 +809,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -799,7 +819,7 @@ jobs:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "pnpm"
@@ -918,17 +938,16 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install pinned uv
-        run: python -m pip install uv==0.11.29
+        run: python -m pip install uv==0.12.10
 
       - name: Bootstrap backend test environment
         run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e '.[dev]'
+          uv sync --python 3.12 --extra dev --locked
 
       - name: Verify 0058-to-0068 cutover on PostgreSQL 16
         env:
@@ -939,7 +958,7 @@ jobs:
 
   backend:
     name: backend
-    needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, backend-static, backend-pytest, backend-postgres-cutover, production-pr-base-precheck, authoritative-cve-precheck, dockerfile-copy-precheck]
+    needs: [classify, specialized-quality, backend-scope, python-dependency-audit, production-python-image-smoke, backend-targeted, backend-docs, doc-reachability, backend-static, backend-pytest, backend-postgres-cutover, production-pr-base-precheck, authoritative-cve-precheck, dockerfile-copy-precheck]
     if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/production') && needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -955,6 +974,7 @@ jobs:
           AUTHORITATIVE_CVE_REQUIRED: ${{ needs.classify.outputs.authoritative_cve_required }}
           BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
           BACKEND_DOCS_RESULT: ${{ needs['backend-docs'].result }}
+          DOC_REACHABILITY_RESULT: ${{ needs['doc-reachability'].result }}
           BACKEND_STATIC_RESULT: ${{ needs['backend-static'].result }}
           BACKEND_PYTEST_RESULT: ${{ needs['backend-pytest'].result }}
           BACKEND_POSTGRES_CUTOVER_RESULT: ${{ needs['backend-postgres-cutover'].result }}
@@ -970,6 +990,11 @@ jobs:
           set -euo pipefail
           if [ "${CLASSIFY_RESULT}" != "success" ]; then
             echo "CI change classification did not pass" >&2
+            exit 1
+          fi
+
+          if [ "${DOC_REACHABILITY_RESULT}" != "success" ] && [ "${DOC_REACHABILITY_RESULT}" != "skipped" ]; then
+            echo "documentation reachability gate did not pass" >&2
             exit 1
           fi
 
@@ -1110,6 +1135,8 @@ jobs:
       - name: Checkout
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
@@ -1119,7 +1146,7 @@ jobs:
 
       - name: Setup Node
         if: github.event_name != 'pull_request' || github.base_ref == 'production' || needs.classify.outputs.frontend_required == 'true' || needs.classify.outputs.frontend_backend_contracts_required == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "pnpm"
@@ -1150,6 +1177,7 @@ jobs:
         run: |
           node frontend/tests/unit/admin-accounts-queue-v2-contract.mjs
           node frontend/tests/unit/admin-coverage-workspace-contract.mjs
+          python3 scripts/check-admin-window-capabilities.py
 
       - name: Install Playwright Chromium
         if: needs.classify.outputs.frontend_e2e_required == 'true'
@@ -1157,17 +1185,21 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
         run: pnpm --dir frontend exec playwright install --with-deps chromium
 
+      # The admin operator-path spec runs in full: title-filter selection hid
+      # return-context link drift from CI for seven weeks until #1020.
+      # Manifest-selected pilot states are included.
+      # The portal spec stays title-filtered for runtime; the CI efficiency
+      # contract keeps every grep alternative matched to a real test title.
       - name: Critical frontend paths
         if: needs.classify.outputs.frontend_e2e_required == 'true'
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
-        run: >-
-          node scripts/run-cloud-frontend-playwright.js
-          test -c playwright.config.ts
-          tests/e2e/admin-operator-path.spec.ts
-          tests/e2e/portal-workspace-path.spec.ts
-          --grep
-          'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
+          NPCINK_CLOUD_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          NPCINK_CLOUD_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/admin-operator-path.spec.ts tests/e2e/admin-navigation.spec.ts tests/e2e/admin-acceptance-matrix.spec.ts tests/e2e/admin-ai-advisor-pc-v2.spec.ts
+          node scripts/run-admin-visual-checks.mjs --ci-changed
+          node scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/portal-workspace-path.spec.ts --grep 'portal workspace interaction path|Alipay return polls|account projections remain available|account-level support stays available'
 
       - name: Unchanged frontend acknowledgement
         if: github.event_name == 'pull_request' && github.base_ref != 'production' && needs.classify.outputs.frontend_required != 'true' && needs.classify.outputs.frontend_backend_contracts_required != 'true'
@@ -1216,7 +1248,7 @@ jobs:
 
       - name: Setup Python for changed-code coverage
         if: github.event_name == 'pull_request' && needs.backend.result == 'success' && needs['backend-scope'].outputs.requires_full_backend == '1'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

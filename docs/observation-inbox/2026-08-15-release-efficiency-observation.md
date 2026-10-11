@@ -1,5 +1,7 @@
 # Session Observation Receipt — 2026-08-15
 
+Status: historical observation receipt; not current release authority.
+
 ## 1. Session Identity
 
 - Session/task name: production release efficiency and single-operator release governance

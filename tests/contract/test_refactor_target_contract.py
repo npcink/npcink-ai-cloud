@@ -17,9 +17,9 @@ TARGET_CONTRACTS = (
     "docs/refactor-deletion-inventory-v1.md",
 )
 
-BASELINE_EVIDENCE = "docs/refactor-baseline-2026-07-14.md"
-P5_AUDIT_EVIDENCE = "docs/p5-hardening-release-audit-2026-07-17.md"
-P5_B1_EVIDENCE = "docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md"
+BASELINE_EVIDENCE = "docs/history/refactor/2026/refactor-baseline-2026-07-14.md"
+P5_AUDIT_EVIDENCE = "docs/history/refactor/2026/p5-hardening-release-audit-2026-07-17.md"
+P5_B1_EVIDENCE = "docs/history/refactor/2026/p5-b1-hosted-profile-contract-cutover-2026-07-17.md"
 
 SUPERSEDED_CONNECTOR_RUNTIME = "wp_ai_connector_" "runtime.v1"
 SUPERSEDED_CONNECTOR_RESULT = "wp_ai_connector_" "result.v1"
@@ -241,7 +241,7 @@ def test_active_refactor_rules_use_the_current_central_matrix_repository() -> No
 
 
 def test_p4_inventory_has_no_stale_remaining_work_after_closeout() -> None:
-    inventory = _read("docs/p4-portal-admin-surface-inventory-2026-07-16.md")
+    inventory = _read("docs/history/refactor/2026/p4-portal-admin-surface-inventory-2026-07-16.md")
 
     assert "Accepted inventory and completed P4 closeout record." in inventory
     assert "Still required before declaring P4 complete:" not in inventory
@@ -333,10 +333,11 @@ def test_media_contract_tracks_p3_b4d_real_completion_and_remaining_b5_work() ->
     for required in (
         "run-result reads",
         "initial, transient, and idempotent execution responses",
-        "delayed terminal callback payloads",
+        "WordPress continuation polls `GET /v1/runs/{run_id}`",
+        "`GET /v1/runs/{run_id}/result`",
         "The durable creation-time snapshot is never rewritten by projection.",
         "`media_upload_artifact` / `media_upload_result.v1`",
-        "`media_derivative_artifact` / `media_derivative_result.v1`",
+        "`media_derivative_artifact` / `media_derivative_result.v3`",
         "`image_generation_artifacts` / `image_generation_result.v1`",
         "`audio_generation_candidates` / `audio_generation_result.v1`",
     ):
@@ -447,7 +448,7 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
     ai_task = _read("docs/ai-task-runtime-contract-v1.md")
     alt_text = _read("docs/wordpress-ai-alt-text-vision-contract-feasibility-v1.md")
     smoke = _read("docs/production-wordpress-ai-connector-smoke-runbook-v1.md")
-    smoke_builder = _read("app/dev/production_wordpress_ai_connector_smoke.py")
+    smoke_builder = _read("app/ops/production_wordpress_ai_connector_smoke.py")
 
     for required in (
         "Status: active; aligned with the P1 connector reset.",
@@ -466,7 +467,7 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
         "`npcink-cloud/connector-runtime`",
         "`cloud_connector_runtime.v1`",
         "`wordpress_operation.v1`",
-        "`wp-ai.alt-text-vision`",
+        "`vision.ai`",
         "`cloud_connector_result.v1`",
         "`source_artifact_id`",
         "There is no compatibility request shape.",

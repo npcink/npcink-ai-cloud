@@ -7,7 +7,20 @@ Status: historical evidence index; not cleanup authorization.
 - [2026-08-18 final closeout and lessons](repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md)
 - [2026-08-22 archive-ref retention baseline](archive-ref-retention-baseline-2026-08-22.md)
 - [2026-08-22 documentation consolidation closeout and lessons](repository-documentation-consolidation-closeout-and-lessons-2026-08-22.md)
+- [2026-08-25 Portal preview source and repository cleanup retrospective](portal-preview-source-and-repository-cleanup-retrospective-2026-08-25.md)
+
+- [2026-09-11 文档入口、遗漏清单与结构热点调查](document-navigation-and-hotspot-review-2026-09-11.md)
+- [2026-09-11 全仓文档语义盘点](full-document-semantic-inventory-2026-09-11.md)
+- [2026-09-11 连接器到 Cloud 链路验收复核](connector-cloud-chain-acceptance-review-2026-09-11.md)
+- [2026-09-21 P5-B4 一次性验证 compose 归档记录](p5-b4-proof-compose-archive-2026-09-21.md)
 
 Re-inventory the live repository and follow the current standards before any
 new cleanup. Historical counts and candidate lists are not reusable deletion
 authority.
+
+## Records Migrated from docs/ Root (2026-09-22)
+
+- [magick ai root harvest inventory 2026 06 24](magick-ai-root-harvest-inventory-2026-06-24.md)
+- [npcink cloud local docker closeout 2026 06 24](npcink-cloud-local-docker-closeout-2026-06-24.md)
+- [npcink naming reset closeout 2026 06 24](npcink-naming-reset-closeout-2026-06-24.md)
+- [npcink workspace history summary 2026 06 24](npcink-workspace-history-summary-2026-06-24.md)

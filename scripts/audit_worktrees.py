@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Read-only inventory for this repository's linked Git worktrees."""
+"""Read-only inventory for this repository's linked Git worktrees.
+
+With ``--require-locked``, the inventory also enforces the auxiliary-worktree
+lock rule: every non-current ``codex/*`` task worktree must carry a
+``git worktree lock`` (reason ``codex:<task-id>`` per AGENTS.md), and an
+unlocked one fails the audit. The primary worktree and long-lived protected
+roles (for example the M4 operations worktree on ``master``) are exempt.
+"""
 
 from __future__ import annotations
 
@@ -312,14 +319,60 @@ def audit() -> dict[str, Any]:
     }
 
 
+def require_locked_violations(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return auxiliary ``codex/*`` task worktrees that are not locked."""
+
+    return [
+        entry
+        for entry in entries
+        if entry["branch"].startswith("codex/")
+        and not entry["locked"]
+        and entry["classification"] != "current_task"
+        and entry["reason"] != "primary worktree"
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument(
+        "--require-locked",
+        action="store_true",
+        help="fail when an auxiliary codex/* task worktree is unlocked",
+    )
     argv = sys.argv[1:]
     if argv and argv[0] == "--":
         argv = argv[1:]
     args = parser.parse_args(argv)
     payload = audit()
+    if args.require_locked:
+        violations = require_locked_violations(payload["entries"])
+        payload["require_locked_violations"] = [
+            {"path": entry["path"], "branch": entry["branch"]}
+            for entry in violations
+        ]
+        if args.format == "json":
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+            return 1 if violations else 0
+        if violations:
+            print(
+                "[require-locked] unlocked auxiliary task worktrees: "
+                f"{len(violations)}",
+                file=sys.stderr,
+            )
+            for entry in violations:
+                print(
+                    f"  {entry['path']} branch={entry['branch']}",
+                    file=sys.stderr,
+                )
+            print(
+                "Lock it with: git worktree lock --reason "
+                "'codex:<task-id>' <absolute-worktree-path>",
+                file=sys.stderr,
+            )
+            return 1
+        print("[require-locked] ok: auxiliary codex/* task worktrees are locked")
+        return 0
     if args.format == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0

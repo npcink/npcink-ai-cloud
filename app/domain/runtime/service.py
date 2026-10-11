@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.adapters.callbacks.base import RuntimeCallbackDispatcher
@@ -22,13 +23,17 @@ from app.adapters.queue.base import RuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
+from app.core.error_taxonomy import get_error_taxonomy
 from app.core.logging import get_logger
 from app.core.models import (
     RUN_CALLBACK_STATUS_FAILED,
     RUN_CALLBACK_STATUS_PENDING,
     SITE_STATUS_ACTIVE,
+    MediaArtifact,
     ProviderCallRecord,
     RunRecord,
+    ServiceSetting,
+    Site,
     UsageMeterEvent,
 )
 from app.core.secrets import (
@@ -58,13 +63,21 @@ from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
 )
-from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
+from app.domain.content_formatting.runtime import ABILITY as CONTENT_FORMAT_ABILITY
+from app.domain.content_formatting.runtime import execute_formatting
+from app.domain.hosted_model_defaults import (
+    FREE_GPT55_TEXT_PROFILE_ID,
+    VISION_AI_PROFILE_ID,
+)
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_ABILITIES,
+    IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND,
     IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
     MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES,
     ImageContextEvidenceContractViolation,
+    extract_image_context_evidence_request,
     image_context_evidence_artifact_ids,
+    image_context_evidence_dispatch_mode,
 )
 from app.domain.image_context_evidence.service import (
     ImageContextEvidenceProviderError,
@@ -94,6 +107,13 @@ from app.domain.media_batch_plans.contracts import (
     MediaBatchPlanContractViolation,
 )
 from app.domain.media_batch_plans.service import MediaBatchPlanService
+from app.domain.media_governance.contracts import (
+    MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+    MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+    MEDIA_GOVERNANCE_AUDIT_RESULT_CONTRACT,
+    MediaGovernanceAuditContractViolation,
+)
+from app.domain.media_governance.service import MediaGovernanceAuditService
 from app.domain.routing.errors import RoutingError
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
@@ -110,12 +130,14 @@ from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
     RuntimeErrorBase,
     RuntimeExecutionContractError,
+    RuntimeMediaRecognitionPolicyError,
     RuntimeResultExpiredError,
     RuntimeResultNotReadyError,
     RuntimeRunNotFoundError,
     RuntimeSiteInactiveError,
     RuntimeSiteNotProvisionedError,
 )
+from app.domain.runtime.failure_evidence import provider_failure_evidence
 from app.domain.runtime.models import (
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE,
@@ -130,6 +152,7 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
     ProviderOutputDecision,
@@ -147,6 +170,14 @@ from app.domain.runtime.run_lifecycle import (
     RuntimeRunLifecycleService,
 )
 from app.domain.runtime.run_projection import RuntimeRunProjector
+from app.domain.runtime.usage_statistics import build_usage_statistics
+from app.domain.service_settings import (
+    SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+    media_recognition_local_day_bounds,
+    media_recognition_next_window_start,
+    media_recognition_window_is_open,
+    resolve_media_recognition_policy,
+)
 from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_ABILITIES,
@@ -160,6 +191,7 @@ from app.domain.site_knowledge.metrics import (
     record_site_knowledge_failure_metric,
     record_site_knowledge_run_metric,
 )
+from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.site_ops_analysis.contracts import (
     SITE_OPS_ANALYSIS_ABILITIES,
@@ -181,6 +213,7 @@ from app.domain.web_search.contracts import (
     WebSearchContractViolation,
 )
 from app.domain.web_search.service import WebSearchProviderError, WebSearchService
+from app.domain.wordpress_ai_connector.generation_context import GenerationContextEvidence
 from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
 
 __all__ = [
@@ -294,6 +327,7 @@ class RuntimeService:
             input_preprocessor=self._preprocess_provider_input,
             output_preparer=self._prepare_provider_output,
             output_finalizer=self._finalize_provider_output,
+            budget_guard=ProviderBudgetService(),
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
@@ -395,6 +429,8 @@ class RuntimeService:
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
         self.contract_validator.validate_runtime_data_handling_contract(request)
+        if request.ability_name == CONTENT_FORMAT_ABILITY:
+            return execute_formatting(self, request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
         if self._is_cloud_batch_runtime_request(request):
@@ -403,6 +439,8 @@ class RuntimeService:
             return self._execute_site_ops_analysis_request(request)
         if self._is_media_batch_plan_request(request):
             return self._execute_media_batch_plan_request(request)
+        if self._is_media_governance_audit_request(request):
+            return self._execute_media_governance_audit_request(request)
         if self._is_image_context_evidence_request(request):
             return self._execute_image_context_evidence_request(request)
         if self._is_image_source_request(request):
@@ -1283,16 +1321,24 @@ class RuntimeService:
         self,
         *,
         site_id: str | None = None,
+        capability: str | None = None,
         recent_minutes: int = 60,
         limit: int = 20,
     ) -> dict[str, object]:
         current_time = datetime.now(UTC)
         recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
         max_items = max(1, min(100, limit))
+        capability_condition = or_(
+            RunRecord.ability_family == capability,
+            RunRecord.ability_name == capability,
+            RunRecord.profile_id == capability,
+        )
         with get_session(self.database_url) as session:
             run_statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
             if site_id:
                 run_statement = run_statement.where(RunRecord.site_id == site_id)
+            if capability:
+                run_statement = run_statement.where(capability_condition)
             runs = list(
                 session.scalars(
                     run_statement.order_by(
@@ -1309,6 +1355,8 @@ class RuntimeService:
             )
             if site_id:
                 call_statement = call_statement.where(RunRecord.site_id == site_id)
+            if capability:
+                call_statement = call_statement.where(capability_condition)
             provider_call_rows = list(
                 session.execute(
                     call_statement.order_by(
@@ -1317,18 +1365,35 @@ class RuntimeService:
                     ).limit(10000)
                 )
             )
+            provider_call_pairs = [(row[0], row[1]) for row in provider_call_rows]
 
             meter_statement = select(UsageMeterEvent).where(
                 UsageMeterEvent.created_at >= recent_since
             )
             if site_id:
                 meter_statement = meter_statement.where(UsageMeterEvent.site_id == site_id)
+            if capability:
+                meter_statement = meter_statement.where(
+                    exists(select(RunRecord.run_id).where(
+                        RunRecord.run_id == UsageMeterEvent.run_id,
+                        capability_condition,
+                    ))
+                )
             meter_events = list(
                 session.scalars(
                     meter_statement.order_by(
                         UsageMeterEvent.created_at.desc(),
                         UsageMeterEvent.id.desc(),
                     ).limit(10000)
+                )
+            )
+            # Coverage belongs to the bounded run cohort, not the latest 10,000
+            # event rows. Multiple meters per run must not hide older associations.
+            metered_cohort_run_ids = set(
+                session.scalars(
+                    select(UsageMeterEvent.run_id)
+                    .where(UsageMeterEvent.run_id.in_([run.run_id for run in runs]))
+                    .distinct()
                 )
             )
 
@@ -1341,9 +1406,7 @@ class RuntimeService:
         provider_call_run_ids = {
             call.run_id for call, _run in provider_call_rows if call.run_id in run_ids
         }
-        meter_run_ids = {
-            str(event.run_id or "") for event in meter_events if str(event.run_id or "") in run_ids
-        }
+        meter_run_ids = {str(run_id) for run_id in metered_cohort_run_ids if run_id}
         run_groups: dict[str, dict[str, object]] = {}
         profile_groups: dict[str, dict[str, object]] = {}
         execution_kind_groups: dict[str, dict[str, object]] = {}
@@ -1476,9 +1539,19 @@ class RuntimeService:
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
         )
+        issue_daily_counts = self._build_hosted_governance_issue_daily_counts(
+            runs=runs,
+            provider_call_rows=provider_call_pairs,
+            ai_evidence_required_run_ids=ai_evidence_required_run_ids,
+            provider_call_run_ids=provider_call_run_ids,
+            meter_run_ids=meter_run_ids,
+            since=recent_since,
+            until=current_time,
+        )
         result: dict[str, object] = {
             "filters": {
                 "site_id": site_id or "",
+                "capability": capability or "",
                 "recent_minutes": recent_minutes,
                 "limit": max_items,
             },
@@ -1502,11 +1575,16 @@ class RuntimeService:
                     len(ai_evidence_required_run_ids),
                 ),
             },
+            "provider_failures": provider_failure_evidence(provider_call_rows, limit=max_items),
+            "usage_statistics": build_usage_statistics(
+                runs, since=recent_since, until=current_time
+            ),
             "capability_groups": capability_items,
             "profile_groups": profile_items,
             "execution_kind_groups": execution_kind_items,
             "provider_model_groups": provider_model_items,
             "governance_gaps": governance_gaps,
+            "issue_daily_counts": issue_daily_counts,
             "boundary": {
                 "surface": "internal_operator_diagnostics",
                 "cloud_role": "hosted_runtime_detail",
@@ -1517,6 +1595,133 @@ class RuntimeService:
         }
         result["alert_summary"] = self._build_hosted_governance_alert_summary(result)
         return result
+
+    def get_runtime_run_evidence(
+        self,
+        *,
+        site_id: str | None = None,
+        capability: str | None = None,
+        issue_code: str | None = None,
+        recent_minutes: int = 60,
+        limit: int = 25,
+    ) -> dict[str, object]:
+        """Return bounded, payload-free run evidence for operator diagnostics."""
+        current_time = datetime.now(UTC)
+        recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
+        max_items = max(1, min(100, limit))
+        with get_session(self.database_url) as session:
+            statement = select(RunRecord).where(RunRecord.started_at >= recent_since)
+            if site_id:
+                statement = statement.where(RunRecord.site_id == site_id)
+            if capability:
+                statement = statement.where(
+                    or_(
+                        RunRecord.ability_family == capability,
+                        RunRecord.ability_name == capability,
+                        RunRecord.profile_id == capability,
+                    )
+                )
+            if issue_code == "hosted_model.failed_runs":
+                statement = statement.where(RunRecord.status == "failed")
+            elif issue_code == "hosted_model.provider_errors":
+                statement = statement.where(
+                    exists(
+                        select(ProviderCallRecord.id).where(
+                            ProviderCallRecord.run_id == RunRecord.run_id,
+                            ProviderCallRecord.error_code.is_not(None),
+                        )
+                    )
+                )
+            elif issue_code == "hosted_model.unmetered_runs":
+                statement = statement.where(
+                    RunRecord.execution_kind.not_in(NON_AI_ZERO_CREDIT_EXECUTION_KINDS),
+                    ~exists(
+                        select(UsageMeterEvent.id).where(
+                            UsageMeterEvent.run_id == RunRecord.run_id,
+                        )
+                    )
+                )
+            runs = list(
+                session.scalars(
+                    statement.order_by(
+                        RunRecord.started_at.desc(), RunRecord.run_id.desc()
+                    ).limit(max_items + 1)
+                )
+            )
+            has_more = len(runs) > max_items
+            runs = runs[:max_items]
+            run_ids = [run.run_id for run in runs]
+            provider_calls = (
+                list(
+                    session.scalars(
+                        select(ProviderCallRecord).where(
+                            ProviderCallRecord.run_id.in_(run_ids)
+                        )
+                    )
+                )
+                if run_ids
+                else []
+            )
+            meter_events = (
+                list(
+                    session.scalars(
+                        select(UsageMeterEvent).where(
+                            UsageMeterEvent.run_id.in_(run_ids)
+                        )
+                    )
+                )
+                if run_ids
+                else []
+            )
+        calls_by_run: dict[str, int] = {}
+        for call in provider_calls:
+            calls_by_run[call.run_id] = calls_by_run.get(call.run_id, 0) + 1
+        metered_run_ids = {str(event.run_id) for event in meter_events if event.run_id}
+
+        def timestamp(value: datetime | None) -> str | None:
+            return value.astimezone(UTC).isoformat() if value else None
+
+        items: list[dict[str, object]] = []
+        for run in runs:
+            duration_ms = None
+            if run.started_at and run.finished_at:
+                duration_ms = max(
+                    0, int((run.finished_at - run.started_at).total_seconds() * 1000)
+                )
+            items.append(
+                {
+                    "run_id": run.run_id,
+                    "site_id": run.site_id,
+                    "ability_name": run.ability_name,
+                    "ability_family": run.ability_family,
+                    "profile_id": run.profile_id,
+                    "status": run.status,
+                    "error_code": run.error_code,
+                    "started_at": timestamp(run.started_at),
+                    "finished_at": timestamp(run.finished_at),
+                    "duration_ms": duration_ms,
+                    "provider_call_count": calls_by_run.get(run.run_id, 0),
+                    "has_meter_event": run.run_id in metered_run_ids,
+                }
+            )
+        return {
+            "filters": {
+                "site_id": site_id or "",
+                "capability": capability or "",
+                "issue_code": issue_code or "",
+                "recent_minutes": recent_minutes,
+                "limit": max_items,
+            },
+            "generated_at": current_time.isoformat(),
+            "freshness": "snapshot",
+            "sampled": has_more,
+            "truncated": has_more,
+            "items": items,
+            "boundary": {
+                "contains_prompt_or_result_payloads": False,
+                "contains_credentials": False,
+            },
+        }
 
     def get_runtime_backlog_diagnostics(
         self,
@@ -1734,6 +1939,72 @@ class RuntimeService:
             else "Recent runtime providers have meter coverage in this window.",
         }
 
+    def _build_hosted_governance_issue_daily_counts(
+        self,
+        *,
+        runs: list[RunRecord],
+        provider_call_rows: list[tuple[ProviderCallRecord, RunRecord]],
+        ai_evidence_required_run_ids: set[str],
+        provider_call_run_ids: set[str],
+        meter_run_ids: set[str],
+        since: datetime,
+        until: datetime,
+    ) -> dict[str, list[dict[str, object]]]:
+        # Per-issue daily series share the usage-statistics day convention:
+        # dense UTC calendar days across the requested window, so the Admin
+        # inspector can draw an issue-scoped trend aligned with the window
+        # timeline without a second request.
+        days: list[str] = []
+        day = since.date()
+        while day <= until.date():
+            days.append(day.isoformat())
+            day += timedelta(days=1)
+        day_index = {value: index for index, value in enumerate(days)}
+
+        def day_key(value: datetime | None) -> int | None:
+            if value is None:
+                return None
+            aware = (
+                value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+            )
+            return day_index.get(aware.date().isoformat())
+
+        counts = {
+            "hosted_model.unmetered_runs": [0] * len(days),
+            "hosted_model.provider_call_gap": [0] * len(days),
+            "hosted_model.provider_errors": [0] * len(days),
+            "hosted_model.failed_runs": [0] * len(days),
+        }
+        unmetered_ids = ai_evidence_required_run_ids - (
+            meter_run_ids & ai_evidence_required_run_ids
+        )
+        provider_gap_ids = ai_evidence_required_run_ids - (
+            provider_call_run_ids & ai_evidence_required_run_ids
+        )
+        for run in runs:
+            index = day_key(run.started_at)
+            if index is None:
+                continue
+            if run.run_id in unmetered_ids:
+                counts["hosted_model.unmetered_runs"][index] += 1
+            if run.run_id in provider_gap_ids:
+                counts["hosted_model.provider_call_gap"][index] += 1
+            if str(run.status or "") == "failed":
+                counts["hosted_model.failed_runs"][index] += 1
+        for call, _run in provider_call_rows:
+            if not call.error_code:
+                continue
+            index = day_key(call.created_at)
+            if index is not None:
+                counts["hosted_model.provider_errors"][index] += 1
+        return {
+            code: [
+                {"day": day_value, "count": daily[index]}
+                for index, day_value in enumerate(days)
+            ]
+            for code, daily in counts.items()
+        }
+
     def _build_hosted_governance_alert_summary(
         self,
         diagnostics: dict[str, object],
@@ -1765,6 +2036,16 @@ class RuntimeService:
             gaps.get("runs_without_provider_call_count"),
             default=0,
         )
+        raw_issue_daily = diagnostics.get("issue_daily_counts")
+        issue_daily: dict[str, list[dict[str, object]]] = {
+            str(code): [
+                self._dict_or_empty(point)
+                for point in (series if isinstance(series, list) else [])
+            ]
+            for code, series in (
+                raw_issue_daily.items() if isinstance(raw_issue_daily, dict) else []
+            )
+        }
 
         alerts: list[dict[str, object]] = []
 
@@ -1787,6 +2068,7 @@ class RuntimeService:
                     "count": max(0, count),
                     "capabilities": capabilities[:10],
                     "suggested_action": suggested_action,
+                    "daily_counts": issue_daily.get(code, []),
                     "href": "/admin/troubleshooting",
                 }
             )
@@ -2303,6 +2585,9 @@ class RuntimeService:
         if self._is_media_batch_plan_run(run):
             self._execute_media_batch_plan_run(run, repository=repository)
             return
+        if self._is_media_governance_audit_run(run):
+            self._execute_media_governance_audit_run(run, repository=repository)
+            return
         if self._is_image_context_evidence_run(run):
             self._execute_image_context_evidence_run(run, repository=repository)
             return
@@ -2400,12 +2685,184 @@ class RuntimeService:
         input_payload: dict[str, Any],
         policy: dict[str, object],
     ) -> dict[str, Any]:
+        input_payload = self._translate_reviewed_image_prompt(
+            run,
+            repository=repository,
+            input_payload=input_payload,
+        )
+        if run.status == "failed":
+            return input_payload
         return self._apply_automatic_web_search(
             run,
             repository=repository,
             input_payload=input_payload,
             policy=policy,
         )
+
+    def _translate_reviewed_image_prompt(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self._is_image_generation_run(run):
+            return input_payload
+        review = self._dict_or_empty(input_payload.get("review"))
+        if str(review.get("prompt_translation_mode") or "") != "required":
+            return input_payload
+        if review.get("source_prompt_reviewed_by_operator") is not True:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_review_invalid",
+                error_message="image prompt translation requires a reviewed source prompt",
+            )
+            return input_payload
+        source_prompt = str(input_payload.get("prompt") or "").strip()
+        if not source_prompt:
+            return input_payload
+
+        try:
+            candidate, profile_id, default_policy = self._resolve_image_prompt_planner_candidate()
+        except RoutingError:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_unavailable",
+                error_message="image prompt translation is unavailable",
+            )
+            return input_payload
+        provider = self.providers.get(candidate.provider_id)
+        if provider is None:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_unavailable",
+                error_message="image prompt translation is unavailable",
+            )
+            return input_payload
+
+        timeout_ms = max(1, self._coerce_int(default_policy.get("timeout_ms"), default=12_000))
+        request = ProviderExecutionRequest(
+            run_id=run.run_id,
+            site_id=run.site_id,
+            ability_name="npcink-cloud/image-prompt-translation",
+            profile_id=profile_id,
+            execution_kind="text",
+            model_id=candidate.model_id,
+            instance_id=candidate.instance_id,
+            endpoint_variant=candidate.endpoint_variant,
+            trace_id=run.trace_id or run.run_id,
+            input_payload={
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Translate the user-reviewed image brief into concise English "
+                            "for an image-generation model. Preserve every visual constraint "
+                            "and do not add facts, visible text, logos, or WordPress actions. "
+                            "Return only the translated English prompt."
+                        ),
+                    },
+                    {"role": "user", "content": source_prompt},
+                ],
+                "params": {"temperature": 0.0, "max_tokens": 700, "max_output_tokens": 700},
+            },
+            policy={"storage_mode": "result_only"},
+            timeout_ms=timeout_ms,
+            price_input=candidate.price_input,
+            price_output=candidate.price_output,
+        )
+        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        max_retries = max(0, self._coerce_int(policy.get("max_retries"), default=0))
+        result: ProviderExecutionResult | None = None
+        successful_retry_count = 0
+        for retry_count in range(max_retries + 1):
+            try:
+                result = self.provider_execution_service.execute_provider(
+                    provider,
+                    replace(request, retry_count=retry_count),
+                    session=repository.session,
+                    run=run,
+                    provider_id=candidate.provider_id,
+                )
+                successful_retry_count = retry_count
+                break
+            except ProviderExecutionError as error:
+                self.provider_execution_service.record_provider_call(
+                    repository=repository,
+                    run=run,
+                    command=ProviderCallEvidenceCommand(
+                        provider_id=candidate.provider_id,
+                        model_id=candidate.model_id,
+                        instance_id=candidate.instance_id,
+                        region=candidate.region,
+                        latency_ms=(
+                            timeout_ms if error.error_code == "provider.timeout" else 0
+                        ),
+                        tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
+                        tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
+                        cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
+                        retry_count=retry_count,
+                        fallback_used=False,
+                        error_code=error.error_code,
+                    ),
+                    usage_context={"source_type": "image_prompt_translation"},
+                )
+                taxonomy = get_error_taxonomy(error.error_code)
+                if retry_count < max_retries and error.retryable and taxonomy.retryable:
+                    continue
+                self.run_lifecycle_service.fail_run(
+                    repository,
+                    run,
+                    error_code="image_generation.prompt_translation_failed",
+                    error_message="image prompt translation failed before generation",
+                )
+                return input_payload
+
+        if result is None:
+            return input_payload
+
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
+            run=run,
+            command=ProviderCallEvidenceCommand(
+                provider_id=candidate.provider_id,
+                model_id=candidate.model_id,
+                instance_id=candidate.instance_id,
+                region=candidate.region,
+                latency_ms=result.latency_ms,
+                tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out,
+                cost=result.cost,
+                retry_count=successful_retry_count,
+                fallback_used=False,
+                error_code=None,
+            ),
+            usage_context={"source_type": "image_prompt_translation"},
+        )
+        translated_prompt = " ".join(str(result.output.get("output_text") or "").split())[:4000]
+        if not translated_prompt or self._contains_cjk(translated_prompt):
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="image_generation.prompt_translation_invalid",
+                error_message="image prompt translation returned no usable English prompt",
+            )
+            return input_payload
+        translated = dict(input_payload)
+        translated["prompt"] = translated_prompt
+        translated["review"] = {
+            **review,
+            "provider_prompt_translation_status": "translated",
+            "provider_prompt_reviewed_by_operator": False,
+        }
+        return translated
+
+    @staticmethod
+    def _contains_cjk(value: str) -> bool:
+        return any("\u3400" <= character <= "\u9fff" for character in value)
 
     def _prepare_provider_output(
         self,
@@ -2420,17 +2877,77 @@ class RuntimeService:
             provider_output,
             input_payload=input_payload,
         )
-        if self.wordpress_operation_runtime.is_empty_text_output(
+        title_quality_reasons = self.wordpress_operation_runtime.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        blocking_title_quality_reasons = (
+            self.wordpress_operation_runtime.blocking_title_quality_reasons(
+                title_quality_reasons
+            )
+        )
+        if blocking_title_quality_reasons or self.wordpress_operation_runtime.is_empty_text_output(
             input_payload=input_payload,
             provider_output=normalized_output,
         ):
+            quality_reason = self.wordpress_operation_runtime.output_quality_reason(
+                input_payload=input_payload,
+                provider_output=provider_output,
+            )
+            self._record_wordpress_output_quality_diagnostic(run, quality_reason)
+            error_message = (
+                "provider returned the existing title instead of a new suggestion"
+                if "title_unchanged" in blocking_title_quality_reasons
+                else "provider returned no usable WordPress AI connector text"
+            )
             return ProviderOutputDecision(
                 accepted=False,
                 output=normalized_output,
                 error_code="provider.output_quality_rejected",
-                error_message="provider returned no usable WordPress AI connector text",
+                error_message=error_message,
+                usage_context={
+                    "output_quality_reason": quality_reason,
+                },
             )
-        return ProviderOutputDecision(accepted=True, output=normalized_output)
+        usage_context: dict[str, object] = (
+            {"title_quality_reasons": list(title_quality_reasons)}
+            if title_quality_reasons
+            else {}
+        )
+        self._clear_wordpress_output_quality_diagnostic(run)
+        return ProviderOutputDecision(
+            accepted=True,
+            output=normalized_output,
+            usage_context=usage_context,
+        )
+
+    @staticmethod
+    def _record_wordpress_output_quality_diagnostic(run: RunRecord, reason: str) -> None:
+        """Keep bounded, payload-free quality evidence on failed connector runs."""
+        normalized_reason = str(reason or "").strip()[:96]
+        if not normalized_reason:
+            return
+        policy = dict(run.policy_json) if isinstance(run.policy_json, dict) else {}
+        raw_diagnostics = policy.get("runtime_diagnostics")
+        diagnostics = dict(raw_diagnostics) if isinstance(raw_diagnostics, dict) else {}
+        diagnostics.update(
+            {
+                "contract_version": "wordpress_ai_connector_quality.v1",
+                "output_quality_reason": normalized_reason,
+            }
+        )
+        policy["runtime_diagnostics"] = diagnostics
+        run.policy_json = policy
+        flag_modified(run, "policy_json")
+
+    @staticmethod
+    def _clear_wordpress_output_quality_diagnostic(run: RunRecord) -> None:
+        policy = dict(run.policy_json) if isinstance(run.policy_json, dict) else {}
+        if "runtime_diagnostics" not in policy:
+            return
+        policy.pop("runtime_diagnostics", None)
+        run.policy_json = policy
+        flag_modified(run, "policy_json")
 
     def _finalize_provider_output(
         self,
@@ -2487,6 +3004,12 @@ class RuntimeService:
                 ),
             )
         )
+        evidence = getattr(run, "_wordpress_generation_context_evidence", None)
+        if connector_envelope is not None and isinstance(evidence, GenerationContextEvidence):
+            if self._get_storage_mode(policy) != "no_store":
+                normalized_result.durable_result["generation_context"] = evidence.to_payload()
+            if normalized_result.transient_result is not None:
+                normalized_result.transient_result["generation_context"] = evidence.to_payload()
         if normalized_result.transient_result is not None:
             set_transient_runtime_result(run, normalized_result.transient_result)
         return normalized_result.durable_result
@@ -2523,6 +3046,9 @@ class RuntimeService:
                 contract_version=WEB_SEARCH_CONTRACT,
                 input_payload=plan.to_web_search_input(),
                 run_id=f"{run.run_id}:automatic-web-search",
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_session=repository.session,
+                budget_run=run,
             )
         except WebSearchProviderError as error:
             if error.usage is not None:
@@ -2666,6 +3192,18 @@ class RuntimeService:
             else self._get_execution_input_payload(run)
         )
         execution_started_at = datetime.now(UTC)
+        site_account_id = ""
+        account_vector_document_limit: int | None = None
+        account_media_image_limit: int | None = None
+        if run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY:
+            (
+                site_account_id,
+                account_vector_document_limit,
+                account_media_image_limit,
+            ) = self._resolve_site_knowledge_account_limit(
+                repository=repository,
+                site_id=run.site_id,
+            )
 
         def record_progress(progress: dict[str, Any]) -> None:
             run.result_json = {
@@ -2705,6 +3243,11 @@ class RuntimeService:
                 if run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY
                 else None,
                 embedding_usage_callback=record_embedding_usage,
+                account_id=site_account_id,
+                account_vector_document_limit=account_vector_document_limit,
+                account_media_image_limit=account_media_image_limit,
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_run=run,
             ).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,
@@ -2749,6 +3292,35 @@ class RuntimeService:
             result_json=result_json,
             execution_started_at=execution_started_at,
             settings=self.settings,
+        )
+
+    def _resolve_site_knowledge_account_limit(
+        self,
+        *,
+        repository: RuntimeRepository,
+        site_id: str,
+    ) -> tuple[str, int | None, int | None]:
+        account_id = str(
+            repository.session.scalar(select(Site.account_id).where(Site.site_id == site_id))
+            or ""
+        )
+        if not account_id:
+            return "", None, None
+        account_quota = self.commercial_service.get_portal_account_quota_summary(account_id)
+        resource_limits = account_quota.get("resource_limits", [])
+        limits_by_key = (
+            {
+                str(resource.get("key") or ""): int(resource.get("limit") or 0)
+                for resource in resource_limits
+                if isinstance(resource, dict)
+            }
+            if isinstance(resource_limits, list)
+            else {}
+        )
+        return (
+            account_id,
+            limits_by_key.get("vector_documents"),
+            limits_by_key.get("media_images"),
         )
 
     def _record_site_knowledge_embedding_provider_call(
@@ -2949,6 +3521,7 @@ class RuntimeService:
                         retry_count=0,
                         fallback_used=False,
                         error_code=error.usage.error_code or error.error_code,
+                        budget_claim_ids=error.usage.budget_claim_ids,
                     ),
                 )
             self.run_lifecycle_service.fail_run(
@@ -2984,6 +3557,7 @@ class RuntimeService:
                 retry_count=0,
                 fallback_used=False,
                 error_code=execution.usage.error_code,
+                budget_claim_ids=execution.usage.budget_claim_ids,
             ),
             usage_context=usage_context,
         )
@@ -3326,6 +3900,109 @@ class RuntimeService:
                 idempotent_replay=False,
             )
 
+    def _execute_media_governance_audit_request(
+        self,
+        request: RuntimeRequest,
+    ) -> RuntimeExecutionResponse:
+        self.contract_validator.validate_media_governance_audit_contract(request)
+        trace_id = request.trace_id or uuid4().hex
+        run_id = f"run_{uuid4().hex}"
+        merged_policy = self._build_media_governance_audit_policy(request)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
+
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            self._require_active_site(repository, request.site_id)
+
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
+                )
+
+            commercial_decision = self.commercial_service.authorize_runtime_request(
+                session=session,
+                site_id=request.site_id,
+                ability_family=request.ability_family,
+                channel=request.channel,
+                execution_kind=request.execution_kind,
+                execution_tier=request.execution_tier,
+                execution_pattern=request.execution_pattern,
+                data_classification=request.data_classification,
+                trace_id=trace_id,
+                idempotency_key=request.idempotency_key,
+                request_kind="execute",
+                run_id=run_id,
+                estimated_ai_credits=self._estimate_runtime_request_ai_credits(request),
+            )
+            self._enforce_batch_limits(
+                request=request,
+                commercial_decision=commercial_decision,
+            )
+            merged_policy = self._apply_commercial_policy_overrides(
+                merged_policy,
+                commercial_decision=commercial_decision,
+            )
+            storage_mode = self._get_storage_mode(merged_policy)
+            run = self.run_lifecycle_service.create_durable_run(
+                repository=repository,
+                command=RuntimeRunCreationCommand(
+                    run_id=run_id,
+                    site_id=request.site_id,
+                    account_id=str(commercial_decision.get("account_id") or "") or None,
+                    subscription_id=str(commercial_decision.get("subscription_id") or "") or None,
+                    plan_version_id=str(commercial_decision.get("plan_version_id") or "") or None,
+                    ability_name=request.ability_name,
+                    ability_family=request.ability_family,
+                    skill_id=request.skill_id,
+                    workflow_id=request.workflow_id,
+                    contract_version=request.contract_version,
+                    channel=request.channel,
+                    execution_kind=request.execution_kind,
+                    execution_tier=request.execution_tier,
+                    execution_pattern=request.execution_pattern,
+                    data_classification=request.data_classification,
+                    profile_id=request.profile_id or MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+                    canonical_run_id=request.canonical_run_id or None,
+                    status="running",
+                    idempotency_key=request.idempotency_key,
+                    request_fingerprint=request_fingerprint,
+                    trace_id=trace_id,
+                    input_json=self._prepare_input_for_storage(
+                        request.input_payload,
+                        storage_mode=storage_mode,
+                    ),
+                    execution_input_ciphertext=None,
+                    policy_json=merged_policy,
+                    selected_provider_id="media_governance_audit",
+                    selected_model_id="deterministic-auditor",
+                    selected_instance_id="cloud-runtime",
+                ),
+            )
+            self.commercial_service.record_run_acceptance(session=session, run=run)
+            self._execute_media_governance_audit_run(
+                run,
+                repository=repository,
+                input_payload=request.input_payload,
+            )
+            session.commit()
+            return self._build_execution_response(
+                run,
+                repository=repository,
+                idempotent_replay=False,
+            )
+
     def _execute_site_ops_analysis_request(
         self,
         request: RuntimeRequest,
@@ -3434,19 +4111,45 @@ class RuntimeService:
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
         self.contract_validator.validate_image_context_evidence_contract(request)
+        dispatch_mode = image_context_evidence_dispatch_mode(request.input_payload)
+        background_policy = (
+            resolve_media_recognition_policy(self.database_url)
+            if dispatch_mode == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+            else {}
+        )
+        if background_policy and not bool(background_policy.get("enabled")):
+            raise RuntimeMediaRecognitionPolicyError(
+                "media_recognition.background_disabled",
+                "background media recognition is disabled by the platform policy",
+                status_code=409,
+            )
         resolution = self.routing_service.resolve(
-            profile_id=request.profile_id,
+            profile_id=(
+                VISION_AI_PROFILE_ID
+                if background_policy
+                else request.profile_id
+            ),
             execution_kind="vision",
         )
+        selected_candidate = resolution.selected_candidate
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_image_context_evidence_policy(request, resolution)
+        if background_policy:
+            merged_policy["media_recognition_policy"] = {
+                "dispatch_mode": dispatch_mode,
+                "model_id": selected_candidate.model_id,
+                "model_source_profile_id": resolution.profile_id,
+                "timezone": str(background_policy.get("timezone") or ""),
+                "window_start": str(background_policy.get("window_start") or ""),
+                "window_end": str(background_policy.get("window_end") or ""),
+                "daily_limit": int(background_policy.get("daily_limit") or 0),
+                "item_count": self._image_context_evidence_item_count(request.input_payload),
+            }
         request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
             request,
             merged_policy,
         )
-        selected_candidate = resolution.selected_candidate
-
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
@@ -3465,10 +4168,26 @@ class RuntimeService:
                     idempotent_replay=True,
                 )
 
+            worker_eligible_at: datetime | None = None
+            if background_policy:
+                worker_eligible_at = self._media_recognition_worker_eligible_at(
+                    session,
+                    policy=background_policy,
+                    requested_items=self._image_context_evidence_item_count(
+                        request.input_payload
+                    ),
+                    lock_quota_reservations=True,
+                )
+
             self._admit_image_context_evidence_artifact_inputs(
                 repository,
                 site_id=request.site_id,
                 input_payload=request.input_payload,
+                retain_until=(
+                    worker_eligible_at + timedelta(hours=30)
+                    if worker_eligible_at is not None
+                    else None
+                ),
             )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
@@ -3478,7 +4197,7 @@ class RuntimeService:
                 channel=request.channel,
                 execution_kind=request.execution_kind,
                 execution_tier=request.execution_tier,
-                execution_pattern=request.execution_pattern,
+                execution_pattern=("inline" if background_policy else request.execution_pattern),
                 data_classification=request.data_classification,
                 trace_id=trace_id,
                 idempotency_key=request.idempotency_key,
@@ -3495,6 +4214,7 @@ class RuntimeService:
                 commercial_decision=commercial_decision,
             )
             storage_mode = self._get_storage_mode(merged_policy)
+            should_enqueue = bool(background_policy)
             run = self.run_lifecycle_service.create_durable_run(
                 repository=repository,
                 command=RuntimeRunCreationCommand(
@@ -3511,11 +4231,13 @@ class RuntimeService:
                     channel=request.channel,
                     execution_kind=request.execution_kind,
                     execution_tier=request.execution_tier,
-                    execution_pattern=request.execution_pattern,
+                    execution_pattern=(
+                        "whole_run_offload" if background_policy else request.execution_pattern
+                    ),
                     data_classification=request.data_classification,
                     profile_id=request.profile_id or IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
                     canonical_run_id=request.canonical_run_id or None,
-                    status="running",
+                    status="queued" if should_enqueue else "running",
                     idempotency_key=request.idempotency_key,
                     request_fingerprint=request_fingerprint,
                     trace_id=trace_id,
@@ -3523,14 +4245,52 @@ class RuntimeService:
                         request.input_payload,
                         storage_mode=storage_mode,
                     ),
-                    execution_input_ciphertext=None,
+                    execution_input_ciphertext=(
+                        encrypt_runtime_execution_input(
+                            request.input_payload,
+                            settings=self.settings,
+                        )
+                        if should_enqueue
+                        else None
+                    ),
                     policy_json=merged_policy,
                     selected_provider_id=selected_candidate.provider_id,
                     selected_model_id=selected_candidate.model_id,
                     selected_instance_id=selected_candidate.instance_id,
+                    worker_eligible_at=worker_eligible_at,
                 ),
             )
+            if should_enqueue:
+                requested_count = self._image_context_evidence_item_count(request.input_payload)
+                run.result_json = {
+                    "artifact_type": "image_context_evidence_progress",
+                    "composition_role": "image_context_evidence_progress",
+                    "status": "queued",
+                    "run_id": run.run_id,
+                    "progress": {
+                        "status": "queued",
+                        "stage": "queued",
+                        "processed_items": 0,
+                        "successful_items": 0,
+                        "failed_items": 0,
+                        "total_items": requested_count,
+                        "percent": 0,
+                    },
+                    "write_posture": "suggestion_only",
+                    "direct_wordpress_write": False,
+                }
+                flag_modified(run, "result_json")
             self.commercial_service.record_run_acceptance(session=session, run=run)
+            if should_enqueue:
+                session.commit()
+                response = self._build_execution_response(
+                    run,
+                    repository=repository,
+                    idempotent_replay=False,
+                )
+                if worker_eligible_at is None or worker_eligible_at <= datetime.now(UTC):
+                    self.run_lifecycle_service.publish_queue_signal(run.run_id)
+                return response
             self._execute_image_context_evidence_run(
                 run,
                 repository=repository,
@@ -3543,6 +4303,88 @@ class RuntimeService:
                 repository=repository,
                 idempotent_replay=False,
             )
+
+    @staticmethod
+    def _image_context_evidence_item_count(input_payload: dict[str, Any]) -> int:
+        items = extract_image_context_evidence_request(input_payload).get("items")
+        return len(items) if isinstance(items, list) else 0
+
+    @staticmethod
+    def _media_recognition_worker_eligible_at(
+        session: Any,
+        *,
+        policy: dict[str, Any],
+        requested_items: int,
+        now: datetime | None = None,
+        exclude_run_id: str = "",
+        lock_quota_reservations: bool = False,
+    ) -> datetime:
+        if not bool(policy.get("enabled")):
+            raise RuntimeMediaRecognitionPolicyError(
+                "media_recognition.background_disabled",
+                "background media recognition is disabled by the platform policy",
+                status_code=409,
+            )
+        observed_at = now or datetime.now(UTC)
+        daily_limit = max(1, int(policy.get("daily_limit") or 1))
+        if requested_items > daily_limit:
+            raise RuntimeMediaRecognitionPolicyError(
+                "media_recognition.batch_exceeds_daily_limit",
+                "background media recognition batch exceeds the configured daily image limit",
+                status_code=422,
+            )
+        if not media_recognition_window_is_open(policy, now=observed_at):
+            return media_recognition_next_window_start(policy, now=observed_at)
+        if lock_quota_reservations:
+            # Serialize the count-and-create reservation transaction across sites.
+            session.execute(
+                select(ServiceSetting.setting_id)
+                .where(
+                    ServiceSetting.setting_id
+                    == SERVICE_SETTING_MEDIA_RECOGNITION_POLICY
+                )
+                .with_for_update()
+            )
+        day_start, day_end = media_recognition_local_day_bounds(policy, now=observed_at)
+        runs = list(
+            session.scalars(
+                select(RunRecord).where(
+                    RunRecord.ability_name.in_(IMAGE_CONTEXT_EVIDENCE_ABILITIES),
+                    or_(
+                        and_(
+                            RunRecord.status == "queued",
+                            RunRecord.worker_eligible_at >= day_start,
+                            RunRecord.worker_eligible_at < day_end,
+                        ),
+                        and_(
+                            RunRecord.status.in_(("running", "succeeded")),
+                            RunRecord.processing_started_at >= day_start,
+                            RunRecord.processing_started_at < day_end,
+                        ),
+                    ),
+                )
+            )
+        )
+        used_items = 0
+        for run in runs:
+            if exclude_run_id and run.run_id == exclude_run_id:
+                continue
+            run_policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+            recognition_policy = run_policy.get("media_recognition_policy")
+            if not isinstance(recognition_policy, dict):
+                continue
+            if (
+                recognition_policy.get("dispatch_mode")
+                != IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+            ):
+                continue
+            try:
+                used_items += max(0, int(recognition_policy.get("item_count") or 0))
+            except (TypeError, ValueError):
+                continue
+        if used_items + requested_items > daily_limit:
+            return media_recognition_next_window_start(policy, now=observed_at)
+        return observed_at
 
     def _execute_media_batch_plan_run(
         self,
@@ -3589,6 +4431,55 @@ class RuntimeService:
             result_json=execution.result_json,
             provider_id="media_batch_plan",
             model_id="deterministic-intent-parser",
+            instance_id="cloud-runtime",
+            fallback_used=False,
+        )
+
+    def _execute_media_governance_audit_run(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any] | None = None,
+    ) -> None:
+        if self.run_lifecycle_service.cancel_if_requested(
+            repository=repository,
+            run=run,
+        ):
+            return
+
+        payload = (
+            input_payload
+            if isinstance(input_payload, dict)
+            else self._get_execution_input_payload(run)
+        )
+        try:
+            execution = MediaGovernanceAuditService().execute(
+                site_id=run.site_id,
+                ability_name=run.ability_name,
+                contract_version=run.contract_version or "",
+                input_payload=payload,
+                run_id=run.run_id,
+            )
+        except MediaGovernanceAuditContractViolation as error:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+                provider_id="media_governance_audit",
+                model_id="deterministic-auditor",
+                instance_id="cloud-runtime",
+                fallback_used=False,
+            )
+            return
+
+        self.run_lifecycle_service.succeed_run(
+            repository,
+            run,
+            result_json=execution.result_json,
+            provider_id="media_governance_audit",
+            model_id="deterministic-auditor",
             instance_id="cloud-runtime",
             fallback_used=False,
         )
@@ -3673,6 +4564,11 @@ class RuntimeService:
             run=run,
         ):
             return
+        if self._defer_background_image_context_evidence_run(
+            run,
+            repository=repository,
+        ):
+            return
 
         payload = (
             input_payload
@@ -3698,6 +4594,56 @@ class RuntimeService:
 
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
         timeout_ms = max(1, self._coerce_int(policy.get("timeout_ms"), default=30_000))
+        requested_count = self._image_context_evidence_item_count(payload)
+        progress_started_at = datetime.now(UTC)
+        progress_estimate = self._media_recognition_progress_estimate(
+            repository.session,
+            site_id=run.site_id,
+            requested_items=requested_count,
+        )
+        if self._is_background_image_context_evidence_policy(policy):
+            run.result_json = {
+                "artifact_type": "image_context_evidence_progress",
+                "composition_role": "image_context_evidence_progress",
+                "status": "running",
+                "run_id": run.run_id,
+                "progress": {
+                    "status": "running",
+                    "stage": "recognizing",
+                    "processed_items": 0,
+                    "successful_items": 0,
+                    "failed_items": 0,
+                    "total_items": requested_count,
+                    "percent": 0,
+                    "started_at": progress_started_at.isoformat(),
+                    "updated_at": progress_started_at.isoformat(),
+                    **progress_estimate,
+                },
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            }
+            flag_modified(run, "result_json")
+            repository.session.commit()
+        if self._is_background_image_context_evidence_policy(policy):
+            try:
+                payload = self._admit_background_media_image_capacity(
+                    repository=repository,
+                    site_id=run.site_id,
+                    input_payload=payload,
+                )
+            except SiteKnowledgeContractViolation as error:
+                self.run_lifecycle_service.fail_run(
+                    repository,
+                    run,
+                    error_code=error.error_code,
+                    error_message=error.message,
+                    provider_id=selected_candidate.provider_id,
+                    model_id=selected_candidate.model_id,
+                    instance_id=selected_candidate.instance_id,
+                    fallback_used=False,
+                )
+                return
+            requested_count = self._image_context_evidence_item_count(payload)
         try:
             artifact_inputs = self._load_image_context_evidence_artifact_inputs(
                 repository,
@@ -3723,6 +4669,9 @@ class RuntimeService:
                 price_input=selected_candidate.price_input,
                 price_output=selected_candidate.price_output,
                 artifact_inputs=artifact_inputs,
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_session=repository.session,
+                budget_run=run,
             )
         except ImageContextEvidenceContractViolation as error:
             self.run_lifecycle_service.fail_run(
@@ -3753,6 +4702,7 @@ class RuntimeService:
                         retry_count=0,
                         fallback_used=False,
                         error_code=error.usage.error_code or error.error_code,
+                        budget_claim_ids=error.usage.budget_claim_ids,
                     ),
                 )
             self.run_lifecycle_service.fail_run(
@@ -3782,17 +4732,353 @@ class RuntimeService:
                 retry_count=0,
                 fallback_used=False,
                 error_code=execution.usage.error_code,
+                budget_claim_ids=execution.usage.budget_claim_ids,
             ),
         )
+        result_json = execution.result_json
+        evidence_items = result_json.get("items") if isinstance(result_json, dict) else []
+        successful_count = len(evidence_items) if isinstance(evidence_items, list) else 0
+        progress_finished_at = datetime.now(UTC)
+        duration_seconds = max(
+            0.001,
+            (progress_finished_at - progress_started_at).total_seconds(),
+        )
+        result_json = {
+            **result_json,
+            "progress": {
+                "status": "completed",
+                "stage": (
+                    "projection"
+                    if self._is_background_image_context_evidence_policy(policy)
+                    else "completed"
+                ),
+                "processed_items": requested_count,
+                "successful_items": successful_count,
+                "failed_items": max(0, requested_count - successful_count),
+                "total_items": requested_count,
+                "percent": 100,
+                "started_at": progress_started_at.isoformat(),
+                "updated_at": progress_finished_at.isoformat(),
+                "duration_seconds": round(duration_seconds, 3),
+                "items_per_minute": round(successful_count / duration_seconds * 60, 1),
+                "eta_at": progress_finished_at.isoformat(),
+            },
+        }
+        if self._is_background_image_context_evidence_policy(policy):
+            try:
+                projection = self._project_background_media_evidence(
+                    run,
+                    repository=repository,
+                    input_payload=payload,
+                    result_json=execution.result_json,
+                )
+            except (SiteKnowledgeContractViolation, SiteKnowledgeBackendError) as error:
+                self.run_lifecycle_service.fail_run(
+                    repository,
+                    run,
+                    error_code=error.error_code,
+                    error_message=error.message,
+                    provider_id=execution.usage.provider_id,
+                    model_id=execution.usage.model_id,
+                    instance_id=execution.usage.instance_id,
+                    fallback_used=False,
+                )
+                return
+            result_json = {
+                **result_json,
+                "site_knowledge_projection": projection,
+            }
         self.run_lifecycle_service.succeed_run(
             repository,
             run,
-            result_json=execution.result_json,
+            result_json=result_json,
             provider_id=execution.usage.provider_id,
             model_id=execution.usage.model_id,
             instance_id=execution.usage.instance_id,
             fallback_used=False,
         )
+
+    def _admit_background_media_image_capacity(
+        self,
+        *,
+        repository: RuntimeRepository,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        account_id, _, media_image_limit = self._resolve_site_knowledge_account_limit(
+            repository=repository,
+            site_id=site_id,
+        )
+        if not account_id or media_image_limit is None or media_image_limit <= 0:
+            return input_payload
+
+        knowledge_repository = SiteKnowledgeRepository(repository.session)
+        current_count = knowledge_repository.lock_account_and_count_documents(
+            account_id,
+            source_type="media",
+        )
+        remaining_capacity = max(0, int(media_image_limit) - current_count)
+        request = extract_image_context_evidence_request(input_payload)
+        raw_items = request.get("items")
+        items = raw_items if isinstance(raw_items, list) else []
+        admitted_items: list[dict[str, Any]] = []
+        for raw_item in items:
+            if not isinstance(raw_item, dict):
+                continue
+            attachment_id = self._coerce_int(raw_item.get("attachment_id"), default=0)
+            is_refresh = attachment_id > 0 and knowledge_repository.document_exists(
+                site_id=site_id,
+                source_type="media",
+                source_id=attachment_id,
+            )
+            if is_refresh:
+                admitted_items.append(raw_item)
+                continue
+            if remaining_capacity <= 0:
+                continue
+            admitted_items.append(raw_item)
+            remaining_capacity -= 1
+
+        if not admitted_items:
+            raise SiteKnowledgeContractViolation(
+                "media_recognition.media_capacity_exhausted",
+                "the account image recognition capacity has been reached",
+            )
+        if len(admitted_items) == len(items):
+            return input_payload
+
+        admitted_request = {**request, "items": admitted_items}
+        if request is input_payload:
+            return admitted_request
+        return {
+            **input_payload,
+            "image_context_evidence_request": admitted_request,
+        }
+
+    @staticmethod
+    def _media_recognition_progress_estimate(
+        session: Any,
+        *,
+        site_id: str,
+        requested_items: int,
+    ) -> dict[str, Any]:
+        recent_runs = list(
+            session.scalars(
+                select(RunRecord)
+                .where(
+                    RunRecord.site_id == site_id,
+                    RunRecord.ability_name == "npcink-cloud/image-context-evidence",
+                    RunRecord.status == "succeeded",
+                )
+                .order_by(RunRecord.finished_at.desc())
+                .limit(10)
+            )
+        )
+        completed_items = 0
+        duration_seconds = 0.0
+        for recent in recent_runs:
+            result = recent.result_json if isinstance(recent.result_json, dict) else {}
+            progress_value = result.get("progress")
+            progress: dict[str, Any] = (
+                progress_value if isinstance(progress_value, dict) else {}
+            )
+            item_count = int(progress.get("successful_items") or 0)
+            duration = float(progress.get("duration_seconds") or 0)
+            if item_count > 0 and duration > 0:
+                completed_items += item_count
+                duration_seconds += duration
+        if completed_items <= 0 or duration_seconds <= 0:
+            return {"items_per_minute": 0, "estimated_duration_seconds": 0, "eta_at": ""}
+        items_per_second = completed_items / duration_seconds
+        estimated_duration = max(1, int(round(requested_items / items_per_second)))
+        return {
+            "items_per_minute": round(items_per_second * 60, 1),
+            "estimated_duration_seconds": estimated_duration,
+            "eta_at": (datetime.now(UTC) + timedelta(seconds=estimated_duration)).isoformat(),
+        }
+
+    @staticmethod
+    def _is_background_image_context_evidence_policy(policy: dict[str, Any]) -> bool:
+        snapshot = policy.get("media_recognition_policy")
+        return isinstance(snapshot, dict) and (
+            snapshot.get("dispatch_mode") == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+        )
+
+    def _project_background_media_evidence(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any],
+        result_json: dict[str, Any],
+    ) -> dict[str, Any]:
+        request = extract_image_context_evidence_request(input_payload)
+        requested_by_id = {
+            str(item.get("attachment_id") or ""): item
+            for item in request.get("items", [])
+            if isinstance(item, dict) and str(item.get("attachment_id") or "")
+        }
+        source = result_json.get("source")
+        source = source if isinstance(source, dict) else {}
+        media_items: list[dict[str, Any]] = []
+        evidence_items = result_json.get("items")
+        for evidence in evidence_items if isinstance(evidence_items, list) else []:
+            if not isinstance(evidence, dict):
+                continue
+            attachment_key = str(evidence.get("attachment_id") or "")
+            if not attachment_key.isdigit() or int(attachment_key) <= 0:
+                continue
+            request_item = requested_by_id.get(attachment_key)
+            if not isinstance(request_item, dict):
+                continue
+            media_items.append(
+                {
+                    "attachment_id": int(attachment_key),
+                    "mime_type": str(request_item.get("mime_type") or "")[:120],
+                    "title": str(request_item.get("title") or "")[:500],
+                    "url": str(request_item.get("attachment_url") or "")[:2000],
+                    "modified_gmt": str(request_item.get("modified_gmt") or "")[:64],
+                    "media_fingerprint": str(
+                        request_item.get("media_fingerprint") or ""
+                    )[:128],
+                    "alt": str(request_item.get("alt") or "")[:1000],
+                    "caption": str(request_item.get("caption") or "")[:2000],
+                    "description": str(request_item.get("description") or "")[:4000],
+                    "visual_summary": str(evidence.get("visual_summary") or "")[:2000],
+                    "visible_text": evidence.get("visible_text") or [],
+                    "subject_tags": evidence.get("subject_tags") or [],
+                    "alt_text_basis": str(evidence.get("alt_text_basis") or "")[:1500],
+                    "vision_contract_version": "image_context_evidence.v1",
+                    "vision_source": "cloud_vision_model",
+                    "vision_model_id": str(source.get("model_id") or run.selected_model_id or ""),
+                    "vision_run_id": run.run_id,
+                    "confidence": evidence.get("confidence") or 0,
+                    "uncertainty_flags": evidence.get("uncertainty_flags") or [],
+                }
+            )
+        if not media_items:
+            raise SiteKnowledgeContractViolation(
+                "media_recognition.empty_projection",
+                "background media recognition produced no projectable evidence",
+            )
+
+        def record_embedding_usage(
+            provider_id: str,
+            provider_request: ProviderExecutionRequest,
+            provider_result: ProviderExecutionResult | None,
+            provider_error: ProviderExecutionError | None,
+        ) -> None:
+            self._record_site_knowledge_embedding_provider_call(
+                run,
+                repository=repository,
+                provider_id=provider_id,
+                provider_request=provider_request,
+                provider_result=provider_result,
+                provider_error=provider_error,
+            )
+
+        (
+            account_id,
+            account_vector_document_limit,
+            account_media_image_limit,
+        ) = self._resolve_site_knowledge_account_limit(
+            repository=repository,
+            site_id=run.site_id,
+        )
+        projection = SiteKnowledgeService(
+            repository.session,
+            settings=self.settings,
+            providers=self.providers,
+            embedding_usage_callback=record_embedding_usage,
+            account_id=account_id,
+            account_vector_document_limit=account_vector_document_limit,
+            account_media_image_limit=account_media_image_limit,
+            budget_guard=self.provider_execution_service.budget_guard,
+            budget_run=run,
+        ).sync(
+            site_id=run.site_id,
+            input_payload={
+                "contract_version": SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SYNC_ABILITY],
+                "sync_mode": "refresh",
+                "post_ids": [item["attachment_id"] for item in media_items],
+                "media_items": media_items,
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            run_id=run.run_id,
+        )
+        sync = projection.get("sync")
+        sync = sync if isinstance(sync, dict) else {}
+        return {
+            "status": str(projection.get("status") or "completed"),
+            "indexed_documents": int(sync.get("indexed_documents") or 0),
+            "indexed_chunks": int(sync.get("indexed_chunks") or 0),
+            "unchanged_documents": int(sync.get("unchanged_documents") or 0),
+        }
+
+    def _defer_background_image_context_evidence_run(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+    ) -> bool:
+        run_policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+        snapshot = run_policy.get("media_recognition_policy")
+        if not isinstance(snapshot, dict) or (
+            snapshot.get("dispatch_mode") != IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND
+        ):
+            return False
+
+        current_policy = resolve_media_recognition_policy(self.database_url)
+        requested_items = max(1, int(snapshot.get("item_count") or 1))
+        selected_provider_id = str(run.selected_provider_id or "")
+        selected_model_id = str(run.selected_model_id or "")
+        selected_instance_id = str(run.selected_instance_id or "")
+        observed_at = datetime.now(UTC)
+        try:
+            eligible_at = self._media_recognition_worker_eligible_at(
+                repository.session,
+                policy=current_policy,
+                requested_items=requested_items,
+                now=observed_at,
+                exclude_run_id=run.run_id,
+            )
+        except RuntimeMediaRecognitionPolicyError as error:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+                provider_id=selected_provider_id,
+                model_id=selected_model_id,
+                instance_id=selected_instance_id,
+                fallback_used=False,
+            )
+            return True
+
+        updated_snapshot = {
+            **snapshot,
+            "timezone": str(current_policy.get("timezone") or ""),
+            "window_start": str(current_policy.get("window_start") or ""),
+            "window_end": str(current_policy.get("window_end") or ""),
+            "daily_limit": int(current_policy.get("daily_limit") or 0),
+            "worker_eligible_at": eligible_at.isoformat(),
+        }
+        run.policy_json = {**run_policy, "media_recognition_policy": updated_snapshot}
+        flag_modified(run, "policy_json")
+        if eligible_at <= observed_at:
+            run.worker_eligible_at = eligible_at
+            return False
+
+        payload = self._get_execution_input_payload(run)
+        self._admit_image_context_evidence_artifact_inputs(
+            repository,
+            site_id=run.site_id,
+            input_payload=payload,
+            retain_until=eligible_at + timedelta(hours=30),
+        )
+        repository.defer_run_until(run, eligible_at=eligible_at)
+        return True
 
     def _admit_image_context_evidence_artifact_inputs(
         self,
@@ -3800,6 +5086,7 @@ class RuntimeService:
         *,
         site_id: str,
         input_payload: dict[str, Any],
+        retain_until: datetime | None = None,
     ) -> None:
         total_bytes = 0
         for artifact_id in image_context_evidence_artifact_ids(input_payload):
@@ -3815,6 +5102,14 @@ class RuntimeService:
                     "image context evidence source artifact is unavailable",
                 ) from error
             total_bytes += reference.byte_size
+            if retain_until is not None:
+                artifact = repository.session.get(MediaArtifact, artifact_id)
+                if artifact is not None:
+                    artifact_expires_at = artifact.expires_at
+                    if artifact_expires_at.tzinfo is None:
+                        artifact_expires_at = artifact_expires_at.replace(tzinfo=UTC)
+                    if artifact_expires_at < retain_until:
+                        artifact.expires_at = retain_until
             if total_bytes > MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES:
                 raise RuntimeExecutionContractError(
                     "image_context_evidence.source_artifacts_too_large",
@@ -3990,12 +5285,19 @@ class RuntimeService:
                 repository=repository,
                 input_payload=payload,
             )
-            llm_prompt_plan = self._build_image_source_llm_prompt_plan(
-                run,
-                repository=repository,
-                input_payload=payload,
-                site_knowledge_context=site_knowledge_context,
-            )
+            # Ordinary image-source searches use deterministic query angles.
+            # The paid text planner is reserved for an explicit user action.
+            if self._image_source_manual_keyword_generation(payload):
+                llm_prompt_plan = self._build_image_source_llm_prompt_plan(
+                    run,
+                    repository=repository,
+                    input_payload=payload,
+                    site_knowledge_context=site_knowledge_context,
+                )
+            else:
+                llm_prompt_plan = self._skipped_image_source_llm_prompt_plan(
+                    reason="manual_keyword_generation_required"
+                )
         try:
             execution = ImageSourceService(self.settings).execute(
                 site_id=run.site_id,
@@ -4086,6 +5388,8 @@ class RuntimeService:
         enhancement_mode = str(input_payload.get("enhancement_mode") or "").strip().lower()
         if latency_mode == "fast_first" or enhancement_mode == "deferred":
             return True
+        if latency_mode == "complete":
+            return False
 
         cloud_steps = visual_context.get("cloud_ai_steps")
         if isinstance(cloud_steps, list) and cloud_steps:
@@ -4095,6 +5399,15 @@ class RuntimeService:
                 and "candidate_rerank" not in normalized_steps
             )
         return False
+
+    def _image_source_manual_keyword_generation(self, input_payload: dict[str, Any]) -> bool:
+        visual_context = self._dict_or_empty(input_payload.get("visual_context"))
+        query_intent = self._dict_or_empty(visual_context.get("query_intent"))
+        return bool(
+            input_payload.get("generate_keywords")
+            or visual_context.get("generate_keywords")
+            or query_intent.get("generate_keywords")
+        )
 
     def _skipped_image_source_site_knowledge_context(self, *, reason: str) -> dict[str, Any]:
         return {
@@ -4170,6 +5483,8 @@ class RuntimeService:
                 settings=self.settings,
                 providers=self.providers,
                 embedding_usage_callback=record_embedding_usage,
+                budget_guard=self.provider_execution_service.budget_guard,
+                budget_run=run,
             ).execute(
                 site_id=run.site_id,
                 ability_name=SITE_KNOWLEDGE_SEARCH_ABILITY,
@@ -4281,6 +5596,9 @@ class RuntimeService:
             provider_result = self.provider_execution_service.execute_provider(
                 provider,
                 request,
+                session=repository.session,
+                run=run,
+                provider_id=candidate.provider_id,
             )
         except ProviderExecutionError as error:
             self.provider_execution_service.record_provider_call(
@@ -4423,7 +5741,10 @@ class RuntimeService:
                     "content": (
                         "Return JSON with key prompt_candidates, an array of 1 to 3 "
                         "objects. Each object must include id, label, direction_type, "
-                        "visual_strategy, reason, and prompt. Use direction_type values "
+                        "visual_strategy, reason, localized_prompt, and prompt. "
+                        "localized_prompt must be concise Simplified Chinese for operator "
+                        "review; prompt must be the faithful English image-model version. "
+                        "Use direction_type values "
                         "like editorial_scene, conceptual_metaphor, workflow_detail, "
                         "or article_cover so the editor can show distinct visual choices. "
                         "reason must briefly explain why the direction fits the selected "
@@ -4468,7 +5789,10 @@ class RuntimeService:
             if not isinstance(item, dict):
                 continue
             prompt = " ".join(str(item.get("prompt") or "").split())[:1200]
-            if not prompt:
+            localized_prompt = " ".join(
+                str(item.get("localized_prompt") or "").split()
+            )[:1200]
+            if not prompt or not self._contains_cjk(localized_prompt):
                 continue
             candidates.append(
                 {
@@ -4479,6 +5803,7 @@ class RuntimeService:
                     "reason": str(item.get("reason") or "")[:220],
                     "image_use": str(item.get("image_use") or "")[:80],
                     "prompt": prompt,
+                    "localized_prompt": localized_prompt,
                 }
             )
         return candidates
@@ -4519,6 +5844,9 @@ class RuntimeService:
 
     def _is_media_batch_plan_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in MEDIA_BATCH_PLAN_ABILITIES
+
+    def _is_media_governance_audit_request(self, request: RuntimeRequest) -> bool:
+        return request.ability_name in MEDIA_GOVERNANCE_AUDIT_ABILITIES
 
     def _is_site_ops_analysis_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in SITE_OPS_ANALYSIS_ABILITIES
@@ -4590,6 +5918,9 @@ class RuntimeService:
     def _is_media_batch_plan_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in MEDIA_BATCH_PLAN_ABILITIES
 
+    def _is_media_governance_audit_run(self, run: RunRecord) -> bool:
+        return str(run.ability_name or "") in MEDIA_GOVERNANCE_AUDIT_ABILITIES
+
     def _is_image_context_evidence_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in IMAGE_CONTEXT_EVIDENCE_ABILITIES
 
@@ -4636,7 +5967,7 @@ class RuntimeService:
             connector_envelope,
             source_artifact=source_artifact,
         )
-        return self.wordpress_operation_runtime.apply_site_knowledge_reference(
+        prepared_input = self.wordpress_operation_runtime.apply_site_knowledge_reference(
             site_id=run.site_id,
             run_id=run.run_id,
             session=repository.session,
@@ -4644,6 +5975,13 @@ class RuntimeService:
             provider_input=provider_input,
             embedding_usage_callback=record_embedding_usage,
         )
+        # Snapshot Cloud-owned evidence before the provider receives mutable input.
+        setattr(  # noqa: B010 - transient evidence is not an ORM column.
+            run,
+            "_wordpress_generation_context_evidence",
+            GenerationContextEvidence.from_runtime_metadata(prepared_input.get("metadata")),
+        )
+        return prepared_input
 
     def _admit_wordpress_operation_artifact_input(
         self,
@@ -4775,6 +6113,29 @@ class RuntimeService:
         }
         return policy
 
+    def _build_media_governance_audit_policy(self, request: RuntimeRequest) -> dict[str, object]:
+        policy = self._apply_runtime_controls(dict(request.policy), request)
+        policy["allow_fallback"] = False
+        policy["execution_contract"] = {
+            "ability_name": request.ability_name,
+            "contract_version": request.contract_version,
+            "profile_id": request.profile_id or MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+            "execution_pattern": request.execution_pattern,
+            "data_classification": request.data_classification,
+            "storage_mode": request.storage_mode,
+            "timeout_seconds": max(0, request.timeout_seconds),
+            "retry_max": max(0, request.retry_max),
+            "retention_ttl": max(0, request.retention_ttl),
+            "result_contract": MEDIA_GOVERNANCE_AUDIT_RESULT_CONTRACT,
+            "cloud_role": "runtime_detail",
+            "inventory_owner": "local_wordpress_host",
+            "wordpress_write_owner": "npcink-abilities-toolkit",
+            "write_posture": "read_only",
+            "cloud_scan": False,
+            "direct_wordpress_write": False,
+        }
+        return policy
+
     def _build_site_ops_analysis_policy(self, request: RuntimeRequest) -> dict[str, object]:
         policy = self._apply_runtime_controls(dict(request.policy), request)
         policy["allow_fallback"] = False
@@ -4806,11 +6167,21 @@ class RuntimeService:
         policy = self._apply_runtime_controls(policy, request)
         policy = self._apply_routing_snapshot(policy, resolution)
         policy["allow_fallback"] = False
+        dispatch_mode = image_context_evidence_dispatch_mode(request.input_payload)
+        execution_pattern = request.execution_pattern
+        if dispatch_mode == IMAGE_CONTEXT_EVIDENCE_DISPATCH_BACKGROUND:
+            execution_pattern = "whole_run_offload"
+            policy["task_backend"] = {
+                "enabled": True,
+                "mode": "queue",
+                "callback_mode": "polling_preferred",
+                "polling_interval_sec": 10,
+            }
         policy["execution_contract"] = {
             "ability_name": request.ability_name,
             "contract_version": request.contract_version,
             "profile_id": request.profile_id or IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
-            "execution_pattern": request.execution_pattern,
+            "execution_pattern": execution_pattern,
             "data_classification": request.data_classification,
             "storage_mode": request.storage_mode,
             "timeout_seconds": max(0, request.timeout_seconds),
@@ -4821,6 +6192,11 @@ class RuntimeService:
             "final_writes": "core_proposal_required",
             "direct_wordpress_write": False,
             "requires_human_visual_check": True,
+            "task_backend": (
+                policy.get("task_backend")
+                if isinstance(policy.get("task_backend"), dict)
+                else {}
+            ),
         }
         return policy
 
@@ -4971,6 +6347,15 @@ class RuntimeService:
         policy["routing_candidates"] = [
             self._serialize_routing_candidate(candidate) for candidate in resolution.candidates
         ]
+        policy["routing_explainability"] = {
+            "router_version": resolution.router_version,
+            "profile_id": resolution.profile_id,
+            "execution_kind": resolution.execution_kind,
+            "profile_revision": resolution.revision,
+            "selection_policy": dict(resolution.selection_policy),
+            "candidate_order": [candidate.instance_id for candidate in resolution.candidates],
+            "selection_basis": "resolved_candidate_order",
+        }
         return policy
 
     def _prefer_routing_candidate(
@@ -5275,8 +6660,17 @@ class RuntimeService:
 
     def _is_queued_run_stale(self, run: RunRecord, current_time: datetime) -> bool:
         started_at = self.run_projector.normalize_timestamp(run.started_at)
-        return run.status == "queued" and started_at <= (
-            current_time - timedelta(seconds=RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS)
+        worker_eligible_at = (
+            self.run_projector.normalize_timestamp(run.worker_eligible_at)
+            if run.worker_eligible_at is not None
+            else None
+        )
+        return (
+            run.status == "queued"
+            and (worker_eligible_at is None or worker_eligible_at <= current_time)
+            and started_at
+            <= current_time
+            - timedelta(seconds=RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS)
         )
 
     def _is_running_run_stale(self, run: RunRecord, current_time: datetime) -> bool:

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, init_schema
-from app.dev.bootstrap_portal_site import bootstrap_portal_site
-from app.dev.seed_runtime import seed_site_auth
+from app.ops.bootstrap_portal_site import bootstrap_portal_site
+from app.ops.seed_runtime import seed_site_auth
 
 
 def _sqlite_url(tmp_path: Path) -> str:

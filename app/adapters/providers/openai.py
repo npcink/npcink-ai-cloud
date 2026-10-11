@@ -6,7 +6,6 @@ import math
 import re
 import time
 from collections.abc import Iterable
-from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -504,16 +503,8 @@ class OpenAIProviderAdapter:
         started_at = time.monotonic()
 
         try:
-            with self._build_client(request.timeout_ms) as client:
+            with self._build_client(request.timeout_ms, request.endpoint_variant) as client:
                 response = self._post_with_compatibility_retry(client, endpoint_path, payload)
-                if (
-                    response.status_code == 404
-                    and endpoint_path == "/responses"
-                    and self._can_retry_responses_as_chat_completions(request)
-                ):
-                    result_request = replace(request, endpoint_variant="chat_completions")
-                    endpoint_path, payload = self._build_http_request(result_request)
-                    response = self._post_with_compatibility_retry(client, endpoint_path, payload)
                 response.raise_for_status()
         except httpx.TimeoutException as error:
             raise ProviderExecutionError(
@@ -567,10 +558,24 @@ class OpenAIProviderAdapter:
             )
         latency_ms = max(1, int((time.monotonic() - started_at) * 1000))
         result = self._build_http_result(result_request, response_json, latency_ms)
-        if result_request.endpoint_variant in {"responses", "chat_completions"}:
+        if result_request.endpoint_variant in {"responses", "chat_completions", "ollama_chat"}:
             result.cache_affinity_applied = bool(
                 payload.get("prompt_cache_key")
                 and self._prompt_cache_key_supported
+            )
+        if result_request.endpoint_variant == "responses" and result.output.get(
+            "response_status"
+        ) in {"incomplete", "failed", "cancelled"}:
+            raise ProviderExecutionError(
+                "provider.output_contract_invalid",
+                f"Responses response ended with {result.finish_reason}",
+                tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out,
+                cost=result.cost,
+                usage_context={
+                    **result.usage_context(),
+                    "response_status": result.output.get("response_status", "unknown"),
+                },
             )
         return result
 
@@ -600,6 +605,15 @@ class OpenAIProviderAdapter:
             ):
                 retry_payload.pop("metadata", None)
             elif (
+                "response_format" in payload
+                and self._response_reports_unavailable_parameter(response, "response_format")
+            ):
+                # Some OpenAI-compatible runtimes advertise JSON mode but
+                # reject the requested format at execution time. Retry once
+                # without the transport hint; the Cloud output contract still
+                # validates and normalizes the returned text.
+                retry_payload.pop("response_format", None)
+            elif (
                 payload.get("temperature") != 1
                 and self._response_requires_temperature_one(response)
             ):
@@ -609,6 +623,36 @@ class OpenAIProviderAdapter:
             payload = retry_payload
             response = self._post_provider_request(client, endpoint_path, payload)
         return response
+
+    @staticmethod
+    def _response_reports_unavailable_parameter(
+        response: httpx.Response,
+        parameter: str,
+    ) -> bool:
+        try:
+            payload = response.json()
+        except ValueError:
+            return False
+        error_payload = payload.get("error") if isinstance(payload, dict) else None
+        values: list[object] = [error_payload]
+        if isinstance(error_payload, dict):
+            values.extend(
+                [
+                    error_payload.get("message"),
+                    error_payload.get("param"),
+                    error_payload.get("code"),
+                    error_payload.get("type"),
+                ]
+            )
+        needle = parameter.lower()
+        return any(
+            needle in str(value).lower()
+            and any(
+                marker in str(value).lower()
+                for marker in ("unavailable", "not available", "unsupported")
+            )
+            for value in values
+        )
 
     def _post_provider_request(
         self,
@@ -653,16 +697,6 @@ class OpenAIProviderAdapter:
                 extensions=streamed_response.extensions,
             )
 
-    def _can_retry_responses_as_chat_completions(
-        self,
-        request: ProviderExecutionRequest,
-    ) -> bool:
-        if request.endpoint_variant != "responses":
-            return False
-        options = self._resolve_request_options(request.input_payload)
-        messages = options.get("messages")
-        return isinstance(messages, list) and bool(messages)
-
     @staticmethod
     def _response_reports_unsupported_parameter(
         response: httpx.Response,
@@ -705,14 +739,17 @@ class OpenAIProviderAdapter:
         normalized = str(message or "").strip().lower()
         return "temperature" in normalized and "only 1 is allowed" in normalized
 
-    def _build_client(self, request_timeout_ms: int) -> httpx.Client:
+    def _build_client(self, request_timeout_ms: int, endpoint_variant: str = "") -> httpx.Client:
         timeout_seconds = min(
             max(request_timeout_ms / 1000, 0.001),
             max(self.timeout_seconds, 0.001),
         )
 
+        base_url = self.base_url
+        if endpoint_variant == "ollama_chat" and base_url.endswith("/v1"):
+            base_url = base_url[:-3]
         return httpx.Client(
-            base_url=self.base_url,
+            base_url=base_url,
             headers=self._build_http_headers(),
             timeout=timeout_seconds,
             transport=self.transport,
@@ -741,11 +778,32 @@ class OpenAIProviderAdapter:
             self._apply_image_generation_request_options(image_payload, options)
             return "/images/generations", image_payload
 
+        if request.endpoint_variant == "ollama_chat":
+            native_options: dict[str, Any] = {"num_predict": int(options.get("max_tokens", 512))}
+            if isinstance(options.get("temperature"), (int, float)):
+                native_options["temperature"] = options["temperature"]
+            return "/api/chat", {
+                "model": runtime_model_id,
+                "messages": self._resolve_ollama_messages(options),
+                "stream": False,
+                "think": False,
+                "options": native_options,
+            }
+
         if request.endpoint_variant == "responses":
             responses_payload: dict[str, Any] = {
                 "model": runtime_model_id,
                 "input": self._resolve_responses_input(options),
             }
+            # Ollama's Qwen-VL models emit reasoning until the output budget is
+            # exhausted unless thinking is explicitly disabled.  The OpenAI
+            # compatible endpoint accepts this provider extension and keeps the
+            # final text available to the WordPress vision contract.
+            if "qwen3-vl" in runtime_model_id.lower():
+                responses_payload["think"] = False
+                responses_payload.pop("reasoning_effort", None)
+                responses_payload.pop("reasoning", None)
+                responses_payload.pop("max_reasoning_tokens", None)
             if isinstance(options.get("temperature"), (int, float)):
                 responses_payload["temperature"] = options["temperature"]
             if isinstance(options.get("max_output_tokens"), int):
@@ -758,6 +816,14 @@ class OpenAIProviderAdapter:
             "model": runtime_model_id,
             "messages": self._resolve_chat_messages(options),
         }
+        if "qwen3-vl" in runtime_model_id.lower():
+            chat_payload["think"] = False
+            # Ollama's OpenAI-compatible Qwen-VL route uses `think` as the
+            # provider switch. Do not send the generic reasoning fields as
+            # they can re-enable hidden reasoning on older Ollama builds.
+            chat_payload.pop("reasoning_effort", None)
+            chat_payload.pop("reasoning", None)
+            chat_payload.pop("max_reasoning_tokens", None)
         if isinstance(options.get("temperature"), (int, float)):
             chat_payload["temperature"] = options["temperature"]
         if isinstance(options.get("max_tokens"), int):
@@ -875,18 +941,62 @@ class OpenAIProviderAdapter:
                 cost_estimate_mode=cost_estimate_mode,
             )
 
+        if request.endpoint_variant == "ollama_chat":
+            message = response_json.get("message")
+            output_text = self._extract_message_content(message)
+            usage = {
+                "prompt_tokens": response_json.get("prompt_eval_count", 0),
+                "completion_tokens": response_json.get("eval_count", 0),
+            }
+            normalized_usage = normalize_openai_usage(
+                usage,
+                input_field="prompt_tokens",
+                output_field="completion_tokens",
+            )
+            cost_estimate = self._estimate_cost_details(
+                request,
+                normalized_usage,
+                usage=usage,
+            )
+            return ProviderExecutionResult(
+                output={
+                    "output_text": output_text,
+                    "messages": [message] if isinstance(message, dict) else [],
+                    "model_id": response_json.get("model", request.model_id),
+                    "usage": usage,
+                },
+                latency_ms=latency_ms,
+                tokens_in=normalized_usage.total_input_tokens,
+                tokens_out=normalized_usage.output_tokens,
+                cost=cost_estimate.total_cost,
+                finish_reason=str(
+                    response_json.get("done_reason")
+                    or ("stop" if response_json.get("done") is True else "unknown")
+                ),
+                reasoning_tokens=normalized_usage.reasoning_tokens,
+                cost_estimate_mode=cost_estimate.mode,
+            )
+
         if request.endpoint_variant == "responses":
             usage = response_json.get("usage", {})
             output_text = self._extract_responses_output_text(response_json)
             response_output = response_json.get("output")
+            response_status = self._extract_responses_status(response_json)
+            reported_model_id = self._optional_string(response_json.get("model"))
             output = {
                 "output_text": output_text,
                 "messages": [{"role": "assistant", "content": output_text}],
-                "model_id": response_json.get("model", request.model_id),
+                # Keep the legacy model_id projection for existing callers, but
+                # expose the two evidence values separately. A gateway's
+                # reported model is not proof of the physical model used.
+                "model_id": reported_model_id or request.model_id,
+                "requested_model_id": request.model_id,
+                "reported_model_id": reported_model_id,
+                "response_status": response_status,
                 "usage": usage if isinstance(usage, dict) else {},
             }
             if isinstance(response_output, list):
-                output["output"] = response_output
+                output["output"] = self._sanitize_responses_output(response_output)
                 tool_calls = self._extract_responses_tool_calls(response_output)
                 if tool_calls:
                     output["tool_calls"] = tool_calls
@@ -1252,7 +1362,11 @@ class OpenAIProviderAdapter:
         payload: dict[str, Any],
         options: dict[str, Any],
     ) -> None:
-        self._apply_common_request_options(payload, options)
+        self._apply_common_request_options(
+            payload,
+            options,
+            include_provider_reasoning_defaults=True,
+        )
         if isinstance(options.get("response_format"), dict):
             payload["response_format"] = options["response_format"]
         tools = self._normalize_chat_tools(options.get("tools"))
@@ -1282,6 +1396,8 @@ class OpenAIProviderAdapter:
         self,
         payload: dict[str, Any],
         options: dict[str, Any],
+        *,
+        include_provider_reasoning_defaults: bool = False,
     ) -> None:
         for numeric_key in ("top_p", "presence_penalty", "frequency_penalty"):
             if isinstance(options.get(numeric_key), (int, float)):
@@ -1305,7 +1421,11 @@ class OpenAIProviderAdapter:
             for key, value in options["extra"].items():
                 if isinstance(key, str) and key not in payload:
                     payload[key] = value
-        if self.default_reasoning_effort and "reasoning_effort" not in payload:
+        if (
+            include_provider_reasoning_defaults
+            and self.default_reasoning_effort
+            and "reasoning_effort" not in payload
+        ):
             payload["reasoning_effort"] = self.default_reasoning_effort
         if "parallel_tool_calls" in options:
             payload["parallel_tool_calls"] = bool(options.get("parallel_tool_calls"))
@@ -1535,6 +1655,8 @@ class OpenAIProviderAdapter:
         status = self._infer_catalog_status(effective_payload)
         is_deprecated = self._infer_catalog_deprecated(status, effective_payload)
         endpoint_variant = self._select_catalog_endpoint_variant(feature, tier)
+        if feature == "vision" and "qwen3-vl" in model_id.lower():
+            endpoint_variant = "chat_completions"
         runtime_pricing = self._runtime_cache_pricing(effective_payload)
         override_evidence = {
             key: metadata_override[key]
@@ -1711,7 +1833,10 @@ class OpenAIProviderAdapter:
         if "image" in modalities or "vision" in modalities:
             return "vision"
 
-        if any(keyword in model_key for keyword in ("vision", "multimodal", "omni")):
+        if any(
+            keyword in model_key
+            for keyword in ("vision", "multimodal", "omni", "qwen3-vl", "-vl", ":vl")
+        ):
             return "vision"
 
         return "text"
@@ -2096,8 +2221,51 @@ class OpenAIProviderAdapter:
             if normalized:
                 return normalized
 
+        # Runtime projections use `input` for the complete, instruction-bearing
+        # prompt and `text` for the bounded source text. Prefer the complete
+        # input for chat providers; falling back to `text` silently discarded
+        # task instructions and made editorial/translation models ask for the
+        # source content again.
+        explicit_input = payload.get("input")
+        if isinstance(explicit_input, str) and explicit_input.strip():
+            return [{"role": "user", "content": explicit_input}]
+
         source_text = self._collect_source_text(payload)
         return [{"role": "user", "content": source_text or "empty input"}]
+
+    def _resolve_ollama_messages(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        messages = self._resolve_chat_messages(payload)
+        native: list[dict[str, Any]] = []
+        for message in messages:
+            role = str(message.get("role") or "user")
+            content = message.get("content")
+            if isinstance(content, str):
+                native.append({"role": role, "content": content})
+                continue
+            text_parts: list[str] = []
+            images: list[str] = []
+            if isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = str(block.get("type") or "")
+                    if block_type in {"text", "input_text"} and isinstance(block.get("text"), str):
+                        text_parts.append(block["text"])
+                    image = block.get("image_url")
+                    image_url = ""
+                    if block_type == "input_image" and isinstance(image, str):
+                        image_url = image
+                    elif isinstance(image, dict) and isinstance(image.get("url"), str):
+                        image_url = image["url"]
+                    if isinstance(image_url, str) and image_url.startswith("data:"):
+                        encoded = image_url.split(",", 1)[1] if "," in image_url else ""
+                        if encoded:
+                            images.append(encoded)
+            item: dict[str, Any] = {"role": role, "content": " ".join(text_parts)}
+            if images:
+                item["images"] = images
+            native.append(item)
+        return native
 
     def _resolve_responses_input(self, payload: dict[str, Any]) -> Any:
         if "input" in payload:
@@ -2141,41 +2309,119 @@ class OpenAIProviderAdapter:
         return ""
 
     def _extract_responses_output_text(self, payload: dict[str, Any]) -> str:
+        response_status = self._extract_responses_status(payload)
+        if response_status in {"incomplete", "failed", "cancelled"}:
+            return ""
+
         output_text = payload.get("output_text")
         if isinstance(output_text, str) and output_text:
             return output_text
 
         output = payload.get("output")
-        if not isinstance(output, list):
-            return ""
-
         fragments: list[str] = []
-        for item in output:
-            if not isinstance(item, dict):
-                continue
-            content = item.get("content")
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                if not isinstance(block, dict):
+        if isinstance(output, list):
+            for item in output:
+                if not isinstance(item, dict):
                     continue
-                if isinstance(block.get("text"), str):
-                    fragments.append(block["text"])
+                if item.get("type") != "message":
                     continue
-                if isinstance(block.get("content"), str):
-                    fragments.append(block["content"])
+                item_status = item.get("status")
+                if isinstance(item_status, str) and item_status != "completed":
+                    continue
+                content = item.get("content")
+                if isinstance(content, dict):
+                    content = [content]
+                if not isinstance(content, list):
+                    continue
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") != "output_text":
+                        continue
+                    text = block.get("text")
+                    if isinstance(text, str) and text:
+                        fragments.append(text)
 
         return " ".join(fragment for fragment in fragments if fragment).strip()
 
-    def _extract_responses_finish_reason(self, payload: dict[str, Any]) -> str:
+    @staticmethod
+    def _extract_responses_status(payload: dict[str, Any]) -> str:
+        status = payload.get("status")
+        if isinstance(status, str) and status.strip():
+            return status.strip().lower()
         output = payload.get("output")
-        if isinstance(output, list):
-            for item in output:
-                if isinstance(item, dict) and isinstance(item.get("status"), str):
-                    if item["status"] == "completed":
-                        return "stop"
+        if not isinstance(output, list):
+            return "unknown"
+        statuses = {
+            str(item.get("status") or "").strip().lower()
+            for item in output
+            if isinstance(item, dict) and item.get("status")
+        }
+        if "failed" in statuses:
+            return "failed"
+        if "incomplete" in statuses:
+            return "incomplete"
+        if "cancelled" in statuses:
+            return "cancelled"
+        if "completed" in statuses:
+            return "completed"
+        return "unknown"
 
-        return "stop"
+    @staticmethod
+    def _sanitize_responses_output(output: list[Any]) -> list[dict[str, Any]]:
+        """Keep final message and tool-call fields while dropping reasoning text."""
+        safe_items: list[dict[str, Any]] = []
+        allowed_types = {"message", "function_call", "custom_tool_call"}
+        for item in output:
+            if not isinstance(item, dict) or item.get("type") not in allowed_types:
+                continue
+            item_type = item["type"]
+            if item_type == "message":
+                content = item.get("content")
+                safe_content: list[dict[str, str]] = []
+                if isinstance(content, list):
+                    for block in content:
+                        if (
+                            isinstance(block, dict)
+                            and block.get("type") == "output_text"
+                            and isinstance(block.get("text"), str)
+                        ):
+                            safe_content.append({"type": "output_text", "text": block["text"]})
+                safe_item = {
+                    "type": "message",
+                    "status": item.get("status", "completed"),
+                    "role": item.get("role", "assistant"),
+                    "content": safe_content,
+                }
+            else:
+                safe_item = {
+                    key: item[key]
+                    for key in ("type", "id", "call_id", "name", "arguments", "status")
+                    if key in item
+                }
+            safe_items.append(safe_item)
+        return safe_items
+
+    def _extract_responses_finish_reason(self, payload: dict[str, Any]) -> str:
+        status = self._extract_responses_status(payload)
+        if status == "completed":
+            output = payload.get("output")
+            if isinstance(output, list) and any(
+                isinstance(item, dict) and item.get("type") in {"function_call", "custom_tool_call"}
+                for item in output
+            ):
+                return "tool_calls"
+            return "stop"
+        if status == "incomplete":
+            details = payload.get("incomplete_details")
+            if isinstance(details, dict) and isinstance(details.get("reason"), str):
+                return details["reason"]
+            return "incomplete"
+        if status == "failed":
+            return "error"
+        if status == "cancelled":
+            return "cancelled"
+        return "unknown"
 
     def _map_http_status_error(self, status_code: int) -> str:
         if status_code == 401:

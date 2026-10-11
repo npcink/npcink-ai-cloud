@@ -136,6 +136,21 @@ class CommercialPaymentQueries:
             select(PaymentRefund).where(PaymentRefund.idempotency_key == idempotency_key)
         )
 
+    def get_payment_refund_by_provider_external_no(
+        self,
+        *,
+        provider: str,
+        external_refund_no: str,
+    ) -> PaymentRefund | None:
+        if not provider or not external_refund_no:
+            return None
+        return self.session.scalar(
+            select(PaymentRefund).where(
+                PaymentRefund.provider == provider,
+                PaymentRefund.external_refund_no == external_refund_no,
+            )
+        )
+
     def list_payment_refunds(self, order_id: str) -> list[PaymentRefund]:
         return list(
             self.session.scalars(

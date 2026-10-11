@@ -2,6 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useFragmentDisclosure } from '@/features/admin/useFragmentDisclosure';
 import { useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -121,7 +122,7 @@ interface AdminOverview {
       failureScopes: string[];
     };
     primaryAction: {
-      kind: 'readiness' | 'runtime_telemetry' | 'coverage' | 'accounts';
+      kind: 'readiness' | 'runtime_telemetry' | 'provider_budget' | 'coverage' | 'accounts';
       href: string;
     };
     followUpFocus: 'runtime' | 'commercial';
@@ -150,6 +151,7 @@ function normalizeOverview(raw: any): AdminOverview {
   const operatorPrimaryActionKind: AdminOverview['operatorProjection']['primaryAction']['kind'] =
     operatorPrimaryAction.kind === 'readiness' ||
     operatorPrimaryAction.kind === 'runtime_telemetry' ||
+    operatorPrimaryAction.kind === 'provider_budget' ||
     operatorPrimaryAction.kind === 'coverage' ||
     operatorPrimaryAction.kind === 'accounts'
       ? operatorPrimaryAction.kind
@@ -157,6 +159,7 @@ function normalizeOverview(raw: any): AdminOverview {
   const operatorPrimaryActionFallbacks = {
     readiness: '/admin/troubleshooting',
     runtime_telemetry: '/admin/troubleshooting',
+    provider_budget: '/admin/service-settings?tab=provider-budget',
     coverage: '/admin/coverage',
     accounts: '/admin/accounts',
   } as const;
@@ -382,6 +385,7 @@ function AdminOverviewContent() {
   const router = useRouter();
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const runtimeEvidenceRef = useFragmentDisclosure('runtime-attention', Boolean(overview));
   const [error, setError] = useState<string | null>(null);
   const [supportQuery, setSupportQuery] = useState('');
   const requestControllerRef = useRef<AbortController | null>(null);
@@ -518,6 +522,19 @@ function AdminOverviewContent() {
               ),
           };
         }
+        case 'provider_budget_pressure':
+          return {
+            title: t('admin.watch_provider_budget_title', {}, 'Provider budget needs review'),
+            reason: t(
+              item.detailCode === 'provider_budget_exceeded'
+                ? 'admin.watch_provider_budget_exceeded_reason'
+                : 'admin.watch_provider_budget_warning_reason',
+              {},
+              item.detailCode === 'provider_budget_exceeded'
+                ? 'A provider account spend limit has been reached; new dispatches are fail-closed.'
+                : 'A provider account spend budget is near its warning threshold.'
+            ),
+          };
         default:
           return {
             title: item.code || t('common.unknown'),
@@ -643,6 +660,8 @@ function AdminOverviewContent() {
       ? t('admin.home_primary_action_readiness', {}, 'Inspect readiness failures')
     : overview.operatorProjection.primaryAction.kind === 'runtime_telemetry'
       ? t('admin.home_primary_action_runtime_telemetry', {}, 'Inspect runtime telemetry')
+      : overview.operatorProjection.primaryAction.kind === 'provider_budget'
+      ? t('admin.home_primary_action_provider_budget', {}, 'Review provider budget')
       : overview.operatorProjection.primaryAction.kind === 'coverage'
       ? t('admin.home_primary_action_coverage', {}, 'Review service status')
       : t('admin.home_primary_action_accounts', {}, 'Review customers');
@@ -908,7 +927,7 @@ function AdminOverviewContent() {
             </BackofficeStackCard>
       </BackofficeSectionPanel>
 
-      <details className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
+      <details ref={runtimeEvidenceRef} className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
         <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-900/60">
           {t('admin.home_extended_evidence_title', {}, 'Platform usage and extended evidence')}
           <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
@@ -937,6 +956,7 @@ function AdminOverviewContent() {
             {statusLabel}
           </span>
         </div>
+        <span id="runtime-attention" />
         <BackofficeMetricStrip items={evidenceWindowMetrics} columnsClassName="grid-cols-2 md:grid-cols-4" />
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {runtimeStatusItems.map((item) => (

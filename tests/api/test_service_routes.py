@@ -13,8 +13,11 @@ from app.core.models import (
     Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
+    AccountUserMembership,
     BillingSnapshot,
+    Principal,
     Site,
+    SiteKnowledgeDocument,
     UsageMeterEvent,
 )
 from app.domain.commercial.errors import CommercialValidationError
@@ -188,6 +191,47 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         issue_audit["event_id"]
     ]
     assert "payload" not in exact_audit_data["items"][0]
+    exact_created_at = str(exact_audit_data["items"][0]["created_at"])
+    actor_time_audit_response = client.get(
+        "/internal/service/audit-events",
+        params={
+            "actor_ref": "internal",
+            "created_from": exact_created_at,
+            "created_to": exact_created_at,
+        },
+        headers=build_internal_headers(),
+    )
+    assert actor_time_audit_response.status_code == 200
+    actor_time_data = actor_time_audit_response.json()["data"]
+    assert actor_time_data["items"]
+    assert all(item["actor_ref"] == "internal" for item in actor_time_data["items"])
+    assert actor_time_data["filters"]["created_from"] == exact_created_at
+    assert actor_time_data["filters"]["created_to"] == exact_created_at
+    invalid_time_range = client.get(
+        "/internal/service/audit-events",
+        params={
+            "created_from": "2026-08-16T00:00:00Z",
+            "created_to": "2026-08-15T00:00:00Z",
+        },
+        headers=build_internal_headers(),
+    )
+    assert invalid_time_range.status_code == 422
+    assert invalid_time_range.json()["error_code"] == "audit.time_range_invalid"
+    timezone_missing = client.get(
+        "/internal/service/audit-events?created_from=2026-08-15T00:00:00",
+        headers=build_internal_headers(),
+    )
+    assert timezone_missing.status_code == 422
+    unix_timestamp = client.get(
+        "/internal/service/audit-events?created_from=1723680000",
+        headers=build_internal_headers(),
+    )
+    assert unix_timestamp.status_code == 422
+    lowercase_rfc3339 = client.get(
+        "/internal/service/audit-events?created_from=2026-08-15t00:00:00z",
+        headers=build_internal_headers(),
+    )
+    assert lowercase_rfc3339.status_code == 200
     expected_exact_filters = {
         "event_id": issue_audit["event_id"],
         "idempotency_key": issue_audit["idempotency_key"],
@@ -954,6 +998,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert overview["counts"]["sites_active"] == 1
     assert overview["counts"]["site_keys_active"] == 1
     assert overview["recent_usage"]["event_count"] >= 1
+    assert overview["provider_budget"]["status"] in {"disabled", "ok", "warning", "exceeded"}
     assert "platform_credit_summary" not in overview
     assert "runtime_diagnostics" in overview
     assert overview["operational_readiness"]["status"] == "error"
@@ -1512,6 +1557,26 @@ def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_paginati
                 )
             )
         session.add(
+            Principal(
+                principal_id="prn_queue_alpha",
+                email="alpha.owner@example.test",
+                status="active",
+                session_version=1,
+                metadata_json={},
+            )
+        )
+        session.add(
+            AccountUserMembership(
+                membership_id="aum_queue_alpha",
+                principal_id="prn_queue_alpha",
+                account_id="acct_queue_alpha",
+                role="owner",
+                status="active",
+                allowed_actions_json=[],
+                metadata_json={},
+            )
+        )
+        session.add(
             Site(
                 site_id="site_queue_critical",
                 account_id="acct_queue_delta",
@@ -1591,6 +1656,33 @@ def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_paginati
         "monitor": 0,
         "stable": 1,
     }
+
+    customer_name_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"customer": "alpha warning"},
+        headers=build_internal_headers(),
+    )
+    assert customer_name_response.status_code == 200
+    customer_name_data = customer_name_response.json()["data"]
+    assert customer_name_data["filters"]["customer"] == "alpha warning"
+    assert customer_name_data["total"] == 1
+    assert customer_name_data["items"][0]["subscription"]["account_id"] == "acct_queue_alpha"
+
+    customer_email_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"customer": "ALPHA.OWNER@EXAMPLE.TEST"},
+        headers=build_internal_headers(),
+    )
+    assert customer_email_response.status_code == 200
+    assert customer_email_response.json()["data"]["total"] == 1
+
+    customer_account_id_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"customer": "acct_queue_alpha"},
+        headers=build_internal_headers(),
+    )
+    assert customer_account_id_response.status_code == 200
+    assert customer_account_id_response.json()["data"]["total"] == 1
 
     needs_action_response = client.get(
         "/internal/service/admin/subscriptions",
@@ -1800,6 +1892,42 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
                 created_at=now,
             ),
         ]
+        session.add_all(
+            [
+                SiteKnowledgeDocument(
+                    site_id="site_quota",
+                    post_id=1,
+                    source_type="post",
+                    source_id=1,
+                    parent_post_id=None,
+                    post_type="post",
+                    post_status="publish",
+                    title="Quota article",
+                    url="https://example.test/quota-article",
+                    modified_gmt="2026-08-31 00:00:00",
+                    content_hash="quota-article-hash",
+                    last_sync_run_id="run-quota-article",
+                    metadata_json={},
+                    last_indexed_at=now,
+                ),
+                SiteKnowledgeDocument(
+                    site_id="site_quota",
+                    post_id=2,
+                    source_type="media",
+                    source_id=2,
+                    parent_post_id=None,
+                    post_type="attachment",
+                    post_status="publish",
+                    title="Quota image",
+                    url="https://example.test/quota-image.jpg",
+                    modified_gmt="2026-08-31 00:00:00",
+                    content_hash="quota-image-hash",
+                    last_sync_run_id="run-quota-image",
+                    metadata_json={},
+                    last_indexed_at=now,
+                ),
+            ]
+        )
         session.add_all(events)
         session.commit()
 
@@ -1843,7 +1971,10 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
         ("step_offload", "whole_run_offload"),
     ]
     assert resource_limits["vector_documents"]["unit"] == "document"
+    assert resource_limits["vector_documents"]["used"] == 1.0
     assert resource_limits["vector_documents"]["limit"] == 100.0
+    assert resource_limits["media_images"]["used"] == 1.0
+    assert resource_limits["media_images"]["limit"] == 100.0
     assert data["coverage"]["active_key_site_count"] == 1
 
 

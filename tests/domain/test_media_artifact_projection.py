@@ -472,7 +472,7 @@ def test_real_delayed_callback_claim_projects_without_rewriting_snapshot(
                 "source": "site_registered",
                 "callback_url": "https://callback.example.test/runtime",
                 "key_id": "callback_key",
-                "callback_id": "runtime_terminal_test",
+                "registration_id": "runtime_terminal_test",
                 "registered": True,
             },
             "task_backend": {
@@ -490,7 +490,7 @@ def test_real_delayed_callback_claim_projects_without_rewriting_snapshot(
                         "callback-secret",
                         settings=settings,
                     ),
-                    "callback_id": "runtime_terminal_test",
+                    "registration_id": "runtime_terminal_test",
                 }
             }
         }

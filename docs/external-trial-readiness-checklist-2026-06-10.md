@@ -1,6 +1,7 @@
 # External Trial Readiness Checklist - 2026-06-10
 
-Status: active checklist.
+Status: historical readiness checklist. Current readiness authority is
+`docs/internal-new-user-readiness-gate-v1.md`.
 
 Scope: first controlled external trial of Npcink AI Cloud hosted runtime and
 reviewable WordPress assistance.

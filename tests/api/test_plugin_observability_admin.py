@@ -28,6 +28,41 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
 
+def test_admin_record_scope_filters_all_aggregates_without_hiding_unknown_plugins(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        for index, (site, plugin, kind) in enumerate([
+            ("site-001", "unknown-real-plugin", "operation.completed"),
+            ("site-002", "unknown-real-plugin", "validation.technical_monitoring_only"),
+            ("site-002", "npcink-tech-20260907-yhz7bh-a", "validation.technical_monitoring_only"),
+        ]):
+            session.add(PluginObservabilityEvent(
+                dedupe_key=f"scope-{index}", site_id=site, key_id="key_default",
+                schema_version="2026-06-01", plugin_slug=plugin, plugin_version="0.1.0",
+                source="local", event_kind=kind, event_id=f"scope-{index}",
+                status="ok", latency_ms=10, captured_at=now, received_at=now,
+            ))
+        session.commit()
+
+    for scope, expected, sites in [("all", 3, 2), ("operational", 1, 1), ("test", 2, 1)]:
+        response = client.get(
+            f"/internal/service/admin/plugin-observability?record_scope={scope}",
+            headers=build_internal_headers(trace_id="traceadminscope0000000000000000"),
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["record_scope"] == scope
+        assert data["totals"]["events_total"] == expected
+        assert data["totals"]["active_site_count"] == sites
+        assert sum(row["events_total"] for row in data["timeline"]) == expected
+        assert sum(row["events_total"] for row in data["plugins"]) == expected
+        if scope == "operational":
+            assert [row["plugin_slug"] for row in data["plugins"]] == ["unknown-real-plugin"]
+
+
 def _seed_plugin_events(database_url: str) -> None:
     now = datetime.now(UTC)
     events = [
@@ -373,7 +408,49 @@ def test_admin_plugin_observability_attention_state_requires_idempotency(
 def test_admin_plugin_observability_invalid_window_hours(tmp_path: Path) -> None:
     _, client = _build_client(tmp_path)
     response = client.get(
-        "/internal/service/admin/plugin-observability?window_hours=999",
+        "/internal/service/admin/plugin-observability?window_hours=2161",
         headers=build_internal_headers(trace_id="traceadmin0060000000000000000000"),
     )
     assert response.status_code == 422
+
+
+def test_recent_activity_links_only_same_site_runs_without_content(tmp_path: Path) -> None:
+    from app.core.models import RunRecord
+
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        session.add(RunRecord(
+            run_id="run-linked", site_id="site-001", ability_name="connector-runtime",
+            channel="wordpress", execution_kind="sync", profile_id="text.ai",
+            status="succeeded", trace_id="trace-linked", started_at=now - timedelta(minutes=32),
+            finished_at=now - timedelta(minutes=31),
+            input_json={"secret": "private-input"}, result_json={"text": "private-result"},
+        ))
+        for index, site in enumerate(["site-001", "site-002"]):
+            session.add(PluginObservabilityEvent(
+                dedupe_key=f"linked-{index}", event_id=f"linked-{index}", site_id=site,
+                plugin_slug="npcink-cloud-addon", event_kind="generation.completed",
+                status="ok", correlation_id="run-linked", received_at=now,
+            ))
+        session.commit()
+    response = client.get(
+        "/internal/service/admin/plugin-observability?site_id=site-001",
+        headers=build_internal_headers(trace_id="traceadminlinked000000000000000"),
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["recent_activity_limit"] == 50
+    assert len(data["recent_activity"]) == 1
+    item = data["recent_activity"][0]
+    assert item["status"] == "ok"
+    assert item["run"]["run_id"] == "run-linked"
+    assert item["run"]["status"] == "succeeded"
+    assert item["run"]["started_at"] != item["received_at"]
+    assert "private-input" not in response.text
+    assert "private-result" not in response.text
+    other = client.get(
+        "/internal/service/admin/plugin-observability?site_id=site-002",
+        headers=build_internal_headers(trace_id="traceadminlinked000000000000000"),
+    )
+    assert other.json()["data"]["recent_activity"][0]["run"] is None

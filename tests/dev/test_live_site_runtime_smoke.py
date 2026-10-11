@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.dev.live_site_runtime_smoke import (
+from app.ops.live_site_runtime_smoke import (
     APPROVAL_TEXT,
     GuardError,
     approval_matches,

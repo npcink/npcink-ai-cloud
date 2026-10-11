@@ -1,6 +1,6 @@
 # Nightly Inspection Stage Closeout 2026-06-16
 
-Status: current stage closed
+Status: historical stage closeout; not current runtime or release authority.
 
 Date: 2026-06-16
 

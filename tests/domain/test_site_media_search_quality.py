@@ -212,5 +212,10 @@ def test_service_applies_media_ranking_and_duplicate_grouping_only_for_media_int
         "returned_count": 2,
         "duplicate_chunks_collapsed": 0,
         "duplicate_media_collapsed": 1,
+        "recommendation_quality": {
+            "document_duplicates_collapsed": 0,
+            "weak_candidates_suppressed": 0,
+            "strong_or_review_candidates": 0,
+        },
         "ranking_strategy": "semantic_plus_bounded_lexical",
     }

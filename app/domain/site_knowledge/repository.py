@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.core.models import RunRecord, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_STALE_POST_STATUS
 
 
 class SiteKnowledgeRepository:
@@ -85,6 +87,85 @@ class SiteKnowledgeRepository:
         )
         self.session.flush()
         return self._rowcount(chunk_result) + self._rowcount(document_result)
+
+    def list_public_source_types(self, site_id: str) -> list[str]:
+        return [
+            str(source_type)
+            for source_type in self.session.scalars(
+                select(SiteKnowledgeDocument.source_type)
+                .where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status == "publish",
+                )
+                .distinct()
+                .order_by(SiteKnowledgeDocument.source_type.asc())
+            )
+            if str(source_type or "").strip()
+        ]
+
+    def mark_unmanifested_sources_stale(
+        self,
+        site_id: str,
+        *,
+        keep_sources: set[tuple[str, int]],
+        source_types: set[str],
+    ) -> int:
+        """Mark still-public documents absent from a completed sync manifest stale.
+
+        Only source types that the manifest actually delivered are considered,
+        so indexes holding source kinds the manifest never covers are left
+        untouched. Rows keep their content: the stale marker removes them from
+        every public-status-filtered read path while preserving audit evidence.
+        """
+        normalized_source_types = sorted(
+            {
+                str(source_type or "").strip()
+                for source_type in source_types
+                if str(source_type or "").strip()
+            }
+        )
+        if not normalized_source_types:
+            return 0
+        stale_ids_by_type: dict[str, list[int]] = {}
+        for source_type, source_id in self.session.execute(
+            select(SiteKnowledgeDocument.source_type, SiteKnowledgeDocument.source_id).where(
+                SiteKnowledgeDocument.site_id == site_id,
+                SiteKnowledgeDocument.post_status == "publish",
+                SiteKnowledgeDocument.source_type.in_(normalized_source_types),
+            )
+        ).all():
+            normalized_type = str(source_type or "")
+            try:
+                normalized_id = int(source_id)
+            except (TypeError, ValueError):
+                continue
+            if (normalized_type, normalized_id) in keep_sources:
+                continue
+            stale_ids_by_type.setdefault(normalized_type, []).append(normalized_id)
+        for source_type, source_ids in stale_ids_by_type.items():
+            for offset in range(0, len(source_ids), 500):
+                source_id_slice = source_ids[offset : offset + 500]
+                self.session.execute(
+                    update(SiteKnowledgeDocument)
+                    .where(
+                        SiteKnowledgeDocument.site_id == site_id,
+                        SiteKnowledgeDocument.source_type == source_type,
+                        SiteKnowledgeDocument.source_id.in_(source_id_slice),
+                        SiteKnowledgeDocument.post_status == "publish",
+                    )
+                    .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
+                )
+                self.session.execute(
+                    update(SiteKnowledgeChunk)
+                    .where(
+                        SiteKnowledgeChunk.site_id == site_id,
+                        SiteKnowledgeChunk.source_type == source_type,
+                        SiteKnowledgeChunk.source_id.in_(source_id_slice),
+                    )
+                    .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
+                )
+        self.session.flush()
+        return sum(len(source_ids) for source_ids in stale_ids_by_type.values())
 
     def upsert_document_with_chunks(
         self,
@@ -181,17 +262,105 @@ class SiteKnowledgeRepository:
             self.session.scalar(
                 select(func.count())
                 .select_from(SiteKnowledgeDocument)
-                .where(SiteKnowledgeDocument.site_id == site_id)
+                .where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+                )
             )
             or 0
         )
+
+    def count_documents_for_account(
+        self,
+        account_id: str,
+        *,
+        source_type: str | None = None,
+        exclude_source_type: str | None = None,
+    ) -> int:
+        normalized_account_id = str(account_id or '').strip()
+        if not normalized_account_id:
+            return 0
+        statement = (
+            select(func.count())
+            .select_from(SiteKnowledgeDocument)
+            .join(Site, Site.site_id == SiteKnowledgeDocument.site_id)
+            .where(
+                Site.account_id == normalized_account_id,
+                SiteKnowledgeDocument.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+            )
+        )
+        if source_type is not None:
+            statement = statement.where(SiteKnowledgeDocument.source_type == source_type)
+        if exclude_source_type is not None:
+            statement = statement.where(
+                SiteKnowledgeDocument.source_type != exclude_source_type
+            )
+        return int(self.session.scalar(statement) or 0)
+
+    def lock_account_and_count_documents(
+        self,
+        account_id: str,
+        *,
+        source_type: str | None = None,
+        exclude_source_type: str | None = None,
+    ) -> int:
+        normalized_account_id = str(account_id or '').strip()
+        if not normalized_account_id:
+            return 0
+        self.session.scalar(
+            select(Account.account_id)
+            .where(Account.account_id == normalized_account_id)
+            .with_for_update()
+        )
+        return self.count_documents_for_account(
+            normalized_account_id,
+            source_type=source_type,
+            exclude_source_type=exclude_source_type,
+        )
+
+    def list_document_counts_by_site(self, site_ids: list[str]) -> list[dict[str, object]]:
+        normalized_site_ids = list(
+            dict.fromkeys(
+                str(site_id).strip() for site_id in site_ids if str(site_id).strip()
+            )
+        )
+        if not normalized_site_ids:
+            return []
+        statement = (
+            select(
+                Site.site_id,
+                Site.name,
+                Site.status,
+                func.count(SiteKnowledgeDocument.id),
+                func.max(SiteKnowledgeDocument.last_indexed_at),
+            )
+            .select_from(Site)
+            .outerjoin(SiteKnowledgeDocument, SiteKnowledgeDocument.site_id == Site.site_id)
+            .where(Site.site_id.in_(normalized_site_ids))
+            .group_by(Site.site_id, Site.name, Site.status)
+            .order_by(Site.name.asc(), Site.site_id.asc())
+        )
+        return [
+            {
+                "site_id": str(site_id),
+                "site_name": str(name or site_id),
+                "status": str(status or ""),
+                "indexed_document_count": int(document_count or 0),
+                "last_indexed_at": last_indexed_at.isoformat() if last_indexed_at else "",
+            }
+            for site_id, name, status, document_count, last_indexed_at
+            in self.session.execute(statement).all()
+        ]
 
     def count_chunks(self, site_id: str) -> int:
         return int(
             self.session.scalar(
                 select(func.count())
                 .select_from(SiteKnowledgeChunk)
-                .where(SiteKnowledgeChunk.site_id == site_id)
+                .where(
+                    SiteKnowledgeChunk.site_id == site_id,
+                    SiteKnowledgeChunk.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+                )
             )
             or 0
         )
@@ -297,13 +466,14 @@ class SiteKnowledgeRepository:
                     SiteKnowledgeChunk.site_id == site_id,
                     SiteKnowledgeChunk.source_type == source_type,
                     SiteKnowledgeChunk.source_id == source_id,
+                    SiteKnowledgeChunk.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
                 )
             )
             or 0
         )
 
     def count_truncated_documents(self, site_id: str) -> int:
-        documents = self.session.scalars(
+        documents: Iterable[Any] = self.session.scalars(
             select(SiteKnowledgeDocument.metadata_json).where(
                 SiteKnowledgeDocument.site_id == site_id
             )
@@ -332,14 +502,15 @@ class SiteKnowledgeRepository:
                 SiteKnowledgeDocument.site_id == site_id,
                 SiteKnowledgeDocument.post_id.in_(normalized_ids),
                 SiteKnowledgeDocument.post_status == "publish",
+                SiteKnowledgeDocument.source_type.in_(("post", "page")),
             )
         ).all()
         metadata_by_post_id = {
-            int(post_id): {
-                "title": str(title or ""),
-                **(metadata if isinstance(metadata, dict) else {}),
+            int(row[0]): {
+                "title": str(row[1] or ""),
+                **(row[2] if isinstance(row[2], dict) else {}),
             }
-            for post_id, title, metadata in rows
+            for row in rows
         }
         return {
             post_id: metadata_by_post_id[post_id]
@@ -369,6 +540,39 @@ class SiteKnowledgeRepository:
             .group_by(SiteKnowledgeDocument.source_type)
         ).all()
         return {str(source_type): int(count or 0) for source_type, count in rows}
+
+    def coverage_evidence(self, site_id: str) -> dict[str, Any]:
+        """Return indexed counts and only evidence-backed staleness signals.
+
+        Whole-site denominators belong to the WordPress connector.  The Cloud
+        index cannot infer them from its own rows, so this method deliberately
+        reports counts plus comparable stale rows rather than manufacturing a
+        percentage from the indexed set.
+        """
+        documents = list(
+            self.session.scalars(
+                select(SiteKnowledgeDocument).where(
+                    SiteKnowledgeDocument.site_id == site_id
+                )
+            )
+        )
+        stale_count = 0
+        comparable_count = 0
+        for document in documents:
+            modified = _parse_source_datetime(document.modified_gmt)
+            indexed = _as_utc(document.last_indexed_at)
+            if modified is None or indexed is None:
+                continue
+            comparable_count += 1
+            if modified > indexed:
+                stale_count += 1
+        return {
+            "indexed_documents": len(documents),
+            "post_type_counts": self.post_type_counts(site_id),
+            "source_type_counts": self.source_type_counts(site_id),
+            "stale_document_count": stale_count,
+            "staleness_comparable_document_count": comparable_count,
+        }
 
     def has_running_sync(self, site_id: str) -> bool:
         count = self.session.scalar(
@@ -434,3 +638,22 @@ class SiteKnowledgeRepository:
                 statement.order_by(SiteKnowledgeChunk.indexed_at.desc()).limit(max(1, limit))
             )
         )
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _parse_source_datetime(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _as_utc(parsed)

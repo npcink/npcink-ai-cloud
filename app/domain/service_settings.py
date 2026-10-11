@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 
@@ -18,29 +19,54 @@ from app.domain.commercial.currency import (
     SERVICE_SETTING_ACCOUNTING_FX,
     AccountingFxValidationError,
     build_accounting_fx_config,
-    resolve_accounting_fx_rate,
 )
-
-SERVICE_SETTING_PORTAL_PUBLIC = "portal_public"
-SERVICE_SETTING_QQ_LOGIN = "portal_qq_login"
-SERVICE_SETTING_PORTAL_EMAIL = "portal_email"
-SERVICE_SETTING_PAYMENT_ALIPAY = "payment_alipay"
-SERVICE_SETTING_SITE_RELINK_POLICY = "site_relink_policy"
-
-SERVICE_SETTING_KIND_PORTAL = "portal"
-SERVICE_SETTING_KIND_COMMERCIAL = "commercial"
-SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH = "/open/auth/qq/callback"
-SERVICE_SETTING_ALIPAY_NOTIFY_PATH = "/open/payments/alipay/notify"
-SERVICE_SETTING_ALIPAY_RETURN_PATH = "/open/payments/alipay/return"
-ALIPAY_PAGE_PAY_GATEWAY_URL = "https://openapi.alipay.com/gateway.do"
-DEFAULT_SITE_RELINK_COOLDOWN_DAYS = 90
-MIN_SITE_RELINK_COOLDOWN_DAYS = 90
-MAX_SITE_RELINK_COOLDOWN_DAYS = 365
-
-STATUS_READY = "ready"
-STATUS_DISABLED = "disabled"
-STATUS_MISSING_CONFIG = "missing_config"
-STATUS_ERROR = "error"
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+from app.domain.routing.errors import RoutingError
+from app.domain.routing.service import RoutingService
+from app.domain.runtime.provider_budget import (
+    SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+    ProviderBudgetService,
+)
+from app.domain.service_settings_projection import (
+    _boundary,
+    serialize,
+    serialize_accounting_fx,
+    serialize_media_recognition_policy,
+    serialize_platform_preferences,
+    serialize_provider_account_spend_budget,
+    serialize_site_relink_policy,
+)
+from app.domain.service_settings_values import (
+    ALIPAY_PAGE_PAY_GATEWAY_URL,
+    DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
+    DEFAULT_MEDIA_RECOGNITION_WINDOW_END,
+    DEFAULT_MEDIA_RECOGNITION_WINDOW_START,
+    DEFAULT_PLATFORM_TIMEZONE,
+    DEFAULT_SITE_RELINK_COOLDOWN_DAYS,
+    MAX_SITE_RELINK_COOLDOWN_DAYS,
+    MIN_SITE_RELINK_COOLDOWN_DAYS,
+    SERVICE_SETTING_ALIPAY_NOTIFY_PATH,
+    SERVICE_SETTING_ALIPAY_RETURN_PATH,
+    SERVICE_SETTING_KIND_COMMERCIAL,
+    SERVICE_SETTING_KIND_PORTAL,
+    SERVICE_SETTING_KIND_RUNTIME,
+    SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+    SERVICE_SETTING_PAYMENT_ALIPAY,
+    SERVICE_SETTING_PLATFORM_PREFERENCES,
+    SERVICE_SETTING_PORTAL_EMAIL,
+    SERVICE_SETTING_PORTAL_PUBLIC,
+    SERVICE_SETTING_QQ_LOGIN,
+    SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH,
+    SERVICE_SETTING_SITE_RELINK_POLICY,
+    STATUS_DISABLED,
+    STATUS_ERROR,
+    STATUS_MISSING_CONFIG,
+    STATUS_READY,
+    _dict,
+    _normalize_clock,
+    _positive_int,
+    _string,
+)
 
 
 class ServiceSettingsAdminError(ValueError):
@@ -70,36 +96,52 @@ class ServiceSettingsAdminService:
                                 SERVICE_SETTING_PAYMENT_ALIPAY,
                                 SERVICE_SETTING_SITE_RELINK_POLICY,
                                 SERVICE_SETTING_ACCOUNTING_FX,
+                                SERVICE_SETTING_PLATFORM_PREFERENCES,
+                                SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+                                SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
                             ]
                         )
                     )
                 )
             }
+            provider_budget_runtime = ProviderBudgetService().admin_projection(session=session)
         return {
             "surface": "admin_service_settings",
             "settings": {
-                "portal_public": self._serialize(
+                "portal_public": serialize(
                     rows.get(SERVICE_SETTING_PORTAL_PUBLIC),
                     setting_id=SERVICE_SETTING_PORTAL_PUBLIC,
                 ),
-                "qq_login": self._serialize(
+                "qq_login": serialize(
                     rows.get(SERVICE_SETTING_QQ_LOGIN),
                     setting_id=SERVICE_SETTING_QQ_LOGIN,
                 ),
-                "portal_email": self._serialize(
+                "portal_email": serialize(
                     rows.get(SERVICE_SETTING_PORTAL_EMAIL),
                     setting_id=SERVICE_SETTING_PORTAL_EMAIL,
                 ),
-                "alipay_payment": self._serialize(
+                "alipay_payment": serialize(
                     rows.get(SERVICE_SETTING_PAYMENT_ALIPAY),
                     setting_id=SERVICE_SETTING_PAYMENT_ALIPAY,
                 ),
-                "site_relink_policy": self._serialize_site_relink_policy(
+                "site_relink_policy": serialize_site_relink_policy(
                     rows.get(SERVICE_SETTING_SITE_RELINK_POLICY),
                 ),
-                "accounting_fx": self._serialize_accounting_fx(
+                "accounting_fx": serialize_accounting_fx(
                     rows.get(SERVICE_SETTING_ACCOUNTING_FX),
                 ),
+                "platform_preferences": serialize_platform_preferences(
+                    rows.get(SERVICE_SETTING_PLATFORM_PREFERENCES),
+                ),
+                "media_recognition_policy": serialize_media_recognition_policy(
+                    rows.get(SERVICE_SETTING_MEDIA_RECOGNITION_POLICY),
+                ),
+                "provider_budget": {
+                    **serialize_provider_account_spend_budget(
+                        rows.get(SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET),
+                    ),
+                    "runtime": provider_budget_runtime,
+                },
             },
             "env_fallback": "disabled",
             "boundary": _boundary(),
@@ -119,7 +161,7 @@ class ServiceSettingsAdminService:
             enabled=bool(payload.get("enabled", True)),
             required_secret_keys=[],
         )
-        return self._serialize(row)
+        return serialize(row)
 
     def save_site_relink_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
         raw_cooldown_days = payload.get(
@@ -150,7 +192,182 @@ class ServiceSettingsAdminService:
             enabled=bool(payload.get("enabled", True)),
             required_secret_keys=[],
         )
-        return self._serialize_site_relink_policy(row)
+        return serialize_site_relink_policy(row)
+
+    def save_media_recognition_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        current = resolve_media_recognition_policy(self.database_url)
+        enabled = bool(payload.get("enabled", current["enabled"]))
+        window_start = _normalize_clock(
+            payload.get("window_start", current["window_start"])
+        )
+        window_end = _normalize_clock(payload.get("window_end", current["window_end"]))
+        try:
+            daily_limit = int(
+                _string(payload.get("daily_limit", current["daily_limit"]))
+            )
+        except (TypeError, ValueError):
+            daily_limit = 0
+        if enabled:
+            try:
+                RoutingService(
+                    self.database_url,
+                    settings=self.settings,
+                ).resolve(
+                    profile_id=VISION_AI_PROFILE_ID,
+                    execution_kind="vision",
+                )
+            except RoutingError as error:
+                raise ServiceSettingsAdminError(
+                    "service_settings.media_recognition_profile_unavailable",
+                    "the vision understanding runtime profile has no verified candidate",
+                    status_code=409,
+                ) from error
+        if not window_start or not window_end or window_start == window_end:
+            raise ServiceSettingsAdminError(
+                "service_settings.media_recognition_window_invalid",
+                "media recognition execution window requires distinct HH:MM start and end",
+            )
+        if not 1 <= daily_limit <= 10000:
+            raise ServiceSettingsAdminError(
+                "service_settings.media_recognition_daily_limit_invalid",
+                "media recognition daily limit must be between 1 and 10000",
+            )
+        row = self._save(
+            setting_id=SERVICE_SETTING_MEDIA_RECOGNITION_POLICY,
+            setting_kind=SERVICE_SETTING_KIND_RUNTIME,
+            config={
+                "window_start": window_start,
+                "window_end": window_end,
+                "daily_limit": daily_limit,
+            },
+            secrets={},
+            enabled=enabled,
+            required_secret_keys=[],
+        )
+        return serialize_media_recognition_policy(row)
+
+    def save_platform_preferences(self, payload: dict[str, Any]) -> dict[str, Any]:
+        timezone_name = _string(payload.get("timezone"))
+        try:
+            ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.platform_timezone_invalid",
+                "platform timezone must be a valid IANA timezone",
+            ) from error
+        row = self._save(
+            setting_id=SERVICE_SETTING_PLATFORM_PREFERENCES,
+            setting_kind=SERVICE_SETTING_KIND_RUNTIME,
+            config={"timezone": timezone_name},
+            secrets={},
+            enabled=True,
+            required_secret_keys=[],
+        )
+        return serialize_platform_preferences(row)
+
+    def save_provider_account_spend_budget(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        enabled = bool(payload.get("enabled", False))
+        try:
+            warning_ratio = float(payload.get("warning_ratio", 0.8))
+        except (TypeError, ValueError) as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_warning_ratio_invalid",
+                "provider budget warning ratio must be a number between 0.01 and 1",
+            ) from error
+        if not 0.01 <= warning_ratio <= 1:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_warning_ratio_invalid",
+                "provider budget warning ratio must be between 0.01 and 1",
+            )
+        try:
+            conservative_cost = float(
+                payload.get("conservative_unpriced_cost_usd", 0.05)
+            )
+        except (TypeError, ValueError) as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_conservative_cost_invalid",
+                "conservative unpriced cost must be greater than zero",
+            ) from error
+        if not 0 < conservative_cost <= 1000:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_conservative_cost_invalid",
+                "conservative unpriced cost must be greater than zero and no greater than 1000",
+            )
+
+        raw_providers = payload.get("providers")
+        if not isinstance(raw_providers, list):
+            raw_providers = []
+        providers: dict[str, dict[str, Any]] = {}
+        for raw_provider in raw_providers:
+            if not isinstance(raw_provider, dict):
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_provider_invalid",
+                    "each provider budget entry must be an object",
+                )
+            provider_id = _string(raw_provider.get("provider_id"))
+            if not provider_id or len(provider_id) > 64:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_provider_invalid",
+                    "provider ID is required and must be no longer than 64 characters",
+                )
+            if provider_id in providers:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_provider_duplicate",
+                    f"provider budget is duplicated for {provider_id}",
+                )
+            account_class = _string(raw_provider.get("account_class")) or "paid"
+            if account_class not in {"paid", "test"}:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_account_class_invalid",
+                    "provider account class must be paid or test",
+                )
+            try:
+                daily_usd = float(raw_provider.get("daily_usd", 0))
+                monthly_usd = float(raw_provider.get("monthly_usd", 0))
+            except (TypeError, ValueError) as error:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_limit_invalid",
+                    "provider daily and monthly limits must be numbers",
+                ) from error
+            if not 0 <= daily_usd <= 1_000_000 or not 0 <= monthly_usd <= 1_000_000:
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_limit_invalid",
+                    "provider daily and monthly limits must be between 0 and 1000000 USD",
+                )
+            if account_class == "paid" and (daily_usd <= 0 or monthly_usd <= 0):
+                raise ServiceSettingsAdminError(
+                    "service_settings.provider_budget_paid_limits_required",
+                    f"paid provider {provider_id} requires positive daily and monthly limits",
+                )
+            providers[provider_id] = {
+                "account_class": account_class,
+                "daily_usd": round(daily_usd, 6),
+                "monthly_usd": round(monthly_usd, 6),
+            }
+        if enabled and not providers:
+            raise ServiceSettingsAdminError(
+                "service_settings.provider_budget_provider_required",
+                "add at least one provider budget before enabling the guard",
+            )
+        row = self._save(
+            setting_id=SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+            setting_kind=SERVICE_SETTING_KIND_RUNTIME,
+            config={
+                "warning_ratio": round(warning_ratio, 6),
+                "conservative_unpriced_cost_usd": round(conservative_cost, 6),
+                "require_provider_configuration": bool(
+                    payload.get("require_provider_configuration", True)
+                ),
+                "providers": providers,
+            },
+            secrets={},
+            enabled=enabled,
+            required_secret_keys=[],
+        )
+        return serialize_provider_account_spend_budget(row)
 
     def save_accounting_fx(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -173,7 +390,7 @@ class ServiceSettingsAdminService:
             enabled=True,
             required_secret_keys=[],
         )
-        return self._serialize_accounting_fx(row)
+        return serialize_accounting_fx(row)
 
     def save_qq_login(self, payload: dict[str, Any]) -> dict[str, Any]:
         client_id = _string(payload.get("client_id"))
@@ -208,7 +425,7 @@ class ServiceSettingsAdminService:
             enabled=bool(payload.get("enabled", True)),
             required_secret_keys=["client_secret"],
         )
-        return self._serialize(row)
+        return serialize(row)
 
     def save_email(self, payload: dict[str, Any]) -> dict[str, Any]:
         host = _string(payload.get("smtp_host"))
@@ -282,7 +499,7 @@ class ServiceSettingsAdminService:
             enabled=enabled,
             required_secret_keys=["smtp_password"] if username else [],
         )
-        return self._serialize(row)
+        return serialize(row)
 
     def save_alipay_payment(self, payload: dict[str, Any]) -> dict[str, Any]:
         enabled = bool(payload.get("enabled", True))
@@ -360,7 +577,7 @@ class ServiceSettingsAdminService:
             enabled=enabled,
             required_secret_keys=["private_key", "public_key"] if enabled else [],
         )
-        return self._serialize(row)
+        return serialize(row)
 
     def test_qq_login(self) -> dict[str, Any]:
         row = _load_service_setting(self.database_url, SERVICE_SETTING_QQ_LOGIN)
@@ -606,86 +823,6 @@ class ServiceSettingsAdminService:
             current.last_error_message = message or None
             session.commit()
 
-    def _serialize(self, row: ServiceSetting | None, *, setting_id: str = "") -> dict[str, Any]:
-        if row is None:
-            return {
-                "setting_id": setting_id,
-                "setting_kind": SERVICE_SETTING_KIND_PORTAL,
-                "enabled": False,
-                "configured": False,
-                "status": STATUS_MISSING_CONFIG,
-                "config": {},
-                "secrets": {},
-                "last_tested_at": "",
-                "last_error_code": "",
-                "last_error_message": "",
-                "credential_value_exposure": "none",
-            }
-        secrets = _dict(row.secret_ciphertext_json)
-        secret_status = {
-            key: {
-                "configured": bool(_string(value)),
-                "display": "configured" if value else "missing",
-            }
-            for key, value in secrets.items()
-        }
-        return {
-            "setting_id": row.setting_id,
-            "setting_kind": row.setting_kind,
-            "enabled": bool(row.enabled),
-            "configured": row.status == STATUS_READY,
-            "status": row.status,
-            "config": _public_config(_dict(row.config_json)),
-            "secrets": secret_status,
-            "last_tested_at": row.last_tested_at.isoformat() if row.last_tested_at else "",
-            "last_error_code": row.last_error_code or "",
-            "last_error_message": row.last_error_message or "",
-            "credential_value_exposure": "none",
-        }
-
-    def _serialize_site_relink_policy(
-        self,
-        row: ServiceSetting | None,
-    ) -> dict[str, Any]:
-        if row is None:
-            return {
-                "setting_id": SERVICE_SETTING_SITE_RELINK_POLICY,
-                "setting_kind": SERVICE_SETTING_KIND_COMMERCIAL,
-                "enabled": True,
-                "configured": True,
-                "status": STATUS_READY,
-                "config": {
-                    "cooldown_days": DEFAULT_SITE_RELINK_COOLDOWN_DAYS,
-                },
-                "secrets": {},
-                "last_tested_at": "",
-                "last_error_code": "",
-                "last_error_message": "",
-                "credential_value_exposure": "none",
-            }
-        return self._serialize(row)
-
-    def _serialize_accounting_fx(
-        self,
-        row: ServiceSetting | None,
-    ) -> dict[str, Any]:
-        rate = resolve_accounting_fx_rate(
-            row.config_json if row is not None and row.enabled else None
-        )
-        return {
-            "setting_id": SERVICE_SETTING_ACCOUNTING_FX,
-            "setting_kind": SERVICE_SETTING_KIND_COMMERCIAL,
-            "enabled": True,
-            "configured": not rate.is_fallback,
-            "status": STATUS_READY if not rate.is_fallback else STATUS_MISSING_CONFIG,
-            "config": rate.as_dict(),
-            "secrets": {},
-            "last_tested_at": "",
-            "last_error_code": "",
-            "last_error_message": "",
-            "credential_value_exposure": "none",
-        }
-
 
 def resolve_portal_public_base_url(database_url: str, settings: Settings) -> str:
     row = _load_service_setting(database_url, SERVICE_SETTING_PORTAL_PUBLIC)
@@ -802,6 +939,79 @@ def resolve_site_relink_policy(database_url: str) -> dict[str, Any]:
     }
 
 
+def resolve_media_recognition_policy(database_url: str) -> dict[str, Any]:
+    row = _load_service_setting(database_url, SERVICE_SETTING_MEDIA_RECOGNITION_POLICY)
+    config = _dict(row.config_json) if row is not None else {}
+    return {
+        "enabled": bool(row is not None and row.enabled and row.status == STATUS_READY),
+        "timezone": resolve_platform_timezone(database_url),
+        "window_start": _normalize_clock(config.get("window_start"))
+        or DEFAULT_MEDIA_RECOGNITION_WINDOW_START,
+        "window_end": _normalize_clock(config.get("window_end"))
+        or DEFAULT_MEDIA_RECOGNITION_WINDOW_END,
+        "daily_limit": _positive_int(
+            config.get("daily_limit"),
+            default=DEFAULT_MEDIA_RECOGNITION_DAILY_LIMIT,
+        ),
+    }
+
+
+def resolve_platform_timezone(database_url: str) -> str:
+    row = _load_service_setting(database_url, SERVICE_SETTING_PLATFORM_PREFERENCES)
+    timezone_name = _string(_dict(row.config_json).get("timezone")) if row is not None else ""
+    return timezone_name or DEFAULT_PLATFORM_TIMEZONE
+
+
+def media_recognition_local_day_bounds(
+    policy: dict[str, Any],
+    *,
+    now: datetime,
+) -> tuple[datetime, datetime]:
+    timezone = ZoneInfo(_string(policy.get("timezone")) or DEFAULT_PLATFORM_TIMEZONE)
+    local_now = now.astimezone(timezone)
+    local_start = datetime.combine(local_now.date(), time.min, tzinfo=timezone)
+    return local_start.astimezone(UTC), (local_start + timedelta(days=1)).astimezone(UTC)
+
+
+def media_recognition_window_is_open(
+    policy: dict[str, Any],
+    *,
+    now: datetime,
+) -> bool:
+    timezone = ZoneInfo(_string(policy.get("timezone")) or DEFAULT_PLATFORM_TIMEZONE)
+    local_now = now.astimezone(timezone)
+    current_minutes = local_now.hour * 60 + local_now.minute
+    start_minutes = _clock_minutes(
+        _normalize_clock(policy.get("window_start")) or DEFAULT_MEDIA_RECOGNITION_WINDOW_START
+    )
+    end_minutes = _clock_minutes(
+        _normalize_clock(policy.get("window_end")) or DEFAULT_MEDIA_RECOGNITION_WINDOW_END
+    )
+    if start_minutes < end_minutes:
+        return start_minutes <= current_minutes < end_minutes
+    return current_minutes >= start_minutes or current_minutes < end_minutes
+
+
+def media_recognition_next_window_start(
+    policy: dict[str, Any],
+    *,
+    now: datetime,
+) -> datetime:
+    timezone = ZoneInfo(_string(policy.get("timezone")) or DEFAULT_PLATFORM_TIMEZONE)
+    local_now = now.astimezone(timezone)
+    start_minutes = _clock_minutes(
+        _normalize_clock(policy.get("window_start")) or DEFAULT_MEDIA_RECOGNITION_WINDOW_START
+    )
+    local_start = datetime.combine(
+        local_now.date(),
+        time(hour=start_minutes // 60, minute=start_minutes % 60),
+        tzinfo=timezone,
+    )
+    if local_start <= local_now:
+        local_start += timedelta(days=1)
+    return local_start.astimezone(UTC)
+
+
 def _load_service_setting(database_url: str, setting_id: str) -> ServiceSetting | None:
     with get_session(database_url) as session:
         return session.get(ServiceSetting, setting_id)
@@ -830,31 +1040,6 @@ def _setting_status(
     if any(not _string(secret_ciphertexts.get(key)) for key in required_secret_keys):
         return STATUS_MISSING_CONFIG
     return STATUS_READY
-
-
-def _public_config(config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in config.items()
-        if "password" not in key and "secret" not in key and "token" not in key
-    }
-
-
-def _boundary() -> dict[str, Any]:
-    return {
-        "surface": "cloud_service_settings",
-        "cloud_owns": [
-            "portal_login_provider_config",
-            "portal_email_delivery_config",
-            "payment_gateway_config",
-            "site_account_relink_policy",
-        ],
-        "wordpress_control_plane": False,
-        "ability_registry_truth": "wordpress_local",
-        "workflow_registry_truth": "wordpress_local",
-        "credential_value_exposure": "none",
-        "env_fallback": "disabled",
-    }
 
 
 def _default_qq_redirect_uri(public_base_url: str) -> str:
@@ -933,12 +1118,9 @@ def _normalize_url(value: str) -> str:
     return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path or "", "", ""))
 
 
-def _dict(value: object) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _string(value: object) -> str:
-    return str(value or "").strip()
+def _clock_minutes(value: str) -> int:
+    hour, minute = (int(part) for part in value.split(":"))
+    return hour * 60 + minute
 
 
 def _bool(value: object, *, default: bool) -> bool:
@@ -952,14 +1134,6 @@ def _bool(value: object, *, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
-
-
-def _positive_int(value: object, *, default: int) -> int:
-    try:
-        parsed = int(_string(value))
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default
 
 
 def _positive_float(value: object, *, default: float) -> float:

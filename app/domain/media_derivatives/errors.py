@@ -90,6 +90,15 @@ class MediaJobQueueFullError(MediaDerivativeErrorBase):
         )
 
 
+class MediaGovernanceStaleSourceError(MediaDerivativeErrorBase):
+    def __init__(self) -> None:
+        super().__init__(
+            409,
+            "media_governance_canary.stale_source",
+            "source artifact checksum no longer matches the audited candidate",
+        )
+
+
 class MediaDerivativeSourceDecodeFailedError(MediaDerivativeErrorBase):
     def __init__(self) -> None:
         super().__init__(

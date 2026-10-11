@@ -27,6 +27,7 @@ from app.domain.agent_workflow_metadata import (
 from app.domain.commercial.service import CommercialService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.observability.site_monitoring_overview import SiteMonitoringOverviewService
+from app.domain.runtime.provider_budget import ProviderBudgetService
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.usage.service import UsageService
@@ -807,28 +808,61 @@ class InternalAIAdvisorService:
                 return cached
 
         try:
-            llm_result = provider.execute(
-                ProviderExecutionRequest(
-                    run_id=f"advisor_{scope}_{int(datetime.now(UTC).timestamp())}",
-                    site_id=site_id or "internal",
-                    ability_name="internal_ops_summarizer",
-                    profile_id="internal.ops.summarizer",
-                    execution_kind="text",
-                    model_id=model_id,
-                    instance_id=f"{provider.provider_id}:internal-ops-summarizer",
-                    endpoint_variant="chat_completions",
-                    trace_id="internal_ops_summarizer",
-                    input_payload=self._build_summarizer_input_payload(
-                        redacted_context,
-                        draft_kind=draft_kind,
-                    ),
-                    policy={
-                        "data_contract": SUMMARIZER_VERSION,
-                        "customer_content_allowed": False,
-                    },
-                    timeout_ms=12_000,
-                )
+            request = ProviderExecutionRequest(
+                run_id=f"advisor_{scope}_{int(datetime.now(UTC).timestamp())}",
+                site_id=site_id or "internal",
+                ability_name="internal_ops_summarizer",
+                profile_id="internal.ops.summarizer",
+                execution_kind="text",
+                model_id=model_id,
+                instance_id=f"{provider.provider_id}:internal-ops-summarizer",
+                endpoint_variant="chat_completions",
+                trace_id="internal_ops_summarizer",
+                input_payload=self._build_summarizer_input_payload(
+                    redacted_context,
+                    draft_kind=draft_kind,
+                ),
+                policy={
+                    "data_contract": SUMMARIZER_VERSION,
+                    "customer_content_allowed": False,
+                },
+                timeout_ms=12_000,
             )
+            budget_guard = ProviderBudgetService()
+            budget_run = RunRecord(
+                run_id=request.run_id,
+                site_id=request.site_id,
+                ability_name=request.ability_name,
+                profile_id=request.profile_id,
+                execution_kind=request.execution_kind,
+                policy_json=request.policy,
+            )
+            with get_session(self.database_url) as session:
+                budget_claim = budget_guard.claim_before_dispatch(
+                    session=session,
+                    run=budget_run,
+                    provider_id=provider.provider_id,
+                    model_id=model_id,
+                    request=request,
+                )
+                try:
+                    llm_result = provider.execute(request)
+                except ProviderExecutionError:
+                    if budget_claim is not None:
+                        budget_guard.reconcile(
+                            session=session,
+                            claim_ids=budget_claim.claim_ids,
+                            actual_cost_usd=None,
+                        )
+                    session.commit()
+                    raise
+                if budget_claim is not None:
+                    budget_guard.reconcile(
+                        session=session,
+                        claim_ids=budget_claim.claim_ids,
+                        actual_cost_usd=llm_result.cost,
+                    )
+                session.commit()
         except ProviderExecutionError as error:
             self._maybe_record_summarizer_audit_event(
                 record_audit=record_audit,

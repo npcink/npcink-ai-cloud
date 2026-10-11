@@ -24,6 +24,10 @@ pytestmark = pytest.mark.skipif(
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "verify-release-bundle-manifest.py"
 IMAGE_INPUT_HELPER = ROOT / "scripts" / "production-application-image-inputs.py"
+requires_repository_git = pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="production image-input contracts require repository Git metadata",
+)
 
 
 def load_helper_module():
@@ -800,6 +804,7 @@ def update_manifest_checksum(bundle: Path) -> None:
     checksum_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+@requires_repository_git
 def test_v2_bundle_binds_exact_production_release_plan(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -906,6 +911,7 @@ def test_v2_bundle_binds_exact_production_release_plan(
     assert "release-plan manifest hash mismatch" in rejected.stderr
 
 
+@requires_repository_git
 def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -998,6 +1004,7 @@ def test_v2_bundle_with_staged_source_root_and_precomputed_source_inputs(
     assert not (bundle / "scripts/__pycache__").exists()
 
 
+@requires_repository_git
 def test_v2_bundle_rejects_missing_or_mismatched_release_plan(
     exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
@@ -2436,7 +2443,7 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "dist/worker.tar.gz" not in bundle
     assert "deploy-bundle.tgz.sha256" in bundle
     assert 'name="npcink-portal-activation-contract"' in remote_smoke
-    assert 'content="addon-verified-free-activation-v1"' in remote_smoke
+    assert 'content="registration-verified-free-activation-v2"' in remote_smoke
     assert 'INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-1}"' in bundle
     assert "must include every locked external image" in bundle
     assert "must include the frontend image" in bundle
@@ -2457,8 +2464,10 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert 'cp -a "${LOCAL_SCAN_DIR}/." "${SCAN_CACHE_OUTPUT_DIR}/"' in bundle
 
     ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "actions/cache/restore@v4" in ci_workflow
-    assert "actions/cache/save@v4" in ci_workflow
+    assert ci_workflow.count("actions/cache/restore@v6") == 3
+    assert ci_workflow.count("actions/cache/save@v6") == 3
+    assert "actions/cache/restore@v4" not in ci_workflow
+    assert "actions/cache/save@v4" not in ci_workflow
     assert ci_workflow.count("continue-on-error: true") >= 2
     assert "production-image-scan-v1-linux-amd64-" in ci_workflow
     assert "NPCINK_CLOUD_SCAN_REUSE_DIR" in ci_workflow

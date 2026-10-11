@@ -69,6 +69,12 @@ prompt/router/preset local truth, or WordPress write owner.
   After two consecutive failures with the same external-transfer signature,
   stop automatic retries, preserve the evidence, and either use a documented
   recovery lane or report the blocker to the operator.
+- A green GitHub Actions run is not evidence for lanes it skipped. The change
+  classifier deliberately skips irrelevant lanes, so a push-run `success` with
+  skipped backend lanes says nothing about backend health. Before diagnosing a
+  required-check failure as flaky or pre-existing, confirm that the runs being
+  compared actually executed the relevant lane; never infer master health from
+  a run that skipped it.
 - When the operator explicitly declares sessions to be running in parallel,
   follow the Three Uniques in
   `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
@@ -187,6 +193,17 @@ Repository integration gate:
 ```bash
 pnpm run check:fast
 ```
+
+Advisory AI review gate (run before `pnpm run pr:publish`):
+
+```bash
+ocr review --from origin/master --to HEAD
+```
+
+Treat findings as a second opinion: fix real defects or record why they are
+acceptable. Follows AI Code Review Standard v1 in `npcink-workflow-toolbox`
+`docs/platform/ai-code-review-standard-v1.md`; the CI workflow posting the same
+review on pull requests is advisory and never a required check.
 
 `check:fast` is not the default inner-loop command for every small edit. Start
 with the narrowest test, lint, type, or contract gate that covers the changed

@@ -14,6 +14,65 @@ afterEach(() => {
 });
 
 describe('admin login BFF origin', () => {
+  it.each([
+    ['http://127.0.0.1:18010', '/admin/vector-settings', '/admin/vector-settings'],
+    ['http://localhost:18010', '//attacker.example/admin', '/admin'],
+    ['https://cloud.example.com', '/administrator', '/admin'],
+  ])('keeps successful form login on %s with a safe admin path', async (origin, redirect, expected) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      status: 'ok', data: {},
+    }), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'set-cookie': 'npcink_admin_session_token=session; Path=/; HttpOnly; Secure; SameSite=Lax',
+      },
+    })));
+    const response = await POST(new NextRequest(`${origin}/admin/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
+      body: new URLSearchParams({ admin_key: 'test', redirect }),
+    }));
+    const location = response.headers.get('location')!;
+    expect(response.status).toBe(303);
+    expect(location).toBe(expected);
+    expect(new URL(location, origin).origin).toBe(origin);
+    expect(response.headers.get('set-cookie')).toContain('npcink_admin_session_token=session');
+  });
+
+  it('shows invalid-key errors on the loopback form origin instead of violating form-action self', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      status: 'error', error_code: 'auth.admin_key_invalid', data: {}, meta: {},
+    }), { status: 401, headers: { 'content-type': 'application/json' } })));
+    const origin = 'http://127.0.0.1:18010';
+    const response = await POST(new NextRequest(`${origin}/admin/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
+      body: 'admin_key=wrong&redirect=%2Fadmin',
+    }));
+    const location = new URL(response.headers.get('location')!, origin);
+    expect(location.origin).toBe(origin);
+    expect(location.searchParams.get('error')).toBe('auth.admin_key_invalid');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('keeps an upstream redirect local and preserves its cookie', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, {
+      status: 303,
+      headers: {
+        location: 'https://cloud.example.com/admin/vector-settings',
+        'set-cookie': 'npcink_admin_session_token=session; Path=/; HttpOnly',
+      },
+    })));
+    const response = await POST(new NextRequest('http://127.0.0.1:18010/admin/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'admin_key=test',
+    }));
+    expect(response.headers.get('location')).toBe('/admin/vector-settings');
+    expect(response.headers.get('set-cookie')).toContain('npcink_admin_session_token=session');
+  });
+
   it('does not use Origin or Referer as a redirect destination', async () => {
     vi.stubEnv('NEXT_PUBLIC_ENV', 'test');
     const request = new NextRequest(
@@ -29,12 +88,12 @@ describe('admin login BFF origin', () => {
 
     const response = await GET(request);
     expect(response.headers.get('location')).toBe(
-      'https://cloud.example.com/admin/login?redirect=%2Fadmin'
+      '/admin/login?redirect=%2Fadmin'
     );
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
-  it('binds redirects to the configured public origin even behind an internal request URL', async () => {
+  it('uses a relative redirect even behind an internal request URL', async () => {
     vi.stubEnv('NEXT_PUBLIC_ENV', 'production');
     const request = new NextRequest(
       'http://frontend:3000/admin/auth/login?redirect=/admin',
@@ -43,7 +102,7 @@ describe('admin login BFF origin', () => {
 
     const response = await GET(request);
     expect(response.headers.get('location')).toBe(
-      'https://cloud.example.com/admin/login?redirect=%2Fadmin'
+      '/admin/login?redirect=%2Fadmin'
     );
   });
 
@@ -79,7 +138,7 @@ describe('admin login BFF origin', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(response.status).toBe(303);
     expect(response.headers.get('location')).toBe(
-      'https://cloud.example.com/admin/login?error=auth.origin_not_allowed&redirect=%2Fadmin'
+      '/admin/login?error=auth.origin_not_allowed&redirect=%2Fadmin'
     );
     expect(forwardedHeaders?.get('host')).toBe('cloud.example.com');
     expect(forwardedHeaders?.get('x-forwarded-host')).toBe('cloud.example.com');
@@ -136,7 +195,7 @@ describe('admin login BFF origin', () => {
     const response = await POST(request);
     expect(response.status).toBe(303);
     expect(response.headers.get('location')).toBe(
-      'https://cloud.example.com/admin/login?error=proxy.admin_login_invalid_response&redirect=%2Fadmin'
+      '/admin/login?error=proxy.admin_login_invalid_response&redirect=%2Fadmin'
     );
     expect(response.headers.get('location')).not.toContain('auth.admin_login_failed');
   });

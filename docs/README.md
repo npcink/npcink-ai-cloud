@@ -6,6 +6,45 @@ Purpose: provide one maintained entry point for current Cloud authority while
 preserving dated implementation and validation evidence without presenting it
 as current truth.
 
+## 按当前任务找文档
+
+| 现在要做什么 | 从这里开始 |
+| --- | --- |
+| 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
+| 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
+| 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
+| 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
+| 查合规工作底稿方法（四列结构、来源分级、触发线分离） | [开发会话操作经验记录](development-session-notes-compliance-2026-09-26.md) |
+| 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
+| 查本地 WordPress 草稿闭环证据 | [本地草稿闭环验证记录](history/engineering/2026/local-wordpress-draft-closed-loop-validation-2026-09-23.md) — fake Provider、预览/插入/显式保存、回读一致性与精确清理；不是商业或用户验收证据 |
+| 查战略会话的讨论脉络与决定去向 | [战略会话综合纪要](strategy-session-synthesis-2026-09-22.md) — 时间线、七仓库总览、问题清单摘要 |
+| 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) — 含 2026-09-23 增补的开放前必做项 |
+| 查 Provider 账户级预算硬上限缺口（开放前必做） | [Provider 预算硬上限缺口盘点](provider-budget-hard-cap-inventory-2026-09-23.md) — 三层防线已合入 master（PR #1029/#1031）；剩余出口：M4 promotion、操作者武装与 smoke、裸 HTTP 付费路径收敛（见"实现合入更新"节） |
+| 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
+| 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
+| 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
+| 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
+| 逐项确认境内合规待办（生成式AI、标识、收款、数据） | [境内合规确认清单](compliance-confirmation-checklist-2026-09-23.md) — 工作底稿，非法律意见 |
+| 接续兼容稳定性、预算与支付会话的未完事项 | [兼容稳定性、预算与支付后续交接清单](compat-stability-payment-follow-up-handoff-2026-09-22.md) — 台账记行节奏、required 决策门槛、ADR-055 实现前置、退款两项裁决、观察窗口与提交门治理 |
+| 复用该会话的执行与验证经验 | [会话复盘](compat-budget-payment-session-retrospective-2026-09-22.md) — 分阶段执行模式、文档/发布/清理的机械经验、测试分层与稳定性证据方法 |
+| 查境内访问延迟观测 | [境内访问延迟观测](domestic-latency-observation-2026-09-22.md) — 本机 P95≈90ms，同步端点成立；含服务器自解析失败发现 |
+| 查延迟观测第二观测点补充 | [延迟观测补充](domestic-latency-observation-supplement-2026-09-22.md) — 跨云 ECS P95≈138ms，结论不变 |
+| 查推荐质量试批与第二性能窗口结论 | [推荐试批与观察窗口记录](history/trials/2026/recommendation-trial-batch-and-second-observation-window-2026-09-22.md) — 8 篇 93 候选有用率 51.6%；锚点修复无回归；正式优化延后至真实使用反馈 |
+| 查退款能力缺口 | [退款能力缺口盘点](refund-gap-inventory-2026-09-22.md) — 静态盘点：网关/状态机/幂等已实现未验证；回调、对账、失败终态、运营入口未实现 |
+| 一个人先把本地流程用起来，暂缓商业化投入 | [本地优先阶段总结与行动计划](local-first-validation-stage-2026-09-21.md) — 当前个人试用计划，非验收通过证明 |
+| 用真实文章试用，判断是否有帮助 | [标题试用与人工记录](title-quality-observation-2026-09.md) |
+| 理解产品三层定位与数据互联方向 | [战略定位 v1](strategy-positioning-v1-2026-09-21.md) |
+| 盘点 Site Knowledge 现状与跨平台耦合点 | [Site Knowledge 现状盘点](site-knowledge-inventory-2026-09-21.md) |
+| 理解运行诊断、使用统计和插件上报 | [工作台操作与开发指南](runtime-observation-workbench-operator-guidelines-v1.md) |
+| 修改运行观测页面 | [运行观测 UI 开发规范](cloud-admin-runtime-observation-ui-development-standard-v1.md) |
+| 规划运行观测工作台改造 | [工作台改造计划](runtime-observation-workbench-improvement-plan-v1.md) |
+| 在真实环境验收运行观测工作台 | [真实场景验收记录](runtime-observation-workbench-real-scenario-acceptance-v1.md) |
+| 评审后台版式和信息层级 | [视觉与信息架构评审规范](cloud-admin-visual-information-architecture-review-standard-v1.md) |
+| 修改代码并选择验证方式 | [开发与验证工作模型](development-validation-operating-model-v1.md) |
+| 查工程债与暂缓清理队列 | [工程跟进队列](engineering-follow-up-queue-v1.md) — 低收益项的触发条件与已完成整改索引 |
+| 判断一个大文件是否值得拆 | [结构整改启动条件](structural-remediation-delivery-standard-v1.md) |
+| 找遗漏文档或查看本轮整理结果 | [文档补充清单与结构调查](history/repository-hygiene/2026/document-navigation-and-hotspot-review-2026-09-11.md) |
+
 ## How to Read This Repository
 
 Use documentation in this order:
@@ -39,7 +78,25 @@ deleting the old decision history.
 
 ## Product Boundaries
 
+- [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
+- [Background Evidence and Cron Handoff](background-evidence-and-cron-handoff-2026-09-09.md) — reused acceptance, candidate identity and pending natural upload observation.
+
+- [WordPress AI Unified Plan](wordpress-ai-unified-delivery-plan-2026-09-07.md) - current disposition followed by historical proposals; no automatic model calls.
+- [WordPress Formatting History](history/wordpress-content-formatting-summary-2026-09-08.md) - requirements, open-source lessons, implementation tradeoffs and paused research.
+- [WordPress AI Engineering Closeout](history/wordpress-ai-engineering-closeout-2026-09-08.md) - phase-1 source integration, verification and remaining decisions.
+- [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
+- [WordPress AI Request Path Map](wordpress-ai-request-path-map-v1.md) — end-to-end call chain from the editor button to the feedback events, with the code location of each step; visual companion to the flow document above, not a separate authority.
+- [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) — accepted; keeps `ONE_ACTIVE_CONTRACT_VERSION` pre-public and pre-declares the trigger that switches to a bounded compatibility window with `upgrade_required` semantics
+- [ADR-054: Responses Output Boundary and No Silent Endpoint Downgrade](decisions/054-responses-output-boundary-and-no-silent-downgrade.md) — accepted; keeps upstream Responses parsing endpoint-specific, fail-closed, and explicit about model evidence
+- [ADR-055: Provider Account-Level Spend Budget Kill Switch](decisions/055-provider-account-level-spend-budget.md) — accepted design record; single dispatch choke point reusing existing cost estimates, atomic per-account daily/monthly claims, warn at 80 percent, fail closed at 100 percent; implementation and paid-provider authorization remain separate operator decisions
+- [ADR-057: Keep WordPress AI Quality Evidence Payload-Free](decisions/057-wordpress-ai-quality-evidence.md) — accepted; keeps structure-sensitive output diagnostics bounded and payload-free while preserving the official WordPress AI result and write boundaries
+
 - [Site Knowledge Recommendation Development Record](site-knowledge-recommendation-development-record-v1.md) — cross-repository lessons for vector evidence, coverage comparison, consumer debugging, and validation; implementation authority remains with the active runtime and connector contracts.
+- [Site Knowledge Recommendation Quality Improvement Standard](site-knowledge-recommendation-quality-improvement-standard-v1.md) — consolidated quality loop for bounded hybrid ranking, natural-anchor safety, metadata-only behavior feedback, multi-AI offline review, open-source references, and single-operator evidence gates.
+- [Site Knowledge Recommendation History Synthesis — 2026-08-26](history/engineering/2026/site-knowledge-recommendation-history-synthesis-2026-08-26.md) — dated plain-language summary of the internal-link/related-content distinction, UI simplification lessons, bounded vector-quality improvements, phased evidence gates, and deferred model expansion; not runtime or release authority.
+- [WordPress AI Recommendation Development Standard](wordpress-ai-recommendation-development-standard-v1.md) — consolidated WordPress-first product boundary, phased delivery, editor UX, validation, observation, and single-operator rules.
+- [WordPress Editor Readiness Runbook](wordpress-editor-readiness-runbook-v1.md) — read-only prerequisites for local editor acceptance; Cloud-unavailable results are blocked, not recommendation evidence.
+- [WordPress Editor Acceptance Observation — 2026-08-24](history/engineering/2026/wordpress-editor-acceptance-observation-2026-08-24.md) — five-sample latency and evidence baseline; observation only, not a performance SLA.
 
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
 - [Cloud Task Pack Boundary](cloud-task-pack-boundary-v1.md) — retired negative
@@ -47,63 +104,84 @@ deleting the old decision history.
 - [Cloud AI Data Handling Standard](cloud-ai-data-handling-standard-v1.md)
 - [Cloud Media Delivery Boundary](cloud-media-delivery-boundary-v1.md)
 - [Media Runtime Boundary](media-runtime-boundary-v1.md)
+- [Cloud Media Governance Standard](cloud-media-governance-standard-v1.md)
+- [Site Media Recommendation Development Standard v2](site-media-recommendation-development-standard-v2.md) — active implementation, validation, and staged-quality rules for external image-source recommendations; implementation companion to the [Site Media Recommendation Engineering Standard v1](site-media-recommendation-engineering-standard-v1.md), which governs site-inventory media recommendations
+- [Cloud Media Governance Product and Development Retrospective — 2026-09-02](history/media/2026/cloud-media-governance-product-development-retrospective-2026-09-02.md) — dated synthesis of the production exercise, product-boundary decisions, reversible MVP, recovery posture, evidence states and implementation stop lines; not implementation or runtime acceptance evidence
 - [Cloud Open Callback Boundary](cloud-open-callback-boundary-v1.md)
 - [Multi-platform Connector Boundary](multi-platform-connector-boundary-v1.md)
+- [Strategy Positioning v1 — 2026-09-21](strategy-positioning-v1-2026-09-21.md) — operator-directed product direction: three-layer structure (features, connectors, data interconnection), boundary hard lines, and roadmap discipline; direction record, not release authority
+- [Site Knowledge Static Inventory — 2026-09-21](site-knowledge-inventory-2026-09-21.md) — static code inventory of storage, ingestion, retrieval, operations, WordPress coupling, and gaps; evidence record, not runtime authority
 - [Cloud Agent Positioning](cloud-agent-positioning-v1.md)
 - [Cloud Agent Workflow Metadata Projection](cloud-agent-workflow-metadata-projection-v1.md)
 - [Cloud Agent Feedback Contract](cloud-agent-feedback-contract-v1.md)
 - [Cloud Agent Feedback Quality Gate](cloud-agent-feedback-quality-gate-v1.md)
+- [Internal AI Advisor](internal-ai-advisor-v1.md) — advisory read layer over Cloud service evidence; allowed and forbidden internal AI usage
 
 ## Engineering and Delivery Standards
+
+- [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。
+- [Free 试用前生产发布准备 — 2026-10-06](production-release-readiness-plan-2026-10-06.md) — 两处旧测试修复候选、累计部署范围、五项迁移与回滚条件；不是生产发布授权。
+- [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 已确认正常自注册、复用 Free 和四周判据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，启动状态待操作者核实。
+- [ADR-058: Registration-Verified Account Free Entitlement](decisions/058-registration-verified-account-free-entitlement.md) — verified registration grants account-owned Free; Addon still owns proof of site connection, with legacy fallback preserved.
+- [Free Trial Development Candidate — 2026-10-06](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md) — local backend evidence and retained implementation; frontend dependency and M4 relay blockers, not merge or deployment evidence.
+
+- [Performance and Security Remediation Closeout and Standard](performance-security-remediation-closeout-and-standard-v1.md) — September 2026 performance/security findings, merged/M4 evidence, rollback, and reusable review gates.
 
 - [Early Product Validation and Minimal Telemetry Standard](early-product-validation-and-minimal-telemetry-standard-v1.md)
   — active stop rules, minimum non-author trial loop, privacy-safe journey
   evidence, defect priority, and commercial-proof reopening triggers
 - [Single-Operator AI Development Standard](single-operator-ai-development-standard-v1.md)
-- [Single-Operator Pre-User Development Closeout and Next-Stage Guide — 2026-08-18](single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md) — dated synthesis of the solo-AI pre-user phase, user-experience remediation, privacy-safe observation, delivery-time lessons, workflow lanes, and the next ordinary-development stop point; not production or human-value authority
+- [AI Assisted Development Four Perspective Synthesis — 2026-09-07](ai-assisted-development-four-perspective-synthesis-2026-09-07.md) — dated synthesis of the solo-development, release, user-experience, and platform-administration conversations; preserves reusable rules and explicit deferrals without replacing current runtime or release authority
+- [Single-Operator Pre-User Development Closeout and Next-Stage Guide — 2026-08-18](history/engineering/2026/single-operator-pre-user-development-closeout-and-next-stage-2026-08-18.md) — dated synthesis of the solo-AI pre-user phase, user-experience remediation, privacy-safe observation, delivery-time lessons, workflow lanes, and the next ordinary-development stop point; not production or human-value authority
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [Single-Operator AI Development, M4 Validation, and Production Release Playbook](single-operator-ai-development-and-release-playbook-v1.md)
 - [Local-First Validation and Risk-Tiered CI](decisions/049-local-first-validation-and-risk-tiered-ci.md)
-- [Operator-Initiated Certificate Readiness Refresh](decisions/050-operator-initiated-certificate-readiness-refresh.md)
 - [Historical Issue Closure and Release Evidence Standard](historical-issue-closure-and-release-evidence-standard-v1.md)
-- [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
-- [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md)
+- [Historical Problems Closeout and Next-Stage Plan — 2026-08-22](history/engineering/2026/historical-problems-closeout-and-next-stage-plan-2026-08-22.md) — dated synthesis of the referenced Portal, diagnostics, administrator-observation, release-efficiency, and editor-monitoring discussions; records remaining work, reasons, phased next steps, and reusable development rules; not runtime, M4, production, or human-value authority
 - [Single-Operator AI Release Workflow Standard](single-operator-ai-release-workflow-standard-v1.md) — operator-facing bug-fix to production flow, Environment wait handling, timing, evidence, and rollback
-- [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
+- [Pre-production Release Pause and User-experience Consolidation Closeout — 2026-08-21](history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md)
   — dated history from issue synthesis and privacy-safe observation through the
   OpenSSL exception review chain, Docker-capable gate split, retired production
   promotions, and the current Portal-first consolidation handoff; not
   production or human-value authority
-- [Multi-Session Development Observation Synthesis and Next-Stage Plan — 2026-08-15](multi-session-development-observation-synthesis-and-next-stage-plan-2026-08-15.md) — dated four-track evidence matrix, cross-session problem triage, phased execution plan, and observation stop lines; not runtime, production, or human-value authority
+- [Multi-Session Development Observation Synthesis and Next-Stage Plan — 2026-08-15](history/engineering/2026/multi-session-development-observation-synthesis-and-next-stage-plan-2026-08-15.md) — dated four-track evidence matrix, cross-session problem triage, phased execution plan, and observation stop lines; not runtime, production, or human-value authority
 - [Development Efficiency Phase 3 Observation Plan](development-efficiency-phase3-observation-plan-v1.md) — current plan for collecting comparable delivery samples before further CI/shard/cache optimization
-- [Development Efficiency Phases 1–3 Closeout and Retrospective](development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
-- [Development and Delivery Efficiency Closeout and Retrospective](development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
-- [Production Release Feedback Loop Closeout and Standard — 2026-08-13](production-release-feedback-loop-closeout-and-standard-2026-08-13.md) — dated release-identity/readiness/CI closeout plus the reusable early-failure, promotion, exact-SHA preflight, and timing discipline; current release authority remains the production policy
+- [Development Efficiency Phases 1–3 Closeout and Retrospective](history/engineering/2026/development-efficiency-phases1-3-closeout-and-retrospective-2026-08-14.md) — dated evidence for PRs `#711`–`#713`, review corrections, validation receipts, and the current observation stop point
+- [Development and Delivery Efficiency Closeout and Retrospective](history/engineering/2026/development-delivery-efficiency-closeout-and-retrospective-2026-08-11.md) — dated evidence for PRs `#620`–`#635`, measured baselines, corrections, and still-pending natural after-samples; not current release authorization
+- [Development and Delivery Efficiency Standard](development-delivery-efficiency-standard-v1.md) — bounded timing, evidence reuse, retry budgets, and local acceptance measurement rules
+- [Production Release Feedback Loop Closeout and Standard — 2026-08-13](history/production/2026/production-release-feedback-loop-closeout-and-standard-2026-08-13.md) — dated release-identity/readiness/CI closeout plus the reusable early-failure, promotion, exact-SHA preflight, and timing discipline; current release authority remains the production policy
+- [Production Release Efficiency Phase 1-2 Closeout and Development Retrospective — 2026-08-23](history/production/2026/production-release-efficiency-phase1-closeout-and-development-retrospective-2026-08-23.md) — PR #851 merge, clean-master M4 acceptance, root causes of delay, reusable evidence rules, and deferred next steps; not production authorization
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
+- [Merge-Lane Operations Runbook](merge-lane-operations-runbook-v1.md) — active runbook for driving PRs through the protected master lane: strict-freshness cascades, advisory review thread resolution, dependabot revival protocol, CI failure modes, and the weekly CVE recheck window renewal
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
+- [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
+- [Pgy Primary M4 Access](decisions/052-pgy-primary-m4-access.md) — accepted default-path decision for Pgy SSH/direct transfer with LAN and Tailscale fallback
+- [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery
+- [Managed Source Relay Closeout and Development Retrospective — 2026-09-04](history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md) — dated evidence for PRs `#891` and `#892`, relay failure diagnosis, bounded retry corrections, M4 promotion, and reusable development lessons; not current runtime or release authority
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)
-- [Internal Readiness Final Handoff — 2026-08-18](internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
+- [Internal Readiness Final Handoff — 2026-08-18](history/engineering/2026/internal-readiness-final-handoff-2026-08-18.md) — dated final handoff summarizing the five-stage delivery chain, development lessons, evidence states, and the bounded next action
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
 - [Repository Stage-Transition Cleanup Standard](repository-stage-transition-cleanup-standard-v1.md)
 - [Repository Stage-Transition Worktree and Branch Cleanup Retrospective](history/repository-hygiene/2026/repository-stage-transition-worktree-and-branch-cleanup-retrospective-2026-08-08.md) — dated evidence for the 2026-08-08 consolidation; re-inventory current state before any future cleanup
 - [Repository Hygiene Final Closeout and Development Lessons — 2026-08-18](history/repository-hygiene/2026/repository-hygiene-final-closeout-and-development-lessons-2026-08-18.md) — dated final topology, preservation layers, branch/worktree policy, and reusable cleanup lessons; not future deletion authority
 - [Repository Documentation Consolidation Closeout and Lessons — 2026-08-22](history/repository-hygiene/2026/repository-documentation-consolidation-closeout-and-lessons-2026-08-22.md) — dated evidence for PRs `#836`–`#842`, branch recovery, documentation classification and archival, corrections, stopping decision, and reusable cleanup method; not future deletion authority
-- [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
-- [Seven-Session Development Synthesis and Open-Issue Triage](seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
+- [Single-Session AI Development Closeout and Retrospective](history/engineering/2026/single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
+- [Seven-Session Development Synthesis and Open-Issue Triage](history/engineering/2026/seven-session-development-synthesis-and-open-issues-2026-08-04.md) — dated synthesis of recent Cloud sessions; recheck current source before acting
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
+- [M4 Preview Target Alignment Standard](m4-preview-target-alignment-standard-v1.md) — keep 18010 tunnel and candidate sync targets aligned, with version confirmation and recovery steps
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
 - [Engineering Command Inventory Standard](engineering-command-inventory-standard-v1.md)
-- [Engineering Command Inventory M4 Source Bundle Closeout and Retrospective](engineering-command-inventory-m4-source-bundle-closeout-and-retrospective-2026-08-04.md)
+- [Engineering Command Inventory M4 Source Bundle Closeout and Retrospective](history/engineering/2026/engineering-command-inventory-m4-source-bundle-closeout-and-retrospective-2026-08-04.md)
 - [Structural Remediation Delivery Standard](structural-remediation-delivery-standard-v1.md)
 - [Repository Hygiene and Documentation Lifecycle Standard](repository-hygiene-and-documentation-lifecycle-standard-v1.md)
 - [Systematic Remediation Delivery Standard](systematic-remediation-delivery-standard-v1.md)
-- [Systematic Remediation Closeout and Retrospective — 2026-08-14](systematic-remediation-closeout-and-retrospective-2026-08-14.md) — dated evidence for the staged remediation sequence, validation chain, runtime observations, and development lessons
+- [Systematic Remediation Closeout and Retrospective — 2026-08-14](history/engineering/2026/systematic-remediation-closeout-and-retrospective-2026-08-14.md) — dated evidence for the staged remediation sequence, validation chain, runtime observations, and development lessons
 - [Repository Hygiene Cleanup Closeout and Retrospective](history/repository-hygiene/2026/repository-hygiene-cleanup-closeout-and-development-retrospective-2026-08-03.md)
-- [AI Development Stage Closeout and Production Readiness Retrospective](ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
+- [AI Development Stage Closeout and Production Readiness Retrospective](history/engineering/2026/ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [PR and Dependency Update Policy](pr-and-dependency-update-policy.md)
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md)
-- [AI Development Changed-Code Coverage Closeout and Retrospective](ai-development-changed-code-coverage-retrospective-2026-08-08.md) — dated implementation, CI cost-correction, and observation-cycle evidence; the active policy remains in CI Pytest Sharding
+- [AI Development Changed-Code Coverage Closeout and Retrospective](history/engineering/2026/ai-development-changed-code-coverage-retrospective-2026-08-08.md) — dated implementation, CI cost-correction, and observation-cycle evidence; the active policy remains in CI Pytest Sharding
 - [Python Type Checking Standard](python-type-checking-standard.md)
 - [Cloud Production Release Policy](cloud-production-release-policy-v1.md)
 - [Production-host Localhost Candidate Canary Standard](production-host-localhost-candidate-canary-standard-v1.md)
@@ -112,6 +190,7 @@ deleting the old decision history.
 
 - [Refactor Master Plan](refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](refactor-deletion-inventory-v1.md)
+- [Deferred Engineering Triggers](deferred-engineering-triggers-v1.md) — 2026-09-18 trigger-gated deferrals with pre-declared trigger conditions: three architecture directions (Addon contract registry, capability-surface gap, quality-driven routing), the request-log identity deviation, the Addon hosted-profile literal, the 2026-09-19 M4 preview sync/deploy marker finding, and the 2026-09-20 decision that production promotion remains paused indefinitely until an operator chooses to resume; not an authorization for early work
 - [Hosted Runtime Profiles](cloud-hosted-runtime-profiles-v1.md)
 - [First-install Contract](cloud-first-install-contract-v1.md)
 - [AI Task Runtime Contract](ai-task-runtime-contract-v1.md)
@@ -121,7 +200,7 @@ deleting the old decision history.
 - [Site Knowledge Search Architecture Standard](site-knowledge-search-architecture-standard-v1.md) — lexical, vector, and hybrid retrieval selection, Meilisearch admission gate, evaluation, and Cloud ownership rules
 - [Site Operations Cloud Analysis Runtime](site-ops-cloud-analysis-runtime-v1.md)
 - [Commercial Repository Decomposition Plan](commercial-repository-decomposition-plan-v1.md)
-- [Commercial Repository Decomposition Closeout and Retrospective](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)
+- [Commercial Repository Decomposition Closeout and Retrospective](history/engineering/2026/commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)
 
 Commercial repository decomposition is paused after Phase 7I. The plan remains
 the implementation history and restart contract; the closeout records the
@@ -131,20 +210,29 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Admin, Portal, Identity, and Commercial
 
 - [Cloud Portal Customer Workspace UI Standard](cloud-portal-customer-workspace-ui-standard-v1.md)
+- [Cloud Portal Site Detail Status Display Standard](cloud-portal-site-detail-status-display-standard-v1.md) — 站点详情页状态归属、告警分类、自动更新文案、操作收敛和回归测试规则
+- [Site Monitoring Observability](site-monitoring-observability-v1.md) — implemented read-only Cloud health telemetry for Portal site owners and Admin cross-site aggregation
 - [Portal Customer Workspace UI Closeout and Retrospective — 2026-08-14 to 2026-08-15](history/portal/2026/portal-customer-workspace-ui-closeout-and-retrospective-2026-08-14.md)
   — dated PC-first Portal information architecture, account/site ownership,
   all-sites filtering, browser validation, and M4 candidate evidence; not
   merge, production, or customer acceptance authority
 - [Cloud WordPress Connector State and Diagnostics Standard](cloud-wordpress-connector-state-and-diagnostics-standard-v1.md)
 - [Cloud Connector Recovery Contract](cloud-connector-recovery-contract-v1.md)
-- [Site-Inactive Recovery Closeout — 2026-08-13](site-inactive-recovery-closeout-2026-08-13.md) — dated cross-repository implementation, validation, and development-learning record
-- [WordPress–Cloud Integration Diagnostics Retrospective — 2026-08-13](wordpress-cloud-integration-diagnostics-retrospective-2026-08-13.md) — dated synthesis of featured-image scene compatibility, Site Knowledge retrieval acceptance, QQ OAuth projection, site lifecycle, Portal proxy, and timeout diagnostics; not current deployment or production evidence
+- [Site-Inactive Recovery Closeout — 2026-08-13](history/engineering/2026/site-inactive-recovery-closeout-2026-08-13.md) — dated cross-repository implementation, validation, and development-learning record
+- [WordPress–Cloud Integration Diagnostics Retrospective — 2026-08-13](history/engineering/2026/wordpress-cloud-integration-diagnostics-retrospective-2026-08-13.md) — dated synthesis of featured-image scene compatibility, Site Knowledge retrieval acceptance, QQ OAuth projection, site lifecycle, Portal proxy, and timeout diagnostics; not current deployment or production evidence
 - [Admin Information Architecture](cloud-admin-information-architecture-v2.md)
 - [Admin UI Standard](cloud-admin-ui-standard-v1.md)
+- [Admin Diagnostics Density Tier Session Retrospective — 2026-09-22](history/admin/2026/records/admin-diagnostics-density-tier-retrospective-2026-09-22.md) — closed session record for the compact density tier rollout (PR #1012): decisions, lessons for future AI sessions, and the densification backlog
+- [Runtime Diagnostics, Navigation and Validation Retrospective — 2026-10-08](history/admin/2026/records/runtime-diagnostics-navigation-and-validation-retrospective-2026-10-08.md) — dated interface and navigation decisions, regression controls, evidence limits and the unresolved historical Portal read failure; current merge/M4 acceptance remains separate
+- [Provider Budget Settings Closeout Retrospective — 2026-10-11](history/admin/2026/records/provider-budget-settings-closeout-retrospective-2026-10-11.md) — PR #1092 delivery record with the reusable Linux-golden regeneration recipe (loopback-origin container render + footprint calibration), M4 host recovery over 蒲公英, and protected-merge mechanics for bot-reviewed PRs; the guard ships disabled
+- [Admin Validation Maintenance Closeout — 2026-10-08](history/admin/2026/records/admin-validation-maintenance-closeout-2026-10-08.md) — fixture identity/audit consistency, non-pilot visual selection, enlarged-text help containment, and historical preservation lessons
 - [Admin Frontend Engineering Standard](cloud-admin-frontend-engineering-standard-v1.md)
 - [Admin UI Review and Delivery Playbook](cloud-admin-ui-review-and-delivery-playbook-v1.md)
 - [Admin Customer Operations Workspace Standard](cloud-admin-customer-operations-workspace-standard-v1.md)
 - [Customer Account and Identity Stage Standard](customer-account-identity-stage-standard-v1.md)
+- [ADR-031: Require Principal-Owned Portal Site Authorization](decisions/031-principal-owned-portal-site-authorization.md) — accepted; decision 6 superseded by ADR-034
+- [ADR-034: Keep Existing Sites Unbound During Ownership Bootstrap](decisions/034-fail-closed-principal-site-ownership-bootstrap.md) — accepted; supersedes decision 6 of ADR-031
+- [User Identity, Membership, and Site Authorization Closeout — 2026-07-27](history/engineering/2026/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md) — dated evidence; production deployment and real-user acceptance remain outside its scope
 - [Billing Entitlement Contract](cloud-billing-entitlement-v1.md)
 - [Payment Entitlement Contract](cloud-payment-entitlement-v1.md)
 - [Payment Gateway Contract](payment-gateway-contract-v1.md)
@@ -153,9 +241,14 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 
 ## Providers, Media, and Quality
 
+- [Site Media Recommendation Engineering Standard](site-media-recommendation-engineering-standard-v1.md) — active WordPress-first product and engineering rules for one-click media preparation, bounded recognition proxies, cross-modal retrieval evaluation, structured visual evidence, deduplication, abstention, incremental lifecycle, administrator-controlled background execution windows, and recommendation quality
+- [Media Fingerprints, Visual Evidence, and Article ALT Development Standard](media-alt-and-visual-evidence-development-standard-v1.md) — active reference for article ALT, exact-fingerprint evidence reuse, explicit recognition consent, and Toolbox/Addon/Cloud ownership
+- [Site Media Recognition Closeout and Development Retrospective — 2026-08-31](history/media/2026/site-media-recognition-closeout-and-development-retrospective-2026-08-31.md) — dated Cloud/Add-on/local acceptance record for one-click sequential batching, package capacity, daily pacing, idempotent recovery, progress semantics, and the final `70 / 70` eligible-image result; not current deployment or production authority
+- [Cloud Model Capability Discovery and Verification Standard](cloud-model-capability-discovery-and-verification-standard-v1.md) — external metadata discovery, capability-specific configuration probes, evidence states, route-fingerprint caching, and rollout rules for text, vision, embeddings, image, audio, and video generation
+- [Model Capability Verification Development Retrospective — 2026-08-26](history/engineering/2026/model-capability-verification-development-retrospective-2026-08-26.md) — dated synthesis of the model/Provider/route distinction, capability reliability versus output quality, low-cost single-operator observation, 30-day evidence freshness, runtime fail-closed behavior, and deferred video integration; not merge, M4 acceptance, production, or quality authority
 - [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md)
 - [Cloud Web Search Provider Integration Standard](cloud-web-search-provider-integration-standard-v1.md) — active investigation, adapter, secret-handling, verification, M4, merge, and rollout rules for managed search providers
-- [AnySearch Web Search Provider Integration Closeout — 2026-08-18](anysearch-web-search-provider-integration-closeout-2026-08-18.md) — dated evidence for PR `#793`, the stale-branch migration correction, M4 acceptance, bounded real-upstream validation, and extracted development lessons; not production or human acceptance authority
+- [AnySearch Web Search Provider Integration Closeout — 2026-08-18](history/engineering/2026/anysearch-web-search-provider-integration-closeout-2026-08-18.md) — dated evidence for PR `#793`, the stale-branch migration correction, M4 acceptance, bounded real-upstream validation, and extracted development lessons; not production or human acceptance authority
 - [Operator-initiated Provider Image Delivery Probe](decisions/042-operator-initiated-provider-image-delivery-probe.md)
 - [Model Reference Metadata](model-reference-metadata-v1.md)
 - [Cloud Web Search Runtime Contract](cloud-web-search-runtime-contract-v1.md)
@@ -163,19 +256,22 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [Image Source AI Generation Handoff](image-source-ai-generation-handoff-v1.md)
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Editor Assist Quality Flywheel](editor-assist-quality-flywheel-v1.md)
+- [WordPress AI Runtime Validation Rollout Plan](wordpress-ai-runtime-validation-rollout-plan-v1.md)
+- [WordPress AI Runtime Continuous Observation — 2026-09-21](wordpress-ai-runtime-observation-2026-09-21.md) — active observation record for the post-implementation natural-traffic, semantic-review, gateway, compatibility-gate, and production-pause boundaries
+- [Default Branch Dependency High-Alert Closeout — 2026-09-21](history/dependency-high-alerts-closeout-2026-09-21.md) — merged `js-yaml` and `sharp` security fix, local/native verification, M4 acceptance, alert refresh, and reusable dependency-update rules
 - [Customer Journey Metadata](customer-journey-metadata-v1.md) — active
   metadata-only WordPress and Portal event, consent, retention, summary, and
   release-evidence contract
 - [Real Editor Cohort Operations](real-editor-cohort-operations-v1.md)
-- [Pre-user Customer Journey Observability Closeout and Development Retrospective — 2026-08-17](pre-user-customer-journey-observability-closeout-and-development-retrospective-2026-08-17.md)
+- [Pre-user Customer Journey Observability Closeout and Development Retrospective — 2026-08-17](history/engineering/2026/pre-user-customer-journey-observability-closeout-and-development-retrospective-2026-08-17.md)
   — dated Cloud/Add-on/Portal/M4/local evidence, privacy decision, lean
   single-operator method, and formal-release/human-cohort handoff; not
   production or recruitment authorization
-- [Real Editor Technical Monitoring Closeout and Development Retrospective — 2026-08-15](real-editor-technical-monitoring-closeout-and-development-retrospective-2026-08-15.md)
+- [Real Editor Technical Monitoring Closeout and Development Retrospective — 2026-08-15](history/engineering/2026/real-editor-technical-monitoring-closeout-and-development-retrospective-2026-08-15.md)
   — dated two-site Provider, AI-credit, metadata-only quality, Addon PR `#97`,
   correction, and remaining-observation evidence; not production or human-value
   acceptance authority
-- [Editor Assist Quality JSON Export Production Closeout — 2026-08-07](editor-assist-quality-json-export-production-closeout-2026-08-07.md)
+- [Editor Assist Quality JSON Export Production Closeout — 2026-08-07](history/engineering/2026/editor-assist-quality-json-export-production-closeout-2026-08-07.md)
   — dated evidence for the restrained metadata-only export, focused validation,
   production release, time costs, and explicit non-commercial conclusions
 - [Feedback Data Operations](feedback-data-operations-v1.md)
@@ -184,6 +280,7 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 ## Operations and Release
 
 - [Operations Playbook](../deploy/OPS_PLAYBOOK.md)
+- [Production Host DNS and Certificate Recovery — 2026-10-07](history/production/2026/production-host-dns-and-certificate-recovery-2026-10-07.md) — dated host recovery evidence; original application version remains deployed, not Free trial release approval
 - [Release Checklist](../deploy/RELEASE_CHECKLIST.md)
 - [Production Release Optimization and Formal Smoke Handoff](production-release-optimization-and-formal-smoke-handoff-v1.md)
 - [Production Release Historical Issues Closeout and Retrospective — 2026-08-14](history/production/2026/production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
@@ -192,14 +289,14 @@ priority. Neither document is reclassified or moved by this cleanup batch.
   production authorization
 - [First-install PostgreSQL 18 Runbook](cloud-first-install-rds-pg18-runbook.md)
 - [Production WordPress Connector Smoke](production-wordpress-ai-connector-smoke-runbook-v1.md)
-- [Issue #406 Production Validation Preparation Retrospective](issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
+- [Issue #406 Production Validation Preparation Retrospective](history/engineering/2026/issue-406-controlled-production-validation-preparation-retrospective-2026-08-04.md)
   — dated evidence; canary/browser completion is not production validation
 - [Production WordPress Round-Trip Validation Runbook](production-wordpress-roundtrip-validation-runbook-v1.md)
-- [Production Internal-Validation Active-Soak Evidence — 2026-08-05](production-internal-validation-active-soak-evidence-2026-08-05.md)
-- [Python 3.14.6 Controlled-Validation Operator Worksheet — 2026-08-05](python-3-14-6-controlled-validation-operator-worksheet-2026-08-05.md)
+- [Production Internal-Validation Active-Soak Evidence — 2026-08-05](history/production/2026/production-internal-validation-active-soak-evidence-2026-08-05.md)
+- [Python 3.14.6 Controlled-Validation Operator Worksheet — 2026-08-05](history/production/2026/python-3-14-6-controlled-validation-operator-worksheet-2026-08-05.md)
   — one-operator, one-budget production evidence, exact quota/ledger assertions,
   WordPress-write boundaries, and fixture cleanup
-- [Production WordPress Image Round-Trip Evidence — 2026-08-05](production-wordpress-image-roundtrip-evidence-2026-08-05.md)
+- [Production WordPress Image Round-Trip Evidence — 2026-08-05](history/production/2026/production-wordpress-image-roundtrip-evidence-2026-08-05.md)
   — dated one-operator SiliconFlow lifecycle evidence, cleanup receipt,
   alt-text diagnosis, timing lesson, and remaining first-install blockers
 - [Production Release and WordPress Text Round-Trip Closeout — 2026-08-07](history/production/2026/production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
@@ -209,6 +306,9 @@ priority. Neither document is reclassified or moved by this cleanup batch.
 - [P5 Local Backup/Restore Drill](p5-b5-local-backup-restore-drill-v1.md)
 - [Runtime Stability and Performance Evidence Plan](runtime-stability-performance-evidence-v1.md)
 - [Small-customer Trial Readiness](small-customer-trial-commercial-readiness-v1.md)
+- [Nightly Intelligence / Morning Brief](nightly-site-inspection-morning-brief-v1.md) — active planning contract for off-hours site inspection, content quality scoring, and morning editorial readiness; WordPress remains the content and write owner
+- [ADR-046: Use a Read-Only Production Ownership Inventory](decisions/046-read-only-production-ownership-inventory.md) — accepted; prerequisite before migrating an existing user/site dataset
+- [CNA evidence re-verification — 2026-09-16](history/production/2026/cve-authority-reverification-2026-09-16.md) — dated verification record; not production release approval
 
 Production approval, deployment, production validation, and GA remain separate
 states. A historical production or M4 receipt never authorizes a new release.
@@ -223,6 +323,12 @@ Accepted and superseded architectural decisions live under
 - verify duplicate numbering and ambiguous status before adding a new ADR;
 - use the current implementation and newest accepted successor when an older
   ADR conflicts with present source.
+
+Numbering status: 044 is unassigned (the sequence skips from 043 to 045);
+the 2026-07-28 `ai_credits` meter decision was renumbered from ADR-028 to
+[ADR-056](decisions/056-ai-credit-commercial-meter-contract.md) on 2026-09-22
+to resolve a duplicate numbering collision. Documentation structural checks
+verify this sequence.
 
 ## Evidence and Historical Material
 
@@ -246,7 +352,7 @@ Special retained evidence areas:
 
 - [`docs/history/`](history/) contains material already moved into an explicit
   history namespace;
-- [`docs/legacy-contracts/`](legacy-contracts/) contains reference-only
+- [`docs/legacy-contracts/`](legacy-contracts/magick-ai-root/README.md) contains reference-only
   snapshots imported from the former repository layout;
 - [`docs/superpowers/`](superpowers/) contains historical planning artifacts
   and is excluded from routine documentation governance.
@@ -296,7 +402,69 @@ When changing documentation structure:
 5. run the narrowest policy/contract gate covering the changed entry points;
 6. keep documentation-only work out of M4 unless a runtime-specific risk
    explicitly requires it;
-7. report local, PR, merged, M4, production, and human evidence separately.
+7. report local, PR, merged, M4, production, and human evidence separately;
+8. move a task's dated records into `docs/history/<topic>/` when the task
+   merges; a dated record stays at the `docs/` root only with an entry under
+   [Dated Active-document Review](#dated-active-document-review), and
+   `check_doc_reachability.py` fails on unlisted dated root records older
+   than the current month.
 
 An unreferenced basename, old date, large file, or `retired` label is a review
 signal, not deletion authority.
+
+## Dated Active-document Review
+
+The 2026 dated-document review classifies current authority explicitly without
+moving or rewriting historical evidence.
+
+Retained active authority:
+
+- [AI Provider Env Config Retirement](ai-provider-env-config-retirement-2026-06-26.md) - retired negative guard;
+- [External Trial Operator Runbook](external-trial-operator-runbook-2026-06-11.md) - bounded operator procedure;
+- [Image Processing FC/OSS Readiness](image-processing-fc-oss-readiness-2026-07-20.md) - current deferred migration decision;
+- [Naming Residual Allowlist](naming-residual-allowlist-2026-06-24.md) - cross-repository naming guard;
+- [P5 B8 Final Engineering Closeout](p5-b8-final-engineering-closeout-2026-07-19.md) - pinned at the root by `check-release-policy.sh`;
+- [Provider Connection Production Runbook](provider-connection-production-runbook-2026-06-30.md) - current provider operations procedure;
+- [Python 3.14.6 Controlled Production Validation Risk Decision](python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md) - pinned at the root by `check-release-policy.sh`;
+- [Release CI Open-source Patterns](release-ci-open-source-patterns-2026-07.md) - current CI selection and evidence-reuse guidance.
+
+Historical evidence retained in place:
+
+- [Admin Account Governance Lightweight](admin-account-governance-lightweight-2026-06-12.md);
+- [AI Assisted Development Four Perspective Synthesis — 2026-09-07](ai-assisted-development-four-perspective-synthesis-2026-09-07.md);
+- [Background Evidence and Cron Handoff — 2026-09-09](background-evidence-and-cron-handoff-2026-09-09.md);
+- [Compat Budget Payment Session Retrospective — 2026-09-22](compat-budget-payment-session-retrospective-2026-09-22.md);
+- [Compat Stability Payment Follow-up Handoff — 2026-09-22](compat-stability-payment-follow-up-handoff-2026-09-22.md);
+- [Compliance Confirmation Checklist — 2026-09-23](compliance-confirmation-checklist-2026-09-23.md);
+- [Cloud Production Deployment History](cloud-production-deployment-history-2026-06-24.md);
+- [Development Session Notes — 2026-09-22](development-session-notes-2026-09-22.md);
+- [Development Session Notes — 2026-09-23](development-session-notes-2026-09-23.md);
+- [Development Session Notes — 2026-09-26](development-session-notes-2026-09-26.md);
+- [Development Session Notes Compliance — 2026-09-26](development-session-notes-compliance-2026-09-26.md);
+- [Domestic Latency Observation — 2026-09-22](domestic-latency-observation-2026-09-22.md);
+- [Domestic Latency Observation Supplement — 2026-09-22](domestic-latency-observation-supplement-2026-09-22.md);
+- [External Trial Capability Note](external-trial-capability-note-2026-06-10.md);
+- [External Trial Copy and Log](external-trial-copy-and-log-2026-06-11.md);
+- [External Trial Handoff Summary](external-trial-handoff-summary-2026-06-15.md);
+- [External Trial Readiness Checklist](external-trial-readiness-checklist-2026-06-10.md);
+- [Local-first Validation Stage — 2026-09-21](local-first-validation-stage-2026-09-21.md);
+- [M4 Compiled Preview and Login Retrospective — 2026-09-08](m4-compiled-preview-and-login-retrospective-2026-09-08.md);
+- [Next Stage Plan — 2026-09-22](next-stage-plan-2026-09-22.md);
+- [Payment and Domestic Readiness Note — 2026-09-22](payment-and-domestic-readiness-note-2026-09-22.md);
+- [Provider Budget Hard Cap Inventory — 2026-09-23](provider-budget-hard-cap-inventory-2026-09-23.md);
+- [Pre-release Legacy Debt and Development History](pre-release-legacy-debt-and-development-history-2026-07-10.md);
+- [Refund Gap Inventory — 2026-09-22](refund-gap-inventory-2026-09-22.md);
+- [Service Settings Projection Remediation — 2026-09-09](service-settings-projection-remediation-2026-09-09.md);
+- [Site Knowledge Inventory — 2026-09-21](site-knowledge-inventory-2026-09-21.md);
+- [Site-Owner AI Product Commercial Brainstorm — 2026-10-08](history/strategy/2026/site-owner-ai-product-commercial-brainstorm-2026-10-08.md);
+- [Strategy Positioning v1 — 2026-09-21](strategy-positioning-v1-2026-09-21.md);
+- [Strategy Session Synthesis — 2026-09-22](strategy-session-synthesis-2026-09-22.md);
+- [Title Quality Observation — 2026-09](title-quality-observation-2026-09.md);
+- [WordPress AI Loop Verification Checklist — 2026-09-22](wordpress-ai-loop-verification-checklist-2026-09-22.md);
+- [WordPress AI Runtime Observation — 2026-09-21](wordpress-ai-runtime-observation-2026-09-21.md);
+- [WordPress AI Unified Delivery Plan — 2026-09-07](wordpress-ai-unified-delivery-plan-2026-09-07.md).
+
+Run `python3 scripts/report-maintainability-inventory.py` for the advisory,
+read-only large-file trend, source-text-contract, behavior-test, and document
+lifecycle inventory. Its counts are navigation signals, not quality targets or
+merge gates.

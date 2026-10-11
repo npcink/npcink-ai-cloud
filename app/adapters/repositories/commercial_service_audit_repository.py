@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, or_, select, union_all
+from sqlalchemy.orm import Session, defer
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.models import ServiceAuditEvent
@@ -71,8 +71,12 @@ class CommercialServiceAuditRepository:
         event_kind: str | None = None,
         outcome: str | None = None,
         idempotency_key: str | None = None,
+        actor_ref: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
+        since: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[ServiceAuditEvent]:
@@ -85,14 +89,57 @@ class CommercialServiceAuditRepository:
                 event_kind=event_kind,
                 outcome=outcome,
                 idempotency_key=idempotency_key,
+                actor_ref=actor_ref,
                 scope_kind=scope_kind,
                 scope_id=scope_id,
+                since=since,
+                created_from=created_from,
+                created_to=created_to,
             )
         )
         statement = statement.order_by(
             ServiceAuditEvent.created_at.desc(),
             ServiceAuditEvent.id.desc(),
         ).offset(max(0, offset)).limit(limit)
+        return list(self.session.scalars(statement))
+
+    def list_portal_activity_events(
+        self,
+        *,
+        account_id: str,
+        site_ids: list[str],
+        site_id: str = "",
+        event_kind: str | None = None,
+        outcome: str | None = None,
+    ) -> list[ServiceAuditEvent]:
+        # Account-level activity and explicitly authorized sites are separate subjects.
+        scopes = [ServiceAuditEvent.site_id == site_id] if site_id else [
+            and_(ServiceAuditEvent.account_id == account_id, ServiceAuditEvent.site_id.is_(None)),
+            *(ServiceAuditEvent.site_id == item for item in sorted(set(site_ids))),
+        ]
+        filters = self._service_audit_filters(event_kind=event_kind, outcome=outcome)
+        # Bound each authorized subject before merging its records. A global
+        # ordered scan can traverse another tenant's entire history for an empty site.
+        branches = [
+            select(ServiceAuditEvent.id, ServiceAuditEvent.created_at)
+            .where(scope, *filters)
+            .order_by(ServiceAuditEvent.created_at.desc(), ServiceAuditEvent.id.desc())
+            .limit(200).subquery()
+            for scope in scopes
+        ]
+        candidates = union_all(*(
+            select(branch.c.id, branch.c.created_at) for branch in branches
+        )).cte("portal_activity_candidates").prefix_with("MATERIALIZED", dialect="postgresql")
+        recent = (
+            select(candidates.c.id, candidates.c.created_at)
+            .order_by(candidates.c.created_at.desc(), candidates.c.id.desc())
+            .limit(200).subquery()
+        )
+        statement = select(ServiceAuditEvent).options(
+            defer(ServiceAuditEvent.payload_json, raiseload=True)
+        ).join(recent, ServiceAuditEvent.id == recent.c.id).order_by(
+            ServiceAuditEvent.created_at.desc(), ServiceAuditEvent.id.desc()
+        )
         return list(self.session.scalars(statement))
 
     def list_service_audit_events_for_principal(
@@ -127,9 +174,12 @@ class CommercialServiceAuditRepository:
         event_kind: str | None = None,
         outcome: str | None = None,
         idempotency_key: str | None = None,
+        actor_ref: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
         since: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> int:
         return int(
             self.session.scalar(
@@ -146,9 +196,12 @@ class CommercialServiceAuditRepository:
                             event_kind=event_kind,
                             outcome=outcome,
                             idempotency_key=idempotency_key,
+                            actor_ref=actor_ref,
                             scope_kind=scope_kind,
                             scope_id=scope_id,
                             since=since,
+                            created_from=created_from,
+                            created_to=created_to,
                         )
                     ),
                 )
@@ -213,9 +266,12 @@ class CommercialServiceAuditRepository:
         event_kind: str | None = None,
         outcome: str | None = None,
         idempotency_key: str | None = None,
+        actor_ref: str | None = None,
         scope_kind: str | None = None,
         scope_id: str | None = None,
         since: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> list[SQLAFilter]:
         filters: list[SQLAFilter] = []
         normalized_site_ids = (
@@ -250,12 +306,18 @@ class CommercialServiceAuditRepository:
             filters.append(ServiceAuditEvent.outcome == outcome)
         if idempotency_key:
             filters.append(ServiceAuditEvent.idempotency_key == idempotency_key)
+        if actor_ref:
+            filters.append(ServiceAuditEvent.actor_ref == actor_ref)
         if scope_kind:
             filters.append(ServiceAuditEvent.scope_kind == scope_kind)
         if scope_id:
             filters.append(ServiceAuditEvent.scope_id == scope_id)
         if since is not None:
             filters.append(ServiceAuditEvent.created_at >= since)
+        if created_from is not None:
+            filters.append(ServiceAuditEvent.created_at >= created_from)
+        if created_to is not None:
+            filters.append(ServiceAuditEvent.created_at <= created_to)
         return filters
 
     def _serialize_datetime(self, value: datetime | None) -> str | None:

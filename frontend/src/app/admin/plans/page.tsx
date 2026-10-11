@@ -92,6 +92,13 @@ type PlanCatalogPayload = {
   tier_templates?: TierSummary[];
 };
 
+type BootstrapResult = {
+  tierId: string;
+  packageAlias: string;
+  status: 'succeeded' | 'failed';
+  message: string;
+};
+
 const PLAN_CATALOG_LOAD_TIMEOUT_MS = 10_000;
 type PlanCatalogState = 'missing' | 'unpublished' | 'ready';
 const TIER_ORDER = new Map([['free', 0], ['plus', 1], ['pro', 2], ['agency', 3]]);
@@ -174,6 +181,7 @@ function PlansContent() {
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
+  const [bootstrapResults, setBootstrapResults] = useState<BootstrapResult[]>([]);
   const activeRequestRef = useRef(false);
   const requestSequenceRef = useRef(0);
   const hasLoadedRef = useRef(false);
@@ -265,11 +273,9 @@ function PlansContent() {
     }
   };
 
-  const handleBootstrapShell = useCallback(async (shell: TierSummary) => {
-    setIsBootstrapping(true);
-    setError(null);
+  const bootstrapShell = useCallback(async (shell: TierSummary): Promise<BootstrapResult> => {
+    const localizedAlias = localizePackageAlias(t, shell.tier_id, shell.package_alias);
     try {
-      const localizedAlias = localizePackageAlias(t, shell.tier_id, shell.package_alias);
       const localizedPositioning = localizePositioning(t, shell.tier_id, shell.positioning);
       const localizedOperatorNote = localizeOperatorNote(t, shell.tier_id, shell.package_operator_note);
       const metadata = {
@@ -320,23 +326,53 @@ function PlansContent() {
         },
       });
 
-      toast.success(
-        t(
-          'admin.package_shell_bootstrap_notice',
-          {},
-          `${localizedAlias} package is now available for customer assignment.`
-        ),
-        t('admin.plans.package_initialized_title', {}, 'Package initialized')
-      );
-      await loadPlans(true);
+      return {
+        tierId: shell.tier_id,
+        packageAlias: localizedAlias,
+        status: 'succeeded',
+        message: t('admin.package_shell_bootstrap_notice', {}, `${localizedAlias} package is now available for customer assignment.`)
+      };
     } catch (err) {
-      setError(
-        resolveUiErrorMessage(err, t('error.failed_save', {}, 'Failed to save.'))
-      );
+      return {
+        tierId: shell.tier_id,
+        packageAlias: localizedAlias,
+        status: 'failed',
+        message: resolveUiErrorMessage(err, t('error.failed_save', {}, 'Failed to save.'))
+      };
+    }
+  }, [t]);
+
+  const runBootstrapShells = useCallback(async (
+    shells: TierSummary[],
+    retainedResults: BootstrapResult[] = []
+  ) => {
+    setIsBootstrapping(true);
+    setError(null);
+    setBootstrapResults(retainedResults);
+    const completed = [...retainedResults];
+    try {
+      for (const shell of shells) {
+        const result = await bootstrapShell(shell);
+        completed.push(result);
+        setBootstrapResults([...completed]);
+      }
+      const succeededCount = completed.filter((result) => result.status === 'succeeded').length;
+      const failedCount = completed.filter((result) => result.status === 'failed').length;
+      if (failedCount === 0) {
+        toast.success(
+          t('admin.package_shells_bootstrap_complete', {}, `${succeededCount} standard packages initialized.`),
+          t('admin.plans.package_initialized_title', {}, 'Package initialization complete')
+        );
+      }
+      if (succeededCount > 0) await loadPlans(true);
     } finally {
       setIsBootstrapping(false);
     }
-  }, [loadPlans, t, toast]);
+  }, [bootstrapShell, loadPlans, t, toast]);
+
+  const handleBootstrapShell = useCallback(async (shell: TierSummary) => {
+    await runBootstrapShells([shell]);
+  }, [runBootstrapShells]);
 
   const handleBootstrapMissingShells = useCallback(async () => {
     const missingShells = tierTemplates.filter((shell) => {
@@ -350,11 +386,17 @@ function PlansContent() {
       );
       return;
     }
-    for (const shell of missingShells) {
-      // Sequential bootstrap keeps notices and server-side upserts predictable.
-      await handleBootstrapShell(shell);
-    }
-  }, [handleBootstrapShell, plans, t, tierTemplates, toast]);
+    await runBootstrapShells(missingShells);
+  }, [plans, runBootstrapShells, t, tierTemplates, toast]);
+
+  const retryFailedBootstrapShells = useCallback(async () => {
+    const failedTierIds = new Set(
+      bootstrapResults.filter((result) => result.status === 'failed').map((result) => result.tierId)
+    );
+    const failedShells = tierTemplates.filter((shell) => failedTierIds.has(shell.tier_id));
+    const succeededResults = bootstrapResults.filter((result) => result.status === 'succeeded');
+    await runBootstrapShells(failedShells, succeededResults);
+  }, [bootstrapResults, runBootstrapShells, tierTemplates]);
 
   if (isLoading) {
     return <LoadingFallback />;
@@ -622,6 +664,25 @@ function PlansContent() {
             {t('admin.bootstrap_missing_shells', {}, 'Create missing packages')}
           </button>
         </div>
+        {bootstrapResults.length > 0 ? (
+          <div className="border-y border-slate-200 py-3 dark:border-slate-800" data-ui="package-bootstrap-results">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ul className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2" aria-label={t('admin.plans.bootstrap_results', {}, 'Package initialization results')}>
+                {bootstrapResults.slice(0, 4).map((result) => (
+                  <li key={result.tierId} className="flex min-w-0 items-start justify-between gap-3 text-sm">
+                    <span className="min-w-0"><strong>{result.packageAlias}</strong><span className="ml-2 text-slate-500 dark:text-slate-400">{result.message}</span></span>
+                    <BackofficeStatusBadge status={result.status} label={result.status} />
+                  </li>
+                ))}
+              </ul>
+              {bootstrapResults.some((result) => result.status === 'failed') ? (
+                <button type="button" className="btn btn-secondary btn-sm" disabled={isBootstrapping} onClick={() => void retryFailedBootstrapShells()}>
+                  {t('admin.plans.retry_failed_packages', {}, 'Retry failed packages')}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
           {canonicalTierCoverage.map(({ shell, item, isPresent }) => {
             return (

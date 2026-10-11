@@ -1,5 +1,7 @@
 # Feedback Data Operations v1
 
+Status: active operator guidance for read-only feedback projections.
+
 ## Purpose
 
 The feedback status command gives operators one aggregate, read-only view of
@@ -44,44 +46,8 @@ It performs no database writes.
 For local diagnostics with an explicitly configured database:
 
 ```bash
-python -m app.dev.feedback_status --window-hours 168
+python -m app.ops.feedback_status --window-hours 168
 ```
-
-## Local deterministic fixture
-
-During local development, use the bounded feedback-flywheel fixture instead of
-random event volume:
-
-```bash
-docker compose -f docker-compose.dev.yml exec -T api \
-  python -m app.dev.seed_feedback_flywheel_demo seed
-docker compose -f docker-compose.dev.yml exec -T api \
-  python -m app.dev.seed_feedback_flywheel_demo report
-docker compose -f docker-compose.dev.yml exec -T api \
-  python -m app.dev.seed_feedback_flywheel_demo cleanup
-```
-
-The fixture creates four synthetic, connected sites:
-
-- monitoring enabled, active, and reporting ordinary observability;
-- monitoring enabled and active, but missing ordinary observability;
-- monitoring disabled;
-- monitoring state unknown.
-
-It also creates four agent-feedback events (`insufficient`) and five distinct
-editor-assist quality sessions (`validation`). Re-running `seed` replaces only
-the exact fixture identities, so counts do not accumulate. `cleanup` removes
-only those identities and their dependent rows. On a local database that
-already contains other development data, the aggregate report intentionally
-includes both the fixture and those existing rows; use a disposable SQLite
-database when exact fixture-only totals are required.
-
-The command refuses production-like environments and remote database hosts.
-All fixture records are metadata-only and use fixed synthetic identifiers;
-they contain no prompt, generated text, post content, provider response,
-credential, or real user/site identity. Synthetic output validates aggregation
-and gap handling only. It is not evidence of real Addon delivery, user benefit,
-or production coverage.
 
 ## Interpret
 
@@ -99,7 +65,7 @@ or production coverage.
   sent at least one ordinary plugin observability event.
 - `agent_feedback_window`: distinct sites that sent governed agent feedback.
 - `editor_assist_quality_window`: distinct sites that sent metadata-only
-  editor-assist quality events under `editor_assist_quality.v1`.
+  editor-assist quality events under `editor_assist_quality.v2`.
 - `coverage.plugin_observability_over_monitoring_enabled` uses the explicit
   monitoring-enabled population as its denominator. Active-runtime ratios
   remain available for comparison; `null` means the denominator is zero.

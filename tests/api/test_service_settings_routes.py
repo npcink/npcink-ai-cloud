@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -10,8 +11,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import select
 
 from app.api.routes import service as service_routes
+from app.api.routes import site_compliance_admin as site_compliance_admin_routes
 from app.core.db import dispose_engine, get_session
 from app.core.models import (
+    CatalogCapabilityEvidence,
+    CatalogInstance,
+    CatalogModel,
+    CatalogProvider,
+    RoutingBinding,
     ServiceAuditEvent,
     ServiceSetting,
 )
@@ -19,12 +26,16 @@ from app.core.secrets import (
     decrypt_service_setting_secret,
     encrypt_service_setting_secret,
 )
+from app.domain.hosted_model_defaults import VISION_AI_PROFILE_ID
+from app.domain.model_capabilities.probes import vision_probe_fingerprint
+from app.setup.security import sha256_text
 from tests.api.service_routes_test_support import (
     _build_client,
     _runtime_service_settings,
 )
 from tests.conftest import (
     build_internal_headers,
+    seed_provider_model_allowlist,
 )
 
 OLD_SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"O" * 32).decode("ascii")
@@ -34,6 +45,7 @@ MALICIOUS_EXCEPTION_DETAIL = (
     "Traceback (most recent call last): /srv/private/advisor.py "
     "database_password=super-secret-token"
 )
+TEST_ADMIN_KEY = "nca_admin_npcink-cloud-admin-key-test-32"
 
 
 def _alipay_test_keys() -> tuple[str, str]:
@@ -52,6 +64,271 @@ def _alipay_test_keys() -> tuple[str, str]:
         .decode("utf-8")
     )
     return private_pem, public_pem
+
+
+def _seed_verified_vision_model(database_url: str) -> None:
+    seed_provider_model_allowlist(
+        database_url,
+        provider_id="vision-provider",
+        kind="test_provider",
+        model_ids=["vision-model"],
+        capability_ids=["vision"],
+        runtime_profile_ids=[VISION_AI_PROFILE_ID],
+    )
+    with get_session(database_url) as session:
+        session.add(
+            CatalogProvider(
+                provider_id="vision-provider",
+                display_name="Vision Provider",
+                adapter_type="openai_compatible",
+                status="active",
+            )
+        )
+        session.add(
+            CatalogModel(
+                model_id="vision-model",
+                provider_id="vision-provider",
+                family="vision-model",
+                feature="text",
+                status="available",
+                revision="test",
+            )
+        )
+        session.add(
+            CatalogInstance(
+                instance_id="vision-provider-global-vision-model",
+                model_id="vision-model",
+                provider_id="vision-provider",
+                endpoint_variant="responses",
+                region="global",
+                capability_tags=["text", "vision"],
+                health_status="healthy",
+            )
+        )
+        session.add(
+            CatalogCapabilityEvidence(
+                instance_id="vision-provider-global-vision-model",
+                capability="vision",
+                state="verified",
+                route_fingerprint=vision_probe_fingerprint(
+                    provider_connection_id="vision-provider",
+                    model_id="vision-model",
+                    endpoint_variant="responses",
+                ),
+                source="test_fixture",
+                revision="test",
+                checked_at=datetime.now(UTC),
+            )
+        )
+        binding = session.get(
+            RoutingBinding,
+            VISION_AI_PROFILE_ID,
+        )
+        assert binding is not None
+        binding.candidate_instance_ids = ["vision-provider-global-vision-model"]
+        binding.selection_policy_json = {}
+        binding.revision = "test"
+        session.commit()
+
+
+def test_admin_media_recognition_policy_inherits_alt_text_profile_and_updates_partially(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    _seed_verified_vision_model(database_url)
+
+    initial = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    data = initial.json()["data"]
+    assert data["settings"]["platform_preferences"] == {
+        "setting_id": "platform_preferences",
+        "setting_kind": "runtime",
+        "enabled": True,
+        "configured": False,
+        "status": "missing_config",
+        "config": {"timezone": "Asia/Shanghai"},
+        "secrets": {},
+        "last_tested_at": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "credential_value_exposure": "none",
+    }
+    assert data["settings"]["media_recognition_policy"] == {
+        "setting_id": "media_recognition_policy",
+        "setting_kind": "runtime",
+        "enabled": False,
+        "configured": False,
+        "status": "disabled",
+        "config": {
+            "window_start": "01:00",
+            "window_end": "06:00",
+            "daily_limit": 100,
+        },
+        "secrets": {},
+        "last_tested_at": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "credential_value_exposure": "none",
+    }
+    assert "options" not in data
+
+    platform_preferences = client.patch(
+        "/internal/service/admin/service-settings/platform-preferences",
+        json={"timezone": "UTC"},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-platform-preferences-001"
+        ),
+    )
+    assert platform_preferences.status_code == 200, platform_preferences.text
+    assert platform_preferences.json()["data"]["config"] == {"timezone": "UTC"}
+
+    disabled = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={
+            "enabled": False,
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-disabled"
+        ),
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["data"]["status"] == "disabled"
+
+    saved = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={
+            "enabled": True,
+            "window_start": "23:30",
+            "window_end": "05:15",
+            "daily_limit": 250,
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-001"
+        ),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["setting_kind"] == "runtime"
+    assert saved.json()["data"]["status"] == "ready"
+    assert saved.json()["data"]["config"] == {
+        "window_start": "23:30",
+        "window_end": "05:15",
+        "daily_limit": 250,
+    }
+
+    invalid_cases = (
+        (
+            "service-settings-media-recognition-window-invalid",
+            {"window_end": "23:30"},
+            "service_settings.media_recognition_window_invalid",
+        ),
+        (
+            "service-settings-media-recognition-clock-invalid",
+            {"window_start": "25:00"},
+            "service_settings.media_recognition_window_invalid",
+        ),
+    )
+    valid_payload = {
+        "enabled": True,
+        "window_start": "23:30",
+        "window_end": "05:15",
+        "daily_limit": 250,
+    }
+    for idempotency_key, override, error_code in invalid_cases:
+        response = client.patch(
+            "/internal/service/admin/service-settings/media-recognition-policy",
+            json={**valid_payload, **override},
+            headers=build_internal_headers(idempotency_key=idempotency_key),
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["error_code"] == error_code
+
+    legacy_timezone = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={**valid_payload, "timezone": "Asia/Shanghai"},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-timezone-rejected"
+        ),
+    )
+    assert legacy_timezone.status_code == 422, legacy_timezone.text
+
+    invalid_timezone = client.patch(
+        "/internal/service/admin/service-settings/platform-preferences",
+        json={"timezone": "Mars/Olympus"},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-platform-timezone-invalid"
+        ),
+    )
+    assert invalid_timezone.status_code == 400, invalid_timezone.text
+    assert invalid_timezone.json()["error_code"] == (
+        "service_settings.platform_timezone_invalid"
+    )
+
+    reloaded = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert reloaded.status_code == 200, reloaded.text
+    assert reloaded.json()["data"]["settings"]["platform_preferences"]["config"] == {
+        "timezone": "UTC"
+    }
+
+    invalid_limit = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={**valid_payload, "daily_limit": 0},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-limit-invalid"
+        ),
+    )
+    assert invalid_limit.status_code == 422, invalid_limit.text
+
+    with get_session(database_url) as session:
+        events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "media_recognition_policy"
+                )
+            )
+        )
+        platform_events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "platform_preferences"
+                )
+            )
+        )
+    assert {event.outcome for event in events} == {"succeeded", "error"}
+    assert all(event.event_kind == "service_setting.save" for event in events)
+    assert all(
+        "model_id" not in json.dumps(event.payload_json or {}) for event in events
+    )
+    assert {event.outcome for event in platform_events} == {"succeeded", "error"}
+    assert all(
+        event.event_kind == "service_setting.save" for event in platform_events
+    )
+
+    dispose_engine(database_url)
+
+
+def test_admin_media_recognition_policy_rejects_enable_without_alt_text_profile(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(tmp_path)
+
+    response = client.patch(
+        "/internal/service/admin/service-settings/media-recognition-policy",
+        json={"enabled": True},
+        headers=build_internal_headers(
+            idempotency_key="service-settings-media-recognition-profile-missing"
+        ),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == (
+        "service_settings.media_recognition_profile_unavailable"
+    )
 
 
 def test_admin_operational_readiness_projection_is_bounded_and_fail_closed() -> None:
@@ -312,6 +589,7 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert data["settings"]["alipay_payment"]["configured"] is True
     assert data["settings"]["site_relink_policy"]["config"]["cooldown_days"] == 180
     assert data["boundary"]["wordpress_control_plane"] is False
+    assert "media_recognition_runtime_policy" in data["boundary"]["cloud_owns"]
     assert "smtp-password" not in json.dumps(data)
     assert alipay_private_key not in json.dumps(data)
     assert alipay_public_key not in json.dumps(data)
@@ -320,7 +598,20 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
 
 
 def test_admin_site_compliance_draft_publish_and_public_projection(tmp_path: Path) -> None:
-    database_url, client = _build_client(tmp_path)
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "admin_key_sha256": sha256_text(TEST_ADMIN_KEY),
+            "admin_principal_id": "platform:founder",
+        },
+    )
+
+    login = client.post(
+        "/admin/auth/login",
+        json={"admin_key": TEST_ADMIN_KEY, "redirect": "/admin/site-compliance"},
+        headers={"origin": "http://testserver", "referer": "http://testserver/"},
+    )
+    assert login.status_code == 200
 
     initial = client.get(
         "/internal/service/admin/site-compliance",
@@ -374,6 +665,7 @@ def test_admin_site_compliance_draft_publish_and_public_projection(tmp_path: Pat
         "site_compliance.draft.save",
         "site_compliance.publish",
     }
+    assert {event.actor_ref for event in events} == {"platform:founder"}
     assert "示例运营主体" not in json.dumps(
         [event.payload_json for event in events],
         ensure_ascii=False,
@@ -408,6 +700,85 @@ def test_admin_site_compliance_publish_is_blocked_until_required_fields_are_conf
     assert published.status_code == 409
     assert published.json()["error_code"] == "site_compliance.publish_blocked"
 
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_failed_publish_records_authenticated_actor_without_content(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "admin_key_sha256": sha256_text(TEST_ADMIN_KEY),
+            "admin_principal_id": "platform:compliance-reviewer",
+        },
+    )
+    login = client.post(
+        "/admin/auth/login",
+        json={"admin_key": TEST_ADMIN_KEY, "redirect": "/admin/site-compliance"},
+        headers={"origin": "http://testserver", "referer": "http://testserver/"},
+    )
+    assert login.status_code == 200
+
+    published = client.post(
+        "/internal/service/admin/site-compliance/publish",
+        json={},
+        headers=build_internal_headers(idempotency_key="site-compliance-publish-error"),
+    )
+    assert published.status_code == 409
+    assert published.json()["error_code"] == "site_compliance.draft_required"
+
+    with get_session(database_url) as session:
+        event = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "site_compliance.publish",
+                ServiceAuditEvent.outcome == "error",
+            )
+        )
+    assert event is not None
+    assert event.actor_ref == "platform:compliance-reviewer"
+    assert event.payload_json["error_code"] == "site_compliance.draft_required"
+    assert event.payload_json["content_exposed"] is False
+    assert "payload" not in event.payload_json
+
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_audit_failure_does_not_change_save_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    initial = client.get(
+        "/internal/service/admin/site-compliance",
+        headers=build_internal_headers(),
+    )
+    payload = initial.json()["data"]["draft"]["payload"]
+
+    original_get_cloud_services = site_compliance_admin_routes.get_cloud_services
+    call_count = 0
+
+    def fail_only_during_audit(request: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return original_get_cloud_services(request)  # type: ignore[arg-type]
+        raise RuntimeError("audit service unavailable")
+
+    monkeypatch.setattr(
+        site_compliance_admin_routes,
+        "get_cloud_services",
+        fail_only_during_audit,
+    )
+    saved = client.put(
+        "/internal/service/admin/site-compliance/draft",
+        json={"payload": payload},
+        headers=build_internal_headers(idempotency_key="site-compliance-audit-failure"),
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"] == "ok"
+    assert call_count == 2
     dispose_engine(database_url)
 
 
@@ -757,5 +1128,175 @@ def test_admin_service_settings_email_test_can_send_repeatedly(
         "operator@example.com",
         "operator@example.com",
     ]
+
+    dispose_engine(database_url)
+
+
+def test_admin_provider_account_spend_budget_save_and_runtime_projection(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    initial = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    provider_budget = initial.json()["data"]["settings"]["provider_budget"]
+    assert provider_budget["setting_id"] == "provider_account_spend_budget"
+    assert provider_budget["setting_kind"] == "runtime"
+    assert provider_budget["enabled"] is False
+    assert provider_budget["configured"] is False
+    assert provider_budget["status"] == "disabled"
+    assert provider_budget["config"] == {
+        "warning_ratio": 0.8,
+        "conservative_unpriced_cost_usd": 0.05,
+        "require_provider_configuration": True,
+        "providers": [],
+    }
+    assert provider_budget["runtime"]["status"] == "disabled"
+    assert provider_budget["runtime"]["items"] == []
+    assert provider_budget["runtime"]["connections"] == []
+    assert provider_budget["runtime"]["period_timezone"] == "UTC"
+
+    saved = client.patch(
+        "/internal/service/admin/service-settings/provider-account-spend-budget",
+        json={
+            "enabled": True,
+            "warning_ratio": 0.9,
+            "conservative_unpriced_cost_usd": 0.02,
+            "require_provider_configuration": False,
+            "providers": [
+                {
+                    "provider_id": "openai",
+                    "account_class": "paid",
+                    "daily_usd": 5,
+                    "monthly_usd": 100,
+                }
+            ],
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-provider-budget-001"
+        ),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["enabled"] is True
+    assert saved.json()["data"]["status"] == "ready"
+    assert saved.json()["data"]["config"] == {
+        "warning_ratio": 0.9,
+        "conservative_unpriced_cost_usd": 0.02,
+        "require_provider_configuration": False,
+        "providers": [
+            {
+                "provider_id": "openai",
+                "account_class": "paid",
+                "daily_usd": 5.0,
+                "monthly_usd": 100.0,
+            }
+        ],
+    }
+
+    reloaded = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert reloaded.status_code == 200, reloaded.text
+    runtime = reloaded.json()["data"]["settings"]["provider_budget"]["runtime"]
+    assert runtime["status"] == "ok"
+    assert runtime["warning_ratio"] == 0.9
+    assert runtime["configured_provider_count"] == 1
+    assert runtime["missing_provider_ids"] == []
+    assert {(item["provider_id"], item["period_kind"]) for item in runtime["items"]} == {
+        ("openai", "day"),
+        ("openai", "month"),
+    }
+    assert all(item["reserved_cost_usd"] == 0.0 for item in runtime["items"])
+
+    invalid_cases = (
+        (
+            "service-settings-provider-budget-ratio-invalid",
+            {"warning_ratio": 1.5},
+            None,
+        ),
+        (
+            "service-settings-provider-budget-paid-limits",
+            {"providers": [{"provider_id": "openai", "daily_usd": 0, "monthly_usd": 100}]},
+            "service_settings.provider_budget_paid_limits_required",
+        ),
+        (
+            "service-settings-provider-budget-duplicate",
+            {
+                "providers": [
+                    {"provider_id": "openai", "daily_usd": 1, "monthly_usd": 10},
+                    {"provider_id": "openai", "daily_usd": 2, "monthly_usd": 20},
+                ]
+            },
+            "service_settings.provider_budget_provider_duplicate",
+        ),
+        (
+            "service-settings-provider-budget-empty",
+            {"providers": []},
+            "service_settings.provider_budget_provider_required",
+        ),
+        (
+            "service-settings-provider-budget-unknown-field",
+            {"timezone": "UTC"},
+            None,
+        ),
+    )
+    valid_payload = {
+        "enabled": True,
+        "warning_ratio": 0.9,
+        "conservative_unpriced_cost_usd": 0.02,
+        "require_provider_configuration": False,
+        "providers": [
+            {"provider_id": "openai", "account_class": "paid", "daily_usd": 5, "monthly_usd": 100}
+        ],
+    }
+    for idempotency_key, override, error_code in invalid_cases:
+        response = client.patch(
+            "/internal/service/admin/service-settings/provider-account-spend-budget",
+            json={**valid_payload, **override},
+            headers=build_internal_headers(idempotency_key=idempotency_key),
+        )
+        if error_code is None:
+            assert response.status_code == 422, response.text
+        else:
+            assert response.status_code == 400, response.text
+            assert response.json()["error_code"] == error_code
+
+    disabled = client.patch(
+        "/internal/service/admin/service-settings/provider-account-spend-budget",
+        json={
+            "enabled": False,
+            "warning_ratio": 0.9,
+            "conservative_unpriced_cost_usd": 0.02,
+            "require_provider_configuration": False,
+            "providers": [
+                {
+                    "provider_id": "openai",
+                    "account_class": "paid",
+                    "daily_usd": 5,
+                    "monthly_usd": 100,
+                }
+            ],
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-provider-budget-disabled"
+        ),
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["data"]["enabled"] is False
+
+    with get_session(database_url) as session:
+        events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "provider_account_spend_budget"
+                )
+            )
+        )
+    assert {event.outcome for event in events} == {"succeeded", "error"}
+    assert all(event.event_kind == "service_setting.save" for event in events)
 
     dispose_engine(database_url)

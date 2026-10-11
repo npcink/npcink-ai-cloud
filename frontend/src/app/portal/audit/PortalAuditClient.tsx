@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalSection,
@@ -13,6 +13,7 @@ import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader
 import {
   PortalEmptyState,
   PortalErrorState,
+  PortalErrorReference,
   PortalLoadingState,
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
@@ -24,6 +25,7 @@ import {
   type PortalAuditSummary,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { ApiError } from '@/lib/errors';
 import { getPortalSiteDisplayName } from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
@@ -43,6 +45,8 @@ const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
 
 const SUCCESSFUL_AUDIT_OUTCOMES = new Set(['success', 'succeeded', 'ok', 'completed']);
 
+type ActivityReadError = { message: string; reference: string };
+
 function isSuccessfulAuditOutcome(outcome: string): boolean {
   return SUCCESSFUL_AUDIT_OUTCOMES.has(String(outcome || '').trim().toLowerCase());
 }
@@ -55,6 +59,7 @@ export function PortalAuditClient() {
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const { t } = useLocale();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const siteFilterId = searchParams.get('site') || '';
   const selectedSite = session?.sites.find((site) => site.site_id === siteFilterId);
   const selectedSiteName = selectedSite
@@ -64,8 +69,8 @@ export function PortalAuditClient() {
   const [auditSummary, setAuditSummary] = useState<PortalAuditSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [error, setError] = useState<ActivityReadError | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<ActivityReadError | null>(null);
 
   const [visibleLimit, setVisibleLimit] = useState(10);
   const siteFilterIdRef = useRef(siteFilterId);
@@ -107,10 +112,11 @@ export function PortalAuditClient() {
         t,
         t('audit.load_error', {}, 'Failed to load audit data')
       );
+      const failure = { message, reference: err instanceof ApiError ? err.requestId || err.traceId : '' };
       if (loadingMore) {
-        setLoadMoreError(message);
+        setLoadMoreError(failure);
       } else {
-        setError(message);
+        setError(failure);
       }
     } finally {
       if (
@@ -181,6 +187,10 @@ export function PortalAuditClient() {
     return t('portal.audit.generic_activity', {}, 'Account activity');
   };
 
+  const loadMoreLabel = loadMoreError
+    ? t('common.retry')
+    : t('portal.audit.load_more', {}, 'Load more activity');
+
   if (sessionLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
@@ -191,21 +201,6 @@ export function PortalAuditClient() {
         title={t('auth.not_signed_in')}
         description={t('auth.please_sign_in')}
         actionLabel={t('nav.sign_in')}
-      />
-    );
-  }
-
-  if (isLoading) {
-    return <PortalLoadingState message={t('common.loading')} />;
-  }
-
-  if (error) {
-    return (
-      <PortalErrorState
-        title={t('common.error')}
-        description={error}
-        retryLabel={t('common.retry')}
-        onRetry={() => void loadActivity(visibleLimit)}
       />
     );
   }
@@ -229,9 +224,9 @@ export function PortalAuditClient() {
           if (nextSiteId) nextParams.set('site', nextSiteId);
           else nextParams.delete('site');
           const query = nextParams.toString();
-          window.history.replaceState(window.history.state, '', `/portal/audit${query ? `?${query}` : ''}`);
+          router.replace(`/portal/audit${query ? `?${query}` : ''}`, { scroll: false });
         }}
-        metrics={[
+        metrics={!isLoading && !error ? [
           { label: t('portal.audit.records_total', {}, 'Total records'), value: auditSummary?.totals?.events || 0 },
           { label: t('portal.audit.visible_records', {}, 'Visible records'), value: recentEvents.length },
           {
@@ -247,7 +242,7 @@ export function PortalAuditClient() {
             value: auditSummary?.generated_at ? formatDate(auditSummary.generated_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
             size: 'compact',
           },
-        ]}
+        ] : []}
         metricsColumnsClassName="xl:grid-cols-4"
         secondaryActions={
           <button type="button" className="btn btn-secondary" onClick={() => void loadActivity(visibleLimit)}>
@@ -255,15 +250,19 @@ export function PortalAuditClient() {
           </button>
         }
       />
+      {isLoading ? <PortalLoadingState message={t('common.loading')} /> : error ? (
+        <PortalErrorState title={t('error.failed_load')} description={error.message} supportReference={error.reference} retryLabel={t('common.retry')} onRetry={() => void loadActivity(visibleLimit)} />
+      ) : null}
 
-      <PortalSection className="overflow-hidden p-0">
+
+      <PortalSection className="overflow-hidden p-0" hidden={isLoading || Boolean(error)}>
         <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
           <h2 className="text-xl font-semibold text-gray-950 dark:text-white">{t('portal.audit.records_title', {}, 'Activity records')}</h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
             {t('portal.audit.recent_desc', {}, 'Only recent customer-readable activity is shown here.')}
           </p>
         </div>
-        {recentEvents.length === 0 ? (
+        {!isLoading && !error && recentEvents.length === 0 ? (
           <div className="p-6">
             <PortalEmptyState
               title={t('portal.audit.empty_title', {}, 'No activity in this view')}
@@ -395,21 +394,24 @@ export function PortalAuditClient() {
         && (visibleLimit < 200 || isLoadingMore || Boolean(loadMoreError)) ? (
           <div className="border-t border-gray-200 px-6 py-4 text-center dark:border-gray-800">
             {loadMoreError ? (
-              <p className="mb-3 text-sm text-red-700 dark:text-red-300">{loadMoreError}</p>
+              <div className="mb-3">
+                <p className="text-sm text-red-700 dark:text-red-300">{loadMoreError.message}</p>
+                <PortalErrorReference reference={loadMoreError.reference} />
+              </div>
             ) : null}
             <button
               type="button"
               className="btn btn-secondary"
               disabled={isLoadingMore}
               onClick={() => {
-                const nextLimit = Math.min(200, visibleLimit + 20);
+                const nextLimit = loadMoreError ? visibleLimit : Math.min(200, visibleLimit + 20);
                 setVisibleLimit(nextLimit);
                 void loadActivity(nextLimit, true);
               }}
             >
               {isLoadingMore
                 ? t('common.loading', {}, 'Loading...')
-                : t('portal.audit.load_more', {}, 'Load more activity')}
+                : loadMoreLabel}
             </button>
           </div>
         ) : null}

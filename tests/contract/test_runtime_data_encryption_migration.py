@@ -20,7 +20,6 @@ from app.core.models import (
     SiteApiKey,
 )
 from app.core.secrets import decrypt_runtime_data_plaintext
-from app.dev.reencrypt_runtime_data import main as reencryption_cli_main
 from app.domain.runtime import runtime_data_reencryption as reencryption_module
 from app.domain.runtime.runtime_data_reencryption import (
     ADDON_PAYLOAD_PURPOSE,
@@ -35,6 +34,7 @@ from app.domain.runtime.runtime_data_reencryption import (
     inventory_runtime_data_ciphertexts,
     verify_runtime_data_ciphertexts,
 )
+from app.ops.reencrypt_runtime_data import main as reencryption_cli_main
 
 LEGACY_ROOT = "legacy-admin-session-root-secret-at-least-32b"
 OLD_RDE_KEY_ID = "runtime-key-2026-06"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any
@@ -15,6 +16,7 @@ WP_AI_CONNECTOR_VISION_DATA_CLASSIFICATION = "internal"
 WP_AI_CONNECTOR_MAX_PROMPT_CHARS = 12000
 WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
 WP_AI_CONNECTOR_MAX_SYSTEM_INSTRUCTION_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
+WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS = 160
 WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS = 60
 WP_AI_CONNECTOR_SOURCE_ARTIFACT_ID_CHARS = 36
 WP_AI_CONNECTOR_SITE_KNOWLEDGE_REFERENCE_MODES_BY_TASK = {
@@ -34,6 +36,7 @@ WP_AI_CONNECTOR_ALT_TEXT_REQUEST_FIELDS = frozenset(
         "max_tokens",
         "prompt",
         "source_artifact_id",
+        "task_contract",
         "title",
     }
 )
@@ -65,11 +68,15 @@ WP_AI_CONNECTOR_ALLOWED_TASKS = frozenset(
         "audio_summary_script",
         "comment_moderation",
         "comment_reply_suggest",
+        "content_translation",
         "content_classification",
         "content_rewrite",
         "content_summary",
+        "editorial_notes",
+        "editorial_updates",
         "excerpt_generation",
         "meta_description",
+        "slug_generation",
         "title_generation",
     }
 )
@@ -77,6 +84,10 @@ WP_AI_CONNECTOR_SOURCE_TEXT_TASKS = frozenset(
     {
         "content_rewrite",
         "content_summary",
+        "content_translation",
+        "editorial_updates",
+        "excerpt_generation",
+        "meta_description",
         "title_generation",
     }
 )
@@ -117,6 +128,19 @@ AI_TASK_ALLOWED_CONSTRAINTS = frozenset(
         "no_new_numbers",
         "json_object",
         "existing_terms_only",
+    }
+)
+AI_TASK_ALLOWED_SOURCES = frozenset(
+    {"wordpress_abilities_api", "npcink_abilities_toolkit"}
+)
+AI_TASK_ALLOWED_VERIFICATION_STATES = frozenset(
+    {
+        "registered",
+        "mapped",
+        "schema_valid",
+        "mapping_current",
+        "contract_drift",
+        "unsupported",
     }
 )
 AI_TASK_MAX_OUTPUT_SCHEMA_BYTES = 12_000
@@ -225,6 +249,25 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
     normalized_request = dict(request)
     if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
         normalized_request["source_text"] = validate_source_text_request(request)
+        if "existing_title" in request:
+            if task != "title_generation":
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_invalid",
+                    "existing_title context is supported only for title_generation",
+                )
+            if not isinstance(request["existing_title"], str):
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_invalid",
+                    "existing_title context must be a string",
+                )
+            existing_title = request["existing_title"].strip()
+            if len(existing_title) > WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS:
+                raise WordPressOperationContractViolation(
+                    "wordpress_operation.existing_title_too_large",
+                    "existing_title context exceeds the "
+                    f"{WP_AI_CONNECTOR_MAX_EXISTING_TITLE_CHARS} character limit",
+                )
+            normalized_request["existing_title"] = existing_title
         if "system_instruction" in request:
             normalized_request["system_instruction"] = validate_system_instruction(
                 request
@@ -326,13 +369,20 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "AI task contract must be an object",
         )
     allowed_fields = {
+        "ability_id",
+        "contract_source",
+        "risk_level",
+        "requires_approval",
+        "verification_state",
         "contract_version",
         "ability_name",
         "task",
         "task_family",
         "context_requirements",
         "constraints",
+        "input_schema",
         "output_schema",
+        "schema_hash",
         "write_posture",
     }
     if set(value) - allowed_fields:
@@ -346,12 +396,18 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "AI task contract requires ai_task_contract.v1",
         )
     ability_name = str(value.get("ability_name") or "").strip()
+    ability_id = str(value.get("ability_id") or ability_name).strip()
+    contract_source = str(value.get("contract_source") or "wordpress_abilities_api").strip()
+    verification_state = str(value.get("verification_state") or "mapping_current").strip()
     projected_task = str(value.get("task") or "").strip()
     family = str(value.get("task_family") or "").strip()
     valid_ability_name = re.fullmatch(r"[a-z0-9_-]+/[a-z0-9_-]+", ability_name) is not None
     valid_task = re.fullmatch(r"[a-z0-9_]{1,64}", projected_task) is not None
     if (
         not valid_ability_name
+        or ability_id != ability_name
+        or contract_source not in AI_TASK_ALLOWED_SOURCES
+        or verification_state not in AI_TASK_ALLOWED_VERIFICATION_STATES
         or not valid_task
         or projected_task != task
         or family not in AI_TASK_ALLOWED_FAMILIES
@@ -359,6 +415,22 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
         raise WordPressOperationContractViolation(
             "wordpress_operation.ai_task_contract_identity_invalid",
             "AI task contract identity does not match the registered task projection",
+        )
+    if verification_state != "mapping_current":
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_not_current",
+            "AI task contract verification must be mapping_current before Cloud execution",
+        )
+    risk_level = str(value.get("risk_level") or "read").strip()
+    if risk_level not in {"read", "write", "destructive"}:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_risk_invalid",
+            "AI task contract risk_level is not supported",
+        )
+    if "requires_approval" in value and not isinstance(value["requires_approval"], bool):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_approval_invalid",
+            "AI task contract requires_approval must be boolean",
         )
     if str(value.get("write_posture") or "") != "suggestion_only":
         raise WordPressOperationContractViolation(
@@ -403,6 +475,49 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             "wordpress_operation.ai_task_contract_output_schema_too_large",
             "AI task contract output schema exceeds the runtime projection limit",
         )
+    input_schema = value.get("input_schema")
+    if input_schema is not None and not isinstance(input_schema, dict):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_input_schema_invalid",
+            "AI task contract input schema must be an object when provided",
+        )
+    schema_hash = str(value.get("schema_hash") or "")
+    if schema_hash and re.fullmatch(r"sha256:[0-9a-f]{64}", schema_hash) is None:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.ai_task_contract_schema_hash_invalid",
+            "AI task contract schema_hash must be a sha256 digest when provided",
+        )
+    if schema_hash:
+        # Keep the digest byte-compatible with Addon/Toolkit: recursively sort
+        # object keys, preserve array order, then use compact escaped JSON.
+        canonical_schema = _canonicalize_schema(
+            {
+                "input_schema": input_schema if isinstance(input_schema, dict) else {},
+                "output_schema": output_schema,
+            }
+        )
+        canonical_schema_json = json.dumps(
+            canonical_schema,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).replace("/", "\\/")
+        expected_hash = "sha256:" + hashlib.sha256(
+            canonical_schema_json.encode("utf-8")
+        ).hexdigest()
+        if expected_hash != schema_hash:
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.ai_task_contract_schema_hash_mismatch",
+                "AI task contract schema_hash does not match its input and output schemas",
+            )
+
+
+def _canonicalize_schema(value: Any) -> Any:
+    """Sort JSON object keys without changing array order."""
+    if isinstance(value, dict):
+        return {key: _canonicalize_schema(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_canonicalize_schema(item) for item in value]
+    return value
 
 
 def resolve_site_knowledge_reference_mode(

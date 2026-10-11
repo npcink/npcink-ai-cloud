@@ -89,6 +89,7 @@ def test_service_audit_repository_preserves_write_filters_principal_and_summary(
             repository.count_service_audit_events(
                 account_id="account-a",
                 outcome="success",
+                actor_ref="principal-a",
                 since=datetime.now(UTC) - timedelta(days=1),
             )
             == 1
@@ -126,6 +127,19 @@ def test_service_audit_repository_bounds_high_cardinality_deep_page(
         )
         session.flush()
         repository = CommercialServiceAuditRepository(session)
+
+        bounded_events = repository.list_service_audit_events(
+            actor_ref="operator",
+            created_from=base_time + timedelta(seconds=100),
+            created_to=base_time + timedelta(seconds=199),
+            limit=200,
+        )
+        assert len(bounded_events) == 100
+        assert repository.count_service_audit_events(
+            actor_ref="operator",
+            created_from=base_time + timedelta(seconds=100),
+            created_to=base_time + timedelta(seconds=199),
+        ) == 100
 
         events = repository.list_service_audit_events(
             account_id="account-large",

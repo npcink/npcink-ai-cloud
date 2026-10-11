@@ -70,7 +70,8 @@ class CommercialRuntimeKnowledgeQueries:
         if not site_ids:
             return {}
         items: dict[str, dict[str, int]] = {
-            site_id: {"documents": 0, "chunks": 0} for site_id in site_ids
+            site_id: {"documents": 0, "media_documents": 0, "chunks": 0}
+            for site_id in site_ids
         }
         document_statement = (
             select(SiteKnowledgeDocument.site_id, func.count())
@@ -79,9 +80,24 @@ class CommercialRuntimeKnowledgeQueries:
             .group_by(SiteKnowledgeDocument.site_id)
         )
         for site_id, count in self.session.execute(document_statement):
-            items.setdefault(str(site_id or ""), {"documents": 0, "chunks": 0})["documents"] = int(
-                count or 0
+            items.setdefault(
+                str(site_id or ""),
+                {"documents": 0, "media_documents": 0, "chunks": 0},
+            )["documents"] = int(count or 0)
+        media_document_statement = (
+            select(SiteKnowledgeDocument.site_id, func.count())
+            .select_from(SiteKnowledgeDocument)
+            .where(
+                SiteKnowledgeDocument.site_id.in_(site_ids),
+                SiteKnowledgeDocument.source_type == "media",
             )
+            .group_by(SiteKnowledgeDocument.site_id)
+        )
+        for site_id, count in self.session.execute(media_document_statement):
+            items.setdefault(
+                str(site_id or ""),
+                {"documents": 0, "media_documents": 0, "chunks": 0},
+            )["media_documents"] = int(count or 0)
         chunk_statement = (
             select(SiteKnowledgeChunk.site_id, func.count())
             .select_from(SiteKnowledgeChunk)
@@ -89,9 +105,10 @@ class CommercialRuntimeKnowledgeQueries:
             .group_by(SiteKnowledgeChunk.site_id)
         )
         for site_id, count in self.session.execute(chunk_statement):
-            items.setdefault(str(site_id or ""), {"documents": 0, "chunks": 0})["chunks"] = int(
-                count or 0
-            )
+            items.setdefault(
+                str(site_id or ""),
+                {"documents": 0, "media_documents": 0, "chunks": 0},
+            )["chunks"] = int(count or 0)
         return items
 
     def summarize_site_knowledge_index_usage(

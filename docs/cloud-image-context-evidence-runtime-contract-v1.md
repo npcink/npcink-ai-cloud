@@ -1,5 +1,7 @@
 # Cloud Image Context Evidence Runtime Contract v1
 
+Status: active runtime contract; current implementation and boundary authority.
+
 `npcink-cloud/image-context-evidence` is a Cloud hosted vision runtime ability for
 WordPress media review surfaces.
 

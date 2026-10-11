@@ -20,7 +20,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app.core.config import Settings
-from app.dev.baseline_status import load_remote_baseline_status
+from app.ops.baseline_status import load_remote_baseline_status
 from scripts import runtime_hot_path_explain
 
 HTTP_ENDPOINTS: tuple[tuple[str, str, bool, dict[str, str]], ...] = (

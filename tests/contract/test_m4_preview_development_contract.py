@@ -20,7 +20,11 @@ REDACTOR = ROOT / "scripts" / "redact-m4-preview-logs.py"
 PACKAGE_PROXY = ROOT / "scripts" / "m4-package-proxy.py"
 OVERLAY = ROOT / "docker-compose.m4-preview.yml"
 PREVIEW_PROXY = ROOT / "deploy" / "nginx.m4-preview.conf"
+SOURCE_RELAY_NGINX = ROOT / "deploy" / "m4-source-relay-nginx.conf"
 RUNBOOK = ROOT / "docs" / "m4-preview-development-v1.md"
+REMOTE_DEV_STANDARD = (
+    ROOT / "docs" / "m4-remote-development-and-overlay-network-standard-v1.md"
+)
 AI_STANDARD = ROOT / "docs" / "m4-preview-ai-development-standard-v1.md"
 VALIDATION_ADR = (
     ROOT / "docs" / "decisions" / "024-risk-tiered-development-validation-authority.md"
@@ -34,8 +38,9 @@ CHECKPOINT_ADR = (
 SOURCE_RELAY_ADR = (
     ROOT / "docs" / "decisions" / "026-private-source-relay-transfer.md"
 )
+PGY_ACCESS_ADR = ROOT / "docs" / "decisions" / "052-pgy-primary-m4-access.md"
 SOURCE_RELAY_VALIDATION = (
-    ROOT / "docs" / "m4-source-relay-transfer-validation-2026-07-24.md"
+    ROOT / "docs" / "history" / "m4" / "2026" / "m4-source-relay-transfer-validation-2026-07-24.md"
 )
 PACKAGE_PROXY_ADR = (
     ROOT / "docs" / "decisions" / "027-m4-package-proxy-streaming-cache.md"
@@ -43,9 +48,84 @@ PACKAGE_PROXY_ADR = (
 PACKAGE_PROXY_VALIDATION = (
     ROOT
     / "docs"
+    / "history"
+    / "m4"
+    / "2026"
     / "m4-package-proxy-streaming-cache-validation-2026-07-25.md"
 )
 OLLAMA_LAUNCH_AGENT = ROOT / "deploy" / "top.mqzj.npcink-ollama-preview.plist"
+
+
+@pytest.mark.parametrize(
+    ("mode", "build_exit", "expected_exit", "expected_calls"),
+    [
+        ("production", 0, 0, ["build", "serve"]),
+        ("production", 42, 42, ["build"]),
+        ("development", 0, 0, ["dev"]),
+        ("invalid", 0, 64, []),
+    ],
+)
+def test_m4_frontend_start_builds_before_serving_and_fails_closed(
+    tmp_path: Path,
+    mode: str,
+    build_exit: int,
+    expected_exit: int,
+    expected_calls: list[str],
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    calls = tmp_path / "calls.txt"
+    fake_node = fake_bin / "node"
+    fake_node.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            set -eu
+            case "$*" in
+                'node_modules/next/dist/bin/next build --webpack')
+                    test "$NODE_ENV" = production
+                    echo build >> "$CALLS"
+                    test "$BUILD_EXIT" = 0 || exit "$BUILD_EXIT"
+                    mkdir -p .next/standalone/frontend .next/static
+                    touch .next/standalone/frontend/server.js
+                    echo asset > .next/static/client.js
+                    ;;
+                '.next/standalone/frontend/server.js')
+                    test "$NODE_ENV" = production
+                    test "$HOSTNAME" = 0.0.0.0
+                    test "$PORT" = 3000
+                    test -f .next/standalone/frontend/.next/static/client.js
+                    test -f .next/standalone/frontend/public/favicon.ico
+                    echo serve >> "$CALLS"
+                    ;;
+                'node_modules/next/dist/bin/next dev --webpack -H 0.0.0.0')
+                    test "$NODE_ENV" = development
+                    echo dev >> "$CALLS"
+                    ;;
+                *) exit 99 ;;
+            esac
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_node.chmod(0o755)
+    (tmp_path / "public").mkdir()
+    (tmp_path / "public" / "favicon.ico").write_text("icon", encoding="utf-8")
+    completed = subprocess.run(
+        ["sh", str(ROOT / "frontend/scripts/m4-preview-start.sh"), mode],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "CALLS": str(calls),
+            "BUILD_EXIT": str(build_exit),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == expected_exit, completed.stderr
+    assert (calls.read_text().splitlines() if calls.exists() else []) == expected_calls
 
 
 def _write_fake_lsof(fake_bin: Path, *, port_is_occupied: bool) -> None:
@@ -281,6 +361,7 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "source_transfer_mode" in source
     assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE" in source
     assert "NPCINK_CLOUD_M4_RELAY_SSH_HOST" in source
+    assert "NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE" in source
     assert "ConnectionAttempts=3" in source
     assert "root@100.90.87.36" in source
     assert "74.82.195.160" not in source
@@ -290,9 +371,17 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "M4 relay SSH host contains unsupported characters" in source
     assert "source transfer holds" in source
     assert "systemd-run --quiet --collect" in source
+    assert "M4_RELAY_HTTP_MODE" in source
+    assert 'transient|nginx)' in source
     assert '--bind "${bind_ip}"' in source
+    assert "managed relay Nginx service is not active" in source
+    assert 'SOURCE_RELAY_UNIT="none"' in source
+    assert 'install -d -m 700 -o root -g root "${run_dir}"' in source
+    assert 'chmod 640 "${bundle}"' in source
+    assert 'chmod 710 "${run_dir}"' in source
     assert "--retry-all-errors" in source
-    assert "--max-time 120" in source
+    assert "--continue-at -" in source
+    assert "--max-time 900" in source
     assert "--speed-time 20" in source
     assert "source_dirty_paths" in source
     assert "frontend_source_fingerprint" in source
@@ -399,6 +488,19 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert source.index("wait_for_http") < source.index(
         '> "${deployed_frontend_source_marker}"'
     )
+
+
+def test_m4_source_relay_nginx_is_tailscale_only_and_read_only() -> None:
+    source = SOURCE_RELAY_NGINX.read_text(encoding="utf-8")
+
+    assert "listen 100.86.14.81:18080;" in source
+    assert "root /var/lib/npcink-ai-cloud-m4-source-relay;" in source
+    assert "autoindex off;" in source
+    assert "limit_except GET HEAD" in source
+    assert "deny all;" in source
+    assert "disable_symlinks on;" in source
+    assert "listen 0.0.0.0" not in source
+    assert "listen 120.24.237.214" not in source
 
 
 def test_m4_frontend_recreate_is_selected_only_for_frontend_relevant_change() -> None:
@@ -718,8 +820,9 @@ def test_m4_source_sync_refreshes_identity_and_skips_unrelated_runtime_mutations
     assert "stack_touched=1" in worker_guard
     assert "--force-recreate frontend" in frontend_guard
     assert "stack_touched=1" in frontend_guard
-    assert "nginx -s reload" in proxy_guard
-    assert "restart proxy" in proxy_guard
+    assert "--force-recreate proxy" in proxy_guard
+    assert "nginx -s reload" not in proxy_guard
+    assert "restart proxy" not in proxy_guard
     assert "proxy config is unchanged; proxy reload skipped" in sync_block
 
 
@@ -918,6 +1021,12 @@ def test_m4_atomic_nginx_commit_preserves_old_config_until_rsync_succeeds(
             remote_dir={remote}
             run_id=fault-injection
             nginx_config_incoming=""
+            nginx_config_changed=0
+            if ! cmp -s \
+                "${{staging}}/deploy/nginx.m4-preview.conf" \
+                "${{remote_dir}}/deploy/nginx.m4-preview.conf"; then
+                nginx_config_changed=1
+            fi
             {commit_block}
             """
         ),
@@ -970,6 +1079,25 @@ def test_m4_atomic_nginx_commit_preserves_old_config_until_rsync_succeeds(
 
     assert completed.returncode == 0
     assert live_config.read_text(encoding="utf-8") == candidate
+    assert not incoming.exists()
+
+    live_inode = live_config.stat().st_ino
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "LIVE_CONFIG": str(live_config),
+            "EXPECTED_OLD": candidate.rstrip("\n"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert live_config.stat().st_ino == live_inode
     assert not incoming.exists()
 
 
@@ -1354,10 +1482,95 @@ def test_m4_deploy_allows_recovery_when_primary_frontend_is_absent(
     not (ROOT / ".git").exists(),
     reason="source transfer dry-run requires Git worktree metadata",
 )
-def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -> None:
+def test_m4_source_transfer_requires_explicit_dirty_candidate() -> None:
+    dirty_candidate_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "1",
+        "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "0",
+    }
+    dirty_marker = (
+        ROOT / f".m4-preview-dirty-contract-{os.getpid()}-{time.time_ns()}"
+    )
+    dirty_marker.write_text("dirty candidate contract\n", encoding="utf-8")
+    try:
+        blocked = subprocess.run(
+            ["bash", str(SCRIPT), "sync", "--dry-run"],
+            cwd=ROOT,
+            env=dirty_candidate_env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        dirty_marker.unlink(missing_ok=True)
+
+    assert blocked.returncode != 0
+    assert "candidate source worktree is dirty" in blocked.stderr
+    assert "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1" in blocked.stderr
+
+
+@pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="source transfer dry-run requires Git worktree metadata",
+)
+def test_m4_source_transfer_requires_explicit_non_master_candidate() -> None:
+    source_branch = subprocess.run(
+        ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    ).stdout.strip() or "detached"
+    if source_branch == "master":
+        pytest.skip("non-master candidate guard requires a non-master checkout")
+
+    blocked_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "0",
+        "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "1",
+    }
+    blocked = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=blocked_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert blocked.returncode != 0
+    assert "explicit feature-branch preview" in blocked.stderr
+
+
+@pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="source transfer dry-run requires Git worktree metadata",
+)
+def test_m4_source_transfer_defaults_to_direct_and_relay_is_explicit() -> None:
+    candidate_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE": "1",
+        "NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE": "1",
+    }
+    direct = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=candidate_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "source transfer mode: direct" in direct.stdout
+    assert "would upload source directly to M4" in direct.stdout
+    assert "172.16.3.35" in direct.stdout
+
+    relay_env = {
+        **candidate_env,
+        "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "relay",
+    }
     relayed = subprocess.run(
         ["bash", str(SCRIPT), "sync", "--dry-run"],
         cwd=ROOT,
+        env=relay_env,
         text=True,
         capture_output=True,
         check=True,
@@ -1365,21 +1578,6 @@ def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -
     assert "source transfer mode: relay" in relayed.stdout
     assert "root@100.90.87.36" in relayed.stdout
     assert "100.90.87.36:18080" in relayed.stdout
-
-    direct_env = {
-        **os.environ,
-        "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "direct",
-    }
-    direct = subprocess.run(
-        ["bash", str(SCRIPT), "sync", "--dry-run"],
-        cwd=ROOT,
-        env=direct_env,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert "source transfer mode: direct" in direct.stdout
-    assert "would upload source directly to M4" in direct.stdout
 
 
 def test_m4_source_transfer_validation_fails_closed_without_git_metadata() -> None:
@@ -1413,6 +1611,51 @@ def test_m4_source_transfer_validation_fails_closed_without_git_metadata() -> No
     assert invalid_host.returncode != 0
     assert "SSH host contains unsupported characters" in invalid_host.stderr
 
+    relative_identity_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE": "relay-key.pem",
+    }
+    relative_identity = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=relative_identity_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert relative_identity.returncode != 0
+    assert "identity file must be an absolute path" in relative_identity.stderr
+
+    missing_identity_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE": "/missing/relay-key.pem",
+    }
+    missing_identity = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=missing_identity_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert missing_identity.returncode != 0
+    assert "identity file must be a regular file" in missing_identity.stderr
+
+    invalid_http_mode_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_HTTP_MODE": "automatic",
+    }
+    invalid_http_mode = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=invalid_http_mode_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert invalid_http_mode.returncode != 0
+    assert "HTTP mode must be transient or nginx" in invalid_http_mode.stderr
+
 
 def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
     completed = subprocess.run(
@@ -1432,7 +1675,7 @@ def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
     assert "rsync" not in completed.stdout
 
 
-def test_m4_auto_tunnel_prefers_lan_and_falls_back_to_tailscale(
+def test_m4_auto_tunnel_prefers_lan_then_pgy_then_tailscale(
     tmp_path: Path,
 ) -> None:
     fake_bin = tmp_path / "bin"
@@ -1444,6 +1687,7 @@ def test_m4_auto_tunnel_prefers_lan_and_falls_back_to_tailscale(
 printf '%s\n' "$*" >> "${FAKE_SSH_LOG}"
 case "$*" in
   *192.168.10.200*health/live*) exit "${FAKE_LAN_STATUS:-0}" ;;
+  *172.16.3.35*health/live*) exit "${FAKE_PGY_STATUS:-0}" ;;
   *100.102.170.79*health/live*) exit "${FAKE_TAILSCALE_STATUS:-0}" ;;
 esac
 sleep 1
@@ -1455,9 +1699,10 @@ sleep 1
     fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_curl.chmod(0o755)
 
-    for lan_status, expected_route, expected_host in (
-        ("0", "lan", "muze@192.168.10.200"),
-        ("1", "tailscale", "muze@100.102.170.79"),
+    for lan_status, pgy_status, expected_route, expected_host in (
+        ("0", "0", "lan", "muze@192.168.10.200"),
+        ("1", "0", "pgy", "muze@172.16.3.35"),
+        ("1", "1", "tailscale", "muze@100.102.170.79"),
     ):
         ssh_log = tmp_path / f"{expected_route}.log"
         runtime_env = {
@@ -1465,6 +1710,7 @@ sleep 1
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "FAKE_SSH_LOG": str(ssh_log),
             "FAKE_LAN_STATUS": lan_status,
+            "FAKE_PGY_STATUS": pgy_status,
         }
         completed = subprocess.run(
             ["bash", str(SCRIPT), "tunnel", "--auto"],
@@ -1483,7 +1729,7 @@ sleep 1
         ).splitlines()[-1]
 
 
-def test_m4_auto_tunnel_fails_when_both_routes_are_unhealthy(tmp_path: Path) -> None:
+def test_m4_auto_tunnel_fails_when_all_routes_are_unhealthy(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_ssh = fake_bin / "ssh"
@@ -1504,7 +1750,7 @@ def test_m4_auto_tunnel_fails_when_both_routes_are_unhealthy(tmp_path: Path) -> 
     )
 
     assert completed.returncode != 0
-    assert "both LAN and Tailscale" in completed.stderr
+    assert "LAN, Pgy, and Tailscale" in completed.stderr
 
 
 def test_m4_tunnel_reports_ready_only_after_local_health_is_usable(
@@ -1515,9 +1761,13 @@ def test_m4_tunnel_reports_ready_only_after_local_health_is_usable(
     _write_fake_lsof(fake_bin, port_is_occupied=False)
     event_log = tmp_path / "events.log"
     health_attempts = tmp_path / "health-attempts"
+    ssh_release = tmp_path / "ssh-release"
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         """#!/bin/sh
+while [ ! -f "${FAKE_SSH_RELEASE}" ]; do
+  sleep 0.01
+done
 printf 'tunnel-started\n' >> "${FAKE_EVENT_LOG}"
 sleep 3
 """,
@@ -1534,6 +1784,9 @@ fi
 attempts=$((attempts + 1))
 printf '%s\n' "${attempts}" > "${FAKE_HEALTH_ATTEMPTS}"
 printf 'health-attempt-%s\n' "${attempts}" >> "${FAKE_EVENT_LOG}"
+if [ "${attempts}" -eq 1 ]; then
+  : > "${FAKE_SSH_RELEASE}"
+fi
 test "${attempts}" -ge 2
 """,
         encoding="utf-8",
@@ -1544,6 +1797,7 @@ test "${attempts}" -ge 2
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "FAKE_EVENT_LOG": str(event_log),
         "FAKE_HEALTH_ATTEMPTS": str(health_attempts),
+        "FAKE_SSH_RELEASE": str(ssh_release),
         "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
     }
 
@@ -1559,11 +1813,16 @@ test "${attempts}" -ge 2
 
     assert "tunnel_ready=true" in completed.stdout
     assert "local_health_url=http://127.0.0.1:18042/health/live" in completed.stdout
-    assert event_log.read_text(encoding="utf-8").splitlines()[:3] == [
-        "tunnel-started",
-        "health-attempt-1",
-        "health-attempt-2",
-    ]
+    events = event_log.read_text(encoding="utf-8").splitlines()
+    assert events[0] == "health-attempt-1"
+    assert sorted(events) == sorted(
+        [
+            "tunnel-started",
+            "health-attempt-1",
+            "health-attempt-2",
+        ]
+    )
+    assert events.index("health-attempt-1") < events.index("health-attempt-2")
 
 
 def test_m4_tunnel_does_not_count_an_unowned_existing_health_listener(
@@ -1616,6 +1875,7 @@ def test_m4_browser_preflight_marks_peer_relay_and_low_throughput_not_counted(
         """#!/bin/sh
 case "$*" in
   *192.168.10.200*health/live*) exit 1 ;;
+  *172.16.3.35*health/live*) exit 1 ;;
   *100.102.170.79*health/live*) exit 0 ;;
 esac
 sleep 2
@@ -1723,6 +1983,7 @@ printf 'pong from preview via 100.102.170.79:41641 in 45ms\n'
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
+        "NPCINK_CLOUD_M4_SSH_HOST": "muze@100.102.170.79",
     }
 
     completed = subprocess.run(
@@ -1998,7 +2259,9 @@ def test_m4_overlay_is_loopback_only_and_starts_the_complete_runtime() -> None:
         == 4
     )
     assert '"node"' in overlay
-    assert '"node_modules/next/dist/bin/next"' in overlay
+    assert '"scripts/m4-preview-start.sh"' in overlay
+    assert '${NPCINK_CLOUD_M4_FRONTEND_MODE:-production}' in overlay
+    assert "start_period: 5m" in overlay
     for service in (
         "postgres",
         "redis",
@@ -2573,3 +2836,41 @@ def test_m4_private_source_relay_decision_and_validation_are_linked() -> None:
     assert "4,823,040" in validation
     assert "18 seconds" in validation
     assert "SHA-256" in validation
+
+
+def test_m4_pgy_primary_access_decision_is_linked_and_explicit() -> None:
+    decision = PGY_ACCESS_ADR.read_text(encoding="utf-8")
+    standard = AI_STANDARD.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "ADR-052" in standard
+    assert "ADR-052" in runbook
+    assert "ADR-052" in readme
+    assert "052-pgy-primary-m4-access.md" in docs_index
+    assert "172.16.3.35" in decision
+    assert "direct source" in decision
+    assert "LAN" in decision
+    assert "Tailscale" in decision
+    assert "do not silently" in decision
+
+
+def test_m4_remote_development_standard_is_linked_and_operational() -> None:
+    standard = REMOTE_DEV_STANDARD.read_text(encoding="utf-8")
+    ai_standard = AI_STANDARD.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+
+    assert "Status: active." in standard
+    assert "172.16.3.35" in standard
+    assert "LAN -> Pgy -> Tailscale" in standard
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct" in standard
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay" in standard
+    assert "phone -> Pgy or Tailscale -> SSH to M5" in standard
+    assert "silently switch" in standard
+    assert "M4 Remote Development and Overlay Network Standard" in ai_standard
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in runbook
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in readme
+    assert "m4-remote-development-and-overlay-network-standard-v1.md" in docs_index

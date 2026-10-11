@@ -11,6 +11,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Receive, Scope, Send
 
+from app import __version__
 from app.api.envelope import build_envelope
 from app.api.portal_idempotency_middleware import PortalIdempotencyMiddleware
 from app.api.routes.agent_feedback import router as agent_feedback_router
@@ -58,7 +59,7 @@ def create_app(
 
     app = FastAPI(
         title=settings.project_name,
-        version="0.1.0",
+        version=__version__,
         docs_url="/docs" if settings.environment != "production" else None,
         redoc_url="/redoc" if settings.environment != "production" else None,
     )
@@ -114,6 +115,19 @@ def create_app(
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        # Start in report-only mode so existing third-party OAuth/payment
+        # integrations can be inventoried before enforcement.
+        response.headers.setdefault(
+            "Content-Security-Policy-Report-Only",
+            (
+                "default-src 'self'; base-uri 'self'; object-src 'none'; "
+                "frame-ancestors 'none'; form-action 'self'"
+            ),
+        )
         return response
 
     @app.middleware("http")
@@ -197,7 +211,7 @@ def create_app(
 def _create_setup_app(setup_service: SetupService) -> FastAPI:
     setup_app = FastAPI(
         title="Npcink AI Cloud Setup",
-        version="0.1.0",
+        version=__version__,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

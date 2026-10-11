@@ -26,6 +26,7 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
   getPortalCustomerIssueTitle,
   getPortalMonitoringIssueCategory,
+  hasPortalServiceAttention,
 } from '@/lib/portal-monitoring-display';
 import { formatDate } from '@/lib/utils';
 import {
@@ -94,6 +95,7 @@ function PortalSiteRecordContent() {
   const [isRemovingSite, setIsRemovingSite] = useState(false);
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
+  const [hasOpenedRemoveModal, setHasOpenedRemoveModal] = useState(false);
   const siteMonitoring = usePortalSiteMonitoring(siteId, t);
   const siteKnowledge = usePortalSiteKnowledge(siteId, t);
 
@@ -124,7 +126,7 @@ function PortalSiteRecordContent() {
   }, [isAuthenticated, siteId, t]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !hasOpenedRemoveModal) {
       setSiteRelinkPolicy(null);
       setExpectedRelinkAvailableAt('');
       return;
@@ -149,7 +151,7 @@ function PortalSiteRecordContent() {
     return () => {
       alive = false;
     };
-  }, [isAuthenticated]);
+  }, [hasOpenedRemoveModal, isAuthenticated]);
 
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
@@ -166,38 +168,15 @@ function PortalSiteRecordContent() {
   }
 
   const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
+  const recovery = error ? getPortalSiteRecovery(error.code, siteId, t) : null;
 
   if (error) {
-    const recovery = getPortalSiteRecovery(error.code, siteId, t);
-    const sessionSiteStatusLabel = sessionSite?.status === 'active'
-      ? t('portal.sites.table_ready', {}, 'Connected')
-      : sessionSite?.status === 'inactive'
-        ? t('portal.site_status_inactive', {}, 'Inactive')
-        : sessionSite?.status === 'provisioning'
-          ? t('portal.site_status_provisioning', {}, 'Provisioning')
-          : t('portal.site_status_suspended', {}, 'Suspended');
-
+    if (sessionSite) {
+      // Keep the owned site snapshot visible while exposing the error-specific
+      // recovery action below. The session record remains useful context.
+    } else {
     return (
       <PortalPageStack>
-        {sessionSite ? (
-          <PortalWorkspaceHeader
-            title={getPortalSiteDisplayName(sessionSite)}
-            currentPage="record"
-            selectedSiteId={siteId}
-            sites={session.sites}
-            titleAccessory={(
-              <PortalStatusBadge
-                status={sessionSite.status === 'active' ? 'active' : 'warning'}
-                label={sessionSiteStatusLabel}
-              />
-            )}
-            metadata={getPortalSiteUrl(sessionSite) ? (
-              <span className="break-all text-sm text-slate-600 dark:text-slate-300">
-                {getPortalSiteUrl(sessionSite)}
-              </span>
-            ) : undefined}
-          />
-        ) : null}
         <PortalErrorState
           title={t('common.error')}
           description={error.message}
@@ -208,28 +187,23 @@ function PortalSiteRecordContent() {
         />
       </PortalPageStack>
     );
-  }
-
-  if (!summary) {
-    return <PortalLoadingState message={t('common.loading')} />;
+    }
   }
 
   const site: Site = {
     site_id: siteId,
-    name: summary.site?.name || sessionSite?.name || siteId,
-    site_url: summary.site?.site_url || sessionSite?.site_url || '',
-    platform_kind: summary.site?.platform_kind || sessionSite?.platform_kind || 'wordpress',
-    status: summary.site?.status || sessionSite?.status || 'inactive',
+    name: summary?.site?.name || sessionSite?.name || siteId,
+    site_url: summary?.site?.site_url || sessionSite?.site_url || '',
+    platform_kind: summary?.site?.platform_kind || sessionSite?.platform_kind || 'wordpress',
+    status: summary?.site?.status || sessionSite?.status || 'inactive',
   };
   const siteUrl = getPortalSiteUrl(site);
   const monitoringNeedsAttention = siteMonitoring.overview
-    ? siteMonitoring.overview.health.status !== 'ok'
-      || siteMonitoring.overview.action_required.length > 0
-      || siteMonitoring.overview.quota.top_pressure !== 'none'
+    ? hasPortalServiceAttention(siteMonitoring.overview)
     : false;
   const siteNeedsAttention = site.status !== 'active'
     || !siteUrl
-    || Boolean(summary.customer_status?.needs_attention)
+    || Boolean(summary?.customer_status?.needs_attention)
     || monitoringNeedsAttention;
   const siteConnectionStatusLabel = site.status === 'active'
     ? t('portal.sites.table_ready', {}, 'Connected')
@@ -238,7 +212,9 @@ function PortalSiteRecordContent() {
       : site.status === 'provisioning'
         ? t('portal.site_status_provisioning', {}, 'Provisioning')
         : t('portal.site_status_suspended', {}, 'Suspended');
-  const primaryMonitoringAction = siteMonitoring.overview?.action_required[0] || null;
+  const primaryMonitoringAction = siteMonitoring.overview?.action_required.find(
+    (item) => getPortalMonitoringIssueCategory(item) !== 'knowledge'
+  ) || null;
   const primaryIssueCategory = primaryMonitoringAction
     ? getPortalMonitoringIssueCategory(primaryMonitoringAction)
     : null;
@@ -284,8 +260,7 @@ function PortalSiteRecordContent() {
           'The latest service evidence is incomplete or needs review. Refresh the service status before contacting support.'
         );
   const canRemoveThisSite = Boolean(
-    session.selected_context?.site.site_id === siteId
-    && session.selected_context.allowed_actions.includes('remove_sites')
+    sessionSite?.allowed_actions?.includes('remove_sites')
     && site.status !== 'archived'
     && site.status !== 'suspended'
   );
@@ -302,8 +277,9 @@ function PortalSiteRecordContent() {
     setRemoveError('');
     try {
       await portalClient.removeSite(site.site_id);
-      await refresh();
-      router.push(`/portal?removed_site=${encodeURIComponent(site.site_id)}#sites`);
+      let refreshFailed = false;
+      await refresh().catch(() => { refreshFailed = true; });
+      router.push(`/portal?removed_site=${encodeURIComponent(site.site_id)}${refreshFailed ? '&site_refresh=failed' : ''}#sites`);
     } catch (err) {
       setRemoveError(
         formatPortalErrorMessage(
@@ -335,10 +311,28 @@ function PortalSiteRecordContent() {
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
+  const renderAttentionAction = () => {
+    if (site.status === 'inactive') {
+      return <Link href="/portal#sites" className="btn btn-secondary btn-sm mt-3">{t('portal.activate_site_action')}</Link>;
+    }
+    if (!siteUrl) {
+      return <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm mt-3">{t('portal.support_request_new_action')}</Link>;
+    }
+    if (primaryIssueCategory === 'quota') {
+      return <Link href="/portal/billing" className="btn btn-secondary btn-sm mt-3">{t('portal.nav_billing')}</Link>;
+    }
+    return <button type="button" className="btn btn-secondary btn-sm mt-3" disabled={siteMonitoring.isLoading} onClick={siteMonitoring.refresh}>{t('common.retry')}</button>;
+  };
+
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
         title={getPortalSiteDisplayName(site)}
+        description={t(
+          'portal.site_record.description',
+          {},
+          'Check whether this site is connected and whether AI can use its content.'
+        )}
         currentPage="record"
         selectedSiteId={siteId}
         sites={session.sites}
@@ -361,25 +355,27 @@ function PortalSiteRecordContent() {
             </span>
           </div>
         )}
-        contextPanel={siteNeedsAttention ? (
+        contextPanel={siteNeedsAttention && !error ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">{attentionTitle}</p>
               <p className="mt-1 text-sm leading-5 text-amber-800 dark:text-amber-200">{attentionDetail}</p>
             </div>
-            <Link
-              href={primaryIssueCategory === 'quota'
-                ? '/portal/billing'
-                : `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`}
-              className="btn btn-secondary btn-sm mt-3"
-            >
-              {primaryIssueCategory === 'quota'
-                ? t('portal.nav_billing', {}, 'View package')
-                : t('portal.support_request_new_action', {}, 'Submit ticket')}
-            </Link>
+            {renderAttentionAction()}
           </div>
         ) : undefined}
       />
+
+      {error ? (
+        <PortalErrorState
+          title={t('common.error')}
+          description={error.message}
+          retryLabel={t('common.retry')}
+          onRetry={() => window.location.reload()}
+          recoveryLabel={recovery?.label}
+          recoveryHref={recovery?.href}
+        />
+      ) : null}
 
       <PortalSiteServiceStatus
         t={t}
@@ -406,7 +402,10 @@ function PortalSiteRecordContent() {
               <button
                 type="button"
                 className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                onClick={() => setShowRemoveModal(true)}
+                onClick={() => {
+                  setHasOpenedRemoveModal(true);
+                  setShowRemoveModal(true);
+                }}
               >
                 {t('portal.remove_site_action', {}, 'Remove site')}
               </button>

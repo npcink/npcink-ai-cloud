@@ -6,23 +6,37 @@ from typing import Any
 from sqlalchemy import select
 
 from app.core.db import get_session
-from app.core.models import PluginObservabilityEvent
+from app.core.models import (
+    PluginObservabilityEvent,
+    ProviderCallRecord,
+    RunRecord,
+)
 
-CONTRACT_VERSION = "editor_assist_quality.v1"
+CONTRACT_VERSION = "editor_assist_quality.v2"
 ADDON_PLUGIN_SLUG = "npcink-cloud-addon"
-GENERATION_EVENT = "addon.editor_assist.generation.completed"
+GENERATION_EVENT = "addon.editor_assist.generation.presented"
+SUPERSEDED_EVENT = "addon.editor_assist.generation.superseded"
 REPEAT_EVENT = "addon.editor_assist.generation.repeated"
 OUTCOME_EVENTS = {
     "addon.editor_assist.outcome.observed",
     "addon.editor_assist.outcome.expired",
 }
-QUALITY_EVENT_KINDS = {GENERATION_EVENT, REPEAT_EVENT, *OUTCOME_EVENTS}
+QUALITY_EVENT_KINDS = {GENERATION_EVENT, SUPERSEDED_EVENT, REPEAT_EVENT, *OUTCOME_EVENTS}
 TRACKED_TASKS = {
     "title_generation",
     "content_summary",
     "content_rewrite",
 }
 MIN_ISSUE_SAMPLE = 5
+ATTRIBUTION_BUCKET_LIMIT = 12
+RUN_ID_LOOKUP_CHUNK = 500
+UNKNOWN_RUNTIME_PROFILE = "unknown_runtime_profile"
+ATTRIBUTION_METHOD = (
+    "A session is attributed to the run the Addon correlated with the generated "
+    "output it matched or expired. The model is the provider call that produced "
+    "that run's output. Runs without a successful provider call stay in the "
+    "runtime-profile breakdown only and are reported as unattributed models."
+)
 
 
 class EditorAssistQualityService:
@@ -40,7 +54,7 @@ class EditorAssistQualityService:
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
-        bounded_hours = min(168, max(1, int(window_hours or 24)))
+        bounded_hours = min(720, max(1, int(window_hours or 24)))
         start_at = current_time - timedelta(hours=bounded_hours)
         comparison_start_at = start_at - timedelta(hours=bounded_hours)
 
@@ -92,6 +106,27 @@ class EditorAssistQualityService:
         )
         task_summaries = self._task_summaries(sessions)
         previous_task_summaries = self._task_summaries(previous_sessions)
+        attributed_run_ids: set[str] = set()
+        for item in sessions.values():
+            session_run_id = str(item.get("attribution_run_id") or "")
+            if session_run_id:
+                attributed_run_ids.add(session_run_id)
+            generation_records = item.get("generation_records") or {}
+            if isinstance(generation_records, dict):
+                attributed_run_ids.update(
+                    str(generation.get("run_id") or "")
+                    for generation in generation_records.values()
+                    if isinstance(generation, dict) and str(generation.get("run_id") or "")
+                )
+        attribution = self._attribution(
+            sessions,
+            self._attribution_index(attributed_run_ids),
+        )
+        run_index = attribution.pop("_run_index", {})
+        runtime = self._runtime_summary(
+            run_index if isinstance(run_index, dict) else {}
+        )
+        compatibility = self._compatibility_summary(sessions)
         totals = self._summarize_sessions("all", list(sessions.values()))
         totals["generation_total"] = generation_total
         totals["p50_generation_latency_ms"] = self._percentile(latencies, 0.50)
@@ -130,6 +165,9 @@ class EditorAssistQualityService:
             },
             "totals": totals,
             "tasks": task_summaries,
+            "attribution": attribution,
+            "runtime": runtime,
+            "compatibility": compatibility,
             "trend": self._build_trend(
                 sessions,
                 start_at=start_at,
@@ -149,6 +187,7 @@ class EditorAssistQualityService:
                 "final_write_truth": "wordpress_local",
                 "control_plane": "wordpress_local",
                 "raw_content_retention": False,
+                "attribution_source": "cloud_owned_run_and_provider_call_evidence",
             },
         }
 
@@ -179,19 +218,53 @@ class EditorAssistQualityService:
                     "site_id": event.site_id,
                     "quality_session_id": quality_session_id,
                     "task_key": event_task,
+                    "addon_version": str(event.plugin_version or ""),
+                    "wordpress_ai_version": str(payload.get("wordpress_ai_version") or ""),
                     "generation_count": 0,
                     "repeated": False,
                     "outcome": "",
                     "outcome_confidence": "",
                     "save_kind": "",
+                    "attribution_run_id": "",
+                    "generation_records": {},
                     "started_at": self._aware_datetime(event.received_at),
                     "latest_at": self._aware_datetime(event.received_at),
                 },
             )
             item["latest_at"] = self._aware_datetime(event.received_at)
+            if event.plugin_version and not item.get("addon_version"):
+                item["addon_version"] = str(event.plugin_version)
+            wordpress_ai_version = str(payload.get("wordpress_ai_version") or "")
+            if wordpress_ai_version and not item.get("wordpress_ai_version"):
+                item["wordpress_ai_version"] = wordpress_ai_version
+            generation_id = str(payload.get("generation_id") or "").strip()
+            if not generation_id:
+                continue
+            generation_records = item["generation_records"]
+            generation = generation_records.setdefault(
+                generation_id,
+                {
+                    "generation_id": generation_id,
+                    "generation_sequence": 0,
+                    "lifecycle_state": "",
+                    "outcome": "",
+                    "outcome_confidence": "",
+                    "evidence_type": "",
+                    "run_id": "",
+                },
+            )
+            correlated_run_id = str(event.correlation_id or "").strip()
+            if correlated_run_id:
+                generation["run_id"] = correlated_run_id
             if event.event_kind == GENERATION_EVENT:
                 generation_total += 1
                 sequence = self._int(payload.get("generation_sequence"))
+                generation["generation_sequence"] = max(
+                    self._int(generation.get("generation_sequence")), sequence, 1
+                )
+                generation["lifecycle_state"] = str(
+                    payload.get("lifecycle_state") or "presented"
+                )
                 item["generation_count"] = max(
                     self._int(item.get("generation_count")),
                     sequence,
@@ -199,6 +272,15 @@ class EditorAssistQualityService:
                 )
                 if event.latency_ms is not None:
                     latencies.append(max(0, int(event.latency_ms)))
+                if correlated_run_id and not item.get("attribution_run_id"):
+                    item["attribution_run_id"] = correlated_run_id
+            elif event.event_kind == SUPERSEDED_EVENT:
+                generation["lifecycle_state"] = "superseded"
+                item["generation_count"] = max(
+                    self._int(item.get("generation_count")),
+                    self._int(payload.get("generation_sequence")),
+                    1,
+                )
             elif event.event_kind == REPEAT_EVENT:
                 item["repeated"] = True
                 item["generation_count"] = max(
@@ -207,11 +289,21 @@ class EditorAssistQualityService:
                     2,
                 )
             elif event.event_kind in OUTCOME_EVENTS:
-                item["outcome"] = str(payload.get("outcome") or "")
-                item["outcome_confidence"] = str(
+                generation["outcome"] = str(payload.get("outcome") or "")
+                generation["outcome_confidence"] = str(
                     payload.get("outcome_confidence") or ""
                 )
+                generation["evidence_type"] = str(
+                    payload.get("evidence_type") or ""
+                )
+                generation["lifecycle_state"] = str(
+                    payload.get("lifecycle_state") or "resolved"
+                )
+                item["outcome"] = generation["outcome"]
+                item["outcome_confidence"] = generation["outcome_confidence"]
                 item["save_kind"] = str(payload.get("save_kind") or "")
+                if correlated_run_id:
+                    item["attribution_run_id"] = correlated_run_id
         return sessions, generation_total, latencies
 
     def _task_summaries(
@@ -231,6 +323,12 @@ class EditorAssistQualityService:
     def _summarize_sessions(
         self,
         task_key: str,
+        sessions: list[dict[str, Any]],
+    ) -> dict[str, object]:
+        return {"task_key": task_key, **self._rate_bundle(sessions)}
+
+    def _rate_bundle(
+        self,
         sessions: list[dict[str, Any]],
     ) -> dict[str, object]:
         session_total = len(sessions)
@@ -262,7 +360,6 @@ class EditorAssistQualityService:
         )
 
         return {
-            "task_key": task_key,
             "session_total": session_total,
             "resolved_session_total": resolved_sessions,
             "pending_session_total": max(0, session_total - resolved_sessions),
@@ -281,6 +378,285 @@ class EditorAssistQualityService:
             "published_exact_session_total": published_exact_sessions,
             "sample_stage": self._sample_stage(session_total),
         }
+
+    def _attribution_index(
+        self,
+        run_ids: set[str],
+    ) -> dict[str, dict[str, object]]:
+        if not run_ids:
+            return {}
+        ordered = sorted(run_ids)
+        runs: list[RunRecord] = []
+        calls: list[ProviderCallRecord] = []
+        with get_session(self.database_url) as session:
+            for start in range(0, len(ordered), RUN_ID_LOOKUP_CHUNK):
+                chunk = ordered[start : start + RUN_ID_LOOKUP_CHUNK]
+                runs.extend(
+                    session.scalars(
+                        select(RunRecord).where(RunRecord.run_id.in_(chunk))
+                    )
+                )
+                calls.extend(
+                    session.scalars(
+                        select(ProviderCallRecord)
+                        .where(ProviderCallRecord.run_id.in_(chunk))
+                        .order_by(
+                            ProviderCallRecord.run_id.asc(),
+                            ProviderCallRecord.id.asc(),
+                        )
+                    )
+                )
+
+        index: dict[str, dict[str, object]] = {
+            run.run_id: {
+                "run_id": run.run_id,
+                "ability_name": run.ability_name or "",
+                "runtime_profile": run.profile_id or "",
+                "run_status": run.status or "",
+                "fallback_used": bool(run.fallback_used),
+                "router_version": "",
+                "routing_revision": "",
+                "model_id": "",
+                "provider_id": "",
+                "instance_id": "",
+                "provider_call_count": 0,
+                "provider_error_count": 0,
+                "provider_latencies_ms": [],
+                }
+            for run in runs
+        }
+        for run in runs:
+            entry = index.get(run.run_id)
+            if entry is None:
+                continue
+            policy = run.policy_json if isinstance(run.policy_json, dict) else {}
+            explainability = policy.get("routing_explainability")
+            if isinstance(explainability, dict):
+                entry["router_version"] = str(
+                    explainability.get("router_version") or ""
+                )
+                entry["routing_revision"] = str(
+                    explainability.get("profile_revision") or ""
+                )
+            if not entry["routing_revision"]:
+                entry["routing_revision"] = str(policy.get("routing_revision") or "")
+        producing_call: dict[str, ProviderCallRecord] = {}
+        for call in calls:
+            entry = index.get(call.run_id)
+            if entry is None:
+                continue
+            entry["provider_call_count"] = self._int(entry["provider_call_count"]) + 1
+            if call.error_code:
+                entry["provider_error_count"] = self._int(
+                    entry["provider_error_count"]
+                ) + 1
+            if call.latency_ms is not None and call.latency_ms >= 0:
+                latencies = entry["provider_latencies_ms"]
+                if isinstance(latencies, list):
+                    latencies.append(int(call.latency_ms))
+            if call.error_code:
+                continue
+            producing_call[call.run_id] = call
+        for run_id, call in producing_call.items():
+            entry = index[run_id]
+            entry["model_id"] = call.model_id or ""
+            entry["provider_id"] = call.provider_id or ""
+            entry["instance_id"] = call.instance_id or ""
+        return index
+
+    def _runtime_summary(self, index: dict[str, dict[str, object]]) -> dict[str, object]:
+        entries = list(index.values())
+        run_total = len(entries)
+        succeeded_total = sum(1 for entry in entries if entry.get("run_status") == "succeeded")
+        failed_total = sum(1 for entry in entries if entry.get("run_status") == "failed")
+        canceled_total = sum(1 for entry in entries if entry.get("run_status") == "canceled")
+        fallback_total = sum(1 for entry in entries if bool(entry.get("fallback_used")))
+        provider_call_total = sum(self._int(entry.get("provider_call_count")) for entry in entries)
+        provider_error_total = sum(
+            self._int(entry.get("provider_error_count")) for entry in entries
+        )
+        latencies: list[int] = []
+        for entry in entries:
+            raw_latencies = entry.get("provider_latencies_ms")
+            if not isinstance(raw_latencies, list):
+                continue
+            latencies.extend(
+                int(latency)
+                for latency in raw_latencies
+                if isinstance(latency, int) and latency >= 0
+            )
+        return {
+            "linked_run_total": run_total,
+            "succeeded_run_total": succeeded_total,
+            "failed_run_total": failed_total,
+            "canceled_run_total": canceled_total,
+            "fallback_run_total": fallback_total,
+            "fallback_rate": self._rate(fallback_total, run_total),
+            "provider_call_total": provider_call_total,
+            "provider_error_total": provider_error_total,
+            "provider_error_rate": self._rate(provider_error_total, provider_call_total),
+            "p50_provider_latency_ms": self._percentile(latencies, 0.50),
+            "p95_provider_latency_ms": self._percentile(latencies, 0.95),
+        }
+
+    def _compatibility_summary(
+        self,
+        sessions: dict[str, dict[str, Any]],
+    ) -> dict[str, object]:
+        versions: dict[str, int] = {}
+        for item in sessions.values():
+            version = str(item.get("addon_version") or "unknown_addon_version")
+            versions[version] = versions.get(version, 0) + 1
+        addon_versions = [
+            {"addon_version": version, "session_total": total}
+            for version, total in versions.items()
+        ]
+        addon_versions.sort(
+            key=lambda item: (-self._int(item.get("session_total")), str(item["addon_version"]))
+        )
+        wordpress_ai_versions: dict[str, int] = {}
+        for item in sessions.values():
+            version = str(item.get("wordpress_ai_version") or "unknown_wordpress_ai_version")
+            wordpress_ai_versions[version] = wordpress_ai_versions.get(version, 0) + 1
+        wordpress_ai_version_buckets = [
+            {"wordpress_ai_version": version, "session_total": total}
+            for version, total in wordpress_ai_versions.items()
+        ]
+        wordpress_ai_version_buckets.sort(
+            key=lambda item: (
+                -self._int(item.get("session_total")),
+                str(item["wordpress_ai_version"]),
+            )
+        )
+        return {
+            "quality_contract": CONTRACT_VERSION,
+            "addon_versions": addon_versions[:ATTRIBUTION_BUCKET_LIMIT],
+            "wordpress_ai_versions": wordpress_ai_version_buckets[:ATTRIBUTION_BUCKET_LIMIT],
+        }
+
+    def _attribution(
+        self,
+        sessions: dict[str, dict[str, Any]],
+        index: dict[str, dict[str, object]],
+    ) -> dict[str, object]:
+        model_groups: dict[str, list[dict[str, Any]]] = {}
+        model_providers: dict[str, set[str]] = {}
+        profile_groups: dict[str, list[dict[str, Any]]] = {}
+        profile_abilities: dict[str, set[str]] = {}
+        attributed_total = 0
+        generation_total = 0
+        attributed_generation_total = 0
+        for item in sessions.values():
+            generation_records = item.get("generation_records") or {}
+            if isinstance(generation_records, dict):
+                generation_total += len(generation_records)
+                attributed_generation_total += sum(
+                    1
+                    for generation in generation_records.values()
+                    if isinstance(generation, dict)
+                    and index.get(str(generation.get("run_id") or "")) is not None
+                )
+            entry = index.get(str(item.get("attribution_run_id") or ""))
+            if entry is None:
+                continue
+            attributed_total += 1
+            profile = str(entry.get("runtime_profile") or "") or UNKNOWN_RUNTIME_PROFILE
+            profile_groups.setdefault(profile, []).append(item)
+            ability_name = str(entry.get("ability_name") or "")
+            if ability_name:
+                profile_abilities.setdefault(profile, set()).add(ability_name)
+
+            model_id = str(entry.get("model_id") or "")
+            if not model_id:
+                continue
+            model_groups.setdefault(model_id, []).append(item)
+            provider_id = str(entry.get("provider_id") or "")
+            if provider_id:
+                model_providers.setdefault(model_id, set()).add(provider_id)
+
+        session_total = len(sessions)
+        return {
+            "method": ATTRIBUTION_METHOD,
+            "coverage": {
+                "session_total": session_total,
+                "attributed_session_total": attributed_total,
+                "unattributed_session_total": max(0, session_total - attributed_total),
+                "attribution_rate": self._rate(attributed_total, session_total),
+                "generation_total": generation_total,
+                "attributed_generation_total": attributed_generation_total,
+                "unattributed_generation_total": max(
+                    0, generation_total - attributed_generation_total
+                ),
+                "generation_attribution_rate": self._rate(
+                    attributed_generation_total, generation_total
+                ),
+            },
+            "by_model": self._attribution_buckets(
+                model_groups,
+                label_key="model_id",
+                annotations=model_providers,
+                annotation_key="provider_ids",
+            ),
+            "by_runtime_profile": self._attribution_buckets(
+                profile_groups,
+                label_key="runtime_profile",
+                annotations=profile_abilities,
+                annotation_key="ability_names",
+            ),
+            "by_router": self._router_buckets(sessions, index),
+            "_run_index": index,
+        }
+
+    def _router_buckets(
+        self,
+        sessions: dict[str, dict[str, Any]],
+        index: dict[str, dict[str, object]],
+    ) -> list[dict[str, object]]:
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for item in sessions.values():
+            run_id = str(item.get("attribution_run_id") or "")
+            entry = index.get(run_id)
+            if entry is None:
+                continue
+            router_version = str(entry.get("router_version") or "unknown_router")
+            revision = str(entry.get("routing_revision") or "unknown_revision")
+            label = f"{router_version}@{revision}"
+            groups.setdefault(label, []).append(item)
+        return [
+            {
+                "router": label,
+                **self._rate_bundle(items),
+            }
+            for label, items in sorted(
+                groups.items(),
+                key=lambda item: (-len(item[1]), item[0]),
+            )[:ATTRIBUTION_BUCKET_LIMIT]
+        ]
+
+    def _attribution_buckets(
+        self,
+        groups: dict[str, list[dict[str, Any]]],
+        *,
+        label_key: str,
+        annotations: dict[str, set[str]],
+        annotation_key: str,
+    ) -> list[dict[str, object]]:
+        buckets: list[dict[str, object]] = []
+        for label, items in groups.items():
+            buckets.append(
+                {
+                    label_key: label,
+                    **self._rate_bundle(items),
+                    annotation_key: sorted(annotations.get(label, set())),
+                }
+            )
+        buckets.sort(
+            key=lambda item: (
+                -self._int(item.get("session_total")),
+                str(item[label_key]),
+            )
+        )
+        return buckets[:ATTRIBUTION_BUCKET_LIMIT]
 
     def _build_trend(
         self,

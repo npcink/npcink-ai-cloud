@@ -17,9 +17,24 @@ def _load_module():
     return module
 
 
+def _stub_repository_state(monkeypatch, module) -> None:
+    monkeypatch.setattr(
+        module,
+        "repository_state",
+        lambda: {
+            "branch": "codex/test",
+            "head": "head-sha",
+            "status_short": "",
+            "clean": True,
+        },
+    )
+    monkeypatch.setattr(module, "git_text", lambda *_args, **_kwargs: "base-sha")
+
+
 def test_task_plan_writes_structured_ignored_envelope(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
+    _stub_repository_state(monkeypatch, module)
     output = tmp_path / "task.json"
     args = Namespace(
         task_id="validation-router-test",
@@ -226,6 +241,7 @@ def test_tampered_saved_command_is_rejected(monkeypatch) -> None:
 def test_negative_resource_budget_is_rejected(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
+    _stub_repository_state(monkeypatch, module)
     args = Namespace(
         task_id="invalid-budget",
         module="tooling",
@@ -294,6 +310,7 @@ def test_task_parser_uses_workflow_lane_target_when_elapsed_budget_is_omitted(
 ) -> None:
     module = _load_module()
     monkeypatch.setattr(module, "validate_task_worktree", lambda _base: None)
+    _stub_repository_state(monkeypatch, module)
     output = tmp_path / "merge-task.json"
     args = module.build_parser().parse_args(
         [

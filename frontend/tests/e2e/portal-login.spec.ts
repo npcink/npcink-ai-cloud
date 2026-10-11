@@ -81,12 +81,14 @@ async function installLoginFlowMocks(
     sessionDelayMs = 0,
     initialRateLimitSeconds = 0,
     resendRateLimitSeconds = 0,
+    remainingFreeCredits = 300,
   }: {
     initiallyLoggedIn?: boolean;
     withSessionCookie?: boolean;
     sessionDelayMs?: number;
     initialRateLimitSeconds?: number;
     resendRateLimitSeconds?: number;
+    remainingFreeCredits?: number;
   } = {}
 ) {
   let loggedIn = initiallyLoggedIn;
@@ -115,6 +117,26 @@ async function installLoginFlowMocks(
       loggedIn = false;
       await fulfillJson(route, {}, {
         'Set-Cookie': 'npcink_portal_session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax',
+      });
+      return;
+    }
+
+    if (pathname === '/account/entitlements') {
+      await fulfillJson(route, {
+        current_subscription: {
+          plan_id: 'free',
+          plan_version_id: 'free_v1',
+          plan_kind: 'default_free',
+          package_alias: 'Free',
+          status: 'active',
+        },
+        quota_summary: {
+          ai_credits: {
+            remaining: remainingFreeCredits,
+            status: remainingFreeCredits > 0 ? 'ok' : 'limited',
+          },
+          resource_limits: [],
+        },
       });
       return;
     }
@@ -378,12 +400,12 @@ test('an authenticated user is redirected from the login page to the Portal defa
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
 });
 
-test('an authenticated user is redirected from registration to the Portal default', async ({ page }) => {
+test('an authenticated user is redirected from registration to the Portal connection guide', async ({ page }) => {
   await installLoginFlowMocks(page, { initiallyLoggedIn: true });
 
   await page.goto('/portal/register');
 
-  await expect(page).toHaveURL(`${BASE_URL}/portal`);
+  await expect(page).toHaveURL(`${BASE_URL}/portal#sites`);
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
 });
 
@@ -397,8 +419,27 @@ test('a new account offers site connection before package review', async ({ page
   await expect(setupChecklist.getByRole('link')).toHaveCount(1);
   await expect(setupChecklist.locator('a[href="/portal/billing"]')).toHaveCount(0);
   await expect(setupChecklist).toContainText(
-    /Confirm site connection|确认站点连接|Site setup still needs attention|站点设置仍需处理/i
+    /Connect your first site|连接您的第一个站点/i
   );
+  await expect(setupChecklist).toContainText(
+    /Review your account package and credits above|账户套餐和额度请查看上方信息/i
+  );
+  await expect(setupChecklist.locator('a[href="#sites"]')).toHaveCount(1);
+  const overview = page.locator('[data-portal-home="operation-overview"]');
+  await expect(overview.getByText('Free', { exact: true })).toBeVisible();
+  await expect(overview.getByText('300', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
+});
+
+test('exhausted Free credits lead to usage review without a payment requirement', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await installLoginFlowMocks(page, { initiallyLoggedIn: true, remainingFreeCredits: 0 });
+  await page.goto('/portal');
+  const followUp = page.locator('[data-portal-home="operation-overview"]');
+  await expect(page.getByText(/Free credits for this period have been used|本周期 Free 额度已用完/i)).toBeVisible();
+  await expect(followUp.locator('a[href="/portal/billing#package-options"]')).toHaveCount(0);
+  await expect(followUp.getByRole('link', { name: '查看用量', exact: true })).toBeVisible();
+  await expect(page.locator('a[href="/portal/usage"]').first()).toBeVisible();
 });
 
 test('a stale Portal cookie returns to login without exposing protected navigation', async ({ page }) => {
@@ -506,7 +547,7 @@ test('public authentication entry keeps current desktop and mobile visual contra
   await expect(
     page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
   ).toBeVisible();
-  await expect(page.getByText(/activate Free service|激活 Free 服务/i).first()).toBeVisible();
+  await expect(page.getByText(/receive account-owned Free service|获得账户 Free 服务/i).first()).toBeVisible();
   await expect(page).toHaveScreenshot('portal-register-current.png', {
     fullPage: true,
     maxDiffPixelRatio: 0.02,

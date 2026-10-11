@@ -6,8 +6,8 @@ import stat
 
 import pytest
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT
-from app.dev.live_site_identity_provision import (
+from app.ops.live_site_addon_install import APPROVAL_TEXT
+from app.ops.live_site_identity_provision import (
     GuardError,
     build_cli_result,
     build_report,

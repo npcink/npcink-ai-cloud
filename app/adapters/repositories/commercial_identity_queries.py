@@ -407,7 +407,7 @@ class CommercialIdentityQueries:
                 ).label("self_registered"),
             ).select_from(filtered)
         ).one()
-        principal_ids = list(
+        principal_ids: list[Any] = list(
             self.session.scalars(
                 select(filtered.c.principal_id)
                 .order_by(

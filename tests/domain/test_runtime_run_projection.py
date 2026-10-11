@@ -142,12 +142,36 @@ def test_run_projection_covers_public_status_states(
     task_backend = projector.build_task_backend_payload(run)
 
     assert lifecycle["phase"] == phase
+    assert lifecycle["worker_eligible_at"] is None
     assert lifecycle["terminal_status"] == terminal_status
     assert lifecycle["queue_mode"] == "queue_backed"
     assert run_state["phase"] == phase
     assert cast(dict[str, object], run_state["retry"])["operator_next_action"] == next_action
     assert task_backend["status"] == backend_status
     assert task_backend["callback_url"] == ""
+
+
+def test_run_state_projects_payload_free_wordpress_quality_reason() -> None:
+    projector = RuntimeRunProjector()
+    run = _run(
+        "failed",
+        ability_name="ai/content-translation",
+        error_code="provider.output_quality_rejected",
+        policy_json={
+            "max_retries": 1,
+            "runtime_diagnostics": {
+                "contract_version": "wordpress_ai_connector_quality.v1",
+                "output_quality_reason": "translation_structure_drift",
+            },
+        },
+    )
+
+    error = cast(dict[str, object], projector.build_run_state_payload(run, [])[
+        "error"
+    ])
+
+    assert error["quality_contract_version"] == "wordpress_ai_connector_quality.v1"
+    assert error["quality_reason"] == "translation_structure_drift"
 
 
 def test_lifecycle_projects_callback_cancel_retention_and_task_backend() -> None:

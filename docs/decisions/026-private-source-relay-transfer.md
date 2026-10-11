@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. The persistent-service/transient-bundle refinement is recorded in
+[ADR-051](051-managed-private-source-relay-service.md).
 
 ## Date
 

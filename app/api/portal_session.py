@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.api.auth import (
@@ -664,7 +665,8 @@ async def resolve_portal_request_context(
             body=await request.body(),
             site_id=auth.site_id,
         )
-        outcome = claim_portal_mutation(
+        outcome = await run_in_threadpool(
+            claim_portal_mutation,
             database_url=get_cloud_services(request).settings.database_url,
             principal_id=auth.principal_id,
             idempotency_key=request.headers.get("Idempotency-Key", ""),

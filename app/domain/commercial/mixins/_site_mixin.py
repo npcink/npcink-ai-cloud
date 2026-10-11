@@ -1272,7 +1272,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "callback_url": str(normalized_terminal.get("callback_url") or ""),
                 "key_id": str(normalized_terminal.get("key_id") or ""),
                 "secret_ciphertext": secret_ciphertext,
-                "callback_id": str(normalized_terminal.get("callback_id") or "runtime_terminal"),
+                "registration_id": str(normalized_terminal.get("registration_id") or ""),
             }
             runtime_callbacks["terminal"] = stored_terminal
             metadata["runtime_callbacks"] = runtime_callbacks
@@ -1283,9 +1283,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             metadata["runtime_terminal_callback_key_id"] = str(
                 normalized_terminal.get("key_id") or ""
             )
-            metadata["runtime_terminal_callback_id"] = str(
-                normalized_terminal.get("callback_id") or "runtime_terminal"
+            metadata["runtime_terminal_callback_registration_id"] = str(
+                normalized_terminal.get("registration_id") or ""
             )
+            metadata.pop("runtime_terminal_callback_id", None)
             metadata.pop("runtime_terminal_callback_secret", None)
             site.metadata_json = metadata
 
@@ -1295,8 +1296,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "enabled": bool(normalized_terminal.get("enabled")),
                     "callback_url": str(normalized_terminal.get("callback_url") or ""),
                     "key_id": str(normalized_terminal.get("key_id") or ""),
-                    "callback_id": str(
-                        normalized_terminal.get("callback_id") or "runtime_terminal"
+                    "registration_id": str(
+                        normalized_terminal.get("registration_id") or ""
                     ),
                 },
             }

@@ -16,6 +16,7 @@ from app.domain.customer_journey.service import CustomerJourneyService
 from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.runtime.service import RuntimeService
+from app.domain.site_knowledge.metrics import cleanup_site_knowledge_observability
 from app.domain.usage.rollup import UsageRollupService
 from app.workers.alert_provider_degradation import run_once as run_alert_provider_degradation
 from app.workers.heartbeat import WorkerHeartbeat
@@ -79,6 +80,15 @@ def _run_plugin_observability_cleanup(settings: Settings) -> dict[str, object]:
     return PluginObservabilityService(settings.database_url).cleanup_expired_events(
         retention_days=settings.plugin_observability_retention_days,
     )
+
+
+def _run_site_knowledge_observability_cleanup(settings: Settings) -> dict[str, object]:
+    result = cleanup_site_knowledge_observability(
+        settings.database_url,
+        retention_days=settings.site_knowledge_observability_retention_days,
+        batch_size=settings.retention_cleanup_batch_size,
+    )
+    return {str(key): value for key, value in result.items()}
 
 
 def _run_usage_rollup(settings: Settings) -> dict[str, object]:
@@ -256,6 +266,14 @@ def cadence_task_specs() -> list[CadenceTaskSpec]:
             event_kind="usage.rollup_cadence",
             interval_seconds=lambda settings: settings.usage_rollup_interval_seconds,
             runner=_run_usage_rollup,
+        ),
+        CadenceTaskSpec(
+            task_id="site_knowledge_observability_cleanup",
+            event_kind="site_knowledge.observability_retention_cleanup.cadence",
+            interval_seconds=lambda settings: (
+                settings.plugin_observability_cleanup_interval_seconds
+            ),
+            runner=_run_site_knowledge_observability_cleanup,
         ),
         CadenceTaskSpec(
             task_id="editor_assist_quality_detection",

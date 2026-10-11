@@ -1,0 +1,98 @@
+{
+  "runtime": {
+    "hours": [
+      336,
+      720,
+      2160
+    ],
+    "defaultHours": 336,
+    "apiFunction": "get_runtime_telemetry_diagnostics",
+    "queryParameter": "recent_minutes",
+    "unitsPerHour": 60,
+    "runtimeSource": "app/domain/runtime/service.py",
+    "runtimeFunction": "get_runtime_telemetry_diagnostics",
+    "runtimeMaxHours": null
+  },
+  "pluginHistory": {
+    "hours": [
+      336,
+      720,
+      2160
+    ],
+    "defaultHours": 336,
+    "apiFunction": "get_admin_plugin_history",
+    "queryParameter": "window_hours",
+    "unitsPerHour": 1,
+    "runtimeSource": "app/domain/observability/plugin_event_history.py",
+    "runtimeFunction": "get_plugin_event_history",
+    "runtimeMaxHours": null
+  },
+  "plugin": {
+    "hours": [
+      24,
+      72,
+      168,
+      336,
+      720
+    ],
+    "defaultHours": 24,
+    "apiFunction": "get_admin_plugin_observability",
+    "queryParameter": "window_hours",
+    "unitsPerHour": 1,
+    "runtimeSource": "app/domain/observability/plugin_events.py",
+    "runtimeFunction": "get_admin_summary",
+    "runtimeMaxHours": 720
+  },
+  "media": {
+    "hours": [
+      336,
+      720
+    ],
+    "defaultHours": 336,
+    "apiFunction": "get_admin_media_observability",
+    "queryParameter": "window_hours",
+    "unitsPerHour": 1,
+    "runtimeSource": "app/domain/media_derivatives/metrics.py",
+    "runtimeFunction": "get_summary",
+    "runtimeMaxHours": 720
+  },
+  "vector": {
+    "hours": [
+      336,
+      720
+    ],
+    "defaultHours": 336,
+    "apiFunction": "get_admin_vector_observability",
+    "queryParameter": "window_hours",
+    "unitsPerHour": 1,
+    "runtimeSource": "app/domain/site_knowledge/metrics.py",
+    "runtimeFunction": "get_summary",
+    "runtimeMaxHours": 720
+  },
+  "quality": {
+    "hours": [
+      336,
+      720
+    ],
+    "defaultHours": 336,
+    "apiFunction": "get_admin_editor_assist_quality",
+    "queryParameter": "window_hours",
+    "unitsPerHour": 1,
+    "runtimeSource": "app/domain/observability/editor_assist_quality.py",
+    "runtimeFunction": "get_summary",
+    "runtimeMaxHours": 720
+  },
+  "feedback": {
+    "hours": [
+      24,
+      168
+    ],
+    "defaultHours": 24,
+    "apiFunction": "get_admin_agent_feedback",
+    "queryParameter": "window_hours",
+    "unitsPerHour": 1,
+    "runtimeSource": "app/domain/agent_feedback/service.py",
+    "runtimeFunction": "get_summary",
+    "runtimeMaxHours": 168
+  }
+}

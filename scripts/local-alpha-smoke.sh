@@ -416,7 +416,7 @@ import os
 import sys
 
 from app.core.config import Settings
-from app.dev.seed_runtime import seed_site_auth
+from app.ops.seed_runtime import seed_site_auth
 
 secret = os.environ.pop("NPCINK_CLOUD_LOCAL_ALPHA_SEED_SECRET", "")
 if not secret:
@@ -442,7 +442,7 @@ fi
 
 ok "Bootstrapping portal membership and billing snapshot"
 docker compose -f "${ROOT_DIR}/docker-compose.dev.yml" run --rm api \
-	python -m app.dev.bootstrap_portal_site \
+	python -m app.ops.bootstrap_portal_site \
 		--site-id "${SITE_ID}" \
 		--user-email "${MEMBER_EMAIL}" \
 		--public-base-url "${BASE_URL}" >/dev/null

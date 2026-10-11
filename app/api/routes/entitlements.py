@@ -5,11 +5,14 @@ from typing import Any, cast
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
+from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.security import extract_trace_id
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
+from app.domain.routing.service import RoutingService
+from app.domain.wordpress_ai_connector.readiness import build_wordpress_ai_capabilities
 
 router = APIRouter(prefix="/v1/entitlements", tags=["entitlements"])
 
@@ -189,22 +192,37 @@ def _resolve_pro_cloud_runtime(policy: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _resolve_ai_credit_usage_detail(request: Request, account_id: str) -> dict[str, object]:
+def _resolve_quota_summary(request: Request, account_id: str) -> dict[str, object]:
     if not account_id:
-        return {}
+        return {"ai_credit_usage_detail": {}, "resource_limits": []}
     try:
         quota_summary = _get_commercial_service(request).get_portal_account_quota_summary(
             account_id
         )
     except CommercialServiceError:
-        return {}
+        return {"ai_credit_usage_detail": {}, "resource_limits": []}
     ai_credit_usage_detail = quota_summary.get("ai_credit_usage_detail")
-    if not isinstance(ai_credit_usage_detail, dict):
-        return {}
+    public_ai_credit_usage_detail = (
+        {
+            key: value
+            for key, value in ai_credit_usage_detail.items()
+            if key != "recent_items"
+        }
+        if isinstance(ai_credit_usage_detail, dict)
+        else {}
+    )
+    resource_limits = quota_summary.get("resource_limits")
+    public_media_limits = [
+        {
+            key: item.get(key)
+            for key in ("key", "label", "used", "limit", "remaining", "status", "unit")
+        }
+        for item in resource_limits
+        if isinstance(item, dict) and str(item.get("key") or "") == "media_images"
+    ] if isinstance(resource_limits, list) else []
     return {
-        key: value
-        for key, value in ai_credit_usage_detail.items()
-        if key != "recent_items"
+        "ai_credit_usage_detail": public_ai_credit_usage_detail,
+        "resource_limits": public_media_limits,
     }
 
 
@@ -219,7 +237,18 @@ def _build_entitlement_payload(
     account_id = str(site.get("account_id") or "")
     tier_id = _resolve_package_tier(policy)
     site_limit = _resolve_site_limit(policy, tier_id)
-    settings = get_cloud_services(request).settings
+    services = get_cloud_services(request)
+    settings = services.settings
+    # Capability evidence must include enabled DB-managed execution
+    # connections. The long-lived service container intentionally keeps its
+    # base provider map lightweight; using it alone would report
+    # `no_eligible_model` after an operator configures a connection in the
+    # provider table, even though runtime routing can resolve that connection.
+    capability_providers = resolve_live_provider_adapters(
+        settings,
+        base_providers=services.providers,
+        include_enabled_connections=True,
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "paid_object": {
@@ -241,10 +270,17 @@ def _build_entitlement_payload(
             },
             "hosted_runtime_quota": _resolve_runtime_quota(policy),
             "pro_cloud_runtime": _resolve_pro_cloud_runtime(policy),
+            "wordpress_ai_capabilities": build_wordpress_ai_capabilities(
+                policy=policy,
+                routing=RoutingService(
+                    settings.database_url,
+                    settings=settings,
+                    execution_provider_ids=set(capability_providers),
+                ),
+                provider_ids=set(capability_providers),
+            ),
         },
-        "quota_summary": {
-            "ai_credit_usage_detail": _resolve_ai_credit_usage_detail(request, account_id),
-        },
+        "quota_summary": _resolve_quota_summary(request, account_id),
     }
 
 

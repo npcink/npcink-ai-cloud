@@ -3,8 +3,11 @@ from __future__ import annotations
 import base64
 import json
 import re
+import unicodedata
+from collections import Counter
 from collections.abc import Callable
 from typing import Any, cast
+from urllib.parse import unquote
 
 from sqlalchemy.orm import Session
 
@@ -46,6 +49,107 @@ EmbeddingUsageCallback = Callable[
     None,
 ]
 
+_TRANSFORMATION_GENERIC_PATTERNS = (
+    re.compile(
+        r"\b(?:this|the)\s+(?:condensed|shortened|revised|rewritten|updated|improved)"
+        r"\s+(?:paragraph|content|text)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:has been|was|is now)(?:\s+\w+){0,2}\s+"
+        r"(?:revised|rewritten|updated|improved|optimized)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:to produce|suitable for)\s+(?:a|an|the)\s+"
+        r"(?:(?:clear|concise|short|revised|rewritten|updated)\s+)?"
+        r"(?:version|article|paragraph|text|result)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:requires|needs)\s+(?:condensation|condensing|shortening|rewriting|optimization)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:requires|needs)\s+to\s+be\s+"
+        r"(?:condensed|shortened|rewritten|optimized|revised|updated)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bshould\s+be\s+(?:condensed|shortened|rewritten|optimized|revised|updated)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:requires|needs)\s+(?:a\s+)?(?:more\s+)?"
+        r"(?:concise|short|clear)(?:\s+and\s+(?:concise|short|clear))?\s+"
+        r"(?:revision|version|rewrite)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bwe\s+suggest\s+(?:removing|replacing|rewriting|shortening|condensing)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(r"\bto\s+make\s+it\s+read\s+(?:well|better)\b", flags=re.IGNORECASE),
+    re.compile(
+        r"\b(?:use|suggest)\s+(?:a|an|the)\s+"
+        r"(?:(?:clear|concise|short|revised|rewritten|updated)\s+)?"
+        r"(?:replacement|rewrite|version|alternative)\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:offers?|provides?)\s+(?:a|an|the)\s+"
+        r"(?:(?:clear|concise|short|useful|and)\s+){0,5}"
+        r"(?:statement|summary|overview)\s+(?:for|to)\s+readers\b",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:该|此)?(?:段落|内容|文本).*(?:已|已经|完成|更新|优化|改写|修订)",
+        flags=re.IGNORECASE | re.DOTALL,
+    ),
+)
+_TRANSFORMATION_LATIN_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'-]*")
+_TRANSFORMATION_CJK_RUN_RE = re.compile(r"[\u3400-\u9fff]+")
+_TRANSFORMATION_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "be",
+        "for",
+        "has",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "the",
+        "this",
+        "to",
+        "was",
+    }
+)
+_TRANSFORMATION_GENERIC_SOURCE_TERMS = frozenset(
+    {
+        "article",
+        "clear",
+        "clarify",
+        "concise",
+        "content",
+        "paragraph",
+        "point",
+        "readability",
+        "rewrite",
+        "revised",
+        "revision",
+        "short",
+        "shorter",
+        "text",
+        "updated",
+        "version",
+        "wording",
+    }
+)
+
 
 class WordPressOperationRuntime:
     """Executes WordPress-specific provider preparation and result normalization."""
@@ -58,6 +162,13 @@ class WordPressOperationRuntime:
     ) -> None:
         self.settings = settings
         self.providers = providers
+        # Single-entry memo for title quality evaluation; deliberately holds
+        # references to the last evaluated payload pair so identity comparison
+        # cannot be fooled by object reuse, at the cost of retaining that one
+        # request's payloads until the next title evaluation replaces them.
+        self._title_quality_cache: (
+            tuple[dict[str, Any], dict[str, Any], tuple[str, ...]] | None
+        ) = None
 
     def source_artifact_id(self, input_payload: dict[str, Any]) -> str:
         operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
@@ -90,6 +201,7 @@ class WordPressOperationRuntime:
             )
             or ""
         ).strip()
+        existing_title = str(scene_request.get("existing_title") or "").strip()
         raw_system_instruction = scene_request.get("system_instruction")
         if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
             system_instruction = (
@@ -114,23 +226,85 @@ class WordPressOperationRuntime:
                 "Classify the comment moderation outcome. Return strict JSON only. No markdown."
             ),
             "comment_reply_suggest": "Draft a concise comment reply. Return only the reply text.",
+            "content_translation": (
+                "Translate the supplied content into the requested target language. "
+                "Preserve HTML and block markup. When Gutenberg block comments are present, "
+                "copy every block delimiter and every HTML tag exactly and translate only "
+                "visible human text inside the existing structure. Keep the same number and "
+                "order of blocks, links, attributes, and code markers. Return only the "
+                "translated content. Do not wrap the answer in <content> tags or any other "
+                "container."
+            ),
             "content_classification": (
                 'Classify the content. Return strict JSON only: {"suggestions":'
                 '[{"term":"...","confidence":0.8,"is_new":false}]}. No markdown.'
             ),
             "content_rewrite": (
-                "Rewrite the content as requested. Return exactly one rewritten version."
+                "Rewrite only the supplied content according to the request. Return exactly "
+                "one rewritten version (one revised version) and nothing else. Preserve the "
+                "original meaning, facts, "
+                "names, numbers, links, and structure. Keep the result close to the source "
+                "length; do not expand a short paragraph into an explanation, add background, "
+                "product names, workflow claims, or administrative context."
             ),
             "content_summary": "Summarize the content. Return only the summary.",
-            "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
+            "editorial_notes": (
+                "Review the supplied block and return strict JSON matching the Ability "
+                "schema. Do not return Markdown or explanations. When review_types are "
+                "provided and the block contains a clear readability, grammar, SEO, or "
+                "accessibility issue, return a concrete suggestion. Use the requested "
+                "review type and include review_type, text, and priority in each "
+                "suggestion. If an objective issue is present, an empty suggestions array "
+                "is invalid; return at least one actionable suggestion. An empty suggestions "
+                "array is valid only when there is no material, objective issue."
+            ),
+            "editorial_updates": (
+                "Rewrite the supplied content according to the editorial notes. Return only "
+                "the final revised content, with no preface, explanation, reasoning, labels, "
+                "or mention of the notes. Preserve the original facts and language. If a "
+                "note is vague, make the smallest clear grammatical improvement possible; "
+                "never say that the task is impossible and never describe your process. Keep "
+                "the result close to the source length; do not expand a short paragraph into "
+                "an explanation, add background, product names, workflow claims, or "
+                "administrative context. Return the revised paragraph itself and retain its "
+                "substantive words; do not replace the paragraph with a completion statement "
+                "such as 'updated', 'optimized', or 'ready for readers'."
+            ),
+            "excerpt_generation": (
+                "Generate a concise excerpt from the supplied content. Use only facts, "
+                "names, products, organizations, and claims that appear in the source. "
+                "Preserve the source's concrete topic and key nouns verbatim when possible. "
+                "Do not introduce concepts, relationships, audiences, benefits, or business "
+                "context that the source does not contain. If the source is short, extract or "
+                "lightly compress its own wording instead of expanding it. Return only the "
+                "excerpt itself."
+            ),
+            "image_prompt_generation": (
+                "Generate one concise image prompt. Return only the prompt text."
+            ),
             "meta_description": (
-                "Generate one SEO meta description, 120 to 155 characters. Return "
-                "only the description."
+                "Generate one SEO meta description, 120 to 155 characters, from the "
+                "supplied content and title. Use only facts, names, products, "
+                "organizations, and claims present in that source. Preserve the source's "
+                "key nouns verbatim when possible. Do not introduce concepts, relationships, "
+                "audiences, benefits, or generic business promises absent from the source. "
+                "If the source is short, stay close to its wording rather than expanding it. "
+                "Return only the description itself."
             ),
             "title_generation": (
                 "Generate exactly one concise title faithful to the main topic. For Chinese, "
                 "normally use no more than 36 characters; for other languages, normally use "
-                "no more than 12 words. Return only the title text."
+                "no more than 12 words. Do not copy or return the exact wording of any "
+                "existing title or heading in the scene input; write a meaningfully "
+                "different alternative. Keep the title under 80 characters, use normal "
+                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
+                "or numbers absent from the scene input. Return only the title text."
+            ),
+            "slug_generation": (
+                "Generate concise SEO-friendly slug suggestions and return strict JSON "
+                "matching the Ability schema. Use lowercase ASCII letters and digits "
+                "separated by hyphens only. Never return Unicode characters, percent "
+                "encoded bytes, percent signs, underscores, spaces, or a full URL."
             ),
         }.get(task)
         if task_instruction is None:
@@ -143,28 +317,75 @@ class WordPressOperationRuntime:
                 "analysis": "Analyze the scene input and return the requested result.",
             }.get(task_family, "Return only the requested suggestion. Do not explain.")
 
+        if task == "title_generation" and title_output_schema:
+            task_instruction = (
+                "Generate exactly one concise title faithful to the main topic. For Chinese, "
+                "normally use no more than 36 characters; for other languages, normally use "
+                "no more than 12 words. Do not copy or return the exact wording of any "
+                "existing title or heading in the scene input; write a meaningfully "
+                "different alternative. Return one strict JSON object with exactly one "
+                "string field named `title`. Keep the title under 80 characters, use normal "
+                "punctuation, avoid vague filler, and do not invent names, versions, dates, "
+                "or numbers absent from the scene input. Do not return bare title text."
+            )
+
         fragments = [task_instruction]
-        fragments.append(
-            "Use the same language as the scene input unless a WordPress ability "
-            "instruction explicitly asks for another language."
-        )
-        fragments.append(
-            "Output contract: return only the final value for this one task. Do not "
-            "include introductions, headings, Markdown, bullet lists, numbered lists, "
-            "multiple options, labels, explanations, or offers to continue. Never add a "
-            "name, number, claim, or event that is absent from the scene input."
-        )
+        if task == "title_generation" and existing_title:
+            fragments.append(
+                "Existing WordPress title: "
+                + existing_title
+                + ". Do not return this title or a trivially unchanged version; provide a "
+                "meaningfully different alternative."
+            )
+        if task != "slug_generation":
+            fragments.append(
+                "Use the same language as the scene input unless a WordPress ability "
+                "instruction explicitly asks for another language."
+            )
+        else:
+            fragments.append(
+                "Slugs are an ASCII transport value: use lowercase ASCII letters and "
+                "digits separated by hyphens only. Never return Unicode characters, "
+                "percent-encoded bytes, percent signs, underscores, spaces, or a full URL."
+            )
+            fragments.append(
+                "For named entities and product terms, use their established Latin spelling "
+                "when one is known (for example WordPress, WeChat, Baidu, and mini-program). "
+                "Do not invent pinyin by splitting Chinese characters into arbitrary syllables."
+            )
+        target_language = str(scene_request.get("target_language") or "").strip()
+        if task == "content_translation" and target_language:
+            fragments.append(
+                f"WordPress target language: {target_language}. Translate into this language "
+                "even when the scene input uses another language."
+            )
+        if title_output_schema:
+            fragments.append(
+                "Output contract: return one strict JSON object matching the title Ability "
+                "schema. Do not include Markdown, explanations, multiple options, or any "
+                "field other than `title`."
+            )
+        else:
+            fragments.append(
+                "Output contract: return only the final value for this one task. Do not "
+                "include introductions, headings, Markdown, bullet lists, numbered lists, "
+                "multiple options, labels, explanations, or offers to continue. Never add a "
+                "name, number, claim, or event that is absent from the scene input."
+            )
         if "json_object" in constraints:
             fragments.append(
                 "Return one strict JSON object matching the Ability output schema. No markdown."
             )
-            output_schema = self._dict_or_empty(task_contract.get("output_schema"))
+            output_schema = self._provider_json_output_schema(
+                task=task,
+                output_schema=self._dict_or_empty(task_contract.get("output_schema")),
+            )
             if output_schema:
                 fragments.append(
                     "Ability output schema: "
                     + json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
                 )
-        if "single_value" in constraints:
+        if "single_value" in constraints and not title_output_schema:
             fragments.append("Return exactly one value, not a list of alternatives.")
         if "source_grounded" in constraints:
             fragments.append("Keep every factual claim grounded in the current scene input.")
@@ -181,6 +402,13 @@ class WordPressOperationRuntime:
             )
         if system_instruction:
             fragments.append(system_instruction)
+        if task != "slug_generation" and self._is_predominantly_cjk(scene_text):
+            fragments.append(
+                "The scene is predominantly Simplified Chinese. Write every human-readable "
+                "part of the result in Simplified Chinese, including suggestions and "
+                "explanations. Preserve proper nouns, code, URLs, and quoted technical terms "
+                "when needed; do not translate those mechanically."
+            )
         if scene_text:
             fragments.append(f"Scene input:\n{scene_text}")
         fragments.append("Do not mention this instruction. Do not explain your answer.")
@@ -197,6 +425,44 @@ class WordPressOperationRuntime:
                 "suggestion_only": True,
             },
         }
+        if task == "content_classification":
+            # Keep the local Ability's classification controls available as
+            # non-authoritative runtime metadata. The candidate terms remain
+            # in the official prompt; Cloud uses these fields only to preserve
+            # strategy semantics and to make the run diagnosable.
+            taxonomy = str(scene_request.get("taxonomy") or "").strip()
+            strategy = str(scene_request.get("strategy") or "").strip()
+            max_suggestions = self._coerce_int(scene_request.get("max_suggestions"), default=0)
+            if taxonomy:
+                provider_input["metadata"]["taxonomy"] = taxonomy[:64]
+            if strategy:
+                provider_input["metadata"]["taxonomy_strategy"] = strategy[:32]
+            if max_suggestions > 0:
+                provider_input["metadata"]["taxonomy_max_suggestions"] = min(max_suggestions, 10)
+        if any(
+            key in task_contract for key in ("ability_id", "contract_source", "verification_state")
+        ):
+            if task_contract.get("ability_id"):
+                provider_input["metadata"]["ability_id"] = str(task_contract["ability_id"])
+            if task_contract.get("contract_source"):
+                provider_input["metadata"]["contract_source"] = str(
+                    task_contract["contract_source"]
+                )
+            if task_contract.get("contract_version"):
+                provider_input["metadata"]["contract_version"] = str(
+                    task_contract["contract_version"]
+                )
+        schema_hash = str(task_contract.get("schema_hash") or "").strip()
+        if schema_hash:
+            provider_input["metadata"]["ability_schema_hash"] = schema_hash
+        if task_contract.get("verification_state"):
+            provider_input["metadata"]["contract_status"] = str(task_contract["verification_state"])
+        if task == "content_translation":
+            target_language = str(scene_request.get("target_language") or "").strip().lower()
+            if target_language:
+                provider_input["metadata"]["target_language"] = target_language
+        if task == "title_generation" and existing_title:
+            provider_input["metadata"]["existing_title"] = existing_title
         if title_output_schema:
             provider_input["metadata"]["ability_output_schema"] = title_output_schema
             provider_input["response_format"] = {
@@ -208,13 +474,20 @@ class WordPressOperationRuntime:
                 },
             }
         elif "json_object" in constraints:
-            output_schema = self._dict_or_empty(task_contract.get("output_schema"))
+            output_schema = self._provider_json_output_schema(
+                task=task,
+                output_schema=self._dict_or_empty(task_contract.get("output_schema")),
+            )
+            provider_input["metadata"]["ability_output_schema"] = output_schema
             provider_input["response_format"] = (
                 {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "wordpress_ability_output",
                         "schema": output_schema,
+                        # Ability schemas may contain optional or open object fields.
+                        # Preserve that contract instead of inheriting strict defaults.
+                        "strict": False,
                     },
                 }
                 if output_schema
@@ -222,12 +495,16 @@ class WordPressOperationRuntime:
             )
 
         default_max_tokens = {
-            "alt_text_suggest": 48,
+            # Small reasoning-capable vision models may spend a short prefix
+            # on internal reasoning even when thinking is disabled. Keep
+            # enough output budget for the final alt text to be emitted.
+            "alt_text_suggest": 512,
             "comment_moderation": 120,
             "comment_reply_suggest": 180,
             "content_classification": 220,
             "content_rewrite": 512,
             "content_summary": 160,
+            "editorial_updates": 256,
             "excerpt_generation": 140,
             "meta_description": 80,
             "title_generation": 48,
@@ -251,6 +528,16 @@ class WordPressOperationRuntime:
         temperature = scene_request.get("temperature")
         if isinstance(temperature, (int, float)):
             provider_input["temperature"] = float(temperature)
+        elif task in {
+            "content_translation",
+            "content_classification",
+            "editorial_notes",
+            "slug_generation",
+        }:
+            # Structure-sensitive connector tasks should be reproducible by
+            # default. Callers can still provide an explicit temperature when
+            # the local Ability contract allows it.
+            provider_input["temperature"] = 0.0
 
         return provider_input
 
@@ -275,7 +562,12 @@ class WordPressOperationRuntime:
         )
         mode = str(reference.get("mode") or "")
         if not expected_mode or mode != expected_mode or reference.get("enabled") is not True:
-            return provider_input
+            return self._generation_context_status(
+                provider_input,
+                mode=expected_mode or "none",
+                status="not_requested",
+                reason="reference_disabled_or_unsupported",
+            )
 
         policy = generation_context_policy(
             task=task,
@@ -430,11 +722,26 @@ class WordPressOperationRuntime:
             return self._normalize_alt_text_provider_output(
                 output_text=output_text,
             )
-        title_output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        ability_output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        title_output_schema = self._title_output_schema(
+            task=task,
+            task_contract={"output_schema": ability_output_schema},
+        )
         if task == "title_generation" and title_output_schema:
             output_text = self._extract_title_schema_output(
                 output_text=output_text,
                 output_schema=title_output_schema,
+            )
+            if not output_text:
+                return {}
+        elif (
+            "json_object" in constraints
+            and ability_output_schema
+            and task not in {"content_classification"}
+        ):
+            output_text = self._normalize_json_schema_output(
+                output_text,
+                output_schema=ability_output_schema,
             )
             if not output_text:
                 return {}
@@ -457,7 +764,10 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_classification_output(
                 output_text,
                 source_text=str(input_payload.get("text") or ""),
+                strategy=str(metadata.get("taxonomy_strategy") or ""),
             )
+        elif task == "slug_generation":
+            normalized_text = self._normalize_slug_output(output_text)
         elif task in (
             "title_generation",
             "excerpt_generation",
@@ -476,22 +786,171 @@ class WordPressOperationRuntime:
                 source_text=str(input_payload.get("text") or ""),
                 task=task,
             )
-        elif "single_value" in constraints:
+        elif task == "editorial_updates" or "single_value" in constraints:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
-                limit=320,
-                strip_explanation=True,
+                limit=(
+                    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+                    if task in {"content_translation", "editorial_updates"}
+                    else 320
+                ),
+                strip_explanation=task not in {"content_translation"},
                 source_text=str(input_payload.get("text") or ""),
                 task=task,
             )
 
         if not normalized_text and not strips_reasoning_noise:
             return output
+        if self._transformation_quality_reason(
+            source_text=str(input_payload.get("text") or ""),
+            output_text=normalized_text,
+            task=task,
+        ):
+            return {}
 
         normalized = dict(output)
         normalized["output_text"] = normalized_text
         normalized["messages"] = [{"role": "assistant", "content": normalized_text}]
+        # Responses diagnostics and typed output items are adapter evidence,
+        # not part of the WordPress suggestion contract. Tool execution keeps
+        # its own normalized call projection before this connector boundary.
+        normalized.pop("output", None)
+        normalized.pop("response_status", None)
         return normalized
+
+    @staticmethod
+    def _editorial_update_keeps_source_content(*, source_text: str, output_text: str) -> bool:
+        """Reject completion statements that replace the requested paragraph."""
+        return WordPressOperationRuntime._transformation_output_keeps_source_content(
+            source_text=source_text,
+            output_text=output_text,
+            task="editorial_updates",
+        )
+
+    @staticmethod
+    def _rewrite_keeps_source_content(*, source_text: str, output_text: str) -> bool:
+        """Reject generic rewrite summaries that are not rewritten source content."""
+        return WordPressOperationRuntime._transformation_output_keeps_source_content(
+            source_text=source_text,
+            output_text=output_text,
+            task="content_rewrite",
+        )
+
+    @staticmethod
+    def _transformation_quality_reason(
+        *, source_text: str, output_text: str, task: str
+    ) -> str | None:
+        if task == "content_rewrite" and not (
+            WordPressOperationRuntime._rewrite_keeps_source_content(
+                source_text=source_text,
+                output_text=output_text,
+            )
+        ):
+            return "output_not_grounded"
+        if task == "editorial_updates" and not (
+            WordPressOperationRuntime._editorial_update_keeps_source_content(
+                source_text=source_text,
+                output_text=output_text,
+            )
+        ):
+            return "output_not_grounded"
+        return None
+
+    @staticmethod
+    def _transformation_output_keeps_source_content(
+        *, source_text: str, output_text: str, task: str
+    ) -> bool:
+        """Keep bounded transformations while rejecting unsupported completion prose."""
+        source_plain = WordPressOperationRuntime._transformation_source_plain(
+            source_text=source_text,
+            task=task,
+        )
+        output_plain = re.sub(r"<[^>]+>", " ", output_text).strip()
+        if task == "editorial_updates" and len(output_plain) > max(256, len(source_plain) * 4):
+            return False
+        if not source_plain or not output_plain:
+            return False
+
+        looks_generic = any(
+            pattern.search(output_plain) for pattern in _TRANSFORMATION_GENERIC_PATTERNS
+        )
+        source_tokens = WordPressOperationRuntime._transformation_tokens(source_plain)
+        output_tokens = WordPressOperationRuntime._transformation_tokens(output_plain)
+        overlap = len(source_tokens & output_tokens)
+        if task == "editorial_updates":
+            # Editorial updates must still contain the block's own subject and
+            # facts. Notes often contain words such as "clear" or "concise";
+            # those are not source evidence and must not make boilerplate pass.
+            # A source made only of stop words or punctuation cannot ground an
+            # editorial update. Treat it as empty rather than allowing the
+            # ``min(3, 0) == 0`` comparison to pass.
+            if not source_tokens:
+                return False
+            # Require positive source grounding before considering whether the
+            # wording is generic. This allows a factual sentence such as
+            # "the schedule should be updated quarterly" when it retains the
+            # block's subject and facts, while still rejecting boilerplate.
+            if overlap < min(3, len(source_tokens)):
+                return False
+            if not looks_generic:
+                return True
+            substantive_source_tokens = source_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+            substantive_output_tokens = output_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+            return len(substantive_source_tokens & substantive_output_tokens) >= 2
+
+        if not looks_generic:
+            return True
+
+        # A generic rewrite is safe only when it still carries at least two
+        # substantive source terms. This catches provider boilerplate without
+        # rejecting a bounded paraphrase that retains the subject and action.
+        substantive_source_tokens = source_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+        substantive_output_tokens = output_tokens - _TRANSFORMATION_GENERIC_SOURCE_TERMS
+        return len(substantive_source_tokens & substantive_output_tokens) >= 2
+
+    @staticmethod
+    def _transformation_source_plain(*, source_text: str, task: str) -> str:
+        """Extract the editable content, excluding task notes and wrappers."""
+        wrapper_names = "block-content" if task == "editorial_updates" else "block-content|content"
+        matches = [
+            match.group("value")
+            for match in re.finditer(
+                rf"<(?P<wrapper>{wrapper_names})\b[^>]*>"
+                rf"(?P<value>.*?)</(?P=wrapper)\s*>",
+                source_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        ]
+        if matches:
+            selected = " ".join(matches)
+        elif task == "editorial_updates" and re.search(
+            r"<(?P<control>notes?|system-instruction|instructions?|available-terms)\b"
+            r"[^>]*>.*?</(?P=control)\s*>",
+            source_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            # Without the expected block wrapper, do not treat task notes or
+            # other control fields as editable source content. Plain text
+            # editorial requests remain supported by the fallback below.
+            selected = ""
+        else:
+            selected = source_text
+        return re.sub(r"<[^>]+>", " ", selected).strip()
+
+    @staticmethod
+    def _transformation_tokens(text: str) -> set[str]:
+        tokens = {
+            token.lower()
+            for token in _TRANSFORMATION_LATIN_TOKEN_RE.findall(text)
+            if token.lower() not in _TRANSFORMATION_STOP_WORDS and len(token) > 1
+        }
+        for match in _TRANSFORMATION_CJK_RUN_RE.finditer(text):
+            run = match.group(0)
+            if len(run) < 2:
+                continue
+            tokens.update((run,))
+            tokens.update(run[index : index + 2] for index in range(len(run) - 1))
+        return tokens
 
     def _normalize_alt_text_provider_output(
         self,
@@ -509,6 +968,30 @@ class WordPressOperationRuntime:
         if not normalized_text or contains_inline_media_transport(normalized_text):
             return {}
         return {"output_text": normalized_text}
+
+    @staticmethod
+    def _provider_json_output_schema(
+        *, task: str, output_schema: dict[str, object]
+    ) -> dict[str, object]:
+        """Add provider-only fields required by an Ability's execution parser."""
+        if task != "editorial_notes" or not output_schema:
+            return output_schema
+        schema = json.loads(json.dumps(output_schema, ensure_ascii=False))
+        properties = schema.get("properties")
+        suggestions = properties.get("suggestions") if isinstance(properties, dict) else None
+        item_schema = suggestions.get("items") if isinstance(suggestions, dict) else None
+        if not isinstance(item_schema, dict):
+            return schema
+        item_schema.setdefault("type", "object")
+        item_properties = item_schema.setdefault("properties", {})
+        if not isinstance(item_properties, dict):
+            item_properties = {}
+            item_schema["properties"] = item_properties
+        item_properties.setdefault("priority", {"type": "integer", "minimum": 1, "maximum": 5})
+        required = item_schema.setdefault("required", ["review_type", "text", "priority"])
+        if isinstance(required, list) and "priority" not in required:
+            required.append("priority")
+        return schema
 
     @staticmethod
     def _title_output_schema(*, task: str, task_contract: dict[str, object]) -> dict[str, object]:
@@ -540,7 +1023,7 @@ class WordPressOperationRuntime:
 
     @staticmethod
     def _extract_title_schema_output(*, output_text: str, output_schema: dict[str, object]) -> str:
-        """Fail closed unless the Provider result satisfies the Ability title field."""
+        """Extract a title field and fail closed when the declared schema is absent."""
         if output_schema.get("type") != "object":
             return ""
         properties = output_schema.get("properties")
@@ -570,6 +1053,15 @@ class WordPressOperationRuntime:
             for item in metadata.get("task_constraints", [])
             if isinstance(item, str) and str(item).strip()
         }
+        output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if "json_object" in constraints and output_schema:
+            normalized = self._normalize_json_schema_output(
+                self._extract_provider_output_text(provider_output),
+                output_schema=output_schema,
+            )
+            if not normalized:
+                return True
+            return False
         if (
             task
             not in {
@@ -577,6 +1069,7 @@ class WordPressOperationRuntime:
                 "comment_reply_suggest",
                 "content_rewrite",
                 "content_summary",
+                "content_translation",
                 "excerpt_generation",
                 "meta_description",
                 "title_generation",
@@ -584,12 +1077,32 @@ class WordPressOperationRuntime:
             and "single_value" not in constraints
         ):
             return False
+        response_status = str(provider_output.get("response_status") or "").strip().lower()
+        if response_status in {"incomplete", "failed", "cancelled"}:
+            return True
         output_text = self._extract_provider_output_text(provider_output)
         if output_text == "":
+            return True
+        if task == "content_translation":
+            if self._translation_quality_reason(
+                source_text=str(input_payload.get("text") or ""),
+                output_text=output_text,
+                target_language=str(metadata.get("target_language") or ""),
+            ):
+                return True
+        if self._looks_like_provider_reasoning(output_text):
             return True
         if task != "title_generation":
             return False
         if self._has_unbalanced_title_quote(output_text):
+            return True
+        if self._is_boilerplate_output(output_text):
+            return True
+        title_quality_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if self.blocking_title_quality_reasons(title_quality_reasons):
             return True
         usage = provider_output.get("usage")
         usage = usage if isinstance(usage, dict) else {}
@@ -607,6 +1120,434 @@ class WordPressOperationRuntime:
         )
         return reasoning_tokens > 0 and visible_unit_count <= 3
 
+    def title_quality_reasons(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Return bounded, deterministic title findings for runtime evidence."""
+        # One provider output is evaluated up to three times per decision cycle
+        # (retry predicate, service decision, rejection reason), and each
+        # evaluation is O(source length); memoize on the exact payload pair so
+        # repeated evaluations of the same output run the scans once.
+        cache = self._title_quality_cache
+        if (
+            cache is not None
+            and cache[0] is input_payload
+            and cache[1] is provider_output
+        ):
+            return cache[2]
+        reasons = self._compute_title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        self._title_quality_cache = (input_payload, provider_output, reasons)
+        return reasons
+
+    def _compute_title_quality_reasons(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> tuple[str, ...]:
+        metadata = self._dict_or_empty(input_payload.get("metadata"))
+        if str(metadata.get("task") or "").strip() != "title_generation":
+            return ()
+        candidate = self._title_candidate_for_quality(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        if not candidate:
+            return ()
+
+        source_text = str(input_payload.get("text") or "")
+        reasons: list[str] = []
+        if len(candidate) > 80:
+            reasons.append("title_length_exceeded")
+        if self._is_vague_title(candidate):
+            reasons.append("title_vague")
+        elif self._is_boilerplate_output(candidate):
+            reasons.append("title_boilerplate")
+        if self._title_matches_scene_heading(
+            candidate,
+            source_text,
+            existing_title=str(metadata.get("existing_title") or ""),
+        ):
+            reasons.append("title_unchanged")
+        if re.search(r"([,，。！？!?；;：:、])\1+", candidate):
+            reasons.append("title_repeated_punctuation")
+        if self._has_unsupported_title_claim(candidate, source_text):
+            reasons.append("title_unsupported_claim")
+        if self._is_mixed_language_title(candidate):
+            # Mixed language is evidence for review, not a rejection: product names
+            # such as WordPress and Typecho are legitimate in Chinese titles.
+            reasons.append("title_mixed_language")
+        return tuple(dict.fromkeys(reasons))
+
+    @staticmethod
+    def blocking_title_quality_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
+        """Drop evidence-only findings; the remainder justify retry or rejection.
+
+        Single source of truth shared by the retry predicate and the runtime
+        service decision so the evidence-only set can never drift apart.
+        """
+        return tuple(reason for reason in reasons if reason != "title_mixed_language")
+
+    def _title_candidate_for_quality(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> str:
+        metadata = self._dict_or_empty(input_payload.get("metadata"))
+        raw = self._extract_provider_output_text(provider_output)
+        schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if schema:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return ""
+            raw = str(parsed.get("title") or "") if isinstance(parsed, dict) else ""
+        if not raw:
+            return ""
+        return self._normalize_plain_text_output(
+            raw,
+            limit=10_000,
+            strip_explanation=True,
+            source_text=str(input_payload.get("text") or ""),
+            task="title_generation",
+        ).strip()
+
+    @staticmethod
+    def _is_vague_title(candidate: str) -> bool:
+        normalized = re.sub(r"\s+", "", candidate).casefold()
+        return normalized in {
+            "文章标题",
+            "标题建议",
+            "内容介绍",
+            "相关文章介绍",
+            "一篇文章",
+            "thisarticle",
+            "anarticle",
+            "suggestedtitle",
+        }
+
+    @staticmethod
+    def _has_unsupported_title_claim(candidate: str, source_text: str) -> bool:
+        raw_source = source_text.casefold()
+        source = re.sub(r"<[^>]+>", " ", source_text).casefold()
+        # Whitespace-insensitive comparison: titles routinely re-space CJK
+        # spans and bracket labels, so compare compacted forms, not raw text.
+        source_compact = re.sub(r"\s+", "", source)
+        claims = re.findall(
+            r"(?<![A-Za-z0-9])v?\d+(?:\.\d+){1,3}(?![A-Za-z0-9])|\b20\d{2}\b",
+            candidate,
+            re.I,
+        )
+        claims.extend(
+            match.group(1)
+            for match in re.finditer(r"[\[【《「]([^\]】》」]{2,80})[\]】》」]", candidate)
+            # Bracketed labels are usually composed framing (【实用指南】),
+            # not copied claims; only spans carrying factual markers such as
+            # digits count as verifiable claims.
+            if re.search(r"\d", match.group(1))
+        )
+        for claim in claims:
+            claim_compact = re.sub(r"\s+", "", claim.casefold())
+            if claim_compact in source_compact:
+                continue
+            if re.fullmatch(r"v?\d+(?:\.\d+){1,3}", claim, re.I):
+                # A candidate may normalize a version ("3.5" -> "3.5.0");
+                # accept it while any prefix of the version stays grounded.
+                parts = re.sub(r"^v", "", claim, flags=re.I).split(".")
+                while len(parts) > 2:
+                    parts.pop()
+                    if ".".join(parts) in source_compact:
+                        break
+                else:
+                    return True
+                continue
+            if re.fullmatch(r"20\d{2}", claim) and claim.casefold() in raw_source:
+                # Years also live in tag attributes (alt text, hrefs) that the
+                # tag strip removes; a raw-source hit still grounds the claim.
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def _is_mixed_language_title(candidate: str) -> bool:
+        has_cjk = bool(re.search(r"[\u3400-\u9fff]", candidate))
+        english_words = re.findall(r"[A-Za-z]{2,}", candidate)
+        return has_cjk and len(english_words) >= 4
+
+    def output_quality_reason(
+        self,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> str:
+        """Return a content-free reason for a rejected Connector result."""
+        response_status = str(provider_output.get("response_status") or "").strip().lower()
+        if response_status in {"incomplete", "failed", "cancelled"}:
+            return f"responses_{response_status}"
+        output_text = self._extract_provider_output_text(provider_output)
+        if not output_text:
+            return "empty_output_text"
+        if self._looks_like_provider_reasoning(output_text):
+            return "provider_reasoning_leak"
+        metadata = input_payload.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        task = str(metadata.get("task") or "").strip()
+        source_text = str(input_payload.get("text") or "")
+        transformation_reason = self._transformation_quality_reason(
+            source_text=source_text,
+            output_text=output_text,
+            task=task,
+        )
+        if transformation_reason:
+            return transformation_reason
+        constraints = {
+            str(item).strip()
+            for item in metadata.get("task_constraints", [])
+            if isinstance(item, str) and str(item).strip()
+        }
+        output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if task == "content_translation":
+            translation_reason = self._translation_quality_reason(
+                source_text=str(input_payload.get("text") or ""),
+                output_text=output_text,
+                target_language=str(metadata.get("target_language") or ""),
+            )
+            if translation_reason:
+                return translation_reason
+        if "json_object" in constraints and output_schema:
+            normalized = self._normalize_json_schema_output(
+                self._extract_provider_output_text(provider_output),
+                output_schema=output_schema,
+            )
+            if not normalized:
+                return "ability_output_schema_invalid"
+        if task == "title_generation" and self._dict_or_empty(
+            metadata.get("ability_output_schema")
+        ):
+            try:
+                parsed = json.loads(output_text)
+            except json.JSONDecodeError:
+                return "title_schema_invalid_json"
+            if not isinstance(parsed, dict) or not isinstance(parsed.get("title"), str):
+                return "title_schema_missing_title"
+            if not parsed["title"].strip():
+                return "title_schema_empty_title"
+        title_reasons = self.title_quality_reasons(
+            input_payload=input_payload,
+            provider_output=provider_output,
+        )
+        blocking_reasons = self.blocking_title_quality_reasons(title_reasons)
+        if blocking_reasons:
+            # Evidence-only findings (mixed language) are filtered here too:
+            # every consumer of this method gets a rejection-grade reason or
+            # none at all, independent of caller-side gating.
+            return blocking_reasons[0]
+        if task == "title_generation" and self._is_boilerplate_output(output_text):
+            return "title_boilerplate"
+        if task == "title_generation" and self._title_matches_scene_heading(
+            output_text,
+            str(input_payload.get("text") or ""),
+            existing_title=str(metadata.get("existing_title") or ""),
+        ):
+            return "title_unchanged"
+        return "normalized_text_empty"
+
+    @classmethod
+    def _translation_quality_reason(
+        cls,
+        *,
+        source_text: str,
+        output_text: str,
+        target_language: str,
+    ) -> str:
+        """Reject translation output that is structurally unsafe or contaminated."""
+        if cls._contains_translation_refusal(output_text):
+            return "translation_refusal_leak"
+
+        source_markers = cls._translation_structure_markers(source_text)
+        output_markers = cls._translation_structure_markers(output_text)
+        if source_markers != output_markers:
+            return "translation_structure_drift"
+
+        normalized_target = target_language.strip().lower().replace("_", "-")
+        if normalized_target not in {"zh-cn", "zh-tw", "zh-hans", "zh-hant"}:
+            source_cjk = cls._translation_visible_cjk_count(source_text)
+            output_cjk = cls._translation_visible_cjk_count(output_text)
+            if source_cjk == 0 and output_cjk >= 1:
+                return "target_language_mismatch"
+            # A few CJK characters can be valid proper nouns. A fifth of a
+            # substantial source is a strong signal that the model left source
+            # paragraphs untranslated, so fail closed before WordPress stores it.
+            if source_cjk >= 80 and output_cjk >= max(20, int(source_cjk * 0.20)):
+                return "translation_untranslated_source"
+
+        if len(source_text) >= 200 and len(output_text) > int(len(source_text) * 2.2):
+            return "translation_length_inflation"
+        return ""
+
+    @staticmethod
+    def _contains_translation_refusal(output_text: str) -> bool:
+        return bool(
+            re.search(
+                r"(?is)(?:"
+                r"i\s+(?:cannot|can't|can\s+not)\s+(?:complete|fulfill|help|comply)|"
+                r"per\s+my\s+instructions|"
+                r"i\s+must\s+refuse|"
+                r"as\s+an\s+ai\b|"
+                r"我(?:不能|无法|不可以)(?:完成|遵循|提供)|"
+                r"根据我的指令"
+                r")",
+                output_text,
+            )
+        )
+
+    @staticmethod
+    def _translation_structure_markers(value: str) -> dict[str, object]:
+        tags = Counter(
+            match.group(1).lower()
+            for match in re.finditer(r"</?([A-Za-z][\w:-]*)\b[^>]*>", value)
+            if match.group(1).lower() not in {"content", "block-content"}
+        )
+        block_comments = Counter(re.findall(r"<!--\s*/?wp:[^>]+-->", value, flags=re.I))
+        links = Counter(
+            re.sub(r"[),.;:，。；：]+$", "", match)
+            for match in re.findall(r"https?://[^\s\"'<>]+", value)
+        )
+        return {
+            "tags": dict(tags),
+            "block_comments": dict(block_comments),
+            "links": dict(links),
+            "code_fences": value.count("```") + value.count("~~~"),
+        }
+
+    @staticmethod
+    def _translation_visible_cjk_count(value: str) -> int:
+        visible = re.sub(r"(?is)<[^>]+>|https?://[^\s\"'<>]+|```.*?```", " ", value)
+        return len(re.findall(r"[\u3400-\u9fff]", visible))
+
+    @staticmethod
+    def _normalize_json_schema_output(
+        output_text: str,
+        *,
+        output_schema: dict[str, object],
+    ) -> str:
+        """Accept only JSON that matches the Ability-owned root schema."""
+        candidates = [output_text.strip()]
+        fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", output_text, flags=re.S | re.I)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if WordPressOperationRuntime._json_value_matches_schema(parsed, output_schema):
+                return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+        return ""
+
+    @staticmethod
+    def _json_value_matches_schema(value: object, schema: dict[str, object]) -> bool:
+        schema_type = str(schema.get("type") or "")
+        if schema_type == "object":
+            if not isinstance(value, dict):
+                return False
+            required = schema.get("required")
+            if isinstance(required, list) and any(
+                isinstance(name, str) and name not in value for name in required
+            ):
+                return False
+            properties = schema.get("properties")
+            if isinstance(properties, dict):
+                for key, child_schema in properties.items():
+                    if key in value and isinstance(child_schema, dict):
+                        if not WordPressOperationRuntime._json_value_matches_schema(
+                            value[key], child_schema
+                        ):
+                            return False
+            if schema.get("additionalProperties") is False and isinstance(properties, dict):
+                if any(key not in properties for key in value):
+                    return False
+            return True
+        if schema_type == "array":
+            if not isinstance(value, list):
+                return False
+            minimum = schema.get("minItems")
+            maximum = schema.get("maxItems")
+            if isinstance(minimum, int) and len(value) < minimum:
+                return False
+            if isinstance(maximum, int) and len(value) > maximum:
+                return False
+            item_schema = schema.get("items")
+            return not isinstance(item_schema, dict) or all(
+                WordPressOperationRuntime._json_value_matches_schema(item, item_schema)
+                for item in value
+            )
+        if schema_type == "string":
+            if not isinstance(value, str):
+                return False
+            minimum = schema.get("minLength")
+            maximum = schema.get("maxLength")
+            if isinstance(minimum, int) and len(value) < minimum:
+                return False
+            if isinstance(maximum, int) and len(value) > maximum:
+                return False
+            enum = schema.get("enum")
+            return not isinstance(enum, list) or value in enum
+        if schema_type == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if schema_type == "number":
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if schema_type == "boolean":
+            return isinstance(value, bool)
+        enum = schema.get("enum")
+        if isinstance(enum, list) and value not in enum:
+            return False
+        return True
+
+    @classmethod
+    def _title_matches_scene_heading(
+        cls,
+        output_text: str,
+        source_text: str,
+        *,
+        existing_title: str = "",
+    ) -> bool:
+        """Reject a title suggestion that simply repeats a supplied heading."""
+        candidate = cls._comparable_title(output_text)
+        if not candidate or (not source_text.strip() and not existing_title.strip()):
+            return False
+
+        source = cls._strip_reasoning_noise(source_text)
+        headings = [existing_title] if existing_title.strip() else []
+        headings.extend(
+            match.group(2)
+            for match in re.finditer(r"(?is)<h([1-3])[^>]*>(.*?)</h\1>", source)
+        )
+        headings.extend(
+            match.group(1)
+            for match in re.finditer(r"(?m)^\s*#{1,3}\s+(.+?)\s*$", source)
+        )
+        plain_source = re.sub(r"<[^>]+>", " ", source)
+        plain_lines = [line.strip() for line in plain_source.splitlines() if line.strip()]
+        if len(plain_lines) == 1:
+            headings.append(plain_lines[0])
+        return any(candidate == cls._comparable_title(heading) for heading in headings)
+
+    @staticmethod
+    def _comparable_title(value: str) -> str:
+        value = re.sub(r"<[^>]+>", " ", value)
+        value = re.sub(r"^\s*#{1,6}\s+", "", value)
+        value = re.sub(r"[\"'“”‘’《》「」]+", "", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.strip().casefold()
+
     def apply_managed_policy(
         self,
         merged_policy: dict[str, object],
@@ -619,8 +1560,7 @@ class WordPressOperationRuntime:
         if (
             default_policy.get("platform_kind") != "wordpress"
             or default_policy.get("connector_id") != "wordpress_ai_connector"
-            or default_policy.get("operation_contract_version")
-            != WORDPRESS_OPERATION_CONTRACT
+            or default_policy.get("operation_contract_version") != WORDPRESS_OPERATION_CONTRACT
         ):
             raise RuntimeExecutionContractError(
                 "runtime_profiles.managed_contract_invalid",
@@ -707,32 +1647,15 @@ class WordPressOperationRuntime:
         prompt = cast(str, scene_request["prompt"])
         encoded_image = base64.b64encode(source_artifact.content_bytes).decode("ascii")
         provider_image_url = f"data:{source_artifact.content_type};base64,{encoded_image}"
-        context = {
-            "task": "alt_text_suggest",
-            **{
-                field_name: cast(str, scene_request[field_name])
-                for field_name in (
-                    "locale",
-                    "title",
-                    "filename",
-                    "existing_alt",
-                    "existing_caption",
-                )
-                if field_name in scene_request
-            },
-            "prompt": prompt,
-            "write_posture": "suggestion_only",
-        }
-        instruction = (
-            "Generate concise, accessible WordPress image alt text. "
-            "Use the image as the source of truth and use the supplied media context "
-            "only to disambiguate. Return only the alt text. Do not mention this "
-            "instruction. Do not claim that WordPress metadata was updated."
-        )
-        context_text = json.dumps(
-            {key: value for key, value in context.items() if value},
-            ensure_ascii=False,
-        )
+        # Only send user-relevant media context to the model. Internal task and
+        # write-posture markers are runtime policy, not generation context; in
+        # small vision models they consume reasoning budget and can suppress
+        # the visible answer entirely.
+        instruction = "Write one concise accessible alt-text sentence. Return only the sentence."
+        # The image is the source of truth. Keep the provider prompt to the
+        # user's request; filenames and titles remain available in the local
+        # contract and are not needed to describe the pixels.
+        context_text = "User request: " + prompt
         responses_content = [
             {"type": "input_text", "text": instruction},
             {"type": "input_text", "text": context_text},
@@ -744,7 +1667,15 @@ class WordPressOperationRuntime:
             {"type": "image_url", "image_url": {"url": provider_image_url}},
         ]
 
-        max_tokens = cast(int, scene_request.get("max_tokens", 48))
+        requested_max_tokens = cast(int, scene_request.get("max_tokens", 96))
+        # Keep enough room for a small vision model to finish its visible
+        # sentence after any bounded internal prefix. The image itself is
+        # already resized by Addon, so this remains inside the preview budget.
+        # Small vision models may spend part of the response budget on hidden
+        # visual reasoning before emitting the final alt text. Keep enough
+        # headroom for both phases while the connector still projects only
+        # the final text to WordPress.
+        max_tokens = max(requested_max_tokens, 1536)
         return {
             "input": [{"role": "user", "content": responses_content}],
             "messages": [{"role": "user", "content": chat_content}],
@@ -789,7 +1720,32 @@ class WordPressOperationRuntime:
         task: str = "",
     ) -> str:
         raw_text = self._strip_reasoning_noise(output_text)
-        text = self._extract_task_candidate(raw_text, task=task, limit=limit)
+        if task in {"content_translation", "editorial_updates"}:
+            # Models sometimes echo the connector's <content> transport marker.
+            # Treat an empty wrapper as empty output and unwrap a non-empty
+            # wrapper before the normal text/HTML preservation path.
+            wrapped = re.fullmatch(
+                r"\s*<content\b[^>]*>(.*?)</content>\s*",
+                raw_text,
+                flags=re.I | re.S,
+            )
+            if wrapped is not None:
+                raw_text = wrapped.group(1).strip()
+                if not raw_text:
+                    return ""
+        # Translation is a structure-preserving operation. Do not run it
+        # through the Markdown cleanup used by short suggestions: that would
+        # remove underscores, collapse code formatting, and alter HTML-facing
+        # content before the structure gate can assess it.
+        text = (
+            raw_text
+            if task == "content_translation"
+            else self._extract_task_candidate(
+                raw_text,
+                task=task,
+                limit=limit,
+            )
+        )
         if not text:
             text = self._strip_markdown(raw_text)
         if strip_explanation:
@@ -802,6 +1758,10 @@ class WordPressOperationRuntime:
         if task in {"excerpt_generation", "content_summary"} and (
             self._is_boilerplate_output(text) or self._looks_like_title_bundle(raw_text)
         ):
+            if task == "excerpt_generation":
+                source_excerpt = self._extract_source_excerpt(source_text, limit=limit)
+                if source_excerpt:
+                    return source_excerpt
             cjk_fallback = self._extract_cjk_text(source_text, limit=limit)
             if cjk_fallback:
                 return cjk_fallback
@@ -812,19 +1772,175 @@ class WordPressOperationRuntime:
         output_text: str,
         *,
         source_text: str = "",
+        strategy: str = "",
     ) -> str:
+        available_terms = self._extract_available_terms(source_text)
         parsed = self._parse_classification_json(output_text)
         if parsed is None:
+            # With an official candidate pool, malformed model output cannot be
+            # safely converted into a new taxonomy term. Recover only exact
+            # mentions of supplied candidates; this handles providers that
+            # return a short list or sentence despite the JSON contract.
             parsed = {
-                "suggestions": [
-                    {"term": term, "confidence": 0.6, "is_new": True}
-                    for term in self._extract_classification_terms(
-                        output_text,
-                        source_text=source_text,
-                    )
-                ]
+                "suggestions": (
+                    self._extract_available_term_mentions(output_text, available_terms)
+                    if available_terms
+                    else []
+                    if strategy == "existing_only"
+                    else [
+                        {"term": term, "confidence": 0.6, "is_new": True}
+                        for term in self._extract_classification_terms(
+                            output_text,
+                            source_text=source_text,
+                        )
+                    ]
+                )
             }
+        if available_terms:
+            # WordPress supplies the candidate pool and owns the meaning of an
+            # empty result. Keep only model suggestions that can be mapped to a
+            # supplied term; never infer a taxonomy term from arbitrary content.
+            matched = self._match_existing_taxonomy_terms(
+                parsed.get("suggestions"),
+                available_terms,
+            )
+            if not matched:
+                # A provider may have returned a human-readable list even when
+                # it ignored the JSON response format. Mapping only exact
+                # candidate mentions preserves existing_only semantics without
+                # fabricating or writing a term.
+                matched = self._extract_available_term_mentions(output_text, available_terms)
+            parsed["suggestions"] = matched
+        elif strategy == "existing_only":
+            # An empty candidate pool means there is no safe existing term to
+            # return. Do not turn source words into new taxonomy suggestions.
+            parsed["suggestions"] = []
         return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+    @classmethod
+    def _extract_available_term_mentions(
+        cls,
+        output_text: str,
+        available_terms: list[str],
+    ) -> list[dict[str, Any]]:
+        """Recover exact candidate mentions from a non-JSON provider reply."""
+        output = str(output_text or "").strip()
+        if not output or not available_terms:
+            return []
+        output_folded = output.casefold()
+        output_key = cls._taxonomy_term_key(output)
+        recovered: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw_term in available_terms:
+            term = str(raw_term or "").strip()
+            key = cls._taxonomy_term_key(term)
+            if not term or not key or key in seen:
+                continue
+            if key.isascii() and re.search(
+                r"(?<![a-z0-9])" + re.escape(key) + r"(?![a-z0-9])", output_folded
+            ):
+                found = True
+            else:
+                found = key in output_key
+            if not found:
+                continue
+            recovered.append({"term": term, "confidence": 0.6, "is_new": False})
+            seen = seen | {key}
+        return recovered
+
+    def _normalize_slug_output(self, output_text: str) -> str:
+        parsed = self._parse_json_object(output_text)
+        raw_slugs = parsed.get("slugs") if isinstance(parsed, dict) else None
+        slugs: list[str] = []
+        if isinstance(raw_slugs, list):
+            for raw_slug in raw_slugs:
+                if not isinstance(raw_slug, str):
+                    continue
+                slug = self._normalize_ascii_slug(raw_slug)
+                if slug and slug not in slugs:
+                    slugs.append(slug)
+                if len(slugs) >= 10:
+                    break
+        if not slugs:
+            # An empty result is safer than fabricating a slug from transport
+            # metadata or a title whose language may not be transliterable. Keep
+            # the official JSON shape so the raw provider value cannot leak
+            # back through the generic output fallback.
+            return json.dumps({"slugs": []}, ensure_ascii=False, separators=(",", ":"))
+        return json.dumps({"slugs": slugs}, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _parse_json_object(output_text: str) -> dict[str, Any] | None:
+        candidates = [output_text.strip()]
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output_text, flags=re.S | re.I)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
+
+    @staticmethod
+    def _normalize_ascii_slug(raw_slug: str) -> str:
+        value = raw_slug.strip()
+        for _ in range(3):
+            decoded = unquote(value)
+            if decoded == value:
+                break
+            value = decoded
+        value = unicodedata.normalize("NFKC", value).lower()
+        # Percent-decoded CJK and other Unicode must be rejected as a whole.
+        # Dropping those bytes would silently turn a meaningful slug into an
+        # unrelated partial value such as ``thebiz``. The provider must return
+        # an intentional ASCII transliteration instead.
+        if not value.isascii():
+            return ""
+        value = value.replace("_", "-")
+        value = re.sub(r"[^a-z0-9]+", "-", value)
+        return value.strip("-")[:80].strip("-")
+
+    @staticmethod
+    def _extract_available_terms(source_text: str) -> list[str]:
+        match = re.search(
+            r"<available-terms>\s*(.*?)\s*</available-terms>",
+            source_text,
+            flags=re.I | re.S,
+        )
+        if match is None:
+            return []
+        return [item.strip() for item in re.split(r"[,，]", match.group(1)) if item.strip()]
+
+    @classmethod
+    def _match_existing_taxonomy_terms(
+        cls,
+        suggestions: Any,
+        available_terms: list[str],
+    ) -> list[dict[str, Any]]:
+        canonical_by_key = {cls._taxonomy_term_key(term): term for term in available_terms}
+        matched: list[dict[str, Any]] = []
+        if not isinstance(suggestions, list):
+            return matched
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                continue
+            term = str(suggestion.get("term") or "").strip()
+            canonical = canonical_by_key.get(cls._taxonomy_term_key(term))
+            if not canonical:
+                continue
+            normalized = dict(suggestion)
+            normalized["term"] = canonical
+            normalized["is_new"] = False
+            matched.append(normalized)
+        return matched
+
+    @staticmethod
+    def _taxonomy_term_key(term: str) -> str:
+        normalized = unicodedata.normalize("NFKC", term).casefold()
+        return re.sub(r"[^\w\u3400-\u9fff]+", "", normalized)
 
     def _has_available_terms(self, source_text: str) -> bool:
         match = re.search(
@@ -1007,7 +2123,7 @@ class WordPressOperationRuntime:
 
     def _extract_first_list_item(self, output_text: str) -> str:
         for line in output_text.splitlines():
-            match = re.match(r"\s*(?:[-*]|\d+[.)、])\s*(.+?)\s*$", line)
+            match = re.match(r"\s*(?:[-*]|\d+[.)、](?!\d))\s*(.+?)\s*$", line)
             if match is None:
                 continue
             candidate = self._strip_markdown(match.group(1))
@@ -1015,7 +2131,7 @@ class WordPressOperationRuntime:
             if 4 <= len(candidate) <= 120:
                 return candidate
         match = re.search(
-            r"(?:^|\s)\d+[.)、]\s*(.+?)(?=\s+\d+[.)、]\s+|$)",
+            r"(?:^|\s)\d+[.)、](?!\d)\s*(.+?)(?=\s+\d+[.)、](?!\d)\s+|$)",
             output_text,
         )
         if match is not None:
@@ -1081,16 +2197,32 @@ class WordPressOperationRuntime:
                 "以下是基于",
                 "下面是",
                 "以下是",
+                "基于提供的信息构建的回答",
                 "如果你愿意",
                 "我还可以",
                 "here are",
                 "based on your",
+                "based on the provided information",
                 "i can also",
                 "title suggestions",
                 "标题建议",
                 "多个版本",
+                "unknown source",
+                "no specific content",
+                "no specific facts",
+                "merely a description",
             )
         )
+
+    @classmethod
+    def _extract_source_excerpt(cls, source_text: str, *, limit: int) -> str:
+        """Return a bounded source sentence for an unusable excerpt response."""
+        plain = re.sub(r"(?is)<[^>]+>", " ", source_text)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if not plain:
+            return ""
+        sentence = re.split(r"(?<=[.!?。！？])\s+", plain, maxsplit=1)[0].strip()
+        return cls._trim_incomplete_tail(cls._truncate_text(sentence or plain, limit=limit))
 
     @staticmethod
     def _looks_like_title_bundle(text: str) -> bool:
@@ -1126,10 +2258,37 @@ class WordPressOperationRuntime:
         )
 
     @staticmethod
+    def _looks_like_provider_reasoning(output_text: str) -> bool:
+        """Reject gateway messages that expose response-planning instructions."""
+        return bool(
+            re.match(
+                r"(?is)^\s*(?:"
+                r"we need (?:to )?(?:answer|return|respond)|"
+                r"need (?:to )?(?:answer|return|respond)|"
+                r"the user wants (?:a |an )?(?:title|summary|rewrite|answer)|"
+                r"the task\s*[:：]|"
+                r"content (?:is|of)\b|"
+                r"language of\b|"
+                r"must (?:answer|return|output)|"
+                r"return (?:only|exactly)|"
+                r"same language|language (?:is|:)|"
+                r"do not mention (?:this )?(?:instruction|request)"
+                r")\b",
+                output_text,
+            )
+        )
+
+    @staticmethod
     def _is_latin_heavy(text: str) -> bool:
         cjk_count = len(re.findall(r"[\u4e00-\u9fff]", text))
         latin_count = len(re.findall(r"[A-Za-z]", text))
         return latin_count > max(24, cjk_count * 2)
+
+    @staticmethod
+    def _is_predominantly_cjk(text: str) -> bool:
+        cjk_count = len(re.findall(r"[\u4e00-\u9fff]", text))
+        latin_count = len(re.findall(r"[A-Za-z]", text))
+        return cjk_count >= 4 and latin_count <= max(24, cjk_count * 2)
 
     def _extract_cjk_text(self, source_text: str, *, limit: int) -> str:
         fragments = re.findall(
