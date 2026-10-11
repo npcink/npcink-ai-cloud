@@ -4,10 +4,11 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.models import Account, RunRecord, Site, SiteKnowledgeChunk, SiteKnowledgeDocument
+from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_STALE_POST_STATUS
 
 
 class SiteKnowledgeRepository:
@@ -86,6 +87,57 @@ class SiteKnowledgeRepository:
         )
         self.session.flush()
         return self._rowcount(chunk_result) + self._rowcount(document_result)
+
+    def mark_unmanifested_sources_stale(
+        self,
+        site_id: str,
+        *,
+        keep_sources: set[tuple[str, int]],
+        source_types: set[str],
+    ) -> int:
+        """Mark still-public documents absent from a completed sync manifest stale.
+
+        Only source types that the manifest actually delivered are considered,
+        so indexes holding source kinds the manifest never covers are left
+        untouched. Rows keep their content: the stale marker removes them from
+        every public-status-filtered read path while preserving audit evidence.
+        """
+        normalized_source_types = sorted(
+            {str(source_type or "").strip() for source_type in source_types if str(source_type or "").strip()}
+        )
+        if not normalized_source_types:
+            return 0
+        documents = list(
+            self.session.scalars(
+                select(SiteKnowledgeDocument).where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status == "publish",
+                    SiteKnowledgeDocument.source_type.in_(normalized_source_types),
+                )
+            )
+        )
+        stale_sources: list[tuple[str, int]] = []
+        for document in documents:
+            source_type = str(document.source_type or "")
+            try:
+                source_id = int(document.source_id)
+            except (TypeError, ValueError):
+                continue
+            if (source_type, source_id) in keep_sources:
+                continue
+            stale_sources.append((source_type, source_id))
+            document.post_status = SITE_KNOWLEDGE_STALE_POST_STATUS
+            self.session.execute(
+                update(SiteKnowledgeChunk)
+                .where(
+                    SiteKnowledgeChunk.site_id == site_id,
+                    SiteKnowledgeChunk.source_type == source_type,
+                    SiteKnowledgeChunk.source_id == source_id,
+                )
+                .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
+            )
+        self.session.flush()
+        return len(stale_sources)
 
     def upsert_document_with_chunks(
         self,

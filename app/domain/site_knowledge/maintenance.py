@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.models import ProviderConnection, Site
 from app.domain.site_knowledge.contracts import SiteKnowledgeContractViolation
+from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_VECTOR_MODEL_ID,
     SITE_KNOWLEDGE_VECTOR_PROVIDER_ID,
@@ -19,6 +21,11 @@ SITE_KNOWLEDGE_MAINTENANCE_REVISION = "site_knowledge_maintenance.v1"
 ACTIVE_MAINTENANCE_LIFECYCLES = frozenset(
     {"reindex_required", "awaiting_site_sync", "rebuilding", "failed"}
 )
+SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD = "manifest_sources"
+SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD = "manifest_truncated"
+SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD = "last_pruned_source_count"
+SITE_KNOWLEDGE_LAST_PRUNED_AT_FIELD = "last_pruned_at"
+SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT = 20000
 
 
 def target_embedding_space_id() -> str:
@@ -210,7 +217,8 @@ def record_maintenance_batch(
     if site is None:
         return
     metadata = dict(site.metadata_json) if isinstance(site.metadata_json, dict) else {}
-    metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = {
+    previous = _copy_maintenance_state(metadata)
+    state: dict[str, Any] = {
         "contract_version": SITE_KNOWLEDGE_MAINTENANCE_REVISION,
         "status": status,
         "request_id": str(maintenance["request_id"]),
@@ -219,8 +227,131 @@ def record_maintenance_batch(
         "total_batches": int(maintenance["batch_count"]),
         "last_error_code": str(last_error_code or ""),
     }
+    for evidence_field in (
+        SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD,
+        SITE_KNOWLEDGE_LAST_PRUNED_AT_FIELD,
+    ):
+        if evidence_field in previous:
+            state[evidence_field] = previous[evidence_field]
+    if status != "ready":
+        # An in-flight delivery still needs its accumulated manifest for the
+        # final batch's prune; only a completed delivery drops it.
+        for manifest_field in (
+            SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD,
+            SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD,
+        ):
+            if manifest_field in previous:
+                state[manifest_field] = previous[manifest_field]
+    metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = state
     site.metadata_json = metadata
     session.flush()
+
+
+def merge_maintenance_manifest_sources(
+    session: Session,
+    *,
+    site_id: str,
+    delivered_sources: list[tuple[str, int]],
+) -> None:
+    """Accumulate one full-sync batch's delivered public sources.
+
+    The delivery-wide accumulation is the manifest the final batch prunes
+    against. WordPress stays the public-content truth, and the change bridge
+    cannot replay removals that happened while it could not deliver, so the
+    delivered-set difference is the only Cloud-side evidence that an indexed
+    source no longer exists publicly.
+    """
+    delivered_keys: list[str] = []
+    for source_type, source_id in delivered_sources:
+        normalized_type = str(source_type or "").strip()
+        try:
+            normalized_id = int(source_id)
+        except (TypeError, ValueError):
+            continue
+        if normalized_type and normalized_id > 0:
+            delivered_keys.append(f"{normalized_type}:{normalized_id}")
+    if not delivered_keys:
+        return
+    site = session.get(Site, site_id)
+    if site is None:
+        return
+    metadata = dict(site.metadata_json) if isinstance(site.metadata_json, dict) else {}
+    state = _copy_maintenance_state(metadata)
+    accumulated = state.get(SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD)
+    keys = (
+        [str(key) for key in accumulated if isinstance(key, str)]
+        if isinstance(accumulated, list)
+        else []
+    )
+    seen = set(keys)
+    for key in delivered_keys:
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
+    state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] = keys[:SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT]
+    state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] = (
+        len(keys) > SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT
+    )
+    metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = state
+    site.metadata_json = metadata
+    session.flush()
+
+
+def prune_unmanifested_sources(
+    session: Session,
+    *,
+    site_id: str,
+    repository: SiteKnowledgeRepository,
+) -> dict[str, Any]:
+    """Mark indexed sources that a completed full sync never delivered stale.
+
+    Runs only on the final maintenance batch. Sources delivered by earlier
+    batches of the same delivery form the authoritative public manifest, so
+    documents that remain indexed but never reappear are removals the change
+    bridge could not reconcile (for example deletions that happened while the
+    site was offline). Stale rows keep their content for audit while every
+    public-status-filtered read path stops serving them.
+    """
+    state = _site_maintenance_state(session, site_id)
+    keys = _manifest_source_keys(state)
+    summary: dict[str, Any] = {
+        "status": "skipped_empty_manifest",
+        "pruned_source_count": 0,
+    }
+    if not keys:
+        return summary
+    if bool(state.get(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD)):
+        summary["status"] = "skipped_truncated_manifest"
+        return summary
+    keep_sources: set[tuple[str, int]] = set()
+    source_types: set[str] = set()
+    for key in keys:
+        source_type, _, raw_source_id = key.partition(":")
+        try:
+            source_id = int(raw_source_id)
+        except ValueError:
+            continue
+        keep_sources.add((source_type, source_id))
+        source_types.add(source_type)
+    pruned_source_count = repository.mark_unmanifested_sources_stale(
+        site_id,
+        keep_sources=keep_sources,
+        source_types=source_types,
+    )
+    site = session.get(Site, site_id)
+    if site is not None:
+        metadata = dict(site.metadata_json) if isinstance(site.metadata_json, dict) else {}
+        state = _copy_maintenance_state(metadata)
+        state.pop(SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD, None)
+        state.pop(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD, None)
+        state[SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD] = int(pruned_source_count)
+        state[SITE_KNOWLEDGE_LAST_PRUNED_AT_FIELD] = datetime.now(UTC).isoformat()
+        metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = state
+        site.metadata_json = metadata
+        session.flush()
+    summary["status"] = "pruned"
+    summary["pruned_source_count"] = int(pruned_source_count)
+    return summary
 
 
 def _projection(
@@ -260,6 +391,18 @@ def _site_maintenance_state(session: Session, site_id: str) -> dict[str, Any]:
     )
     value = metadata.get(SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY)
     return value if isinstance(value, dict) else {}
+
+
+def _copy_maintenance_state(metadata: dict[str, Any]) -> dict[str, Any]:
+    state = metadata.get(SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY)
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def _manifest_source_keys(state: dict[str, Any]) -> list[str]:
+    value = state.get(SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD)
+    if not isinstance(value, list):
+        return []
+    return [str(key) for key in value if isinstance(key, str) and ":" in key]
 
 
 def _bounded_int(value: Any, *, minimum: int, maximum: int) -> int:

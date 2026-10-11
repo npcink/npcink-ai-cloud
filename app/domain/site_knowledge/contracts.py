@@ -47,6 +47,10 @@ ALLOWED_SEARCH_INTENTS = frozenset(
 ALLOWED_RESULT_GRANULARITIES = frozenset({"chunk", "document"})
 ALLOWED_SYNC_MODES = frozenset({"refresh", "rebuild", "delete"})
 PUBLIC_POST_STATUSES = frozenset({"publish"})
+# Cloud-side marker for indexed sources that a completed full-manifest sync no
+# longer lists. It is not a WordPress status: retrieval only serves public
+# statuses, so stale-marked rows stay auditable while staying unreachable.
+SITE_KNOWLEDGE_STALE_POST_STATUS = "stale"
 PUBLIC_POST_TYPES = frozenset({"post", "page", "attachment"})
 PUBLIC_COMMENT_STATUSES = frozenset({"approved", "approve", "1"})
 PUBLIC_SOURCE_TYPES = frozenset({"post", "page", "comment", "media"})
