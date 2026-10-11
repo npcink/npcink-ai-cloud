@@ -370,9 +370,9 @@ for production_path in deploy/nginx.prod.conf deploy/magick-domain-nginx.conf.te
 	reject_marker_case_insensitive "${production_path}" '/udp'
 done
 require_marker "deploy/image-lock/production-images.json" \
-	'python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc'
+	'python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72'
 require_marker "deploy/image-lock/production-images.json" \
-	'node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
+	'node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402'
 require_marker "deploy/OPS_PLAYBOOK.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/deploy-to-ssh-host.sh" \
