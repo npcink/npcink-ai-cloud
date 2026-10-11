@@ -106,6 +106,11 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 WORKDIR /app
 
+# The digest-pinned Alpine base predates the fixed zlib/openssl releases;
+# upgrade those system libraries at build time so the release image scan
+# stays fail-closed without waiting for an upstream base rebuild.
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 zlib
+
 # The pinned Alpine base reserves GID 999 as an empty `ping` group. Fail closed on
 # that exact base state, then rename it so artifact volumes keep stable 999:999 ownership.
 RUN set -eu; \

@@ -5,6 +5,11 @@ RUN apk add --no-cache \
     libucontext=1.5.1-r0 \
     musl-obstack=1.2.3-r2
 
+# The digest-pinned Alpine base predates the fixed openssl/zlib releases;
+# upgrade those system libraries at build time so the release image scan
+# stays fail-closed without waiting for an upstream base rebuild.
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 zlib
+
 FROM base AS deps
 
 WORKDIR /app

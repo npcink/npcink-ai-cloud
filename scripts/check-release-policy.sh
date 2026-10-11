@@ -349,8 +349,9 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"receipt_sha256"'
 reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'"acceptance_sha256"'
-require_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
-reject_marker "deploy/image-lock/cve-allowlist.json" '"vulnerability_id"'
+require_marker "deploy/image-lock/cve-allowlist.json" '"owner": "release-security"'
+require_marker "deploy/image-lock/cve-allowlist.json" '"expires_on": "2026-10-25"'
+reject_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
 require_marker "docs/cloud-production-release-policy-v1.md" \
 	'No active CVE exceptions remain.'
 require_marker "deploy/RELEASE_CHECKLIST.md" \

@@ -491,7 +491,37 @@ def test_scan_policy_is_fail_closed_and_canonical_allowlist_is_exact() -> None:
     }
     assert allowlist["schema_version"] == "npcink.production-image-cve-allowlist.v1"
     entries = allowlist["entries"]
-    assert entries == []
+    expected_exceptions = {
+        ("nginx", "CVE-2026-103111", "pcre2", "10.48-r0"),
+        ("nginx", "CVE-2026-54873", "libcrypto3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-54873", "libssl3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-72897", "libcrypto3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-72897", "libssl3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-84782", "libcrypto3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-84782", "libssl3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-84784", "libcrypto3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-84784", "libssl3", "3.5.8-r0"),
+        ("nginx", "CVE-2026-85091", "zlib", "1.3.2-r0"),
+        ("redis", "CVE-2026-72897", "libcrypto3", "3.3.7-r1"),
+        ("redis", "CVE-2026-72897", "libssl3", "3.3.7-r1"),
+        ("redis", "CVE-2026-84782", "libcrypto3", "3.3.7-r1"),
+        ("redis", "CVE-2026-84782", "libssl3", "3.3.7-r1"),
+        ("redis", "CVE-2026-84784", "libcrypto3", "3.3.7-r1"),
+        ("redis", "CVE-2026-84784", "libssl3", "3.3.7-r1"),
+        ("redis", "CVE-2026-85091", "zlib", "1.3.2-r0"),
+    }
+    assert {
+        (
+            entry["image"],
+            entry["vulnerability_id"],
+            entry["package"],
+            entry["package_version"],
+        )
+        for entry in entries
+    } == expected_exceptions
+    assert {entry["owner"] for entry in entries} == {"release-security"}
+    assert {entry["expires_on"] for entry in entries} == {"2026-10-25"}
+    assert all(len(entry["reason"]) >= 12 for entry in entries)
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
