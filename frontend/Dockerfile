@@ -6,9 +6,13 @@ RUN apk add --no-cache \
     musl-obstack=1.2.3-r2
 
 # The digest-pinned Alpine base predates the fixed openssl/zlib releases;
-# upgrade those system libraries at build time so the release image scan
-# stays fail-closed without waiting for an upstream base rebuild.
-RUN apk add --no-cache --upgrade libcrypto3 libssl3 zlib
+# install the exact fixed package versions (Alpine main: openssl 3.5.9-r0,
+# zlib 1.3.2-r1) so the upgrade stays reproducible and the release image
+# scan stays fail-closed without waiting for an upstream base rebuild.
+RUN apk add --no-cache --upgrade \
+    libcrypto3=3.5.9-r0 \
+    libssl3=3.5.9-r0 \
+    zlib=1.3.2-r1
 
 FROM base AS deps
 

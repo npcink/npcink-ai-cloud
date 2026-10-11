@@ -349,13 +349,43 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"receipt_sha256"'
 reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'"acceptance_sha256"'
-require_marker "deploy/image-lock/cve-allowlist.json" '"owner": "release-security"'
-require_marker "deploy/image-lock/cve-allowlist.json" '"expires_on": "2026-10-25"'
 reject_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
+# Fail closed on the CVE allowlist: parse it and enforce ownership and a
+# live, bounded exception window; the gate genuinely fails once entries
+# expire instead of trusting hand-synced date markers.
+if ! python3 - "${ROOT_DIR}/deploy/image-lock/cve-allowlist.json" <<'PY'
+import datetime
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    entries = json.load(handle)["entries"]
+today = datetime.date.today()
+for entry in entries:
+    expires = datetime.date.fromisoformat(entry["expires_on"])
+    if entry["owner"] != "release-security":
+        sys.exit(f"unexpected allowlist owner: {entry['owner']!r}")
+    if expires <= today:
+        sys.exit(
+            "expired CVE exception: "
+            f"{entry['image']} {entry['vulnerability_id']} expired {expires}"
+        )
+    if (expires - today).days > 30:
+        sys.exit(
+            "CVE exception beyond the 30-day horizon: "
+            f"{entry['image']} {entry['vulnerability_id']} expires {expires}"
+        )
+PY
+then
+	echo "[fail] CVE allowlist validation failed (invalid, expired, or out-of-window entries)" >&2
+	exit 1
+fi
 require_marker "docs/cloud-production-release-policy-v1.md" \
-	'No active CVE exceptions remain.'
+	'time-boxed CVE exceptions for the retag-only'
+require_marker "docs/cloud-production-release-policy-v1.md" \
+	'images are active from 2026-10-11 until 2026-10-25'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
-	'canonical CVE allowlist is empty'
+	'the canonical CVE allowlist is empty again after the bounded redis/nginx exception window closes'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'quoted and unquoted Compose UDP protocols must'
 run_compose_protocol_guard

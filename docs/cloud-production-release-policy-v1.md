@@ -84,11 +84,16 @@ Git, and run the narrowest relevant local gates plus CI. Before promoting
   policy but does not add a second hidden reviewer wait.
 
 The temporary Python and Node CVE exceptions are retired. Production images
-must use the digest-locked Python 3.14.7 and Node 22.23.2 candidates recorded in
+must use the digest-locked candidates recorded in
 `deploy/image-lock/production-images.json`. The six OpenSSL
 `CVE-2026-14456` exceptions expired on `2026-09-19` and are retired as of
 2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
-`frontend`, and `nginx`. No active CVE exceptions remain.
+`frontend`, and `nginx`. Seventeen time-boxed CVE exceptions for the retag-only
+`redis` and `nginx` images are active from 2026-10-11 until 2026-10-25
+(owner `release-security`) because no upstream rebuild carrying the fixed
+Alpine libraries existed at promotion time; `api` and `frontend` findings are
+repaired by exact-version in-image package upgrades. The gate fails closed
+again the moment those entries expire.
 This withdraws authorization; it does not establish that any image is fixed.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding
 must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol

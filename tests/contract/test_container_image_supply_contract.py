@@ -594,8 +594,11 @@ def test_active_release_contract_records_retired_openssl_exceptions() -> None:
         assert "QUIC" in surface
         assert "HTTP/3" in surface
         assert "UDP" in surface
-    assert "No active CVE exceptions remain." in policy
-    assert "canonical CVE allowlist is empty" in checklist
+    assert "images are active from 2026-10-11 until 2026-10-25" in policy
+    assert (
+        "the canonical CVE allowlist is empty again after the bounded redis/nginx"
+        " exception window closes" in checklist
+    )
     assert "quoted and unquoted Compose UDP protocols" in checklist
 
 
