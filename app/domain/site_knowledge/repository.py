@@ -103,7 +103,11 @@ class SiteKnowledgeRepository:
         every public-status-filtered read path while preserving audit evidence.
         """
         normalized_source_types = sorted(
-            {str(source_type or "").strip() for source_type in source_types if str(source_type or "").strip()}
+            {
+                str(source_type or "").strip()
+                for source_type in source_types
+                if str(source_type or "").strip()
+            }
         )
         if not normalized_source_types:
             return 0
