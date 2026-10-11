@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
@@ -22,6 +22,7 @@ from app.domain.site_knowledge.maintenance import (
     prune_unmanifested_sources,
     record_maintenance_batch,
 )
+from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID,
@@ -256,6 +257,43 @@ def test_full_sync_manifest_diff_prunes_offline_deleted_source(
         assert chunk_statuses[("post", 101)] == {"publish"}
         assert chunk_statuses[("post", 102)] == {SITE_KNOWLEDGE_STALE_POST_STATUS}
         assert chunk_statuses[("post", 103)] == {"publish"}
+
+        with get_session(database_url) as session:
+            repository = SiteKnowledgeRepository(session)
+            raw_document_count = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(SiteKnowledgeDocument)
+                    .where(SiteKnowledgeDocument.site_id == SITE_ID)
+                )
+                or 0
+            )
+            stale_chunk_count = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(SiteKnowledgeChunk)
+                    .where(
+                        SiteKnowledgeChunk.site_id == SITE_ID,
+                        SiteKnowledgeChunk.post_status == SITE_KNOWLEDGE_STALE_POST_STATUS,
+                    )
+                )
+                or 0
+            )
+            raw_chunk_count = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(SiteKnowledgeChunk)
+                    .where(SiteKnowledgeChunk.site_id == SITE_ID)
+                )
+                or 0
+            )
+            assert raw_document_count == 3
+            assert stale_chunk_count > 0
+            # quota-driving counts exclude stale rows ...
+            assert repository.count_documents(SITE_ID) == 2
+            assert repository.count_chunks(SITE_ID) == raw_chunk_count - stale_chunk_count
+            # ... while the audit-facing coverage view keeps them.
+            assert repository.coverage_evidence(SITE_ID)["indexed_documents"] == 3
 
         with get_session(database_url) as session:
             settings = Settings(

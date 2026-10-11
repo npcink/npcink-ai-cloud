@@ -234,7 +234,10 @@ class SiteKnowledgeRepository:
             self.session.scalar(
                 select(func.count())
                 .select_from(SiteKnowledgeDocument)
-                .where(SiteKnowledgeDocument.site_id == site_id)
+                .where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+                )
             )
             or 0
         )
@@ -253,7 +256,10 @@ class SiteKnowledgeRepository:
             select(func.count())
             .select_from(SiteKnowledgeDocument)
             .join(Site, Site.site_id == SiteKnowledgeDocument.site_id)
-            .where(Site.account_id == normalized_account_id)
+            .where(
+                Site.account_id == normalized_account_id,
+                SiteKnowledgeDocument.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+            )
         )
         if source_type is not None:
             statement = statement.where(SiteKnowledgeDocument.source_type == source_type)
@@ -323,7 +329,10 @@ class SiteKnowledgeRepository:
             self.session.scalar(
                 select(func.count())
                 .select_from(SiteKnowledgeChunk)
-                .where(SiteKnowledgeChunk.site_id == site_id)
+                .where(
+                    SiteKnowledgeChunk.site_id == site_id,
+                    SiteKnowledgeChunk.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
+                )
             )
             or 0
         )
@@ -429,6 +438,7 @@ class SiteKnowledgeRepository:
                     SiteKnowledgeChunk.site_id == site_id,
                     SiteKnowledgeChunk.source_type == source_type,
                     SiteKnowledgeChunk.source_id == source_id,
+                    SiteKnowledgeChunk.post_status != SITE_KNOWLEDGE_STALE_POST_STATUS,
                 )
             )
             or 0
