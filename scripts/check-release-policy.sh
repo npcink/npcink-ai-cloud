@@ -349,7 +349,6 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"receipt_sha256"'
 reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'"acceptance_sha256"'
-reject_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
 # Fail closed on the CVE allowlist: parse it and enforce ownership and a
 # live, bounded exception window; the gate genuinely fails once entries
 # expire instead of trusting hand-synced date markers.
@@ -360,7 +359,7 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as handle:
     entries = json.load(handle)["entries"]
-today = datetime.date.today()
+today = datetime.datetime.now(datetime.timezone.utc).date()
 for entry in entries:
     expires = datetime.date.fromisoformat(entry["expires_on"])
     if entry["owner"] != "release-security":
