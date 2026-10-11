@@ -288,10 +288,11 @@ def merge_maintenance_manifest_sources(
         if key not in seen:
             seen.add(key)
             keys.append(key)
-    state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] = keys[:SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT]
-    state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] = (
+    truncated = bool(state.get(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD)) or (
         len(keys) > SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT
     )
+    state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] = keys[:SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT]
+    state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] = truncated
     metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = state
     site.metadata_json = metadata
     session.flush()
@@ -342,8 +343,11 @@ def prune_unmanifested_sources(
     if site is not None:
         metadata = dict(site.metadata_json) if isinstance(site.metadata_json, dict) else {}
         state = _copy_maintenance_state(metadata)
-        state.pop(SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD, None)
-        state.pop(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD, None)
+        # The accumulated manifest must survive a failed publish: a blocked
+        # final batch is re-delivered, and record_maintenance_batch drops these
+        # fields itself on the only path where the delivery truly completed
+        # (status="ready"). Clearing here would make the retried batch prune
+        # against just its own slice and stale-mark earlier batches' content.
         state[SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD] = int(pruned_source_count)
         state[SITE_KNOWLEDGE_LAST_PRUNED_AT_FIELD] = datetime.now(UTC).isoformat()
         metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = state

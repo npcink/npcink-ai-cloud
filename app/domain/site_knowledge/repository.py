@@ -116,7 +116,7 @@ class SiteKnowledgeRepository:
                 )
             )
         )
-        stale_sources: list[tuple[str, int]] = []
+        stale_ids_by_type: dict[str, list[int]] = {}
         for document in documents:
             source_type = str(document.source_type or "")
             try:
@@ -125,19 +125,23 @@ class SiteKnowledgeRepository:
                 continue
             if (source_type, source_id) in keep_sources:
                 continue
-            stale_sources.append((source_type, source_id))
             document.post_status = SITE_KNOWLEDGE_STALE_POST_STATUS
-            self.session.execute(
-                update(SiteKnowledgeChunk)
-                .where(
-                    SiteKnowledgeChunk.site_id == site_id,
-                    SiteKnowledgeChunk.source_type == source_type,
-                    SiteKnowledgeChunk.source_id == source_id,
+            stale_ids_by_type.setdefault(source_type, []).append(source_id)
+        for source_type, source_ids in stale_ids_by_type.items():
+            for offset in range(0, len(source_ids), 500):
+                self.session.execute(
+                    update(SiteKnowledgeChunk)
+                    .where(
+                        SiteKnowledgeChunk.site_id == site_id,
+                        SiteKnowledgeChunk.source_type == source_type,
+                        SiteKnowledgeChunk.source_id.in_(
+                            source_ids[offset : offset + 500]
+                        ),
+                    )
+                    .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
                 )
-                .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
-            )
         self.session.flush()
-        return len(stale_sources)
+        return sum(len(source_ids) for source_ids in stale_ids_by_type.values())
 
     def upsert_document_with_chunks(
         self,

@@ -17,6 +17,7 @@ from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_STALE_POST_STATUS
 from app.domain.site_knowledge.maintenance import (
     SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD,
     SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD,
+    SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD,
     maintenance_request_id,
     merge_maintenance_manifest_sources,
     prune_unmanifested_sources,
@@ -470,3 +471,72 @@ def test_prune_skips_truncated_manifest_and_empty_state() -> None:
         "pruned_source_count": 0,
     }
     assert calls == []
+
+
+def test_prune_keeps_manifest_until_delivery_records_ready() -> None:
+    session = FakeSession()
+    session.site.metadata_json = {
+        "site_knowledge_maintenance": {
+            "manifest_sources": ["post:1", "post:2"],
+        }
+    }
+    marked: list[dict[str, object]] = []
+
+    class RecordingRepository:
+        def mark_unmanifested_sources_stale(
+            self,
+            site_id: str,
+            *,
+            keep_sources: set[tuple[str, int]],
+            source_types: set[str],
+        ) -> int:
+            marked.append(
+                {"keep": sorted(keep_sources), "types": sorted(source_types)}
+            )
+            return 1
+
+    summary = prune_unmanifested_sources(
+        session,  # type: ignore[arg-type]
+        site_id="site-1",
+        repository=RecordingRepository(),  # type: ignore[arg-type]
+    )
+    assert summary == {"status": "pruned", "pruned_source_count": 1}
+    assert marked == [{"keep": [("post", 1), ("post", 2)], "types": ["post"]}]
+
+    state = session.site.metadata_json["site_knowledge_maintenance"]
+    # A publish failure records the final batch as blocked; its retry must
+    # still prune against the full delivery manifest, not one batch's slice.
+    assert state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] == ["post:1", "post:2"]
+    assert state[SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD] == 1
+
+    record_maintenance_batch(
+        session,
+        site_id="site-1",
+        maintenance={
+            "request_id": maintenance_request_id("site-1"),
+            "batch_index": 1,
+            "batch_count": 2,
+        },
+        status="ready",
+    )
+    state = session.site.metadata_json["site_knowledge_maintenance"]
+    assert SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD not in state
+    assert state[SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD] == 1
+
+
+def test_manifest_truncation_flag_is_sticky() -> None:
+    session = FakeSession()
+    session.site.metadata_json = {
+        "site_knowledge_maintenance": {
+            "manifest_sources": ["post:1"],
+            "manifest_truncated": True,
+        }
+    }
+
+    merge_maintenance_manifest_sources(
+        session, site_id="site-1", delivered_sources=[("post", 1)]
+    )
+
+    state = session.site.metadata_json["site_knowledge_maintenance"]
+    assert state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] == ["post:1"]
+    assert state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] is True
