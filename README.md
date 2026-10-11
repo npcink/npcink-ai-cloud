@@ -43,7 +43,7 @@ Start with:
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
 - [Internal New-User Readiness Gate](docs/internal-new-user-readiness-gate-v1.md)
-- [Internal Readiness Final Handoff — 2026-08-18](docs/internal-readiness-final-handoff-2026-08-18.md)
+- [Internal Readiness Final Handoff — 2026-08-18](docs/history/engineering/2026/internal-readiness-final-handoff-2026-08-18.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
 - [Formal-user Observability Consent and Site Support Standard](docs/production-observability-consent-and-site-support-standard-v1.md)
@@ -98,6 +98,13 @@ test reports, caches, and `*.egg-info/` directories are local state, not source
 truth.
 
 ## Quick Start
+
+The local Docker setup below is an optional runtime setup. In the approved
+M4 workflow, the authoring Mac does not need a root `.env` merely to edit or
+run source checks. Inspect command implementations before running them:
+`test:api`, `check:seam`, and `check:perimeter` currently invoke local Docker.
+Use the M4 lane for runtime checks and record any gate that was not executed;
+a focused M4 test does not automatically replace a broader gate.
 
 Requirements:
 
@@ -225,7 +232,11 @@ Key M4 decisions and measurements remain directly discoverable:
 - [ADR-025 checkpoint dispatch](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
 - [ADR-026 private source relay](docs/decisions/026-private-source-relay-transfer.md)
 - [ADR-027 package proxy cache](docs/decisions/027-m4-package-proxy-streaming-cache.md)
-- [Package proxy validation](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
+- [ADR-051 managed private source relay](docs/decisions/051-managed-private-source-relay-service.md)
+- [ADR-052 Pgy primary M4 access](docs/decisions/052-pgy-primary-m4-access.md)
+- [M4 remote development and overlay network standard](docs/m4-remote-development-and-overlay-network-standard-v1.md)
+- [Managed source relay closeout and retrospective](docs/history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md)
+- [Package proxy validation](docs/history/m4/2026/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 
 ## Target Refactor Contracts
 
@@ -241,9 +252,9 @@ A target contract is not evidence that implementation is complete.
 
 Evidence records (not target-contract completion proof):
 
-- [Pre-refactor baseline](docs/refactor-baseline-2026-07-14.md)
-- [P5 hardening and release audit](docs/p5-hardening-release-audit-2026-07-17.md)
-- [P5-B1 hosted-profile cutover](docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md)
+- [Pre-refactor baseline](docs/history/refactor/2026/refactor-baseline-2026-07-14.md)
+- [P5 hardening and release audit](docs/history/refactor/2026/p5-hardening-release-audit-2026-07-17.md)
+- [P5-B1 hosted-profile cutover](docs/history/refactor/2026/p5-b1-hosted-profile-contract-cutover-2026-07-17.md)
 
 Bounded provider-connection operations and hosted
 runtime-profile configuration remain current Cloud responsibilities. Broader

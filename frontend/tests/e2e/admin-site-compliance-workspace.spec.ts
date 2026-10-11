@@ -181,6 +181,25 @@ test('site compliance keeps one active editor, preserves draft state, and separa
 
   await page.getByRole('button', { name: /版本记录|Version history/i }).click();
   await expect(page.locator('[data-ui="site-compliance-version-table"]')).toContainText('v1');
+  await expect(
+    page.locator('[data-ui="site-compliance-version-table"] a').first()
+  ).toHaveAttribute('href', '/admin/audit?scope_kind=service_setting&scope_id=site_compliance');
+
+  await page.getByRole('button', { name: /发布检查|Publish checks/i }).click();
+  await page.getByRole('button', { name: /发布到公开页面|Publish/i }).click();
+  const publishDialog = page.getByRole('dialog', { name: /确认发布合规版本|Publish this compliance version/i });
+  await expect(publishDialog).toContainText(/v1/);
+  await expect(publishDialog).toContainText(/v2/);
+  await expect(publishDialog).toContainText(/隐私政策|privacy policy/i);
+  await publishDialog.getByRole('button', { name: /取消|Cancel/i }).click();
+  expect(harness.getPublishCount()).toBe(0);
+
+  await page.getByRole('button', { name: /发布到公开页面|Publish/i }).click();
+  await page.getByRole('dialog', { name: /确认发布合规版本|Publish this compliance version/i })
+    .getByRole('button', { name: /确认发布|Publish version/i })
+    .click();
+  await expect(page.getByText(/资料已发布|Published\./i)).toBeVisible();
+  expect(harness.getPublishCount()).toBe(1);
 });
 
 test('site compliance section selector and tables remain mobile safe', async ({ page }) => {

@@ -185,17 +185,6 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - dependencies
-
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "10:30"
-      timezone: Asia/Shanghai
-    open-pull-requests-limit: 1
-    labels:
-      - dependencies
 YAML
 	if ! cmp -s "${ROOT_DIR}/.github/dependabot.yml" <(printf '%s' "${expected}"); then
 		echo "[fail] .github/dependabot.yml does not match the canonical pre-GA policy" >&2
@@ -230,7 +219,6 @@ require_file "deploy/remote-runtime-config-preflight.sh"
 require_file ".env.example"
 require_file "docker-compose.dev.yml"
 require_file "docker-compose.prod.yml"
-require_file "docker-compose.p5-b4-runtime-proof.yml"
 require_file "docker-compose.runtime.yml"
 require_file "docker-compose.pg18-proof.yml"
 require_file "scripts/cloud-deploy-bundle-smoke-flow.sh"
@@ -361,24 +349,12 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"receipt_sha256"'
 reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'"acceptance_sha256"'
-require_marker_count "deploy/image-lock/cve-allowlist.json" '"vulnerability_id": "CVE-2026-14456"' 6
-require_marker_count "deploy/image-lock/cve-allowlist.json" '"package": "libcrypto3"' 3
-require_marker_count "deploy/image-lock/cve-allowlist.json" '"package": "libssl3"' 3
-require_marker_count "deploy/image-lock/cve-allowlist.json" '"package_version": "3.5.7-r0"' 6
-require_marker_count "deploy/image-lock/cve-allowlist.json" '"owner": "Npcink Cloud release operator"' 6
-require_marker_count "deploy/image-lock/cve-allowlist.json" '"expires_on": "2026-09-19"' 6
-require_marker "deploy/image-lock/cve-allowlist.json" \
-	'no QUIC, HTTP/3, or UDP listener'
-require_marker "deploy/image-lock/cve-allowlist.json" \
-	'Stop immediately if QUIC or UDP is enabled'
-require_marker "deploy/image-lock/cve-allowlist.json" \
-	'OpenSSL 3.5.8 or newer'
+require_marker "deploy/image-lock/cve-allowlist.json" '"entries": []'
+reject_marker "deploy/image-lock/cve-allowlist.json" '"vulnerability_id"'
 require_marker "docs/cloud-production-release-policy-v1.md" \
-	'`CVE-2026-14456` exception is active only through `2026-09-19`'
-require_marker "docs/cloud-production-release-policy-v1.md" \
-	'valid only while production has no'
+	'No active CVE exceptions remain.'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
-	'current OpenSSL `CVE-2026-14456` exception contains exactly six'
+	'canonical CVE allowlist is empty'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'quoted and unquoted Compose UDP protocols must'
 run_compose_protocol_guard
@@ -394,7 +370,7 @@ for production_path in deploy/nginx.prod.conf deploy/magick-domain-nginx.conf.te
 	reject_marker_case_insensitive "${production_path}" '/udp'
 done
 require_marker "deploy/image-lock/production-images.json" \
-	'python:3.14-alpine@sha256:05b2b8b732ecd268fee8727a369f936f022d1321b59befd13c30ede22769dcdc'
+	'python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc'
 require_marker "deploy/image-lock/production-images.json" \
 	'node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
 require_marker "deploy/OPS_PLAYBOOK.md" \
@@ -517,7 +493,7 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'docker exec -i --env VARIAB
 reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "run --rm --no-deps -e VARIABLE_NAME"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
-require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "python -m app.dev.reencrypt_service_secrets"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "python -m app.ops.reencrypt_service_secrets"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "--old-key-id"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '/opt/npcink-ai-cloud/.release-state/<release-name>/env.deploy'
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '`--skip-frontend-image` preserves an existing frontend only'
@@ -541,8 +517,8 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "com.docker.compose.service=
 reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "Runtime configuration-only changes can normally be applied"
 require_marker "deploy/OPS_PLAYBOOK.md" "deploy/deploy-to-ssh-host.sh --stage-only"
 require_marker "deploy/OPS_PLAYBOOK.md" "staged_release=/absolute/release-path"
-require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_runtime_data verify"
-require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_service_secrets verify"
+require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.ops.reencrypt_runtime_data verify"
+require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.ops.reencrypt_service_secrets verify"
 require_marker "deploy/OPS_PLAYBOOK.md" "There is intentionally no copy/paste Compose command"
 reject_marker "deploy/OPS_PLAYBOOK.md" "run --rm --no-deps"
 require_marker "deploy/OPS_PLAYBOOK.md" "protected names-only environment handoff"
@@ -579,7 +555,7 @@ require_marker "deploy/OPS_PLAYBOOK.md" "NPCINK_CLOUD_CERTIFICATE_RENEWAL_HOOK_P
 require_marker "deploy/OPS_PLAYBOOK.md" "/usr/bin/python3.11"
 require_marker "deploy/OPS_PLAYBOOK.md" 'Pure `--stage-only` upload'
 require_marker "deploy/RELEASE_CHECKLIST.md" "new-key-only \`verify\`"
-require_marker "deploy/RELEASE_CHECKLIST.md" "python -m app.dev.reencrypt_service_secrets"
+require_marker "deploy/RELEASE_CHECKLIST.md" "python -m app.ops.reencrypt_service_secrets"
 require_marker "deploy/RELEASE_CHECKLIST.md" "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
 require_marker "deploy/RELEASE_CHECKLIST.md" "deploy/deploy-to-ssh-host.sh --stage-only --skip-bundle-build"
 require_marker "deploy/RELEASE_CHECKLIST.md" "staged_release=/absolute/release-path"
@@ -666,7 +642,6 @@ require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" "NPCINK_CLOUD_SERVICE
 require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" "NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID"
 for ordinary_runtime_surface in \
 	docker-compose.prod.yml \
-	docker-compose.p5-b4-runtime-proof.yml \
 	.env.example \
 	scripts/cloud-deploy-bundle-smoke-flow.sh; do
 	reject_marker "${ordinary_runtime_surface}" "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"

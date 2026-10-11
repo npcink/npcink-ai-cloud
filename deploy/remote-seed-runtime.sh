@@ -102,7 +102,7 @@ from __future__ import annotations
 import os
 import sys
 
-from app.dev.seed_runtime import main
+from app.ops.seed_runtime import main
 
 secret = os.environ.pop("NPCINK_CLOUD_SEED_RUNTIME_SECRET", "")
 if not secret:

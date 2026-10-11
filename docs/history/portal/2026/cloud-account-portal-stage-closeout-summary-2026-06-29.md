@@ -261,7 +261,7 @@ Related commits:
 
 Detailed document:
 
-- `docs/cloud-site-connection-closeout-history-2026-06-29.md`
+- `../../engineering/2026/cloud-site-connection-closeout-history-2026-06-29.md`
 
 ## Article Audio Generation Boundary
 
@@ -306,7 +306,7 @@ Toolbox fixed flow
 
 Detailed document:
 
-- `docs/article-audio-generation-stage-summary-2026-06-29.md`
+- `../../media/2026/article-audio-generation-stage-summary-2026-06-29.md`
 
 ## Verification Completed In This Stage
 

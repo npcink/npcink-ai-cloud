@@ -46,8 +46,10 @@ function AccountPageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const { session, isLoading, isAuthenticated, refresh } = useSession();
+  const [providerState, setProviderState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [providerError, setProviderError] = useState('');
   const [providers, setProviders] = useState<PortalIdentityProviderStatus[]>([]);
-  const [status, setStatus] = useState<AccountActionState>('loading');
+  const [status, setStatus] = useState<AccountActionState>('idle');
   const [message, setMessage] = useState('');
   const [emailChangeNewEmail, setEmailChangeNewEmail] = useState('');
   const [emailChangeCode, setEmailChangeCode] = useState('');
@@ -62,21 +64,15 @@ function AccountPageContent() {
   const qqStatus = searchParams?.get('qq') || '';
 
   const loadProviders = useCallback(async () => {
-    setStatus('loading');
-    setMessage('');
+    setProviderState('loading');
+    setProviderError('');
     try {
       const response = await portalClient.getIdentityProviders();
       setProviders(response.data?.providers || []);
-      setStatus('idle');
+      setProviderState('ready');
     } catch (error) {
-      setStatus('error');
-      setMessage(
-        formatPortalErrorMessage(
-          error,
-          t,
-          t('portal.account.identity_provider_load_failed', undefined, 'Unable to read third-party login status')
-        )
-      );
+      setProviderState('error');
+      setProviderError(formatPortalErrorMessage(error, t, t('portal.account.identity_provider_load_failed')));
     }
   }, [t]);
 
@@ -316,7 +312,14 @@ function AccountPageContent() {
             </div>
           </PortalCard>
 
-          {!qqProvider?.configured && !qqProvider?.bound ? (
+          {providerState === 'loading' ? (
+            <p role="status" className="text-sm text-slate-500">{t('common.loading')}</p>
+          ) : providerState === 'error' ? (
+            <div className="space-y-3" role="alert">
+              <p className="text-sm text-rose-700 dark:text-rose-300">{providerError}</p>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadProviders()}>{t('common.retry')}</button>
+            </div>
+          ) : !qqProvider?.configured && !qqProvider?.bound ? (
             <details className="rounded-[1.1rem] border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
                 <span>
@@ -461,7 +464,7 @@ function AccountPageContent() {
 
       <Modal
         isOpen={showEmailChange}
-        onClose={() => setShowEmailChange(false)}
+        onClose={() => { if (status !== 'requesting_email_change' && status !== 'verifying_email_change') setShowEmailChange(false); }}
         closeLabel={t('common.close', {}, 'Close')}
         title={contactEmail
           ? t('portal.account.contact_change_title', undefined, 'Change email')

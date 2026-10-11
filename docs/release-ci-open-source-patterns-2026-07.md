@@ -1,6 +1,7 @@
 # Release CI Open-Source Patterns 2026-07
 
-Status: active engineering note.
+Status: active engineering note; retained because the development operating model still
+uses these CI selection and evidence-reuse patterns.
 
 Purpose: record the release-flow patterns borrowed from mature open-source CI
 practice and how they map to Npcink AI Cloud without expanding Cloud product

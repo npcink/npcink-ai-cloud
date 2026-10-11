@@ -146,7 +146,7 @@ class MediaDerivativeObservabilityService:
         now: datetime | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
-        bounded_hours = min(168, max(1, int(window_hours or 24)))
+        bounded_hours = min(720, max(1, int(window_hours or 24)))
         start_at = current_time - timedelta(hours=bounded_hours)
 
         with get_session(self.database_url) as session:

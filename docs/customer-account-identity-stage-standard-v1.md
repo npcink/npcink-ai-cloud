@@ -17,7 +17,7 @@ Authority:
 
 Implementation history:
 
-- [Customer Account and Identity Simplification Closeout and Development Retrospective](customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)
+- [Customer Account and Identity Simplification Closeout and Development Retrospective](history/engineering/2026/customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)
   records the delivery sequence, verification evidence, failed assumptions, and
   reusable development method. It is historical evidence, not normative
   authority.

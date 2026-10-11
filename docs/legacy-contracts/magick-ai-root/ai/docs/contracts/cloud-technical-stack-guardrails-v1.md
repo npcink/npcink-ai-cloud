@@ -1,4 +1,8 @@
 # Cloud Technical Stack Guardrails v1
+Status: reference-only legacy snapshot.
+
+> Legacy snapshot: reference-only; current Cloud contracts take precedence.
+> The original status lines below are preserved as historical snapshot text and do not declare current authority.
 
 > 状态：active
 > 更新时间：2026-03-27

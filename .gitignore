@@ -16,5 +16,7 @@ dist/
 .tmp/
 .runtime/
 .deploy-secrets/
+.workbuddy/
+.mimosa/
 
 docs/superpowers/

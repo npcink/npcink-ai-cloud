@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_TAG="${NPCINK_CLOUD_PROD_EXTRAS_DEFAULT_TAG:-npcink-ai-cloud-api:prod-extra-smoke-default}"
 ZILLIZ_TAG="${NPCINK_CLOUD_PROD_EXTRAS_ZILLIZ_TAG:-npcink-ai-cloud-api:prod-extra-smoke-zilliz}"
-UV_VERSION="0.11.29"
+UV_VERSION="0.12.10"
 PYTHON_VERSION="3.14"
 UVX_BIN="${UVX_BIN:-uvx}"
 LOCK_ROOT="/usr/local/share/npcink-ai-cloud"

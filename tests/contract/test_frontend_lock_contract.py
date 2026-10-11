@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -60,13 +63,21 @@ def test_dev_frontend_build_and_runtime_install_from_root_lock() -> None:
 def test_watch_doctor_and_ci_consume_only_the_root_lock() -> None:
     watch = _read("scripts/watch-cloud-frontend-sync.js")
     doctor = _read("scripts/dev-frontend-doctor.sh")
-    workflows = "\n".join(
-        _read(relative_path)
-        for relative_path in (
-            ".github/workflows/ci.yml",
-            ".github/workflows/deploy-production.yml",
-        )
+    workflow_paths = sorted(
+        [
+            *ROOT.glob(".github/workflows/*.yml"),
+            *ROOT.glob(".github/workflows/*.yaml"),
+        ]
     )
+    workflows = "\n".join(path.read_text(encoding="utf-8") for path in workflow_paths)
+    workflow_steps = []
+    for workflow_path in workflow_paths:
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        for job in workflow.get("jobs", {}).values():
+            if isinstance(job, dict):
+                workflow_steps.extend(
+                    step for step in job.get("steps", []) if isinstance(step, dict)
+                )
 
     assert "path.join( cloudRoot, 'pnpm-lock.yaml' )" in watch
     assert "path.join( cloudRoot, '.dockerignore' )" in watch
@@ -78,10 +89,19 @@ def test_watch_doctor_and_ci_consume_only_the_root_lock() -> None:
     assert "/app/node_modules/.pnpm" in doctor
 
     assert "frontend/pnpm-lock.yaml" not in workflows
-    setup_node_count = workflows.count("uses: actions/setup-node@v6")
-    assert setup_node_count > 0
-    assert workflows.count("cache-dependency-path: pnpm-lock.yaml") == setup_node_count
-    assert workflows.count('node-version: "22"') == setup_node_count
+    setup_node_steps = [
+        step
+        for step in workflow_steps
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    ]
+    setup_node_refs = [str(step["uses"]) for step in setup_node_steps]
+    assert setup_node_refs
+    assert all(re.fullmatch(r"actions/setup-node@v[1-9]\d*", ref) for ref in setup_node_refs)
+    assert len(set(setup_node_refs)) == 1
+    for step in setup_node_steps:
+        assert step.get("with", {}).get("node-version") == "22"
+        assert step.get("with", {}).get("cache") == "pnpm"
+        assert step.get("with", {}).get("cache-dependency-path") == "pnpm-lock.yaml"
     assert 'node-version: "20"' not in workflows
     assert "pnpm install --frozen-lockfile --filter frontend..." in workflows
     assert "working-directory: frontend" not in workflows

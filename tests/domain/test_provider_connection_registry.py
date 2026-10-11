@@ -1080,6 +1080,12 @@ def test_runtime_settings_project_capability_provider_connections(
     serialized_connections = {item["connection_id"]: item for item in serialized["connections"]}
     assert serialized_connections["search_tavily"]["enabled"] is False
     assert serialized_connections["search_zhihu"]["enabled"] is True
+    assert serialized_connections["search_tavily"]["runtime_effective"] is False
+    assert serialized_connections["search_tavily"]["runtime_effective_reason"] == "disabled"
+    assert serialized_connections["search_zhihu"]["runtime_effective"] is True
+    assert serialized_connections["search_zhihu"]["runtime_effective_reason"] == "primary"
+    assert serialized_connections["image_unsplash"]["runtime_effective"] is True
+    assert serialized_connections["image_unsplash"]["runtime_effective_reason"] == "parallel"
     assert serialized_connections["embedding_siliconflow"]["enabled"] is False
     assert serialized_connections["embedding_tei"]["enabled"] is True
     serialized_text = str(serialized)

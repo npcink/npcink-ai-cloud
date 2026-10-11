@@ -38,7 +38,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Operator and diagnostic reads.
   {
     methods: ['GET'],
-    pattern: /^(?:overview|plugin-observability|media-observability|vector-observability|agent-feedback|editor-assist-quality|runtime-telemetry|agent-workflow-metadata)$/,
+    pattern: /^(?:overview|plugin-observability(?:\/history)?|media-observability|vector-observability|agent-feedback|editor-assist-quality|runtime-telemetry(?:\/runs)?|agent-workflow-metadata)$/,
     namespace: 'admin',
     requiredCapability: 'can_review_diagnostics',
   },
@@ -123,6 +123,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   {
     methods: ['GET'],
     pattern: /^(?:ai-resources|provider-connections|model-references|site-knowledge-vector-profile|runtime-profiles)$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['GET'],
+    pattern: /^runtime-profiles\/capability-probes\/summary$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },
@@ -277,13 +283,19 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['POST'],
+    pattern: /^runtime-profiles\/capability-probe$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_catalog',
+  },
+  {
+    methods: ['POST'],
     pattern: /^site-knowledge-vector-profile\/index-rebuilds$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
   },
   {
     methods: ['PATCH'],
-    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy|accounting-fx)$/,
+    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy|accounting-fx|platform-preferences|media-recognition-policy|provider-account-spend-budget)$/,
     namespace: 'admin',
   },
   {

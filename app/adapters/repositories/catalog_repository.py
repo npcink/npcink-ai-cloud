@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.providers.base import ProviderCatalogSnapshot
 from app.core.models import (
+    CatalogCapabilityEvidence,
     CatalogInstance,
     CatalogModel,
     CatalogProvider,
@@ -30,6 +31,84 @@ class CatalogRepository:
             CatalogRevision.id.desc(),
         )
         return self.session.scalar(statement)
+
+    def get_capability_evidence(
+        self,
+        *,
+        instance_id: str,
+        capability: str,
+        route_fingerprint: str,
+    ) -> CatalogCapabilityEvidence | None:
+        statement = select(CatalogCapabilityEvidence).where(
+            CatalogCapabilityEvidence.instance_id == instance_id,
+            CatalogCapabilityEvidence.capability == capability,
+            CatalogCapabilityEvidence.route_fingerprint == route_fingerprint,
+        )
+        return self.session.scalar(statement)
+
+    def list_capability_evidence_for_instances(
+        self,
+        *,
+        instance_ids: list[str],
+        capability: str,
+    ) -> dict[str, CatalogCapabilityEvidence]:
+        if not instance_ids:
+            return {}
+        statement = (
+            select(CatalogCapabilityEvidence)
+            .where(
+                CatalogCapabilityEvidence.instance_id.in_(instance_ids),
+                CatalogCapabilityEvidence.capability == capability,
+            )
+            .order_by(
+                CatalogCapabilityEvidence.checked_at.desc().nullslast(),
+                CatalogCapabilityEvidence.id.desc(),
+            )
+        )
+        result: dict[str, CatalogCapabilityEvidence] = {}
+        for evidence in self.session.scalars(statement):
+            result.setdefault(evidence.instance_id, evidence)
+        return result
+
+    def upsert_capability_evidence(
+        self,
+        *,
+        instance_id: str,
+        capability: str,
+        state: str,
+        route_fingerprint: str,
+        source: str,
+        revision: str,
+        checked_at: datetime | None,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> CatalogCapabilityEvidence:
+        evidence = self.get_capability_evidence(
+            instance_id=instance_id,
+            capability=capability,
+            route_fingerprint=route_fingerprint,
+        )
+        if evidence is None:
+            evidence = CatalogCapabilityEvidence(
+                instance_id=instance_id,
+                capability=capability,
+                state=state,
+                route_fingerprint=route_fingerprint,
+                source=source,
+                revision=revision,
+                checked_at=checked_at,
+                error_code=error_code,
+                error_detail=error_detail,
+            )
+            self.session.add(evidence)
+        else:
+            evidence.state = state
+            evidence.source = source
+            evidence.revision = revision
+            evidence.checked_at = checked_at
+            evidence.error_code = error_code
+            evidence.error_detail = error_detail
+        return evidence
 
     def list_enabled_provider_connections(self) -> list[ProviderConnection]:
         statement = (

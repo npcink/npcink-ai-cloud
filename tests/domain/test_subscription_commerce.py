@@ -160,6 +160,7 @@ def test_facade_and_billing_plan_catalogs_share_resource_limits() -> None:
             "monthly_included_points",
             "site_limit",
             "max_vector_documents",
+            "max_media_images",
             "max_batch_items",
             "nightly_inspection_retention_days",
         ):

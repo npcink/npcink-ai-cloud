@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+  buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
@@ -14,7 +15,7 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   await expect(page.getByLabel(
     /2 formal readiness checks failed across workers, operations cadence|正式运营就绪检查有 2 项失败.*工作进程.*运维定时任务/i
   )).toBeVisible();
-  await expect(page.getByText(/Provider call coverage gap|供应商调用遥测缺口/i).first()).toBeVisible();
+  await expect(page.getByText(/Provider call coverage gap|Call records missing|供应商调用遥测缺口|调用记录缺失/i).first()).toBeVisible();
   await expect(page.getByText(/Attention subscriptions already need review|Attention 订阅已经需要审查/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toHaveAttribute(
     'href',
@@ -43,6 +44,51 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
 
+test('admin overview surfaces provider budget pressure before dispatch widens', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/overview', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        generated_at: '2026-09-23T12:00:00Z',
+        counts: { sites_active: 1 },
+        operational_readiness: { status: 'ok', checks_failed: 0, failure_scopes: [], href: '/admin/troubleshooting' },
+        runtime_diagnostics: { callback: { failed: 0, pending: 0 }, guard: { recent_events: 0 } },
+        runtime_telemetry: { alert_summary: { status: 'inactive', alert_count: 0, alerts: [] } },
+        provider_budget: { status: 'warning', items: [{ warning: true }] },
+        operator_projection: {
+          revision: 'admin-overview-operator-projection-v1',
+          status: 'warning',
+          conclusion_code: 'warning',
+          conclusion_args: {},
+          readiness: { status: 'ready', checks_failed: 0, failure_scopes: [], href: '/admin/troubleshooting' },
+          primary_action: { kind: 'provider_budget', href: '/admin/ai-resources' },
+          follow_up_focus: 'runtime',
+          watch_items: [{
+            code: 'provider_budget_pressure',
+            scope: 'runtime.provider_budget',
+            severity: 'warn',
+            value: 1,
+            detail_code: 'provider_budget_warning',
+            detail_args: {},
+          }],
+        },
+        attention_subscriptions: [],
+        expiring_subscriptions: { within_7_days: 0 },
+      })),
+    });
+  });
+  await page.goto('/admin');
+
+  await expect(page.getByText(/Provider budget needs review|Provider 预算需要复核/i)).toBeVisible();
+  await expect(page.getByText(/near its warning threshold|接近警告阈值/i)).toBeVisible();
+  await expect(page.getByRole('link', { name: /Review provider budget|复核 Provider 预算/i })).toHaveAttribute(
+    'href',
+    '/admin/ai-resources'
+  );
+});
+
 test('quick switcher discovers diagnostic child routes without expanding the sidebar', async ({ page }) => {
   await installAdminMocks(page);
   await page.goto('/admin');
@@ -52,6 +98,13 @@ test('quick switcher discovers diagnostic child routes without expanding the sid
     'data-nav-level',
     'primary'
   );
+  await page.getByRole('button', { name: /Collapse sidebar|收起侧栏/i }).click();
+  const collapsedLabels = page.locator('[data-ui="admin-primary-nav"] [data-nav-collapsed-label]');
+  const labelValues = await collapsedLabels.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-nav-collapsed-label')));
+  expect(new Set(labelValues).size).toBe(labelValues.length);
+  await expect(page.locator('[data-nav-collapsed-label="CU"]')).toHaveCount(1);
+  await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/accounts"]')).toBeVisible();
+
   const switcherButton = page.getByRole('button', { name: /Open quick switcher|打开快速跳转/i });
   await switcherButton.click();
   const dialog = page.getByRole('dialog', { name: /Quick switcher|快速跳转/i });

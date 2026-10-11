@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -128,9 +129,12 @@ class PostgreSQL18Validator:
                         "(attempt_id varchar(64) PRIMARY KEY)"
                     )
                 )
-                existing = connection.execute(
-                    text(f"SELECT attempt_id FROM {INSTALL_MARKER_TABLE}")
-                ).scalars().all()
+                existing = cast(
+                    "list[str]",
+                    connection.execute(
+                        text(f"SELECT attempt_id FROM {INSTALL_MARKER_TABLE}")
+                    ).scalars().all(),
+                )
                 if existing and existing != [attempt_id]:
                     raise SetupError(
                         409,
@@ -221,9 +225,12 @@ class PostgreSQL18Validator:
         marker_identity = (current_schema, INSTALL_MARKER_TABLE, "r")
         if not interrupted_attempt_id or marker_identity not in relation_identities:
             raise SetupError(409, "setup.database_not_empty", "database must be empty")
-        marker_attempts = connection.execute(
-            text(f"SELECT attempt_id FROM {INSTALL_MARKER_TABLE}")
-        ).scalars().all()
+        marker_attempts = cast(
+            "list[str]",
+            connection.execute(
+                text(f"SELECT attempt_id FROM {INSTALL_MARKER_TABLE}")
+            ).scalars().all(),
+        )
         if marker_attempts != [interrupted_attempt_id]:
             raise SetupError(409, "setup.database_not_empty", "database must be empty")
         model_tables = {table.name for table in Base.metadata.sorted_tables}

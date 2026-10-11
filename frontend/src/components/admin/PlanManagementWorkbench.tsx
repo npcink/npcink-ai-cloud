@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -42,6 +43,7 @@ type TierSummary = {
   monthly_included_points: number;
   site_limit: number;
   max_vector_documents: number;
+  max_media_images: number;
   budgets_template: Record<string, unknown>;
   concurrency_template: Record<string, unknown>;
   max_batch_items: number;
@@ -79,6 +81,7 @@ type PlanVersionFormState = {
   monthly_included_points: string;
   site_limit: string;
   max_vector_documents: string;
+  max_media_images: string;
   max_cost_cny_per_period: string;
   sales_price_cny: string;
   max_active_runs: string;
@@ -131,6 +134,7 @@ function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormStat
     ),
     site_limit: numberField(metadata.site_limit ?? tierSummary?.site_limit),
     max_vector_documents: numberField(metadata.max_vector_documents ?? tierSummary?.max_vector_documents),
+    max_media_images: numberField(metadata.max_media_images ?? tierSummary?.max_media_images),
     max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     sales_price_cny: numberField(detail?.sales_offer?.amount),
     max_active_runs: numberField(concurrency.max_active_runs),
@@ -147,6 +151,7 @@ function buildBaselineFieldPatch(tierSummary: TierSummary): Partial<PlanVersionF
     monthly_included_points: numberField(tierSummary.monthly_included_points),
     site_limit: numberField(tierSummary.site_limit),
     max_vector_documents: numberField(tierSummary.max_vector_documents),
+    max_media_images: numberField(tierSummary.max_media_images),
     max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     max_active_runs: numberField(concurrency.max_active_runs),
     max_batch_items: numberField(tierSummary.max_batch_items),
@@ -303,6 +308,7 @@ export function PlanManagementWorkbench({
         monthly_included_points: Number(form.monthly_included_points || 0),
         site_limit: Number(form.site_limit || 0),
         max_vector_documents: Number(form.max_vector_documents || 0),
+        max_media_images: Number(form.max_media_images || 0),
         max_cost_cny_per_period: Number(form.max_cost_cny_per_period || 0),
         sales_price_cny: Number(form.sales_price_cny || 0),
         max_active_runs: Number(form.max_active_runs || 0),
@@ -491,6 +497,13 @@ export function PlanManagementWorkbench({
                       value={form.max_vector_documents}
                       onChange={(value) => updateField('max_vector_documents', value)}
                     />
+                    <ParameterField
+                      label={t('admin.media_images_limit', {}, 'Image recognition limit')}
+                      detail={t('admin.media_images_limit_detail', {}, 'Maximum images this account plan can recognize and retain in the image index.')}
+                      unit={t('admin.plans.unit_images', {}, 'images')}
+                      value={form.max_media_images}
+                      onChange={(value) => updateField('max_media_images', value)}
+                    />
                   </div>
                 </section>
 
@@ -517,14 +530,6 @@ export function PlanManagementWorkbench({
                       onChange={(value) => updateField('max_batch_items', value)}
                     />
                     <ParameterField
-                      label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
-                      detail={t('admin.period_cost_budget_detail', {}, 'Internal provider-cost monitoring threshold; it does not change the sales price.')}
-                      unit={t('admin.plans.unit_cny_period', {}, 'CNY / period')}
-                      value={form.max_cost_cny_per_period}
-                      step={0.01}
-                      onChange={(value) => updateField('max_cost_cny_per_period', value)}
-                    />
-                    <ParameterField
                       label={t('admin.grace_period_label', {}, 'Grace period')}
                       detail={t('admin.plans.grace_period_detail', {}, 'Days the subscription may remain available after the current period ends.')}
                       unit={t('admin.plans.unit_days', {}, 'days')}
@@ -533,6 +538,32 @@ export function PlanManagementWorkbench({
                     />
                   </div>
                 </section>
+
+                <AdminSettingsDisclosure
+                  dataUi="plan-cost-monitoring"
+                  title={t('admin.plans.cost_monitoring_title', {}, 'Advanced cost monitoring')}
+                  description={t(
+                    'admin.plans.cost_monitoring_desc',
+                    {},
+                    'Internal monitoring only. Set 0 to disable this plan-level threshold; it does not change the customer price or credits.'
+                  )}
+                  statusLabel={Number(form.max_cost_cny_per_period) === 0 ? t('common.disabled', {}, 'Disabled') : t('common.enabled', {}, 'Enabled')}
+                  statusTone={Number(form.max_cost_cny_per_period) === 0 ? 'neutral' : 'configured'}
+                >
+                  <ParameterField
+                    label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
+                    detail={t(
+                      'admin.period_cost_budget_detail',
+                      {},
+                      'Internal provider-cost monitoring threshold. Set 0 to disable monitoring; it does not change the sales price.'
+                    )}
+                    unit={t('admin.plans.unit_cny_period', {}, 'CNY / period')}
+                    value={form.max_cost_cny_per_period}
+                    min={0}
+                    step={0.01}
+                    onChange={(value) => updateField('max_cost_cny_per_period', value)}
+                  />
+                </AdminSettingsDisclosure>
               </div>
 
               {lastReceipt ? (

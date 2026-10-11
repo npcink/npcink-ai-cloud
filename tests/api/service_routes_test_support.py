@@ -20,6 +20,7 @@ from tests.conftest import (
     TEST_INTERNAL_AUTH_TOKEN,
     TEST_PORTAL_JWT_SECRET,
     seed_provider_model_allowlist,
+    seed_verified_capability_evidence_for_catalog,
 )
 
 SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"S" * 32).decode("ascii")
@@ -39,6 +40,7 @@ def _build_client(
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
     CatalogService(database_url, providers=providers).refresh_catalog()
+    seed_verified_capability_evidence_for_catalog(database_url)
 
     settings_kwargs = {
         "_env_file": None,

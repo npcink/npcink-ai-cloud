@@ -4,7 +4,6 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from urllib.parse import unquote_plus
 
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.adapters.repositories.stats_repository import StatsRepository
@@ -16,6 +15,33 @@ from app.core.models import (
     RunRecord,
 )
 from app.domain.health.scoring import assess_instance_health
+from app.domain.usage.value_helpers import (
+    _average_latency as _average_latency_value,
+)
+from app.domain.usage.value_helpers import (
+    _calculate_percentile as _calculate_percentile_value,
+)
+from app.domain.usage.value_helpers import (
+    _coerce_non_negative_int as _coerce_non_negative_int_value,
+)
+from app.domain.usage.value_helpers import (
+    _format_datetime as _format_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _format_datetime_or_empty as _format_datetime_or_empty_value,
+)
+from app.domain.usage.value_helpers import (
+    _normalize_datetime as _normalize_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _normalize_required_datetime as _normalize_required_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _parse_logs_analytics_datetime as _parse_logs_analytics_datetime_value,
+)
+from app.domain.usage.value_helpers import (
+    _safe_rate as _safe_rate_value,
+)
 
 
 def _coerce_int(value: object, default: int = 0) -> int:
@@ -67,6 +93,33 @@ class UsageService:
         self.database_url = database_url
         self.now_factory = now_factory or (lambda: datetime.now(UTC))
 
+    def _average_latency(self, latencies: list[int]) -> int:
+        return _average_latency_value(latencies)
+
+    def _safe_rate(self, numerator: int, denominator: int) -> float:
+        return _safe_rate_value(numerator, denominator)
+
+    def _normalize_datetime(self, value: datetime | None) -> datetime | None:
+        return _normalize_datetime_value(value)
+
+    def _normalize_required_datetime(self, value: datetime) -> datetime:
+        return _normalize_required_datetime_value(value)
+
+    def _format_datetime(self, value: datetime) -> str:
+        return _format_datetime_value(value)
+
+    def _format_datetime_or_empty(self, value: datetime | None) -> str:
+        return _format_datetime_or_empty_value(value)
+
+    def _parse_logs_analytics_datetime(self, value: str) -> datetime | None:
+        return _parse_logs_analytics_datetime_value(value)
+
+    def _coerce_non_negative_int(self, value: Any) -> int:
+        return _coerce_non_negative_int_value(value)
+
+    def _calculate_percentile(self, values: list[int], percentile: float) -> int:
+        return _calculate_percentile_value(values, percentile)
+
     def get_instance_stats(
         self,
         instance_id: str,
@@ -89,7 +142,9 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_health_snapshots([instance_id])
+            health_snapshots = repository.list_latest_health_snapshots(
+                [instance_id], earliest_on_tie=True
+            )
             today_metrics = repository.aggregate_provider_calls_window(
                 start_at=windows["today"]["start_at"],
                 end_at=windows["today"]["end_at"],
@@ -231,7 +286,9 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_health_snapshots(candidate_instance_ids)
+            health_snapshots = repository.list_latest_health_snapshots(
+                candidate_instance_ids, earliest_on_tie=True
+            )
             today_metrics = repository.aggregate_runs_window(
                 start_at=windows["today"]["start_at"],
                 end_at=windows["today"]["end_at"],
@@ -489,7 +546,7 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_health_snapshots()
+            health_snapshots = repository.list_latest_health_snapshots()
             sites_total = repository.count_sites()
             profiles_total = repository.count_profiles()
             today_run_metrics = repository.aggregate_runs_window(
@@ -1110,8 +1167,10 @@ class UsageService:
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
             instances = repository.list_instances()
-            provider_calls = repository.list_provider_calls(site_id)
-            health_snapshots = repository.list_health_snapshots()
+            provider_calls = repository.list_provider_calls(site_id, start_at=start_at, end_at=now)
+            health_snapshots = repository.list_latest_health_snapshots(
+                [instance.instance_id for instance in instances], earliest_on_tie=True
+            )
 
         instances_by_id = {instance.instance_id: instance for instance in instances}
         latest_health_by_instance = self._latest_health_by_instance(health_snapshots)
@@ -1719,15 +1778,7 @@ class UsageService:
         delta_ms = int(round((finished_at - started_at).total_seconds() * 1000))
         return max(0, delta_ms)
 
-    def _average_latency(self, latencies: list[int]) -> int:
-        if not latencies:
-            return 0
-        return int(round(sum(latencies) / len(latencies)))
 
-    def _safe_rate(self, numerator: int, denominator: int) -> float:
-        if denominator <= 0:
-            return 0.0
-        return round(numerator / denominator, 4)
 
     def _is_in_window(self, value: datetime | None, start_at: datetime, end_at: datetime) -> bool:
         normalized = self._normalize_datetime(value)
@@ -1735,27 +1786,9 @@ class UsageService:
             return False
         return start_at <= normalized <= end_at
 
-    def _normalize_datetime(self, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return self._normalize_required_datetime(value)
 
-    def _normalize_required_datetime(self, value: datetime) -> datetime:
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value.astimezone(UTC)
 
-    def _format_datetime(self, value: datetime) -> str:
-        normalized = self._normalize_datetime(value)
-        if normalized is None:
-            return ""
-        return normalized.strftime("%Y-%m-%d %H:%M:%S")
 
-    def _format_datetime_or_empty(self, value: datetime | None) -> str:
-        normalized = self._normalize_datetime(value)
-        if normalized is None:
-            return ""
-        return normalized.strftime("%Y-%m-%d %H:%M:%S")
 
     def _build_logs_analytics_context(
         self,
@@ -1770,8 +1803,16 @@ class UsageService:
 
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
-            runs = repository.list_runs(site_id)
-            provider_calls = repository.list_provider_calls(site_id)
+            runs = repository.list_runs(
+                site_id,
+                start_at=window["start_at"],
+                end_at=window["end_at"],
+            )
+            provider_calls = repository.list_provider_calls(
+                site_id,
+                start_at=window["start_at"],
+                end_at=window["end_at"],
+            )
 
         runs_by_id = {run.run_id: run for run in runs}
         filtered_calls: list[ProviderCallRecord] = []
@@ -1873,21 +1914,7 @@ class UsageService:
             "end_at": now,
         }
 
-    def _parse_logs_analytics_datetime(self, value: str) -> datetime | None:
-        normalized_value = str(value or "").strip()
-        normalized_value = normalized_value.replace("%%20", " ").replace("%20", " ")
-        normalized_value = normalized_value.replace("% ", " ")
-        normalized_value = unquote_plus(normalized_value).strip()
-        normalized_value = normalized_value.replace("T", " ")
-        if not normalized_value:
-            return None
-        return datetime.strptime(normalized_value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
 
-    def _coerce_non_negative_int(self, value: Any) -> int:
-        try:
-            return max(0, int(value or 0))
-        except (TypeError, ValueError):
-            return 0
 
     def _logs_filters_require_unavailable_dimensions(
         self,
@@ -2087,18 +2114,3 @@ class UsageService:
             }
             for label, counts in day_counts.items()
         ]
-
-    def _calculate_percentile(self, values: list[int], percentile: float) -> int:
-        if not values:
-            return 0
-        normalized = sorted(max(0, int(value)) for value in values)
-        if len(normalized) == 1:
-            return normalized[0]
-        rank = max(
-            0,
-            min(
-                len(normalized) - 1,
-                int((len(normalized) * max(0.0, float(percentile))) / 100.0 + 0.999999) - 1,
-            ),
-        )
-        return normalized[rank]

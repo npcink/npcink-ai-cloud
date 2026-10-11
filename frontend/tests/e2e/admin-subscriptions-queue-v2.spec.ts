@@ -100,6 +100,7 @@ test('subscription risk queue persists server filters and inspector focus while 
     const url = new URL(route.request().url());
     const status = url.searchParams.get('status') || '';
     const accountId = url.searchParams.get('account_id') || '';
+    const customer = (url.searchParams.get('customer') || '').toLowerCase();
     const planId = url.searchParams.get('plan_id') || '';
     const risk = url.searchParams.get('risk') || 'all';
     const sort = url.searchParams.get('sort') || '';
@@ -108,6 +109,7 @@ test('subscription risk queue persists server filters and inspector focus while 
     const matchingItems = SUBSCRIPTIONS.filter((item) => {
       return (!status || item.subscription.status === status) &&
         (!accountId || item.subscription.account_id.includes(accountId)) &&
+        (!customer || `${item.account.name} ${item.subscription.account_id}`.toLowerCase().includes(customer)) &&
         (!planId || item.subscription.plan_id.includes(planId));
     });
     const riskRank: Record<string, number> = { critical: 0, warning: 1, monitor: 2, stable: 3 };
@@ -210,10 +212,10 @@ test('subscription risk queue persists server filters and inspector focus while 
   await expect(page).toHaveURL(/status=active/);
   await expect(queueItems).toHaveCount(1);
 
-  await page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i).fill('acct_beta');
+  await page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i).fill('acct_beta');
   await page.getByPlaceholder(/Plan ID|套餐 ID|方案 ID/i).fill('plus');
   await page.getByRole('button', { name: /^Apply$|^应用$|^套用$/i }).click();
-  await expect(page).toHaveURL(/account_id=acct_beta/);
+  await expect(page).toHaveURL(/customer=acct_beta/);
   await expect(page).toHaveURL(/plan_id=plus/);
   await expect(queueItems).toHaveCount(1);
 
@@ -248,23 +250,23 @@ test('subscription risk queue persists server filters and inspector focus while 
   await expect(page).toHaveURL(expectedQueueUrl);
 
   await page.reload();
-  await expect(page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i)).toHaveValue('acct_beta');
+  await expect(page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i)).toHaveValue('acct_beta');
   await expect(page.getByPlaceholder(/Plan ID|套餐 ID|方案 ID/i)).toHaveValue('plus');
   await expect(page.getByRole('combobox', { name: /^Sort$|^排序$/i })).toHaveValue('customer');
   await expect(drawer).toContainText('Beta Customer');
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
   await expect(page).not.toHaveURL(/focus=/);
-  await expect(page).toHaveURL(/account_id=acct_beta/);
+  await expect(page).toHaveURL(/customer=acct_beta/);
   failNextRefresh = true;
   await page.getByRole('button', { name: /Refresh subscriptions|刷新订阅|刷新訂閱/i }).click();
   await expect(page.getByRole('alert').first()).toContainText('temporary subscription refresh failure');
   await expect(page.getByText(/last successfully loaded results|最近一次成功加载的结果/i)).toBeVisible();
   await expect(queueItems).toHaveCount(1);
-  await expect(page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i)).toHaveValue('acct_beta');
+  await expect(page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i)).toHaveValue('acct_beta');
 
   failNextRefresh = true;
-  await page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i).fill('acct_missing');
+  await page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i).fill('acct_missing');
   await page.getByRole('button', { name: /^Apply$|^应用$|^套用$/i }).click();
   await expect(page.getByText(/last successfully loaded results|最近一次成功加载的结果/i)).toBeVisible();
   await expect(queueItems).toHaveCount(1);
@@ -273,7 +275,7 @@ test('subscription risk queue persists server filters and inspector focus while 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);
   await expect(queueItems).toBeVisible();
-  await page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i).fill('');
+  await page.getByPlaceholder(/Name, email, or Account ID|名称、邮箱或账户 ID/i).fill('');
   await page.getByRole('button', { name: /^Apply$|^应用$|^套用$/i }).click();
   await page.getByRole('button', { name: /^Inspect$|^检查$|^檢查$/i }).first().click();
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toBeVisible();

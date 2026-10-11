@@ -35,6 +35,7 @@ _MEDIA_DERIVATIVE_PUBLIC_ARTIFACT_FIELDS = frozenset(
         "filesize_bytes",
         "checksum",
         "processing_warnings",
+        "transform_facts",
     }
 )
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { portalClient } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
@@ -10,6 +10,15 @@ export function QqLoginButton({ returnTo = '/portal' }: { returnTo?: string }) {
   const { t } = useLocale();
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [message, setMessage] = useState('');
+
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void portalClient.getLoginOptions().then((response) => {
+      if (!cancelled) setAvailable(response.data.qq_available);
+    }).catch(() => { /* Email sign-in stays available when option discovery fails. */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const startLogin = async () => {
     setStatus('loading');
@@ -32,6 +41,8 @@ export function QqLoginButton({ returnTo = '/portal' }: { returnTo?: string }) {
       );
     }
   };
+
+  if (!available) return null;
 
   return (
     <div className="space-y-2">

@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT as STAGE1_APPROVAL_TEXT
-from app.dev.live_site_runtime_execute_smoke import (
+from app.ops.live_site_addon_install import APPROVAL_TEXT as STAGE1_APPROVAL_TEXT
+from app.ops.live_site_runtime_execute_smoke import (
     APPROVAL_TEXT as EXECUTE_SMOKE_APPROVAL_TEXT,
 )
-from app.dev.live_site_runtime_smoke import APPROVAL_TEXT as RESOLVE_SMOKE_APPROVAL_TEXT
-from app.dev.live_site_trial_status import build_status_report, load_optional_json
+from app.ops.live_site_runtime_smoke import APPROVAL_TEXT as RESOLVE_SMOKE_APPROVAL_TEXT
+from app.ops.live_site_trial_status import build_status_report, load_optional_json
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> Path:

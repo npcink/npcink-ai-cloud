@@ -114,8 +114,8 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["principal_id"] == principal_id
     assert items[0]["email"] == email
     assert items[0]["source"] == "portal_self_registration"
-    assert items[0]["package_alias"] == ""
-    assert items[0]["plan_id"] == ""
+    assert items[0]["package_alias"] == "Free"
+    assert items[0]["plan_id"] == "free"
     assert items[0]["qq_bound"] is False
     assert items[0]["site_id"] == ""
 

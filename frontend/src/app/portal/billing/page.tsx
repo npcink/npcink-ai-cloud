@@ -527,7 +527,9 @@ function PortalBillingContent() {
       )
     : '';
   const packageStatus =
-    String(quotaSummary?.status || '') === 'limited'
+    !quotaSummary || error
+      ? 'unknown'
+      : String(quotaSummary.status) === 'limited'
       ? 'warning'
       : 'ok';
   const packageStatusLabel =
@@ -542,7 +544,7 @@ function PortalBillingContent() {
         title={t('portal.billing.customer_title', {}, 'Package')}
         description={t('portal.billing.subtitle', {}, 'Review the account package, AI credits, and available account actions.')}
         currentPage="billing"
-        titleAccessory={packageStatus !== 'warning' ? (
+        titleAccessory={packageStatus === 'ok' ? (
           <PortalStatusBadge status="active" label={packageStatusLabel} className="text-[0.68rem]" />
         ) : null}
         metadata={(
@@ -615,15 +617,15 @@ function PortalBillingContent() {
         />
       ) : null}
 
-      <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
+      {!error && quotaSummary ? <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
         <PortalEntitlementUsage
           quotaSummary={quotaSummary}
           t={t}
           locale={locale}
         />
-      </PortalCard>
+      </PortalCard> : null}
 
-      <div id="package-options" className="scroll-mt-24">
+      {!error && entitlements ? <div id="package-options" className="scroll-mt-24">
         <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-2xl">
@@ -682,7 +684,7 @@ function PortalBillingContent() {
             </div>
           </div>
         </PortalCard>
-      </div>
+      </div> : null}
 
       {paymentOrdersCard}
 

@@ -14,7 +14,7 @@ smoke.
 
 Current evidence overlay — 2026-07-22: P1-E05 and P1-E06 are complete for the
 exact controlled-production release recorded in
-[Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
+[Post-P5 Final Integration And Production Validation Closeout](history/refactor/2026/post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
 The P1-E05 record includes production title execution, provider/run evidence,
 suggestion-only posture, idempotent replay, unchanged provider-call count, and
 no WordPress write. The separate P1-E06 operator record includes inventory,
@@ -65,7 +65,7 @@ approval, preflight, audit truth, and final WordPress writes.
 Script:
 
 ```text
-app/dev/production_wordpress_ai_connector_smoke.py
+app/ops/production_wordpress_ai_connector_smoke.py
 ```
 
 Tests:
@@ -118,7 +118,7 @@ Run this first after deploying production Cloud:
 ```bash
 cd /Users/muze/gitee/npcink-ai-cloud
 
-.venv/bin/python -m app.dev.production_wordpress_ai_connector_smoke \
+.venv/bin/python -m app.ops.production_wordpress_ai_connector_smoke \
   --secret-file .tmp/prod-cloud-api-key.secret.json \
   --base-url https://cloud.npc.ink \
   --site-url "$WORDPRESS_SITE_URL" \
@@ -170,7 +170,7 @@ EOF
 Run:
 
 ```bash
-.venv/bin/python -m app.dev.production_wordpress_ai_connector_smoke \
+.venv/bin/python -m app.ops.production_wordpress_ai_connector_smoke \
   --secret-file .tmp/prod-cloud-api-key.secret.json \
   --base-url https://cloud.npc.ink \
   --site-url "$WORDPRESS_SITE_URL" \
@@ -252,8 +252,8 @@ Before changing this smoke helper, run:
 
 ```bash
 .venv/bin/python -m pytest tests/dev/test_production_wordpress_ai_connector_smoke.py
-.venv/bin/python -m py_compile app/dev/production_wordpress_ai_connector_smoke.py
-git diff --check -- app/dev/production_wordpress_ai_connector_smoke.py tests/dev/test_production_wordpress_ai_connector_smoke.py
+.venv/bin/python -m py_compile app/ops/production_wordpress_ai_connector_smoke.py
+git diff --check -- app/ops/production_wordpress_ai_connector_smoke.py tests/dev/test_production_wordpress_ai_connector_smoke.py
 ```
 
 ## Failure Notes

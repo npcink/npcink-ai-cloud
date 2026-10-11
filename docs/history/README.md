@@ -8,16 +8,34 @@ boundaries, engineering standards, runbooks, and plans in the `docs/` root.
 
 ## Collections
 
+- [工程整改复盘（2026-09-22）](engineering-remediation-retrospective-2026-09-22.md)
+  — 12 个整改 PR 的经验：子会话实现+主会话发布模式、fail-closed 翻转扫全
+  消费面、CI 车道不收窄廉价检查、工作树覆盖事故与确定性重放、契约体系两次
+  实战拦截。
+
+- [运行诊断与编辑器推荐验收（2026-09-21）](trials/2026/diagnostics-and-editor-acceptance-2026-09-21.md)
+  — 当前诊断页浏览器证据、编辑器请求超时与旧验收命令误报问题。
+
+- [运行与观测开发复盘与试用交接（2026-09-11）](admin/2026/runtime-observation-closeout-2026-09-11.md)
+  — 页面定位、插件上报接通、部署与浏览器证据、历史问题处理边界。
+
 - [Admin acceptance evidence](admin/2026/) - dated route and interaction
   acceptance records, grouped by delivery phase.
 - [Portal evidence](portal/2026/) - dated Portal implementation histories,
   closeouts, and workspace retrospectives.
+- [Media evidence](media/2026/) - dated site-media recognition and
+  recommendation implementation closeouts, acceptance evidence, and lessons.
 - [Production evidence](production/2026/) - dated release audits, closeouts,
   and development retrospectives that do not authorize future deployment.
 - [Repository hygiene evidence](repository-hygiene/2026/) - dated cleanup,
   worktree consolidation, preservation, and rollback records from 2026.
 - [Refactor evidence](refactor/2026/) - dated P5 engineering closeouts,
   acceptance records, and expired exceptions from 2026.
+- [M4 preview evidence](m4/2026/) - dated M4 preview transfer, routing,
+  and package-cache validation records.
+- [Engineering development evidence](engineering/2026/) - dated
+  engineering retrospectives, closeouts, and session syntheses migrated
+  from the `docs/` root on 2026-09-22.
 - [Trial and rehearsal evidence](trials/2026/) - dated external-trial,
   live-site, Nightly Inspection, and real-site rehearsal records from 2026.
 

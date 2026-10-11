@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
+import { adminVisualSpecPattern } from '../../../scripts/admin-visual-plan.mjs';
 
 const manifest = JSON.parse(readFileSync(fromFrontendRoot('admin-ui-manifest.json'), 'utf8'));
 const receiptSchema = JSON.parse(readFileSync(fromFrontendRoot('admin-visual-receipt.schema.json'), 'utf8'));
@@ -31,45 +32,27 @@ const expectedRuleIds = [
   'context-stability',
   'browser-runtime-errors',
 ];
-const pilotRoutes = {
-  '/admin/ai-resources': {
-    pageModel: 'queue',
-    states: ['ready', 'selected', 'filtered', 'operation_error', 'dialog'],
-    spec: 'tests/e2e/admin-provider-directory-v2.spec.ts',
-  },
-  '/admin/coverage': {
-    pageModel: 'queue',
-    states: ['ready', 'filtered', 'paginated', 'selected', 'refresh_error'],
-    spec: 'tests/e2e/admin-service-queue-v2.spec.ts',
-  },
-  '/admin/service-settings': {
-    pageModel: 'configuration',
-    states: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog'],
-    spec: 'tests/e2e/admin-service-settings-v2.spec.ts',
-  },
-  '/admin/troubleshooting': {
-    pageModel: 'diagnostic',
-    states: ['ready', 'selected', 'partial_error', 'disclosure'],
-    spec: 'tests/e2e/admin-runtime-diagnostics-v2.spec.ts',
-  },
-  '/admin/audit': {
-    pageModel: 'diagnostic',
-    states: ['ready', 'filtered', 'selected', 'refresh_error'],
-    spec: 'tests/e2e/admin-audit-workspace.spec.ts',
-  },
-  '/admin/support-requests': {
-    pageModel: 'queue',
-    states: ['ready', 'filtered', 'selected', 'returned'],
-    spec: 'tests/e2e/admin-support-request-operator-closure.spec.ts',
-    artifact: 'support-request-queue',
-  },
-  '/admin/support-requests/[requestId]': {
-    pageModel: 'detail',
-    states: ['ready', 'action_error', 'action_success', 'return_context'],
-    spec: 'tests/e2e/admin-support-request-operator-closure.spec.ts',
-    artifact: 'support-request-detail',
-  },
+const routeArtifacts = {
+  '/admin/support-requests': 'support-request-queue',
+  '/admin/support-requests/[requestId]': 'support-request-detail',
 };
+const minimumStates = {
+  diagnostic: ['ready'],
+  queue: ['ready', 'filtered', 'selected'],
+  configuration: ['ready', 'invalid', 'dirty', 'save_error', 'saved'],
+  detail: ['ready', 'action_error', 'action_success', 'return_context'],
+};
+function assertPilotStates(pilot) {
+  for (const state of minimumStates[pilot.pageModel] || ['ready']) {
+    assert.ok(pilot.requiredStates.includes(state), `${pilot.pageModel} must require ${state}`);
+  }
+  if (pilot.pageModel === 'diagnostic') {
+    assert.ok(pilot.requiredStates.some(state => ['selected', 'filtered'].includes(state)), 'diagnostic needs an interaction state');
+    assert.ok(pilot.requiredStates.some(state => ['partial_error', 'refresh_error'].includes(state)), 'diagnostic needs a source-error state');
+  }
+}
+assert.throws(() => assertPilotStates({ pageModel: 'diagnostic', requiredStates: ['ready', 'selected'] }), /source-error/);
+assert.throws(() => assertPilotStates({ pageModel: 'configuration', requiredStates: ['ready'] }), /require invalid/);
 
 assert.equal(manifest.version, 9, 'visual governance must use the reviewed v9 manifest');
 assert.equal(manifest.visualGovernance.version, 1);
@@ -78,14 +61,14 @@ assert.deepEqual(manifest.visualGovernance.resultStates, expectedStatuses);
 assert.deepEqual(manifest.visualGovernance.rules.map((rule) => rule.id), expectedRuleIds);
 assert.ok(manifest.visualGovernance.rules.every((rule) => rule.authority === 'hard_gate'));
 
-for (const [route, expected] of Object.entries(pilotRoutes)) {
-  const pilot = manifest.visualGovernance.pilotRoutes[route];
-  assert.equal(manifest.routes[route], expected.pageModel, `${route} manifest model must remain authoritative`);
-  assert.equal(pilot.pageModel, expected.pageModel, `${route} visual model must match the route manifest`);
+for (const [route, pilot] of Object.entries(manifest.visualGovernance.pilotRoutes)) {
+  const expected = { spec: pilot.browserSpec, states: pilot.requiredStates, artifact: routeArtifacts[route] };
+  assert.equal(manifest.routes[route], pilot.pageModel, `${route} manifest model must remain authoritative`);
   assert.equal(pilot.riskTier, 'material');
-  assert.deepEqual(pilot.requiredStates, expected.states);
+  assertPilotStates(pilot);
   assert.match(pilot.workingSurface, /^\[data-ui=/);
 
+  assert.match(expected.spec || '', adminVisualSpecPattern, `${route} must register an executable browser spec`);
   const spec = readFileSync(fromFrontendRoot(expected.spec), 'utf8');
   assert.match(spec, /observeAdminBrowserEvidence/, `${route} must observe console and network failures`);
   assert.match(spec, /writeAdminVisualReceipt/, `${route} must emit a structured browser receipt`);
@@ -146,6 +129,6 @@ assert.match(helper, /status[\s\S]*trimEnd\(\)/, 'porcelain parsing must preserv
 assert.match(helper, /artifactId[\s\S]*artifactSuffix/, 'one workflow must support multiple receipt artifacts');
 assert.match(helper, /testInfo\.outputPath[\s\S]*testInfo\.attach/);
 assert.match(packageSource, /admin-visual-governance-contract\.mjs/);
-assert.match(packageSource, /admin-runtime-diagnostics-v2\.spec\.ts/);
+assert.match(packageSource, /run-admin-visual-checks\.mjs/);
 
-console.log(`admin_visual_governance_contract: ok (12 rules, ${Object.keys(pilotRoutes).length} pilot routes, structured receipts)`);
+console.log(`admin_visual_governance_contract: ok (12 rules, ${Object.keys(manifest.visualGovernance.pilotRoutes).length} pilot routes, structured receipts)`);

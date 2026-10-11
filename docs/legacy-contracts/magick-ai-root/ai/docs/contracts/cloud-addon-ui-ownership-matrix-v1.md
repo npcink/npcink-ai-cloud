@@ -1,4 +1,8 @@
 # Cloud Addon UI Ownership Matrix v1
+Status: reference-only legacy snapshot.
+
+> Legacy snapshot: reference-only; current Cloud contracts take precedence.
+> The original status lines below are preserved as historical snapshot text and do not declare current authority.
 
 > Status: active
 > Canonical Source: this AI contract front door.

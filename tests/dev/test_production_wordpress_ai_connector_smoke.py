@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.dev.production_wordpress_ai_connector_smoke import (
+from app.ops.production_wordpress_ai_connector_smoke import (
     APPROVAL_TEXT,
     SmokeError,
     approval_matches,

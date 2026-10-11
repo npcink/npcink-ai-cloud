@@ -146,10 +146,10 @@
     {
       "package": "root",
       "profile": "local_read",
-      "owner_doc": "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md",
+      "owner_doc": "docs/history/production/2026/python-3-14-cve-upstream-checkpoint-2026-07-24.md",
       "used_by": ["runbook", "contract"],
       "status": "active",
-      "evidence": ["README.md", "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md"],
+      "evidence": ["README.md", "docs/history/production/2026/python-3-14-cve-upstream-checkpoint-2026-07-24.md"],
       "commands": {
         "check:python-dependency-audit": "Audit locked Python dependencies and supported indexes.",
         "check:python-cve-upstream": "Inspect the recorded upstream Python CVE checkpoint.",
@@ -159,10 +159,10 @@
     {
       "package": "root",
       "profile": "provider_budget",
-      "owner_doc": "docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md",
+      "owner_doc": "docs/history/engineering/2026/provider-call-ledger-and-next-stage-deferral-2026-07-25.md",
       "used_by": ["runbook"],
       "status": "active",
-      "evidence": ["README.md", "docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md"],
+      "evidence": ["README.md", "docs/history/engineering/2026/provider-call-ledger-and-next-stage-deferral-2026-07-25.md"],
       "commands": {
         "provider:call-ledger": "Inspect or record governed real-provider call budget evidence."
       }
@@ -216,6 +216,21 @@
     },
     {
       "package": "root",
+      "profile": "ci_read",
+      "owner_doc": "docs/repository-hygiene-and-documentation-lifecycle-standard-v1.md",
+      "used_by": ["ci", "runbook"],
+      "status": "active",
+      "evidence": [
+        "docs/README.md",
+        "scripts/check_doc_reachability.py",
+        ".github/workflows/ci.yml"
+      ],
+      "commands": {
+        "check:doc-reachability": "Fail when a tracked document cannot be reached from docs/README.md."
+      }
+    },
+    {
+      "package": "root",
       "profile": "local_read",
       "owner_doc": "docs/development-validation-operating-model-v1.md",
       "used_by": ["runbook", "contract", "automation"],
@@ -224,6 +239,12 @@
         "README.md",
         "scripts/check_changed.py",
         "scripts/ai_task.py",
+        "scripts/measure_acceptance_command.py",
+        "scripts/wordpress_editor_readiness.py",
+        "scripts/wordpress_editor_acceptance.py",
+        "scripts/summarize_editor_acceptance.py",
+        "docs/development-delivery-efficiency-standard-v1.md",
+        "docs/wordpress-editor-readiness-runbook-v1.md",
         "tests/contract/test_check_changed_contract.py",
         "tests/contract/test_ai_task_contract.py"
       ],
@@ -232,7 +253,11 @@
         "verify:local": "Run the development-lane local gates for the current diff; do not publish or invoke GitHub.",
         "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
         "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
-        "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON."
+        "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON.",
+        "timing:acceptance": "Append timing evidence for one bounded local acceptance command.",
+        "wordpress:editor:readiness": "Run read-only WordPress, plugin, database, site, and Cloud readiness checks.",
+        "wordpress:editor:acceptance": "Run bounded read-only related-article and internal-link checks against existing WordPress posts.",
+        "wordpress:editor:acceptance:summary": "Summarize natural editor acceptance samples without changing their evidence."
       }
     },
     {
@@ -316,7 +341,6 @@
       "commands": {
         "seed:dev": "Seed the fixed local runtime development baseline.",
         "seed:smoke": "Run the supported local runtime smoke seed alias.",
-        "providers:import-env": "Import legacy provider environment configuration into managed storage.",
         "login:seed:dev": "Seed stable local Admin and Portal login data."
       }
     },
@@ -332,19 +356,16 @@
         "smoke:local-alpha": "Run the local hosted-runtime alpha smoke.",
         "smoke:internal-alpha-onboarding": "Run the focused internal-alpha onboarding smoke.",
         "smoke:site-knowledge": "Run the real-chain Site Knowledge smoke.",
-        "smoke:media-derivative:wp": "Run the WordPress media derivative end-to-end smoke.",
-        "drill:provider-failure": "Exercise the local provider failure drill.",
-        "drill:callback-failure": "Exercise the local callback failure drill.",
-        "drill:auth-failure": "Exercise the local authentication failure drill."
+        "smoke:media-derivative:wp": "Run the WordPress media derivative end-to-end smoke."
       }
     },
     {
       "package": "root",
       "profile": "local_state",
-      "owner_doc": "docs/ai-provider-connections-and-dev-frontend-history-2026-06-26.md",
+      "owner_doc": "docs/history/engineering/2026/ai-provider-connections-and-dev-frontend-history-2026-06-26.md",
       "used_by": ["runbook", "automation", "manual"],
       "status": "active",
-      "evidence": ["README.md", "Makefile", "docs/ai-provider-connections-and-dev-frontend-history-2026-06-26.md"],
+      "evidence": ["README.md", "Makefile", "docs/history/engineering/2026/ai-provider-connections-and-dev-frontend-history-2026-06-26.md"],
       "commands": {
         "frontend:sync": "Synchronize local frontend dependencies and generated state.",
         "frontend:watch": "Run the local frontend auto-sync watch loop.",
@@ -362,10 +383,12 @@
         "docs/cloud-agent-feedback-quality-gate-v1.md",
         "docs/editor-assist-quality-flywheel-v1.md",
         "scripts/report_ai_quality_regression_samples.py",
+        "app/ops/editor_assist_quality_status.py",
         "tests/contract/test_ai_quality_regression_samples.py"
       ],
       "commands": {
-        "report:ai-quality-regression": "Report the bounded metadata-only Agent Feedback and Editor Assist regression samples."
+        "report:ai-quality-regression": "Report the bounded metadata-only Agent Feedback and Editor Assist regression samples.",
+        "report:editor-assist-quality-status": "Report the read-only Editor Assist natural-traffic observation gate."
       }
     },
     {
@@ -550,16 +573,16 @@
       "owner_doc": "docs/cloud-admin-ui-standard-v1.md",
       "used_by": ["ci", "runbook", "contract", "automation"],
       "status": "active",
-      "evidence": ["AGENTS.md", "frontend/DEVELOPMENT.md", "docs/cloud-admin-ui-standard-v1.md"],
+      "evidence": ["AGENTS.md", "frontend/DEVELOPMENT.md", "docs/cloud-admin-ui-standard-v1.md", "frontend/admin-ui-manifest.json", "scripts/run-admin-visual-checks.mjs"],
       "commands": {
         "check:visual:frontend": "Run the bounded frontend visual test suite.",
         "precheck:admin-acceptance": "Verify the Admin acceptance matrix contract and focused test lint.",
         "check:admin-acceptance": "Run the current-master desktop acceptance baseline for every classified Admin route.",
         "precheck:admin-ui": "Run focused Admin audit workspace contracts and lint before the shared Admin UI gate.",
         "check:admin-ui": "Run the required Admin UI governance and static gate.",
-        "precheck:admin-ui:visual": "Run the focused Admin audit workspace browser receipt before the shared visual gate.",
+        "precheck:admin-ui:visual": "Lint the Admin audit workspace spec; its browser receipt runs once in the manifest-generated visual gate.",
         "check:admin-ui:visual-governance": "Verify risk-tiered Admin visual rules, pilot routes, and structured receipt contracts.",
-        "check:admin-ui:visual": "Run the required material Admin UI browser gate."
+        "check:admin-ui:visual": "Run every manifest-registered visual pilot and supplemental PC browser spec, rejecting missing mappings."
       }
     },
     {

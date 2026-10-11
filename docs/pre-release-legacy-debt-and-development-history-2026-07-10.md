@@ -1,6 +1,8 @@
 # Pre-release Legacy Debt and Development History - 2026-07-10
 
-Status: active release-readiness handoff.
+Status: historical release-readiness and debt evidence. Current release authority is
+`docs/cloud-production-release-policy-v1.md`; current refactor authority is
+`docs/refactor-master-plan-v1.md`.
 
 ## 1. Purpose
 
@@ -102,10 +104,10 @@ stale entitlement snapshots.
 
 Relevant records include:
 
-- `docs/release-readiness-legacy-cleanup-closeout-2026-07-02.md`
-- `docs/release-readiness-cleanup-closeout-2026-07-07.md`
+- `history/production/2026/release-readiness-legacy-cleanup-closeout-2026-07-02.md`
+- `history/production/2026/release-readiness-cleanup-closeout-2026-07-07.md`
 - `docs/history/admin/2026/records/admin-surface-cleanup-closeout-2026-07-02.md`
-- `docs/npcink-naming-reset-closeout-2026-06-24.md`
+- `history/repository-hygiene/2026/npcink-naming-reset-closeout-2026-06-24.md`
 
 ### 3.3 Canonical scope enforcement
 
@@ -194,9 +196,9 @@ platform.
 
 Relevant records:
 
-- `docs/runtime-stack-decision-history-2026-07-09.md`
+- `history/engineering/2026/runtime-stack-decision-history-2026-07-09.md`
 - `docs/runtime-stability-performance-evidence-v1.md`
-- `docs/runtime-stability-observation-2026-07-09.md`
+- `history/engineering/2026/runtime-stability-observation-2026-07-09.md`
 
 ## 4. Verified Closed Historical Debt
 
@@ -327,7 +329,7 @@ workflows.
 
 Production promotion remains subject to
 `docs/cloud-production-release-policy-v1.md` and the open gates in
-`docs/pc-launch-readiness-2026-07-10.md`, including real mailbox/provider tests,
+`history/engineering/2026/pc-launch-readiness-2026-07-10.md`, including real mailbox/provider tests,
 stable service-setting encryption, a database backup/restore command, known
 rollback SHA, and the operator approval sentence.
 

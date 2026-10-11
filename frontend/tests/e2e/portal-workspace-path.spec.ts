@@ -20,16 +20,17 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
-async function fulfillError(route: Route, errorCode: string, status = 503) {
+async function fulfillError(route: Route, errorCode: string, status = 503, traceId = 'portal-workspace-error-trace', responseReference = '') {
   await route.fulfill({
     status,
     contentType: 'application/json',
+    headers: responseReference ? { 'X-Request-ID': responseReference } : {},
     body: JSON.stringify({
       status: 'error',
       error_code: errorCode,
       message: 'internal backend detail',
       data: {},
-      meta: { trace_id: 'portal-workspace-error-trace', revision: 'm6' },
+      meta: { trace_id: traceId, revision: 'm6' },
     }),
   });
 }
@@ -61,7 +62,7 @@ function buildPortalSession(
       name: 'Clear Site',
       site_url: 'https://clear.example.test',
       platform_kind: 'wordpress',
-      status: 'active',
+      status: options.singleReadySite ? options.siteAttentionStatus || 'active' : 'active',
       capacity_scope: 'scope_1',
       capacity: {
         active_count: 2,
@@ -126,7 +127,6 @@ async function installPortalMocks(
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
     emptySites?: boolean;
-    delayInitialEntitlements?: boolean;
     zeroEntitlements?: boolean;
     failInitialEntitlements?: boolean;
     accountEntitlementsErrorCode?: string;
@@ -149,13 +149,7 @@ async function installPortalMocks(
   const accountProjectionRequests: string[] = [];
   let accountEntitlementsRequestCount = 0;
   let portalStateMutationRequestCount = 0;
-  let delayedEntitlementsCompleted = false;
-  let initialEntitlementsDelayed = false;
   let initialEntitlementsFailed = false;
-  let releaseInitialEntitlementsGate: (() => void) | null = null;
-  const initialEntitlementsGate = new Promise<void>((resolve) => {
-    releaseInitialEntitlementsGate = resolve;
-  });
   let releaseSessionRefreshGate: (() => void) | null = null;
   const sessionRefreshGate = new Promise<void>((resolve) => {
     releaseSessionRefreshGate = resolve;
@@ -249,6 +243,8 @@ async function installPortalMocks(
       accountProjectionRequests.push(`${pathname}${url.search}`);
     }
 
+    if (pathname === '/auth/login-options') { await fulfillJson(route, { qq_available: true }); return; }
+
     if (pathname === '/auth/identity-providers') {
       await fulfillJson(route, {
         providers: [
@@ -324,14 +320,6 @@ async function installPortalMocks(
         initialEntitlementsFailed = true;
         await fulfillError(route, 'service.entitlements_temporarily_unavailable');
         return;
-      }
-      const shouldDelayThisResponse = Boolean(
-        options.delayInitialEntitlements
-        && !initialEntitlementsDelayed
-      );
-      if (shouldDelayThisResponse) {
-        initialEntitlementsDelayed = true;
-        await initialEntitlementsGate;
       }
       const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
       const packageRemaining = options.zeroEntitlements ? 0 : 2419;
@@ -460,9 +448,6 @@ async function installPortalMocks(
         },
         generated_at: '2026-04-07T10:00:00Z',
       });
-      if (shouldDelayThisResponse) {
-        delayedEntitlementsCompleted = true;
-      }
       return;
     }
 
@@ -550,6 +535,7 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/credit-events') {
+      expect(url.searchParams.get('site_id')).toBe(selectedSiteId);
       await fulfillJson(route, {
         contract_version: 'portal-credit-events-v1',
         account_id: 'acct_portal',
@@ -960,6 +946,26 @@ async function installPortalMocks(
             created_at: '2026-04-07T09:05:00Z',
           },
         ],
+        attachments: [],
+        feedback: null,
+      });
+      return;
+    }
+
+    if (pathname === '/support-requests/ticket_portal_e2e_other_site') {
+      await fulfillJson(route, {
+        request: {
+          request_id: 'ticket_portal_e2e_other_site',
+          topic: 'site',
+          status: 'closed',
+          priority: 'normal',
+          site_id: 'site_not_selected',
+          title: 'A different site needs review',
+          description: 'This ticket belongs to another site in the account.',
+          created_at: '2026-04-06T09:05:00Z',
+          updated_at: '2026-04-06T10:05:00Z',
+        },
+        messages: [],
         attachments: [],
         feedback: null,
       });
@@ -1645,10 +1651,8 @@ async function installPortalMocks(
     accountEntitlementsRequestCount: () => accountEntitlementsRequestCount,
     accountProjectionRequestCount: () => accountProjectionRequestCount,
     accountProjectionRequests: () => [...accountProjectionRequests],
-    delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     loginVerified: () => loginVerified,
     portalStateMutationRequestCount: () => portalStateMutationRequestCount,
-    releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
     sessionRequestCount: () => sessionRequestCount,
     releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
   };
@@ -1687,8 +1691,15 @@ test('portal workspace interaction path: account overview to site detail and ser
   ).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
-  await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toBeVisible();
-  await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toHaveCount(0);
+  await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toHaveCount(0);
+  await expect(sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i)).toHaveCount(0);
+  await page.goto('/portal?q=Attention');
+  const activeSiteSearch = sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i);
+  await expect(activeSiteSearch).toBeVisible();
+  await expect(activeSiteSearch).toHaveValue('Attention');
+  await activeSiteSearch.fill('');
+  await expect(page).not.toHaveURL(/(?:\?|&)q=/);
   await expect(sitesWorkspace.getByRole('columnheader', { name: /Context|当前上下文/i })).toHaveCount(0);
   await expect(sitesWorkspace.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
   await expect(
@@ -1698,6 +1709,9 @@ test('portal workspace interaction path: account overview to site detail and ser
   await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
   await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
+  const unselectedSiteRow = sitesWorkspace.getByRole('row', { name: /Clear Site/i });
+  await unselectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await expect(unselectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
@@ -1743,16 +1757,9 @@ test('portal workspace interaction path: account overview to site detail and ser
   await usageViewTabs.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
-  await expect(page.locator('main').getByRole('combobox')).toHaveCount(4);
-  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('');
-  await expect(page.getByRole('combobox', { name: /Summary interval|汇总粒度/i })).toHaveValue('30m');
-  const creditBucketRow = page.getByRole('button', { name: /18.*Content writing|18.*内容生成/i }).first();
-  await expect(creditBucketRow).toBeVisible();
-  await creditBucketRow.click();
-  const creditBucketDialog = page.getByRole('dialog', { name: /Apr 7|4\/7/i });
-  await expect(creditBucketDialog).toBeVisible();
-  const creditEventRow = creditBucketDialog.getByRole('button', { name: /Content writing|内容生成/i });
-  await creditEventRow.click();
+  await expect(page.locator('main').getByRole('combobox')).toHaveCount(3);
+  await expect(page.getByRole('combobox', { name: /Current site|当前站点/i })).toHaveValue('site_attention');
+  await page.locator('[data-portal-usage="records-table"]').getByRole('button', { name: /Content writing|内容生成/i }).click();
   const creditEventDialog = page.getByRole('dialog', { name: /Content writing|内容生成/i });
   await expect(creditEventDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
   await creditEventDialog.getByText(/Support information|支持信息/i).click();
@@ -1774,7 +1781,7 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
-  await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
+  await page.getByRole('button', { name: /Manage package|管理套餐/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
   const packageConfirmButton = packageDialog.getByRole('button', { name: /^Select package$|^选择套餐$/i });
@@ -1897,7 +1904,7 @@ test('portal account page hides internal identifiers and duplicate summary metri
   await expect(page.getByText(/portal-demo@example\.com/i)).toHaveCount(1);
   await expect(page.getByText(/Other sign-in methods|其他登录方式/i)).toBeVisible();
   await expect(page.getByText(/Primary login method|主要登录方式/i)).toHaveCount(0);
-  await page.getByRole('button', { name: /Need to change contact|需要修改联系方式/i }).click();
+  await page.getByRole('button', { name: /Change email|修改邮箱/i }).click();
   await expect(page.locator('[data-portal-account="email-change-dialog"]')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByText(/prn_8d95fab64fa7487bb31cd81c3adac4a8/i)).toHaveCount(0);
@@ -1910,7 +1917,7 @@ test('portal audit stays a bounded support deep link', async ({ page }) => {
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-support-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
-  await expect(page.getByText(/activity for All sites|查看 全部站点 最近的登录和服务活动/i)).toBeVisible();
+  await expect(page.getByText(/activity for All sites|查看 全部站点 最近的操作/i)).toBeVisible();
   const auditTable = page.locator('[data-portal-audit="records-table"]');
   await expect(auditTable).toBeVisible();
   await expect(auditTable.locator('tbody tr')).toHaveCount(10);
@@ -1940,7 +1947,7 @@ test('portal site record focuses on address, status, and support actions', async
   await expect(page.getByText(/^Growth$/)).toHaveCount(0);
   await expect(page.getByText(/^plan_growth$/)).toHaveCount(0);
   const siteKnowledgePanel = page.locator('[data-portal-site="site-knowledge"]');
-  await expect(siteKnowledgePanel.getByRole('heading', { name: /Site knowledge|站点知识/i })).toBeVisible();
+  await expect(siteKnowledgePanel.getByRole('heading', { name: /AI content knowledge|AI 内容知识|Site knowledge|站点知识/i })).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/^86$/)).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/32 searches|32 次搜索/i)).toBeVisible();
   await expect(siteKnowledgePanel.getByText(/3 could not find|3 次未找到相关内容/i)).toBeVisible();
@@ -1980,7 +1987,7 @@ test('account projections remain available without a selected site context', asy
   await page.goto('/portal');
   const overview = page.locator('[data-portal-home="operation-overview"]');
   await expect(overview.getByText(/Current package|当前套餐/i).first()).toBeVisible();
-  await expect(overview.getByText(/^Remaining$|^剩余$/i).first()).toBeVisible();
+  await expect(overview.getByText(/^Available AI credits$|^可用 AI 积分$/i).first()).toBeVisible();
   await expect(overview.getByText(/Choose a current site before|请先选择当前站点/i)).toHaveCount(0);
   await expect(overview.getByText(/No site selected|未选择站点/i)).toHaveCount(0);
   await expect(overview.getByText(/^Loading\.\.\.$|^加载中\.\.\.$/i)).toHaveCount(0);
@@ -1988,7 +1995,7 @@ test('account projections remain available without a selected site context', asy
   await expect(overview.getByText(/^Available$|^可用$/i)).toHaveCount(0);
 
   await page.goto('/portal/billing');
-  await expect(page.getByRole('heading', { level: 1, name: /Package and rights|套餐与权益/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
   await page.goto('/portal/usage');
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await page.goto('/portal/audit');
@@ -2001,7 +2008,7 @@ test('account-level support stays available without a selected site context', as
   const calls = await installPortalMocks(page, { withoutSelectedContext: true });
 
   await page.goto('/portal/support');
-  await expect(page.getByRole('combobox', { name: /Current site|当前站点|目前站點/i })).toHaveValue('');
+  await expect(page.getByRole('combobox', { name: /Current site|当前站点|目前站點/i })).toHaveCount(0);
   await expect(
     page.locator('[data-portal-support="tickets-table"]').getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)
   ).toBeVisible();
@@ -2011,6 +2018,28 @@ test('account-level support stays available without a selected site context', as
   await expect(page.getByText(/Please check the latest account payment order\./i).first()).toBeVisible();
 
   expect(calls.accountProjectionRequestCount()).toBe(0);
+});
+
+test('closed ticket makes the reopen-on-reply behavior explicit', async ({ page }) => {
+  await installPortalMocks(page);
+
+  await page.goto('/portal/support/ticket_portal_e2e_other_site');
+  await expect(page.locator('[data-portal-support="reply-reopen-notice"]')).toContainText(
+    /Replying will reopen this support request|回复将重新打开此支持请求/i
+  );
+  await expect(page.getByRole('button', { name: /Reply and reopen|回复并重新打开/i })).toBeVisible();
+});
+
+test('single unavailable site keeps support explicitly account-scoped without a fake site selector', async ({ page }) => {
+  await installPortalMocks(page, {
+    withoutSelectedContext: true,
+    singleReadySite: true,
+    siteAttentionStatus: 'inactive',
+  });
+
+  await page.goto('/portal/support');
+  await expect(page.getByText(/^Account scope$|^账户范围$/i)).toBeVisible();
+  await expect(page.getByText(/^Select a site$|^选择站点$/i)).toHaveCount(0);
 });
 
 test('[readiness:new_account_no_site] a new account gets a WordPress connection path instead of a dead end', async ({ page }) => {
@@ -2040,27 +2069,22 @@ test('[readiness:single_site_ready] one ready site shows healthy account and sit
   await expect(page.getByText(/^Connected$|^已接入$/i)).toBeVisible();
 });
 
-test('[readiness:multi_site_context_switch] switching site keeps account package and entitlements stable', async ({ page }) => {
-  const calls = await installPortalMocks(page, { delayInitialEntitlements: true });
+// [readiness:multi_site_context_switch]
+test('[readiness:multi_site_account_context] multi-site home keeps account service independent from site switching', async ({ page }) => {
+  await installPortalMocks(page);
 
   await page.goto('/portal');
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
-  const managementSiteSelector = page.getByRole('combobox', {
+  await expect(page.getByRole('combobox', {
     name: /Current management site|当前管理站点/i,
-  });
-  await expect(managementSiteSelector).toBeVisible();
-  await expect(page.getByText(/Switching changes the account scope|切换后，账号服务、套餐、用量和工单/i)).toBeVisible();
-  await managementSiteSelector.selectOption('site_clear');
+  })).toHaveCount(0);
+  await expect(page.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i)).toHaveCount(0);
+  await expect(page.getByText(/Switching changes the account scope|切换后，账号服务、套餐、用量和工单/i)).toHaveCount(0);
 
   await expect(page.getByText(/^Growth$/).first()).toBeVisible();
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
-  await expect(page.getByRole('row', { name: /Clear Site/i }).getByText(
-    /Current management site|当前管理站点/i
-  )).toBeVisible();
-
-  calls.releaseInitialEntitlements();
-  await expect.poll(calls.delayedEntitlementsCompleted).toBe(true);
-  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  await expect(page.getByRole('row', { name: /Attention Site/i })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Clear Site/i })).toBeVisible();
 });
 
 test('site filter scopes usage evidence without changing account package data', async ({ page }) => {
@@ -2070,13 +2094,11 @@ test('site filter scopes usage evidence without changing account package data', 
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
   await expect(page.getByText(/24 AI credits used|共使用 24 AI 积分/i)).toBeVisible();
 
-  await page.getByRole('combobox', { name: /Site filter|站点筛选/i }).selectOption('site_clear');
+  await page.getByRole('combobox', { name: /Current site|当前站点/i }).selectOption('site_clear');
   await expect.poll(() => new URL(page.url()).searchParams.get('site')).toBe('site_clear');
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
   await expect(page.getByText(/6 AI credits used|共使用 6 AI 积分/i)).toBeVisible();
-  await expect.poll(() => calls.accountProjectionRequests()).toContain(
-    '/account/usage-summary?site_id=site_clear'
-  );
+  expect(calls.accountProjectionRequests().some((request) => request.startsWith('/account/usage-summary'))).toBe(false);
   await expect.poll(() => calls.accountProjectionRequests()).toContain(
     '/account/credit-trend?window=24h&site_id=site_clear'
   );
@@ -2090,7 +2112,7 @@ test('site filter scopes usage evidence without changing account package data', 
     .getByRole('tab', { name: /AI credit records|AI 积分记录/i })
     .click();
   await expect.poll(() => calls.accountProjectionRequests().some((request) => (
-    request.startsWith('/account/credit-event-buckets?')
+    request.startsWith('/account/credit-events?')
     && request.includes('site_id=site_clear')
   ))).toBe(true);
   await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
@@ -2115,7 +2137,7 @@ test('[readiness:session_expired_recovery] expired session restores the requeste
   expect(restoredUrl.pathname).toBe('/portal/usage');
   expect(restoredUrl.searchParams.get('view')).toBe('records');
   expect(restoredUrl.searchParams.get('site')).toBe('site_clear');
-  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('site_clear');
+  await expect(page.getByRole('combobox', { name: /Current site|当前站点/i })).toHaveValue('site_clear');
   await expect(
     page.locator('[data-portal-usage="view-tabs"]')
       .getByRole('tab', { name: /AI credit records|AI 积分记录/i })
@@ -2127,7 +2149,7 @@ test('portal home renders a real zero entitlement balance', async ({ page }) => 
   await installPortalMocks(page, { zeroEntitlements: true });
   await page.goto('/portal');
 
-  const remainingMetric = page.getByText(/^Remaining$|^剩余$/i).first().locator('../..');
+  const remainingMetric = page.getByText(/^Available AI credits$|^可用 AI 积分$/i).first().locator('../..');
   await expect(remainingMetric.getByText(/^0$/)).toBeVisible();
   await expect(remainingMetric.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
 });
@@ -2315,12 +2337,49 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
 
     await page.goto('/portal/billing');
     await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
-    await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
+    await page.getByRole('button', { name: /Manage package|管理套餐/i }).click();
     await expect(page.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
     await expectNoPageOverflow();
     await page.keyboard.press('Escape');
   }
 });
+
+for (const navigation of [
+  { name: 'desktop', width: 1440, selector: '[data-ui="portal-primary-nav"]' },
+  { name: 'tablet', width: 900, selector: '[data-ui="portal-tablet-nav"]' },
+  { name: 'mobile', width: 390, selector: '#portal-mobile-nav' },
+]) {
+  test(`portal recent activity retains account navigation ownership on ${navigation.name}`, async ({ page }) => {
+    await installPortalMocks(page);
+    await page.setViewportSize({ width: navigation.width, height: 900 });
+    await page.goto('/portal/audit');
+    await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
+    if (navigation.name === 'mobile') {
+      await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+    }
+    const nav = page.locator(navigation.selector);
+    await expect(nav).toBeVisible();
+    await expect(nav.locator('a[aria-current]')).toHaveCount(1);
+    await expect(nav.locator('a[aria-current="true"]')).toHaveAttribute('href', '/portal/account');
+    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
+
+    await page.goto('/portal/usage');
+    await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+    if (navigation.name === 'mobile') {
+      await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+    }
+    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(1);
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/usage');
+    await expect(nav.locator('a[href="/portal/account"]')).not.toHaveAttribute('aria-current', 'page');
+    await nav.locator('a[href="/portal/account"]').focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/portal\/account$/);
+    if (navigation.name === 'mobile') {
+      await page.locator('button[aria-controls="portal-mobile-nav"]').click();
+    }
+    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
+  });
+}
 
 test('portal purchase and support tasks stay usable on a 390px viewport', async ({ page }) => {
   await installPortalMocks(page);
@@ -2336,7 +2395,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
 
   await page.goto('/portal/billing');
-  await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
+  await page.getByRole('button', { name: /Manage package|管理套餐/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
@@ -2352,4 +2411,236 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeInViewport();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('portal read failures retain context and retry without showing empty results', async ({ page }) => {
+  await installPortalMocks(page);
+  let failRecords = true;
+  await page.route('**/api/portal/account/credit-events?**', async (route) => {
+    if (failRecords) await fulfillError(route, 'proxy.portal_backend_timeout', 504);
+    else await route.fallback();
+  });
+  await page.goto('/portal/usage?view=records');
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(page.getByText(/0 service events|共 0 次服务|暂无服务记录/i)).toHaveCount(0);
+  failRecords = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(page.locator('[data-portal-usage="records-table"]')).toBeVisible();
+  await page.route('**/api/portal/account/audit-summary**', (route) => fulfillError(route, 'proxy.portal_backend_timeout', 504));
+  await page.goto('/portal/audit?site=unavailable_site');
+  await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('unavailable_site');
+  await page.getByRole('combobox', { name: /Site filter|站点筛选/i }).selectOption('');
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('');
+  await page.route('**/api/portal/support-requests?**', (route) => fulfillError(route, 'proxy.portal_backend_timeout', 504));
+  await page.goto('/portal/support');
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /No tickets yet|暂无工单/i })).toHaveCount(0);
+});
+
+for (const endpoint of ['audit-summary', 'audit-events'] as const) {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`portal activity ${endpoint} failure keeps evidence and recovers in ${theme}`, async ({ page }, testInfo) => {
+      await installPortalMocks(page);
+      await page.emulateMedia({ colorScheme: theme });
+      await page.addInitScript((value) => window.localStorage.setItem('theme', value), theme);
+      let failed = true;
+      const reference = `portal-read-${endpoint}-${theme}-${'a'.repeat(128)}`;
+      await page.route(`**/api/portal/account/${endpoint}**`, async (route) => {
+        if (failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, theme === 'dark' ? '' : 'different-backend-trace', reference);
+        else await route.fallback();
+      });
+      const failedResponse = page.waitForResponse((response) =>
+        response.url().includes(`/account/${endpoint}`) && response.status() === 504
+      );
+      await page.goto('/portal/audit?site=site_attention');
+      const response = await failedResponse;
+      await testInfo.attach('activity-read-failure-fixture.json', {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify({
+          evidence_kind: 'injected_fixture',
+          url: response.url(),
+          status: response.status(),
+          response_reference: response.headers()['x-request-id'] || '',
+          response: await response.json(),
+        }, null, 2)),
+      });
+      const filter = page.getByRole('combobox', { name: /Site filter|站点筛选/i });
+      await expect(filter).toHaveValue('site_attention');
+      await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+      await expect(page.locator('[data-portal-audit="records-table"]')).not.toBeVisible();
+      await expect(page.getByText(/No activity in this view|当前视图里还没有活动/i)).toHaveCount(0);
+      await expect(page.getByText(/internal backend detail|proxy.portal_backend_timeout/i)).toHaveCount(0);
+      const support = page.locator('[data-portal-error="support-reference"]');
+      await expect(support).not.toHaveAttribute('open', '');
+      await support.locator('summary').focus();
+      await page.keyboard.press('Enter');
+      await expect(support.getByText(reference, { exact: true })).toBeVisible();
+      await expect(support.getByText('different-backend-trace', { exact: true })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+      failed = false;
+      await page.getByRole('button', { name: /Retry|重试/i }).click();
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+      await expect(filter).toHaveValue('site_attention');
+      await expect(support).toHaveCount(0);
+      await page.getByRole('button', { name: /Load more activity|加载更多活动/i }).click();
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(12);
+      await filter.selectOption('');
+      await expect(page).toHaveURL(/\/portal\/audit$/);
+      await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+      await page.locator('[data-ui="portal-primary-nav"] a[href="/portal/account"]').click();
+      await expect(page).toHaveURL(/\/portal\/account$/);
+    });
+  }
+}
+
+test('portal activity load-more failure retains rows and retries the same limit', async ({ page }) => {
+  await installPortalMocks(page);
+  let failed = true;
+  const requestedLimits: number[] = [];
+  await page.route('**/api/portal/account/audit-events**', async (route) => {
+    const limit = Number(new URL(route.request().url()).searchParams.get('limit'));
+    requestedLimits.push(limit);
+    if (limit > 10 && failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504, 'activity-more-failure');
+    else await route.fallback();
+  });
+  await page.goto('/portal/audit');
+  const rows = page.locator('[data-portal-audit="records-table"] tbody tr');
+  await expect(rows).toHaveCount(10);
+  await page.getByRole('button', { name: /Load more activity|加载更多活动/i }).click();
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(rows).toHaveCount(10);
+  const support = page.locator('[data-portal-error="support-reference"]');
+  await support.locator('summary').click();
+  await expect(support.getByText('activity-more-failure', { exact: true })).toBeVisible();
+  failed = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(rows).toHaveCount(12);
+  expect(requestedLimits).toEqual([10, 30, 30]);
+  await expect(support).toHaveCount(0);
+});
+
+test('portal activity ignores a late failure after switching site filters', async ({ page }) => {
+  await installPortalMocks(page);
+  let releaseFailure!: () => void;
+  const pendingFailure = new Promise<void>((resolve) => { releaseFailure = resolve; });
+  let markRequested!: () => void;
+  const requested = new Promise<void>((resolve) => { markRequested = resolve; });
+  await page.route('**/api/portal/account/audit-summary**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('site_id') === 'site_attention') {
+      markRequested();
+      await pendingFailure;
+      await fulfillError(route, 'proxy.portal_backend_timeout', 504, 'obsolete-site-failure');
+    } else await route.fallback();
+  });
+  await page.goto('/portal/audit?site=site_attention');
+  await requested;
+  await page.getByRole('combobox', { name: /Site filter|站点筛选/i }).selectOption('site_clear');
+  await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+  const lateResponse = page.waitForResponse((response) => response.status() === 504 && response.url().includes('/account/audit-summary'));
+  releaseFailure();
+  await lateResponse;
+  await expect(page.getByRole('combobox', { name: /Site filter|站点筛选/i })).toHaveValue('site_clear');
+  await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+  await expect(page.locator('[data-portal-error="support-reference"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
+});
+
+test('portal activity without a response identifier recovers without inventing one', async ({ page }) => {
+  await installPortalMocks(page);
+  let failed = true;
+  await page.route('**/api/portal/account/audit-events**', async (route) => {
+    if (failed) await route.fulfill({ status: 502, contentType: 'text/html', body: '<h1>private upstream detail</h1>' });
+    else await route.fallback();
+  });
+  await page.goto('/portal/audit');
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(page.locator('[data-portal-error="support-reference"]')).toHaveCount(0);
+  await expect(page.getByText(/private upstream detail|client.non_json_response/i)).toHaveCount(0);
+  failed = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
+});
+
+test('identity provider failures have a retry state', async ({ page }) => {
+  await installPortalMocks(page);
+  let failed = true;
+  await page.route('**/api/portal/auth/identity-providers', async (route) => {
+    if (failed) await fulfillError(route, 'proxy.portal_backend_timeout', 504);
+    else await route.fallback();
+  });
+  await page.goto('/portal/account');
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(page.getByText(/not available in the current environment|当前环境暂不可用/i)).toHaveCount(0);
+  failed = false;
+  await page.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(page.getByText(/Other sign-in methods|其他登录方式/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
+});
+
+for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) {
+  test(`confirmed site ${scenario} keeps success when session refresh fails`, async ({ page }) => {
+    await installPortalMocks(page);
+    let mutationCount = 0;
+    let refreshCount = 0;
+    const nextStatus = scenario === 'deactivate' ? 'inactive' : 'archived';
+    await page.route(/\/(?:api\/portal|portal\/v1)\/session$/, async (route) => {
+      if (!mutationCount) { await route.fallback(); return; }
+      refreshCount += 1;
+      if (refreshCount === 1) {
+        await fulfillError(route, 'service.temporarily_unavailable');
+        return;
+      }
+      const session = buildPortalSession('site_clear');
+      session.sites[0].status = nextStatus;
+      await fulfillJson(route, session);
+    });
+    await page.route(/\/(?:api\/portal|portal\/v1)\/sites\/site_attention\/(?:lifecycle|remove)$/, async (route) => {
+      mutationCount += 1;
+      await fulfillJson(route, {
+        site: { ...buildPortalSession('site_attention').sites[0], status: nextStatus },
+        relink_policy: { relink_available_at: '2026-11-07T00:00:00Z' },
+      });
+    });
+    await page.goto(scenario === 'remove-from-detail' ? '/portal/sites/site_attention' : '/portal');
+    const actionScope = scenario === 'remove-from-detail'
+      ? page
+      : page.locator('[data-portal-sites="desktop-table"]').getByRole('row').filter({ hasText: 'Attention Site' });
+    await actionScope.getByText(/^(Other actions|其他操作)$/i).click();
+    const actionName = scenario === 'deactivate' ? /^(Deactivate|停用)$/i : /^(Remove site|移除站点)$/i;
+    await actionScope.getByRole('button', { name: actionName }).click();
+    await page.getByRole('dialog').getByRole('button', { name: actionName }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByText(/operation completed, but|操作已完成，但站点列表/i)).toBeVisible();
+    expect(mutationCount).toBe(1);
+    const retry = page.getByRole('button', { name: /^(Refresh site list|刷新站点列表)$/i });
+    await retry.click();
+    await expect(retry).toHaveCount(0);
+    expect(mutationCount).toBe(1);
+    expect(refreshCount).toBe(2);
+    const siteRow = page.locator('[data-portal-sites="desktop-table"]').getByRole('row').filter({ hasText: 'Attention Site' });
+    if (nextStatus === 'archived') {
+      await expect(siteRow).toHaveCount(0);
+    } else {
+      await expect(siteRow.getByRole('button', { name: /^(Activate|激活)$/i })).toBeEnabled();
+    }
+  });
+}
+
+
+test('usage balance and records do not wait for the unused runtime summary', async ({ page }) => {
+  const calls = await installPortalMocks(page);
+  let unusedSummaryRequests = 0;
+  await page.route(/\/(?:api\/portal|portal\/v1)\/account\/usage-summary(?:\?|$)/, async (route) => {
+    unusedSummaryRequests += 1;
+    await fulfillError(route, 'proxy.portal_backend_timeout', 504);
+  });
+  await page.goto('/portal/usage?view=records&site=site_clear');
+  await expect(page.getByText(/^2,419$|^2,419 点$/i).first()).toBeVisible();
+  const records = page.locator('[data-portal-usage="records-table"]');
+  await expect(records).toBeVisible();
+  await expect.poll(() => records.getByRole('row').count()).toBeGreaterThan(1);
+  expect(unusedSummaryRequests).toBe(0);
+  expect(calls.accountProjectionRequests().some((request) => request.startsWith('/account/usage-summary'))).toBe(false);
 });

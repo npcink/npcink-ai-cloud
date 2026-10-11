@@ -45,4 +45,4 @@ export NPCINK_CLOUD_DIAGNOSTIC_SOURCE_REVISION
 npcink_ai_cloud_compose "${ROOT_DIR}" exec -T \
 	-e NPCINK_CLOUD_DIAGNOSTIC_RELEASE_NAME="${NPCINK_CLOUD_DIAGNOSTIC_RELEASE_NAME}" \
 	-e NPCINK_CLOUD_DIAGNOSTIC_SOURCE_REVISION="${NPCINK_CLOUD_DIAGNOSTIC_SOURCE_REVISION}" \
-	api python -m app.dev.feedback_status --window-hours "${WINDOW_HOURS}"
+	api python -m app.ops.feedback_status --window-hours "${WINDOW_HOURS}"

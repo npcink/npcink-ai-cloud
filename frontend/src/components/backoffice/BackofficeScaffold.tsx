@@ -70,6 +70,7 @@ type BackofficePageHeaderProps = Pick<
   primaryAction?: React.ReactNode;
   secondaryAction?: React.ReactNode;
   summaryAside?: React.ReactNode;
+  toolbarControls?: React.ReactNode;
 };
 
 type BackofficeConfigurationHeaderProps = BackofficePageHeaderProps & {
@@ -92,16 +93,21 @@ type BackofficeDiagnosticNoticeProps = {
   className?: string;
 };
 
-type BackofficeDisclosureProps = {
-  summary: string;
+type BackofficeDisclosureProps = React.DetailsHTMLAttributes<HTMLDetailsElement> & {
+  summary: React.ReactNode;
   children: React.ReactNode;
-  className?: string;
   contentClassName?: string;
+  summaryClassName?: string;
 };
 
-export function BackofficePageStack({ children, className, ...props }: BackofficeFrameProps) {
+export function BackofficePageStack({
+  children,
+  className,
+  spacing = 'default',
+  ...props
+}: BackofficeFrameProps & { spacing?: 'default' | 'compact' }) {
   return (
-    <div className={cn('space-y-6', className)} {...props}>
+    <div className={cn(spacing === 'compact' ? 'space-y-3 admin-tier-compact' : 'space-y-6', className)} {...props}>
       {children}
     </div>
   );
@@ -235,13 +241,40 @@ export function BackofficePageHeader({
   eyebrow,
   title,
   description,
+  density = 'default',
   summaryItems = [],
   primaryAction,
   secondaryAction,
   summaryAside,
-}: BackofficePageHeaderProps) {
-  const actions = primaryAction || secondaryAction ? (
+  toolbarControls,
+}: BackofficePageHeaderProps & { density?: 'default' | 'compact' }) {
+  if (density === 'compact') {
+    return (
+      <div data-ui="backoffice-page-header" data-density="compact" className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{title}</h1>
+            {description ? (
+              <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
+            ) : null}
+          </div>
+          {primaryAction || secondaryAction || toolbarControls ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {toolbarControls}
+              {secondaryAction}
+              {primaryAction}
+            </div>
+          ) : null}
+        </div>
+        {summaryItems.length ? (
+          <BackofficeSummaryStrip items={summaryItems} density="compact" className="pt-1" />
+        ) : null}
+      </div>
+    );
+  }
+  const actions = primaryAction || secondaryAction || toolbarControls ? (
     <>
+      {toolbarControls}
       {secondaryAction}
       {primaryAction}
     </>
@@ -406,9 +439,12 @@ export function BackofficeSummaryStrip({
               ? 'min-h-7'
               : 'min-h-9 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-950/45'
           )}
-          title={item.detail || undefined}
+          title={item.detailDisplay === 'hint' ? undefined : item.detail || undefined}
         >
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.label}</span>
+          {item.detail && item.detailDisplay === 'hint' ? (
+            <BackofficeInfoHint label={item.label} detail={item.detail} className="h-4 w-4 text-[0.6rem]" />
+          ) : null}
           <span className={cn('font-semibold text-slate-950 dark:text-white', item.toneClassName)}>
             {item.value}
           </span>
@@ -449,10 +485,15 @@ export function BackofficeDisclosure({
   children,
   className,
   contentClassName,
+  summaryClassName,
+  ...props
 }: BackofficeDisclosureProps) {
   return (
-    <details className={cn('rounded-[1.35rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950', className)}>
-      <summary className="cursor-pointer select-none px-5 py-4 text-sm font-semibold text-slate-900 dark:text-white md:px-6">
+    <details
+      className={cn('rounded-[1.35rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950', className)}
+      {...props}
+    >
+      <summary className={cn('cursor-pointer select-none px-5 py-4 text-sm font-semibold text-slate-900 dark:text-white md:px-6', summaryClassName)}>
         {summary}
       </summary>
       <div className={cn('border-t border-slate-200 p-5 dark:border-slate-800 md:p-6', contentClassName)}>

@@ -12,6 +12,24 @@ from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
 
 
+def test_openai_chat_projection_prefers_complete_input_over_source_text() -> None:
+    adapter = OpenAIProviderAdapter(api_key="test-api-key")
+
+    messages = adapter._resolve_chat_messages(
+        {
+            "input": "Apply the editorial notes.\n\nScene input:\nOriginal paragraph.",
+            "text": "Original paragraph.",
+        }
+    )
+
+    assert messages == [
+        {
+            "role": "user",
+            "content": "Apply the editorial notes.\n\nScene input:\nOriginal paragraph.",
+        }
+    ]
+
+
 def test_openai_adapter_fetches_catalog_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/models")
@@ -70,6 +88,25 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
     assert snapshot.models[2].instances[0].endpoint_variant == "image_generations"
     assert snapshot.models[3].feature == "embedding"
     assert snapshot.models[3].instances[0].endpoint_variant == "embeddings"
+
+
+def test_openai_adapter_classifies_qwen_vl_catalog_models_as_vision() -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="",
+        allow_http_without_api_key=True,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"data": [{"id": "qwen3-vl:2b"}]},
+            )
+        ),
+    )
+
+    model = adapter.fetch_catalog().models[0]
+
+    assert model.feature == "vision"
+    assert model.instances[0].endpoint_variant == "chat_completions"
+    assert model.instances[0].capability_tags[0] == "vision"
 
 
 def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> None:
@@ -375,6 +412,79 @@ def test_openai_adapter_applies_provider_default_reasoning_effort() -> None:
     assert result.output["output_text"] == "正文"
 
 
+def test_openai_adapter_does_not_emit_unverified_thinking_defaults() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["reasoning_effort"] == "none"
+        assert "thinking" not in payload
+        assert "reasoning" not in payload
+        return httpx.Response(
+            200,
+            json={
+                "model": "gpt-5.5",
+                "choices": [
+                    {"finish_reason": "stop", "message": {"role": "assistant", "content": "正文"}}
+                ],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 2},
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        default_reasoning_effort="none",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="chat_completions",
+            model_id="deepseek-flash",
+            input_payload={"messages": [{"role": "user", "content": "给出正文"}]},
+        )
+    )
+
+    assert result.output["output_text"] == "正文"
+
+
+def test_openai_adapter_does_not_apply_chat_reasoning_default_to_responses() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        assert "reasoning_effort" not in payload
+        assert "reasoning" not in payload
+        assert "thinking" not in payload
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": "响应正文"}],
+                    }
+                ],
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        default_reasoning_effort="none",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="responses",
+            model_id="gpt-5.5",
+            input_payload={"input": "给出正文"},
+        )
+    )
+
+    assert result.output["output_text"] == "响应正文"
+
+
 def test_openai_adapter_request_extra_overrides_provider_default_reasoning_effort() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
@@ -605,8 +715,173 @@ def test_openai_adapter_executes_responses_over_http() -> None:
     )
 
     assert result.output["output_text"] == "vision summary"
+    assert result.output["requested_model_id"] == "gpt-4.1"
+    assert result.output["reported_model_id"] == "gpt-4.1"
     assert result.tokens_in == 21
     assert result.tokens_out == 9
+
+
+def test_openai_adapter_accepts_only_typed_responses_message_text() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/responses")
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-flash",
+                "output": [
+                    {
+                        "type": "message",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": "nested text"}],
+                    }
+                ],
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="responses",
+            model_id="gpt-5.5",
+            input_payload={"input": "return one title"},
+        )
+    )
+
+    assert result.output["output_text"] == "nested text"
+    assert result.output["requested_model_id"] == "gpt-5.5"
+    assert result.output["reported_model_id"] == "deepseek-flash"
+
+
+def test_openai_adapter_rejects_reasoning_and_chat_completion_fallback_shapes() -> None:
+    responses = iter(
+        [
+            {
+                "model": "gpt-5.5",
+                "output": [
+                    {
+                        "type": "reasoning",
+                        "status": "completed",
+                        "content": [{"type": "reasoning_text", "text": "internal plan"}],
+                    }
+                ],
+            },
+            {
+                "model": "gpt-5.5",
+                "choices": [{"message": {"role": "assistant", "content": "gateway text"}}],
+            },
+        ]
+    )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=next(responses))
+        ),
+    )
+
+    for _ in range(2):
+        result = adapter.execute(
+            _build_request(
+                execution_kind="text",
+                endpoint_variant="responses",
+                model_id="gpt-5.5",
+                input_payload={"input": "return one title"},
+            )
+        )
+        assert result.output["output_text"] == ""
+
+
+def test_openai_adapter_rejects_incomplete_responses_text() -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "model": "gpt-5.5",
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                    "output_text": "partial title",
+                    "output": [
+                        {
+                            "type": "message",
+                            "status": "incomplete",
+                            "content": [{"type": "output_text", "text": "partial title"}],
+                        }
+                    ],
+                },
+            )
+        ),
+    )
+
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(
+            _build_request(
+                execution_kind="text",
+                endpoint_variant="responses",
+                model_id="gpt-5.5",
+                input_payload={"input": "return one title"},
+            )
+        )
+
+    assert error.value.error_code == "provider.output_contract_invalid"
+    assert error.value.tokens_in == 0
+    assert error.value.usage_context["response_status"] == "incomplete"
+
+
+def test_openai_adapter_prefers_responses_message_over_reasoning_output() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/responses")
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-flash",
+                "output": [
+                    {
+                        "type": "reasoning",
+                        "status": "completed",
+                        "content": [{"type": "reasoning_text", "text": "internal plan"}],
+                    },
+                    {
+                        "type": "message",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": "usable title"}],
+                    },
+                ],
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="responses",
+            model_id="gpt-5.5",
+            input_payload={"input": "return one title"},
+        )
+    )
+
+    assert result.output["output_text"] == "usable title"
+    assert result.output["requested_model_id"] == "gpt-5.5"
+    assert result.output["reported_model_id"] == "deepseek-flash"
+    assert result.output["output"] == [
+        {
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "usable title"}],
+        }
+    ]
+    assert "internal plan" not in json.dumps(result.output)
 
 
 def test_openai_adapter_retries_responses_without_unsupported_metadata() -> None:
@@ -764,75 +1039,41 @@ def test_openai_adapter_retries_when_compatible_provider_requires_temperature_on
     assert seen_temperatures == [0.2, 1]
 
 
-def test_openai_adapter_retries_responses_404_with_chat_completions_messages() -> None:
+def test_openai_adapter_does_not_downgrade_responses_404_to_chat_completions() -> None:
     seen_paths: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_paths.append(request.url.path)
         payload = json.loads(request.content.decode("utf-8"))
-        if request.url.path.endswith("/responses"):
-            assert payload["model"] == "gpt-4.1"
-            return httpx.Response(404, json={"error": {"message": "not found"}})
-        assert request.url.path.endswith("/chat/completions")
-        assert payload["messages"][0]["content"][0]["type"] == "text"
-        assert payload["messages"][0]["content"][1]["type"] == "image_url"
-        return httpx.Response(
-            200,
-            json={
-                "model": "gpt-4.1",
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": "Blue ceramic mug on a white table.",
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {"prompt_tokens": 18, "completion_tokens": 9},
-            },
-        )
+        assert request.url.path.endswith("/responses")
+        assert payload["model"] == "gpt-4.1"
+        return httpx.Response(404, json={"error": {"message": "not found"}})
 
     adapter = OpenAIProviderAdapter(
         api_key="test-api-key",
         transport=httpx.MockTransport(handler),
     )
 
-    result = adapter.execute(
-        _build_request(
-            execution_kind="vision",
-            endpoint_variant="responses",
-            model_id="gpt-4.1",
-            input_payload={
-                "input": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": "Write alt text."},
-                            {"type": "input_image", "image_url": "https://example.com/mug.png"},
-                        ],
-                    }
-                ],
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Write alt text."},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": "https://example.com/mug.png"},
-                            },
-                        ],
-                    }
-                ],
-            },
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(
+            _build_request(
+                execution_kind="vision",
+                endpoint_variant="responses",
+                model_id="gpt-4.1",
+                input_payload={
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": "Write alt text."}],
+                        }
+                    ],
+                    "messages": [{"role": "user", "content": "Write alt text."}],
+                },
+            )
         )
-    )
 
-    assert seen_paths == ["/v1/responses", "/v1/chat/completions"]
-    assert result.output["output_text"] == "Blue ceramic mug on a white table."
-    assert result.tokens_in == 18
-    assert result.tokens_out == 9
+    assert seen_paths == ["/v1/responses"]
+    assert error.value.error_code == "provider.endpoint_not_found"
 
 
 def test_openai_adapter_executes_embeddings_over_http() -> None:
@@ -1317,7 +1558,10 @@ def test_openai_adapter_sample_image_uses_typed_static_bytes() -> None:
     assert result.media_candidates[0].source_url is None
 
 
-def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_format() -> None:
+@pytest.mark.parametrize("strict", [True, False])
+def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_format(
+    strict: bool,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         assert request.url.path.endswith("/responses")
@@ -1326,7 +1570,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
             "type": "json_schema",
             "name": "vision_payload",
             "schema": {"type": "object"},
-            "strict": True,
+            "strict": strict,
         }
         assert payload["tools"] == [
             {
@@ -1373,7 +1617,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
                         "json_schema": {
                             "name": "vision_payload",
                             "schema": {"type": "object"},
-                            "strict": True,
+                            "strict": strict,
                         },
                     },
                 },
@@ -1611,6 +1855,56 @@ def test_openai_adapter_disables_unsupported_prompt_cache_key_after_one_retry() 
     assert prompt_cache_presence == [True, False, False]
     assert first_result.cache_affinity_applied is False
     assert second_result.cache_affinity_applied is False
+
+
+def test_openai_adapter_retries_when_response_format_is_unavailable() -> None:
+    seen_response_format: list[bool] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        seen_response_format.append("response_format" in payload)
+        if "response_format" in payload:
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": "This response_format type is unavailable now",
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": "compatible-model",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": '{"title":"ok"}'},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="chat_completions",
+            model_id="compatible-model",
+            input_payload={
+                "messages": [{"role": "user", "content": "return JSON"}],
+                "params": {"response_format": {"type": "json_object"}},
+            },
+        )
+    )
+
+    assert seen_response_format == [True, False]
+    assert result.output["output_text"] == '{"title":"ok"}'
 
 
 def test_openai_adapter_maps_context_overflow_separately_from_invalid_request() -> None:

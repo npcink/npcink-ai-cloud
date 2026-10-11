@@ -299,5 +299,5 @@ PR `#317` 对 Vector Settings 工作台的收口属于这一类有边界的整�
 - [M4 Preview AI Development Standard](../../../m4-preview-ai-development-standard-v1.md)
 - [Production / Master 差异审查](production-master-delta-audit-2026-07-25.md)
 - [Cloud Admin UI 开发复盘](../../../history/admin/2026/records/cloud-admin-ui-development-retrospective-2026-07-27.md)
-- [账户、权益、站点重连与前台发布复盘](../../../account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
-- [公开前台发布代码收口](../../../public-frontend-release-code-closeout-2026-07-26.md)
+- [账户、权益、站点重连与前台发布复盘](../../engineering/2026/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
+- [公开前台发布代码收口](../../engineering/2026/public-frontend-release-code-closeout-2026-07-26.md)

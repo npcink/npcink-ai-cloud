@@ -60,6 +60,17 @@ function sanitizeAdminRedirect(value: string): string {
   }
 }
 
+function redirectWithinAdmin(path: string): NextResponse {
+  // Preserve the browser's origin and tunnel port without trusting host headers.
+  return new NextResponse(null, {
+    status: 303,
+    headers: {
+      Location: sanitizeAdminRedirect(path),
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 function redirectToLogin(
   request: NextRequest,
   errorCode: string,
@@ -80,9 +91,7 @@ function redirectToLogin(
     url.searchParams.set('trace_id', traceId);
   }
   url.searchParams.set('redirect', sanitizeAdminRedirect(redirect));
-  const response = NextResponse.redirect(url, 303);
-  response.headers.set('Cache-Control', 'no-store');
-  return response;
+  return redirectWithinAdmin(`${url.pathname}${url.search}`);
 }
 
 function invalidUpstreamResponse(
@@ -109,12 +118,7 @@ function invalidUpstreamResponse(
 
 export async function GET(request: NextRequest) {
   const redirect = sanitizeAdminRedirect(request.nextUrl.searchParams.get('redirect') || '/admin');
-  const response = NextResponse.redirect(
-    new URL(`/admin/login?redirect=${encodeURIComponent(redirect)}`, resolveTrustedAdminOrigin()),
-    303
-  );
-  response.headers.set('Cache-Control', 'no-store');
-  return response;
+  return redirectWithinAdmin(`/admin/login?redirect=${encodeURIComponent(redirect)}`);
 }
 
 export async function POST(request: NextRequest) {
@@ -170,10 +174,7 @@ export async function POST(request: NextRequest) {
       const parsed = new URL(location, resolveTrustedAdminOrigin());
       redirectLocation = sanitizeAdminRedirect(`${parsed.pathname}${parsed.search}${parsed.hash}`);
     } catch {}
-    const response = NextResponse.redirect(
-      new URL(redirectLocation, resolveTrustedAdminOrigin()),
-      303
-    );
+    const response = redirectWithinAdmin(redirectLocation);
     copyAdminSessionCookie(backendResponse, response);
     response.headers.set('Cache-Control', 'no-store');
     return response;
@@ -197,10 +198,7 @@ export async function POST(request: NextRequest) {
 
   if (!wantsJson) {
     if (backendResponse.ok) {
-      const response = NextResponse.redirect(
-        new URL(redirect, resolveTrustedAdminOrigin()),
-        303
-      );
+      const response = redirectWithinAdmin(redirect);
       copyAdminSessionCookie(backendResponse, response);
       response.headers.set('Cache-Control', 'no-store');
       return response;

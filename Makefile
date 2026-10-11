@@ -24,8 +24,7 @@ baseline:
 	cd frontend && pnpm run lint
 
 bootstrap-dev:
-	uv venv --python 3.12 .venv
-	uv pip install --python .venv/bin/python -e '.[dev]'
+	uv sync --python 3.12 --extra dev --locked
 	pnpm --dir frontend install --frozen-lockfile
 
 dev:
@@ -75,7 +74,7 @@ migrate:
 	docker compose -f docker-compose.dev.yml run --rm api alembic upgrade head
 
 seed-dev:
-	docker compose -f docker-compose.dev.yml run --rm api python -m app.dev.seed_runtime \
+	docker compose -f docker-compose.dev.yml run --rm api python -m app.ops.seed_runtime \
 		--site-id "$(SITE_ID)" \
 		--key-id "$(KEY_ID)" \
 		--secret "$(SECRET)" \

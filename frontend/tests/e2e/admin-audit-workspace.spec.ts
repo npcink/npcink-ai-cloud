@@ -61,6 +61,17 @@ test('audit workspace keeps exact evidence URL-backed and excludes raw payloads'
   await expect(page.locator('[data-ui="admin-inspector-drawer"]')).toBeVisible();
   await page.locator('[data-ui="admin-inspector-drawer-close"]').click();
 
+  await page.goto('/admin/audit');
+  await page.getByText(/More filters|更多筛选/i).click();
+  await page.getByLabel(/Operator ID|操作员/i).fill('operator');
+  await page.getByLabel(/From time|开始时间/i).fill('2026-04-07T00:00');
+  await page.getByLabel(/To time|结束时间/i).fill('2026-04-09T23:59');
+  await page.getByRole('button', { name: /Apply filters|应用筛选/i }).click();
+  await expect(page).toHaveURL(/actor_ref=operator/);
+  await expect(page).toHaveURL(/created_from=2026-04-/);
+  await expect(page).toHaveURL(/created_to=2026-04-/);
+  await expect(directory.locator('tbody tr')).toHaveCount(1);
+
   failNextAuditRequest = true;
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
   await expect(page.getByText(/last loaded audit page remains visible|仍保留上次成功加载的审计页/i)).toBeVisible();
@@ -107,6 +118,22 @@ test('audit workspace recovers deep pages and distinguishes filtered empty', asy
   await page.getByLabel(/Idempotency key|幂等键/i).fill('missing-audit-event');
   await page.getByRole('button', { name: /Apply filters|应用筛选/i }).click();
   await expect(page.getByText(/No matching audit evidence|没有匹配的审计证据/i)).toBeVisible();
+});
+
+test('audit workspace preserves precise RFC3339 URL filters when reapplied', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installAdminMocks(page);
+  const preciseFrom = '2026-04-08T09:45:59.123Z';
+  const preciseTo = '2026-04-08T09:46:00.987Z';
+
+  await page.goto(`/admin/audit?created_from=${encodeURIComponent(preciseFrom)}&created_to=${encodeURIComponent(preciseTo)}`);
+  await page.getByText(/More filters|更多筛选/i).click();
+  await page.getByRole('button', { name: /Apply filters|应用筛选/i }).click();
+
+  const url = new URL(page.url());
+  expect(url.searchParams.get('created_from')).toBe(preciseFrom);
+  expect(url.searchParams.get('created_to')).toBe(preciseTo);
 });
 
 test('audit workspace exposes an initial failure and retry path', async ({ page }) => {

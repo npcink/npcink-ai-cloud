@@ -1,4 +1,5 @@
 # CommercialRepository 渐进拆分实施计划 v1
+Status: active plan.
 
 状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7I M4 accepted；CommercialRepository 继续拆分已暂停
 
@@ -21,7 +22,7 @@
 - [生产发布策略](cloud-production-release-policy-v1.md)
 
 阶段结果、收益复核、低效根因与商业验证交接见
-[CommercialRepository 拆分收口与开发复盘](commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
+[CommercialRepository 拆分收口与开发复盘](history/engineering/2026/commercial-repository-decomposition-closeout-and-development-retrospective-2026-08-03.md)。
 
 ## 2. 当前事实
 

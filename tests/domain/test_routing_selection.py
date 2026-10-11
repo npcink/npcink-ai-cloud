@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import CatalogModel, ProviderConnection
+from app.core.models import CatalogCapabilityEvidence, CatalogModel, ProviderConnection
 from app.domain.catalog.service import CatalogService
+from app.domain.model_capabilities.probes import vision_probe_fingerprint
 from app.domain.provider_connections.service import ProviderConnectionAdminService
 from app.domain.routing.errors import RoutingNoCandidatesError
 from app.domain.routing.service import RoutingService
@@ -256,6 +259,87 @@ def test_routing_service_rejects_deprecated_models_even_when_allowlisted(
         RoutingService(database_url).resolve(
             profile_id="text.balanced",
             execution_kind="text",
+        )
+
+    dispose_engine(database_url)
+
+
+def test_routing_service_requires_current_verified_capability_evidence(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    fingerprint = vision_probe_fingerprint(
+        provider_connection_id="openai",
+        model_id="gpt-4.1",
+        endpoint_variant="responses",
+    )
+    with get_session(database_url) as session:
+        session.add(
+            ProviderConnection(
+                connection_id="openai",
+                provider_type="openai_compatible",
+                display_name="OpenAI",
+                enabled=True,
+                base_url="https://api.openai.test/v1",
+                config_json={
+                    "provider_id": "openai",
+                    "kind": "openai_compatible",
+                    "capability_ids": ["vision"],
+                    "runtime_profile_ids": ["vision.default"],
+                    "model_ids": ["gpt-4.1"],
+                },
+                secret_ciphertext="configured-in-test",
+                status="ready",
+                source_role="execution_source",
+                metadata_json={},
+            )
+        )
+        session.commit()
+
+    with pytest.raises(RoutingNoCandidatesError):
+        RoutingService(database_url).resolve(
+            profile_id="vision.default",
+            execution_kind="vision",
+        )
+
+    with get_session(database_url) as session:
+        evidence = CatalogCapabilityEvidence(
+            instance_id="openai-us-east-vision-default",
+            capability="vision",
+            state="verified",
+            route_fingerprint=fingerprint,
+            source="test_probe",
+            revision="fresh",
+            checked_at=datetime.now(UTC),
+        )
+        session.add(evidence)
+        session.commit()
+
+    resolution = RoutingService(database_url).resolve(
+        profile_id="vision.default",
+        execution_kind="vision",
+    )
+    assert resolution.selected_candidate.instance_id == "openai-us-east-vision-default"
+
+    with get_session(database_url) as session:
+        evidence = session.scalar(
+            select(CatalogCapabilityEvidence).where(
+                CatalogCapabilityEvidence.instance_id
+                == "openai-us-east-vision-default",
+                CatalogCapabilityEvidence.capability == "vision",
+                CatalogCapabilityEvidence.route_fingerprint == fingerprint,
+            )
+        )
+        assert evidence is not None
+        evidence.checked_at = datetime.now(UTC) - timedelta(days=31)
+        session.commit()
+
+    with pytest.raises(RoutingNoCandidatesError):
+        RoutingService(database_url).resolve(
+            profile_id="vision.default",
+            execution_kind="vision",
         )
 
     dispose_engine(database_url)

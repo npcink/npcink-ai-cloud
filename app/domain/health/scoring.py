@@ -5,6 +5,13 @@ from datetime import UTC, datetime, timedelta
 
 from app.core.models import ProviderCallRecord
 
+QUALITY_FAILURE_CODES = frozenset(
+    {
+        "provider.output_quality_rejected",
+        "provider.output_contract_invalid",
+    }
+)
+
 
 @dataclass(slots=True)
 class HealthAssessment:
@@ -44,6 +51,9 @@ def assess_instance_health(
     calls_total = len(scoped_calls)
     success_total = sum(1 for call in scoped_calls if not call.error_code)
     timeout_total = sum(1 for call in scoped_calls if call.error_code == "provider.timeout")
+    quality_failure_total = sum(
+        1 for call in scoped_calls if call.error_code in QUALITY_FAILURE_CODES
+    )
     success_rate = round(success_total / calls_total, 4)
     timeout_rate = round(timeout_total / calls_total, 4)
     avg_latency_ms = int(round(sum(call.latency_ms for call in scoped_calls) / calls_total))
@@ -74,6 +84,7 @@ def assess_instance_health(
             "recent calls="
             f"{calls_total}; success_rate={success_rate:.4f}; "
             f"timeout_rate={timeout_rate:.4f}; avg_latency_ms={avg_latency_ms}; "
+            f"quality_failure_total={quality_failure_total}; "
             f"sample_adjusted={'true' if sample_adjusted else 'false'}"
         ),
         calls_total=calls_total,

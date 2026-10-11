@@ -38,14 +38,14 @@ assert.doesNotMatch(home, /<QqLoginButton/, 'home must keep one primary CTA inst
 assert.match(home, /href="\/portal\/register"/, 'home must keep a clear registration CTA');
 assert.match(
   home,
-  /支持 QQ 快捷登录[\s\S]*WordPress Addon[\s\S]*激活 Free 服务/,
-  'home must explain that registration creates the account before addon-verified Free activation'
+  /支持 QQ 快捷登录[\s\S]*验证成功即可获得 Free 服务[\s\S]*WordPress Addon/,
+  'home must explain verified-registration Free before WordPress site connection'
 );
 assert.match(login, /<QqLoginButton/, 'login must expose the QQ login entry');
 assert.match(register, /<QqLoginButton/, 'registration must expose the QQ login entry');
 assert.match(
   loginLayout,
-  /npcink-portal-activation-contract['"]:\s*['"]addon-verified-free-activation-v1/,
+  /npcink-portal-activation-contract['"]:\s*['"]registration-verified-free-activation-v2/,
   'portal login metadata must expose a server-rendered activation contract for release smoke'
 );
 assert.match(proxy, /X-Robots-Tag[\s\S]*noindex/, 'admin responses must opt out of indexing');

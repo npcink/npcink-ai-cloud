@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 from zipfile import ZipFile
 
-from app.dev.live_site_addon_install import APPROVAL_TEXT
-from app.dev.live_site_addon_package import ADDON_PLUGIN_BASENAME
-from app.dev.live_site_preflight import SiteTarget
-from app.dev.live_site_stage1_readiness import (
+from app.ops.live_site_addon_install import APPROVAL_TEXT
+from app.ops.live_site_addon_package import ADDON_PLUGIN_BASENAME
+from app.ops.live_site_preflight import SiteTarget
+from app.ops.live_site_stage1_readiness import (
     ALLOWED_PREFLIGHT_BLOCKERS,
     addon_zip_failures,
     build_readiness_report,

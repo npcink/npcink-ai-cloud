@@ -360,6 +360,40 @@ also exercise the actual operator path:
 Do not make the entire Playwright suite the default inner loop. Use the
 smallest route-focused spec that covers the changed seam.
 
+#### Deployed-browser evidence and click failures
+
+When a preview URL is the reported consumer, run the existing focused spec
+against that URL with `NPCINK_CLOUD_FRONTEND_BASE_URL`. Use the repository
+Playwright wrapper and its shared browser cache before downloading another
+browser. Record the visited origin/path, browser engine/version, profile type,
+mocked/live data mode, and the deployment identity returned by `/api/health`.
+Keep local Git identity separate. Matching commit IDs do not prove matching
+dirty files; compare the candidate source/frontend fingerprints with M4 status
+when making an artifact-identity claim. Unavailable identity stays unmeasured.
+
+Mocked API responses on deployed frontend assets prove UI behavior, not the
+live backend or WordPress delivery path. Pair them with a bounded live read or
+the relevant producer-to-consumer proof, explicitly identifying each lane.
+
+For a control that does nothing in the operator's browser:
+
+1. record the route, filter state, time, browser version, and expected result;
+2. check the serving revision and the actual hit target, navigation, console,
+   and request outcome before changing the implementation;
+3. compare the same route in the normal profile and InPrivate when useful;
+   a difference suggests profile settings/extensions, but does not identify
+   the cause or authorize clearing all data or disabling global security;
+4. use a self-contained diagnostic script and await explicit completion;
+   missing evidence is not an empty result;
+5. verify click, refresh, and browser history in the affected consumer before
+   closing the original report. A fresh test browser passing is insufficient.
+
+Do not claim replacing `router.replace` with Next.js `Link` bypasses client
+routing, or infer a root cause merely because a code change passes tests.
+Update golden screenshots only after reviewing the exact differences and
+confirming they represent the intended surface; never use a baseline update
+to conceal a broken interaction.
+
 ### 7.4 Coverage visibility
 
 Coverage is diagnostic evidence, not the first acceptance gate.

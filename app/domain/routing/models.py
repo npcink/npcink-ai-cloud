@@ -29,6 +29,7 @@ class RoutingResolution:
     default_policy: dict[str, Any]
     selection_policy: dict[str, Any]
     candidates: list[RoutingCandidate] = field(default_factory=list)
+    router_version: str = "hosted_router.v1"
 
     @property
     def selected_candidate(self) -> RoutingCandidate:

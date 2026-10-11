@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
@@ -9,6 +10,13 @@ IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 class RuntimeCallbackTargetValidationError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class ResolvedRuntimeCallbackTarget:
+    host: str
+    port: int
+    ip_address: IPAddress
 
 
 _BLOCKED_NETWORKS = (
@@ -36,6 +44,10 @@ _BLOCKED_NETWORKS = (
 
 
 def validate_runtime_callback_target(callback_url: str) -> None:
+    resolve_runtime_callback_target(callback_url)
+
+
+def resolve_runtime_callback_target(callback_url: str) -> ResolvedRuntimeCallbackTarget:
     raw = str(callback_url or "").strip()
     parsed = urlsplit(raw)
     if parsed.scheme.lower() != "https":
@@ -45,7 +57,7 @@ def validate_runtime_callback_target(callback_url: str) -> None:
     if parsed.username or parsed.password:
         raise RuntimeCallbackTargetValidationError("callback_url must not include userinfo")
 
-    host = parsed.hostname.strip().lower()
+    host = parsed.hostname.strip().lower().encode("idna").decode("ascii")
     port = parsed.port or 443
     if host == "localhost":
         raise RuntimeCallbackTargetValidationError("callback_url host is not allowed")
@@ -57,13 +69,15 @@ def validate_runtime_callback_target(callback_url: str) -> None:
 
     if literal_ip is not None:
         _ensure_public_callback_ip(literal_ip)
-        return
+        return ResolvedRuntimeCallbackTarget(host=host, port=port, ip_address=literal_ip)
 
     resolved_ips = _resolve_callback_target_ips(host, port)
     if not resolved_ips:
         raise RuntimeCallbackTargetValidationError("callback_url host did not resolve")
     for resolved_ip in resolved_ips:
         _ensure_public_callback_ip(resolved_ip)
+    selected_ip = min(resolved_ips, key=lambda value: (value.version, int(value)))
+    return ResolvedRuntimeCallbackTarget(host=host, port=port, ip_address=selected_ip)
 
 
 def _resolve_callback_target_ips(host: str, port: int) -> set[IPAddress]:

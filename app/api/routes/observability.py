@@ -26,6 +26,7 @@ class PluginEventPayload(BaseModel):
     schema_version: str = Field(default="", max_length=32)
     plugin_slug: str = Field(min_length=1, max_length=64)
     plugin_version: str = Field(default="", max_length=64)
+    wordpress_ai_version: str = Field(default="", max_length=64)
     source: str = Field(default="local", max_length=32)
     event_kind: str = Field(min_length=1, max_length=96)
     event_id: str = Field(default="", max_length=96)
@@ -50,11 +51,14 @@ class PluginEventPayload(BaseModel):
     failed_count: int | None = Field(default=None, ge=0, le=100_000)
     quality_contract: str = Field(default="", max_length=64)
     quality_session_id: str = Field(default="", max_length=191)
+    generation_id: str = Field(default="", max_length=191)
     task_key: str = Field(default="", max_length=64)
     object_scope_hash: str = Field(default="", max_length=128)
     actor_scope_hash: str = Field(default="", max_length=128)
     outcome: str = Field(default="", max_length=64)
     outcome_confidence: str = Field(default="", max_length=32)
+    evidence_type: str = Field(default="", max_length=64)
+    lifecycle_state: str = Field(default="", max_length=32)
     save_kind: str = Field(default="", max_length=32)
     time_to_outcome_bucket: str = Field(default="", max_length=32)
     generation_sequence: int | None = Field(default=None, ge=1, le=100_000)
@@ -79,6 +83,16 @@ class PluginEventPayload(BaseModel):
             or self.content_storage != "omitted_metadata_only"
         ):
             raise ValueError("monitoring state projection contract is invalid")
+        return self
+
+    @model_validator(mode="after")
+    def validate_editor_assist_quality_v2(self) -> Self:
+        if (
+            self.quality_contract == "editor_assist_quality.v2"
+            and self.event_kind.startswith("addon.editor_assist.")
+            and not self.generation_id
+        ):
+            raise ValueError("editor assist quality v2 events require generation_id")
         return self
 
 

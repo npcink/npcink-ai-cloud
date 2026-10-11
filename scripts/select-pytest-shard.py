@@ -159,7 +159,11 @@ def discover_collected_test_item_counts(roots: list[Path]) -> dict[str, int]:
         check=False,
     )
     if completed.returncode != 0:
-        raise SystemExit("pytest collection failed while calculating shard item floors")
+        stderr_tail = "\n".join(completed.stderr.strip().splitlines()[-40:])
+        raise SystemExit(
+            "pytest collection failed while calculating shard item floors"
+            f" (exit {completed.returncode}):\n{stderr_tail}"
+        )
     root_prefixes = tuple(normalize_repo_path(root).rstrip("/") for root in roots)
     counts: Counter[str] = Counter()
     for raw_line in completed.stdout.splitlines():

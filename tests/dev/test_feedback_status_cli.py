@@ -8,7 +8,7 @@ import pytest
 
 from app.core.config import Settings
 from app.core.db import init_schema
-from app.dev.feedback_status import _positive_bounded_hours, build_payload
+from app.ops.feedback_status import _positive_bounded_hours, build_payload
 
 
 def test_build_payload_includes_manifest_revision_without_exposing_database(

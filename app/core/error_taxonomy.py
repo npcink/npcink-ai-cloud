@@ -48,6 +48,18 @@ _ERROR_TAXONOMY: dict[str, ErrorTaxonomyEntry] = {
         retryable=False,
         fallback_eligible=True,
     ),
+    "provider.budget_exceeded": ErrorTaxonomyEntry(
+        error_code="provider.budget_exceeded",
+        error_stage="provider_budget",
+        retryable=False,
+        fallback_eligible=True,
+    ),
+    "provider.budget_configuration_missing": ErrorTaxonomyEntry(
+        error_code="provider.budget_configuration_missing",
+        error_stage="provider_budget",
+        retryable=False,
+        fallback_eligible=False,
+    ),
     "provider.context_overflow": ErrorTaxonomyEntry(
         error_code="provider.context_overflow",
         error_stage="provider",

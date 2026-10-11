@@ -56,6 +56,14 @@ ability registry.
 - Long `site-knowledge-sync` runs use the existing runtime worker path and
   `run_records`; no second queue, scheduler, or workflow engine is introduced.
 
+Related Content and Internal Links expose additive, deterministic review
+metadata without changing ranking order or authorizing a write. Both intents
+declare `candidate_relevance` as `strong`, `review`, or `weak`. Internal Links
+continues to expose source-passage anchor evidence, but Cloud does not declare
+placement eligibility because it cannot validate the current editor structure
+or detect edits made after search. WordPress owns current-state preflight,
+placement eligibility, editor adoption, proposal approval, and final writes.
+
 ## Rebuildable Image-Attachment Projection
 
 `site_knowledge_sync.v1` additively accepts a bounded `media_items` list. Each
@@ -374,9 +382,16 @@ workflow should use comments, such as FAQ or user-feedback analysis.
 `site_knowledge_search.v1` accepts the optional additive input
 `result_granularity`:
 
-- `chunk` is the compatibility default and preserves ranked chunk results;
+- `chunk` is the default for intents other than `related_content` and preserves
+  ranked chunk results;
 - `document` returns each public source document once after evidence filtering
   and reranking, then applies `max_results`.
+
+`related_content` always returns document-level results, even when a caller
+omits the field or requests `chunk`. A related-article surface recommends
+articles rather than repeated chunks from the same article. When
+`current_post_id` is present, Cloud excludes that document in both the vector
+backend and PostgreSQL fallback paths.
 
 Document results keep the best-ranked chunk as the primary evidence and add a
 bounded `matched_chunks` list containing only `source_type`, `source_id`,
@@ -417,7 +432,15 @@ Supported first workflows:
   `suggested_action`, and `faq_mode=wordpress_local_only`.
 - `related_content`: topic cluster planning. Results include
   `cluster_candidate`, `cluster_role`, `planning_action`, and
-  `planning_mode=wordpress_local_only`.
+  `planning_mode=wordpress_local_only`. Cloud ranks vector retrieval and any
+  optional provider reranking with bounded local evidence: shared title terms
+  add at most `0.04`, and synced category/tag overlap adds at most `0.04`.
+  The additive `related_content_ranking` object reports the semantic score
+  source, component bonuses, and final ranking score. Provider-rerank and
+  vector scores are not compared across their score-source groups, and exact
+  query matches remain a separate higher-priority group. These fields explain
+  the strategy; synthetic fixtures and passing tests do not prove real-world
+  recommendation quality.
 - `content_gap_analysis`: content coverage review. Results include
   `gap_signal`, `suggested_action`, and `planning_mode=wordpress_local_only`
   so editors can decide whether to expand existing content or create new
@@ -435,9 +458,28 @@ Supported first workflows:
   follow-up without Cloud producing article titles, article bodies, SEO copy,
   `article_write_plan` candidates, full drafts, ready-to-publish content, or
   automatic publishing instructions.
-- `internal_links`: editor link recommendation. Results include
-  `anchor_text_candidates`, `link_target`, `suggested_action`, and
+- `internal_links`: editor link recommendation. WordPress may send up to 24
+  visible-editor `source_passages`, with at most 1,200 characters per passage
+  and 12,000 characters total. Other intents reject this field. The existing
+  `result_only` storage posture leaves durable runtime input empty, and Cloud
+  does not echo those passages.
+  When a vector candidate and a source passage share a specific exact phrase,
+  the result adds `anchor_or_context` plus bounded `anchor_evidence`; generic
+  phrases and the complete target title are rejected. Results continue to
+  include `anchor_text_candidates`, `link_target`, `suggested_action`, and
   `insert_mode=wordpress_local_only`.
+  Cloud ranks this intent with vector retrieval, optional provider reranking,
+  and then bounded local evidence: shared query terms add at most `0.05`,
+  synced category/tag overlap adds at most `0.04`, and exact anchor evidence
+  adds at most `0.06`. The additive `internal_link_ranking` object reports the
+  score source, component bonuses, and final ranking score. Provider-rerank and
+  vector scores are not compared across their score-source groups, and exact
+  query matches remain a separate higher-priority group. Other intents keep
+  their existing ranking behavior.
+  These fields explain the active ranking strategy; they are not a claim that
+  recommendation quality has improved. That conclusion requires a separately
+  labeled, complete human gold set. WordPress must independently match the
+  returned phrase against current visible editor state before enabling Apply.
 - `refresh_suggestions`: stale/overlapping content review. Results include
   `refresh_action`, `refresh_signals`, `suggested_action`, and
   `update_mode=wordpress_local_only`. The same results include
@@ -600,10 +642,15 @@ when the caller explicitly allowed a non-site-grounded fallback.
 
 ## Coverage Semantics
 
-`post_type_coverage` is MVP Cloud-seen coverage. It reports coverage for post
-types present in the Cloud index, not authoritative whole-site WordPress
-coverage. Whole-site coverage requires the WordPress side to provide source
-totals in a later contract.
+`post_type_coverage` and `source_type_coverage` are nullable ratios. Cloud
+returns a ratio only when the WordPress connector supplies an authoritative
+whole-site denominator; otherwise the value is `null`. The response always
+includes `post_type_counts`, `source_type_counts`, and
+`coverage_basis=cloud_index_counts_without_whole_site_denominator`, so an
+indexed count is never presented as complete site coverage. `has_stale_content`
+is `true` only when a comparable source `modified_gmt` is newer than the index;
+it is `null` when no comparable source timestamp exists, and the response also
+exposes both stale and comparable document counts.
 
 ## Anti-Hallucination Roadmap
 

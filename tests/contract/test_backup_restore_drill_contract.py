@@ -189,8 +189,8 @@ def test_restore_drill_document_freezes_scope_and_honest_evidence_boundary() -> 
     document = DOC.read_text(encoding="utf-8")
 
     assert "Status: active engineering gate." in document
-    assert "production-backup-restore-drill-2026-07-10.md" in document
-    assert "production-backup-restore-drill-2026-07-11.md" in document
+    assert "history/production/2026/production-backup-restore-drill-2026-07-10.md" in document
+    assert "history/production/2026/production-backup-restore-drill-2026-07-11.md" in document
     assert "database and local-volume\nArtifactStore" in document
     assert "20260717_0068" in document
     assert "The script does not freeze that literal" in document

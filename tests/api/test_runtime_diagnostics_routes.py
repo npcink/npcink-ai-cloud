@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy import select
 
 from app.adapters.callbacks.http import HttpRuntimeCallbackDispatcher
@@ -36,8 +37,10 @@ RUNTIME_CALLBACK_TEST_SECRET = "callback-fixture-" + ("x" * 32)
 MISSING_ACTIVATE_IDEMPOTENCY_KEY = "diag-activate-1"
 
 
+@pytest.mark.parametrize("meter_load", ["normal", "outside_window", "over_limit"])
 def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     tmp_path: Path,
+    meter_load: str,
 ) -> None:
     database_url, client = _build_client(tmp_path)
     site_id = "site_model_gov"
@@ -154,6 +157,11 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
             model_id="gpt-5.5",
             instance_id="openai-global-gpt-5-5-text",
         )
+        add_run(
+            run_id="run-non-ai-upload", ability_family="uncovered_text",
+            execution_kind="media_upload", profile_id="media.upload",
+            provider_id="", model_id="", instance_id="",
+        )
         session.flush()
         session.add_all(
             [
@@ -217,13 +225,35 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
                     currency="USD",
                     dedupe_key=f"model-gov-{run_id}-{meter_key}",
                     payload_json={},
-                    created_at=now - timedelta(minutes=4),
+                    created_at=now - timedelta(
+                        minutes=120 if meter_load == "outside_window" else 4
+                    ),
                 )
             )
+        if meter_load == "over_limit":
+            # More than the event-directory cap, all associated with one run.
+            # Earlier knowledge/vision meters must still establish coverage.
+            session.add_all([
+                UsageMeterEvent(
+                    account_id=subscription.account_id, site_id=site_id,
+                    subscription_id=subscription.subscription_id,
+                    plan_version_id=subscription.plan_version_id,
+                    run_id="run-model-gov-text", event_kind="meter", meter_key="runs",
+                    quantity=1, ability_family="text", channel="openapi",
+                    execution_kind="text", execution_tier="cloud",
+                    data_classification="internal", currency="USD",
+                    dedupe_key=f"coverage-overflow-{index}", payload_json={},
+                    created_at=now - timedelta(minutes=1),
+                ) for index in range(10001)
+            ])
         session.commit()
 
     unauthenticated = client.get("/internal/service/runtime/diagnostics/runtime-telemetry")
     assert unauthenticated.status_code == 401
+    unauthenticated_runs = client.get(
+        "/internal/service/admin/runtime-telemetry/runs"
+    )
+    assert unauthenticated_runs.status_code == 401
 
     response = client.get(
         "/internal/service/runtime/diagnostics/runtime-telemetry"
@@ -235,8 +265,20 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         f"?site_id={site_id}&recent_minutes=10080&limit=10",
         headers=build_internal_headers(),
     )
+    run_evidence_response = client.get(
+        "/internal/service/admin/runtime-telemetry/runs"
+        f"?site_id={site_id}&issue_code=hosted_model.failed_runs&recent_minutes=60&limit=2",
+        headers=build_internal_headers(),
+    )
+    provider_run_evidence_response = client.get(
+        "/internal/service/admin/runtime-telemetry/runs"
+        f"?site_id={site_id}&issue_code=hosted_model.provider_errors&recent_minutes=60&limit=10",
+        headers=build_internal_headers(),
+    )
     assert response.status_code == 200
     assert admin_alias_response.status_code == 200
+    assert run_evidence_response.status_code == 200
+    assert provider_run_evidence_response.status_code == 200
     legacy_response = client.get(
         "/internal/service/runtime/diagnostics/hosted-model-governance"
         f"?site_id={site_id}&recent_minutes=60&limit=10",
@@ -250,16 +292,32 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert legacy_response.status_code == 404
     assert legacy_admin_alias_response.status_code == 404
     data = response.json()["data"]
-    assert admin_alias_response.json()["data"]["totals"]["runs"] == 4
+    assert admin_alias_response.json()["data"]["totals"]["runs"] == 5
     assert admin_alias_response.json()["data"]["filters"]["recent_minutes"] == 10080
-    assert data["totals"]["runs"] == 4
+    assert data["totals"]["runs"] == 5
+    assert data["usage_statistics"]["runs"] == 5
+    assert data["usage_statistics"]["active_sites"] == 1
     assert data["totals"]["ai_evidence_required_runs"] == 4
-    assert data["totals"]["non_ai_zero_credit_runs"] == 0
+    assert data["totals"]["non_ai_zero_credit_runs"] == 1
     assert data["totals"]["provider_calls"] == 2
     assert data["totals"]["provider_call_run_coverage_rate"] == 0.5
     assert data["totals"]["metered_run_coverage_rate"] == 0.75
     assert data["boundary"]["direct_wordpress_write"] is False
     assert data["boundary"]["contains_prompt_or_result_payloads"] is False
+    run_evidence = run_evidence_response.json()["data"]
+    assert run_evidence["filters"]["issue_code"] == "hosted_model.failed_runs"
+    assert run_evidence["filters"]["limit"] == 2
+    assert run_evidence["boundary"]["contains_prompt_or_result_payloads"] is False
+    assert run_evidence["boundary"]["contains_credentials"] is False
+    assert all(
+        "result_json" not in item and "input_json" not in item
+        for item in run_evidence["items"]
+    )
+    provider_run_ids = {
+        item["run_id"]
+        for item in provider_run_evidence_response.json()["data"]["items"]
+    }
+    assert provider_run_ids == {item["run_id"] for item in data["provider_failures"]}
     capability_by_id = {item["group_id"]: item for item in data["capability_groups"]}
     assert capability_by_id["text"]["tokens_total"] == 60
     assert capability_by_id["knowledge"]["tokens_total"] == 5
@@ -269,6 +327,12 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
     assert data["governance_gaps"]["unmetered_capabilities"] == ["uncovered_text"]
     assert data["governance_gaps"]["missing_provider_call_capabilities"] == ["uncovered_text"]
     assert data["governance_gaps"]["unmetered_run_count"] == 1
+    missing = client.get(
+        f"/internal/service/admin/runtime-telemetry/runs?site_id={site_id}"
+        "&issue_code=hosted_model.unmetered_runs&recent_minutes=60&limit=25",
+        headers=build_internal_headers(),
+    ).json()["data"]["items"]
+    assert [run["run_id"] for run in missing] == ["run-model-gov-uncovered-text"]
     assert data["governance_gaps"]["runs_without_provider_call_count"] == 2
     assert data["alert_summary"]["status"] == "error"
     assert any(
@@ -284,7 +348,61 @@ def test_runtime_telemetry_diagnostics_summarizes_runtime_families(
         and "uncovered_text" in alert["capabilities"]
         for alert in data["alert_summary"]["alerts"]
     )
+    alert_daily = {
+        alert["code"]: alert["daily_counts"]
+        for alert in data["alert_summary"]["alerts"]
+    }
+    assert sum(
+        point["count"] for point in alert_daily["hosted_model.unmetered_runs"]
+    ) == 1
+    assert sum(
+        point["count"] for point in alert_daily["hosted_model.provider_call_gap"]
+    ) == 2
+    assert all(
+        isinstance(point["day"], str)
+        and isinstance(point["count"], int)
+        and point["count"] >= 0
+        for series in alert_daily.values()
+        for point in series
+    )
     assert data["alert_summary"]["boundary"]["direct_wordpress_write"] is False
+
+    assert data["provider_failures"] == []
+    with get_session(database_url) as session:
+        call = session.scalar(
+            select(ProviderCallRecord).where(ProviderCallRecord.run_id == "run-model-gov-text")
+        )
+        assert call is not None
+        call.error_code = "provider.invalid_request"
+        run = session.scalar(select(RunRecord).where(RunRecord.run_id == call.run_id))
+        assert run is not None
+        run.error_message = "private prompt: additionalProperties is required to be false"
+        session.commit()
+    failure_response = client.get(
+        f"/internal/service/admin/runtime-telemetry?site_id={site_id}&recent_minutes=60&limit=1",
+        headers=build_internal_headers(),
+    )
+    failures = failure_response.json()["data"]["provider_failures"]
+    assert len(failures) == 1
+    assert failures[0]["run_id"] == "run-model-gov-text"
+    assert failures[0]["reason"] == "output_schema_invalid"
+    assert "private prompt" not in json.dumps(failures)
+    provider_error_response = client.get(
+        f"/internal/service/admin/runtime-telemetry?site_id={site_id}&recent_minutes=60&limit=10",
+        headers=build_internal_headers(),
+    )
+    provider_error_alert = next(
+        alert
+        for alert in provider_error_response.json()["data"]["alert_summary"]["alerts"]
+        if alert["code"] == "hosted_model.provider_errors"
+    )
+    assert provider_error_alert["count"] == 1
+    assert sum(point["count"] for point in provider_error_alert["daily_counts"]) == 1
+    other_site = client.get(
+        "/internal/service/admin/runtime-telemetry?site_id=unrelated-site&recent_minutes=60",
+        headers=build_internal_headers(),
+    )
+    assert other_site.json()["data"]["provider_failures"] == []
 
 
 def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
@@ -338,7 +456,7 @@ def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
             "callback_url": "https://example.com/diag",
             "key_id": "runtime_callback_key",
             "secret": RUNTIME_CALLBACK_TEST_SECRET,
-            "callback_id": "runtime_terminal",
+            "registration_id": "runtime_terminal",
         },
     )
 
@@ -784,7 +902,7 @@ def test_service_routes_runtime_callback_dispatch_recovery_is_operator_visible(
             "callback_url": "https://example.com/recover",
             "key_id": "runtime_callback_key",
             "secret": RUNTIME_CALLBACK_TEST_SECRET,
-            "callback_id": "runtime_terminal",
+            "registration_id": "runtime_terminal",
         },
     )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.dev.live_site_env import (
+from app.ops.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     parse_env_file,
     resolve_approval_text,

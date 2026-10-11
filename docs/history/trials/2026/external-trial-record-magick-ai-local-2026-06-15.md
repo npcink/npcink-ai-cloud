@@ -22,7 +22,7 @@ Read first:
 - `docs/cloud-content-generation-boundary-v1.md`
 - `docs/cloud-bulk-article-run-v1.md`
 - `docs/cloud-agent-feedback-contract-v1.md`
-- `docs/ai-credit-ledger-detail-summary-2026-06-13.md`
+- `../../engineering/2026/ai-credit-ledger-detail-summary-2026-06-13.md`
 
 ## Trial Target
 

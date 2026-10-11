@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -40,7 +41,14 @@ def _operation_payload(
 ) -> dict[str, Any]:
     scene_text_field = (
         "source_text"
-        if task in {"title_generation", "content_summary", "content_rewrite"}
+        if task in {
+            "title_generation",
+            "content_summary",
+            "content_rewrite",
+            "editorial_updates",
+            "excerpt_generation",
+            "meta_description",
+        }
         else "prompt"
     )
     scene_request: dict[str, Any] = {
@@ -80,15 +88,15 @@ def _operation_payload(
 @pytest.mark.parametrize(
     ("task", "source_text", "expected_max_tokens"),
     [
-        (
-            "title_generation",
-            "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
-            48,
-        ),
-        (
-            "content_summary",
-            "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
-            160,
+            (
+                "title_generation",
+                "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
+                48,
+            ),
+            (
+                "content_summary",
+                "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
+                160,
         ),
         (
             "content_rewrite",
@@ -121,10 +129,647 @@ def test_p2_text_provider_input_projects_source_text_once(
     assert provider_input["metadata"]["task"] == task
     assert provider_input["metadata"]["suggestion_only"] is True
     assert provider_input["max_tokens"] == expected_max_tokens
+    if task == "title_generation":
+        assert "Do not copy or return the exact wording" in provider_input["input"]
     assert "site_alpha" not in serialized
     assert "alpha.example.test" not in serialized
     assert "object_revision" not in serialized
     assert "connector_version" not in serialized
+
+
+def test_editorial_updates_provider_input_forbids_process_explanations() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="editorial_updates",
+            request={
+                "source_text": "This paragraph needs a concise editorial update.",
+                "system_instruction": "Editorial notes to apply: Make the paragraph clearer.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/editorial-updates",
+                    "task": "editorial_updates",
+                    "task_family": "transformation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                    "output_schema": {"type": "string"},
+                    "write_posture": "suggestion_only",
+                },
+            },
+        )
+    )
+
+    assert provider_input["max_tokens"] == 256
+    assert "Return only the final revised content" in provider_input["input"]
+    assert "never say that the task is impossible" in provider_input["input"]
+    assert "Editorial notes to apply: Make the paragraph clearer." in provider_input["input"]
+
+
+@pytest.mark.parametrize("task", ["excerpt_generation", "meta_description"])
+def test_short_text_generation_provider_input_preserves_source_facts(task: str) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task=task,
+            request={
+                "source_text": (
+                    "A bounded connector maps WordPress AI abilities to a hosted provider."
+                ),
+                "system_instruction": "Generate a concise excerpt or SEO description.",
+                "task_contract": {
+                    "task_family": "generation",
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                },
+            },
+        )
+    )
+
+    assert "Use only facts, names, products, organizations, and claims" in provider_input[
+        "input"
+    ]
+    assert "do not introduce concepts" in provider_input["input"].lower()
+    assert "Return only the" in provider_input["input"]
+    expected_source = "A bounded connector maps WordPress AI abilities to a hosted provider."
+    assert provider_input["text"] == expected_source
+    assert provider_input["input"].count(expected_source) == 1
+    assert "Generate a concise excerpt or SEO description." in provider_input["input"]
+
+
+@pytest.mark.parametrize(
+    "task",
+    ["content_translation", "content_classification", "editorial_notes", "slug_generation"],
+)
+def test_structure_sensitive_connector_tasks_default_to_deterministic_temperature(
+    task: str,
+) -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task=task,
+            request={
+                "prompt": "Review this fixed connector sample.",
+                "source_text": "Review this fixed connector sample.",
+                "task_contract": {
+                    "task_family": "analysis" if task == "editorial_notes" else "generation",
+                    "constraints": (
+                        ["json_object"]
+                        if task in {"content_classification", "editorial_notes", "slug_generation"}
+                        else []
+                    ),
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"suggestions": {"type": "array"}},
+                    }
+                    if task in {"content_classification", "editorial_notes"}
+                    else {},
+                },
+            },
+        )
+    )
+
+    assert provider_input["temperature"] == 0.0
+
+
+def test_content_translation_provider_input_protects_gutenberg_structure() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="content_translation",
+            request={
+                "source_text": "<!-- wp:paragraph --><p>需要翻译。</p><!-- /wp:paragraph -->",
+                "target_language": "en-us",
+            },
+        )
+    )
+
+    assert "copy every block delimiter" in provider_input["input"]
+    assert "same number and order of blocks" in provider_input["input"]
+    assert provider_input["temperature"] == 0.0
+
+
+def test_editorial_notes_provider_input_requires_suggestion_for_objective_issue() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="editorial_notes",
+            request={
+                "prompt": "These sentence are hard to reads.",
+                "task_contract": {
+                    "task_family": "analysis",
+                    "constraints": ["json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"suggestions": {"type": "array"}},
+                    },
+                },
+            },
+        )
+    )
+
+    assert "an empty suggestions array is invalid" in provider_input["input"]
+
+
+def test_content_rewrite_provider_input_preserves_scope_and_source_length() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="content_rewrite",
+            request={
+                "source_text": "这是一段需要改写的短内容。",
+                "system_instruction": "让表达更加清晰。",
+            },
+        )
+    )
+
+    assert "Return exactly one rewritten version" in provider_input["input"]
+    assert "Keep the result close to the source length" in provider_input["input"]
+    assert "do not expand a short paragraph into an explanation" in provider_input["input"]
+    assert (
+        "Preserve the original meaning, facts, names, numbers, links, and structure"
+        in provider_input["input"]
+    )
+
+
+def test_editorial_updates_provider_input_preserves_scope_and_source_length() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="editorial_updates",
+            request={
+                "source_text": "这是一段需要改写的短内容。",
+                "system_instruction": "编辑建议：让表达更加清晰。",
+            },
+        )
+    )
+
+    assert "Return only the final revised content" in provider_input["input"]
+    assert "Keep the result close to the source length" in provider_input["input"]
+    assert "do not expand a short paragraph into an explanation" in provider_input["input"]
+    assert "add background, product names, workflow claims" in provider_input["input"]
+    assert "Return the revised paragraph itself and retain its substantive words" in provider_input[
+        "input"
+    ]
+
+
+def test_editorial_updates_rejects_bounded_completion_wording_without_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph has been updated to provide clarity."},
+        input_payload={
+            "metadata": {"task": "editorial_updates", "task_constraints": ["single_value"]},
+            "text": "This paragraph needs a concise editorial update.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_accepts_bounded_revised_paragraph_with_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "The connector sends a clear suggestion to WordPress, and the editor reviews "
+                "it before saving."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates", "task_constraints": ["single_value"]},
+            "text": (
+                "The connector sends a suggestion to WordPress. The editor reviews it "
+                "before saving."
+            ),
+        },
+    )
+
+    assert "WordPress" in normalized["output_text"]
+
+
+def test_editorial_updates_accepts_generic_wording_with_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "The plugin schedule should be updated quarterly, and the editor reviews "
+                "the report before saving."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "The plugin schedule changes quarterly, and the editor reviews the report "
+                "before saving."
+            ),
+        },
+    )
+
+    assert "updated quarterly" in normalized["output_text"]
+
+
+def test_editorial_updates_rejects_source_without_substantive_tokens() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "A revision improves clarity."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "the and of",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_does_not_ground_on_control_wrapper_content() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": "The report includes quarterly metrics and editor review.",
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "<notes>The report includes quarterly metrics and editor review.</notes>",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_grounds_on_all_block_content_sections() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Quarterly release schedule requires review."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "<block-content>The</block-content>"
+                "<block-content>Quarterly release schedule requires review.</block-content>"
+            ),
+        },
+    )
+
+    assert normalized["output_text"] == "Quarterly release schedule requires review."
+
+
+def test_editorial_updates_preserves_legal_user_markup_without_block_wrapper() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Quarterly release schedule requires review."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "<task-list><li>Quarterly release schedule requires review.</li></task-list>"
+            ),
+        },
+    )
+
+    assert normalized["output_text"] == "Quarterly release schedule requires review."
+
+
+def test_content_rewrite_extracts_block_content_before_control_wrappers() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Quarterly release schedule requires review."},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<block-content>Quarterly release schedule requires review.</block-content>"
+                "<notes>Make the paragraph concise.</notes>"
+            ),
+        },
+    )
+
+    assert normalized["output_text"] == "Quarterly release schedule requires review."
+
+
+def test_content_rewrite_does_not_reject_common_instruction_word_with_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": "Use WordPress to send a concise suggestion before review.",
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized["output_text"] == "Use WordPress to send a concise suggestion before review."
+
+
+def test_content_rewrite_rejects_chinese_boilerplate_with_only_particle_overlap() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "该段落已完成优化，内容清晰易读。"},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "这是一个测试。",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_generic_summary_without_source_facts() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This condensed paragraph eliminates repetition to produce a clear version "
+                "suitable for an article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<block-content>This paragraph repeats the same idea. The same idea is repeated "
+                "again for emphasis.</block-content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_explanation_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant sentence requires condensation into one concise statement. "
+                "To make it read well in print or on screen, we suggest removing unnecessary "
+                "repetition that only adds length and confusion to the piece."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<block-content>This paragraph repeats the same idea. The same idea is repeated "
+                "again for emphasis.</block-content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_concise_completion_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph has been concisely updated for clarity."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_replacement_instruction_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This sentence repeats itself; use a concise replacement instead."},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "This paragraph repeats the same idea for emphasis.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_generic_revision_without_editable_source_overlap() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This duplicate sentence requires a more concise revision suitable for "
+                "publication."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_generic_revision_with_only_context_words() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant paragraph requires a concise rewrite to clarify its single "
+                "main point within the article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_condensing_explanation_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant paragraph requires condensing into a concise version "
+                "suitable for publication."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_compound_revision_explanation_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This repetitive paragraph requires a more concise and clear revision "
+                "for the article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_condensed_instruction_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This paragraph needs to be condensed into a clear, concise note without "
+                "redundancy while retaining its meaning."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_content_rewrite_rejects_should_be_shortened_instruction_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This redundant paragraph states one idea unnecessarily and should be "
+                "shortened to improve clarity in the article."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": (
+                "<content>This fixed paragraph repeats the same idea and needs a shorter, "
+                "clearer version for an article.</content>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_reader_facing_summary_from_real_acceptance() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This paragraph offers a clear and concise statement for readers to "
+                "understand easily."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_rejects_long_reader_facing_completion() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "This paragraph provides a concise and clear statement for readers to "
+                "understand easily, avoiding unnecessary words while maintaining clarity "
+                "throughout every sentence within each line presented here now without "
+                "extra details that might distract from what matters most right away."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": (
+                "<block-type>core/paragraph</block-type>"
+                "<block-content>This paragraph needs a concise editorial update.</block-content>"
+                "<notes>Make the paragraph clearer.</notes>"
+            ),
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_transformation_quality_reason_reports_missing_source_grounding() -> None:
+    runtime = _runtime()
+
+    reason = runtime.output_quality_reason(
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "The connector sends a suggestion to WordPress before review.",
+        },
+        provider_output={
+            "output_text": "This paragraph has been revised for clarity.",
+        },
+    )
+
+    assert reason == "output_not_grounded"
+
+
+def test_editorial_updates_rejects_unbounded_expansion() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph is clear. " * 40},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "This paragraph needs a concise editorial update.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_editorial_updates_accepts_bounded_revised_paragraph() -> None:
+    runtime = _runtime()
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "This paragraph now offers a concise editorial update."},
+        input_payload={
+            "metadata": {"task": "editorial_updates"},
+            "text": "This paragraph needs a concise editorial update.",
+        },
+    )
+
+    assert normalized["output_text"] == "This paragraph now offers a concise editorial update."
 
 
 def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() -> None:
@@ -158,7 +803,7 @@ def test_alt_text_provider_input_builds_transient_vision_shapes_from_artifact() 
         "type": "image_url",
         "image_url": {"url": "data:image/png;base64,aW1hZ2UtYnl0ZXM="},
     }
-    assert provider_input["max_tokens"] == 96
+    assert provider_input["max_tokens"] == 1536
     assert provider_input["temperature"] == 0.0
     assert "image-bytes" not in repr(source_artifact)
 
@@ -272,6 +917,47 @@ def test_alt_text_contract_rejects_legacy_alias_and_unknown_fields(
         )
 
     assert error.value.error_code == ("wordpress_operation.alt_text_request_fields_forbidden")
+
+
+def test_alt_text_contract_accepts_ability_schema_projection() -> None:
+    input_schema = {"type": "object", "properties": {"attachment_id": {"type": "integer"}}}
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "alt_text": {"type": "string"},
+            "is_decorative": {"type": "boolean"},
+        },
+    }
+    canonical = json.dumps(
+        {"input_schema": input_schema, "output_schema": output_schema},
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).replace("/", "\\/")
+    request = {
+        "source_artifact_id": "art_0123456789abcdef0123456789abcdef",
+        "prompt": "Generate alt text.",
+        "task_contract": {
+            "contract_version": "ai_task_contract.v1",
+            "ability_name": "ai/alt-text-generation",
+            "task": "alt_text_suggest",
+            "task_family": "generation",
+            "context_requirements": [],
+            "constraints": ["single_value", "source_grounded"],
+            "input_schema": input_schema,
+            "output_schema": output_schema,
+            "schema_hash": "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "write_posture": "suggestion_only",
+        },
+    }
+    normalized = validate_wordpress_operation_contract(
+        {
+            "contract_version": "wordpress_operation.v1",
+            "task": "alt_text_suggest",
+            "request": request,
+        }
+    )
+    assert normalized["request"]["task_contract"]["schema_hash"].startswith("sha256:")
 
 
 @pytest.mark.parametrize(
@@ -424,6 +1110,186 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
     }
 
 
+def test_excerpt_replaces_unknown_source_boilerplate_with_source_sentence() -> None:
+    runtime = _runtime()
+    source = "A short article about reliable WordPress AI provider contracts."
+
+    normalized = runtime.normalize_provider_output(
+        {
+            "output_text": (
+                "The content provided is merely a description of an unknown source and "
+                "contains no specific facts."
+            )
+        },
+        input_payload={
+            "metadata": {"task": "excerpt_generation"},
+            "text": source,
+        },
+    )
+
+    assert normalized["output_text"] == source
+
+
+def test_title_schema_rejects_plain_text_from_compatible_gateway() -> None:
+    runtime = _runtime()
+    title_schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string"}},
+    }
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": "Hosted Runtime Connector Verified"},
+        input_payload={
+            "metadata": {
+                "task": "title_generation",
+                "ability_output_schema": title_schema,
+            },
+            "text": "Verify the hosted runtime connector.",
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_title_generation_rejects_an_existing_scene_heading() -> None:
+    runtime = _runtime()
+    source = "# OneBlog - Typecho文字博客主题\n\n这是文章正文。"
+    provider_input = runtime.build_provider_input(
+        _operation_payload(task="title_generation", request={"source_text": source})
+    )
+
+    assert runtime.is_empty_text_output(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+    assert runtime.output_quality_reason(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    ) == "title_unchanged"
+
+
+def test_title_generation_uses_existing_title_context_for_prompt_and_guard() -> None:
+    runtime = _runtime()
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task="title_generation",
+            request={
+                "source_text": "这是文章正文。",
+                "existing_title": "OneBlog - Typecho文字博客主题",
+            },
+        )
+    )
+
+    assert "Existing WordPress title: OneBlog - Typecho文字博客主题" in provider_input["input"]
+    assert provider_input["metadata"]["existing_title"] == "OneBlog - Typecho文字博客主题"
+    assert runtime.is_empty_text_output(
+        input_payload=provider_input,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+    empty_source_payload = dict(provider_input)
+    empty_source_payload["text"] = ""
+    assert runtime.is_empty_text_output(
+        input_payload=empty_source_payload,
+        provider_output={"output_text": "OneBlog - Typecho文字博客主题"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider_text", "expected_reason"),
+    [
+        (
+            "这是一个用于验证标题长度边界的文章标题，包含了非常多的补充说明和无关的扩展信息。"
+            * 3,
+            "title_length_exceeded",
+        ),
+        ("云端标题！！？？", "title_repeated_punctuation"),
+        ("OneBlog 主题 V9.9 部署指南", "title_unsupported_claim"),
+        ("标题建议", "title_vague"),
+    ],
+)
+def test_title_generation_reports_deterministic_quality_reasons(
+    provider_text: str,
+    expected_reason: str,
+) -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+
+    assert runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    )[0] == expected_reason
+    assert runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    )
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output={"output_text": provider_text},
+    ) == expected_reason
+
+
+def test_title_generation_keeps_mixed_language_as_review_evidence() -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇文章介绍 OneBlog Typecho 主题的部署方法。",
+    }
+    provider_output = {"output_text": "OneBlog Typecho Theme Deployment Guide 部署指南"}
+
+    assert runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == ("title_mixed_language",)
+    assert not runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_text", "title"),
+    [
+        # A candidate may normalize a version the source states more coarsely.
+        ("插件要求 Python 3.5 及以上版本。", "Python 3.5.0 环境配置指南"),
+        # Years that appear only inside tag attributes still ground the claim.
+        ('<img src="report.png" alt="2024 年度报告封面">', "2024 年度报告要点"),
+        # CJK spans tolerate re-spacing between candidate and source.
+        ("本次更新引入了若干新特性与修复。", "【新 特性】一文看懂本次更新"),
+        # Version prefix with a v- decoration in the source.
+        ("WordPress v6.5 is now available.", "Upgrading to WordPress 6.5"),
+    ],
+)
+def test_title_generation_accepts_grounded_claim_variants(
+    source_text: str,
+    title: str,
+) -> None:
+    runtime = _runtime()
+    input_payload = {"metadata": {"task": "title_generation"}, "text": source_text}
+
+    reasons = runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": title},
+    )
+    assert "title_unsupported_claim" not in reasons
+
+
+def test_title_generation_still_rejects_invented_claims() -> None:
+    runtime = _runtime()
+    input_payload = {
+        "metadata": {"task": "title_generation"},
+        "text": "这篇笔记记录了本地开发环境的搭建过程。",
+    }
+
+    reasons = runtime.title_quality_reasons(
+        input_payload=input_payload,
+        provider_output={"output_text": "本地开发环境搭建指南（2024 版）"},
+    )
+    assert "title_unsupported_claim" in reasons
+
+
 @pytest.mark.parametrize(
     "provider_text",
     [
@@ -491,6 +1357,17 @@ def test_empty_text_output_judgement_is_task_bounded() -> None:
     )
     assert runtime.is_empty_text_output(
         input_payload=title_input,
+        provider_output={
+            "output_text": "partial title",
+            "response_status": "incomplete",
+        },
+    )
+    assert runtime.is_empty_text_output(
+        input_payload=title_input,
+        provider_output={"output_text": "The user wants a title in JSON. Content is English."},
+    )
+    assert runtime.is_empty_text_output(
+        input_payload=title_input,
         provider_output={"output_text": "《未闭合的标题"},
     )
     assert runtime.is_empty_text_output(
@@ -510,6 +1387,115 @@ def test_empty_text_output_judgement_is_task_bounded() -> None:
     assert not runtime.is_empty_text_output(
         input_payload={"metadata": {"task": "comment_moderation"}},
         provider_output={},
+    )
+
+
+def test_output_quality_reason_identifies_provider_reasoning_leak() -> None:
+    runtime = _runtime()
+
+    assert (
+        runtime.output_quality_reason(
+            input_payload={"metadata": {"task": "content_summary"}},
+            provider_output={
+                "output_text": "We need answer only summary. Need follow constraints."
+            },
+        )
+        == "provider_reasoning_leak"
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider_text", "expected_reason"),
+    [
+        (
+            "I cannot complete this request. Per my instructions, I must refuse.",
+            "translation_refusal_leak",
+        ),
+        (
+            "我无法完成这个请求。",
+            "translation_refusal_leak",
+        ),
+        (
+            "<p>Translated paragraph</p>",
+            "translation_structure_drift",
+        ),
+        (
+            "<p>Translated paragraph</p>\n未翻译的中文段落。" * 12,
+            "translation_untranslated_source",
+        ),
+    ],
+)
+def test_translation_quality_gate_rejects_unsafe_output(
+    provider_text: str,
+    expected_reason: str,
+) -> None:
+    runtime = _runtime()
+    source_text = (
+        '<content><p>这是一个需要完整翻译的中文段落，包含来源链接。'
+        '<a href="https://example.test/docs">文档</a></p></content>'
+    )
+    if expected_reason == "translation_structure_drift":
+        source_text = "<content><p>Translate this structured paragraph.</p></content>"
+        provider_text = "Translated paragraph"
+    if expected_reason == "translation_untranslated_source":
+        source_text = "中文内容需要完整翻译。" * 40
+        provider_text = "中文内容需要完整翻译。" * 30
+
+    input_payload = {
+        "metadata": {"task": "content_translation", "target_language": "en-us"},
+        "text": source_text,
+    }
+    provider_output = {"output_text": provider_text}
+
+    assert runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    )
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == expected_reason
+
+
+def test_translation_quality_gate_rejects_length_inflation() -> None:
+    runtime = _runtime()
+    source_text = "A concise source paragraph with a stable meaning. " * 8
+    provider_output = {"output_text": "A translated paragraph with added noise. " * 24}
+    input_payload = {
+        "metadata": {"task": "content_translation", "target_language": "en-us"},
+        "text": source_text,
+    }
+
+    assert runtime.output_quality_reason(
+        input_payload=input_payload,
+        provider_output=provider_output,
+    ) == "translation_length_inflation"
+
+
+def test_translation_normalization_preserves_markup_and_links() -> None:
+    runtime = _runtime()
+    source_text = (
+        '<content><!-- wp:paragraph --><p>Translate this paragraph.</p>'
+        '<a href="https://example.test/docs">Docs</a><!-- /wp:paragraph --></content>'
+    )
+    translated_text = (
+        '<!-- wp:paragraph --><p>Übersetze diesen Absatz.</p>'
+        '<a href="https://example.test/docs">Dokumentation</a><!-- /wp:paragraph -->'
+    )
+    input_payload = {
+        "metadata": {"task": "content_translation", "target_language": "de-de"},
+        "text": source_text,
+    }
+
+    normalized = runtime.normalize_provider_output(
+        {"output_text": translated_text},
+        input_payload=input_payload,
+    )
+
+    assert normalized["output_text"] == translated_text
+    assert not runtime.is_empty_text_output(
+        input_payload=input_payload,
+        provider_output=normalized,
     )
 
 

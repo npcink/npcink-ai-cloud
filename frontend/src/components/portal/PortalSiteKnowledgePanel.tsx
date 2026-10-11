@@ -36,16 +36,19 @@ export function PortalSiteKnowledgePanel({
   );
   const windowDays = Math.max(1, Math.round(Number(summary?.window?.hours || 168) / 24));
   const statusLabel = !hasKnowledge
-    ? t('portal.vector_obs.status_empty', {}, 'Not set up')
+    ? t('portal.vector_obs.status_empty', {}, 'Not started')
     : needsAttention
-      ? t('portal.vector_obs.status_attention', {}, 'Needs attention')
-      : t('portal.vector_obs.status_ready', {}, 'Ready');
+      ? summary?.health.status === 'error'
+        ? t('portal.vector_obs.status_error', {}, 'Update failed')
+        : t('portal.vector_obs.status_pending', {}, 'To confirm')
+      : t('portal.vector_obs.status_ready', {}, 'Knowledge is ready');
   const displayedStatusLabel = error
     ? t('portal.home.package_pending_label', {}, 'To confirm')
     : summary
       ? statusLabel
       : t('common.loading');
   const statusTone = error || !hasKnowledge ? 'inactive' : needsAttention ? 'warning' : 'active';
+  const showRefresh = Boolean(error || summary?.health.status === 'error');
 
   return (
     <PortalSection
@@ -62,7 +65,14 @@ export function PortalSiteKnowledgePanel({
             {t(
               'portal.vector_obs.customer_desc',
               {},
-              'Site knowledge helps AI use the pages already indexed from this site.'
+              'Site knowledge helps AI use this site\'s pages. Content changes are updated automatically.'
+            )}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t(
+              'portal.vector_obs.site_scope_note',
+              {},
+              'The figures below describe this site only. Account-wide limits are shown under Billing.'
             )}
           </p>
         </div>
@@ -72,7 +82,7 @@ export function PortalSiteKnowledgePanel({
             label={displayedStatusLabel}
             className="normal-case tracking-normal"
           />
-          {onRetry ? (
+          {onRetry && showRefresh ? (
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -106,7 +116,7 @@ export function PortalSiteKnowledgePanel({
           {t(
             'portal.vector_obs.customer_empty_desc',
             {},
-            'No pages have been indexed yet. Sync site knowledge from the WordPress plugin.'
+            'No pages have been added yet. Content changes will be updated automatically after the site is connected.'
           )}
         </PortalCard>
       ) : null}
@@ -133,7 +143,7 @@ export function PortalSiteKnowledgePanel({
               detail: t(
                 'portal.vector_obs.update_hint',
                 {},
-                'Update from the WordPress plugin when site content changes.'
+                'Content changes are updated automatically from the connected WordPress site.'
               ),
               size: 'compact',
             },

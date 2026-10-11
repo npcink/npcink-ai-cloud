@@ -174,6 +174,39 @@ def _principal_registration_access_is_blocked(
 
 
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
+    def _bind_verified_portal_free_subscriptions_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        principal_id: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> None:
+        """Backfill only accessible accounts that have never had a subscription."""
+        memberships = repository.list_accounts_for_principal(
+            principal_id=principal_id,
+            membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
+        )
+        # Share the account lock used by Addon exchange; a second login must
+        # observe the first grant before checking subscription history.
+        for account, identity, membership in sorted(memberships, key=lambda row: row[0].account_id):
+            locked_account = repository.get_account_for_update(account.account_id)
+            if locked_account is None:
+                continue
+            repository.session.refresh(locked_account)
+            repository.session.refresh(identity)
+            repository.session.refresh(membership)
+            if (
+                locked_account.status != ACCOUNT_STATUS_ACTIVE
+                or identity.status != PRINCIPAL_STATUS_ACTIVE
+                or membership.status != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+            ):
+                continue
+            cast(Any, self)._bind_default_free_subscription_for_account_in_session(
+                repository=repository,
+                account_id=locked_account.account_id,
+                audit_context=audit_context,
+            )
+
     def resolve_portal_account_principal_scope(
         self,
         *,
@@ -961,6 +994,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{identity.principal_id}' is not active for any customer account",
                 )
+            self._bind_verified_portal_free_subscriptions_in_session(
+                repository=repository,
+                principal_id=identity.principal_id,
+            )
             binding.last_login_at = now
             identity.last_login_at = now
             session.commit()
@@ -1067,6 +1104,16 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 },
                 last_login_at=now,
             )
+            free_binding = cast(Any, self)._bind_default_free_subscription_for_account_in_session(
+                repository=repository,
+                account_id=account.account_id,
+                audit_context=audit_context,
+            )
+            if free_binding is None:
+                raise CommercialPermissionError(
+                    "service.subscription_required",
+                    "registered account already has subscription history",
+                )
             payload: dict[str, object] = {
                 "status": "registered",
                 "provider": normalized_provider,
@@ -1079,8 +1126,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     binding,
                     principal_id=identity.principal_id,
                 ),
-                "subscription": None,
-                "free_entitlement_state": "pending_addon_connection",
+                "subscription": free_binding["subscription"],
+                "free_entitlement_state": "active",
             }
             self._record_service_audit_in_session(
                 repository=repository,
@@ -1211,6 +1258,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{principal_id}' is not active for any customer account",
                 )
+            self._bind_verified_portal_free_subscriptions_in_session(
+                repository=repository,
+                principal_id=principal_id,
+            )
             identity.last_login_at = now
             session.commit()
         return {
@@ -1568,6 +1619,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
                 )
                 if memberships:
+                    self._bind_verified_portal_free_subscriptions_in_session(
+                        repository=repository,
+                        principal_id=principal_id,
+                        audit_context=audit_context,
+                    )
                     identity.last_login_at = now
                     session.commit()
                     return {
@@ -1615,6 +1671,16 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 metadata_json={"source": "portal_self_registration"},
             )
             service = cast(Any, self)
+            free_binding = service._bind_default_free_subscription_for_account_in_session(
+                repository=repository,
+                account_id=account.account_id,
+                audit_context=audit_context,
+            )
+            if free_binding is None:
+                raise CommercialPermissionError(
+                    "service.subscription_required",
+                    "registered account already has subscription history",
+                )
             payload: dict[str, object] = {
                 "status": "registered",
                 "email": normalized_email,
@@ -1624,8 +1690,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "account_id": account.account_id,
                 "site": None,
                 "site_id": "",
-                "subscription": None,
-                "free_entitlement_state": "pending_addon_connection",
+                "subscription": free_binding["subscription"],
+                "free_entitlement_state": "active",
                 "identity_type": IDENTITY_TYPE_USER,
                 "role": USER_ROLE_OWNER,
                 "allowed_actions": resolve_principal_allowed_actions(),

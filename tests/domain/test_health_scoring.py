@@ -103,3 +103,21 @@ def test_assess_instance_health_keeps_small_failure_sample_degraded() -> None:
     assert assessment.status == "degraded"
     assert assessment.score == 0.5
     assert assessment.timeout_rate == 1.0
+
+
+def test_assess_instance_health_does_not_make_quality_failures_routable() -> None:
+    now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)
+    calls = [
+        _provider_call(
+            created_at=now - timedelta(minutes=20),
+            latency_ms=3200,
+            error_code="provider.output_quality_rejected",
+        )
+        for _ in range(3)
+    ]
+
+    assessment = assess_instance_health(calls, now=now)
+
+    assert assessment.status == "unhealthy"
+    assert assessment.score == 0.0
+    assert "quality_failure_total=3" in assessment.reason

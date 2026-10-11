@@ -57,6 +57,14 @@ export interface AnalyticsLineChartProps {
   secondarySeriesName?: string;
   primaryColor?: string;
   secondaryColor?: string;
+  comparisonSeries?: Array<{
+    name: string;
+    values: number[];
+    // Optional per-series emphasis for multi-series comparison charts; when
+    // neither field is set the series keeps the original neutral style.
+    emphasis?: boolean;
+    color?: string;
+  }>;
 }
 
 export function AnalyticsLineChart({
@@ -69,6 +77,7 @@ export function AnalyticsLineChart({
   secondarySeriesName = 'Secondary',
   primaryColor = '#3b82f6',
   secondaryColor = '#10b981',
+  comparisonSeries,
 }: AnalyticsLineChartProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -81,8 +90,10 @@ export function AnalyticsLineChart({
 
     return {
       backgroundColor: 'transparent',
+      animation: comparisonSeries ? false : undefined,
       tooltip: {
         trigger: 'axis',
+        renderMode: 'richText',
         backgroundColor: tooltipBg,
         borderColor: tooltipBorder,
         textStyle: { color: textColor, fontSize: 12 },
@@ -97,7 +108,7 @@ export function AnalyticsLineChart({
         left: '3%',
         right: '4%',
         bottom: '3%',
-        top: '10%',
+        top: comparisonSeries ? 50 : '10%',
         containLabel: true,
       },
       xAxis: {
@@ -117,7 +128,40 @@ export function AnalyticsLineChart({
         name: yAxisLabel,
         nameTextStyle: { color: textColor, fontSize: 11 },
       },
-      series: [
+      legend: comparisonSeries ? { type: 'scroll', top: 0, textStyle: { color: textColor } } : undefined,
+      series: comparisonSeries ? comparisonSeries.map(series => {
+        const style = series.emphasis === undefined && series.color === undefined
+          ? {}
+          : {
+              symbolSize: series.emphasis ? 6 : 4,
+              itemStyle: series.color ? { color: series.color } : undefined,
+              lineStyle: {
+                width: series.emphasis ? 2.5 : 1.5,
+                ...(series.color ? { color: series.color } : {}),
+                ...(series.emphasis ? {} : { opacity: 0.55 }),
+              },
+            };
+        return {
+          name: series.name,
+          type: 'line',
+          smooth: false,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: series.values,
+          lineStyle: { width: 2 },
+          ...style,
+          ...(series.emphasis
+            ? {
+                areaStyle: {
+                  color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: (series.color || '#3b82f6') + '33' },
+                    { offset: 1, color: (series.color || '#3b82f6') + '05' },
+                  ]),
+                },
+              }
+            : {}),
+        };
+      }) : [
         {
           name: primarySeriesName,
           type: 'line',
@@ -156,7 +200,7 @@ export function AnalyticsLineChart({
           : []),
       ],
     };
-  }, [data, isDark, xAxisLabel, yAxisLabel, primarySeriesName, secondarySeriesName, primaryColor, secondaryColor]);
+  }, [data, isDark, xAxisLabel, yAxisLabel, primarySeriesName, secondarySeriesName, primaryColor, secondaryColor, comparisonSeries]);
 
   return (
     <ReactEChartsCore

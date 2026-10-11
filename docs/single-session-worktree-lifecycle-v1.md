@@ -19,6 +19,29 @@ builders, integrators, merge queues, conflict-domain owners, and frontend slots
 are used only when the operator explicitly enables the
 [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md).
 
+## Conversation Count Is Not Repository Topology
+
+The number of open AI conversations is not evidence for the number of Git
+worktrees that should exist. A conversation can end while its worktree, lock,
+branch, ignored build state, or uncommitted deliverable remains registered.
+Conversely, the stable M4 operations checkout remains required even when only
+one conversation is running.
+
+At session entry and before explaining a stale-looking preview, reconcile these
+facts independently:
+
+1. the browser route and environment being observed;
+2. the source checkout path, branch, exact revision, and dirty state;
+3. the current `origin/master` revision and relevant merged PR;
+4. the M4 candidate or accepted source revision when M4 is involved; and
+5. every registered worktree's owner, deliverable state, and release condition.
+
+Do not infer the rendered source from a familiar URL, directory name, active
+conversation count, or the latest local edit. A preview claim must name the
+source identity that produced it. If source changed after the last candidate
+dispatch, dispatch and verify the coherent checkpoint again before asking the
+operator to review it.
+
 ## Task Worktree Rule
 
 Reuse the current worktree when it is clean, current, and focused on the task.
@@ -41,6 +64,11 @@ the task worktree is clean, and verify that its task commits are represented by
 the merged PR. The session may then unlock and remove only that exact worktree
 without force. Branch deletion remains a separate action and is not implied by
 worktree removal.
+
+Perform this closeout while the task and PR context are still available. A
+merged worktree left registered without an owner or release condition becomes
+future ambiguity: it can be mistaken for current source, reused by a dev
+server, or treated as an active AI session even though none exists.
 
 ### No deliverable
 
@@ -94,6 +122,7 @@ Use:
 ```bash
 pnpm run worktree:audit
 pnpm run worktree:audit -- --format json
+pnpm run worktree:audit -- --require-locked
 ```
 
 The audit classifies the current task, primary/locked/dirty/long-lived
@@ -102,7 +131,9 @@ text output also reconcile each readable worktree with its branch upstream,
 ahead/behind counts, patch-equivalent and unique commits against
 `origin/master`, matching GitHub pull request when available, protected-role
 markers, and a conservative `retain` or `manual_review` disposition. It never
-unlocks, removes, prunes, or changes a worktree.
+unlocks, removes, prunes, or changes a worktree. With `--require-locked`, the
+audit fails when an auxiliary `codex/*` task worktree is unlocked; sessions
+use it at closeout to prove lock discipline without changing any worktree.
 
 GitHub authentication, missing upstreams, unreadable paths, or unavailable
 `origin/master` evidence are reported as evidence gaps. An evidence gap fails

@@ -1,6 +1,8 @@
 # Production Release Optimization and Formal Smoke Handoff v1
 
-Status: active operator handoff.
+Status: active deferred-work handoff; phase 1-2 closeout is recorded in
+[Production Release Efficiency Phase 1-2 Closeout and Development
+Retrospective — 2026-08-23](history/production/2026/production-release-efficiency-phase1-closeout-and-development-retrospective-2026-08-23.md).
 
 Purpose: preserve the release-efficiency decisions and the deferred formal
 smoke checklist so a later release can continue from explicit evidence rather
@@ -11,10 +13,11 @@ Related decision: [ADR-045: Move Production Readiness Checks Before Transfer](de
 
 ## 1. Current decision
 
-The next release-efficiency checkpoint is to merge and validate the readiness
-preflight already implemented in PR #674. Do not add another scheduler, another
-credential path, or a second smoke implementation before observing this path in
-a real release.
+The phase 1-2 readiness preflight and release-plan corrections were merged in
+PR #851 and accepted on M4. The next release-efficiency checkpoint is to
+observe this path in one ordinary, explicitly authorized release. Do not add
+another scheduler, credential path, or smoke implementation before that
+observation is complete.
 
 The intended release sequence is:
 
@@ -29,11 +32,64 @@ exact release plan
 -> evidence receipt and timing review
 ```
 
+## 1.1 Phase 3A: one-release observation checklist
+
+This phase is preparation only. It does not grant production authorization and
+must not be run against production until the operator explicitly approves the
+release envelope.
+
+Before dispatch, record:
+
+```text
+OBSERVATION_PREP
+candidate_master_sha=<full SHA>
+production_pr=<number or not created>
+rollback_revision=<known accepted production revision>
+scope=<no_deploy|static|runtime>
+formal_smoke=<deferred|separately authorized>
+operator_authorization=<pending|recorded>
+```
+
+When the release is explicitly authorized, execute in this order:
+
+1. Confirm clean `master`, green exact-SHA CI, intentional scope, and a known
+   rollback revision.
+2. Run the read-only exact-SHA production preflight; stop on any failed or
+   unknown readiness evidence.
+3. Dispatch only the frozen production promotion. Do not add unrelated fixes,
+   documentation, or workflow changes after dispatch begins.
+4. Record readiness, transfer, deploy, migration, post-install, and health
+   timings from the authoritative logs. Reuse matching evidence instead of
+   rebuilding or rescanning after an unrelated assertion fails.
+5. Confirm the deployed full SHA and health state. Formal Smoke remains
+   `deferred` unless its separate protected-secret and operator authorization
+   contract was activated before the release.
+
+Close the observation with:
+
+```text
+OBSERVATION_CLOSEOUT
+revision=<deployed full SHA>
+readiness_seconds=<value|not measured>
+transfer_seconds=<value|not measured>
+deploy_seconds=<value|not measured>
+migration_seconds=<value|not measured>
+health_seconds=<value|not measured>
+formal_smoke=<passed|failed|deferred|not run>
+failure_phase=<none|readiness|transfer|deploy|migration|health|smoke|unknown>
+rollback=<revision or not used>
+production_state=<validated|blocked|failed>
+```
+
+The first run is an observation sample, not proof of a general speedup. Do
+not start certificate scheduling or Formal Smoke automation until this receipt
+has been reviewed and the dominant remaining delay is identified.
+
 ## 2. Five optimization items
 
 | Item | Current state | Next action | Value / stop condition |
 | --- | --- | --- | --- |
-| Certificate readiness before transfer | Implemented in PR #674; read-only and fail-closed | Merge PR, then use it in the next standard release | Highest value: prevents late failure and bundle re-transfer. Keep unless it causes a false positive; investigate the exact receipt contract rather than bypassing it. |
+| Certificate readiness before transfer | Implemented and merged in PR #851; read-only and fail-closed | Observe it in the next standard release | Highest value: prevents late failure and bundle re-transfer. Keep unless it causes a false positive; investigate the exact receipt contract rather than bypassing it. |
 | Five-day certificate warning | Implemented in `Production Maintenance` as `certificate-readiness` | Run the operator-initiated check during the next maintenance window | Medium/high value at low complexity. Keep warning at 5 days and failure at 7 days; never auto-renew from deploy. |
 | Pytest dynamic/node sharding | Already present in the active CI standard | Observe natural full runs; do not add a fourth shard now | Value already realized. Revisit only if three-shard median remains above the agreed target after natural samples. |
 | Failed-shard-only rerun | Already present and proven useful | Continue using only the failed lane after a distinct failure | Avoids replaying green lanes. Stop automatic retries after the repository's external-transfer retry limit. |
@@ -108,8 +164,8 @@ before the smoke that consumes it. The operator only needs to report
 
 ## 4. Execution order for the next release
 
-1. Merge PR #674 into `master`; verify the merged revision and required checks.
-2. Run the exact production release preflight for the intended production SHA.
+1. Start from the current clean `master`; verify the merged revision and required checks.
+2. Run the exact production promotion preflight for the intended production SHA.
 3. Dispatch the standard production deployment with readiness preflight enabled.
 4. Stop immediately if the readiness, bundle, deploy, migration, or health gate
    fails; do not jump to a later smoke step.
@@ -139,4 +195,3 @@ smoke_seconds=<value|not measured>
 failure_phase=<none|readiness|transfer|deploy|health|smoke|unknown>
 notes=<redacted summary; no secret values>
 ```
-

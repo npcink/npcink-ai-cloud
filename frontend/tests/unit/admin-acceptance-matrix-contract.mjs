@@ -18,7 +18,7 @@ assert.deepEqual(
   [...allowedEvidenceTiers],
   'Admin acceptance evidence tiers must remain explicit and ordered'
 );
-assert.equal(matrix.routes.length, 25, 'Admin acceptance matrix must cover the reviewed 25-route inventory');
+assert.equal(matrix.routes.length, 26, 'Admin acceptance matrix must cover the reviewed 26-route inventory');
 
 const manifestRoutes = Object.entries(manifest.routes).sort(([left], [right]) => left.localeCompare(right));
 const matrixRoutes = matrix.routes

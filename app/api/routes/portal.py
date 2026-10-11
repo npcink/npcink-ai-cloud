@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlencode
 
@@ -1605,7 +1605,8 @@ async def start_portal_qq_login(
             message=error.message,
         )
     nonce = secrets.token_urlsafe(32)
-    issued = _get_commercial_service(request).issue_portal_oauth_state(
+    issued = await run_in_threadpool(
+        _get_commercial_service(request).issue_portal_oauth_state,
         provider="qq",
         return_to=return_to,
         client_scope_id=str(request.client.host if request.client else ""),
@@ -1658,7 +1659,8 @@ async def finish_qq_login_callback(
     if config_error is not None:
         return config_error
     try:
-        consumed_state = _get_commercial_service(request).consume_portal_oauth_state(
+        consumed_state = await run_in_threadpool(
+            _get_commercial_service(request).consume_portal_oauth_state,
             provider="qq",
             state=state,
             nonce=_portal_qq_oauth_nonce(request),
@@ -1677,7 +1679,8 @@ async def finish_qq_login_callback(
             )
             if isinstance(auth, JSONResponse):
                 return auth
-            binding = _get_commercial_service(request).bind_portal_identity_provider(
+            binding = await run_in_threadpool(
+                _get_commercial_service(request).bind_portal_identity_provider,
                 principal_id=auth.principal_id,
                 provider="qq",
                 external_subject=str(subject.get("openid") or ""),
@@ -1713,7 +1716,8 @@ async def finish_qq_login_callback(
             )
             _clear_portal_qq_oauth_nonce_cookie(response)
             return response
-        login = _get_commercial_service(request).resolve_portal_identity_provider_login(
+        login = await run_in_threadpool(
+            _get_commercial_service(request).resolve_portal_identity_provider_login,
             provider="qq",
             external_subject=str(subject.get("openid") or ""),
             unionid=str(subject.get("unionid") or ""),
@@ -1724,7 +1728,8 @@ async def finish_qq_login_callback(
                 access_token=str(token.get("access_token") or ""),
                 openid=str(subject.get("openid") or ""),
             )
-            login = _get_commercial_service(request).register_portal_identity_provider_login(
+            login = await run_in_threadpool(
+                _get_commercial_service(request).register_portal_identity_provider_login,
                 provider="qq",
                 external_subject=str(subject.get("openid") or ""),
                 unionid=str(subject.get("unionid") or ""),
@@ -1777,6 +1782,19 @@ async def finish_qq_login_callback(
     return response
 
 
+@router.get("/auth/login-options")
+async def get_portal_login_options(request: Request) -> Any:
+    qq_config = _portal_qq_config(request)
+    configured = all(
+        str(qq_config.get(key) or "").strip()
+        for key in ("client_id", "client_secret", "redirect_uri")
+    )
+    return _portal_route_envelope(
+        message="portal login options loaded",
+        data={"qq_available": configured},
+    )
+
+
 @router.get("/auth/identity-providers")
 async def list_portal_identity_providers(request: Request) -> Any:
     auth = await resolve_portal_request_context(
@@ -1787,7 +1805,8 @@ async def list_portal_identity_providers(request: Request) -> Any:
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        result = _get_commercial_service(request).list_portal_identity_provider_bindings(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_portal_identity_provider_bindings,
             principal_id=auth.principal_id,
         )
     except CommercialServiceError as error:
@@ -1858,7 +1877,8 @@ async def bind_portal_qq_login(
             message="QQ authorization code and state are required",
         )
     try:
-        _get_commercial_service(request).consume_portal_oauth_state(
+        await run_in_threadpool(
+            _get_commercial_service(request).consume_portal_oauth_state,
             provider="qq",
             state=state,
             nonce=_portal_qq_oauth_nonce(request, payload.nonce),
@@ -1873,7 +1893,8 @@ async def bind_portal_qq_login(
             access_token=str(token.get("access_token") or ""),
             openid=str(subject.get("openid") or ""),
         )
-        binding = _get_commercial_service(request).bind_portal_identity_provider(
+        binding = await run_in_threadpool(
+            _get_commercial_service(request).bind_portal_identity_provider,
             principal_id=auth.principal_id,
             provider="qq",
             external_subject=str(subject.get("openid") or ""),
@@ -1916,7 +1937,8 @@ async def unbind_portal_qq_login(
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        result = _get_commercial_service(request).revoke_portal_identity_provider(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).revoke_portal_identity_provider,
             principal_id=auth.principal_id,
             provider=payload.provider,
         )
@@ -2503,7 +2525,8 @@ async def request_portal_login_code(
             message="Portal email delivery is not configured",
         )
     try:
-        issued = _get_commercial_service(request).issue_portal_login_code(
+        issued = await run_in_threadpool(
+            _get_commercial_service(request).issue_portal_login_code,
             email=email,
             ttl_seconds=ttl_seconds,
         )
@@ -2525,7 +2548,8 @@ async def request_portal_login_code(
         return _service_error_response(error, request=request)
     if email_sender is not None:
         try:
-            email_sender.send_login_code(
+            await run_in_threadpool(
+                email_sender.send_login_code,
                 recipient_email=str(issued.get("email") or ""),
                 principal_id=str(issued.get("principal_id") or ""),
                 code=str(issued.get("code") or ""),
@@ -2570,7 +2594,8 @@ async def verify_portal_login_code(
             message="portal login code and email are required",
         )
     try:
-        verified = _get_commercial_service(request).verify_portal_login_code(
+        verified = await run_in_threadpool(
+            _get_commercial_service(request).verify_portal_login_code,
             email=email,
             code=code,
             max_attempts=max(
@@ -2675,7 +2700,8 @@ async def request_portal_email_change_code(
             message="Portal email delivery is not configured",
         )
     try:
-        issued = _get_commercial_service(request).issue_portal_email_change_code(
+        issued = await run_in_threadpool(
+            _get_commercial_service(request).issue_portal_email_change_code,
             principal_id=auth.principal_id,
             new_email=new_email,
             ttl_seconds=ttl_seconds,
@@ -2684,7 +2710,8 @@ async def request_portal_email_change_code(
         return _service_error_response(error, request=request)
     if email_sender is not None:
         try:
-            email_sender.send_email_change_code(
+            await run_in_threadpool(
+                email_sender.send_email_change_code,
                 recipient_email=str(issued.get("new_email") or ""),
                 old_email=str(issued.get("old_email") or ""),
                 principal_id=str(issued.get("principal_id") or ""),
@@ -2758,7 +2785,8 @@ async def verify_portal_email_change_code(
         expires_at=current_session_expires_at,
     )
     try:
-        changed = _get_commercial_service(request).verify_portal_email_change_code(
+        changed = await run_in_threadpool(
+            _get_commercial_service(request).verify_portal_email_change_code,
             principal_id=auth.principal_id,
             new_email=new_email,
             code=code,
@@ -2791,7 +2819,8 @@ async def verify_portal_email_change_code(
     )
     if email_sender is not None and str(changed.get("old_email") or "").strip():
         try:
-            email_sender.send_email_changed_notice(
+            await run_in_threadpool(
+                email_sender.send_email_changed_notice,
                 recipient_email=str(changed.get("old_email") or ""),
                 new_email=str(changed.get("new_email") or ""),
                 principal_id=auth.principal_id,
@@ -2857,7 +2886,8 @@ async def request_portal_registration_code(
             message="Portal email delivery is not configured",
         )
     try:
-        issued = _get_commercial_service(request).issue_portal_registration_code(
+        issued = await run_in_threadpool(
+            _get_commercial_service(request).issue_portal_registration_code,
             email=email,
             ttl_seconds=ttl_seconds,
         )
@@ -2865,7 +2895,8 @@ async def request_portal_registration_code(
         return _service_error_response(error, request=request)
     if email_sender is not None:
         try:
-            email_sender.send_registration_code(
+            await run_in_threadpool(
+                email_sender.send_registration_code,
                 recipient_email=str(issued.get("email") or ""),
                 principal_id=str(issued.get("principal_id") or ""),
                 code=str(issued.get("code") or ""),
@@ -2918,7 +2949,8 @@ async def verify_portal_registration_code(
             message="portal registration code and email are required",
         )
     try:
-        registration = _get_commercial_service(request).verify_portal_registration_code(
+        registration = await run_in_threadpool(
+            _get_commercial_service(request).verify_portal_registration_code,
             email=email,
             code=code,
             max_attempts=max(
@@ -3070,7 +3102,8 @@ async def revoke_portal_session(request: Request) -> Any:
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        _get_commercial_service(request).revoke_portal_sessions(
+        await run_in_threadpool(
+            _get_commercial_service(request).revoke_portal_sessions,
             principal_id=auth.principal_id,
         )
     except CommercialServiceError as error:
@@ -3097,7 +3130,10 @@ async def list_portal_account_plan_offers(request: Request) -> Any:
         return account_access
     account_id = str(account_access.get("account_id") or "")
     try:
-        offers = _get_commercial_service(request).list_account_plan_offers(account_id=account_id)
+        offers = await run_in_threadpool(
+            _get_commercial_service(request).list_account_plan_offers,
+            account_id=account_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
@@ -3137,7 +3173,8 @@ async def start_portal_account_plan_trial(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).start_account_plan_trial(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).start_account_plan_trial,
             account_id=account_id,
             tier_id=payload.tier_id,
             principal_id=auth.principal_id,
@@ -3197,7 +3234,8 @@ async def create_portal_account_subscription_order(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).create_account_subscription_payment_order(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_account_subscription_payment_order,
             account_id=account_id,
             offer_id=payload.offer_id,
             provider=payload.provider,
@@ -3260,7 +3298,8 @@ async def cancel_portal_account_subscription_order(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).cancel_account_subscription_payment_order(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).cancel_account_subscription_payment_order,
             account_id=account_id,
             subscription_order_id=subscription_order_id,
             site_id=selected_site_id,
@@ -3303,7 +3342,8 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).schedule_account_free_downgrade(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).schedule_account_free_downgrade,
             account_id=account_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
@@ -3335,8 +3375,12 @@ async def get_portal_account_entitlements(request: Request) -> Any:
     account_id = str(account_access.get("account_id") or "")
     try:
         commercial_service = _get_commercial_service(request)
-        quota_summary = commercial_service.get_portal_account_quota_summary(account_id)
-        current_subscription = commercial_service.get_portal_current_subscription(
+        quota_summary = await run_in_threadpool(
+            commercial_service.get_portal_account_quota_summary,
+            account_id
+        )
+        current_subscription = await run_in_threadpool(
+            commercial_service.get_portal_current_subscription,
             account_id=account_id,
         )
     except CommercialServiceError as error:
@@ -3398,12 +3442,66 @@ async def get_portal_account_usage_summary(
     if isinstance(resolved_site_id, JSONResponse):
         return resolved_site_id
     scoped_site_ids = [resolved_site_id] if resolved_site_id else site_ids
-    result = UsageService(_get_commercial_service(request).database_url).get_usage_summary(
+    result = await run_in_threadpool(
+        UsageService(_get_commercial_service(request).database_url).get_usage_summary,
         site_ids=scoped_site_ids
     )
     result["site_ids"] = scoped_site_ids
     return _portal_route_envelope(
         message="portal account usage summary loaded",
+        data=result,
+    )
+
+
+@router.get("/account/site-knowledge-usage")
+async def get_portal_account_site_knowledge_usage(request: Request) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_USAGE,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    site_ids = _portal_account_site_ids(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+    )
+    if isinstance(site_ids, JSONResponse):
+        return site_ids
+    commercial_service = _get_commercial_service(request)
+    quota_summary = await run_in_threadpool(
+        commercial_service.get_portal_account_quota_summary,
+        account_id
+    )
+    vector_limit = next(
+        (
+            int(item.get("limit") or 0)
+            for item in _object_list(quota_summary.get("resource_limits"))
+            if str(item.get("key") or "") == "vector_documents"
+        ),
+        0,
+    )
+    result = await run_in_threadpool(SiteKnowledgeObservabilityService(
+        commercial_service.database_url
+    ).get_account_document_breakdown, site_ids=site_ids)
+    result.update(
+        {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "indexed_document_limit": vector_limit,
+        }
+    )
+    return _portal_route_envelope(
+        message="portal account site knowledge usage loaded",
         data=result,
     )
 
@@ -3442,7 +3540,8 @@ async def get_portal_account_credit_ledger(
     if isinstance(resolved_site_id, JSONResponse):
         return resolved_site_id
     try:
-        ledger = _get_commercial_service(request).get_portal_account_credit_ledger(
+        ledger = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_account_credit_ledger,
             account_id,
             limit=limit,
             offset=offset,
@@ -3489,7 +3588,8 @@ async def get_portal_account_credit_trend(
     if isinstance(resolved_site_id, JSONResponse):
         return resolved_site_id
     try:
-        trend = _get_commercial_service(request).get_portal_account_credit_trend(
+        trend = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_account_credit_trend,
             account_id,
             window=window,
             site_id=resolved_site_id,
@@ -3540,7 +3640,8 @@ async def get_portal_account_credit_events(
     if isinstance(resolved_site_id, JSONResponse):
         return resolved_site_id
     try:
-        events = _get_commercial_service(request).get_portal_account_credit_events(
+        events = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_account_credit_events,
             account_id,
             window=window,
             site_id=resolved_site_id,
@@ -3595,7 +3696,8 @@ async def get_portal_account_credit_event_buckets(
     if isinstance(resolved_site_id, JSONResponse):
         return resolved_site_id
     try:
-        buckets = _get_commercial_service(request).get_portal_account_credit_event_buckets(
+        buckets = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_account_credit_event_buckets,
             account_id,
             bucket=bucket,
             window=window,
@@ -3629,7 +3731,7 @@ async def list_portal_account_credit_packs(request: Request) -> Any:
     )
     if isinstance(account_access, JSONResponse):
         return account_access
-    result = _get_commercial_service(request).list_credit_packs()
+    result = await run_in_threadpool(_get_commercial_service(request).list_credit_packs)
     return _portal_route_envelope(
         message="portal account credit packs loaded",
         data=_portal_credit_pack_catalog_data(result),
@@ -3676,7 +3778,8 @@ async def create_portal_account_credit_pack_order(
     if replay is not None:
         return replay
     try:
-        order = _get_commercial_service(request).create_credit_pack_payment_order(
+        order = await run_in_threadpool(
+            _get_commercial_service(request).create_credit_pack_payment_order,
             account_id=account_id,
             pack_id=payload.pack_id,
             provider=payload.provider,
@@ -3734,7 +3837,8 @@ async def list_portal_account_payment_orders(
     if isinstance(include_unscoped, JSONResponse):
         return include_unscoped
     try:
-        result = _get_commercial_service(request).list_account_payment_orders(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_account_payment_orders,
             account_id,
             site_id=selected_site_id,
             include_unscoped=include_unscoped,
@@ -3786,7 +3890,8 @@ async def get_portal_account_payment_order(request: Request, order_id: str) -> A
     if isinstance(include_unscoped, JSONResponse):
         return include_unscoped
     try:
-        order = _get_commercial_service(request).get_account_payment_order(
+        order = await run_in_threadpool(
+            _get_commercial_service(request).get_account_payment_order,
             account_id=account_id,
             order_id=order_id,
             site_id=selected_site_id,
@@ -3848,7 +3953,8 @@ async def cancel_portal_account_payment_order(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).cancel_account_payment_order(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).cancel_account_payment_order,
             account_id=account_id,
             order_id=order_id,
             site_id=selected_site_id,
@@ -3886,7 +3992,8 @@ async def list_portal_support_requests(
         return account_access
     account_id = str(account_access.get("account_id") or "")
     try:
-        result = _get_commercial_service(request).list_portal_support_requests(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_portal_support_requests,
             principal_id=auth.principal_id,
             account_id=account_id,
             status=status,
@@ -3949,7 +4056,8 @@ async def create_portal_support_request(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).create_portal_support_request(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_portal_support_request,
             principal_id=auth.principal_id,
             account_id=account_id,
             site_id=target_site_id,
@@ -4036,7 +4144,8 @@ async def create_portal_support_request_message(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).create_portal_support_request_message(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_portal_support_request_message,
             principal_id=auth.principal_id,
             request_id=request_id,
             body=payload.body,
@@ -4088,7 +4197,8 @@ async def create_portal_support_request_attachment(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).create_portal_support_request_attachment(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).create_portal_support_request_attachment,
             principal_id=auth.principal_id,
             request_id=request_id,
             filename=payload.filename,
@@ -4134,7 +4244,8 @@ async def get_portal_support_request_attachment(
     if isinstance(request_access, JSONResponse):
         return request_access
     try:
-        result = _get_commercial_service(request).get_portal_support_request_attachment(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_support_request_attachment,
             principal_id=auth.principal_id,
             request_id=request_id,
             attachment_id=attachment_id,
@@ -4185,7 +4296,8 @@ async def submit_portal_support_request_feedback(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).submit_portal_support_request_feedback(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).submit_portal_support_request_feedback,
             principal_id=auth.principal_id,
             request_id=request_id,
             resolved=payload.resolved,
@@ -4228,7 +4340,8 @@ async def list_portal_addon_connection_accounts(request: Request) -> Any:
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        result = _get_commercial_service(request).list_portal_accounts(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_portal_accounts,
             principal_id=auth.principal_id,
         )
     except CommercialServiceError as error:
@@ -4292,7 +4405,8 @@ async def create_portal_addon_connection(
         return replay
     audit_context = _build_portal_audit_context(request, auth.principal_id)
     try:
-        result = service.create_wordpress_addon_connection(
+        result = await run_in_threadpool(
+            service.create_wordpress_addon_connection,
             account_id=payload.account_id,
             principal_id=auth.principal_id,
             site_url=payload.site_url,
@@ -4319,7 +4433,8 @@ async def exchange_portal_addon_connection(
     audit_context.actor_kind = "wordpress_addon"
     audit_context.actor_ref = "pending_exchange"
     try:
-        result = _get_commercial_service(request).consume_wordpress_addon_connection(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).consume_wordpress_addon_connection,
             code=payload.code,
             addon_state=payload.state,
             audit_context=audit_context,
@@ -4360,7 +4475,8 @@ async def remove_portal_site(request: Request, site_id: str) -> Any:
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).remove_portal_site(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).remove_portal_site,
             site_id,
             principal_id=auth.principal_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
@@ -4404,7 +4520,8 @@ async def update_portal_site_lifecycle(
     if replay is not None:
         return replay
     try:
-        result = _get_commercial_service(request).update_portal_site_lifecycle(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_portal_site_lifecycle,
             site_id,
             principal_id=auth.principal_id,
             status=payload.status,
@@ -4521,7 +4638,8 @@ async def get_portal_site_usage_summary(request: Request, site_id: str) -> Any:
     )
     if isinstance(access, JSONResponse):
         return access
-    result = UsageService(_get_commercial_service(request).database_url).get_usage_summary(
+    result = await run_in_threadpool(
+        UsageService(_get_commercial_service(request).database_url).get_usage_summary,
         site_id=site_id
     )
     result["site_id"] = site_id
@@ -4553,8 +4671,9 @@ async def get_portal_site_monitoring_overview(
         return access
     try:
         service = _get_commercial_service(request)
-        policy = service.inspect_commercial_policy(site_id)
-        result = SiteMonitoringOverviewService(service.database_url).get_summary(
+        policy = await run_in_threadpool(service.inspect_commercial_policy, site_id)
+        result = await run_in_threadpool(
+            SiteMonitoringOverviewService(service.database_url).get_summary,
             site_id=site_id,
             commercial_policy=policy,
             window_hours=window_hours,
@@ -4588,7 +4707,8 @@ async def get_portal_site_diagnostic_advisor(
     if isinstance(access, JSONResponse):
         return access
     try:
-        result = _get_portal_advisor_service(request).get_site_diagnostic_advisor(
+        result = await run_in_threadpool(
+            _get_portal_advisor_service(request).get_site_diagnostic_advisor,
             site_id=site_id,
             window_hours=window_hours,
         )
@@ -4621,7 +4741,10 @@ async def get_portal_site_diagnostics(
     if isinstance(access, JSONResponse):
         return access
     try:
-        result = _get_commercial_service(request).get_portal_site_diagnostics(site_id)
+        result = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_site_diagnostics,
+            site_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
@@ -4651,7 +4774,8 @@ async def get_portal_site_plugin_observability(
     )
     if isinstance(access, JSONResponse):
         return access
-    result = PluginObservabilityService(_get_commercial_service(request).database_url).get_summary(
+    result = await run_in_threadpool(
+        PluginObservabilityService(_get_commercial_service(request).database_url).get_summary,
         site_id=site_id,
         window_hours=window_hours,
         plugin_slug=plugin_slug.strip(),
@@ -4685,12 +4809,13 @@ async def get_portal_site_media_observability(
     if isinstance(access, JSONResponse):
         return access
     services = get_cloud_services(request)
-    result = MediaDerivativeObservabilityService(
+    result = await run_in_threadpool(
+        MediaDerivativeObservabilityService(
         services.settings.database_url,
         site_queued_limit=services.settings.media_derivative_site_queued_limit,
         site_running_limit=services.settings.media_derivative_site_running_limit,
         default_chunk_size=services.settings.media_derivative_batch_default_chunk_size,
-    ).get_summary(
+    ).get_summary,
         site_id=site_id,
         window_hours=window_hours,
         target_format=target_format.strip(),
@@ -4724,9 +4849,10 @@ async def get_portal_site_vector_observability(
     )
     if isinstance(access, JSONResponse):
         return access
-    result = SiteKnowledgeObservabilityService(
+    result = await run_in_threadpool(
+        SiteKnowledgeObservabilityService(
         _get_commercial_service(request).database_url
-    ).get_summary(
+    ).get_summary,
         site_id=site_id,
         window_hours=window_hours,
     )
@@ -4758,7 +4884,8 @@ async def list_portal_site_ai_insight_history(
     )
     if isinstance(access, JSONResponse):
         return access
-    history = _get_portal_advisor_service(request).list_ops_summary_history(
+    history = await run_in_threadpool(
+        _get_portal_advisor_service(request).list_ops_summary_history,
         site_id=site_id,
         scope="operations_analysis",
         limit=limit,
@@ -4825,7 +4952,8 @@ async def analyze_portal_site_ai_insight(
             headers={"Retry-After": str(retry_after_seconds)},
         )
     try:
-        summary = _get_portal_advisor_service(request).get_ops_summary(
+        summary = await run_in_threadpool(
+            _get_portal_advisor_service(request).get_ops_summary,
             scope="operations",
             site_id=site_id,
             draft_kind="operator_analysis",
@@ -4888,9 +5016,11 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
         return commercial_site_scope
     try:
         commercial_service = _get_commercial_service(request)
-        policy = commercial_service.inspect_commercial_policy(site_id)
+        policy = await run_in_threadpool(commercial_service.inspect_commercial_policy, site_id)
         quota_summary = (
-            commercial_service.get_portal_account_quota_summary(account_id)
+            await run_in_threadpool(
+                commercial_service.get_portal_account_quota_summary, account_id
+            )
             if not commercial_site_scope
             else {}
         )
@@ -4941,7 +5071,8 @@ async def get_portal_site_credit_ledger(
     if isinstance(access, JSONResponse):
         return access
     try:
-        ledger = _get_commercial_service(request).get_portal_account_credit_ledger(
+        ledger = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_account_credit_ledger,
             str(access.get("account_id") or ""),
             limit=limit,
             offset=offset,
@@ -4972,7 +5103,7 @@ async def list_portal_site_credit_packs(request: Request, site_id: str) -> Any:
     )
     if isinstance(access, JSONResponse):
         return access
-    result = _get_commercial_service(request).list_credit_packs()
+    result = await run_in_threadpool(_get_commercial_service(request).list_credit_packs)
     return _portal_route_envelope(
         message="portal credit packs loaded",
         data=_portal_credit_pack_catalog_data(result, site_id=site_id),
@@ -5005,7 +5136,8 @@ async def list_portal_site_payment_orders(
     if isinstance(access, JSONResponse):
         return access
     try:
-        result = _get_commercial_service(request).list_account_payment_orders(
+        result = await run_in_threadpool(
+            _get_commercial_service(request).list_account_payment_orders,
             str(access.get("account_id") or ""),
             site_id=site_id,
             status_group=status_group,
@@ -5051,7 +5183,8 @@ async def create_portal_site_credit_pack_order(
     if replay is not None:
         return replay
     try:
-        order = _get_commercial_service(request).create_credit_pack_payment_order(
+        order = await run_in_threadpool(
+            _get_commercial_service(request).create_credit_pack_payment_order,
             account_id=str(access.get("account_id") or ""),
             site_id=site_id,
             pack_id=payload.pack_id,
@@ -5105,9 +5238,11 @@ async def get_portal_account_audit_summary(
         return resolved_site_id
     scoped_site_ids = [resolved_site_id] if resolved_site_id else site_ids
     try:
-        summary = _get_commercial_service(request).summarize_service_audit_events(
+        summary = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_recent_activity,
             account_id=account_id,
             site_ids=scoped_site_ids,
+            site_id=resolved_site_id,
             limit=200,
         )
     except CommercialServiceError as error:
@@ -5160,9 +5295,11 @@ async def list_portal_account_audit_events(
         return resolved_site_id
     scoped_site_ids = [resolved_site_id] if resolved_site_id else site_ids
     try:
-        events = _get_commercial_service(request).list_service_audit_events(
+        events = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_recent_activity,
             account_id=account_id,
             site_ids=scoped_site_ids,
+            site_id=resolved_site_id,
             event_kind=event_kind,
             outcome=outcome,
             limit=limit,
@@ -5193,7 +5330,8 @@ async def get_portal_site_audit_summary(request: Request, site_id: str) -> Any:
     if isinstance(access, JSONResponse):
         return access
     try:
-        summary = _get_commercial_service(request).summarize_service_audit_events(
+        summary = await run_in_threadpool(
+            _get_commercial_service(request).summarize_service_audit_events,
             site_id=site_id,
             limit=200,
         )
@@ -5229,7 +5367,8 @@ async def list_portal_site_audit_events(
     if isinstance(access, JSONResponse):
         return access
     try:
-        events = _get_commercial_service(request).list_service_audit_events(
+        events = await run_in_threadpool(
+            _get_commercial_service(request).list_service_audit_events,
             site_id=site_id,
             event_kind=event_kind,
             outcome=outcome,
@@ -5260,7 +5399,10 @@ async def list_portal_site_billing_snapshots(request: Request, site_id: str) -> 
     if isinstance(access, JSONResponse):
         return access
     try:
-        snapshots = _get_commercial_service(request).list_billing_snapshots(site_id)
+        snapshots = await run_in_threadpool(
+            _get_commercial_service(request).list_billing_snapshots,
+            site_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
@@ -5286,7 +5428,10 @@ async def get_portal_site_billing_reconciliation(request: Request, site_id: str)
     if isinstance(access, JSONResponse):
         return access
     try:
-        reconciliation = _get_commercial_service(request).reconcile_billing_snapshot(site_id)
+        reconciliation = await run_in_threadpool(
+            _get_commercial_service(request).reconcile_billing_snapshot,
+            site_id
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(

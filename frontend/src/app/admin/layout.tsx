@@ -10,9 +10,12 @@ import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { AdminCommandDialog } from '@/components/admin/AdminCommandDialog';
+import { AdminDiagnosticNavigation, AdminParentNavigationLink } from '@/components/admin/AdminDiagnosticNavigation';
+import { adminSecondaryParentHref } from '@/features/admin/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/errors';
+import { getAdminCommandShortcutLabel } from '@/lib/admin-shortcuts';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -22,6 +25,7 @@ type AdminNavItem = {
   href: string;
   labelKey: string;
   fallback: string;
+  collapsedLabel: string;
   activePrefixes?: string[];
   secondary?: boolean;
 };
@@ -58,14 +62,6 @@ type AdminSessionData = {
 const ADMIN_SIDEBAR_STORAGE_KEY = 'npcink_admin_sidebar_collapsed';
 const adminLayoutSessionClient = createApiClient({ idempotencyPrefix: 'admin_layout_session' });
 
-function adminNavInitial(label: string): string {
-  const trimmed = label.trim();
-  if (!trimmed) {
-    return '·';
-  }
-  return trimmed.slice(0, 1).toUpperCase();
-}
-
 function isTypingShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -82,8 +78,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
+  const [commandShortcutLabel, setCommandShortcutLabel] = useState('⌘K');
   const [adminSessionReady, setAdminSessionReady] = useState(isLoginPage);
   const [deploymentIdentity, setDeploymentIdentity] = useState<AdminDeploymentIdentity | null>(null);
+
+  useEffect(() => {
+    setCommandShortcutLabel(getAdminCommandShortcutLabel(window.navigator.platform));
+  }, []);
 
   useEffect(() => {
     if (isLoginPage) {
@@ -208,7 +209,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       fallback: 'Workspace',
       descFallback: 'Platform posture and next operator actions.',
       items: [
-        { href: '/admin', labelKey: 'nav.overview', fallback: 'Overview' },
+        { href: '/admin', labelKey: 'nav.overview', fallback: 'Overview', collapsedLabel: 'OV' },
       ],
     },
     {
@@ -221,35 +222,41 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/accounts',
           labelKey: 'common.accounts',
           fallback: 'Customers',
+          collapsedLabel: 'CU',
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
           href: '/admin/support-requests',
           labelKey: 'admin.nav_support_requests',
           fallback: 'Tickets',
+          collapsedLabel: 'TI',
         },
         {
           href: '/admin/coverage',
           labelKey: 'admin.nav_coverage',
           fallback: 'Service Operations',
+          collapsedLabel: 'SO',
           activePrefixes: ['/admin/coverage'],
         },
         {
           href: '/admin/subscriptions',
           labelKey: 'admin.nav_subscriptions',
           fallback: 'Subscription Operations',
+          collapsedLabel: 'SU',
           activePrefixes: ['/admin/subscriptions'],
         },
         {
           href: '/admin/plans',
           labelKey: 'admin.nav_plan_catalog',
           fallback: 'Package Catalog',
+          collapsedLabel: 'PC',
           activePrefixes: ['/admin/plans'],
         },
         {
           href: '/admin/credit-packs',
           labelKey: 'admin.nav_credit_packs',
           fallback: 'AI Credit Packs',
+          collapsedLabel: 'CP',
           activePrefixes: ['/admin/credit-packs'],
         },
       ],
@@ -264,39 +271,43 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/ai-resources',
           labelKey: 'admin.nav_ai_resources',
           fallback: 'Model Suppliers',
+          collapsedLabel: 'MS',
           activePrefixes: ['/admin/ai-resources'],
         },
         {
           href: '/admin/external-services',
           labelKey: 'admin.nav_external_services',
           fallback: 'Search & Images',
+          collapsedLabel: 'SI',
           activePrefixes: ['/admin/external-services'],
         },
         {
           href: '/admin/vector-settings',
           labelKey: 'admin.nav_vector_settings',
           fallback: 'Vector Settings',
+          collapsedLabel: 'VS',
           activePrefixes: ['/admin/vector-settings'],
         },
         {
           href: '/admin/runtime-profiles',
           labelKey: 'admin.nav_runtime_profiles',
           fallback: 'Runtime Profiles',
+          collapsedLabel: 'RP',
           activePrefixes: ['/admin/runtime-profiles'],
+        },
+        {
+          href: '/admin/usage-statistics',
+          labelKey: 'admin.nav_runtime_observation',
+          fallback: 'Runtime observation',
+          collapsedLabel: 'US',
+          activePrefixes: ['/admin/usage-statistics', '/admin/media-observability', '/admin/vector-observability'],
         },
         {
           href: '/admin/troubleshooting',
           labelKey: 'admin.nav_runtime_diagnostics',
           fallback: 'Runtime Diagnostics',
-          activePrefixes: [
-            '/admin/troubleshooting',
-            '/admin/audit',
-            '/admin/plugin-observability',
-            '/admin/media-observability',
-            '/admin/agent-feedback',
-            '/admin/ai-advisor',
-            '/admin/vector-observability',
-          ],
+          collapsedLabel: 'RD',
+          activePrefixes: ['/admin/troubleshooting'],
         },
       ],
     },
@@ -310,11 +321,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/service-settings',
           labelKey: 'admin.nav_service_settings',
           fallback: 'Service Settings',
+          collapsedLabel: 'SS',
         },
         {
           href: '/admin/site-compliance',
           labelKey: 'admin.nav_site_compliance',
           fallback: 'Site Compliance',
+          collapsedLabel: 'SC',
         },
       ],
     },
@@ -324,6 +337,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const isPathMatch = (targetPath: string) => pathname === targetPath || pathname.startsWith(`${targetPath}/`);
 
   const isActive = (item: AdminNavItem) => {
+    const secondaryParent = adminSecondaryParentHref(pathname);
+    if (secondaryParent) return item.href === secondaryParent;
     const href = item.href;
     if (href === '/admin') {
       return pathname === '/admin';
@@ -346,12 +361,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       });
       const diagnosticsGroupLabel = t('admin.nav_group_diagnostics', {}, 'Diagnostics');
       const contextualItems: AdminCommandItem[] = [
-        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence' },
-        { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability' },
-        { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability' },
-        { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability' },
-        { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality' },
-        { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor' },
+        { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit Evidence', collapsedLabel: 'AE' },
+        { href: '/admin/plugin-observability', labelKey: 'admin.plugin_observability_title', fallback: 'Plugin Observability', collapsedLabel: 'PO' },
+        { href: '/admin/media-observability', labelKey: 'admin.media_obs.title', fallback: 'Media Processing Observability', collapsedLabel: 'MO' },
+        { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
+        { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
+        { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
       ].map((item) => ({
         ...item,
         groupLabel: diagnosticsGroupLabel,
@@ -425,8 +440,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 >
                   <span className={cn('min-w-0 truncate', collapsed && 'sr-only')}>{itemLabel}</span>
                   {collapsed ? (
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-[0.7rem] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-100" aria-hidden="true">
-                      {adminNavInitial(itemLabel)}
+                    <span
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-[0.65rem] font-bold tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      data-nav-collapsed-label={item.collapsedLabel}
+                      aria-hidden="true"
+                    >
+                      {item.collapsedLabel}
                     </span>
                   ) : null}
                   {active && !collapsed ? (
@@ -537,7 +556,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
+            <div data-ui="admin-route-breadcrumb" className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
               <button
                 type="button"
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/80 text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
@@ -561,9 +580,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {t('admin.operator_surface', {}, 'Operator surface')}
               </span>
               <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
-              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                {activeNavLabel}
-              </span>
+              {pathname !== activeNavItem.href ? <React.Suspense fallback={<Link href={activeNavItem.href} className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</Link>}>
+                <AdminParentNavigationLink href={activeNavItem.href} label={activeNavLabel} />
+              </React.Suspense> : <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{activeNavLabel}</span>}
             </div>
 
             <div className="flex items-center gap-2">
@@ -578,12 +597,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </svg>
                 <span className="hidden min-w-0 truncate lg:inline">{t('common.search', {}, 'Search')}</span>
                 <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-500 lg:inline">
-                  ⌘K
+                  {commandShortcutLabel}
                 </kbd>
               </button>
-              <span className="hidden rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200 md:inline-flex">
-                {t('admin.internal_only')}
-              </span>
               <div className="hidden items-center gap-2 md:flex">
                 <LocaleSwitcher />
                 <ThemeToggle />
@@ -633,9 +649,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <div className="flex items-center gap-2">
               <LocaleSwitcher />
               <ThemeToggle />
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.22em] text-blue-700 dark:border-blue-900/80 dark:bg-blue-950/40 dark:text-blue-200">
-                {t('admin.internal_only')}
-              </span>
             </div>
             {renderNavGroups('mobile')}
             <div className="grid grid-cols-2 gap-2">
@@ -721,6 +734,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <main className="flex-1 bg-transparent">
           <AdminQueryProvider>
             <AdminRouteTransition>
+              <React.Suspense fallback={null}><AdminDiagnosticNavigation /></React.Suspense>
               {children}
             </AdminRouteTransition>
           </AdminQueryProvider>

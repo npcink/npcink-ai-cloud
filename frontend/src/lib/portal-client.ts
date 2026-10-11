@@ -423,6 +423,21 @@ export interface PortalUsageSummaryPayload {
   };
 }
 
+export interface PortalSiteKnowledgeUsageRow {
+  site_id: string;
+  site_name: string;
+  status: string;
+  indexed_document_count: number;
+  last_indexed_at: string;
+}
+
+export interface PortalAccountSiteKnowledgeUsagePayload {
+  generated_at: string;
+  total_indexed_document_count: number;
+  indexed_document_limit: number;
+  sites: PortalSiteKnowledgeUsageRow[];
+}
+
 export interface PortalPluginObservabilityTotals {
   events_total: number;
   ok_total: number;
@@ -1780,7 +1795,7 @@ export class PortalClient {
   }
 
   /**
-   * 验证注册验证码并创建账号；Free 权益在 WordPress Addon 完成真实连接后激活
+   * 验证注册验证码并创建账号及 Free 权益；站点与凭据由可信 WordPress Addon 连接建立
    * POST /portal/v1/register/verify
    */
   async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
@@ -1788,9 +1803,14 @@ export class PortalClient {
   }
 
   /**
-   * 获取当前账号的第三方登录绑定状态
-   * GET /portal/v1/auth/identity-providers
+   * 获取公开登录方式可用性
+   * GET /portal/v1/auth/login-options
    */
+  async getLoginOptions(): Promise<PortalEnvelope<{ qq_available: boolean }>> {
+    return this.request<{ qq_available: boolean }>('GET', '/auth/login-options', undefined);
+  }
+
+  /** 获取当前账号的第三方登录绑定状态，GET /portal/v1/auth/identity-providers */
   async getIdentityProviders(): Promise<PortalEnvelope<PortalIdentityProvidersResponse>> {
     return this.request('GET', '/auth/identity-providers', undefined);
   }
@@ -2352,6 +2372,10 @@ export class PortalClient {
   async getAccountUsageSummary(siteId?: string): Promise<PortalEnvelope<PortalUsageSummaryPayload>> {
     const query = siteId ? `?site_id=${encodeURIComponent(siteId)}` : '';
     return this.request('GET', `/account/usage-summary${query}`, undefined);
+  }
+
+  async getAccountSiteKnowledgeUsage(): Promise<PortalEnvelope<PortalAccountSiteKnowledgeUsagePayload>> {
+    return this.request('GET', '/account/site-knowledge-usage', undefined);
   }
 
   async getUsageBundle(options?: { siteId?: string }): Promise<PortalUsageBundle> {

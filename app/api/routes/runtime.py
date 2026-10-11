@@ -40,6 +40,7 @@ from app.domain.image_context_evidence.contracts import (
 from app.domain.image_generation.contracts import (
     IMAGE_GENERATION_ABILITIES,
     IMAGE_GENERATION_ABILITY_FAMILY,
+    IMAGE_GENERATION_CLOUD_ABILITY,
     IMAGE_GENERATION_DATA_CLASSIFICATION,
     IMAGE_GENERATION_EXECUTION_KIND,
     IMAGE_GENERATION_PROFILE_ID,
@@ -57,6 +58,14 @@ from app.domain.media_batch_plans.contracts import (
     MEDIA_BATCH_PLAN_DATA_CLASSIFICATION,
     MEDIA_BATCH_PLAN_EXECUTION_KIND,
     MEDIA_BATCH_PLAN_PROFILE_ID,
+)
+from app.domain.media_governance.contracts import (
+    MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+    MEDIA_GOVERNANCE_AUDIT_ABILITY_FAMILY,
+    MEDIA_GOVERNANCE_AUDIT_DATA_CLASSIFICATION,
+    MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND,
+    MEDIA_GOVERNANCE_AUDIT_MAX_ITEMS,
+    MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
 )
 from app.domain.routing.errors import RoutingError
 from app.domain.runtime.errors import RuntimeErrorBase, RuntimeUnsupportedExecutionPatternError
@@ -206,7 +215,11 @@ class RuntimePayload(BaseModel):
             list_item_limits=(
                 {("post_ids",): MAX_SITE_KNOWLEDGE_STATUS_POST_IDS}
                 if self.ability_name == SITE_KNOWLEDGE_STATUS_ABILITY
-                else None
+                else (
+                    {("snapshot", "items"): MEDIA_GOVERNANCE_AUDIT_MAX_ITEMS}
+                    if self.ability_name in MEDIA_GOVERNANCE_AUDIT_ABILITIES
+                    else None
+                )
             ),
             allow_wordpress_ai_output_schema=(
                 self.ability_name in CONNECTOR_RUNTIME_ABILITIES
@@ -226,12 +239,20 @@ def _validate_runtime_json_shape(
     allow_wordpress_ai_output_schema: bool = False,
 ) -> None:
     depth_limit = MAX_RUNTIME_JSON_DEPTH
-    if allow_wordpress_ai_output_schema and path[:4] == (
-        "operation_contract",
-        "request",
-        "task_contract",
-        "output_schema",
-    ):
+    if allow_wordpress_ai_output_schema and path[:4] in {
+        (
+            "operation_contract",
+            "request",
+            "task_contract",
+            "input_schema",
+        ),
+        (
+            "operation_contract",
+            "request",
+            "task_contract",
+            "output_schema",
+        ),
+    }:
         depth_limit = MAX_RUNTIME_SCHEMA_JSON_DEPTH
     if depth >= depth_limit:
         raise ValueError(f"{field_name} exceeds the accepted nesting depth")
@@ -332,16 +353,32 @@ def _is_wordpress_ai_connector_payload(payload: RuntimePayload) -> bool:
 
 
 def _is_wordpress_ai_image_generation_payload(payload: RuntimePayload) -> bool:
+    """Recognize the Cloud-managed wp-ai image generation envelope.
+
+    Resolution here is Cloud-owned: the hosted profile is derived from the
+    ability and the image_generation task, never from the request's own
+    profile_id. Both shipped Addon surfaces send this ability with this task,
+    so they share one recognition rule instead of one of them naming a hosted
+    profile id itself. The narrower channel/source_surface/connector_id shape
+    stays accepted for the connector-channel surface.
+
+    Do not align this predicate with
+    ``RuntimeService._is_wordpress_ai_connector_managed_request`` without a
+    separate decision: that one gates managed runtime policy (timeout,
+    retry, fallback) rather than profile resolution, so widening it would
+    change execution bounds instead of routing.
+    """
+    if not _is_image_generation_payload(payload):
+        return False
     input_payload = payload.input if isinstance(payload.input, dict) else {}
+    if str(input_payload.get("task") or "") != "image_generation":
+        return False
+    if payload.ability_name == IMAGE_GENERATION_CLOUD_ABILITY:
+        return True
     return (
-        _is_image_generation_payload(payload)
-        and (
-            payload.channel == "wordpress_ai_connector"
-            or str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
-        )
-        and str(input_payload.get("connector_id") or "") == "npcink-cloud"
-        and str(input_payload.get("task") or "") == "image_generation"
-    )
+        payload.channel == "wordpress_ai_connector"
+        or str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
+    ) and str(input_payload.get("connector_id") or "") == "npcink-cloud"
 
 
 def _is_image_source_payload(payload: RuntimePayload) -> bool:
@@ -388,6 +425,10 @@ def _is_media_batch_plan_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in MEDIA_BATCH_PLAN_ABILITIES
 
 
+def _is_media_governance_audit_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in MEDIA_GOVERNANCE_AUDIT_ABILITIES
+
+
 def _is_cloud_batch_runtime_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in CLOUD_BATCH_RUNTIME_ABILITIES
 
@@ -403,6 +444,8 @@ def _resolve_ability_family(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_ABILITY_FAMILY
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_ABILITY_FAMILY
+    if _is_media_governance_audit_payload(payload):
+        return MEDIA_GOVERNANCE_AUDIT_ABILITY_FAMILY
     if _is_image_context_evidence_payload(payload):
         return IMAGE_CONTEXT_EVIDENCE_ABILITY_FAMILY
     if _is_audio_generation_payload(payload):
@@ -429,6 +472,8 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_EXECUTION_KIND
     if _is_media_batch_plan_payload(payload) and not payload.execution_kind:
         return MEDIA_BATCH_PLAN_EXECUTION_KIND
+    if _is_media_governance_audit_payload(payload) and not payload.execution_kind:
+        return MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND
     if _is_image_context_evidence_payload(payload) and not payload.execution_kind:
         return IMAGE_CONTEXT_EVIDENCE_EXECUTION_KIND
     if _is_audio_generation_payload(payload) and not payload.execution_kind:
@@ -455,11 +500,13 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_PROFILE_ID
     if _is_media_batch_plan_payload(payload) and not payload.profile_id:
         return MEDIA_BATCH_PLAN_PROFILE_ID
+    if _is_media_governance_audit_payload(payload) and not payload.profile_id:
+        return MEDIA_GOVERNANCE_AUDIT_PROFILE_ID
     if _is_image_context_evidence_payload(payload) and not payload.profile_id:
         return IMAGE_CONTEXT_EVIDENCE_PROFILE_ID
     if _is_audio_generation_payload(payload) and not payload.profile_id:
         return AUDIO_GENERATION_PROFILE_ID
-    if _is_wordpress_ai_image_generation_payload(payload) and not payload.profile_id:
+    if _is_wordpress_ai_image_generation_payload(payload):
         return WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
     if _is_image_generation_payload(payload) and not payload.profile_id:
         return IMAGE_GENERATION_PROFILE_ID
@@ -494,6 +541,8 @@ def _resolve_data_classification(payload: RuntimePayload) -> str:
         return CLOUD_BATCH_RUNTIME_DATA_CLASSIFICATION
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_DATA_CLASSIFICATION
+    if _is_media_governance_audit_payload(payload):
+        return MEDIA_GOVERNANCE_AUDIT_DATA_CLASSIFICATION
     if _is_image_context_evidence_payload(payload):
         input_payload = payload.input if isinstance(payload.input, dict) else {}
         if image_context_evidence_artifact_ids(input_payload):
@@ -776,6 +825,7 @@ async def execute_runtime(
                 },
                 "task_backend": result.task_backend,
                 "run_lifecycle": result.run_lifecycle,
+                "run_state": result.run_state,
                 "result": result.result,
             },
             trace_id=result.trace_id,

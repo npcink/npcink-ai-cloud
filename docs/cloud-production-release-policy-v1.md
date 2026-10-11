@@ -23,6 +23,18 @@ by that runtime.
 - `production` is the production release source.
 - feature and fix branches merge to `master` first.
 - production releases are promoted from `master` to `production`.
+- **Current release state (2026-10-06): the operator has authorized resuming
+  production-candidate validation and preparation of a fresh promotion PR.**
+  Actual server deployment remains separately gated by the final exact-SHA
+  operator confirmation; no server cutover is authorized by this status.
+  The Portal capacity/context restoration reached master through PR #865;
+  current registration/Free browser evidence reached master through PR #1073,
+  followed by test repair PR #1074 and green exact-master CI. Resume through
+  the remaining applicable gates in
+  `history/production/2026/pre-production-release-pause-and-user-experience-consolidation-closeout-2026-08-21.md` §7,
+  using fresh image security evidence instead of retired CVE exceptions.
+  Current scope and evidence limits are recorded in
+  [Production Release Readiness Plan](production-release-readiness-plan-2026-10-06.md).
 
 Do not directly edit production application code on the server. Production
 database credentials and runtime root secrets are authoritative only in the
@@ -73,15 +85,16 @@ Git, and run the narrowest relevant local gates plus CI. Before promoting
 
 The temporary Python and Node CVE exceptions are retired. Production images
 must use the digest-locked Python 3.14.7 and Node 22.23.2 candidates recorded in
-`deploy/image-lock/production-images.json`. The operator-approved OpenSSL
-`CVE-2026-14456` exception is active only through `2026-09-19` and only for the
-six exact `libcrypto3`/`libssl3` version `3.5.7-r0` findings recorded for the
-`api`, `frontend`, and `nginx` images. It is valid only while production has no
-QUIC, HTTP/3, or UDP listener; enabling any of those protocols stops the
-release. OpenSSL `3.5.8` or newer, a changed affected package version, an
-additional blocking finding, or expiry requires removal or separate review of
-the exception plus a fresh Linux/AMD64 release scan and exact-bundle replay.
-A changed base-image digest has the same rebuild and scan requirements.
+`deploy/image-lock/production-images.json`. The six OpenSSL
+`CVE-2026-14456` exceptions expired on `2026-09-19` and are retired as of
+2026-09-20. They covered `libcrypto3`/`libssl3` version `3.5.7-r0` in `api`,
+`frontend`, and `nginx`. No active CVE exceptions remain.
+This withdraws authorization; it does not establish that any image is fixed.
+Any remaining high/critical, unknown-severity, or unfixed blocking finding
+must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol
+guards remain in force. A changed base-image digest still requires rebuilding,
+a fresh scan, and exact-bundle replay. Actual deployment still requires fresh
+candidate validation and the final exact-SHA operator dispatch confirmation.
 Restoring any expired exception, using the historical controlled-validation
 receipt, or using the retired no-user internal-validation switch is not an
 ordinary recovery lane and does not authorize a release.
@@ -983,8 +996,8 @@ that digest.
 Only after the receipt may the script perform an independent PostgreSQL 16
 restore and rehearse `0058 -> 0068`. In that same restore rehearsal and then in
 production it separately runs count-locked `inventory`, `dry-run`, `apply`, and
-new-key-only `verify` through `python -m app.dev.reencrypt_runtime_data` for 18
-rows and `python -m app.dev.reencrypt_service_secrets` for 12 rows. Each
+new-key-only `verify` through `python -m app.ops.reencrypt_runtime_data` for 18
+rows and `python -m app.ops.reencrypt_service_secrets` for 12 rows. Each
 `apply` is an independent database transaction, but both applies and both
 verifies are one 30-row activation gate. The gate also freezes each sorted
 non-secret row-identifier set by canonical-JSON SHA-256; matching counts with a

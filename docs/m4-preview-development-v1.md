@@ -1,5 +1,8 @@
 # M4 Preview Development Workflow v1
 
+Status: active operator runbook; follow the M4 Preview AI Development Standard
+for normative lifecycle requirements.
+
 This runbook owns host, command, recovery, and implementation mechanics.
 AI agents must also follow the normative
 [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
@@ -10,6 +13,11 @@ The source-only authoring and agent checkpoint-dispatch decision is recorded in
 [ADR-025](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md).
 The private source-transfer decision is recorded in
 [ADR-026](decisions/026-private-source-relay-transfer.md).
+[ADR-052](decisions/052-pgy-primary-m4-access.md) supersedes the default M4
+access and source-transfer path while preserving the relay contract for
+explicit recovery.
+The consolidated operator guidance is in
+[M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md).
 
 ## Decision
 
@@ -25,7 +33,8 @@ keeping two Cloud stacks in parallel. The current defaults are:
 
 | Boundary | Value |
 | --- | --- |
-| SSH transport | `muze@100.102.170.79` |
+| SSH transport | `muze@172.16.3.35` (Pgy primary) |
+| Tailscale fallback | `muze@100.102.170.79` |
 | Private source relay | `root@100.90.87.36` |
 | M4 source mirror | `/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev` |
 | Compose project | `npcink-ai-cloud-m4-dev` |
@@ -41,9 +50,9 @@ Cloudflare DNS, Access, or Tunnel change. The existing tunnel continues to use
 
 ## Private Source Relay Contract
 
-Ordinary source bundles default to a transient private relay because the
-authoring Mac and M4 can each connect directly to the relay even when they
-cannot establish a direct path to each other.
+The ordinary source-transfer default is direct SSH to the Pgy M4 address.
+The transient private relay remains available for an explicit operator
+recovery when the primary direct path is unavailable or degraded.
 
 The fixed flow is:
 
@@ -69,29 +78,156 @@ flow.
 The normal environment defaults are:
 
 ```text
-NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay
+NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct
 NPCINK_CLOUD_M4_RELAY_SSH_HOST=root@100.90.87.36
+NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE=
 NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP=100.90.87.36
 NPCINK_CLOUD_M4_RELAY_HTTP_PORT=18080
+NPCINK_CLOUD_M4_RELAY_HTTP_MODE=transient
+NPCINK_CLOUD_M4_RELAY_HTTP_GROUP=nginx
 ```
 
-The script fails visibly when the relay is unavailable. For a bounded
-operator-selected recovery, use the explicit direct fallback:
+`NPCINK_CLOUD_M4_RELAY_SSH_IDENTITY_FILE` is an optional absolute path to a
+regular, non-symlinked private key on the authoring Mac. It is passed only to
+the relay SSH/SCP commands and is never packaged, copied to M4, or written to
+deployment evidence. Leave it empty when the normal SSH agent or config owns
+relay authentication.
+
+The default `transient` mode keeps the existing per-operation Python service.
+An operator-managed relay with an older system Python may instead use
+`NPCINK_CLOUD_M4_RELAY_HTTP_MODE=nginx` after installing the reviewed
+`deploy/m4-source-relay-nginx.conf`. In that mode the script requires the
+dedicated Nginx listener to be active, stores each bundle under its unique run
+path below `/var/lib/npcink-ai-cloud-m4-source-relay` with `root:<http-group>`
+ownership and mode `0640`, and leaves the base directory and Nginx service in
+place while still deleting every run directory, bundle, and lock after the
+operation. The managed mode avoids `/var/tmp` because the host Nginx service
+uses systemd `PrivateTmp`; transient mode continues using the original
+`/var/tmp` path. Each run directory stays private (`0700 root:root`) during
+upload and becomes Nginx-traversable only after the size and SHA-256 checks
+succeed. Existing symlinked base or run paths are rejected.
+
+The managed listener does not change the evidence boundary. It binds only the
+configured Tailscale IP, disables directory listing, accepts only GET/HEAD,
+and never becomes source, Git, deployment, or accepted-revision truth. The M4
+download is the end-to-end HTTP readiness proof, and the downloaded bytes must
+pass the existing size and SHA-256 checks. Relay downloads have a bounded
+15-minute budget and resume partial transfers so the accepted Peer Relay route
+can tolerate lower throughput without weakening integrity validation.
+
+The script fails visibly when the primary Pgy path is unavailable. For a
+bounded operator-selected recovery, use the explicit Tailscale relay mode:
 
 ```bash
-NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct pnpm run m4:preview:sync
+NPCINK_CLOUD_M4_SSH_HOST=muze@100.102.170.79 \
+NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay pnpm run m4:preview:sync
 ```
 
 Do not turn that override into a silent fallback. A degraded endpoint-to-
 endpoint transfer must remain observable. If the relay lock is stale, inspect
-`/var/tmp/npcink-ai-cloud-m4-source-relay/operation.lock/owner.txt` on the
-relay and verify that no transfer service is active before removing only that
-exact lock.
+the applicable `operation.lock/owner.txt` on the relay: transient mode uses
+`/var/tmp/npcink-ai-cloud-m4-source-relay`, while managed Nginx mode uses
+`/var/lib/npcink-ai-cloud-m4-source-relay`. Verify that no transfer service or
+M4 download is active before removing only that exact lock.
 
 SSH and SCP allow up to three bounded connection attempts because the observed
 Peer Relay path can lose an initial handshake. This retries connection
 establishment only; it does not hide a failed transfer, switch transport mode,
 or extend an operation without limit.
+
+### Compiled Browser Preview
+
+The primary M4 frontend defaults to `NPCINK_CLOUD_M4_FRONTEND_MODE=production`.
+It compiles optimized assets on M4 before starting the Next.js standalone
+server. This is a production **build mode** in the disposable preview runtime;
+`NEXT_PUBLIC_ENV=development`, preview authentication, and loopback bindings
+remain unchanged. It does not authorize a production release.
+
+The existing dependency image and volume are reused. Frontend recreation or
+container restart runs a fresh build, with a five-minute health-check grace
+period. Expect a temporary frontend outage while compiling; API health remains
+a separate check. Unchanged frontend source and configuration still skip
+recreation during ordinary source sync.
+
+For active editing or recovery from a failed frontend build, explicitly select
+the development server on the authoring Mac:
+
+```bash
+NPCINK_CLOUD_M4_FRONTEND_MODE=development pnpm run m4:preview:deploy
+```
+
+Ordinary subsequent `sync`, `deploy`, and `promote` commands default back to
+the compiled preview. Specify the override on each source operation that
+should retain hot reload. The selected mode is recorded as `frontend_mode` in
+`m4:preview:status`; direct operations remain candidate evidence. Frontend
+slots and the optional local development Compose retain their existing dev
+server behavior.
+
+Rollback for this change is a candidate deploy with the development override.
+Use the same source checkout and candidate flags when recovering an unmerged
+candidate; do not promote it as accepted. Verify `/admin/login`, its static
+assets, `/health/live`, and the protected API routes after either switch.
+
+#### Browser and Login Acceptance
+
+- Measure HTML first-byte time, browser resource transfer size, hydration,
+  and form submission separately. A fast HTML response is not a usable page.
+- Compare M4 loopback with the actual operator tunnel. Read the overlay
+  client's connection type; ICMP loss alone does not establish SSH failure.
+- Do not run bulk downloads alongside browser timing. Record contention,
+  cache state, and build mode, and treat one sample as an observation.
+- After a build-mode change, verify an actual form submission, a visible
+  invalid-key error with an enabled retry button, and successful session
+  issuance and destination access when an authorized credential is available.
+  A successful GET or a mocked success test is not successful browser login.
+- Admin login response redirects use sanitized relative `/admin` paths so
+  loopback ports and the public origin both remain same-origin. Backend host
+  evidence stays bound to configured trusted origin. Never relax CSP, trust
+  arbitrary Origin/Referer, or remove cookie security to repair navigation.
+- Record candidate, merged, and accepted evidence separately. Promote clean
+  current master after merge and verify both runtime identity and browser
+  behavior. Never treat a historical receipt as current runtime state.
+
+See the [2026-09-08 investigation and retrospective](m4-compiled-preview-and-login-retrospective-2026-09-08.md)
+for measurements, the missed submission check, and remaining verification limits.
+
+### Managed Relay Restart Check
+
+The managed relay host enables both `tailscaled` and `nginx` at boot, but the
+system Nginx unit does not declare an explicit dependency on `tailscaled`.
+After the relay host's first reboot, or whenever source transfer fails after a
+reboot, verify the private listener before changing transfer settings:
+
+```bash
+systemctl is-enabled tailscaled nginx
+systemctl is-active tailscaled nginx
+tailscale ip -4
+nginx -t
+ss -lnt | grep '100.86.14.81:18080'
+```
+
+Expected results are both services `enabled` and `active`, Tailscale address
+`100.86.14.81`, a successful Nginx configuration check, and a listener bound
+to exactly `100.86.14.81:18080`. From M4, an empty relay root returning `403`
+proves the listener is reachable without enabling directory listing:
+
+```bash
+curl -sS --max-time 20 -o /dev/null -w '%{http_code}\n' \
+  http://100.86.14.81:18080/
+```
+
+If the Tailscale address is absent, diagnose `tailscaled` before touching
+Nginx. If the address exists but the listener is absent, inspect
+`journalctl -u nginx --since '-10 minutes'`, run `nginx -t`, and only then
+reload an already active Nginx service or start an inactive one. Nginx also
+serves the host's existing sites, so do not replace its main configuration,
+restart it before `nginx -t` succeeds, or modify unrelated files under
+`/etc/nginx/conf.d/`.
+
+Do not change the relay listener to `0.0.0.0`, expose port `18080` through the
+public security group, or use a public HTTP address as a fallback. A successful
+check must still leave `/var/lib/npcink-ai-cloud-m4-source-relay` empty when no
+M4 operation is active.
 
 ## Safety Boundary
 
@@ -106,8 +242,8 @@ volume deletion, or deletion by a partial name. Other M4 Docker workloads are
 outside this workflow.
 
 All published ports bind to `127.0.0.1`. They are intentionally unreachable
-through the M4 LAN or Tailscale address. For the single operator's browser and
-WordPress-to-Cloud integration, use the automatic SSH tunnel:
+through the M4 LAN, Pgy, or Tailscale address. For the single operator's
+browser and WordPress-to-Cloud integration, use the automatic SSH tunnel:
 
 ```bash
 pnpm run m4:preview:auto
@@ -116,10 +252,12 @@ open http://127.0.0.1:18010
 
 The automatic command first verifies the M4 loopback health endpoint over the
 office LAN SSH target `muze@192.168.10.200`. When that path is unavailable, it
-verifies and uses the existing Tailscale target `muze@100.102.170.79`. The
-browser address remains `http://127.0.0.1:18010` in both locations. Override
-the LAN target with `NPCINK_CLOUD_M4_LAN_SSH_HOST` only when the office address
-changes; `NPCINK_CLOUD_M4_SSH_HOST` remains the Tailscale/deployment target.
+verifies the Pgy target `muze@172.16.3.35`, then the Tailscale fallback
+`muze@100.102.170.79`. The browser address remains
+`http://127.0.0.1:18010` in both locations. Override the LAN target with
+`NPCINK_CLOUD_M4_LAN_SSH_HOST`, the primary target with
+`NPCINK_CLOUD_M4_SSH_HOST`, or the fallback with
+`NPCINK_CLOUD_M4_TAILSCALE_SSH_HOST` when addresses change.
 
 The tunnel binds only the authoring Mac's `127.0.0.1:18010`, stays in the
 foreground, and closes with `Ctrl+C`. It does not update source, use the source
@@ -157,8 +295,8 @@ evidence; do not silently treat either as an automatic substitute. A
 attempt real browser assertions.
 
 The implementation reasoning, rejected alternatives, timeout correction,
-measured LAN/Tailscale evidence, and troubleshooting lessons are recorded in
-[the 2026-07-25 single-operator preview retrospective](m4-personal-preview-auto-route-retrospective-2026-07-25.md).
+measured LAN/Pgy/Tailscale evidence, and troubleshooting lessons are recorded in
+[the 2026-07-25 single-operator preview retrospective](history/m4/2026/m4-personal-preview-auto-route-retrospective-2026-07-25.md).
 
 `https://cloud.mqzjmax.top` remains the protected browser-preview entry. Do not
 configure an automated local WordPress connector against that hostname:
@@ -304,7 +442,7 @@ local Docker substitute.
 Run commands from the local repository worktree:
 
 ```bash
-# Open the single-operator preview; office LAN first, Tailscale fallback
+# Open the single-operator preview; office LAN, Pgy, then Tailscale fallback
 pnpm run m4:preview:auto
 
 # Offsite read-only transport classification before browser assertions
@@ -431,7 +569,7 @@ request, hit, miss, upstream-byte, served-cache-byte, and downstream-disconnect
 counters for diagnosis. See
 [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) for the decision
 boundary and
-[the 2026-07-25 validation record](m4-package-proxy-streaming-cache-validation-2026-07-25.md)
+[the 2026-07-25 validation record](history/m4/2026/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 for measured evidence.
 
 The frontend image already contains its pinned `node_modules`. M4 Preview starts
@@ -532,8 +670,9 @@ M4 Preview separates fast behavioral feedback from repository completion:
 
 - `m4:preview:sync` and `m4:preview:deploy` always record
   `acceptance_state=candidate`;
-- a candidate may come from a feature branch or a dirty worktree and proves
-  only that the packaged source behaved correctly on M4;
+- a candidate may come from a feature branch or a dirty worktree only when the
+  operator explicitly sets the corresponding candidate-source override, and
+  proves only that the packaged source behaved correctly on M4;
 - a change is not accepted until its PR is merged into `master` and
   `m4:preview:promote` succeeds from a clean worktree whose `HEAD` equals the
   freshly fetched `origin/master`.
@@ -588,7 +727,7 @@ revision and full source-bundle equality.
 
 Slots 1 and 2 map M4 loopback ports `8021` and `8022` to authoring-Mac
 foreground tunnel ports `18021` and `18022`. Slot 3 maps `8023` to `18023` and
-requires `--allow-third`. No slot port is published to LAN or Tailscale.
+requires `--allow-third`. No slot port is published to LAN, Pgy, or Tailscale.
 Product mutations are blocked at the slot NGINX edge; only session login,
 verification, and logout are allowed so authenticated pages can be inspected.
 Release removes only the exact slot; an expired lease is reclaimed by the next
@@ -604,7 +743,7 @@ primary is accepted again and the owner performs an explicit slot sync.
 Ollama stays native on M4 rather than becoming another Docker service. The
 checked-in LaunchAgent runs `/usr/local/bin/ollama serve` with `RunAtLoad` and
 `KeepAlive`, and fixes `OLLAMA_HOST` to `127.0.0.1:11434`. It does not publish
-Ollama to LAN, Tailscale, Cloudflare, or a container port.
+Ollama to LAN, Pgy, Tailscale, Cloudflare, or a container port.
 
 Install the managed service once:
 

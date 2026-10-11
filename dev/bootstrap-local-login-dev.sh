@@ -13,7 +13,7 @@ COMPOSE_PROJECT_NAME="${NPCINK_CLOUD_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAM
 cd "${ROOT_DIR}"
 
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose -f docker-compose.dev.yml run --rm api \
-	python -m app.dev.seed_runtime \
+	python -m app.ops.seed_runtime \
 		--site-id "${SITE_ID}" \
 		--key-id "${KEY_ID}" \
 		--secret "${SECRET}" \
@@ -22,7 +22,7 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose -f docker-compose.
 		--skip-health-scan
 
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose -f docker-compose.dev.yml run --rm api \
-	python -m app.dev.bootstrap_portal_site \
+	python -m app.ops.bootstrap_portal_site \
 		--site-id "${SITE_ID}" \
 		--user-email "${MEMBER_EMAIL}" \
 		--public-base-url "${PUBLIC_BASE_URL}" \

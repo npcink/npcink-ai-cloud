@@ -173,6 +173,33 @@ the ref from `refs/heads/<name>` to a dated namespace such as
 Verify the bundle and the full old/new ref set before and after the transaction.
 This reduces active branch clutter without discarding recoverable history.
 
+## Remote Branch Cleanup
+
+Remote branch deletion is a separately authorized operation, not an implied
+part of worktree removal or local branch consolidation. Use an explicit,
+reviewed remote candidate set and always exclude:
+
+- `master`, `production`, and any other protected branch;
+- the current development branch and every branch required by retained work;
+- branches with an open PR, active handoff, uncertain owner, or mismatched
+  remote and PR-head revisions;
+- dependency-bot branches with open update PRs; and
+- closed but unmerged branches until their unique source is separately
+  classified and preserved.
+
+For every deletion candidate, freshly compare the exact remote SHA with the
+merged PR head SHA and require no open PR. Create a dated local archive ref for
+the remote head, include the exact candidate set in a private verified bundle,
+record mode, size, and SHA-256, and only then delete the reviewed remote refs.
+Prefer one atomic remote deletion when the server supports it so a changed or
+rejected ref cannot leave an unexplained partial batch. Fetch with pruning and
+verify every candidate is absent afterward.
+
+Remote deletion does not remove a registered worktree or local branch. After
+the remote batch, re-audit local branches whose upstream is now `gone`; archive
+and remove only the exact merged local candidates through checked ref
+transactions. Preserve current, dirty, checked-out, open, or unmerged work.
+
 ## Archive Ref Retention
 
 This section governs Git refs under `refs/archive/**`. It does not govern
@@ -237,7 +264,8 @@ declared target. The final receipt must include:
 - archive ref count and namespace;
 - verified bundle/archive location and aggregate capacity;
 - recoverable generated-state capacity moved to Trash, if any;
-- remote branches changed, which should normally be zero;
+- remote branches changed, normally zero unless the operator explicitly
+  authorized a separately reviewed remote cleanup batch;
 - active Git operation count;
 - remaining manual-review count;
 - explicit statement that the current worktree was not removed or unlocked.
