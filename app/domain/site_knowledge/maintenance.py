@@ -233,9 +233,13 @@ def record_maintenance_batch(
     ):
         if evidence_field in previous:
             state[evidence_field] = previous[evidence_field]
-    if status != "ready":
+    if status != "ready" and str(previous.get("request_id") or "") == str(
+        maintenance["request_id"]
+    ):
         # An in-flight delivery still needs its accumulated manifest for the
-        # final batch's prune; only a completed delivery drops it.
+        # final batch's prune; only a completed delivery drops it. The
+        # request_id guard keeps one delivery's manifest from leaking into
+        # the next one after a blocked delivery is re-activated.
         for manifest_field in (
             SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD,
             SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD,
@@ -251,6 +255,7 @@ def merge_maintenance_manifest_sources(
     session: Session,
     *,
     site_id: str,
+    request_id: str,
     delivered_sources: list[tuple[str, int]],
 ) -> None:
     """Accumulate one full-sync batch's delivered public sources.
@@ -259,8 +264,11 @@ def merge_maintenance_manifest_sources(
     against. WordPress stays the public-content truth, and the change bridge
     cannot replay removals that happened while it could not deliver, so the
     delivered-set difference is the only Cloud-side evidence that an indexed
-    source no longer exists publicly.
+    source no longer exists publicly. The manifest is always recorded for the
+    active delivery, even when a batch delivers nothing: an empty manifest is
+    the strongest prune signal for a site whose public content was removed.
     """
+    normalized_request_id = str(request_id or "").strip()
     delivered_keys: list[str] = []
     for source_type, source_id in delivered_sources:
         normalized_type = str(source_type or "").strip()
@@ -270,17 +278,19 @@ def merge_maintenance_manifest_sources(
             continue
         if normalized_type and normalized_id > 0:
             delivered_keys.append(f"{normalized_type}:{normalized_id}")
-    if not delivered_keys:
-        return
     site = session.get(Site, site_id)
     if site is None:
         return
     metadata = dict(site.metadata_json) if isinstance(site.metadata_json, dict) else {}
     state = _copy_maintenance_state(metadata)
+    same_delivery = (
+        bool(normalized_request_id)
+        and str(state.get("request_id") or "") == normalized_request_id
+    )
     accumulated = state.get(SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD)
     keys = (
         [str(key) for key in accumulated if isinstance(key, str)]
-        if isinstance(accumulated, list)
+        if isinstance(accumulated, list) and same_delivery
         else []
     )
     seen = set(keys)
@@ -288,9 +298,10 @@ def merge_maintenance_manifest_sources(
         if key not in seen:
             seen.add(key)
             keys.append(key)
-    truncated = bool(state.get(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD)) or (
-        len(keys) > SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT
-    )
+    truncated = (
+        bool(state.get(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD)) if same_delivery else False
+    ) or (len(keys) > SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT)
+    state["request_id"] = normalized_request_id
     state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] = keys[:SITE_KNOWLEDGE_MANIFEST_SOURCES_LIMIT]
     state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] = truncated
     metadata[SITE_KNOWLEDGE_MAINTENANCE_METADATA_KEY] = state
@@ -314,16 +325,16 @@ def prune_unmanifested_sources(
     public-status-filtered read path stops serving them.
     """
     state = _site_maintenance_state(session, site_id)
-    keys = _manifest_source_keys(state)
     summary: dict[str, Any] = {
-        "status": "skipped_empty_manifest",
+        "status": "skipped_no_manifest",
         "pruned_source_count": 0,
     }
-    if not keys:
+    if SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD not in state:
         return summary
     if bool(state.get(SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD)):
         summary["status"] = "skipped_truncated_manifest"
         return summary
+    keys = _manifest_source_keys(state)
     keep_sources: set[tuple[str, int]] = set()
     source_types: set[str] = set()
     for key in keys:
@@ -334,6 +345,10 @@ def prune_unmanifested_sources(
             continue
         keep_sources.add((source_type, source_id))
         source_types.add(source_type)
+    if not source_types:
+        # A recorded-but-empty manifest means the delivery saw no public
+        # sources at all, so every public source type in the index is pruned.
+        source_types = set(repository.list_public_source_types(site_id))
     pruned_source_count = repository.mark_unmanifested_sources_stale(
         site_id,
         keep_sources=keep_sources,

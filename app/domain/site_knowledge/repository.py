@@ -88,6 +88,21 @@ class SiteKnowledgeRepository:
         self.session.flush()
         return self._rowcount(chunk_result) + self._rowcount(document_result)
 
+    def list_public_source_types(self, site_id: str) -> list[str]:
+        return [
+            str(source_type)
+            for source_type in self.session.scalars(
+                select(SiteKnowledgeDocument.source_type)
+                .where(
+                    SiteKnowledgeDocument.site_id == site_id,
+                    SiteKnowledgeDocument.post_status == "publish",
+                )
+                .distinct()
+                .order_by(SiteKnowledgeDocument.source_type.asc())
+            )
+            if str(source_type or "").strip()
+        ]
+
     def mark_unmanifested_sources_stale(
         self,
         site_id: str,
@@ -111,36 +126,41 @@ class SiteKnowledgeRepository:
         )
         if not normalized_source_types:
             return 0
-        documents = list(
-            self.session.scalars(
-                select(SiteKnowledgeDocument).where(
-                    SiteKnowledgeDocument.site_id == site_id,
-                    SiteKnowledgeDocument.post_status == "publish",
-                    SiteKnowledgeDocument.source_type.in_(normalized_source_types),
-                )
-            )
-        )
         stale_ids_by_type: dict[str, list[int]] = {}
-        for document in documents:
-            source_type = str(document.source_type or "")
+        for source_type, source_id in self.session.execute(
+            select(SiteKnowledgeDocument.source_type, SiteKnowledgeDocument.source_id).where(
+                SiteKnowledgeDocument.site_id == site_id,
+                SiteKnowledgeDocument.post_status == "publish",
+                SiteKnowledgeDocument.source_type.in_(normalized_source_types),
+            )
+        ).all():
+            normalized_type = str(source_type or "")
             try:
-                source_id = int(document.source_id)
+                normalized_id = int(source_id)
             except (TypeError, ValueError):
                 continue
-            if (source_type, source_id) in keep_sources:
+            if (normalized_type, normalized_id) in keep_sources:
                 continue
-            document.post_status = SITE_KNOWLEDGE_STALE_POST_STATUS
-            stale_ids_by_type.setdefault(source_type, []).append(source_id)
+            stale_ids_by_type.setdefault(normalized_type, []).append(normalized_id)
         for source_type, source_ids in stale_ids_by_type.items():
             for offset in range(0, len(source_ids), 500):
+                source_id_slice = source_ids[offset : offset + 500]
+                self.session.execute(
+                    update(SiteKnowledgeDocument)
+                    .where(
+                        SiteKnowledgeDocument.site_id == site_id,
+                        SiteKnowledgeDocument.source_type == source_type,
+                        SiteKnowledgeDocument.source_id.in_(source_id_slice),
+                        SiteKnowledgeDocument.post_status == "publish",
+                    )
+                    .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
+                )
                 self.session.execute(
                     update(SiteKnowledgeChunk)
                     .where(
                         SiteKnowledgeChunk.site_id == site_id,
                         SiteKnowledgeChunk.source_type == source_type,
-                        SiteKnowledgeChunk.source_id.in_(
-                            source_ids[offset : offset + 500]
-                        ),
+                        SiteKnowledgeChunk.source_id.in_(source_id_slice),
                     )
                     .values(post_status=SITE_KNOWLEDGE_STALE_POST_STATUS)
                 )

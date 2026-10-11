@@ -405,7 +405,10 @@ def test_manifest_accumulation_survives_batch_progress_records() -> None:
     request_id = maintenance_request_id("site-1")
 
     merge_maintenance_manifest_sources(
-        session, site_id="site-1", delivered_sources=[("post", 1), ("post", 1)]
+        session,
+        site_id="site-1",
+        request_id=request_id,
+        delivered_sources=[("post", 1), ("post", 1)],
     )
     record_maintenance_batch(
         session,
@@ -414,7 +417,10 @@ def test_manifest_accumulation_survives_batch_progress_records() -> None:
         status="delivering",
     )
     merge_maintenance_manifest_sources(
-        session, site_id="site-1", delivered_sources=[("page", 7)]
+        session,
+        site_id="site-1",
+        request_id=request_id,
+        delivered_sources=[("page", 7)],
     )
 
     state = session.site.metadata_json["site_knowledge_maintenance"]
@@ -429,6 +435,67 @@ def test_manifest_accumulation_survives_batch_progress_records() -> None:
     state = session.site.metadata_json["site_knowledge_maintenance"]
     assert SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD not in state
     assert SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD not in state
+
+
+def test_new_delivery_does_not_inherit_blocked_delivery_manifest() -> None:
+    session = FakeSession()
+    blocked_request_id = maintenance_request_id("site-1")
+    session.site.metadata_json = {
+        "site_knowledge_maintenance": {
+            "status": "blocked",
+            "request_id": blocked_request_id,
+            "manifest_sources": ["post:1"],
+            "manifest_truncated": True,
+        }
+    }
+
+    reactivated_request_id = f"{blocked_request_id[:-4]}next"
+    merge_maintenance_manifest_sources(
+        session,
+        site_id="site-1",
+        request_id=reactivated_request_id,
+        delivered_sources=[("page", 9)],
+    )
+    state = session.site.metadata_json["site_knowledge_maintenance"]
+    assert state["request_id"] == reactivated_request_id
+    assert state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] == ["page:9"]
+    assert state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] is False
+
+    record_maintenance_batch(
+        session,
+        site_id="site-1",
+        maintenance={
+            "request_id": reactivated_request_id,
+            "batch_index": 0,
+            "batch_count": 1,
+        },
+        status="delivering",
+    )
+    state = session.site.metadata_json["site_knowledge_maintenance"]
+    assert state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] == ["page:9"]
+
+
+def test_manifest_truncation_flag_is_sticky_within_one_delivery() -> None:
+    session = FakeSession()
+    request_id = maintenance_request_id("site-1")
+    session.site.metadata_json = {
+        "site_knowledge_maintenance": {
+            "request_id": request_id,
+            "manifest_sources": ["post:1"],
+            "manifest_truncated": True,
+        }
+    }
+
+    merge_maintenance_manifest_sources(
+        session,
+        site_id="site-1",
+        request_id=request_id,
+        delivered_sources=[("post", 1)],
+    )
+
+    state = session.site.metadata_json["site_knowledge_maintenance"]
+    assert state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] == ["post:1"]
+    assert state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] is True
 
 
 def test_prune_skips_truncated_manifest_and_empty_state() -> None:
@@ -446,6 +513,9 @@ def test_prune_skips_truncated_manifest_and_empty_state() -> None:
             calls.append((keep_sources, source_types))
             return 0
 
+        def list_public_source_types(self, site_id: str) -> list[str]:
+            return ["post"]
+
     repository = RecordingRepository()
 
     empty_summary = prune_unmanifested_sources(
@@ -453,7 +523,7 @@ def test_prune_skips_truncated_manifest_and_empty_state() -> None:
         site_id="site-1",
         repository=repository,  # type: ignore[arg-type]
     )
-    assert empty_summary == {"status": "skipped_empty_manifest", "pruned_source_count": 0}
+    assert empty_summary == {"status": "skipped_no_manifest", "pruned_source_count": 0}
 
     session.site.metadata_json = {
         "site_knowledge_maintenance": {
@@ -471,6 +541,38 @@ def test_prune_skips_truncated_manifest_and_empty_state() -> None:
         "pruned_source_count": 0,
     }
     assert calls == []
+
+
+def test_empty_recorded_manifest_prunes_all_public_sources() -> None:
+    session = FakeSession()
+    session.site.metadata_json = {
+        "site_knowledge_maintenance": {
+            "manifest_sources": [],
+        }
+    }
+    marked: list[dict[str, object]] = []
+
+    class RecordingRepository:
+        def mark_unmanifested_sources_stale(
+            self,
+            site_id: str,
+            *,
+            keep_sources: set[tuple[str, int]],
+            source_types: set[str],
+        ) -> int:
+            marked.append({"keep": sorted(keep_sources), "types": sorted(source_types)})
+            return 2
+
+        def list_public_source_types(self, site_id: str) -> list[str]:
+            return ["post", "page"]
+
+    summary = prune_unmanifested_sources(
+        session,  # type: ignore[arg-type]
+        site_id="site-1",
+        repository=RecordingRepository(),  # type: ignore[arg-type]
+    )
+    assert summary == {"status": "pruned", "pruned_source_count": 2}
+    assert marked == [{"keep": [], "types": ["page", "post"]}]
 
 
 def test_prune_keeps_manifest_until_delivery_records_ready() -> None:
@@ -524,19 +626,82 @@ def test_prune_keeps_manifest_until_delivery_records_ready() -> None:
     assert state[SITE_KNOWLEDGE_LAST_PRUNED_COUNT_FIELD] == 1
 
 
-def test_manifest_truncation_flag_is_sticky() -> None:
-    session = FakeSession()
-    session.site.metadata_json = {
-        "site_knowledge_maintenance": {
-            "manifest_sources": ["post:1"],
-            "manifest_truncated": True,
-        }
-    }
-
-    merge_maintenance_manifest_sources(
-        session, site_id="site-1", delivered_sources=[("post", 1)]
+def test_empty_manifest_full_sync_prunes_every_public_source(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'manifest-empty-prune.sqlite3'}"
+    init_schema(database_url)
+    _seed(database_url)
+    monkeypatch.setattr(
+        "app.domain.site_knowledge.vector_profile.SiteKnowledgeVectorProfileAdminService"
+        ".publish_site_index",
+        lambda self, site_id, *, source_session: {"status": "ready"},
     )
 
-    state = session.site.metadata_json["site_knowledge_maintenance"]
-    assert state[SITE_KNOWLEDGE_MANIFEST_SOURCES_FIELD] == ["post:1"]
-    assert state[SITE_KNOWLEDGE_MANIFEST_TRUNCATED_FIELD] is True
+    try:
+        with get_session(database_url) as session:
+            settings = Settings(
+                _env_file=None, environment="test", database_url=database_url
+            )
+            service = SiteKnowledgeService(session, settings=settings)
+            service.sync(
+                site_id=SITE_ID,
+                input_payload={
+                    "contract_version": "site_knowledge_sync.v1",
+                    "sync_mode": "refresh",
+                    "post_ids": [301, 302],
+                    "documents": [
+                        _document(
+                            301,
+                            title="Vanishing alpha",
+                            content="One of two pages deleted while offline.",
+                        ),
+                        _document(
+                            302,
+                            title="Vanishing beta",
+                            content="The second of two pages deleted while offline.",
+                        ),
+                    ],
+                    "write_posture": "suggestion_only",
+                },
+                run_id="run-seed-empty",
+            )
+            session.commit()
+
+        request_id = maintenance_request_id(SITE_ID)
+        with get_session(database_url) as session:
+            settings = Settings(
+                _env_file=None, environment="test", database_url=database_url
+            )
+            service = SiteKnowledgeService(session, settings=settings)
+            # The site's whole public content was removed while offline, so
+            # the reconnecting full manifest itself is empty.
+            service.sync(
+                site_id=SITE_ID,
+                input_payload=_maintenance_payload(
+                    sync_mode="rebuild",
+                    post_ids=[999],
+                    documents=[],
+                    request_id=request_id,
+                    batch_index=0,
+                    batch_count=1,
+                    is_final=True,
+                ),
+                run_id="run-empty-full-sync",
+            )
+            session.commit()
+
+        document_statuses = _document_statuses(database_url)
+        assert document_statuses[("post", 301)] == SITE_KNOWLEDGE_STALE_POST_STATUS
+        assert document_statuses[("post", 302)] == SITE_KNOWLEDGE_STALE_POST_STATUS
+
+        with get_session(database_url) as session:
+            settings = Settings(
+                _env_file=None, environment="test", database_url=database_url
+            )
+            service = SiteKnowledgeService(session, settings=settings)
+            assert 301 not in _result_post_ids(service, "vanishing alpha", "run-search-a")
+            assert 302 not in _result_post_ids(service, "second of two", "run-search-b")
+    finally:
+        dispose_engine(database_url)
