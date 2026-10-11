@@ -2752,10 +2752,10 @@ prefetch_base_image() {
 # BEGIN M4 runtime image build recipe
 prefetch_python_base_image() {
 	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc' \
+		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72' \
 		"${python_base_image}" \
 		python \
-		'sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc'
+		'sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72'
 }
 
 prefetch_runtime_base_images() {
@@ -2778,13 +2778,13 @@ build_runtime_image() {
 			;;
 	esac
 	grep -Fq 'FROM ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 AS uv' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS builder' Dockerfile
-	grep -Fq 'FROM python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc AS runtime' Dockerfile
+	grep -Fq 'FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 AS builder' Dockerfile
+	grep -Fq 'FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 AS runtime' Dockerfile
 	echo '[m4-preview] using verified M4-local base aliases; pinned source digests remain unchanged'
 	tail -n +2 Dockerfile |
 		sed \
 			-e "s#ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500#${uv_base_image}#" \
-			-e "s#python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc#${python_base_image}#" \
+			-e "s#python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72#${python_base_image}#" \
 			-e 's#--timeout 60#--timeout 300#' |
 		docker build \
 			--pull=false \
@@ -2802,10 +2802,10 @@ build_runtime_image() {
 # BEGIN M4 frontend image build recipe
 prefetch_frontend_base_image() {
 	prefetch_base_image \
-		'm.daocloud.io/docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32' \
+		'm.daocloud.io/docker.io/library/node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402' \
 		"${node_base_image}" \
 		node \
-		'sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
+		'sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402'
 }
 
 build_frontend_image() {
