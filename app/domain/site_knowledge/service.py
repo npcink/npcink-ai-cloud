@@ -658,6 +658,7 @@ class SiteKnowledgeService:
             merge_maintenance_manifest_sources(
                 self.repository.session,
                 site_id=site_id,
+                request_id=str(maintenance["request_id"]),
                 delivered_sources=delivered_sources,
             )
             if bool(maintenance["is_final"]):
