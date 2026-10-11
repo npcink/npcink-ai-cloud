@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-09-07T06:05:11Z",
-  "resolved_from_revision": "891d545fad7688bda64eadeea05d3b5e742d7fdf",
+  "resolved_at_utc": "2026-10-11T13:45:00Z",
+  "resolved_from_revision": "21d58e0d412ac3821e806af24a327c517ba0098b",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -16,8 +16,8 @@
       "key": "python_runtime",
       "kind": "dockerfile_base",
       "tag": "python:3.14-alpine",
-      "digest": "sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc",
-      "reference": "python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc",
+      "digest": "sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
+      "reference": "python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
       "source_file": "Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
@@ -34,8 +34,8 @@
       "key": "node_frontend",
       "kind": "dockerfile_base",
       "tag": "node:22-alpine",
-      "digest": "sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
-      "reference": "node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
+      "digest": "sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402",
+      "reference": "node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402",
       "source_file": "frontend/Dockerfile",
       "required_platforms": ["linux/amd64", "linux/arm64"]
     },
@@ -43,8 +43,8 @@
       "key": "redis",
       "kind": "compose_external",
       "tag": "redis:7-alpine",
-      "digest": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
-      "reference": "redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "digest": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "reference": "redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
       "release_reference": "npcink-ai-cloud-external-redis:prod",
       "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
       "services": ["redis"],
@@ -54,8 +54,8 @@
       "key": "nginx",
       "kind": "compose_external",
       "tag": "nginx:1.30-alpine-slim",
-      "digest": "sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c",
-      "reference": "nginx:1.30-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c",
+      "digest": "sha256:32463212baf0e7d91aded2e9b843a4f2b9e017804b8c9d5bae7b51dcef64389c",
+      "reference": "nginx:1.30-alpine-slim@sha256:32463212baf0e7d91aded2e9b843a4f2b9e017804b8c9d5bae7b51dcef64389c",
       "release_reference": "npcink-ai-cloud-external-nginx:prod",
       "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
       "services": ["proxy"],
@@ -146,7 +146,7 @@
     "max_exception_days": 30,
     "allowlist_file": "deploy/image-lock/cve-allowlist.json",
     "authoritative_not_affected_file": "deploy/image-lock/authoritative-not-affected.json",
-    "authoritative_not_affected_sha256": "ebbd66e3f2baed3475eec7a528407a1eb76e71af5743dca0f935bf6af4405256",
+    "authoritative_not_affected_sha256": "209a690a78647143598b4ba6747b76a0644e535fd7484c072fdd5dcfbe6df92a",
     "generated_artifacts_must_not_be_committed": true
   }
 }
