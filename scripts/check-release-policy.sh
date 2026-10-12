@@ -351,11 +351,14 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"acceptance_sha256"'
 # Fail closed on the CVE allowlist: parse it and enforce ownership and a
 # live, bounded exception window; the gate genuinely fails once entries
-# expire. The policy doc and checklist window markers are checked against
-# the live allowlist state here so they cannot silently drift apart.
+# expire. The horizon is derived from the image lock's scan policy, and
+# the policy doc and checklist markers are checked against the live
+# allowlist state here so they cannot silently drift apart or deadlock a
+# future release after the window closes.
 if ! python3 - "${ROOT_DIR}/deploy/image-lock/cve-allowlist.json" \
 	"${ROOT_DIR}/docs/cloud-production-release-policy-v1.md" \
-	"${ROOT_DIR}/deploy/RELEASE_CHECKLIST.md" <<'PY'
+	"${ROOT_DIR}/deploy/RELEASE_CHECKLIST.md" \
+	"${ROOT_DIR}/deploy/image-lock/production-images.json" <<'PY'
 import datetime
 import json
 import pathlib
@@ -370,8 +373,11 @@ REQUIRED_FIELDS = (
     "reason",
     "expires_on",
 )
+ALLOWED_OWNERS = ("release-security",)
 WINDOW_MARKER = "images are active from 2026-10-11 until 2026-10-25"
 RETAG_MARKER = "time-boxed CVE exceptions for the retag-only"
+CHECKLIST_ACTIVE_MARKER = "the canonical CVE allowlist is empty again after the bounded redis/nginx"
+CHECKLIST_STABLE_MARKER = "canonical CVE allowlist is empty"
 
 
 def fail(message: str) -> None:
@@ -382,14 +388,21 @@ def fail(message: str) -> None:
 try:
     with open(sys.argv[1], encoding="utf-8") as handle:
         payload = json.load(handle)
+    with open(sys.argv[4], encoding="utf-8") as handle:
+        lock_payload = json.load(handle)
 except (OSError, json.JSONDecodeError) as error:
-    fail(f"CVE allowlist is unreadable or invalid JSON: {error}")
+    fail(f"CVE allowlist or image lock is unreadable or invalid JSON: {error}")
 
 if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
     fail("CVE allowlist must be an object with an entries array")
 
+scan_policy = lock_payload.get("scan_policy") if isinstance(lock_payload, dict) else None
+max_exception_days = scan_policy.get("max_exception_days") if isinstance(scan_policy, dict) else None
+if not isinstance(max_exception_days, int) or max_exception_days <= 0:
+    fail("image lock scan policy must define a positive max_exception_days")
+
 today = datetime.datetime.now(datetime.timezone.utc).date()
-seen_keys: set[tuple[str, str, str]] = set()
+seen_keys: set[tuple[str, str, str, str]] = set()
 for index, entry in enumerate(payload["entries"]):
     if not isinstance(entry, dict):
         fail(f"CVE allowlist entry {index} must be an object")
@@ -398,22 +411,31 @@ for index, entry in enumerate(payload["entries"]):
             fail(f"CVE allowlist entry {index} is missing string field {field!r}")
     if len(entry["reason"].strip()) < 12:
         fail(f"CVE allowlist entry {index} reason must justify the exception")
-    key = (entry["image"], entry["vulnerability_id"], entry["package"])
+    # The downstream scan gate matches entries on this exact four-part key.
+    key = (
+        entry["image"],
+        entry["vulnerability_id"],
+        entry["package"],
+        entry["package_version"],
+    )
     if key in seen_keys:
-        fail(f"duplicate CVE allowlist entry: {key[0]} {key[1]} {key[2]}")
+        fail(f"duplicate CVE allowlist entry: {' '.join(key)}")
     seen_keys.add(key)
     try:
         expires = datetime.datetime.strptime(entry["expires_on"], "%Y-%m-%d").date()
     except ValueError:
         fail(f"CVE allowlist entry {index} expires_on must be YYYY-MM-DD")
     label = f"{entry['image']} {entry['vulnerability_id']}"
-    if entry["owner"] != "release-security":
+    if entry["owner"] not in ALLOWED_OWNERS:
         fail(f"unexpected allowlist owner for {label}: {entry['owner']!r}")
     # expires_on is the last valid day: an entry is usable through that date.
     if expires < today:
         fail(f"expired CVE exception: {label} expired {expires}")
-    if (expires - today).days > 30:
-        fail(f"CVE exception beyond the 30-day horizon: {label} expires {expires}")
+    if (expires - today).days > max_exception_days:
+        fail(
+            f"CVE exception beyond the {max_exception_days}-day horizon: "
+            f"{label} expires {expires}"
+        )
 
 policy_text = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
 checklist_text = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
@@ -421,11 +443,13 @@ active = bool(payload["entries"])
 if active:
     if RETAG_MARKER not in policy_text or WINDOW_MARKER not in policy_text:
         fail("policy doc must state the active retag-only exception window")
+    if CHECKLIST_ACTIVE_MARKER not in checklist_text:
+        fail("release checklist must document the bounded exception window closure path")
 else:
     if RETAG_MARKER in policy_text or WINDOW_MARKER in policy_text:
         fail("policy doc still states an exception window while the allowlist is empty")
-if "the canonical CVE allowlist is empty again after the bounded redis/nginx" not in checklist_text:
-    fail("release checklist must document the bounded exception window closure path")
+    if CHECKLIST_STABLE_MARKER not in checklist_text:
+        fail("release checklist must state the canonical allowlist policy")
 PY
 then
 	echo "[fail] CVE allowlist validation failed (invalid, expired, or out-of-window entries)" >&2
