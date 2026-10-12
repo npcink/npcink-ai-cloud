@@ -10,9 +10,9 @@ RUN apk add --no-cache \
 # zlib 1.3.2-r1) so the upgrade stays reproducible and the release image
 # scan stays fail-closed without waiting for an upstream base rebuild.
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.9-r0 \
-    libssl3=3.5.9-r0 \
-    zlib=1.3.2-r1
+    'libcrypto3>=3.5.9-r0' \
+    'libssl3>=3.5.9-r0' \
+    'zlib>=1.3.2-r1'
 
 FROM base AS deps
 

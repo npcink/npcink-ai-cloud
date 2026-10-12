@@ -363,6 +363,7 @@ REQUIRED_FIELDS = (
     "package",
     "package_version",
     "owner",
+    "reason",
     "expires_on",
 )
 
@@ -382,12 +383,19 @@ if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list)
     fail("CVE allowlist must be an object with an entries array")
 
 today = datetime.datetime.now(datetime.timezone.utc).date()
+seen_keys: set[tuple[str, str, str]] = set()
 for index, entry in enumerate(payload["entries"]):
     if not isinstance(entry, dict):
         fail(f"CVE allowlist entry {index} must be an object")
     for field in REQUIRED_FIELDS:
         if not isinstance(entry.get(field), str) or not entry[field].strip():
             fail(f"CVE allowlist entry {index} is missing string field {field!r}")
+    if len(entry["reason"].strip()) < 12:
+        fail(f"CVE allowlist entry {index} reason must justify the exception")
+    key = (entry["image"], entry["vulnerability_id"], entry["package"])
+    if key in seen_keys:
+        fail(f"duplicate CVE allowlist entry: {key[0]} {key[1]} {key[2]}")
+    seen_keys.add(key)
     try:
         expires = datetime.date.fromisoformat(entry["expires_on"])
     except ValueError:

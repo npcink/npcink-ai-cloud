@@ -111,9 +111,9 @@ WORKDIR /app
 # zlib 1.3.2-r1) so the upgrade stays reproducible and the release image
 # scan stays fail-closed without waiting for an upstream base rebuild.
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.9-r0 \
-    libssl3=3.5.9-r0 \
-    zlib=1.3.2-r1
+    'libcrypto3>=3.5.9-r0' \
+    'libssl3>=3.5.9-r0' \
+    'zlib>=1.3.2-r1'
 
 # The pinned Alpine base reserves GID 999 as an empty `ping` group. Fail closed on
 # that exact base state, then rename it so artifact volumes keep stable 999:999 ownership.
