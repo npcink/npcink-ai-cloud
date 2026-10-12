@@ -351,10 +351,14 @@ reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision
 	'"acceptance_sha256"'
 # Fail closed on the CVE allowlist: parse it and enforce ownership and a
 # live, bounded exception window; the gate genuinely fails once entries
-# expire instead of trusting hand-synced date markers.
-if ! python3 - "${ROOT_DIR}/deploy/image-lock/cve-allowlist.json" <<'PY'
+# expire. The policy doc and checklist window markers are checked against
+# the live allowlist state here so they cannot silently drift apart.
+if ! python3 - "${ROOT_DIR}/deploy/image-lock/cve-allowlist.json" \
+	"${ROOT_DIR}/docs/cloud-production-release-policy-v1.md" \
+	"${ROOT_DIR}/deploy/RELEASE_CHECKLIST.md" <<'PY'
 import datetime
 import json
+import pathlib
 import sys
 
 REQUIRED_FIELDS = (
@@ -366,6 +370,8 @@ REQUIRED_FIELDS = (
     "reason",
     "expires_on",
 )
+WINDOW_MARKER = "images are active from 2026-10-11 until 2026-10-25"
+RETAG_MARKER = "time-boxed CVE exceptions for the retag-only"
 
 
 def fail(message: str) -> None:
@@ -397,27 +403,34 @@ for index, entry in enumerate(payload["entries"]):
         fail(f"duplicate CVE allowlist entry: {key[0]} {key[1]} {key[2]}")
     seen_keys.add(key)
     try:
-        expires = datetime.date.fromisoformat(entry["expires_on"])
+        expires = datetime.datetime.strptime(entry["expires_on"], "%Y-%m-%d").date()
     except ValueError:
         fail(f"CVE allowlist entry {index} expires_on must be YYYY-MM-DD")
     label = f"{entry['image']} {entry['vulnerability_id']}"
     if entry["owner"] != "release-security":
         fail(f"unexpected allowlist owner for {label}: {entry['owner']!r}")
-    if expires <= today:
+    # expires_on is the last valid day: an entry is usable through that date.
+    if expires < today:
         fail(f"expired CVE exception: {label} expired {expires}")
     if (expires - today).days > 30:
         fail(f"CVE exception beyond the 30-day horizon: {label} expires {expires}")
+
+policy_text = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+checklist_text = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
+active = bool(payload["entries"])
+if active:
+    if RETAG_MARKER not in policy_text or WINDOW_MARKER not in policy_text:
+        fail("policy doc must state the active retag-only exception window")
+else:
+    if RETAG_MARKER in policy_text or WINDOW_MARKER in policy_text:
+        fail("policy doc still states an exception window while the allowlist is empty")
+if "the canonical CVE allowlist is empty again after the bounded redis/nginx" not in checklist_text:
+    fail("release checklist must document the bounded exception window closure path")
 PY
 then
 	echo "[fail] CVE allowlist validation failed (invalid, expired, or out-of-window entries)" >&2
 	exit 1
 fi
-require_marker "docs/cloud-production-release-policy-v1.md" \
-	'time-boxed CVE exceptions for the retag-only'
-require_marker "docs/cloud-production-release-policy-v1.md" \
-	'images are active from 2026-10-11 until 2026-10-25'
-require_marker "deploy/RELEASE_CHECKLIST.md" \
-	'the canonical CVE allowlist is empty again after the bounded redis/nginx exception window closes'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'quoted and unquoted Compose UDP protocols must'
 run_compose_protocol_guard
