@@ -10,6 +10,7 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 接续阶段 1 试用（口径确认/机制盘点/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 判据/流程/待办台账，新会话先读这个 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
@@ -154,6 +155,7 @@ deleting the old decision history.
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [Merge-Lane Operations Runbook](merge-lane-operations-runbook-v1.md) — active runbook for driving PRs through the protected master lane: strict-freshness cascades, advisory review thread resolution, dependabot revival protocol, CI failure modes, and the weekly CVE recheck window renewal
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
+- [Cloud OpenCodeReview Usage Policy](ocr-review-usage-policy-v1.md) — repository-local advisory review cadence, quota controls, provider configuration, and 429 recovery rules
 - [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
 - [Pgy Primary M4 Access](decisions/052-pgy-primary-m4-access.md) — accepted default-path decision for Pgy SSH/direct transfer with LAN and Tailscale fallback
 - [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery

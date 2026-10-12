@@ -194,16 +194,24 @@ Repository integration gate:
 pnpm run check:fast
 ```
 
-Advisory AI review gate (run before `pnpm run pr:publish`):
+Advisory AI review follows `docs/ocr-review-usage-policy-v1.md` (Cloud's
+operator-requested cost-control override of the shared standard's cadence).
+Default to one delivered CI review after a coherent checkpoint; do not also
+run a local model-backed review of the same range. After substantive fixes,
+request one incremental `/open-code-review` when ready, not after every push.
+If a local-only review is explicitly needed, use a bounded range once:
 
 ```bash
-ocr review --from origin/master --to HEAD
+ocr review --from origin/master --to HEAD --concurrency 1 --effort low --max-tokens-budget 40000 --timeout 8
 ```
 
-Treat findings as a second opinion: fix real defects or record why they are
-acceptable. Follows AI Code Review Standard v1 in `npcink-workflow-toolbox`
-`docs/platform/ai-code-review-standard-v1.md`; the CI workflow posting the same
-review on pull requests is advisory and never a required check.
+Do not run `ocr scan` or repeated connectivity probes as routine closeout.
+On 429/quota exhaustion, stop agent-initiated retries and preserve evidence.
+A budget-stopped or partially delivered review is incomplete evidence, even
+if the CLI exits 0. Fix real findings or record why they are acceptable;
+record unavailable or incomplete AI evidence rather than repeatedly spending
+quota. Deterministic checks remain mandatory, and OCR is never a required
+check, merge authority, or production authorization.
 
 `check:fast` is not the default inner-loop command for every small edit. Start
 with the narrowest test, lint, type, or contract gate that covers the changed

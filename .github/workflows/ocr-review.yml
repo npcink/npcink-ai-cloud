@@ -1,5 +1,6 @@
-# Canonical OpenCodeReview PR workflow template (AI Code Review Standard v1).
-# Owner: npcink-workflow-toolbox docs/platform/ai-code-review-standard-v1.md
+# Cloud cost-controlled enrollment of AI Code Review Standard v1.
+# Repository policy: docs/ocr-review-usage-policy-v1.md
+# Upstream standard: npcink-workflow-toolbox docs/platform/ai-code-review-standard-v1.md
 #
 # Enrollment per repository:
 #   1. Copy to .github/workflows/ocr-review.yml on a topic branch.
@@ -10,18 +11,23 @@
 #      never add it to required checks.
 #
 # Derived from alibaba/open-code-review examples/github_actions/ocr-review.yml,
-# with the action pinned to a release tag and an explicit review language.
+# with both the action commit and CLI version pinned deliberately.
 
 name: OpenCodeReview PR Review
 
-# Per-PR concurrency: matching events (PR events + /open-code-review comments)
-# share one group so a new review cancels a stale one; unrelated comments land
-# in a unique noop group and are skipped without disrupting a running review.
+# Serialize eligible reviews across this repository, without cancelling work
+# that has already spent tokens. Unrelated comments use unique noop groups.
+# This is repository-local; other repositories need their own quota controls.
 concurrency:
   group: >-
     ${{
       (
-        github.event_name == 'pull_request_target'
+        (
+          github.event_name == 'pull_request_target'
+          && !github.event.pull_request.draft
+          && github.event.pull_request.user.type != 'Bot'
+          && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        )
         || (
           github.event_name == 'issue_comment'
           && github.event.issue.pull_request
@@ -37,16 +43,16 @@ concurrency:
           )
         )
       )
-      && format('ocr-{0}', github.event.pull_request.number || github.event.issue.number)
+      && 'ocr-provider'
       || format('noop-{0}', github.run_id)
     }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   # pull_request_target so secrets are available for fork PRs; safe because the
   # action only reads the diff and runs no code from the PR.
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, ready_for_review]
   issue_comment:
     types: [created]
 
@@ -65,34 +71,49 @@ jobs:
     # ubuntu-latest migration (actions/runner-images#14748). Re-run the
     # canary before bumping further.
     runs-on: ubuntu-26.04
-    # Three 12-minute attempt ceilings plus the 45s/90s pauses leave room
-    # for context lookup and failure reporting inside the 45-minute job.
-    # Bound each attempt so a hung transport cannot consume the whole job
-    # and prevent the retry ladder or failure marker from running.
-    timeout-minutes: 45
-    # PR events, or human-authored comments starting with the trigger keyword.
-    # Bot comments and non-MEMBER/OWNER/COLLABORATOR users cannot spend quota.
+    # One action invocation with room for setup and failure reporting.
+    timeout-minutes: 20
+    # Only trusted humans auto-spend quota. Untrusted/bot PRs need a maintainer's
+    # explicit request; draft/closed PRs are also rejected by the context guard.
     if: |
-      github.event_name == 'pull_request_target'
+      (
+        github.event_name == 'pull_request_target'
+        && !github.event.pull_request.draft
+        && github.event.pull_request.user.type != 'Bot'
+        && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+      )
       || (
         github.event_name == 'issue_comment'
         && github.event.issue.pull_request
         && github.event.comment.user.type != 'Bot'
-        && (
-          github.event.comment.author_association == 'MEMBER'
-          || github.event.comment.author_association == 'OWNER'
-          || github.event.comment.author_association == 'COLLABORATOR'
-        )
+        && contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.comment.author_association)
         && (
           startsWith(github.event.comment.body, '/open-code-review')
           || startsWith(github.event.comment.body, '@open-code-review')
         )
       )
     steps:
+      - name: Get current PR context and eligibility
+        id: pr-context
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const eligible = pullRequest.state === 'open' && !pullRequest.draft;
+            core.setOutput('eligible', String(eligible));
+            core.setOutput('base_ref', pullRequest.base.ref);
+            core.setOutput('head_sha', pullRequest.head.sha);
+            if (!eligible) core.notice('Draft or closed PR: no model calls will be made.');
+
       - name: Refuse a misconfigured enrollment
         id: config_guard
+        if: steps.pr-context.outputs.eligible == 'true'
         # Layer 2 steps 2-3 are prerequisites: without all four values the
-        # three review attempts below burn their retries on guaranteed
+        # review below would spend quota on guaranteed
         # provider failures that look exactly like an outage. Values are
         # checked in run: the previous if-form failed the whole workflow
         # at start for every event in observed behavior (zero-job runs,
@@ -108,92 +129,74 @@ jobs:
             exit 1
           fi
 
-      - name: Get PR context
-        id: pr-context
-        if: github.event_name == 'issue_comment'
+      # No outer retry ladder: quota exhaustion cannot recover through retries.
+      # The pinned upstream action can still retry individual model requests.
+      - name: Run one bounded OpenCodeReview
+        id: ocr_review
+        if: steps.pr-context.outputs.eligible == 'true'
+        timeout-minutes: 15
+        # Action wrapper v1.12.11 (tag object ee83f151, commit a758d9cb).
+        # The wrapper's `ocr_version` input deliberately installs CLI 1.12.13;
+        # the pinned action metadata supports CLI v1.9.6+ and was checked at
+        # this commit, so the wrapper and CLI pins are independent by design.
+        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+        with:
+          llm_url: ${{ secrets.OCR_LLM_URL }}
+          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          llm_model: ${{ vars.OCR_LLM_MODEL }}
+          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
+          # Qwen's compatible-mode endpoint speaks the OpenAI protocol.
+          llm_protocol: openai
+          ocr_version: '1.12.13'
+          review_concurrency: '1'
+          effort: low
+          # Soft input+output budget, not a hard billing cap: an in-flight
+          # round and a final submission round may exceed it.
+          max_tokens_budget: '40000'
+          review_task_timeout: '8'
+          checkpoint_range: 'true'
+          sticky_summary: 'true'
+          language: English
+          base_ref: ${{ steps.pr-context.outputs.base_ref }}
+          head_sha: ${{ steps.pr-context.outputs.head_sha }}
+
+      - name: Reject incomplete advisory evidence
+        if: steps.ocr_review.outcome == 'success'
+        env:
+          OCR_RANGE_REASON: ${{ steps.ocr_review.outputs.range_reason }}
+          OCR_COMMENTS_FAILED: ${{ steps.ocr_review.outputs.comments_failed }}
+          OCR_SUMMARY_URL: ${{ steps.ocr_review.outputs.summary_comment_url }}
         uses: actions/github-script@v9
         with:
           script: |
-            // Resolve PR base/head for issue_comment events, which carry no
-            // top-level pull_request payload fields.
-            const prNumber = context.issue.number;
-            const { data: pullRequest } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-            core.setOutput('base_ref', pullRequest.base.ref);
-            core.setOutput('head_sha', pullRequest.head.sha);
-
-      # Transient provider/transport failures cost the whole review round
-      # when a single step fails (npcink-ai-client-adapter run 37268559643
-      # died in 12s on a git fetch, exit 128, and its pull request merged
-      # with no review delivered). GitHub Actions has no native step retry
-      # and no YAML anchors, so the review step is duplicated deliberately:
-      # attempts 1-2 continue-on-error with growing pauses, attempt 3 is
-      # allowed to fail the job so the failure-marker step below still
-      # fires. A partially delivered earlier attempt can leave near-
-      # duplicate inline comments; reviewers must resolve those duplicates
-      # manually alongside the original finding.
-      - name: Run OpenCodeReview (attempt 1 of 3)
-        id: ocr_review_1
-        continue-on-error: true
-        timeout-minutes: 12
-        # alibaba/open-code-review v1.12.11 (tag object ee83f151, commit
-        # a758d9cb; pinned by commit SHA because the action receives the LLM
-        # auth token - bump deliberately and record the new tag->commit pair).
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
-        with:
-          llm_url: ${{ secrets.OCR_LLM_URL }}
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: ${{ vars.OCR_LLM_MODEL }}
-          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
-          # Review-comment language; switch to Chinese if preferred.
-          language: English
-          base_ref: ${{ steps.pr-context.outputs.base_ref }}
-          head_sha: ${{ steps.pr-context.outputs.head_sha }}
-
-      - name: Pause before the second review attempt
-        if: steps.ocr_review_1.outcome == 'failure'
-        run: sleep 45
-
-      - name: Run OpenCodeReview (attempt 2 of 3)
-        id: ocr_review_2
-        if: steps.ocr_review_1.outcome == 'failure'
-        continue-on-error: true
-        timeout-minutes: 12
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
-        with:
-          llm_url: ${{ secrets.OCR_LLM_URL }}
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: ${{ vars.OCR_LLM_MODEL }}
-          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
-          language: English
-          base_ref: ${{ steps.pr-context.outputs.base_ref }}
-          head_sha: ${{ steps.pr-context.outputs.head_sha }}
-
-      - name: Pause before the final review attempt
-        if: steps.ocr_review_2.outcome == 'failure'
-        run: sleep 90
-
-      - name: Run OpenCodeReview (attempt 3 of 3)
-        id: ocr_review_3
-        if: steps.ocr_review_2.outcome == 'failure'
-        timeout-minutes: 12
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
-        with:
-          llm_url: ${{ secrets.OCR_LLM_URL }}
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: ${{ vars.OCR_LLM_MODEL }}
-          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
-          language: English
-          base_ref: ${{ steps.pr-context.outputs.base_ref }}
-          head_sha: ${{ steps.pr-context.outputs.head_sha }}
+            // The CLI can exit 0 after a budget stop with partial findings.
+            // Keep those findings, but do not call the advisory round complete.
+            const fs = require('fs');
+            if (Number(process.env.OCR_COMMENTS_FAILED) > 0) {
+              core.setFailed('Some review findings could not be posted; inspect the artifact before retrying.');
+              return;
+            }
+            if (process.env.OCR_RANGE_REASON === 'same_head_noop') return;
+            if (!process.env.OCR_SUMMARY_URL) {
+              core.setFailed('No advisory summary was delivered; inspect the artifact before retrying.');
+              return;
+            }
+            let result;
+            try {
+              result = JSON.parse(fs.readFileSync('/tmp/ocr-result.json', 'utf8'));
+            } catch (error) {
+              core.setFailed(`Could not read OCR result file: ${error.message}. Inspect the artifact before retrying.`);
+              return;
+            }
+            const terminal = result.manifest?.terminal_state || result.status;
+            // A docs-only selection is a valid zero-call skip, not a failure.
+            if (terminal !== 'complete' && terminal !== 'skipped') {
+              core.setFailed('Review evidence is incomplete (budget, timeout, or provider failure); inspect the artifact. Do not automatically retry or raise the budget.');
+            }
 
       - name: Report failed advisory review
-        # A failed run is otherwise silent: no comments reach the pull
-        # request, the workflow is advisory (never required), and the merge
-        # can proceed with no AI review delivered at all. One visible marker
+        # A failed or partial run is advisory (never required), and the merge
+        # can proceed without complete AI evidence. One visible marker
         # comment makes the gap actionable. Bot comments cannot re-trigger
         # this workflow, so this cannot loop. Repeated failures update the
         # single existing marker comment (found by its tag) instead of
@@ -216,11 +219,11 @@ jobs:
               marker,
               configFailed
                 ? '**Advisory OpenCodeReview enrollment is incomplete - no AI review was delivered.**'
-                : '**Advisory OpenCodeReview run failed - no AI review was delivered.**',
+                : '**Advisory OpenCodeReview failed or is incomplete - complete AI review evidence was not delivered.**',
               '',
               configFailed
                 ? 'A maintainer must configure the two OCR_LLM secrets and two variables named in the run annotation before requesting another review.'
-                : 'This check is advisory. Before merging, re-run it with a `/open-code-review` comment, or record why this change merges without an AI review.',
+                : 'This check is advisory and will not automatically retry. Inspect the artifact first: for 429/quota exhaustion, wait for quota recovery or an operator-configured key; for a budget stop, split the PR or record partial coverage. Request one `/open-code-review` only after the cause is resolved, or record why the change merges without complete AI evidence.',
               '',
               `Latest failed run (attempt ${context.runAttempt}): ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             ].join('\n');
@@ -260,7 +263,7 @@ jobs:
         # once a later run succeeds (the delivered review is right next to a
         # stale "no review delivered" notice). Remove it so the pull request
         # state stays truthful; matched only on the bot's own tagged comment.
-        if: success()
+        if: success() && steps.ocr_review.outcome == 'success'
         uses: actions/github-script@v9
         with:
           script: |
