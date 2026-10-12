@@ -357,23 +357,48 @@ import datetime
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as handle:
-    entries = json.load(handle)["entries"]
+REQUIRED_FIELDS = (
+    "image",
+    "vulnerability_id",
+    "package",
+    "package_version",
+    "owner",
+    "expires_on",
+)
+
+
+def fail(message: str) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        payload = json.load(handle)
+except (OSError, json.JSONDecodeError) as error:
+    fail(f"CVE allowlist is unreadable or invalid JSON: {error}")
+
+if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
+    fail("CVE allowlist must be an object with an entries array")
+
 today = datetime.datetime.now(datetime.timezone.utc).date()
-for entry in entries:
-    expires = datetime.date.fromisoformat(entry["expires_on"])
+for index, entry in enumerate(payload["entries"]):
+    if not isinstance(entry, dict):
+        fail(f"CVE allowlist entry {index} must be an object")
+    for field in REQUIRED_FIELDS:
+        if not isinstance(entry.get(field), str) or not entry[field].strip():
+            fail(f"CVE allowlist entry {index} is missing string field {field!r}")
+    try:
+        expires = datetime.date.fromisoformat(entry["expires_on"])
+    except ValueError:
+        fail(f"CVE allowlist entry {index} expires_on must be YYYY-MM-DD")
+    label = f"{entry['image']} {entry['vulnerability_id']}"
     if entry["owner"] != "release-security":
-        sys.exit(f"unexpected allowlist owner: {entry['owner']!r}")
+        fail(f"unexpected allowlist owner for {label}: {entry['owner']!r}")
     if expires <= today:
-        sys.exit(
-            "expired CVE exception: "
-            f"{entry['image']} {entry['vulnerability_id']} expired {expires}"
-        )
+        fail(f"expired CVE exception: {label} expired {expires}")
     if (expires - today).days > 30:
-        sys.exit(
-            "CVE exception beyond the 30-day horizon: "
-            f"{entry['image']} {entry['vulnerability_id']} expires {expires}"
-        )
+        fail(f"CVE exception beyond the 30-day horizon: {label} expires {expires}")
 PY
 then
 	echo "[fail] CVE allowlist validation failed (invalid, expired, or out-of-window entries)" >&2
