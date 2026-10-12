@@ -155,6 +155,7 @@ deleting the old decision history.
 - [Single-Session Workflow Standard](single-session-ai-workflow-standard-v1.md)
 - [Merge-Lane Operations Runbook](merge-lane-operations-runbook-v1.md) — active runbook for driving PRs through the protected master lane: strict-freshness cascades, advisory review thread resolution, dependabot revival protocol, CI failure modes, and the weekly CVE recheck window renewal
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
+- [Cloud OpenCodeReview Usage Policy](ocr-review-usage-policy-v1.md) — repository-local advisory review cadence, quota controls, provider configuration, and 429 recovery rules
 - [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
 - [Pgy Primary M4 Access](decisions/052-pgy-primary-m4-access.md) — accepted default-path decision for Pgy SSH/direct transfer with LAN and Tailscale fallback
 - [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery
