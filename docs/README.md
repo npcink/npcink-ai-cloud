@@ -10,6 +10,7 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 接续阶段 1 试用（口径确认/机制盘点/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 判据/流程/待办台账，新会话先读这个 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
