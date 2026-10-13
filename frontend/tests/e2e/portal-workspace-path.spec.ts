@@ -1854,7 +1854,12 @@ for (const scenario of [
     const consoleErrors: string[] = [];
     const failedRequests: string[] = [];
     page.on('pageerror', (error) => consoleErrors.push(error.message));
-    page.on('requestfailed', (request) => failedRequests.push(`${request.method()} ${request.url()}`));
+    page.on('requestfailed', (request) => {
+      const cancelledPrefetch = request.failure()?.errorText === 'net::ERR_ABORTED'
+        && request.headers()['next-router-prefetch'] === '1';
+      // Next.js cancels speculative RSC prefetches; retain every real request failure.
+      if (!cancelledPrefetch) failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText}`);
+    });
     await page.goto('/portal/billing');
     if (scenario.locale === 'en') {
       await page.getByRole('button', { name: /^Language$|^语言$/i }).click();
