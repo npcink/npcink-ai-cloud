@@ -199,11 +199,18 @@ operator-requested cost-control override of the shared standard's cadence).
 Default to one delivered CI review after a coherent checkpoint; do not also
 run a local model-backed review of the same range. After substantive fixes,
 request one incremental `/open-code-review` when ready, not after every push.
-If a local-only review is explicitly needed, use a bounded range once:
+If a local-only review is explicitly needed, preview the exact scope without
+model calls, then use a bounded range once:
 
 ```bash
-ocr review --from origin/master --to HEAD --concurrency 1 --effort low --max-tokens-budget 40000 --timeout 8
+ocr review --from origin/master --to HEAD --preview
+ocr review --from origin/master --to HEAD --concurrency 1 --effort low --max-tokens-budget 80000 --timeout 8
 ```
+
+For a single commit, replace `--from origin/master --to HEAD` with
+`--commit <sha>` in both commands. Range mode uses merge-base and can select
+historical changes across development/production branches; inspect the
+preview before spending Provider quota.
 
 Do not run `ocr scan` or repeated connectivity probes as routine closeout.
 On 429/quota exhaustion, stop agent-initiated retries and preserve evidence.
