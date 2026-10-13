@@ -14,9 +14,12 @@ and the CLI installed on a GitHub runner both call the configured remote
 model API. A new key on the same Provider account may share the same quota;
 rotation alone does not create more capacity.
 
-The observed Provider response was HTTP 429, code 1310: weekly/monthly usage
-limit reached, reset reported as `2026-10-17 09:13:12` (Provider timezone
-not verified). Do not repeat connectivity probes to rediscover this failure.
+The historical GLM Provider response was HTTP 429, code 1310: weekly/monthly
+usage limit reached, reset reported as `2026-10-17 09:13:12` (Provider timezone
+not verified). A later local GLM run returned code 1113 (insufficient balance
+or no available resource package). Neither response establishes the current
+Qwen key's quota or connectivity; HTTP 429 alone does not identify a five-hour
+quota window. Read the Provider error and account quota state before retrying.
 
 ## Ordinary review flow
 
@@ -41,8 +44,18 @@ technical eligibility; OCR does not approve merging or production deployment.
 
 The workflow invokes the pinned action once, with CLI `1.12.13`, `effort=low`,
 one concurrent review task, an eight-minute task timeout, a fifteen-minute
-action ceiling, and `max_tokens_budget=40000` for input plus output tokens.
+action ceiling, and `max_tokens_budget=80000` for input plus output tokens.
 The action's overhead and failure reporting have a twenty-minute job ceiling.
+
+The operator selected this bounded increase on 2026-10-13. The earlier 40,000
+budget stopped PR #1107 before any model request: the single workflow diff
+was estimated at 49,916 tokens, with zero actual tokens consumed. The 80,000
+budget leaves headroom for that size of diff; it does not promise complete
+coverage for every PR. A multi-million-token budget is not the default for
+one advisory review. Local Cloud reviews use the same explicit 80,000 budget,
+`--concurrency 1`, `--effort low`, and `--timeout 8`; the machine-level Provider
+configuration alone does not set these CLI review limits. Preview the exact
+scope before dispatch, and use `--commit <sha>` when reviewing one commit.
 
 The token budget is soft: OCR checks before rounds, and an in-flight round plus
 a final findings-submission round can exceed it. Partial findings can be
@@ -79,6 +92,17 @@ model identifier, and keep `OCR_LLM_USE_ANTHROPIC=false`; the workflow passes
 `llm_protocol: openai` explicitly. Do not put keys in chat,
 argv, source, logs, artifacts, or PR descriptions. Local CLI configuration is
 separate and does not update when GitHub secrets change.
+
+Cloud's local `qwen-shared` Provider and this repository's GitHub configuration
+use `qwen3.8-max` and the same operator-supplied OCR key and endpoint. The
+operator can supply those values in a private machine-level JSON file outside
+Git, then copy them into `~/.opencodereview/config.json` and the two GitHub
+secrets through standard input. GitHub secrets cannot be read back; local and
+CI remain separate copies, so future credential rotation must update both.
+The local CLI configuration is machine-wide; this repository's enrollment
+does not update other repositories' GitHub secrets. Local and CI calls share
+the configured key's Provider capacity, so keep CI as the ordinary review
+path and use local review only for a declared separate question.
 
 Prefer separate OCR and product Provider budgets/accounts where available;
 separate keys are insufficient if the Provider pools their quota. Other
