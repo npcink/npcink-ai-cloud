@@ -452,11 +452,41 @@ metering or build a browser-driven submission loop.
 
 Package capacity and daily execution limits answer different questions:
 
-- `media_images` is the maximum number of recognized image projections the
-  current account package may retain across its sites;
+- `vector_documents` is the account-wide retained capacity for non-media
+  Site Knowledge entries, including articles, pages, and comments;
+- `media_images` is the account-wide retained capacity for indexed media-library
+  attachments. An indexed attachment may contain metadata only; indexing does
+  not prove that a visual Provider call occurred;
 - the daily image limit is a pacing and cost ceiling for new Provider work in
   one system-timezone day;
 - the per-batch limit protects request, worker, and Provider reliability.
+
+Customer and operator surfaces name these retained resources **Text knowledge
+capacity** / **文字知识库容量** and **Image knowledge capacity** /
+**图片知识库容量**. Portal groups the two under **Knowledge capacity** /
+**知识库容量**, separate from AI credits. They do not reset with the monthly
+execution allowance. Keep the existing quota keys and numerical plan values.
+
+Image membership in an article is not image identity. On one site, the same
+attachment reused by several articles occupies one image entry; a standalone
+media-library attachment may also be indexed. A text-only article sync does not
+automatically index or visually recognize its embedded images. Different
+attachment IDs or sites are not promised file-level deduplication.
+
+At retained capacity, limit new entries of that resource only. Existing entries
+remain available and can replace their current index projection; image capacity
+does not consume text capacity. Replacement Provider work still needs credits
+and execution admission. Reuse unchanged visual evidence rather than admitting
+repeat paid recognition solely because an article was synced.
+
+Per-site total-document and chunk safeguards remain independent system
+protection, not monthly execution or account-package capacity. The default
+document safeguard is 10,000 entries per site. Free, Plus, and Pro baseline text
+plus image capacities fit this ceiling; Agency's 35,000 combined entries are
+account-wide across its sites and are not a promise for one site. Before changing
+package values or system safeguards, check actual per-site distribution and
+chunk use. Do not silently lift protection or merge the two resource counters.
+Index cleanup does not authorize Cloud to delete WordPress articles or media.
 
 Before a paid Provider call, Cloud admits only the portion that fits remaining
 package capacity, remaining daily allowance, the per-batch limit, and current
@@ -470,7 +500,7 @@ User-facing progress keeps these quantities separate:
 
 ```text
 Recognition completion = processed eligible images / eligible inventory
-Package capacity = recognized image projections / media_images limit
+Package capacity = indexed image entries / media_images limit
 Today's execution = images admitted today / daily image limit
 ```
 

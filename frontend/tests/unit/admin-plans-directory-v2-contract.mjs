@@ -93,7 +93,7 @@ for (const unitKey of [
   'admin.plans.unit_cny_30_days',
   'admin.plans.unit_credits',
   'admin.plans.unit_sites',
-  'admin.plans.unit_articles',
+  'admin.plans.unit_documents',
   'admin.plans.unit_images',
   'admin.plans.unit_runs',
   'admin.plans.unit_items',

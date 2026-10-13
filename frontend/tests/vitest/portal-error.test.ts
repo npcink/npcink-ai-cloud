@@ -82,6 +82,7 @@ describe('Portal customer-safe errors', () => {
     ['auth.site_suspended', 'suspension operator note', 'is suspended'],
     ['provider_connection.auth_failed', 'provider credential value', 'credential was rejected'],
     ['commercial.quota_exceeded', 'internal entitlement ledger', 'account has reached'],
+    ['media_recognition.media_capacity_exhausted', 'internal capacity admission detail', 'Existing indexed images remain usable and refreshable'],
     [
       'service.entitlements_temporarily_unavailable',
       'database host failed',

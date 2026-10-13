@@ -256,7 +256,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(packageEditor.getByText(/^Runtime limits$|^运行限制$/i)).toBeVisible();
   await expect(packageEditor.getByText(/^Package ID$|^套餐 ID$/i)).toHaveCount(0);
   await expect(packageEditor.getByText(/^Latest version$|^最新版本$/i)).toHaveCount(0);
-  await expect(packageEditor.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^Current-period package AI credits shared by all sites on this account\.$|^当前账号所有站点共享的本周期套餐 AI 积分。$/i)).toBeVisible();
   await expect(packageEditor.locator('[data-ui="plan-parameter-grid"]')).toHaveCount(2);
   await expect(packageEditor.getByText(/^CNY \/ 30d$|^元 \/ 30天$/i)).toBeVisible();
   await expect(packageEditor.getByText(/^credits$|^积分$/i)).toBeVisible();
