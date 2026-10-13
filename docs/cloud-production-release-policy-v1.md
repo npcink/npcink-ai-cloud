@@ -92,8 +92,8 @@ must use the digest-locked candidates recorded in
 `redis` and `nginx` images are active from 2026-10-11 until 2026-10-25
 (owner `release-security`) because no upstream rebuild carrying the fixed
 Alpine libraries existed at promotion time; `api` and `frontend` findings are
-repaired by exact-version in-image package upgrades. The gate fails closed
-again the moment those entries expire.
+repaired by minimum-version in-image package upgrades. Each exception is valid
+through its `expires_on` date in UTC; the gate fails closed after 2026-10-25.
 This withdraws authorization; it does not establish that any image is fixed.
 Any remaining high/critical, unknown-severity, or unfixed blocking finding
 must fail the fresh Linux/AMD64 release scan. The QUIC, HTTP/3, and UDP protocol
