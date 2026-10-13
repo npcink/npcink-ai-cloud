@@ -1696,7 +1696,8 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
   await expect(page.getByText(/2,419|2419/i).first()).toBeVisible();
   const operationOverview = page.locator('[data-portal-home="operation-overview"]');
-  await expect(operationOverview.getByText(/Bound sites exceeds the package limit|绑定站点已超出套餐上限/i)).toBeVisible();
+  await expect(operationOverview.getByText(/^Bound sites needs attention$|^绑定站点需处理$/i)).toBeVisible();
+  await expect(operationOverview.getByText(/Bound sites usage is 2 of 1, exceeding the package by 1|绑定站点已使用 2 \/ 1，超出套餐上限 1/i)).toBeVisible();
   await expect(operationOverview.getByRole('link', { name: /Review package|查看套餐/i }).first()).toBeVisible();
   await expect(
     page
@@ -2143,7 +2144,7 @@ test('[readiness:new_account_no_site] a new account gets a WordPress connection 
     page.getByText(/Open npcink-cloud-addon in WordPress|在 WordPress 中打开 npcink-cloud-addon/i).first()
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
-  await expect(page.getByText(/exceeds the package limit|已超出套餐上限/i)).toHaveCount(0);
+  await expect(page.getByText(/^Bound sites needs attention$|^绑定站点需处理$/i)).toHaveCount(0);
 
   await page.goto('/portal/support?new=1&topic=account');
   const dialog = page.getByRole('dialog', { name: /Submit ticket|提交工单/i });
