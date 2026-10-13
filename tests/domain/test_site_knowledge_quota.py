@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import Account, Site, SiteKnowledgeDocument
+from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 
@@ -77,6 +78,13 @@ def test_account_document_quota_lock_counts_documents_across_sites(tmp_path) -> 
                 )
                 == 1
             )
+        breakdown = SiteKnowledgeObservabilityService(database_url).get_account_document_breakdown(
+            site_ids=["site_one", "site_two"],
+        )
+        assert breakdown["total_indexed_document_count"] == 1
+        assert {
+            site["site_id"]: site["indexed_document_count"] for site in breakdown["sites"]
+        } == {"site_one": 1, "site_two": 0}
     finally:
         dispose_engine(database_url)
 
@@ -228,6 +236,92 @@ def test_account_media_image_quota_blocks_only_new_media_documents(tmp_path) -> 
                 )
                 == 1
             )
+    finally:
+        dispose_engine(database_url)
+
+
+def test_full_image_capacity_allows_text_and_existing_image_refresh(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'mixed-capacity-refresh.sqlite3'}"
+    init_schema(database_url)
+    try:
+        with get_session(database_url) as session:
+            session.add(Account(account_id="acct_mixed", name="Mixed capacity"))
+            session.add(Site(site_id="site_mixed", account_id="acct_mixed", name="Mixed site"))
+            session.commit()
+            service = SiteKnowledgeService(
+                session,
+                settings=Settings(
+                    _env_file=None,
+                    environment="test",
+                    database_url=database_url,
+                    site_knowledge_embedding_provider="deterministic",
+                ),
+                account_id="acct_mixed",
+                account_vector_document_limit=1,
+                account_media_image_limit=1,
+            )
+            image = {
+                "attachment_id": 10,
+                "mime_type": "image/jpeg",
+                "title": "Standalone library image",
+                "url": "https://example.test/library.jpg",
+                "visual_summary": "Original description",
+            }
+            base_payload = {
+                "contract_version": "site_knowledge_sync.v1",
+                "sync_mode": "refresh",
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            }
+            service.sync(
+                site_id="site_mixed",
+                input_payload={**base_payload, "media_items": [image]},
+                run_id="seed-image",
+            )
+            article = {
+                "post_id": 1,
+                "post_type": "post",
+                "post_status": "publish",
+                "title": "An article with a reused image",
+                "url": "https://example.test/article",
+                "content_excerpt": '<p>Article text.</p><img src="https://example.test/library.jpg">',
+            }
+            result = service.sync(
+                site_id="site_mixed",
+                input_payload={
+                    **base_payload,
+                    "documents": [article],
+                    "media_items": [
+                        {**image, "visual_summary": "Updated description"},
+                        {**image, "attachment_id": 11, "url": "https://example.test/new.jpg"},
+                    ],
+                },
+                run_id="mixed-refresh",
+            )
+            assert result["sync"]["indexed_documents"] == 2
+            assert result["sync"]["skipped_due_to_quota"] == 1
+            assert service.repository.count_documents_for_account(
+                "acct_mixed", exclude_source_type="media"
+            ) == 1
+            assert service.repository.count_documents_for_account(
+                "acct_mixed", source_type="media"
+            ) == 1
+            assert not service.repository.document_exists(
+                site_id="site_mixed", source_type="media", source_id=11
+            )
+            # Both capacities are now full; refreshing their existing entries is allowed.
+            refreshed = service.sync(
+                site_id="site_mixed",
+                input_payload={
+                    **base_payload,
+                    "documents": [{**article, "content_excerpt": "Updated article text."}],
+                    "media_items": [{**image, "visual_summary": "Another updated description"}],
+                },
+                run_id="refresh-full-capacities",
+            )
+            assert refreshed["sync"]["indexed_documents"] == 2
+            assert refreshed["sync"]["skipped_due_to_quota"] == 0
+            assert service.repository.count_documents_for_account("acct_mixed") == 2
     finally:
         dispose_engine(database_url)
 

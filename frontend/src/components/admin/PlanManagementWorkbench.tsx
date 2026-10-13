@@ -491,15 +491,15 @@ export function PlanManagementWorkbench({
                       onChange={(value) => updateField('site_limit', value)}
                     />
                     <ParameterField
-                      label={t('admin.vector_documents_limit', {}, 'Knowledge articles')}
-                      detail={t('admin.vector_documents_limit_detail', {}, 'Account-level article capacity for Site Knowledge indexing.')}
-                      unit={t('admin.plans.unit_articles', {}, 'articles')}
+                      label={t('admin.vector_documents_limit', {}, 'Text knowledge capacity')}
+                      detail={t('admin.vector_documents_limit_detail', {}, 'Account-wide indexed articles, pages, and comments. Images count separately; full capacity limits new entries, not updates.')}
+                      unit={t('admin.plans.unit_documents', {}, 'entries')}
                       value={form.max_vector_documents}
                       onChange={(value) => updateField('max_vector_documents', value)}
                     />
                     <ParameterField
-                      label={t('admin.media_images_limit', {}, 'Image recognition limit')}
-                      detail={t('admin.media_images_limit_detail', {}, 'Maximum images this account plan can recognize and retain in the image index.')}
+                      label={t('admin.media_images_limit', {}, 'Image knowledge capacity')}
+                      detail={t('admin.media_images_limit_detail', {}, 'Account-wide indexed media-library images, including images outside articles. This is saved capacity, not recognition calls; existing entries can be refreshed.')}
                       unit={t('admin.plans.unit_images', {}, 'images')}
                       value={form.max_media_images}
                       onChange={(value) => updateField('max_media_images', value)}

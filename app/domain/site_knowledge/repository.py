@@ -318,7 +318,12 @@ class SiteKnowledgeRepository:
             exclude_source_type=exclude_source_type,
         )
 
-    def list_document_counts_by_site(self, site_ids: list[str]) -> list[dict[str, object]]:
+    def list_document_counts_by_site(
+        self,
+        site_ids: list[str],
+        *,
+        exclude_source_type: str | None = None,
+    ) -> list[dict[str, object]]:
         normalized_site_ids = list(
             dict.fromkeys(
                 str(site_id).strip() for site_id in site_ids if str(site_id).strip()
@@ -326,6 +331,9 @@ class SiteKnowledgeRepository:
         )
         if not normalized_site_ids:
             return []
+        join_condition = SiteKnowledgeDocument.site_id == Site.site_id
+        if exclude_source_type is not None:
+            join_condition &= SiteKnowledgeDocument.source_type != exclude_source_type
         statement = (
             select(
                 Site.site_id,
@@ -335,7 +343,7 @@ class SiteKnowledgeRepository:
                 func.max(SiteKnowledgeDocument.last_indexed_at),
             )
             .select_from(Site)
-            .outerjoin(SiteKnowledgeDocument, SiteKnowledgeDocument.site_id == Site.site_id)
+            .outerjoin(SiteKnowledgeDocument, join_condition)
             .where(Site.site_id.in_(normalized_site_ids))
             .group_by(Site.site_id, Site.name, Site.status)
             .order_by(Site.name.asc(), Site.site_id.asc())

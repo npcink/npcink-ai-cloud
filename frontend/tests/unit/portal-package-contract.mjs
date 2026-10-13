@@ -287,8 +287,8 @@ assert.match(
 );
 assert.match(
   entitlementComponentSource,
-  /visibleResourceKeys = new Set\(\['active_sites', 'vector_documents'\]\)/,
-  'Shared entitlement summary must show the active-site package right'
+  /visibleResourceKeys = new Set\(\['active_sites', 'vector_documents', 'media_images'\]\)/,
+  'Shared entitlement summary must show site, text, and image package capacities'
 );
 assert.doesNotMatch(
   entitlementComponentSource,
@@ -302,8 +302,8 @@ assert.match(
 );
 assert.match(
   entitlementComponentSource,
-  /md:grid-cols-2 lg:grid-cols-3/,
-  'Shared entitlement summary must show the three primary package rights on one desktop row'
+  /data-portal-entitlement-group=\{group\.key\}[\s\S]*?className="grid gap-3 md:grid-cols-2"/,
+  'Shared entitlement summary must keep knowledge capacities in paired desktop columns'
 );
 assert.match(
   paymentOrderHistorySource,

@@ -135,6 +135,7 @@ async function installPortalMocks(
     siteAttentionStatus?: string;
     singleReadySite?: boolean;
     sessionExpiredOnce?: boolean;
+    knowledgeUsage?: { text: number; images: number; unlimitedImages?: boolean };
   } = {}
 ) {
   let selectedSiteId = options.singleReadySite ? 'site_clear' : 'site_attention';
@@ -395,7 +396,10 @@ async function installPortalMocks(
           },
         },
         quota_summary: {
-          status: 'ok',
+          status: options.knowledgeUsage && (
+            options.knowledgeUsage.text >= 100
+            || (!options.knowledgeUsage.unlimitedImages && options.knowledgeUsage.images >= 100)
+          ) ? 'limited' : 'ok',
           period_start_at: '2026-04-01T00:00:00Z',
           period_end_at: '2026-04-30T00:00:00Z',
           generated_at: '2026-04-07T10:00:00Z',
@@ -439,10 +443,20 @@ async function installPortalMocks(
             },
             {
               key: 'vector_documents',
-              used: 0,
+              used: options.knowledgeUsage?.text ?? 0,
+              usage_ratio: (options.knowledgeUsage?.text ?? 0) / 100,
               limit: 100,
-              remaining: 100,
-              status: 'ok',
+              remaining: Math.max(0, 100 - (options.knowledgeUsage?.text ?? 0)),
+              status: (options.knowledgeUsage?.text ?? 0) >= 100 ? 'limited' : 'ok',
+            },
+            {
+              key: 'media_images',
+              used: options.knowledgeUsage?.images ?? 7,
+              usage_ratio: options.knowledgeUsage?.unlimitedImages ? 0 : (options.knowledgeUsage?.images ?? 7) / 100,
+              limit: options.knowledgeUsage?.unlimitedImages ? 0 : 100,
+              unlimited: Boolean(options.knowledgeUsage?.unlimitedImages),
+              remaining: Math.max(0, 100 - (options.knowledgeUsage?.images ?? 7)),
+              status: !options.knowledgeUsage?.unlimitedImages && (options.knowledgeUsage?.images ?? 7) >= 100 ? 'limited' : 'ok',
             },
           ],
         },
@@ -1821,6 +1835,79 @@ test('portal workspace interaction path: account overview to site detail and ser
     page.locator('[data-portal-billing="payment-orders-table"]').getByText(/Medium AI credit pack|中 AI 积分包/i)
   ).toBeVisible();
 });
+
+for (const scenario of [
+  { name: 'normal', text: 20, images: 7, unlimitedImages: false, locale: 'zh' },
+  { name: 'normal English', text: 20, images: 7, unlimitedImages: false, locale: 'en' },
+  { name: 'image full English', text: 20, images: 100, unlimitedImages: false, locale: 'en' },
+  { name: 'image full', text: 20, images: 100, unlimitedImages: false },
+  { name: 'text full', text: 100, images: 7, unlimitedImages: false },
+  { name: 'text and image overage', text: 105, images: 105, unlimitedImages: false },
+  { name: 'image overage', text: 20, images: 105, unlimitedImages: false },
+  { name: 'unlimited images', text: 20, images: 105, unlimitedImages: true },
+]) {
+  test(`knowledge capacity separates retained resources: ${scenario.name}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.addInitScript(() => window.localStorage.setItem('locale', 'zh-CN'));
+    // Exercise the supported language switch after hydration, separately from stored-locale boot.
+    await installPortalMocks(page, { emptySites: true, knowledgeUsage: scenario });
+    const consoleErrors: string[] = [];
+    const failedRequests: string[] = [];
+    page.on('pageerror', (error) => consoleErrors.push(error.message));
+    page.on('requestfailed', (request) => failedRequests.push(`${request.method()} ${request.url()}`));
+    await page.goto('/portal/billing');
+    if (scenario.locale === 'en') {
+      await page.getByRole('button', { name: /^Language$|^语言$/i }).click();
+      await page.getByRole('option', { name: /English/i }).click();
+    }
+    const group = page.locator('[data-portal-entitlement-group="knowledge"]');
+    await expect(group.getByRole('heading', { name: /^Knowledge capacity$|^知识库容量$/i })).toBeVisible();
+    const text = group.locator('[data-portal-quota-resource="vector_documents"]');
+    const images = group.locator('[data-portal-quota-resource="media_images"]');
+    await expect(text).toContainText(/Text knowledge capacity|文字知识库容量/i);
+    await expect(text).toContainText(/articles, pages, and comments|文章、页面和评论/i);
+    await expect(images).toContainText(/Image knowledge capacity|图片知识库容量/i);
+    await expect(images).toContainText(/whether or not used in an article|含未用于文章的图片/i);
+    await expect(group).toContainText(/do not reset monthly|不按月重置/i);
+    if (scenario.unlimitedImages) {
+      await expect(images).toContainText(/Unlimited|无限制/i);
+      await expect(images.getByText(/^Full$|^已满$|^Over limit$|^已超限$/i)).toHaveCount(0);
+    } else if (scenario.images >= 100) {
+      await expect(images.locator('[style]')).toHaveAttribute('style', /width: 100%/);
+      await expect(images.getByText(scenario.images > 100 ? /^Over limit$|^已超限$/i : /^Full$|^已满$/i)).toBeVisible();
+      await expect(images).toContainText(/Existing images remain usable and refreshable|已有图片仍可使用和更新/i);
+      if (scenario.name !== 'text and image overage') {
+        await expect(text.getByText(/^Normal$|^正常$/i)).toBeVisible();
+        await expect(page.getByText(/^Image capacity needs attention$|^图片容量需处理$/i)).toBeVisible();
+      }
+    }
+    if (scenario.text >= 100) {
+      await expect(text.getByText(scenario.text > 100 ? /^Over limit$|^已超限$/i : /^Full$|^已满$/i)).toBeVisible();
+      await expect(text).toContainText(/Existing text remains usable and updatable|已有内容仍可使用和更新/i);
+      if (scenario.name !== 'text and image overage') {
+        await expect(images.getByText(/^Normal$|^正常$/i)).toBeVisible();
+        await expect(page.getByText(/^Text capacity needs attention$|^文字容量需处理$/i)).toBeVisible();
+      }
+    }
+    if (scenario.name === 'text and image overage') {
+      await expect(page.getByText(/^Multiple capacities need attention$|^多个容量需要处理$/i)).toBeVisible();
+      await expect(page.getByText(/文字知识库已使用 105 \/ 100.*图片知识库已使用 105 \/ 100/)).toBeVisible();
+
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const screenshotPath = testInfo.outputPath('knowledge-capacity.png');
+    await group.screenshot({ path: screenshotPath });
+    await testInfo.attach(`knowledge-capacity-${scenario.name}`, { path: screenshotPath, contentType: 'image/png' });
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+    if (scenario.name === 'text and image overage') {
+      await page.goto('/portal');
+      await expect(page.getByText(/文字知识库已使用 105 \/ 100/)).toBeVisible();
+      await expect(page.getByText(/图片知识库已使用 105 \/ 100/)).toBeVisible();
+      expect(consoleErrors).toEqual([]);
+    }
+  });
+}
 
 test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
   page,

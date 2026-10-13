@@ -429,7 +429,7 @@ test('public plan catalog stays non-actionable until published terms are loaded'
   const freeTier = desktopPlans.locator('[data-plan-tier="free"]');
   await expect(freeTier.getByRole('link', { name: 'Start free' })).toBeVisible();
   await expect(freeTier.getByText('1 site', { exact: true })).toBeVisible();
-  await expect(freeTier.getByText('1 article', { exact: true })).toBeVisible();
+  await expect(freeTier.getByText('1 entry', { exact: true })).toBeVisible();
   await expect(freeTier.getByText('1 run', { exact: true })).toBeVisible();
   await expect(freeTier.getByText('1 item', { exact: true })).toBeVisible();
   await expect(pricing).toContainText('one 9-day paid-plan trial');

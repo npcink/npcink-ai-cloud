@@ -74,9 +74,10 @@ assert.match(
 );
 assert.match(
   source,
-  /active_sites[\s\S]*active_site_capacity_label[\s\S]*site_capacity_attention_label/,
+  /active_sites[\s\S]*active_site_capacity_label/,
   'Portal home must identify active-site capacity instead of falling back to a generic package warning'
 );
+assert.match(source, /site_capacity_attention_label/, 'Portal home must retain the site-specific status label');
 assert.match(
   source,
   /showAccountSummary = true[\s\S]*metrics=\{showAccountSummary \? operationSummaryItems : \[\]\}/,
