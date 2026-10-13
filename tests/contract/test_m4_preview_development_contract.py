@@ -2874,3 +2874,34 @@ def test_m4_remote_development_standard_is_linked_and_operational() -> None:
     assert "m4-remote-development-and-overlay-network-standard-v1.md" in runbook
     assert "m4-remote-development-and-overlay-network-standard-v1.md" in readme
     assert "m4-remote-development-and-overlay-network-standard-v1.md" in docs_index
+
+
+def test_m4_base_image_prefetch_is_cache_first_and_digest_locked() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    prefetch = source.split("prefetch_base_image() {", 1)[1].split(
+        "\n}\n\n# BEGIN M4 runtime image build recipe",
+        1,
+    )[0]
+    cache_check = prefetch.index("base image cached locally")
+    registry_resolution = prefetch.index("for candidate_ref in")
+
+    assert cache_check < registry_resolution
+    assert 'grep -Fqx "remote_digest=${expected_digest}"' in prefetch
+    assert "grep -Eq '^config_digest=sha256:[0-9a-f]{64}$'" in prefetch
+    assert "no verified registry source available" in prefetch
+    assert (
+        '"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.14-alpine@sha256:'
+        in source
+    )
+    assert (
+        '"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/node:22-alpine@sha256:'
+        in source
+    )
+    assert (
+        'M4_DOCKER_HUB_FALLBACK_REGISTRY="${NPCINK_CLOUD_M4_DOCKER_HUB_FALLBACK_REGISTRY:-dockerproxy.net}"'
+        in source
+    )
+    assert "NPCINK_CLOUD_M4_DOCKER_HUB_FALLBACK_REGISTRY" in source
+    assert '"${M4_DOCKER_HUB_FALLBACK_REGISTRY}" <<' in source
+    assert 'M4_DOCKER_HUB_FALLBACK_REGISTRY="${26}"' in source

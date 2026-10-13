@@ -33,6 +33,10 @@ M4_BROWSER_PREFLIGHT_MIN_BYTES_PER_SECOND=65536
 M4_ALLOW_NON_MASTER_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE:-0}"
 M4_ALLOW_DIRTY_CANDIDATE="${NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE:-0}"
 M4_FRONTEND_MODE="${NPCINK_CLOUD_M4_FRONTEND_MODE:-production}"
+# Docker Hub's DaoCloud mirror is the primary M4 source today.  Keep the
+# fallback digest-locked and configurable so a mirror outage does not require
+# changing the canonical Dockerfiles or source image digests.
+M4_DOCKER_HUB_FALLBACK_REGISTRY="${NPCINK_CLOUD_M4_DOCKER_HUB_FALLBACK_REGISTRY:-dockerproxy.net}"
 
 DRY_RUN=0
 TMP_DIR=""
@@ -99,6 +103,7 @@ Environment overrides:
   NPCINK_CLOUD_M4_ALLOW_NON_MASTER_CANDIDATE=1 (explicit feature-branch candidate preview)
   NPCINK_CLOUD_M4_ALLOW_DIRTY_CANDIDATE=1 (explicit dirty-worktree candidate preview)
   NPCINK_CLOUD_M4_FRONTEND_MODE=production|development (default: production)
+  NPCINK_CLOUD_M4_DOCKER_HUB_FALLBACK_REGISTRY (default: dockerproxy.net)
 EOF
 }
 
@@ -1726,7 +1731,8 @@ upload_and_apply() {
 		"${promotion_pr}" \
 		"${M4_SOURCE_TRANSFER_MODE}" \
 		"${SOURCE_RELAY_URL}" \
-		"${M4_FRONTEND_MODE}" <<'REMOTE_APPLY'
+		"${M4_FRONTEND_MODE}" \
+		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}" <<'REMOTE_APPLY'
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -1756,6 +1762,7 @@ promotion_pr="${22}"
 source_transfer_mode="${23}"
 source_relay_url="${24}"
 export NPCINK_CLOUD_M4_FRONTEND_MODE="${25}"
+M4_DOCKER_HUB_FALLBACK_REGISTRY="${26}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -2674,6 +2681,7 @@ prefetch_base_image() {
 	local_ref="$2"
 	marker_name="$3"
 	expected_digest="$4"
+	fallback_ref="${5:-}"
 	marker_file="${base_cache_dir}/${marker_name}.txt"
 
 	command -v crane >/dev/null 2>&1 || {
@@ -2681,26 +2689,51 @@ prefetch_base_image() {
 		return 1
 	}
 
-	remote_digest="$(crane digest "${remote_ref}")"
-	if [ -n "${expected_digest}" ] && [ "${remote_digest}" != "${expected_digest}" ]; then
-		echo "[m4-preview] base-image digest mismatch: ${marker_name}" >&2
-		return 1
-	fi
-	remote_config_digest="$(
-		crane manifest --platform linux/arm64 "${remote_ref}" |
-			python3 -c 'import json, sys; print(json.load(sys.stdin)["config"]["digest"])'
-	)"
-
 	local_descriptor_current=""
 	if docker image inspect "${local_ref}" >/dev/null 2>&1; then
 		local_descriptor_current="$(docker image inspect -f '{{.Id}}' "${local_ref}")"
 	fi
 	if [ -n "${local_descriptor_current}" ] &&
 		[ -f "${marker_file}" ] &&
-		grep -Fqx "remote_digest=${remote_digest}" "${marker_file}" &&
-		grep -Fqx "local_descriptor=${local_descriptor_current}" "${marker_file}"; then
-		echo "[m4-preview] base image cached: ${marker_name} (${remote_digest})"
+		[ -n "${expected_digest}" ] &&
+		grep -Fqx "remote_digest=${expected_digest}" "${marker_file}" &&
+		grep -Fqx "local_descriptor=${local_descriptor_current}" "${marker_file}" &&
+		grep -Eq '^config_digest=sha256:[0-9a-f]{64}$' "${marker_file}"; then
+		echo "[m4-preview] base image cached locally: ${marker_name} (${expected_digest})"
 		return 0
+	fi
+
+	remote_digest=""
+	remote_config_digest=""
+	remote_ref_used=""
+	for candidate_ref in "${remote_ref}" "${fallback_ref}"; do
+		[ -n "${candidate_ref}" ] || continue
+		candidate_digest=""
+		if ! candidate_digest="$(crane digest "${candidate_ref}" 2>/dev/null)"; then
+			if [ "${candidate_ref}" = "${remote_ref}" ] && [ -n "${fallback_ref}" ]; then
+				echo "[m4-preview] primary base-image source unavailable; trying digest-locked fallback for ${marker_name}" >&2
+			fi
+			continue
+		fi
+		if [ -n "${expected_digest}" ] && [ "${candidate_digest}" != "${expected_digest}" ]; then
+			echo "[m4-preview] base-image digest mismatch: ${marker_name}" >&2
+			continue
+		fi
+		candidate_config_digest=""
+		if ! candidate_config_digest="$(
+			crane manifest --platform linux/arm64 "${candidate_ref}" |
+				python3 -c 'import json, sys; print(json.load(sys.stdin)["config"]["digest"])'
+		)"; then
+			continue
+		fi
+		remote_digest="${candidate_digest}"
+		remote_config_digest="${candidate_config_digest}"
+		remote_ref_used="${candidate_ref}"
+		break
+	done
+	if [ -z "${remote_ref_used}" ]; then
+		echo "[m4-preview] no verified registry source available for ${marker_name}" >&2
+		return 1
 	fi
 
 	prefetch_archive="$(mktemp "${base_cache_dir}/${marker_name}.XXXXXX")"
@@ -2709,7 +2742,7 @@ prefetch_base_image() {
 		--platform linux/arm64 \
 		--format tarball \
 		--cache_path "${base_cache_dir}/layers" \
-		"${remote_ref}" \
+		"${remote_ref_used}" \
 		"${prefetch_archive}" 2>&1 |
 		python3 -u scripts/redact-m4-preview-logs.py --env-file .env --env-file .env.local
 	archive_config_file="$(
@@ -2731,9 +2764,9 @@ prefetch_base_image() {
 	rm -f "${prefetch_archive}"
 	prefetch_archive=""
 
-	loaded_ref="${remote_ref}"
+	loaded_ref="${remote_ref_used}"
 	if ! docker image inspect "${loaded_ref}" >/dev/null 2>&1; then
-		without_digest="${remote_ref%@*}"
+		without_digest="${remote_ref_used%@*}"
 		repository="${without_digest%:*}"
 		loaded_ref="${repository}:i-was-a-digest"
 	fi
@@ -2741,7 +2774,7 @@ prefetch_base_image() {
 	docker tag "${loaded_ref}" "${local_ref}"
 	local_descriptor="$(docker image inspect -f '{{.Id}}' "${local_ref}")"
 	{
-		printf 'remote_ref=%s\n' "${remote_ref}"
+		printf 'remote_ref=%s\n' "${remote_ref_used}"
 		printf 'remote_digest=%s\n' "${remote_digest}"
 		printf 'config_digest=%s\n' "${remote_config_digest}"
 		printf 'local_descriptor=%s\n' "${local_descriptor}"
@@ -2755,7 +2788,8 @@ prefetch_python_base_image() {
 		'm.daocloud.io/docker.io/library/python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72' \
 		"${python_base_image}" \
 		python \
-		'sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72'
+		'sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72' \
+		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72"
 }
 
 prefetch_runtime_base_images() {
@@ -2805,7 +2839,8 @@ prefetch_frontend_base_image() {
 		'm.daocloud.io/docker.io/library/node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402' \
 		"${node_base_image}" \
 		node \
-		'sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402'
+		'sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402' \
+		"${M4_DOCKER_HUB_FALLBACK_REGISTRY}/library/node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402"
 }
 
 build_frontend_image() {
