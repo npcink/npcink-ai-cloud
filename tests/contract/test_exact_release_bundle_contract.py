@@ -867,6 +867,59 @@ def test_v2_bundle_binds_exact_production_release_plan(
     assert manifest["production_release_plan"]["repository"] == "npcink/npcink-ai-cloud"
     assert run_helper("verify-directory", "--root", str(bundle)).returncode == 0
 
+    # Execute the real upload block with a local SCP stand-in. The isolated
+    # preflight tree must work before the release payload has been extracted.
+    preflight = tmp_path / "ssh-preflight"
+    (preflight / "deploy").mkdir(parents=True)
+    (preflight / "scripts").mkdir()
+    deploy_source = (ROOT / "deploy/deploy-to-ssh-host.sh").read_text(encoding="utf-8")
+    upload_start = deploy_source.index(
+        'npcink_ai_cloud_run_timed "upload deploy bundle preflight"'
+    )
+    upload_end = deploy_source.index('if [ "${STAGE_ONLY}" != "1" ]; then', upload_start)
+    uploaded = subprocess.run(
+        ["bash", "-s"],
+        input=(
+            "set -euo pipefail\n"
+            'ROOT_DIR="$NPCINK_TEST_SOURCE_ROOT"\n'
+            'REMOTE_PREFLIGHT_DIR="$NPCINK_TEST_PREFLIGHT_ROOT"\n'
+            "SSH_TARGET=fixture-host\n"
+            "SCP_ARGS=(-q)\n"
+            'npcink_ai_cloud_run_timed() { shift; "$@"; }\n'
+            'scp() { shift; cp "$1" "${2#*:}"; }\n'
+            + deploy_source[upload_start:upload_end]
+        ),
+        env={
+            **os.environ,
+            "NPCINK_TEST_SOURCE_ROOT": str(ROOT),
+            "NPCINK_TEST_PREFLIGHT_ROOT": str(preflight),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert uploaded.returncode == 0, uploaded.stderr
+    archive = tmp_path / "v2-deploy-bundle.tgz"
+    checksum = tmp_path / "v2-deploy-bundle.tgz.sha256"
+    packed = run_helper(
+        "pack", "--root", str(bundle), "--output", str(archive), "--gzip-level", "1", "--mtime", "0"
+    )
+    assert packed.returncode == 0, packed.stderr
+    written = run_helper("checksum", "--bundle", str(archive), "--output", str(checksum))
+    assert written.returncode == 0, written.stderr
+    remote_verified = subprocess.run(
+        [
+            "bash",
+            str(preflight / "deploy/verify-release-bundle.sh"),
+            "--archive",
+            str(archive),
+            str(checksum),
+        ],
+        env={**os.environ, "NPCINK_CLOUD_RELEASE_TOOL_PYTHON": sys.executable},
+        text=True,
+        capture_output=True,
+    )
+    assert remote_verified.returncode == 0, remote_verified.stderr
+
     current_inputs = tmp_path / "application-image-inputs.json"
     current_inputs.write_text(
         json.dumps(plan["application_image_inputs"], sort_keys=True) + "\n",
