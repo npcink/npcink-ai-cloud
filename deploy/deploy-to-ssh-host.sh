@@ -714,6 +714,13 @@ npcink_ai_cloud_run_timed "upload deploy bundle manifest verifier" \
 	scp "${SCP_ARGS[@]}" \
 	"${ROOT_DIR}/scripts/verify-release-bundle-manifest.py" \
 	"${SSH_TARGET}:${REMOTE_PREFLIGHT_DIR}/scripts/verify-release-bundle-manifest.py"
+# The verifier imports these siblings before the release archive is extracted.
+for preflight_helper in production-release-plan.py production-application-image-inputs.py; do
+	npcink_ai_cloud_run_timed "upload deploy bundle preflight ${preflight_helper}" \
+		scp "${SCP_ARGS[@]}" \
+		"${ROOT_DIR}/scripts/${preflight_helper}" \
+		"${SSH_TARGET}:${REMOTE_PREFLIGHT_DIR}/scripts/${preflight_helper}"
+done
 
 if [ "${STAGE_ONLY}" != "1" ]; then
 	if "${LOCAL_RELEASE_TOOL_PYTHON}" "${ROOT_DIR}/scripts/verify-release-bundle-manifest.py" \
