@@ -232,15 +232,15 @@ function PlanDetails({
         </dd>
       </div>
       <div className="flex items-center justify-between gap-4 py-3">
-        <dt className="text-slate-400">{zh ? '知识库文章' : 'Knowledge articles'}</dt>
+        <dt className="text-slate-400">{zh ? '文字知识库容量' : 'Text knowledge capacity'}</dt>
         <dd className="font-bold">
           {showAgencyFallback ? (
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
               right={data?.comparison_rights?.knowledge_article_limit}
-              suffix={zh ? '篇' : 'articles'}
-              singularSuffix="article"
+              suffix={zh ? '条' : 'entries'}
+              singularSuffix="entry"
               unavailable={loading || unavailable}
               zh={zh}
             />

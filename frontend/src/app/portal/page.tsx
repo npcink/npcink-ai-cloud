@@ -29,6 +29,7 @@ import { PortalTag } from '@/components/portal/PortalTag';
 import { PortalSitesWorkspace } from '@/components/portal/PortalSitesWorkspace';
 
 type RestrictionItem = {
+  id?: string;
   tone: 'warn' | 'info';
   label: string;
   detail: string;
@@ -273,22 +274,14 @@ export default function PortalPage() {
   );
   const creditUnavailable =
     String(accountEntitlements?.quota_summary?.ai_credits?.status || '') === 'limited';
-  const overLimitResource = accountEntitlements?.quota_summary?.resource_limits?.find((resource) => (
+  const overLimitResources = (accountEntitlements?.quota_summary?.resource_limits || []).filter((resource) => (
       !resource.unlimited
       && Number(resource.limit || 0) > 0
-      && Number(resource.used || 0) > Number(resource.limit || 0)
+      && (Number(resource.used || 0) > Number(resource.limit || 0)
+        || ((resource.key === 'vector_documents' || resource.key === 'media_images') && resource.status === 'limited'))
     ));
+  const overLimitResource = overLimitResources[0];
   const resourceOverLimit = Boolean(overLimitResource);
-  const overLimitResourceLabel = overLimitResource?.key === 'vector_documents'
-    ? t('portal.usage.resource_vector_documents', {}, 'Knowledge articles')
-    : overLimitResource?.key === 'active_sites'
-      ? t('portal.home.active_site_capacity_label', {}, 'Active site capacity')
-    : overLimitResource?.key === 'bound_sites'
-      ? t('portal.usage.resource_bound_sites', {}, 'Bound sites')
-      : t('portal.home.package_capacity_label', {}, 'Package capacity');
-  const overLimitResourceAmount = overLimitResource
-    ? Math.max(0, Number(overLimitResource.used || 0) - Number(overLimitResource.limit || 0))
-    : 0;
   const currentServiceStatusToken = restrictedCount > 0 ||
     creditUnavailable ||
     resourceOverLimit ||
@@ -296,18 +289,22 @@ export default function PortalPage() {
     (currentSubscription?.status && currentSubscription.status !== 'active')
       ? 'warning'
       : 'active';
-  const currentServiceStatusLabel =
-    currentServiceStatusToken === 'active'
-      ? t('portal.home.service_status_live', {}, 'Ready')
-      : creditUnavailable
-        ? t('portal.home.credit_attention_label', {}, 'AI credits unavailable')
-        : resourceOverLimit
-          ? overLimitResource?.key === 'vector_documents'
-            ? t('portal.home.knowledge_attention_label', {}, 'Knowledge limit exceeded')
-            : overLimitResource?.key === 'active_sites' || overLimitResource?.key === 'bound_sites'
-              ? t('portal.home.site_capacity_attention_label', {}, 'Site capacity exceeded')
-              : t('portal.home.capacity_attention_label', {}, 'Package limit exceeded')
-      : t('portal.home.service_status_attention', {}, 'Needs attention');
+  let currentServiceStatusLabel = t('portal.home.service_status_attention', {}, 'Needs attention');
+  if (currentServiceStatusToken === 'active') {
+    currentServiceStatusLabel = t('portal.home.service_status_live', {}, 'Ready');
+  } else if (creditUnavailable) {
+    currentServiceStatusLabel = t('portal.home.credit_attention_label', {}, 'AI credits unavailable');
+  } else if (resourceOverLimit) {
+    const labels: Record<string, string> = {
+      vector_documents: t('portal.home.knowledge_attention_label', {}, 'Text capacity needs attention'),
+      media_images: t('portal.home.media_attention_label', {}, 'Image capacity needs attention'),
+      active_sites: t('portal.home.site_capacity_attention_label', {}, 'Site capacity exceeded'),
+      bound_sites: t('portal.home.site_capacity_attention_label', {}, 'Site capacity exceeded'),
+    };
+    currentServiceStatusLabel = overLimitResources.length > 1
+      ? t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention')
+      : labels[String(overLimitResource?.key || '')] || t('portal.home.capacity_attention_label', {}, 'Package limit exceeded');
+  }
   const operationSummaryItems = [
     {
       label: t('portal.home.package_card_label', {}, 'Current package'),
@@ -356,7 +353,7 @@ export default function PortalPage() {
       size: 'compact' as const,
     },
   ];
-  const operationFocusItems = [
+  const operationFocusItems: RestrictionItem[] = [
     ...restrictionItems,
     ...(creditUnavailable
       ? [{
@@ -377,28 +374,36 @@ export default function PortalPage() {
             : t('portal.home.billing_action', {}, 'Review package'),
         }]
       : []),
-    ...(overLimitResource
-      ? [{
-          tone: 'warn' as const,
-          label: t(
-            'portal.home.capacity_attention_title',
-            { resource: overLimitResourceLabel },
-            `${overLimitResourceLabel} exceeds the package limit`
-          ),
-          detail: t(
-            'portal.home.capacity_attention_desc',
-            {
-              resource: overLimitResourceLabel,
-              used: formatNumber(Number(overLimitResource.used || 0)),
-              limit: formatNumber(Number(overLimitResource.limit || 0)),
-              exceeded: formatNumber(overLimitResourceAmount),
-            },
-            `${overLimitResourceLabel} usage is ${formatNumber(Number(overLimitResource.used || 0))} of ${formatNumber(Number(overLimitResource.limit || 0))}, exceeding the package by ${formatNumber(overLimitResourceAmount)}.`
-          ),
-          href: '/portal/billing#package-options',
-          action: t('portal.home.billing_action', {}, 'Review package'),
-        }]
-      : []),
+    ...overLimitResources.map((resource) => {
+      const labels: Record<string, string> = {
+        vector_documents: t('portal.usage.resource_vector_documents', {}, 'Text knowledge capacity'),
+        media_images: t('portal.usage.resource_media_images', {}, 'Image knowledge capacity'),
+        active_sites: t('portal.home.active_site_capacity_label', {}, 'Active site capacity'),
+        bound_sites: t('portal.usage.resource_bound_sites', {}, 'Bound sites'),
+      };
+      const resourceLabel = labels[String(resource.key || '')] || t('portal.home.package_capacity_label', {}, 'Package capacity');
+      const params = {
+        resource: resourceLabel,
+        used: formatNumber(Number(resource.used || 0)),
+        limit: formatNumber(Number(resource.limit || 0)),
+        exceeded: formatNumber(Math.max(0, Number(resource.used || 0) - Number(resource.limit || 0))),
+      };
+      const label = t('portal.home.capacity_attention_title', { resource: resourceLabel }, `${resourceLabel} needs attention`);
+      let detail = t('portal.home.capacity_attention_desc', params, `${resourceLabel} usage is ${params.used} of ${params.limit}.`);
+      if (resource.key === 'vector_documents') {
+        detail = t('portal.home.text_capacity_attention_desc', params, `Text knowledge usage is ${params.used} of ${params.limit}. New text indexing is paused; existing entries remain usable and updatable.`);
+      } else if (resource.key === 'media_images') {
+        detail = t('portal.home.media_capacity_attention_desc', params, `Image knowledge usage is ${params.used} of ${params.limit}. New image indexing is paused; existing images remain usable and refreshable.`);
+      }
+      return {
+        id: resource.key,
+        tone: 'warn' as const,
+        label,
+        detail,
+        href: '/portal/billing#package-options',
+        action: t('portal.home.billing_action', {}, 'Review package'),
+      };
+    }),
     ...(accountEntitlementsUnavailable
       ? [{
           tone: 'warn' as const,
@@ -510,7 +515,7 @@ export default function PortalPage() {
                   <div className="mt-4 space-y-3">
                     {remainingOperationFocusItems.slice(0, 3).map((item) => (
                       <div
-                        key={item.label}
+                        key={item.id || item.label}
                         className={cn(
                           'rounded-xl border px-3 py-3',
                           item.tone === 'warn'

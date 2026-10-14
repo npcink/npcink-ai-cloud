@@ -152,7 +152,7 @@ jobs:
           effort: low
           # Soft input+output budget, not a hard billing cap: an in-flight
           # round and a final submission round may exceed it.
-          max_tokens_budget: '40000'
+          max_tokens_budget: '80000'
           review_task_timeout: '8'
           checkpoint_range: 'true'
           sticky_summary: 'true'
