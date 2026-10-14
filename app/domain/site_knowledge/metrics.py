@@ -300,7 +300,9 @@ class SiteKnowledgeObservabilityService:
 
     def get_account_document_breakdown(self, *, site_ids: list[str]) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            sites = SiteKnowledgeRepository(session).list_document_counts_by_site(site_ids)
+            sites = SiteKnowledgeRepository(session).list_document_counts_by_site(
+                site_ids, exclude_source_type="media"
+            )
         return {
             "sites": sites,
             "total_indexed_document_count": sum(

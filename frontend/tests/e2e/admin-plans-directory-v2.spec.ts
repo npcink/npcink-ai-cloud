@@ -57,7 +57,7 @@ test('package directory keeps modal focus while retaining the catalog on refresh
   await expect(workbench).toContainText('Free');
   await expect(workbench.getByRole('tab', { name: /^Package parameters$|^套餐参数$/i })).toHaveAttribute('aria-selected', 'true');
   await expect(workbench.locator('input[type="number"]')).toHaveCount(9);
-  await expect(workbench.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
+  await expect(workbench.getByText(/shared by all sites|所有站点共享/i).first()).toBeVisible();
   await workbench.locator('[data-ui="admin-workbench-close"]').click();
   await expect(page).toHaveURL(/\/admin\/plans$/);
   await expect(page.locator('[data-ui="admin-workbench-dialog"]')).toHaveCount(0);
@@ -72,7 +72,7 @@ test('package directory keeps modal focus while retaining the catalog on refresh
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
 
-test('package management combines readable limits, descriptions, and editing while creation stays in advanced maintenance', async ({ page }) => {
+test('package management combines readable limits, descriptions, and editing while creation stays in advanced maintenance', async ({ page }, testInfo) => {
 	await page.setViewportSize({ width: 1440, height: 1050 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installPlanDirectoryHarness(page);
@@ -91,11 +91,18 @@ test('package management combines readable limits, descriptions, and editing whi
   await expect(inspector.getByRole('heading', { name: /Manage Free|管理 Free/i })).toBeVisible();
   await expect(inspector.getByText(/Current package parameters|当前套餐参数/i)).toBeVisible();
   await expect(inspector.locator('input[type="number"]')).toHaveCount(9);
-  await expect(inspector.getByText(/Knowledge articles|知识库文章上限/i).first()).toBeVisible();
-  await expect(inspector.getByText(/Image recognition limit|图片识别上限/i).first()).toBeVisible();
+  await expect(inspector.getByText(/Text knowledge capacity|文字知识库容量/i).first()).toBeVisible();
+  await expect(inspector.getByText(/Image knowledge capacity|图片知识库容量/i).first()).toBeVisible();
   await expect(inspector.getByText(/Customer-facing 30-day price|用户端展示并用于新支付宝订单/i)).toBeVisible();
+  const costMonitoring = inspector.locator('[data-ui="plan-cost-monitoring"]');
+  await expect(costMonitoring).not.toHaveAttribute('open');
+  await costMonitoring.locator('summary').click();
   await expect(inspector.getByText(/Internal provider-cost monitoring threshold|Provider 成本监控阈值/i)).toBeVisible();
   await expect(inspector.getByRole('button', { name: /^Save$|^保存$/i })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const screenshotPath = testInfo.outputPath('knowledge-capacity-admin.png');
+  await inspector.screenshot({ path: screenshotPath });
+  await testInfo.attach('knowledge-capacity-admin-workbench', { path: screenshotPath, contentType: 'image/png' });
   await inspector.locator('[data-ui="admin-workbench-close"]').click();
 
   await page.getByText(/Package initialization|套餐初始化/i).click();

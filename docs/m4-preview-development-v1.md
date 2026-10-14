@@ -516,11 +516,16 @@ source until `deploy` has successfully validated that image.
 The M4 Docker Desktop proxy currently truncates redirected registry blob
 downloads. The M4-only builder therefore uses host-side `crane` to fetch the
 arm64 base images directly into temporary archives and imports them into the
-same M4 Docker engine. Python and Node are fetched through the DaoCloud Docker
-Hub cache, while uv uses the Nanjing University GHCR cache. Both pinned inputs
-must match the canonical digest, and the imported platform config digest is
-verified before a local-only alias is created. The mutable Node tag's resolved
-digest is cached alongside its imported config digest.
+same M4 Docker engine. A previously imported image is reused first only when
+its marker, local image descriptor, canonical digest, and config digest all
+match; a registry outage must not invalidate an already verified cache. When a
+fresh fetch is required, Python and Node try the DaoCloud Docker Hub cache and
+then the digest-locked `dockerproxy.net` fallback. `NPCINK_CLOUD_M4_DOCKER_HUB_FALLBACK_REGISTRY`
+may select another operator-approved mirror. uv uses the Nanjing University
+GHCR cache. Every selected input must match the canonical digest, and the
+imported platform config digest is verified before a local-only alias is
+created. The mutable Node tag's resolved digest is cached alongside its
+imported config digest.
 
 The backend build then validates and skips only the canonical external
 Dockerfile-frontend declaration and uses Docker 29's bundled frontend, which

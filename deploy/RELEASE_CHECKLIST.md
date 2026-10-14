@@ -313,7 +313,8 @@ private runtime configuration or expand the receipt with customer fields.
 
 - [ ] the exact release canonical CVE allowlist matches the reviewed active
   exception state and the four-part allowlist change discipline above is
-  complete; the canonical CVE allowlist is empty. The six OpenSSL
+  complete; seventeen time-boxed redis/nginx entries expire 2026-10-25 and
+  the canonical CVE allowlist is empty again after the bounded redis/nginx exception window closes. The six OpenSSL
   `CVE-2026-14456` exceptions for `libcrypto3`/`libssl3` version `3.5.7-r0`
   expired on `2026-09-19` and were retired on 2026-09-20. Retirement is not
   evidence that images are fixed; remaining blocking findings require repaired

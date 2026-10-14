@@ -141,6 +141,12 @@ export function formatPortalErrorMessage(
           undefined,
           'Cloud service is temporarily unavailable. Try again shortly or contact support if it continues.'
         );
+      case 'media_recognition.media_capacity_exhausted':
+        return t(
+          'error.portal_media_capacity_exhausted',
+          undefined,
+          'Image knowledge capacity is full. Existing indexed images remain usable and refreshable. Remove unneeded index entries or change the package before adding new images.'
+        );
       case 'commercial.quota_exceeded':
         return t(
           'error.portal_account_quota_exceeded',

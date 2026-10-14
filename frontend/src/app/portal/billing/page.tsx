@@ -38,7 +38,6 @@ import {
 } from '@/lib/portal-client';
 import {
   resolveCustomerPackageDisplay,
-  selectCustomerPackagePressureResource,
 } from '@/lib/customer-package-display';
 import {
   formatPortalErrorMessage,
@@ -85,8 +84,41 @@ function formatBillingPeriodRange(startValue: string, endValue: string, locale: 
   return `${formatter.format(start)} – ${formatter.format(end)}`;
 }
 
-function findLimitedResource(quotaSummary: QuotaSummary | null): QuotaResource | undefined {
-  return selectCustomerPackagePressureResource(quotaSummary?.resource_limits);
+function findLimitedResources(quotaSummary: QuotaSummary | null): QuotaResource[] {
+  return (quotaSummary?.resource_limits || []).filter((resource) => (
+    !resource.unlimited
+    && Number(resource.limit || 0) > 0
+    && (resource.status === 'limited' || Number(resource.used || 0) > Number(resource.limit || 0))
+  ));
+}
+
+function formatLimitedResourceDetail(resource: QuotaResource, packageLabel: string, t: TranslateFn): string {
+  const used = formatNumber(Number(resource.used || 0));
+  const limit = formatNumber(Number(resource.limit || 0));
+  if (resource.key === 'active_sites' || resource.key === 'bound_sites') {
+    return t(
+      resource.key === 'active_sites'
+        ? 'portal.billing.package_status_active_site_limited'
+        : 'portal.billing.package_status_site_limited',
+      { used, limit, package: packageLabel },
+      `${used} sites are connected; ${packageLabel} includes ${limit}.`
+    );
+  }
+  if (resource.key === 'vector_documents') {
+    return t(
+      'portal.billing.package_status_knowledge_limited',
+      { used, limit },
+      `Text knowledge usage is ${used} of ${limit}. New text indexing is paused; existing text remains usable and updatable.`
+    );
+  }
+  if (resource.key === 'media_images') {
+    return t(
+      'portal.billing.package_status_media_limited',
+      { used, limit },
+      `Image knowledge usage is ${used} of ${limit}. New image indexing is paused; existing images remain usable and refreshable.`
+    );
+  }
+  return t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
 }
 
 function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLabel: string, t: TranslateFn): string {
@@ -98,40 +130,30 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
       'The package has no AI credits remaining. Buy AI credits or change the package to continue.'
     );
   }
-  const limitedResource = findLimitedResource(quotaSummary);
-  if (limitedResource?.key === 'active_sites' || limitedResource?.key === 'bound_sites') {
-    return t(
-      limitedResource.key === 'active_sites'
-        ? 'portal.billing.package_status_active_site_limited'
-        : 'portal.billing.package_status_site_limited',
-      {
-        used: formatNumber(Number(limitedResource.used || 0)),
-        limit: formatNumber(Number(limitedResource.limit || 0)),
-        package: packageLabel,
-      },
-      `${formatNumber(Number(limitedResource.used || 0))} sites are connected; ${packageLabel} includes ${formatNumber(Number(limitedResource.limit || 0))}.`
-    );
+  const limitedResources = findLimitedResources(quotaSummary);
+  if (limitedResources.length > 1) {
+    return limitedResources.map((resource) => formatLimitedResourceDetail(resource, packageLabel, t)).join(' ');
   }
-  if (limitedResource?.key === 'vector_documents') {
-    return t(
-      'portal.billing.package_status_knowledge_limited',
-      {
-        used: formatNumber(Number(limitedResource.used || 0)),
-        limit: formatNumber(Number(limitedResource.limit || 0)),
-      },
-      `Knowledge usage is ${formatNumber(Number(limitedResource.used || 0))} of ${formatNumber(Number(limitedResource.limit || 0))}.`
-    );
-  }
-  return t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
+  const limitedResource = limitedResources[0];
+  return limitedResource
+    ? formatLimitedResourceDetail(limitedResource, packageLabel, t)
+    : t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
 }
 
 function resolvePackageStatusLabel(quotaSummary: QuotaSummary | null, t: TranslateFn): string {
   if (quotaSummary?.ai_credits?.status === 'limited') {
     return t('portal.billing.package_status_credit_label', {}, 'AI credits unavailable');
   }
-  const limitedResource = findLimitedResource(quotaSummary);
+  const limitedResources = findLimitedResources(quotaSummary);
+  if (limitedResources.length > 1) {
+    return t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention');
+  }
+  const limitedResource = limitedResources[0];
   if (limitedResource?.key === 'vector_documents') {
-    return t('portal.billing.package_status_knowledge_label', {}, 'Knowledge limit exceeded');
+    return t('portal.billing.package_status_knowledge_label', {}, 'Text capacity needs attention');
+  }
+  if (limitedResource?.key === 'media_images') {
+    return t('portal.billing.package_status_media_label', {}, 'Image capacity needs attention');
   }
   if (limitedResource?.key === 'active_sites' || limitedResource?.key === 'bound_sites') {
     return t('portal.billing.package_status_site_label', {}, 'Site limit exceeded');
