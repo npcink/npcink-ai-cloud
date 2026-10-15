@@ -16,6 +16,7 @@ from app.adapters.providers.base import (
     VISION_PROVIDER_ERROR_MESSAGE,
     CatalogInstanceSeed,
     CatalogModelSeed,
+    ProviderCatalogRefreshError,
     ProviderCatalogSnapshot,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -264,7 +265,11 @@ class OpenAIProviderAdapter:
         if self._http_enabled:
             return self._fetch_http_catalog()
         if not self.allow_sample_catalog:
-            raise RuntimeError("provider catalog refresh requires configured upstream credentials")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "credentials_unavailable",
+                "provider catalog refresh requires configured upstream credentials",
+            )
 
         return self._build_sample_catalog()
 
@@ -428,19 +433,38 @@ class OpenAIProviderAdapter:
                 response = client.get("/models")
                 response.raise_for_status()
         except httpx.TimeoutException as error:
-            raise RuntimeError("provider catalog refresh timed out") from error
+            raise ProviderCatalogRefreshError(
+                self.provider_id, "timeout", "provider catalog refresh timed out"
+            ) from error
         except httpx.HTTPStatusError as error:
             message = self._extract_http_error_message(error.response)
-            raise RuntimeError(
-                f"provider catalog refresh failed with {error.response.status_code}: {message}"
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                f"http_{error.response.status_code}",
+                f"provider catalog refresh failed with {error.response.status_code}: {message}",
             ) from error
         except httpx.RequestError as error:
-            raise RuntimeError(f"provider catalog refresh network error: {error}") from error
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "network_error",
+                f"provider catalog refresh network error: {error}",
+            ) from error
 
-        response_json = response.json()
-        raw_models = response_json.get("data")
+        try:
+            response_json = response.json()
+        except ValueError as error:
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "provider catalog response was not valid JSON",
+            ) from error
+        raw_models = response_json.get("data") if isinstance(response_json, dict) else None
         if not isinstance(raw_models, list):
-            raise ValueError("provider catalog response missing data list")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "provider catalog response missing data list",
+            )
 
         catalog_models: list[CatalogModelSeed] = []
         for raw_model in raw_models:
@@ -450,7 +474,11 @@ class OpenAIProviderAdapter:
             catalog_models.append(model_seed)
 
         if not catalog_models:
-            raise ValueError("provider catalog refresh returned no usable models")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "provider catalog refresh returned no usable models",
+            )
 
         catalog_models.sort(key=self._catalog_sort_key)
 

@@ -233,7 +233,8 @@ PY
 
 	npcink_ai_cloud_wait_for_internal_endpoint \
 		"${ROOT_DIR}" "/health/operational-ready" \
-		"[ok] New workers are stable and operationally ready before public traffic is restored."
+		"[ok] New workers are stable and operationally ready before public traffic is restored." \
+		"${NPCINK_CLOUD_PROVIDER_REFRESH_DEGRADED:-0}"
 	exit 0
 fi
 
@@ -241,6 +242,13 @@ npcink_ai_cloud_require_internal_token
 INTERNAL_AUTH_TOKEN="${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN}"
 npcink_ai_cloud_require_cmd curl
 npcink_ai_cloud_require_cmd mktemp
+if [ "${NPCINK_CLOUD_PROVIDER_REFRESH_DEGRADED:-0}" = "1" ]; then
+	npcink_ai_cloud_wait_for_internal_endpoint \
+		"${ROOT_DIR}" "/health/operational-ready" \
+		"[ok] Cloud service is operationally ready with degraded provider refresh." \
+		1
+	exit 0
+fi
 unset NPCINK_CLOUD_INTERNAL_AUTH_TOKEN
 READINESS_HOST="$("${RELEASE_TOOL_PYTHON}" - "${BASE_URL}" <<'PY'
 from __future__ import annotations
