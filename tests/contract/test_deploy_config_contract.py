@@ -2114,7 +2114,10 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert "bash deploy/remote-load-and-up.sh </dev/null" in deploy_to_ssh_script
     assert "bash deploy/remote-migrate.sh </dev/null" in deploy_to_ssh_script
     assert "deploy/remote-refresh-providers.sh" in deploy_to_ssh_script
-    assert 'PROVIDER_REFRESH_MODE="${NPCINK_CLOUD_PROVIDER_REFRESH_MODE:-strict}"' in deploy_to_ssh_script
+    assert (
+        'PROVIDER_REFRESH_MODE="${NPCINK_CLOUD_PROVIDER_REFRESH_MODE:-strict}"'
+        in deploy_to_ssh_script
+    )
     assert 'NPCINK_CLOUD_PROVIDER_REFRESH_MODE="${PROVIDER_REFRESH_MODE}"' in deploy_to_ssh_script
     assert "Provider refresh raw output cleanup did not complete" in deploy_to_ssh_script
     assert "--provider-refresh-mode best-effort" in (
