@@ -43,6 +43,15 @@ class ProviderCatalogSnapshot:
     models: list[CatalogModelSeed]
 
 
+class ProviderCatalogRefreshError(RuntimeError):
+    """An upstream Provider catalog request or response could not be used."""
+
+    def __init__(self, provider_id: str, failure_type: str, message: str) -> None:
+        super().__init__(message)
+        self.provider_id = str(provider_id or "").strip()
+        self.failure_type = str(failure_type or "upstream_error").strip()
+
+
 @dataclass(slots=True)
 class ProviderExecutionRequest:
     run_id: str

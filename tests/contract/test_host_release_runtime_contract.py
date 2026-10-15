@@ -704,6 +704,15 @@ def test_runtime_compose_never_pulls_and_v227_run_commands_have_no_pull_flag() -
     assert "settings = Settings()" not in refresh
     assert "exec -T api" not in refresh
     assert "NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF" not in refresh
+    assert 'REFRESH_MODE="${NPCINK_CLOUD_PROVIDER_REFRESH_MODE:-strict}"' in refresh
+    refresh_policy = (ROOT / "app/domain/catalog/provider_refresh_release.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"degraded"' in refresh_policy
+    assert '"failed_provider_count"' in refresh_policy
+    assert "historical_catalog_unavailable" in refresh_policy
+    assert "provider_refresh_result.v1" in refresh_policy
+    assert "str(exc)" not in refresh
     assert "up -d --pull never --no-build" not in migrate
     assert "worker callback-worker ops-worker" not in migrate
     assert "Migration completed without starting application services" in migrate

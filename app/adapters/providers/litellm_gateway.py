@@ -7,6 +7,7 @@ import httpx
 from app.adapters.providers.base import (
     CatalogInstanceSeed,
     CatalogModelSeed,
+    ProviderCatalogRefreshError,
     ProviderCatalogSnapshot,
 )
 from app.adapters.providers.openai import OpenAIProviderAdapter
@@ -44,19 +45,38 @@ class LiteLLMGatewayProviderAdapter(OpenAIProviderAdapter):
                 response = client.get("/model/info")
                 response.raise_for_status()
         except httpx.TimeoutException as error:
-            raise RuntimeError("provider catalog refresh timed out") from error
+            raise ProviderCatalogRefreshError(
+                self.provider_id, "timeout", "provider catalog refresh timed out"
+            ) from error
         except httpx.HTTPStatusError as error:
             message = self._extract_http_error_message(error.response)
-            raise RuntimeError(
-                f"provider catalog refresh failed with {error.response.status_code}: {message}"
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                f"http_{error.response.status_code}",
+                f"provider catalog refresh failed with {error.response.status_code}: {message}",
             ) from error
         except httpx.RequestError as error:
-            raise RuntimeError(f"provider catalog refresh network error: {error}") from error
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "network_error",
+                f"provider catalog refresh network error: {error}",
+            ) from error
 
-        response_json = response.json()
-        raw_models = response_json.get("data")
+        try:
+            response_json = response.json()
+        except ValueError as error:
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "provider catalog response was not valid JSON",
+            ) from error
+        raw_models = response_json.get("data") if isinstance(response_json, dict) else None
         if not isinstance(raw_models, list):
-            raise ValueError("provider catalog response missing data list")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "provider catalog response missing data list",
+            )
 
         catalog_models: list[CatalogModelSeed] = []
         for raw_model in raw_models:
@@ -66,7 +86,11 @@ class LiteLLMGatewayProviderAdapter(OpenAIProviderAdapter):
             catalog_models.append(model_seed)
 
         if not catalog_models:
-            raise ValueError("provider catalog refresh returned no usable models")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "provider catalog refresh returned no usable models",
+            )
 
         catalog_models.sort(key=self._catalog_sort_key)
         return ProviderCatalogSnapshot(

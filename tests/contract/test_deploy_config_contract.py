@@ -2113,7 +2113,16 @@ def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     assert 'remote_run_timed "remote operational readiness"' in deploy_to_ssh_script
     assert "bash deploy/remote-load-and-up.sh </dev/null" in deploy_to_ssh_script
     assert "bash deploy/remote-migrate.sh </dev/null" in deploy_to_ssh_script
-    assert "bash deploy/remote-refresh-providers.sh </dev/null" in deploy_to_ssh_script
+    assert "deploy/remote-refresh-providers.sh" in deploy_to_ssh_script
+    assert (
+        'PROVIDER_REFRESH_MODE="${NPCINK_CLOUD_PROVIDER_REFRESH_MODE:-strict}"'
+        in deploy_to_ssh_script
+    )
+    assert 'NPCINK_CLOUD_PROVIDER_REFRESH_MODE="${PROVIDER_REFRESH_MODE}"' in deploy_to_ssh_script
+    assert "Provider refresh raw output cleanup did not complete" in deploy_to_ssh_script
+    assert "--provider-refresh-mode best-effort" in (
+        (_cloud_root() / ".github/workflows/deploy-production.yml").read_text()
+    )
     assert 'bash deploy/remote-smoke.sh "${SMOKE_ARGS[@]}" </dev/null' in deploy_to_ssh_script
     assert "NPCINK_CLOUD_HEALTH_HOST_HEADER" in common_script
     assert "NPCINK_CLOUD_HEALTH_FORWARDED_PROTO" in common_script

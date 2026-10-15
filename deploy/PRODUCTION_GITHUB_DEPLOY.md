@@ -155,6 +155,12 @@ provider refresh, runtime readiness, or broad small-customer preflight.
 9. Runs the external RDS migration and provider refresh through staged one-off
    API containers with Runtime Compose `pull_policy: never` and exact image-ID
    proof, then requires the database to expose the exact sole candidate head.
+   Production explicitly uses `best-effort` provider refresh: an expired or
+   unavailable upstream key may leave a historical catalog projection in place
+   when the catalog already exists, while bootstrap, database, routing, health,
+   and readiness failures remain blocking. The release state records only the
+   failed Provider IDs and bounded failure labels; runtime Provider calls still
+   fail closed until the operator repairs or disables the connection.
 10. Moves `current` atomically, then runs `api-only` to start and verify API.
 11. Runs `workers-only`, proves each new worker container is stable, and proves
    each heartbeat is newer than the cutover cutoff, then verifies generic

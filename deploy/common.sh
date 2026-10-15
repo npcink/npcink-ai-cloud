@@ -1631,11 +1631,13 @@ npcink_ai_cloud_wait_for_internal_endpoint() {
 	local root_dir="$1"
 	local endpoint_path="$2"
 	local success_message="$3"
+	local allow_provider_refresh_degraded="${4:-0}"
 
 	npcink_ai_cloud_compose "${root_dir}" exec -T api python - \
-		"${endpoint_path}" "${success_message}" <<'PY'
+		"${endpoint_path}" "${success_message}" "${allow_provider_refresh_degraded}" <<'PY'
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -1643,8 +1645,11 @@ import time
 import urllib.error
 import urllib.request
 
+from app.domain.observability.readiness_policy import accepts_degraded_provider_refresh
+
 endpoint_path = sys.argv[1]
 success_message = sys.argv[2]
+allow_provider_refresh_degraded = sys.argv[3] == "1"
 domain_name = os.getenv("NPCINK_CLOUD_DOMAIN_NAME", "").strip()
 trusted_hosts = os.getenv("NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST", "")
 trusted_host = next((item.strip() for item in trusted_hosts.split(",") if item.strip()), "")
@@ -1678,9 +1683,33 @@ last_error: Exception | None = None
 for _ in range(30):
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
-            if response.status == 200:
+            status = response.status
+            payload = response.read() if hasattr(response, "read") else b""
+            if status == 200:
                 print(success_message)
                 raise SystemExit(0)
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        try:
+            payload = exc.read()
+        except OSError:
+            payload = b""
+        if (
+            allow_provider_refresh_degraded
+            and endpoint_path == "/health/operational-ready"
+            and status == 503
+        ):
+            try:
+                envelope = json.loads(payload.decode("utf-8"))
+                if accepts_degraded_provider_refresh(envelope):
+                    print(
+                        "[warn] Operational readiness accepted with degraded provider "
+                        "refresh; historical provider projections remain active."
+                    )
+                    raise SystemExit(0)
+            except (AttributeError, KeyError, TypeError, ValueError, UnicodeDecodeError):
+                pass
+        last_error = exc
     except (OSError, urllib.error.URLError) as exc:
         last_error = exc
     time.sleep(2)

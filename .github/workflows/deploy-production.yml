@@ -372,6 +372,7 @@ jobs:
             --skip-seed \
             --skip-smoke \
             --refresh-providers \
+            --provider-refresh-mode best-effort \
             --with-operational-ready \
             "${repair_args[@]}" \
             --remote-compose-file docker-compose.runtime.yml 2>&1 | tee "${deploy_output_file}"
