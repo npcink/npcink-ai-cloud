@@ -41,6 +41,7 @@ SKIP_SEED=0
 SKIP_SMOKE=0
 WITH_PORTAL_SMOKE=0
 REFRESH_PROVIDERS="${NPCINK_CLOUD_REFRESH_PROVIDERS:-0}"
+PROVIDER_REFRESH_MODE="${NPCINK_CLOUD_PROVIDER_REFRESH_MODE:-strict}"
 WITH_OPERATIONAL_READY="${NPCINK_CLOUD_WITH_OPERATIONAL_READY:-0}"
 SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 FIRST_INSTALL_PENDING_REPAIR="${NPCINK_CLOUD_FIRST_INSTALL_PENDING_REPAIR:-0}"
@@ -205,6 +206,11 @@ while [ "$#" -gt 0 ]; do
 			REFRESH_PROVIDERS=1
 			shift
 			;;
+		--provider-refresh-mode)
+			STAGE_ONLY_DISALLOWED_CLI+=("$1")
+			PROVIDER_REFRESH_MODE="$2"
+			shift 2
+			;;
 		--with-operational-ready)
 			STAGE_ONLY_DISALLOWED_CLI+=("$1")
 			WITH_OPERATIONAL_READY=1
@@ -285,6 +291,15 @@ if [ "${STAGE_ONLY}" = "1" ] && [ "${#STAGE_ONLY_DISALLOWED_CLI[@]}" -ne 0 ]; th
 	echo "[fail] --stage-only accepts only bundle/platform, controlled-CVE evidence, SSH, managed-root, and host-Python options; rejected: ${STAGE_ONLY_DISALLOWED_CLI[*]}" >&2
 	exit 1
 fi
+
+case "${PROVIDER_REFRESH_MODE}" in
+	strict|best-effort)
+		;;
+	*)
+		echo "[fail] Provider refresh mode must be strict or best-effort." >&2
+		exit 1
+		;;
+esac
 
 if [ "${STAGE_ONLY}" != "1" ] && \
 	{ [ "${SKIP_SEED}" != "1" ] || [ "${SKIP_SMOKE}" != "1" ]; } && \
@@ -916,6 +931,7 @@ else
 		"${REMOTE_INCOMING_DIR}"
 		"${DEPLOY_HOST_PYTHON}"
 		"${REMOTE_TRANSFER_PLAN_ARG}"
+		"${PROVIDER_REFRESH_MODE}"
 	)
 fi
 REMOTE_SEQUENCE_ARGS=()
@@ -971,6 +987,7 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		SKIP_FRONTEND_IMAGE=0
 		REMOTE_COMPOSE_FILE=""
 		REFRESH_PROVIDERS=0
+		PROVIDER_REFRESH_MODE=strict
 		WITH_OPERATIONAL_READY=0
 		FIRST_INSTALL_PENDING_REPAIR=0
 		FIRST_INSTALL_PENDING_REPAIR_APPROVAL=""
@@ -979,8 +996,8 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		STAGE_ONLY=1
 		;;
 	deploy)
-		{ [ "$#" -eq 5 ] || [ "$#" -eq 6 ]; } || {
-			echo "[fail] Full remote deployment entry requires five or six non-secret arguments." >&2
+		{ [ "$#" -eq 5 ] || [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } || {
+			echo "[fail] Full remote deployment entry requires five to seven non-secret arguments." >&2
 			exit 64
 		}
 		REMOTE_DIR="$1"
@@ -989,6 +1006,7 @@ case "${REMOTE_SEQUENCE_MODE}" in
 		REMOTE_INCOMING_DIR="$4"
 		RELEASE_TOOL_PYTHON="$5"
 		REMOTE_TRANSFER_PLAN_PATH="${6:-}"
+		PROVIDER_REFRESH_MODE="${7:-strict}"
 		REMOTE_DEPLOY_INPUT_PATH="${REMOTE_INCOMING_DIR}/deploy-input.json"
 		if [ "$(id -u)" != "0" ] || [ -L "${REMOTE_DEPLOY_INPUT_PATH}" ] || \
 			[ ! -f "${REMOTE_DEPLOY_INPUT_PATH}" ] || \
@@ -1086,6 +1104,14 @@ PY
 			echo "[fail] Protected deployment input cleanup did not complete." >&2
 			exit 1
 		fi
+		case "${PROVIDER_REFRESH_MODE}" in
+			strict|best-effort)
+				;;
+			*)
+				echo "[fail] Provider refresh mode must be strict or best-effort." >&2
+				exit 1
+				;;
+		esac
 		STAGE_ONLY=0
 		;;
 	*)
@@ -1108,6 +1134,9 @@ RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"
 RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"
 RELEASE_ENV_TMP=""
 ROLLBACK_IMAGE_MAP="${RELEASE_STATE_DIR}/rollback-images.tsv"
+PROVIDER_REFRESH_RESULT_PATH="${RELEASE_STATE_DIR}/provider-refresh-result.json"
+PROVIDER_REFRESH_RAW_OUTPUT_PATH="${RELEASE_STATE_DIR}/provider-refresh-output.log"
+PROVIDER_REFRESH_DEGRADED=0
 PRESERVED_SERVICES_EVIDENCE="${RELEASE_STATE_DIR}/preserved-runtime-services.json"
 ROLLBACK_TAG_SUFFIX="${RELEASE_NAME#release-}"
 REMOTE_DIR_CANONICAL="$(readlink -f "${REMOTE_DIR}")"
@@ -3533,7 +3562,55 @@ if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${REFRESH_PROVIDERS}" = "1" ] && 
 	[ "${PLAN_PRESERVE_BACKEND}" != "1" ]; then
 	CUTOVER_PHASE="refresh-provider-projections-with-staged-image"
 	remote_run_timed "remote refresh providers" \
-		bash deploy/remote-refresh-providers.sh </dev/null
+		env \
+		NPCINK_CLOUD_PROVIDER_REFRESH_MODE="${PROVIDER_REFRESH_MODE}" \
+		bash deploy/remote-refresh-providers.sh >"${PROVIDER_REFRESH_RAW_OUTPUT_PATH}" </dev/null
+	PROVIDER_REFRESH_DEGRADED="$(${RELEASE_TOOL_PYTHON} - "${PROVIDER_REFRESH_RAW_OUTPUT_PATH}" "${PROVIDER_REFRESH_RESULT_PATH}" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+
+raw_path, result_path = sys.argv[1:]
+payload = None
+with open(raw_path, encoding="utf-8") as handle:
+    for line in handle:
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and candidate.get("schema") == "npcink.provider_refresh_result.v1":
+            payload = candidate
+if payload is None:
+    raise SystemExit("[fail] Provider refresh produced no structured result.")
+directory = os.path.dirname(result_path)
+fd, temporary = tempfile.mkstemp(prefix=".provider-refresh-result.", dir=directory)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=True, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, result_path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+print("1" if payload.get("status") == "degraded" else "0")
+PY
+)"
+	if ! rm -f -- "${PROVIDER_REFRESH_RAW_OUTPUT_PATH}" || \
+		[ -e "${PROVIDER_REFRESH_RAW_OUTPUT_PATH}" ] || \
+		[ -L "${PROVIDER_REFRESH_RAW_OUTPUT_PATH}" ]; then
+		echo "[fail] Provider refresh raw output cleanup did not complete." >&2
+		exit 1
+	fi
+	if [ "${PROVIDER_REFRESH_DEGRADED}" = "1" ]; then
+		echo "[warn] Provider refresh degraded; historical catalog projections remain active." >&2
+	fi
+
 elif [ "${PLAN_PRESERVE_BACKEND}" = "1" ]; then
 	CUTOVER_PHASE="preserve-provider-projections"
 	echo "[ok] Frontend-only release preserves backend provider projections."
@@ -3570,6 +3647,7 @@ PY
 		CUTOVER_PHASE="verify-worker-operational-readiness"
 		remote_run_timed "remote internal operational readiness before traffic" \
 			env NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL=1 \
+			NPCINK_CLOUD_PROVIDER_REFRESH_DEGRADED="${PROVIDER_REFRESH_DEGRADED}" \
 			bash deploy/remote-operational-ready.sh \
 				--base-url "${BASE_URL}" \
 				--worker-cutoff "${WORKER_CUTOFF}" </dev/null
@@ -3649,6 +3727,7 @@ if [ "${FIRST_INSTALL_PENDING}" != "1" ] && [ "${WITH_OPERATIONAL_READY}" = "1" 
 	OPERATIONAL_READY_TOKEN="$(npcink_ai_cloud_read_internal_token_projection "${RELEASE_DIR}")"
 	OPERATIONAL_READY_LOOPBACK_URL="http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}"
 	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN="${OPERATIONAL_READY_TOKEN}" \
+	NPCINK_CLOUD_PROVIDER_REFRESH_DEGRADED="${PROVIDER_REFRESH_DEGRADED}" \
 		remote_run_timed "remote operational readiness" \
 		bash deploy/remote-operational-ready.sh \
 			--base-url "${OPERATIONAL_READY_LOOPBACK_URL}" </dev/null

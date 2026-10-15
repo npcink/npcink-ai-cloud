@@ -56,6 +56,9 @@ def resolve_live_provider_adapters(
     base_providers: dict[str, ProviderAdapter] | None = None,
     include_enabled_connections: bool = False,
     connection_source_roles: Iterable[str] | None = EXECUTION_PROVIDER_SOURCE_ROLES,
+    fail_on_database_error: bool = False,
+    fail_on_credential_error: bool = False,
+    include_uncredentialed_connections: bool = False,
 ) -> dict[str, ProviderAdapter]:
     providers = build_provider_adapters(
         settings,
@@ -69,6 +72,9 @@ def resolve_live_provider_adapters(
             build_enabled_connection_provider_adapters(
                 settings,
                 connection_source_roles=connection_source_roles,
+                fail_on_database_error=fail_on_database_error,
+                fail_on_credential_error=fail_on_credential_error,
+                include_uncredentialed_connections=include_uncredentialed_connections,
             )
         )
     return providers
@@ -134,13 +140,22 @@ def build_enabled_connection_provider_adapters(
     settings: Settings,
     *,
     connection_source_roles: Iterable[str] | None = EXECUTION_PROVIDER_SOURCE_ROLES,
+    fail_on_database_error: bool = False,
+    fail_on_credential_error: bool = False,
+    include_uncredentialed_connections: bool = False,
 ) -> dict[str, ProviderAdapter]:
     providers: dict[str, ProviderAdapter] = {}
     for connection in _load_enabled_provider_connections(
         settings,
         connection_source_roles=connection_source_roles,
+        fail_on_database_error=fail_on_database_error,
     ):
-        adapter = _build_provider_adapter_from_connection(settings, connection)
+        adapter = _build_provider_adapter_from_connection(
+            settings,
+            connection,
+            fail_on_credential_error=fail_on_credential_error,
+            include_uncredentialed=include_uncredentialed_connections,
+        )
         if adapter is not None:
             providers[adapter.provider_id] = adapter
     return providers
@@ -162,9 +177,12 @@ def _load_enabled_provider_connections(
     settings: Settings,
     *,
     connection_source_roles: Iterable[str] | None,
+    fail_on_database_error: bool = False,
 ) -> list[ProviderConnection]:
     database_url = _coerce_string(getattr(settings, "database_url", ""))
     if not database_url:
+        if fail_on_database_error:
+            raise RuntimeError("provider connection catalog requires a database URL")
         return []
 
     try:
@@ -176,12 +194,17 @@ def _load_enabled_provider_connections(
                 statement = statement.where(ProviderConnection.source_role.in_(source_roles))
             return list(session.scalars(statement.order_by(ProviderConnection.connection_id.asc())))
     except SQLAlchemyError:
+        if fail_on_database_error:
+            raise
         return []
 
 
 def _build_provider_adapter_from_connection(
     settings: Settings,
     connection: ProviderConnection,
+    *,
+    fail_on_credential_error: bool = False,
+    include_uncredentialed: bool = False,
 ) -> ProviderAdapter | None:
     config = connection.config_json if isinstance(connection.config_json, dict) else {}
     provider_id = _coerce_string(config.get("provider_id") or connection.connection_id)
@@ -191,8 +214,16 @@ def _build_provider_adapter_from_connection(
     kind = _coerce_string(config.get("kind") or connection.provider_type).lower()
     base_url = _coerce_string(connection.base_url)
     secretless = bool(config.get("secretless"))
-    credential = _decrypt_connection_credential(settings, connection)
-    if not credential and not _connection_kind_allows_secretless(kind, secretless=secretless):
+    credential = _decrypt_connection_credential(
+        settings,
+        connection,
+        fail_on_error=fail_on_credential_error,
+    )
+    if (
+        not credential
+        and not _connection_kind_allows_secretless(kind, secretless=secretless)
+        and not include_uncredentialed
+    ):
         return None
 
     adapter = _instantiate_connection_adapter(
@@ -213,6 +244,8 @@ def _build_provider_adapter_from_connection(
 def _decrypt_connection_credential(
     settings: Settings,
     connection: ProviderConnection,
+    *,
+    fail_on_error: bool = False,
 ) -> str:
     ciphertext = _coerce_string(connection.secret_ciphertext)
     if not ciphertext:
@@ -220,6 +253,8 @@ def _decrypt_connection_credential(
     try:
         return decrypt_provider_connection_secret(ciphertext, settings=settings)
     except RuntimeError:
+        if fail_on_error:
+            raise
         return ""
 
 

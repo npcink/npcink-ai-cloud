@@ -147,6 +147,12 @@ if [ "${FAIL_AT:-}" = "refresh" ]; then
     : >"${CUTOVER_FAILURE_TRIGGERED}"
     exit 44
 fi
+provider_refresh_result='{"schema":"npcink.provider_refresh_result.v1","mode":"strict",'\
+'"status":"fresh","historical_catalog_available":true,'\
+'"historical_revision":"catalog-test","refreshed_provider_ids":["openai"],'\
+'"failed_provider_ids":[],"failed_provider_count":0,'\
+'"catalog_revision":"catalog-test-new","failure_types":[]}'
+printf '%s\n' "${provider_refresh_result}"
 """
     baseline = r"""#!/usr/bin/env bash
 set -euo pipefail
@@ -1035,7 +1041,10 @@ def test_atomic_cutover_command_order_and_one_off_modes() -> None:
         "NPCINK_CLOUD_LOAD_MODE=data-only",
         "MIGRATION_STARTED=1",
         'CUTOVER_PHASE="refresh-provider-projections-with-staged-image"',
-        "bash deploy/remote-refresh-providers.sh </dev/null",
+        (
+            "bash deploy/remote-refresh-providers.sh >"
+            '"${PROVIDER_REFRESH_RAW_OUTPUT_PATH}" </dev/null'
+        ),
         'CUTOVER_PHASE="activate-new-release-pointer"',
         'atomic_set_current "${RELEASE_DIR}"',
         "NPCINK_CLOUD_LOAD_MODE=api-only",

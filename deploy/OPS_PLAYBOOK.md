@@ -959,6 +959,12 @@ it is not a current PostgreSQL 18 rollback path.
 
 ## Provider Failover
 
+An expired upstream key may be reported as a degraded provider refresh during a
+production application cutover when a historical catalog is already present.
+That permits the new application and admin surface to start, but it does not
+make the Provider usable: runtime calls remain fail-closed and the release is
+not fully closed until the connection is repaired or disabled.
+
 1. Inspect `providers.degraded_provider_ids` in `GET /internal/service/observability/summary`.
 2. Cross-check `alert.provider_degradation_cadence` freshness in `GET /internal/service/ops/cadence`.
 3. Update hosted provider connections, credentials, and hosted routing in the

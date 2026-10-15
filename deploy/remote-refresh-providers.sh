@@ -11,6 +11,16 @@ RELEASE_TOOL_PYTHON="$(npcink_ai_cloud_release_tool_python)"
 MANIFEST_HELPER="${ROOT_DIR}/scripts/verify-release-bundle-manifest.py"
 npcink_ai_cloud_require_release_tool_python "${RELEASE_TOOL_PYTHON}"
 
+REFRESH_MODE="${NPCINK_CLOUD_PROVIDER_REFRESH_MODE:-strict}"
+case "${REFRESH_MODE}" in
+	strict|best-effort)
+		;;
+	*)
+		echo "[fail] Provider refresh mode must be strict or best-effort." >&2
+		exit 64
+		;;
+esac
+
 # Provider refresh mutates database projections. It is therefore a governed
 # release operation, never an ad-hoc command inside the running API container.
 API_DAEMON_IMAGE_ID="$("${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" \
@@ -24,35 +34,51 @@ PYTHON_COMMAND=(
 	python -
 )
 
-"${PYTHON_COMMAND[@]}" <<'PY'
+"${PYTHON_COMMAND[@]}" "${REFRESH_MODE}" <<'PY'
 from __future__ import annotations
 
 import json
+import sys
 
+from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.core.config import get_settings
+from app.core.db import get_session
+from app.domain.catalog.provider_refresh_release import refresh_provider_catalogs
 from app.domain.catalog.service import CatalogService
 
+mode = sys.argv[1]
 settings = get_settings()
-providers = resolve_live_provider_adapters(settings, include_enabled_connections=True)
+providers = resolve_live_provider_adapters(
+    settings,
+    include_enabled_connections=True,
+    fail_on_database_error=True,
+    fail_on_credential_error=True,
+    include_uncredentialed_connections=True,
+)
 service = CatalogService(settings.database_url, providers=providers, settings=settings)
 
-catalog = service.refresh_catalog()
-health = service.scan_provider_health()
+with get_session(settings.database_url) as session:
+    repository = CatalogRepository(session)
+    latest_revision = repository.get_latest_revision()
+    historical_revision = latest_revision.revision if latest_revision is not None else "bootstrap"
+    historical_catalog_available = (
+        latest_revision is not None
+        and latest_revision.revision != "bootstrap"
+        and bool(repository.list_instances_for_provider())
+    )
+
+result = refresh_provider_catalogs(
+    mode=mode,
+    service=service,
+    providers=providers,
+    historical_catalog_available=historical_catalog_available,
+    historical_revision=historical_revision,
+)
 
 print(
-    json.dumps(
-        {
-            "configured_provider_ids": sorted(providers.keys()),
-            "catalog": {
-                "providers": catalog.get("providers", []),
-                "refreshed_count": catalog.get("refreshed_count", 0),
-                "revision": catalog.get("revision", ""),
-            },
-            "health": health,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-    )
+    json.dumps(result, ensure_ascii=True, sort_keys=True)
 )
+if result["status"] == "failed":
+    raise SystemExit(1)
 PY

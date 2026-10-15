@@ -11,6 +11,7 @@ import httpx
 from app.adapters.providers.base import (
     CatalogInstanceSeed,
     CatalogModelSeed,
+    ProviderCatalogRefreshError,
     ProviderCatalogSnapshot,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -187,10 +188,18 @@ class MiniMaxProviderAdapter:
         elif self.allow_sample_catalog:
             models = self._sample_catalog_models()
         else:
-            raise RuntimeError("MiniMax catalog refresh requires configured credentials")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "credentials_unavailable",
+                "MiniMax catalog refresh requires configured credentials",
+            )
 
         if not models:
-            raise ValueError("MiniMax catalog refresh returned no usable models")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "MiniMax catalog refresh returned no usable models",
+            )
 
         return ProviderCatalogSnapshot(
             provider_id=self.provider_id,
@@ -205,27 +214,36 @@ class MiniMaxProviderAdapter:
                 response = client.get("/models")
                 response.raise_for_status()
         except httpx.TimeoutException as error:
-            raise ProviderExecutionError(
-                "provider.timeout",
-                "MiniMax model catalog request timed out",
+            raise ProviderCatalogRefreshError(
+                self.provider_id, "timeout", "MiniMax model catalog request timed out"
             ) from error
         except httpx.HTTPStatusError as error:
-            raise ProviderExecutionError(
-                self._map_http_status_error(error.response.status_code),
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                f"http_{error.response.status_code}",
                 self._extract_http_error_message(error.response),
-                retryable=error.response.status_code >= 500 or error.response.status_code == 429,
             ) from error
         except httpx.RequestError as error:
-            raise ProviderExecutionError("provider.network_error", str(error)) from error
+            raise ProviderCatalogRefreshError(
+                self.provider_id, "network_error", str(error)
+            ) from error
 
         try:
             response_json = response.json()
         except ValueError as error:
-            raise ValueError("MiniMax model catalog response was not valid JSON") from error
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "MiniMax model catalog response was not valid JSON",
+            ) from error
 
         raw_models = response_json.get("data") if isinstance(response_json, dict) else None
         if not isinstance(raw_models, list):
-            raise ValueError("MiniMax model catalog response did not include a model list")
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                "MiniMax model catalog response did not include a model list",
+            )
 
         models: list[CatalogModelSeed] = []
         seen_model_ids: set[str] = set()
@@ -281,31 +299,34 @@ class MiniMaxProviderAdapter:
             response = client.get(source.url)
             response.raise_for_status()
         except httpx.TimeoutException as error:
-            raise ProviderExecutionError(
-                "provider.timeout",
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "timeout",
                 f"MiniMax official schema request timed out: {source.name}",
             ) from error
         except httpx.HTTPStatusError as error:
-            raise ProviderExecutionError(
-                self._map_http_status_error(error.response.status_code),
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                f"http_{error.response.status_code}",
                 (
                     "MiniMax official schema request failed "
                     f"for {source.name}: {self._extract_http_error_message(error.response)}"
                 ),
-                retryable=error.response.status_code >= 500
-                or error.response.status_code == 429,
             ) from error
         except httpx.RequestError as error:
-            raise ProviderExecutionError(
-                "provider.network_error",
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "network_error",
                 f"MiniMax official schema request failed for {source.name}: {error}",
             ) from error
 
         try:
             return response.json()
         except ValueError as error:
-            raise ValueError(
-                f"MiniMax official schema response was not valid JSON: {source.name}"
+            raise ProviderCatalogRefreshError(
+                self.provider_id,
+                "invalid_response",
+                f"MiniMax official schema response was not valid JSON: {source.name}",
             ) from error
 
     def _extract_model_enum_values(self, payload: Any) -> list[str]:
