@@ -658,9 +658,10 @@ test('an invalid hosted runtime contract fails closed instead of rendering an em
   await page.goto('/admin/runtime-profiles');
 
   const contractAlert = page.getByRole('alert').filter({
-    hasText: 'Hosted runtime profile contract identity mismatch: platform_kind.',
+    hasText: /加载托管运行配置失败|Failed to load hosted runtime profiles\./,
   });
   await expect(contractAlert).toBeVisible();
+  await expect(page.getByText('Hosted runtime profile contract identity mismatch: platform_kind.', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/No hosted runtime profiles|暂无托管运行配置/i)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: /Hosted profile directory|托管配置目录/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Configure candidate chain|配置候选链/i })).toHaveCount(0);
@@ -682,7 +683,7 @@ test('a superseded connector contract field is rejected instead of accepting dua
   await page.goto('/admin/runtime-profiles');
 
   await expect(page.getByRole('alert').filter({
-    hasText: 'Hosted runtime profile contract contains superseded connector contract identity.',
+    hasText: /加载托管运行配置失败|Failed to load hosted runtime profiles\./,
   })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Hosted profile directory|托管配置目录/i })).toHaveCount(0);
 });

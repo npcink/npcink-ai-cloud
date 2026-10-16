@@ -142,8 +142,9 @@ test('audit workspace exposes an initial failure and retry path', async ({ page 
   const auditFailureController = { enabled: true };
   await installAdminMocks(page, { auditFailureController });
   await page.goto('/admin/audit');
-  await expect(page.locator('[role="alert"]').filter({ hasText: 'initial audit evidence failure' })).toBeVisible();
+  await expect(page.locator('[role="alert"]').filter({ hasText: /审计证据加载失败|Failed to load audit evidence\./ })).toBeVisible();
   await expect(page.locator('[data-ui="admin-audit-directory"] tbody tr')).toHaveCount(0);
+  await expect(page.getByText('initial audit evidence failure', { exact: true })).toHaveCount(0);
   auditFailureController.enabled = false;
   await page.getByRole('button', { name: /Retry|重试/i }).click();
   await expect(page.locator('[data-ui="admin-audit-directory"] tbody tr')).toHaveCount(2);

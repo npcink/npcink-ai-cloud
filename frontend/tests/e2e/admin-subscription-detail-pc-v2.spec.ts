@@ -105,7 +105,8 @@ test('subscription detail failure preserves the PC route shell and bounded retry
   await page.goto('/admin/subscriptions/sub_mvp');
 
   await expect(page.getByRole('heading', { name: /Subscription detail is temporarily unavailable|订阅详情暂时不可用/i })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: 'subscription unavailable' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: /加载数据失败|Failed to load data\./ })).toBeVisible();
+  await expect(page.getByText('subscription unavailable', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/subscriptions\/sub_mvp$/);

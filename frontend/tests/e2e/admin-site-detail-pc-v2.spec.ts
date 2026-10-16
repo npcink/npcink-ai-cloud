@@ -45,7 +45,8 @@ test('site detail failure preserves the PC shell and bounded retry', async ({ pa
   await page.goto('/admin/sites/site_mvp');
 
   await expect(page.getByRole('heading', { name: /Site detail is temporarily unavailable|站点详情暂时不可用/i })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: 'site unavailable' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: /加载数据失败|Failed to load data\./ })).toBeVisible();
+  await expect(page.getByText('site unavailable', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/sites\/site_mvp$/);
