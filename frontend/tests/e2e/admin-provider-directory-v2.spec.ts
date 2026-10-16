@@ -1136,6 +1136,8 @@ test('provider failures show localized reasons in toast and row feedback', async
     ['provider.network_error', '无法连接供应商'],
     ['provider.timeout', '供应商请求超时'],
     ['provider.rate_limited', '供应商请求受到限流'],
+    ['client.network_error', '无法连接云端服务'],
+    ['client.request_timeout', '云端服务请求超时'],
     ['provider.unknown', '测试 provider 连接失败'],
   ]) {
     errorCode = code;

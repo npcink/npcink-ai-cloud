@@ -17,6 +17,8 @@ export const translations: Record<Locale, TranslationMap> = {
   en: {
     'error.provider_quota_exhausted': 'The supplier quota or balance is exhausted. Check the supplier account before retrying.',
     'error.provider_configuration_incomplete': 'The supplier configuration is incomplete. Check the selected service and required settings.',
+    'error.client_network_error': 'Could not connect to the Cloud service. Check your network connection and try again.',
+    'error.client_request_timeout': 'The Cloud service request timed out. Try again later.',
     'error.provider_auth_failed': 'Supplier authentication failed. Check the supplier API key and its permissions.',
     'error.provider_network_error': 'Could not connect to the supplier. Check its base URL and network connectivity.',
     'error.provider_timeout': 'The supplier request timed out. Try again later or check the supplier service.',
@@ -5910,6 +5912,8 @@ export const translations: Record<Locale, TranslationMap> = {
   'zh-CN': {
     'error.provider_quota_exhausted': '供应商额度或余额已耗尽，请检查供应商账户后再重试。',
     'error.provider_configuration_incomplete': '供应商配置不完整，请检查所选服务和必填设置。',
+    'error.client_network_error': '无法连接云端服务，请检查本机网络后重试。',
+    'error.client_request_timeout': '云端服务请求超时，请稍后重试。',
     'error.provider_auth_failed': '供应商认证失败，请检查供应商 API Key 是否有效及权限是否充足。',
     'error.provider_network_error': '无法连接供应商，请检查接口地址、网络连通性和 DNS。',
     'error.provider_timeout': '供应商请求超时，请稍后重试或检查供应商服务状态。',

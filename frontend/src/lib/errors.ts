@@ -49,6 +49,8 @@ type ErrorTranslator = (
 ) => string;
 
 const PROVIDER_ERROR_KEYS: Record<string, string> = {
+  'client.network_error': 'error.client_network_error',
+  'client.request_timeout': 'error.client_request_timeout',
   'provider_connection.auth_failed': 'error.provider_auth_failed',
   'provider.auth_invalid': 'error.provider_auth_failed',
   'provider_connection.network_error': 'error.provider_network_error',
