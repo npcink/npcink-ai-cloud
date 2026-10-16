@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
+  installAdminMocks,
 } from './helpers/admin-operator-fixture';
 import {
   observeAdminBrowserEvidence,
@@ -498,4 +499,34 @@ test('payment configuration stays disabled until the operator saves a public bas
   await page.getByRole('switch', { name: /Enable Alipay payment|启用支付宝支付/i }).click();
   await expect(page.getByRole('button', { name: /Save Alipay configuration|保存支付宝配置/i })).toBeDisabled();
   await expect(page.locator('#service-settings-payment input[readonly]').first()).toHaveValue('');
+});
+
+
+test('SMTP test hides untranslated upstream details behind localized guidance', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installAdminMocks(page);
+  await page.route('**/api/admin/service-settings', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ settings: {
+      portal_public: setting('portal_public', 'ready', { public_base_url: 'https://cloud.example.test' }),
+      qq_login: setting('portal_qq_login', 'disabled', {}),
+      alipay_payment: setting('payment_alipay', 'disabled', {}),
+      site_relink_policy: setting('site_relink_policy', 'ready', { cooldown_days: 90 }),
+      platform_preferences: setting('platform_preferences', 'ready', { timezone: 'Asia/Shanghai' }),
+      portal_email: setting('portal_email', 'ready', {
+        smtp_host: 'smtp.example.test', smtp_port: 465, smtp_username: 'mail@example.test',
+        smtp_use_ssl: true, smtp_use_starttls: false, smtp_timeout_seconds: 20,
+        from_email: 'mail@example.test', from_name: 'Npcink AI Cloud', reply_to: '',
+      }, { smtp_password: { configured: true, display: '••••••••' } }),
+    } })) });
+  });
+  await page.route('**/api/admin/service-settings/email/test', async (route) => {
+    await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify(
+      buildAdminApiErrorEnvelope('SMTP upstream closed connection unexpectedly', 'service_settings.email_delivery_failed')
+    ) });
+  });
+  await page.goto('/admin/service-settings?tab=email');
+  await page.getByRole('textbox', { name: '测试收件人' }).fill('smoke@example.test');
+  await page.getByRole('button', { name: '发送测试邮件', exact: true }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/测试邮件发送失败|测试邮件失败/);
+  await expect(page.getByText('SMTP upstream closed connection unexpectedly', { exact: false })).toHaveCount(0);
 });

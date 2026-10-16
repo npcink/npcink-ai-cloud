@@ -217,9 +217,7 @@ function serviceSettingsErrorDetail(
     if (/Name or service not known|getaddrinfo|ENOTFOUND/i.test(rawMessage)) {
       return t('admin.service_settings.error_email_host_lookup', {}, 'The SMTP host could not be resolved. Check the SMTP server domain.');
     }
-    return rawMessage
-      ? t('admin.service_settings.error_email_delivery_detail', { message: rawMessage }, 'Test email failed: {{message}}')
-      : t('admin.service_settings.error_email_delivery_failed', {}, 'Test email failed. Check the SMTP host, port, authentication, and encryption mode.');
+    return t('admin.service_settings.error_email_delivery_failed', {}, 'Test email failed. Check the SMTP host, port, authentication, and encryption mode.');
   }
   if (errorCode === 'service_settings.email_tls_mode_invalid') {
     return t('admin.service_settings.error_tls_mode_invalid', {}, 'SMTP 加密方式不能同时启用 SSL 和 STARTTLS。465 端口通常只使用 SSL，587 端口通常只使用 STARTTLS。');
@@ -256,9 +254,7 @@ function serviceSettingsErrorDetail(
     if (/Could not deserialize key data|ASN\.1|unsupported key type|incorrect format/i.test(rawMessage)) {
       return t('admin.service_settings.error_alipay_key_format', {}, '支付宝密钥格式无效。应用私钥请填写应用私钥，支付宝公钥请填写支付宝开放平台提供的支付宝公钥；支持 PEM 格式或裸 Base64 内容。');
     }
-    return rawMessage
-      ? t('admin.service_settings.error_alipay_config_detail', { message: rawMessage }, '支付宝配置检查失败：{{message}}')
-      : t('admin.service_settings.error_alipay_config_invalid', {}, '支付宝配置检查失败。请检查 App ID、应用私钥、支付宝公钥。');
+    return t('admin.service_settings.error_alipay_config_invalid', {}, '支付宝配置检查失败。请检查 App ID、应用私钥、支付宝公钥。');
   }
   return resolveUiErrorMessage(rawMessage, fallback);
 }
