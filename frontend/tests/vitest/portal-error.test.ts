@@ -103,3 +103,7 @@ describe('Portal customer-safe errors', () => {
     }
   );
 });
+
+it('uses the translated Portal fallback for uncoded English transport failures', () => {
+  expect(formatPortalErrorMessage(new Error('fetch failed'), translate, '加载失败，请稍后重试。')).toBe('加载失败，请稍后重试。');
+});

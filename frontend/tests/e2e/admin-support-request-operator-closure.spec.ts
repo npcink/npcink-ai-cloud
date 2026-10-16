@@ -185,7 +185,8 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(sendReply).toBeDisabled();
   await reply.fill('The payment is now confirmed. Your order is active.');
   await sendReply.click();
-  await expect(page.getByText('temporary public reply failure')).toBeVisible();
+  await expect(page.getByText(/保存失败|Failed to save changes\./)).toBeVisible();
+  await expect(page.getByText('temporary public reply failure', { exact: true })).toHaveCount(0);
   await expect(reply).toHaveValue('The payment is now confirmed. Your order is active.');
   await expect(sendReply).toBeEnabled();
 

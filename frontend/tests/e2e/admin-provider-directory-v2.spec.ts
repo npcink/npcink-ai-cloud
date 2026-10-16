@@ -1112,3 +1112,42 @@ test('provider model health stays a collapsed read-only evidence panel', async (
   await expect(healthPanel).toHaveAttribute('open', '');
   await expect(healthPanel.locator('table')).toBeVisible();
 });
+
+test('provider failures show localized reasons in toast and row feedback', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installProviderDirectoryHarness(page);
+  let errorCode = 'provider.auth_invalid';
+  await page.route('**/api/admin/provider-connections/model_ready/test', async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('provider catalog request failed', errorCode, {
+        connection_id: 'model_ready', provider_id: 'openai', kind: 'openai_compatible',
+        status: 'failed', stage: 'catalog_fetch', ok: false, error_code: errorCode,
+        message: 'provider catalog request failed',
+        receipt: { event_kind: 'provider_connection.test', outcome: 'error' },
+      })),
+    });
+  });
+  await page.goto('/admin/ai-resources');
+  for (const [code, text] of [
+    ['provider.auth_invalid', '供应商认证失败'],
+    ['provider.network_error', '无法连接供应商'],
+    ['provider.timeout', '供应商请求超时'],
+    ['provider.rate_limited', '供应商请求受到限流'],
+    ['client.network_error', '无法连接云端服务'],
+    ['client.request_timeout', '云端服务请求超时'],
+    ['provider.unknown', '测试 provider 连接失败'],
+  ]) {
+    errorCode = code;
+    await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: '测试', exact: true }).click();
+    await expect(page.locator('[data-feedback-for="model_ready"]').getByRole('alert')).toContainText(text);
+    await expect(page.getByRole('alert').filter({ hasText: text })).toHaveCount(2);
+    if (code === 'provider.auth_invalid') {
+      await testInfo.attach('localized-provider-failure-pc', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+    }
+    await expect(page.getByText('provider catalog request failed', { exact: false })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});

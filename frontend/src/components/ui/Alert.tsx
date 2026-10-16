@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
+import { resolveUiErrorMessage } from '@/lib/errors';
 import { cn } from '@/lib/utils';
 
 export type AlertVariant = 'info' | 'success' | 'warning' | 'error';
@@ -115,7 +116,7 @@ export function ErrorDisplay({
   className,
 }: ErrorDisplayProps) {
   const { t } = useLocale();
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorMessage = resolveUiErrorMessage(error, t('error.failed_load'), t);
 
   return (
     <Alert

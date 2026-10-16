@@ -231,7 +231,7 @@ export default function ExternalServicesPage() {
     } catch (testError) {
       setRowFeedback(option.id, {
         tone: 'error',
-        message: resolveUiErrorMessage(testError, copy('admin.external_services.test_error', '连接测试失败。', 'Connection test failed.')),
+        message: resolveUiErrorMessage(testError, copy('admin.external_services.test_error', '连接测试失败。', 'Connection test failed.'), t),
       });
     } finally {
       setBusy('');

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
+import { buildAdminApiEnvelope, buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
 const connections = [
   {
@@ -229,4 +229,19 @@ test('connection test feedback stays with the affected service row', async ({ pa
   const tavily = page.locator('[data-external-service-id="tavily"]');
   await tavily.getByRole('button', { name: /^Test$|^测试$/i }).click();
   await expect(page.locator('[data-external-service-feedback="tavily"]')).toContainText(/Connection test passed|连接测试通过/i);
+});
+
+
+test('external supplier test translates network failures in row feedback', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installExternalServicesHarness(page);
+  await page.route('**/api/admin/provider-connections/external_tavily/test', async (route) => {
+    await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify(
+      buildAdminApiErrorEnvelope('web search provider request failed', 'provider.network_error')
+    ) });
+  });
+  await page.goto('/admin/external-services');
+  await page.locator('[data-external-service-id="tavily"]').getByRole('button', { name: '测试', exact: true }).click();
+  await expect(page.locator('[data-external-service-feedback="tavily"]')).toContainText('无法连接供应商');
+  await expect(page.getByText('web search provider request failed')).toHaveCount(0);
 });
