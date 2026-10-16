@@ -9,6 +9,7 @@ import type {
   ResourceStatus,
   SupplierConnection,
 } from '@/features/admin/ai-resources/types';
+import { asyncOperationRunning, type AsyncOperationState } from '@/features/admin/ai-resources/async-operation-state';
 import { formatDate } from '@/lib/utils';
 
 type Translate = (
@@ -116,10 +117,10 @@ type SharedTableProps = {
   selectedConnectionId: string;
   onSelectConnection: (connectionId: string) => void;
   testResults: Record<string, ProviderConnectionTestResult>;
-  testingConnectionId: string;
-  approvingImageHostConnectionId: string;
-  deletingConnectionId: string;
-  preflightingDeleteConnectionId: string;
+  testingConnection: AsyncOperationState;
+  approvingImageHost: AsyncOperationState;
+  deletingConnection: AsyncOperationState;
+  preflightingDelete: AsyncOperationState;
   confirmingDeleteConnectionId: string;
   deletePreflight: ProviderConnectionDeletePreflight | null;
   onDelete: (connection: SupplierConnection) => void;
@@ -194,10 +195,10 @@ export function ModelSupplierTable({
   selectedConnectionId,
   onSelectConnection,
   testResults,
-  testingConnectionId,
-  approvingImageHostConnectionId,
-  deletingConnectionId,
-  preflightingDeleteConnectionId,
+  testingConnection,
+  approvingImageHost,
+  deletingConnection,
+  preflightingDelete,
   confirmingDeleteConnectionId,
   deletePreflight,
   providerKindLabel,
@@ -249,10 +250,10 @@ export function ModelSupplierTable({
               const testResult = testResults[connection.connection_id];
               const modelCount = connection.model_ids?.length || 0;
               const isSelected = connection.connection_id === selectedConnectionId;
-              const isTesting = testingConnectionId === connection.connection_id;
-              const isApprovingImageHost = approvingImageHostConnectionId === connection.connection_id;
-              const isDeleting = deletingConnectionId === connection.connection_id;
-              const isPreflightingDelete = preflightingDeleteConnectionId === connection.connection_id;
+              const isTesting = asyncOperationRunning(testingConnection, connection.connection_id);
+              const isApprovingImageHost = asyncOperationRunning(approvingImageHost, connection.connection_id);
+              const isDeleting = asyncOperationRunning(deletingConnection, connection.connection_id);
+              const isPreflightingDelete = asyncOperationRunning(preflightingDelete, connection.connection_id);
               const isConfirmingDelete = confirmingDeleteConnectionId === connection.connection_id;
               const matchingDeletePreflight = deletePreflight?.connection.connection_id === connection.connection_id
                 ? deletePreflight

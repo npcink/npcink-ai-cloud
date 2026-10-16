@@ -46,6 +46,14 @@ import {
   type ProviderConnectionForm,
 } from '@/features/admin/ai-resources/provider-workbench-state';
 import {
+  asyncOperationRunning,
+  failAsyncOperation,
+  IDLE_ASYNC_OPERATION,
+  startAsyncOperation,
+  succeedAsyncOperation,
+  type AsyncOperationState,
+} from '@/features/admin/ai-resources/async-operation-state';
+import {
   PROVIDER_PRESETS,
   canChooseReferenceProvider,
   connectionExternalLinkItems,
@@ -343,19 +351,19 @@ function AiResourcesContent() {
     : '';
   const [connectionStatusFilter, setConnectionStatusFilter] = useState<ConnectionStatusFilter>('all');
   const [connectionSearch, setConnectionSearch] = useState('');
-  const [savingConnection, setSavingConnection] = useState(false);
-  const [testingConnectionId, setTestingConnectionId] = useState('');
-  const [probingImageDeliveryConnectionId, setProbingImageDeliveryConnectionId] = useState('');
+  const [savingConnection, setSavingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [testingConnection, setTestingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [probingImageDelivery, setProbingImageDelivery] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [imageDeliveryProbeResult, setImageDeliveryProbeResult] = useState<ProviderImageDeliveryProbeResult | null>(null);
-  const [approvingImageHostConnectionId, setApprovingImageHostConnectionId] = useState('');
-  const [preflightingDeleteConnectionId, setPreflightingDeleteConnectionId] = useState('');
-  const [deletingConnectionId, setDeletingConnectionId] = useState('');
+  const [approvingImageHost, setApprovingImageHost] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [preflightingDelete, setPreflightingDelete] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [deletingConnection, setDeletingConnection] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
   const [deletePreflight, setDeletePreflight] = useState<ProviderConnectionDeletePreflight | null>(null);
-  const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState(false);
-  const [loadingModelReferences, setLoadingModelReferences] = useState(false);
-  const [syncingModelReferences, setSyncingModelReferences] = useState(false);
-  const [autoSyncingModelReferences, setAutoSyncingModelReferences] = useState(false);
+  const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [loadingModelReferences, setLoadingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [syncingModelReferences, setSyncingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
+  const [autoSyncingModelReferences, setAutoSyncingModelReferences] = useState<AsyncOperationState>(IDLE_ASYNC_OPERATION);
   const [modelReferenceAutoSyncError, setModelReferenceAutoSyncError] = useState('');
   const [modelReferences, setModelReferences] = useState<ModelReferenceEntry[]>([]);
   const [modelReferenceTotal, setModelReferenceTotal] = useState(0);
@@ -434,13 +442,14 @@ function AiResourcesContent() {
   const loadModelReferences = useCallback(async (providerId: string) => {
     const normalizedProviderId = providerId.trim().toLowerCase();
     if (!normalizedProviderId || normalizedProviderId === 'custom') {
+      setLoadingModelReferences(IDLE_ASYNC_OPERATION);
       setModelReferences([]);
       setModelReferenceTotal(0);
       setModelReferenceSources([]);
       setLoadedModelReferenceProviderId(normalizedProviderId);
       return;
     }
-    setLoadingModelReferences(true);
+    setLoadingModelReferences(startAsyncOperation(normalizedProviderId));
     setLoadedModelReferenceProviderId('');
     try {
       const pageSize = 500;
@@ -488,14 +497,15 @@ function AiResourcesContent() {
       setModelReferenceTotal(total || references.length);
       setModelReferenceSources(sourceSummary);
       setLoadedModelReferenceProviderId(normalizedProviderId);
+      setLoadingModelReferences(succeedAsyncOperation(normalizedProviderId));
     } catch (referenceError) {
       setModelReferences([]);
       setModelReferenceTotal(0);
       setModelReferenceSources([]);
       setLoadedModelReferenceProviderId('');
-      setError(resolveUiErrorMessage(referenceError, aiText('error_load_model_references', 'Failed to load model reference data.')));
-    } finally {
-      setLoadingModelReferences(false);
+      const referenceMessage = resolveUiErrorMessage(referenceError, aiText('error_load_model_references', 'Failed to load model reference data.'));
+      setLoadingModelReferences(failAsyncOperation(referenceMessage, normalizedProviderId));
+      setError(referenceMessage);
     }
   }, [aiText]);
 
@@ -537,7 +547,7 @@ function AiResourcesContent() {
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
     const docsUrl = externalUrlValue(referenceLinks.docsUrl);
-    setSavingConnection(true);
+    setSavingConnection(startAsyncOperation(normalizedConnectionId));
     setError('');
     setMessage('');
     try {
@@ -573,6 +583,7 @@ function AiResourcesContent() {
       const savedConnectionId = String(response.data.connection_id || normalizedConnectionId);
       setLastReceipt(response.data.receipt || null);
       let testFailed = false;
+      let testErrorMessage = '';
       let successMessage = '';
       setMessage(aiText('message_connection_saved_testing', 'Provider connection saved. Running connection test now.'));
       try {
@@ -581,22 +592,28 @@ function AiResourcesContent() {
         setMessage(successMessage);
       } catch (testError) {
         testFailed = true;
-        setError(
-          aiText('message_connection_saved_test_failed', 'Provider connection saved, but the connection test failed: {{message}}', {
+        setMessage('');
+        testErrorMessage = aiText(
+          'message_connection_saved_test_failed',
+          'Provider connection saved, but the connection test failed: {{message}}',
+          {
             message: resolveUiErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
-          })
+          }
         );
       }
       await loadResources();
-      if (!testFailed) {
+      if (testFailed) {
+        setError(testErrorMessage);
+      } else {
         dispatchProviderWorkbench({ type: 'reset_after_save' });
         setMessage('');
         toast.success(successMessage, t('common.success'));
       }
+      setSavingConnection(succeedAsyncOperation(normalizedConnectionId));
     } catch (saveError) {
-      setError(resolveUiErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.')));
-    } finally {
-      setSavingConnection(false);
+      const saveMessage = resolveUiErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.'));
+      setSavingConnection(failAsyncOperation(saveMessage, normalizedConnectionId));
+      setError(saveMessage);
     }
   }
 
@@ -621,7 +638,7 @@ function AiResourcesContent() {
       return;
     }
 
-    setPreflightingDeleteConnectionId(connection.connection_id);
+    setPreflightingDelete(startAsyncOperation(connection.connection_id));
     setError('');
     try {
       const response = await aiResourcesClient.request<ProviderConnectionDeletePreflight>(
@@ -636,6 +653,7 @@ function AiResourcesContent() {
       }
       setDeletePreflight(response.data);
       setConfirmingDeleteConnectionId(connection.connection_id);
+      setPreflightingDelete(succeedAsyncOperation(connection.connection_id));
     } catch (preflightError) {
       if (deletePreflightRequestRevision.current !== requestRevision) return;
       const preflightMessage = resolveUiErrorMessage(
@@ -645,12 +663,9 @@ function AiResourcesContent() {
           'Could not inspect the current provider deletion impact.'
         )
       );
+      setPreflightingDelete(failAsyncOperation(preflightMessage, connection.connection_id));
       setError(preflightMessage);
       toast.error(preflightMessage, t('common.error'));
-    } finally {
-      if (deletePreflightRequestRevision.current === requestRevision) {
-        setPreflightingDeleteConnectionId('');
-      }
     }
   }
 
@@ -679,7 +694,7 @@ function AiResourcesContent() {
       toast.error(draftMessage, t('common.error'));
       return;
     }
-    setDeletingConnectionId(connection.connection_id);
+    setDeletingConnection(startAsyncOperation(connection.connection_id));
     setError('');
     setMessage('');
     try {
@@ -702,6 +717,7 @@ function AiResourcesContent() {
       setConfirmingDeleteConnectionId('');
       setDeletePreflight(null);
       await loadResources();
+      setDeletingConnection(succeedAsyncOperation(connection.connection_id));
     } catch (deleteError) {
       const isConflict = deleteError instanceof ApiError &&
         deleteError.errorCode === 'provider_connection.delete_conflict';
@@ -720,9 +736,8 @@ function AiResourcesContent() {
             aiText('error_delete_connection', 'Failed to delete provider connection.')
           );
       setError(deleteMessage);
+      setDeletingConnection(failAsyncOperation(deleteMessage, connection.connection_id));
       toast.error(deleteMessage, t('common.error'));
-    } finally {
-      setDeletingConnectionId('');
     }
   }
 
@@ -730,7 +745,7 @@ function AiResourcesContent() {
     const evidenceRunId = String(connection.image_delivery_repair?.run_id || '');
     const evidenceProbeId = probeId || String(connection.image_delivery_repair?.probe_id || '');
     if (!evidenceRunId && !evidenceProbeId) return;
-    setApprovingImageHostConnectionId(connection.connection_id);
+    setApprovingImageHost(startAsyncOperation(connection.connection_id));
     setError('');
     setMessage('');
     try {
@@ -765,22 +780,22 @@ function AiResourcesContent() {
         aiText('image_host_repair_success', 'Exact image host approved. Run the image delivery test again.'),
         t('common.success')
       );
+      setApprovingImageHost(succeedAsyncOperation(connection.connection_id));
     } catch (approvalError) {
       const approvalMessage = resolveUiErrorMessage(
         approvalError,
         aiText('image_host_repair_error', 'Failed to approve the detected image host.')
       );
       setError(approvalMessage);
+      setApprovingImageHost(failAsyncOperation(approvalMessage, connection.connection_id));
       toast.error(approvalMessage, t('common.error'));
-    } finally {
-      setApprovingImageHostConnectionId('');
     }
   }
 
   async function runImageDeliveryProbe(): Promise<void> {
     const connectionId = providerConnectionForm.connectionId;
     if (providerFormMode !== 'edit' || !connectionId) return;
-    setProbingImageDeliveryConnectionId(connectionId);
+    setProbingImageDelivery(startAsyncOperation(connectionId));
     setImageDeliveryProbeResult(null);
     setError('');
     try {
@@ -799,6 +814,7 @@ function AiResourcesContent() {
           : aiText('image_delivery_probe_passed', 'Image delivery test passed.'),
         t('common.success')
       );
+      setProbingImageDelivery(succeedAsyncOperation(connectionId));
     } catch (probeError) {
       const probeErrorCode = probeError instanceof ApiError ? probeError.errorCode : '';
       const probeFallback = probeErrorCode === 'provider_connection.image_probe_model_required'
@@ -811,9 +827,8 @@ function AiResourcesContent() {
         probeFallback
       );
       setError(probeMessage);
+      setProbingImageDelivery(failAsyncOperation(probeMessage, connectionId));
       toast.error(probeMessage, t('common.error'));
-    } finally {
-      setProbingImageDeliveryConnectionId('');
     }
   }
 
@@ -823,7 +838,7 @@ function AiResourcesContent() {
   ): Promise<void> {
     const normalizedProviderId = providerId.trim().toLowerCase();
     if (!normalizedProviderId || normalizedProviderId === 'custom') return;
-    setSyncingModelReferences(true);
+    setSyncingModelReferences(startAsyncOperation(normalizedProviderId));
     setModelReferenceAutoSyncError('');
     try {
       await aiResourcesClient.request<unknown>('/api/admin/model-references/sync', {
@@ -836,8 +851,10 @@ function AiResourcesContent() {
         setMessage('');
         toast.success(successMessage, t('common.success'));
       }
-    } finally {
-      setSyncingModelReferences(false);
+      setSyncingModelReferences(succeedAsyncOperation(normalizedProviderId));
+    } catch (syncError) {
+      setSyncingModelReferences(failAsyncOperation(resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.')), normalizedProviderId));
+      throw syncError;
     }
   }
 
@@ -868,7 +885,7 @@ function AiResourcesContent() {
       setError(aiText('error_fetch_catalog_credential_required', 'Enter an API key before fetching upstream models. Existing saved credentials are not returned to the browser.'));
       return;
     }
-    setFetchingProviderCatalog(true);
+    setFetchingProviderCatalog(startAsyncOperation());
     dispatchProviderWorkbench({ type: 'set_catalog_preview', preview: null });
     setError('');
     setMessage('');
@@ -938,13 +955,15 @@ function AiResourcesContent() {
       setMessage('');
       if (referenceSyncFailed) {
         toast.error(catalogMessage, t('common.error'));
+        setFetchingProviderCatalog(failAsyncOperation(referenceSyncFailed));
       } else {
         toast.success(catalogMessage, t('common.success'));
+        setFetchingProviderCatalog(succeedAsyncOperation());
       }
     } catch (catalogError) {
-      setError(resolveUiErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.')));
-    } finally {
-      setFetchingProviderCatalog(false);
+      const catalogMessage = resolveUiErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.'));
+      setFetchingProviderCatalog(failAsyncOperation(catalogMessage));
+      setError(catalogMessage);
     }
   }
 
@@ -978,7 +997,7 @@ function AiResourcesContent() {
   }
 
   const autoSyncModelReferences = useCallback(async (providerId: string) => {
-    setAutoSyncingModelReferences(true);
+    setAutoSyncingModelReferences(startAsyncOperation(providerId));
     setModelReferenceAutoSyncError('');
     try {
       await aiResourcesClient.request<unknown>('/api/admin/model-references/sync', {
@@ -986,16 +1005,14 @@ function AiResourcesContent() {
         body: {},
       });
       await loadModelReferences(providerId);
+      setAutoSyncingModelReferences(succeedAsyncOperation(providerId));
     } catch (syncError) {
+      const syncMessage = resolveUiErrorMessage(syncError, aiText('model_reference_status_auto_sync_failed', 'Reference intelligence auto sync failed. Saved models and runtime calls are not affected.'));
+      setAutoSyncingModelReferences(failAsyncOperation(syncMessage, providerId));
       await loadModelReferences(providerId);
       setModelReferenceAutoSyncError(
-        resolveUiErrorMessage(
-          syncError,
-          aiText('model_reference_status_auto_sync_failed', 'Reference intelligence auto sync failed. Saved models and runtime calls are not affected.')
-        )
+        syncMessage
       );
-    } finally {
-      setAutoSyncingModelReferences(false);
     }
   }, [aiText, loadModelReferences]);
 
@@ -1005,7 +1022,7 @@ function AiResourcesContent() {
   ) {
     const announce = options.announce !== false;
     const reload = options.reload !== false;
-    setTestingConnectionId(connectionId);
+    setTestingConnection(startAsyncOperation(connectionId));
     setError('');
     if (announce) {
       setMessage('');
@@ -1031,6 +1048,7 @@ function AiResourcesContent() {
       if (reload) {
         await loadResources();
       }
+      setTestingConnection(succeedAsyncOperation(connectionId));
       return result;
     } catch (testError) {
       const result = providerConnectionTestResultFromError(testError);
@@ -1049,9 +1067,8 @@ function AiResourcesContent() {
         setError(testMessage);
         toast.error(testMessage, t('common.error'));
       }
+      setTestingConnection(failAsyncOperation(resolveUiErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')), connectionId));
       throw testError;
-    } finally {
-      setTestingConnectionId('');
     }
   }
 
@@ -1332,7 +1349,12 @@ function AiResourcesContent() {
     || activeProviderConnection?.image_delivery_probe
     || null;
   const activeImageDeliveryRepair = activeProviderConnection?.image_delivery_repair;
-  const isProbingImageDelivery = probingImageDeliveryConnectionId === providerConnectionForm.connectionId;
+  const isSavingConnection = asyncOperationRunning(savingConnection);
+  const isProbingImageDelivery = asyncOperationRunning(probingImageDelivery, providerConnectionForm.connectionId);
+  const isLoadingModelReferences = asyncOperationRunning(loadingModelReferences);
+  const isSyncingModelReferences = asyncOperationRunning(syncingModelReferences);
+  const isAutoSyncingModelReferences = asyncOperationRunning(autoSyncingModelReferences);
+  const isFetchingProviderCatalog = asyncOperationRunning(fetchingProviderCatalog);
   const providerFormExternalLinkItems = providerExternalLinkItems(
     providerReferenceLinksForForm(providerConnectionForm)
   );
@@ -1355,28 +1377,28 @@ function AiResourcesContent() {
     if (!providerFormOpen) return;
     if (!normalizedProviderId || normalizedProviderId === 'custom') return;
     if (loadedModelReferenceProviderId !== normalizedProviderId) return;
-    if (loadingModelReferences || syncingModelReferences || autoSyncingModelReferences) return;
+    if (isLoadingModelReferences || isSyncingModelReferences || isAutoSyncingModelReferences) return;
     if (!modelReferenceSourceNeedsSync(modelsDevReferenceSource, modelReferenceTotal)) return;
     if (autoSyncedReferenceProviders.current.has(normalizedProviderId)) return;
     autoSyncedReferenceProviders.current.add(normalizedProviderId);
     void autoSyncModelReferences(normalizedProviderId);
   }, [
     autoSyncModelReferences,
-    autoSyncingModelReferences,
+    isAutoSyncingModelReferences,
     loadedModelReferenceProviderId,
-    loadingModelReferences,
+    isLoadingModelReferences,
     modelReferenceProviderId,
     modelReferenceTotal,
     modelsDevReferenceSource,
     providerFormOpen,
-    syncingModelReferences,
+    isSyncingModelReferences,
   ]);
 
   const modelReferenceCompactStatusText = useMemo(() => {
-    if (autoSyncingModelReferences) {
+    if (isAutoSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
     }
-    if (loadingModelReferences) {
+    if (isLoadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
     if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
@@ -1388,8 +1410,8 @@ function AiResourcesContent() {
     return aiText('model_reference_compact_not_synced', 'reference not synced');
   }, [
     aiText,
-    autoSyncingModelReferences,
-    loadingModelReferences,
+    isAutoSyncingModelReferences,
+    isLoadingModelReferences,
     modelReferenceAutoSyncError,
     modelReferenceTotal,
     modelsDevReferenceSource,
@@ -1559,7 +1581,7 @@ function AiResourcesContent() {
           titleId="provider-channel-dialog-title"
           message={message}
           error={error}
-          saving={savingConnection}
+          saving={isSavingConnection}
           closeLabel={aiText('action_close_dialog', 'Close')}
           cancelLabel={aiText('action_cancel', 'Cancel')}
           saveLabel={aiText('action_save_and_test_connection', 'Save and test')}
@@ -1773,7 +1795,7 @@ function AiResourcesContent() {
                                 <button
                                   type="button"
                                   className="btn btn-secondary btn-sm"
-                                  disabled={isProbingImageDelivery || savingConnection}
+                                  disabled={isProbingImageDelivery || isSavingConnection}
                                   onClick={() => void runImageDeliveryProbe()}
                                 >
                                   {isProbingImageDelivery
@@ -1813,13 +1835,13 @@ function AiResourcesContent() {
                                 <button
                                   type="button"
                                   className="btn btn-secondary btn-sm"
-                                  disabled={approvingImageHostConnectionId === providerConnectionForm.connectionId}
+                                  disabled={asyncOperationRunning(approvingImageHost, providerConnectionForm.connectionId)}
                                   onClick={() => activeProviderConnection && void approveDetectedImageHost(
                                     activeProviderConnection,
                                     String(activeImageDeliveryProbe.probe_id || activeImageDeliveryRepair?.probe_id || '')
                                   )}
                                 >
-                                  {approvingImageHostConnectionId === providerConnectionForm.connectionId
+                                  {asyncOperationRunning(approvingImageHost, providerConnectionForm.connectionId)
                                     ? aiText('image_host_repair_approving', 'Approving...')
                                     : aiText('image_host_repair_action', 'Approve this exact host')}
                                 </button>
@@ -1900,7 +1922,7 @@ function AiResourcesContent() {
                                 : aiText('status_not_synced', 'Not synced'),
                             })}
                           </div>
-                          {loadingModelReferences || autoSyncingModelReferences || modelReferenceHasSyncError ? (
+                          {isLoadingModelReferences || isAutoSyncingModelReferences || modelReferenceHasSyncError ? (
                             <div className={`mt-0.5 ${modelReferenceHasSyncError ? 'text-amber-700 dark:text-amber-300' : ''}`}>
                               {modelReferenceCompactStatusText}
                             </div>
@@ -1910,10 +1932,10 @@ function AiResourcesContent() {
                               type="button"
                               data-ui="model-reference-retry"
                               className="mt-0.5 font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
-                              disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
+                              disabled={isSyncingModelReferences || isAutoSyncingModelReferences || isLoadingModelReferences || isSavingConnection}
                               onClick={() => void syncModelReferences()}
                             >
-                              {syncingModelReferences || autoSyncingModelReferences
+                              {isSyncingModelReferences || isAutoSyncingModelReferences
                                 ? aiText('action_syncing_model_references', 'Syncing...')
                                 : aiText('action_sync_model_references', 'Retry intelligence only')}
                             </button>
@@ -1923,10 +1945,10 @@ function AiResourcesContent() {
                           type="button"
                           data-ui="model-sync-primary"
                           className="btn btn-secondary h-10 shrink-0 px-3"
-                          disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
+                          disabled={isFetchingProviderCatalog || isSyncingModelReferences || isAutoSyncingModelReferences || isSavingConnection}
                           onClick={() => void fetchProviderCatalogPreview()}
                         >
-                          {fetchingProviderCatalog || syncingModelReferences
+                          {isFetchingProviderCatalog || isSyncingModelReferences
                             ? aiText('action_fetching_upstream_models', 'Syncing...')
                             : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
                         </button>
@@ -2110,7 +2132,7 @@ function AiResourcesContent() {
                                 type="button"
                                 data-ui="model-filtered-enable-request"
                                 className="font-semibold text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300"
-                                disabled={!filteredEnableModelIds.length || savingConnection}
+                                disabled={!filteredEnableModelIds.length || isSavingConnection}
                                 onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'enable' })}
                               >
                                 {aiText('action_enable_filtered_models', 'Enable matching')}
@@ -2119,7 +2141,7 @@ function AiResourcesContent() {
                                 type="button"
                                 data-ui="model-filtered-disable-request"
                                 className="font-semibold text-slate-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300"
-                                disabled={!filteredDisableModelIds.length || savingConnection}
+                                disabled={!filteredDisableModelIds.length || isSavingConnection}
                                 onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'disable' })}
                               >
                                 {aiText('action_disable_filtered_models', 'Disable matching')}
@@ -2166,7 +2188,7 @@ function AiResourcesContent() {
                               type="button"
                               data-ui="model-clear-all-request"
                               className="font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
-                              disabled={!selectedProviderModelIds.length || savingConnection}
+                              disabled={!selectedProviderModelIds.length || isSavingConnection}
                               onClick={() => dispatchProviderWorkbench({
                                 type: 'set_confirming_clear_models',
                                 confirming: true,
@@ -2180,7 +2202,7 @@ function AiResourcesContent() {
                       </div>
                     </details>
 
-                    {loadingModelReferences ? (
+                    {isLoadingModelReferences ? (
                         <div
                           data-surface-state="loading"
                           className="border-y border-slate-200 bg-slate-50/60 px-3 py-3 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900/30 dark:text-slate-400"
@@ -2500,10 +2522,10 @@ function AiResourcesContent() {
           hasActiveFilters={Boolean(connectionSearch.trim() || connectionStatusFilter !== 'all')}
           onClearFilters={handleClearConnectionFilters}
           testResults={connectionTestResults}
-          testingConnectionId={testingConnectionId}
-          approvingImageHostConnectionId={approvingImageHostConnectionId}
-          deletingConnectionId={deletingConnectionId}
-          preflightingDeleteConnectionId={preflightingDeleteConnectionId}
+          testingConnection={testingConnection}
+          approvingImageHost={approvingImageHost}
+          deletingConnection={deletingConnection}
+          preflightingDelete={preflightingDelete}
           confirmingDeleteConnectionId={confirmingDeleteConnectionId}
           deletePreflight={deletePreflight}
           providerKindLabel={providerKindLabel}

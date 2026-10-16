@@ -94,6 +94,36 @@ assert.match(
 );
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
 assert.match(pageSource, /buildProviderConnectionForm\(connection, providerPreset\)/);
+assert.match(
+  pageSource,
+  /catch \(testError\) \{[\s\S]*?testFailed = true;[\s\S]*?setMessage\(''\);[\s\S]*?testErrorMessage = aiText\([\s\S]*?message_connection_saved_test_failed[\s\S]*?await loadResources\(\);[\s\S]*?if \(testFailed\) \{[\s\S]*?setError\(testErrorMessage\);/,
+  'Provider save failures must clear the transient testing message and restore the test error after refreshing resources'
+);
+assert.match(
+  pageSource,
+  /useState<AsyncOperationState>\(IDLE_ASYNC_OPERATION\)/,
+  'Provider async actions must use the shared status model'
+);
+assert.doesNotMatch(
+  pageSource,
+  /set(?:TestingConnectionId|ProbingImageDeliveryConnectionId|ApprovingImageHostConnectionId|PreflightingDeleteConnectionId|DeletingConnectionId)\(/,
+  'Provider async actions must not regress to operation-id setters'
+);
+assert.doesNotMatch(
+  pageSource,
+  /\[(?:savingConnection|fetchingProviderCatalog|loadingModelReferences|syncingModelReferences|autoSyncingModelReferences)\s*,[^\]]+\]\s*=\s*useState\((?:false|true)/,
+  'Provider async actions must not regress to boolean or operation-id state'
+);
+assert.match(
+  pageSource,
+  /setLoadingModelReferences\(IDLE_ASYNC_OPERATION\)/,
+  'Switching away from model references must clear the prior loading operation'
+);
+assert.match(
+  pageSource,
+  /if \(referenceSyncFailed\) \{[\s\S]*?setFetchingProviderCatalog\(failAsyncOperation\(referenceSyncFailed\)\);[\s\S]*?\} else \{[\s\S]*?setFetchingProviderCatalog\(succeedAsyncOperation\(\)\);/,
+  'Catalog refresh must settle its status after the optional reference sync'
+);
 assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
 assert.match(providerWorkbenchStateSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
 assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);

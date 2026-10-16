@@ -948,6 +948,41 @@ test('save and test closes the dialog, uses a compact toast, and keeps the recei
   await expect(page.getByRole('button', { name: /Latest operation|最近操作/i })).toBeVisible();
 });
 
+test('save and test clears the transient testing message when the test fails', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  await page.route('**/api/admin/provider-connections/*/test', async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        buildAdminApiErrorEnvelope(
+          'provider connection catalog request failed',
+          'provider_connection.upstream_error',
+          {
+            connection_id: 'openai_compatible',
+            provider_id: 'openai',
+            kind: 'openai_compatible',
+            status: 'upstream_error',
+            stage: 'catalog_fetch',
+            ok: false,
+            error_code: 'provider_connection.upstream_error',
+            message: 'provider connection catalog request failed',
+          }
+        )
+      ),
+    });
+  });
+  await page.goto('/admin/ai-resources');
+
+  await page.getByRole('button', { name: /Add model supplier|添加模型供应商/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel(/API Key|Credential|凭据/i).fill('test-secret');
+  await dialog.getByRole('button', { name: /Save and test(?: provider)?|保存并测试(?:供应商)?/i }).click();
+
+  await expect(dialog.getByText(/provider connection saved, but the connection test failed|Provider 连接已保存，但连接测试失败/i)).toBeVisible();
+  await expect(page.getByText(/Provider connection saved\. Running connection test now\.|Provider 连接已保存，正在运行连接测试/i)).toHaveCount(0);
+});
+
 test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({ page }, testInfo) => {
   const browserEvidence = observeAdminBrowserEvidence(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
