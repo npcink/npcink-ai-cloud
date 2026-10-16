@@ -2,6 +2,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { LocaleContext } from '@/contexts/LocaleContext';
+import { resolveUiErrorMessage } from '@/lib/errors';
 import { Alert } from './ui/Alert';
 
 interface Props {
@@ -60,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
         >
           <div className="space-y-2">
             <p>
-              {this.state.error?.message || t('error.unexpected', undefined, 'An unexpected error occurred.')}
+              {resolveUiErrorMessage(this.state.error, t('error.unexpected', undefined, 'An unexpected error occurred.'), t)}
             </p>
             <button
               onClick={this.handleRetry}
