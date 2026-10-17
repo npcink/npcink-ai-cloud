@@ -16,7 +16,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /\.request<RuntimeProfilesData>\('\/api\/admin\/runtime-profiles', \{[\s\S]*method: 'PUT'[\s\S]*body: \{[\s\S]*contract_version: 'cloud-hosted-runtime-profiles\.v1'[\s\S]*platform_kind: 'wordpress'[\s\S]*connector_id: 'wordpress_ai_connector'[\s\S]*operation_contract_version: 'wordpress_operation\.v1'[\s\S]*profiles:/,
+  /\.request<RuntimeProfilesData>\('\/api\/admin\/runtime-profiles', \{[\s\S]*method: 'PATCH'[\s\S]*body: \{[\s\S]*contract_version: 'cloud-hosted-runtime-profiles\.v1'[\s\S]*platform_kind: 'wordpress'[\s\S]*connector_id: 'wordpress_ai_connector'[\s\S]*operation_contract_version: 'wordpress_operation\.v1'[\s\S]*profiles:/,
   'hosted runtime profile saves must use PUT with all four contract identity fields'
 );
 
@@ -161,8 +161,9 @@ assert.match(
 
 assert.match(
   pageSource,
-  /function profileTone[\s\S]*modelStatus !== 'available' \|\| healthStatus === 'unhealthy'[\s\S]*return 'error'[\s\S]*healthStatus !== 'healthy'[\s\S]*return 'warning'[\s\S]*return 'success'/,
-  'profile readiness must require an available and healthy primary model, block unhealthy, and warn on unknown health'
+  /function profileTone[\s\S]*instanceTone\(instance, profile.execution_kind\)[\s\S]*function instanceTone[\s\S]*modelStatus !== 'available' \|\| healthStatus === 'unhealthy'[\s\S]*requiresCapabilityVerification/,
+  'profile and candidate readiness must share health and capability evidence'
+
 );
 
 const dialogIndex = pageSource.indexOf('<AdminWorkbenchDialog');
@@ -260,7 +261,7 @@ assert.match(
 assert.match(
   pageSource,
   /async function saveProfiles[\s\S]*for \(const \{ profile, instance \} of pendingSelectedProbes\)[\s\S]*requestCapabilityProbe\(instance, profile\.execution_kind, profile\.timeout_ms\)[\s\S]*setEditingProfileId\(profile\.profile_id\)[\s\S]*setProbeError\(probeFailureMessage[\s\S]*request<RuntimeProfilesData>\('\/api\/admin\/runtime-profiles'/,
-  'save must verify only selected pending candidates, stop on failure, and PUT only after verification succeeds'
+  'save must verify only selected pending candidates, stop on failure, and PATCH only after verification succeeds'
 );
 
 assert.match(

@@ -6,7 +6,10 @@
     "tests/unit/portal-home-layout-contract.mjs",
     "tests/unit/portal-account-ui-contract.mjs",
     "tests/unit/portal-proxy-contract.mjs",
-    "tests/unit/public-entitlement-copy-contract.mjs"
+    "tests/unit/public-entitlement-copy-contract.mjs",
+    "tests/unit/admin-runtime-profiles-dialog-contract.mjs",
+    "tests/unit/admin-runtime-profiles-i18n-contract.mjs",
+    "tests/unit/admin-api-proxy-contract.mjs"
   ],
   "api_tests": [
     "tests/api/test_internal_alpha_onboarding_flow.py",
@@ -16,12 +19,17 @@
     "tests/api/test_portal_routes.py::test_registration_rolls_back_identity_when_free_binding_fails",
     "tests/api/test_portal_routes.py::test_portal_auth_login_code_request_and_verify_with_jwt",
     "tests/api/test_portal_routes.py::test_portal_site_access_rejects_principal_without_account_membership",
-    "tests/api/test_portal_routes.py::test_portal_revoked_account_membership_blocks_site_access"
+    "tests/api/test_portal_routes.py::test_portal_revoked_account_membership_blocks_site_access",
+    "tests/api/test_wordpress_ai_connector_runtime.py::test_admin_runtime_profile_patch_preserves_unrelated_failed_media",
+    "tests/api/test_wordpress_ai_connector_runtime.py::test_admin_runtime_profiles_rejects_incomplete_replacement",
+    "tests/api/test_wordpress_ai_connector_runtime.py::test_admin_runtime_profiles_rejects_expired_capability_evidence"
   ],
   "browser_files": [
     "admin-provider-directory-v2.spec.ts",
     "portal-login.spec.ts",
-    "portal-workspace-path.spec.ts"
+    "portal-workspace-path.spec.ts",
+    "admin-runtime-profiles-workspace.spec.ts",
+    "admin-service-settings-v2.spec.ts"
   ],
   "browser_titles": [
     "save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar",
@@ -38,6 +46,8 @@
     "portal read failures retain context and retry without showing empty results",
     "portal activity load-more failure retains rows and retries the same limit",
     "portal activity ignores a late failure after switching site filters",
-    "confirmed site deactivate keeps success when session refresh fails"
+    "confirmed site deactivate keeps success when session refresh fails",
+    "text edits save independently of failed image capability and preserve unchanged profiles",
+    "Provider budget dropdown uses runtime IDs and retains unavailable saved entries"
   ]
 }

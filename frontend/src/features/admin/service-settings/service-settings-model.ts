@@ -54,7 +54,7 @@ export type ProviderBudgetRuntime = {
   configured_provider_count: number;
   missing_provider_ids: string[];
   items: ProviderBudgetRuntimeItem[];
-  connections: Array<{ provider_id: string; display_name: string; enabled: boolean }>;
+  connections: Array<{ provider_id: string; connection_id?: string; display_name: string; enabled: boolean }>;
   generated_at: string;
   period_timezone: string;
 };
@@ -321,4 +321,18 @@ export function projectServiceSettingsForms(
     savedForms,
     emailConfigExpanded: email.status === 'missing_config' || email.status === 'error',
   };
+}
+
+/** Budget keys are runtime Provider IDs; several connections may share a counter. */
+export function providerBudgetOptions(connections: ProviderBudgetRuntime['connections']) {
+  const groups = new Map<string, string[]>();
+  for (const connection of connections) {
+    const id = connection.provider_id.trim();
+    if (!id) continue;
+    const labels = groups.get(id) || [];
+    const name = connection.display_name || connection.connection_id || id;
+    if (!labels.includes(name)) labels.push(name);
+    groups.set(id, labels);
+  }
+  return [...groups].map(([value, names]) => ({ value, label: `${names.join(' / ')} (${value})` }));
 }

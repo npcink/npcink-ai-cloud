@@ -28,6 +28,7 @@ import {
   type AlipayForm,
   type EmailForm,
   type PlatformPreferencesForm,
+  providerBudgetOptions,
   type ProviderBudgetForm,
   type ProviderBudgetProviderForm,
   type NormalizedServiceSettingsData,
@@ -1632,13 +1633,22 @@ export default function AdminServiceSettingsPage() {
                       <div key={provider.row_id} className="grid gap-3 border-b border-slate-200 pb-3 last:border-b-0 last:pb-0 dark:border-slate-800 lg:grid-cols-[1.2fr_0.8fr_1fr_1fr_auto] lg:items-end">
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
                           {t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')}
-                          <input
+                          <select
                             className="input mt-1 w-full"
                             value={provider.provider_id}
-                            maxLength={64}
                             aria-label={`${t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')} ${index + 1}`}
                             onChange={(event) => updateProviderBudgetRow(index, { provider_id: event.target.value })}
-                          />
+                          >
+                            <option value="">{t('admin.service_settings.provider_budget_select_provider', {}, 'Select a Provider')}</option>
+                            {provider.provider_id && !data?.settings.provider_budget.runtime?.connections.some((connection) => connection.provider_id === provider.provider_id) ? (
+                              <option value={provider.provider_id}>{provider.provider_id} ({t('admin.service_settings.provider_budget_unlisted_provider', {}, 'connection unavailable')})</option>
+                            ) : null}
+                            {providerBudgetOptions(data?.settings.provider_budget.runtime?.connections || []).map((option) => (
+                              <option key={option.value} value={option.value} disabled={providerBudgetForm.providers.some((row, rowIndex) => rowIndex !== index && row.provider_id === option.value)}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
                           {t('admin.service_settings.provider_budget_account_class', {}, '账户类型')}

@@ -37,9 +37,9 @@ doctor 缺项非零退出，不代操作者装依赖或退回其他运行环境�
 | 步骤 | 复用/新增的验证 | 明确不证明 |
 | --- | --- | --- |
 | type-check | 当前 frontend 与所选测试/fixture/配置的严格 TypeScript | 浏览器动作或服务协作 |
-| contracts | Provider 与 Portal 六个现有源码合同 | UI 可操作性 |
+| contracts | Provider、Portal、运行配置与代理方法合同 | UI 可操作性 |
 | api | 现有临时 SQLite/Fake Provider 开户—Addon—signed runtime—usage/audit；注册即 Free、旧账号补齐、事务回滚、登录、跨账户/撤权拒绝；预算幂等/预警/限额修改 | PostgreSQL 并发、生产预算配置、真实邮件或推理 |
-| browser | 15 个精确标题：保存测试成功/失败；目录同步终态及参考失败恢复；登录、Free/零额度/过期会话、Addon 确认、账户/站点过滤、读取重试/旧请求、变更成功后刷新失败 | SMTP 收件、真正 WordPress 写入或商业价值 |
+| browser | 17 个精确标题：保存测试成功/失败；目录同步终态及参考失败恢复；登录、Free/零额度/过期会话、Addon 确认、账户/站点过滤、读取重试/旧请求、变更成功后刷新失败；文字保存不受失败图片配置阻塞，预算下拉使用 runtime ID | SMTP 收件、真正 WordPress 写入或商业价值 |
 
 新增目录同步测试用受控等待确认 running→终态、按钮恢复及再次执行；
 参考资料失败与目录成功分开验证，不用截图代替状态断言。

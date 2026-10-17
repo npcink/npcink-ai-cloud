@@ -276,7 +276,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_catalog',
   },
   {
-    methods: ['PUT'],
+    methods: ['PUT', 'PATCH'],
     pattern: /^runtime-profiles$/,
     namespace: 'admin',
     requiredCapability: 'can_manage_catalog',
