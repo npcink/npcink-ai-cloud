@@ -181,3 +181,15 @@ weights.
 Cloud may summarize quality signals and show read-only detail. WordPress local
 remains the control plane for approval, preflight, final writes, and object
 mutation.
+
+## Optional Ranking Observation Fields
+
+The existing event DTO also accepts optional `ranking_version` (the two frozen
+`internal_links.v1` / `related_content.v1` baselines), one-based `candidate_rank`
+(1–20), `score_bucket` (`low`, `medium`, `high`, `unknown`), bounded
+`retrieval_source`, and strict boolean `rerank_applied`. Metadata requires a
+ranking version. Legacy events can omit every new field. Values remain in the
+existing event JSON; there is no migration, write authority, or raw-content
+telemetry. Batch saved/undo events may carry up to eight `candidate_rank_N`
+reason codes instead of pretending that a batch has one candidate position.
+Developer smoke observations do not constitute human adoption or gold labels.

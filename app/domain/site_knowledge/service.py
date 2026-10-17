@@ -2816,6 +2816,7 @@ def _attach_source_anchor_evidence(
 ) -> list[dict[str, object]]:
     if intent != "internal_links" or not source_passages:
         return results
+    source_prefixes = _anchor_source_prefixes(source_passages)
     projected: list[dict[str, object]] = []
     for item in results:
         result = dict(item)
@@ -2823,6 +2824,7 @@ def _attach_source_anchor_evidence(
             source_passages,
             title=str(result.get("title") or ""),
             chunk_text=str(result.get("chunk") or ""),
+            source_prefixes=source_prefixes,
         )
         if anchor_evidence:
             result["anchor_or_context"] = anchor_evidence["anchor_or_context"]
@@ -2836,9 +2838,12 @@ def _source_anchor_evidence(
     *,
     title: str,
     chunk_text: str,
+    source_prefixes: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
     candidates: list[tuple[int, int, int, str, str]] = []
     normalized_title = _normalize_anchor_comparison(title)
+    if source_prefixes is None:
+        source_prefixes = _anchor_source_prefixes(source_passages)
     for target_priority, target_field, target_text in (
         (2, "title", title),
         (1, "chunk", chunk_text),
@@ -2846,8 +2851,11 @@ def _source_anchor_evidence(
         target = " ".join(str(target_text or "").split())
         if not target:
             continue
+        target_starts = _anchor_target_starts(target, source_prefixes)
         for passage_index, passage in enumerate(source_passages):
-            for phrase in _exact_shared_anchor_phrases(passage, target):
+            for phrase in _exact_shared_anchor_phrases(
+                passage, target, target_starts=target_starts.get(passage_index, [])
+            ):
                 normalized_phrase = _normalize_anchor_comparison(phrase)
                 if not _is_specific_anchor_phrase(phrase) or normalized_phrase == normalized_title:
                     continue
@@ -2860,6 +2868,10 @@ def _source_anchor_evidence(
                         target_field,
                     )
                 )
+        # Every title candidate outranks every chunk candidate. Preserve the
+        # existing tie-breaks across passages without scanning a losing field.
+        if candidates:
+            break
 
     if not candidates:
         return {}
@@ -2873,12 +2885,51 @@ def _source_anchor_evidence(
     }
 
 
-def _exact_shared_anchor_phrases(source: str, target: str) -> list[str]:
+def _anchor_source_prefixes(source_passages: list[str]) -> dict[str, set[int]]:
+    prefixes: dict[str, set[int]] = {}
+    for passage_index, source in enumerate(source_passages):
+        folded = source.casefold()
+        for start in range(len(folded) - 3):
+            prefixes.setdefault(folded[start : start + 4], set()).add(passage_index)
+    return prefixes
+
+
+def _anchor_target_starts(
+    target: str, source_prefixes: dict[str, set[int]]
+) -> dict[int, list[int]]:
+    # Any accepted phrase has at least four characters. A missing folded
+    # prefix rules it out, while exact matching and word boundaries below
+    # remain authoritative. Casefold is only a conservative prefilter.
+    starts: dict[int, list[int]] = {}
+    possible_passages: set[int] = set()
+    for start in range(len(target) - 1, -1, -1):
+        if target[start] not in " \t\n\r,.;:!?，。；：！？、()[]{}<>\"'":
+            possible_passages = (
+                source_prefixes.get(target[start : start + 4].casefold()[:4], set())
+                if start + 4 <= len(target)
+                else set()
+            )
+        for passage_index in possible_passages:
+            starts.setdefault(passage_index, []).append(start)
+    for passage_starts in starts.values():
+        passage_starts.reverse()
+    return starts
+
+
+def _exact_shared_anchor_phrases(
+    source: str, target: str, *, target_starts: list[int] | None = None
+) -> list[str]:
     phrases: list[str] = []
     source_lower = source.lower()
+    if target_starts is None:
+        target_starts = _anchor_target_starts(target, _anchor_source_prefixes([source])).get(0, [])
+    if not target_starts:
+        return []
     for size in range(min(48, len(target)), 3, -1):
         seen: set[str] = set()
-        for start in range(0, len(target) - size + 1):
+        for start in target_starts:
+            if start + size > len(target):
+                break
             raw = target[start : start + size]
             phrase = raw.strip(" \t\n\r,.;:!?，。；：！？、()[]{}<>\"'")
             if len(phrase) < 4 or phrase in seen:
