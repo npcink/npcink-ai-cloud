@@ -60,7 +60,15 @@ M4 acceptance additionally requires PostgreSQL behavior and an isolated old/new
 1/2/4-concurrency comparison with identical fixture/resource limits. Record
 latency, timeouts, pool wait, rollup phase times/query counts, memory, and
 meter/ledger/callback integrity. A shorter rollup alone does not establish
-greater sustainable production capacity. GitHub required checks and merged
+greater sustainable production capacity. For business-latency conclusions,
+keep the offered background work fixed: an unbounded rollup loop executes
+more rounds after an optimization and is a separate saturation test. Report
+its actual round count rather than presenting it as an equal-work comparison.
+Keep request counts within the existing admission/rate limits. A cell with
+rejections is not a valid latency comparison; preserve that evidence and
+reduce the experimental workload instead of weakening protection.
+
+GitHub required checks and merged
 clean-master promotion remain separate gates; production is not authorized.
 
 Rollback by reverting this focused PR. No migration, secret, or scheduler
