@@ -78,9 +78,9 @@ class Settings(BaseSettings):
     site_knowledge_observability_retention_days: int = Field(default=180, ge=1)
     customer_journey_retention_days: int = Field(default=30, ge=1, le=90)
     usage_rollup_interval_seconds: int = Field(default=3600)
-    router_diagnostics_interval_seconds: int = Field(default=900)
-    latency_probe_interval_seconds: int = Field(default=900)
-    alert_provider_degradation_interval_seconds: int = Field(default=900)
+    router_diagnostics_interval_seconds: int = Field(default=3600)
+    latency_probe_interval_seconds: int = Field(default=3600)
+    alert_provider_degradation_interval_seconds: int = Field(default=3600)
     provider_health_scan_interval_seconds: int = Field(default=900)
     media_upload_max_body_bytes: int = Field(
         default=51 * 1024 * 1024,
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     latency_probe_worker_recent_minutes: int = Field(default=360)
     latency_probe_worker_site_limit: int = Field(default=100)
     latency_probe_worker_instance_limit: int = Field(default=20)
-    alert_worker_window_minutes: int = Field(default=30)
+    alert_worker_window_minutes: int = Field(default=60)
     alert_worker_site_limit: int = Field(default=100)
     alert_worker_min_requests: int = Field(default=20)
     alert_worker_error_rate_threshold: float = Field(default=0.25)

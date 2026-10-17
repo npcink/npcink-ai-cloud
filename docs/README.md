@@ -122,6 +122,8 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Background Lightweight Mode](background-lightweight-mode-v1.md) — hourly optional diagnostics, manual quality analysis and unchanged cleanup/usage/callback responsibilities; runtime validation and release remain separate.
+
 - [Runtime Resource Baseline](runtime-resource-baseline-v1.md) — bounded GET-only sampling; begin with 15 minutes, inspect completeness and runtime identity, then explicitly extend the window. No automatic workload or runtime operation.
 - [资源采样恢复与会话收尾经验 — 2026-10-17](history/engineering/2026/resource-sampling-and-session-closeout-retrospective-2026-10-17.md) — stash recovery, historical resource evidence and remaining acceptance gaps; sampler validation, localization, OCR and safe closeout lessons.
 

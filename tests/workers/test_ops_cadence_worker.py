@@ -123,7 +123,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "retention_cleanup",
         "plugin_observability_cleanup",
         "usage_rollup",
-        "editor_assist_quality_detection",
+        "site_knowledge_observability_cleanup",
         "router_diagnostics_summary",
         "latency_probe_summary",
         "alert_provider_degradation",
@@ -139,9 +139,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     assert retention_cleanup["payload"]["retention_batch_limit"] == 2
     assert retention_cleanup["payload"]["retention_remaining_due_runs"] == 0
     assert retention_cleanup["payload"]["retention_partial"] is False
-    artifact_cleanup = next(
-        item for item in first_results if item["task_id"] == "artifact_cleanup"
-    )
+    artifact_cleanup = next(item for item in first_results if item["task_id"] == "artifact_cleanup")
     assert artifact_cleanup["payload"] == {
         "claimed": 0,
         "purged": 0,
@@ -151,9 +149,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "interval_seconds": 60,
     }
     artifact_reconciliation = next(
-        item
-        for item in first_results
-        if item["task_id"] == "artifact_inventory_reconciliation"
+        item for item in first_results if item["task_id"] == "artifact_inventory_reconciliation"
     )
     assert artifact_reconciliation["payload"] == {
         "store_examined": 0,
@@ -194,31 +190,10 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     reconciliation_event = next(
         item
         for item in first_events
-        if item["event_kind"]
-        == "runtime.artifact_inventory_reconciliation.cadence"
+        if item["event_kind"] == "runtime.artifact_inventory_reconciliation.cadence"
     )
     assert reconciliation_event["payload"] == artifact_reconciliation["payload"]
-    quality_detection = next(
-        item
-        for item in first_results
-        if item["task_id"] == "editor_assist_quality_detection"
-    )
-    assert quality_detection["payload"] == {
-        "contract_version": "editor_assist_quality.v2",
-        "window_hours": 168,
-        "session_total": 0,
-        "resolved_session_total": 0,
-        "sample_stage": "insufficient",
-        "issue_candidate_total": 0,
-        "sustained_issue_candidate_total": 0,
-        "actionable_issue_candidate_total": 0,
-        "candidate_refs": [],
-        "read_only": True,
-        "production_mutation": False,
-        "automatic_evaluation_trigger": False,
-        "content_storage": "omitted_metadata_only",
-        "interval_seconds": 86400,
-    }
+    assert all(item["task_id"] != "editor_assist_quality_detection" for item in first_results)
 
     latest_created_at = datetime.fromisoformat(
         str(first_events[0]["created_at"]).replace("Z", "+00:00")
@@ -227,10 +202,11 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     assert second_results == []
 
     third_results = run_due_tasks(settings, now=latest_created_at + timedelta(seconds=61))
-    assert len(third_results) == 10
+    assert len(third_results) == 11
     assert {item["task_id"] for item in third_results} == {
         "retention_cleanup",
         "plugin_observability_cleanup",
+        "site_knowledge_observability_cleanup",
         "usage_rollup",
         "router_diagnostics_summary",
         "latency_probe_summary",
@@ -245,6 +221,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     assert {item["task_id"] for item in fourth_results} == {
         "retention_cleanup",
         "plugin_observability_cleanup",
+        "site_knowledge_observability_cleanup",
         "usage_rollup",
         "router_diagnostics_summary",
         "latency_probe_summary",
@@ -259,6 +236,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     assert {item["task_id"] for item in fifth_results} == {
         "retention_cleanup",
         "plugin_observability_cleanup",
+        "site_knowledge_observability_cleanup",
         "usage_rollup",
         "router_diagnostics_summary",
         "latency_probe_summary",
@@ -550,3 +528,133 @@ def test_artifact_reconciliation_store_construction_error_is_redacted(
     observed = f"{results!r}\n{caplog.text}"
     assert str(private_root) not in observed
     dispose_engine(database_url)
+
+
+def test_optional_diagnostics_default_to_hourly_without_changing_core_cadences() -> None:
+    settings = Settings(_env_file=None, environment="test")
+    for field in (
+        "router_diagnostics_interval_seconds",
+        "latency_probe_interval_seconds",
+        "alert_provider_degradation_interval_seconds",
+    ):
+        assert getattr(settings, field) == 3600
+    assert settings.alert_worker_window_minutes == 60
+    assert settings.provider_health_scan_interval_seconds == 900
+    assert settings.usage_rollup_interval_seconds == 3600
+    assert settings.retention_cleanup_interval_seconds == 3600
+    assert settings.runtime_callback_worker_poll_seconds == 5
+
+
+@pytest.mark.parametrize("elapsed", [900, 3599, 3600, 86401])
+def test_due_tasks_obey_hourly_schedule_and_never_auto_run_quality(
+    monkeypatch: pytest.MonkeyPatch,
+    elapsed: int,
+) -> None:
+    from dataclasses import replace
+
+    now = datetime(2026, 10, 17, 12, tzinfo=UTC)
+    settings = Settings(_env_file=None, environment="test")
+    called = []
+
+    class AuditSink:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def record_service_audit_event(self, **_kwargs):
+            pass
+
+    specs = [
+        replace(spec, runner=lambda _settings, task_id=spec.task_id: called.append(task_id) or {})
+        for spec in ops_cadence_module.cadence_task_specs()
+    ]
+    monkeypatch.setattr(ops_cadence_module, "CommercialService", AuditSink)
+    monkeypatch.setattr(ops_cadence_module, "cadence_task_specs", lambda: specs)
+    monkeypatch.setattr(
+        ops_cadence_module,
+        "_latest_event",
+        lambda *_args, **_kwargs: {"created_at": now.isoformat()},
+    )
+    run_due_tasks(settings, now=now + timedelta(seconds=elapsed))
+    assert "editor_assist_quality_detection" not in called
+    optional = {"router_diagnostics_summary", "latency_probe_summary", "alert_provider_degradation"}
+    assert optional.intersection(called) == (optional if elapsed >= 3600 else set())
+    if elapsed >= 3600:
+        assert {
+            "usage_rollup",
+            "retention_cleanup",
+            "artifact_cleanup",
+            "payment_order_expiration",
+        }.issubset(called)
+
+
+def test_manual_quality_is_reported_separately_without_stale_health_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 10, 17, 12, tzinfo=UTC)
+    settings = Settings(_env_file=None, environment="test")
+    monkeypatch.setattr(ops_cadence_module, "CommercialService", lambda *_args, **_kwargs: object())
+
+    def event(*_args, **kwargs):
+        assert kwargs["event_kind"] != "editor_assist.quality_detection.cadence"
+        if kwargs.get("outcome") == "error":
+            return None
+        return {"created_at": (now - timedelta(seconds=30)).isoformat(), "outcome": "succeeded"}
+
+    monkeypatch.setattr(ops_cadence_module, "_latest_event", event)
+    report = build_cadence_summary(settings, now=now)
+    assert report["totals"]["tasks_total"] == 11
+    assert report["totals"]["non_fresh_total"] == 0
+    assert report["manual_tasks"] == [
+        {
+            "task_id": "editor_assist_quality_detection",
+            "execution_mode": "manual",
+        }
+    ]
+    assert all(row["task_id"] != "editor_assist_quality_detection" for row in report["items"])
+
+
+def test_manual_quality_command_executes_once_without_worker_heartbeat(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import json
+    import sys
+
+    settings = Settings(_env_file=None, environment="test")
+    calls = []
+    monkeypatch.setattr(
+        sys, "argv", ["ops-cadence", "--manual-task", "editor_assist_quality_detection"]
+    )
+    monkeypatch.setattr(ops_cadence_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(ops_cadence_module, "require_database_connection", lambda _url: None)
+    monkeypatch.setattr(ops_cadence_module, "configure_logging", lambda _level: None)
+    monkeypatch.setattr(
+        ops_cadence_module,
+        "_run_editor_assist_quality_detection",
+        lambda _settings: calls.append("quality") or {"read_only": True},
+    )
+
+    def no_daemon(*_args, **_kwargs):
+        raise AssertionError("manual analysis must not start or impersonate the cadence worker")
+
+    monkeypatch.setattr(ops_cadence_module, "WorkerHeartbeat", no_daemon)
+    monkeypatch.setattr(ops_cadence_module.time, "sleep", no_daemon)
+    ops_cadence_module.main()
+    assert calls == ["quality"]
+    assert json.loads(capsys.readouterr().out) == {"read_only": True}
+
+
+def test_manual_command_rejects_scheduled_tasks_before_loading_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["ops-cadence", "--manual-task", "retention_cleanup"])
+
+    def no_runtime():
+        raise AssertionError("invalid manual task must fail before runtime initialization")
+
+    monkeypatch.setattr(ops_cadence_module, "get_settings", no_runtime)
+    with pytest.raises(SystemExit) as error:
+        ops_cadence_module.main()
+    assert error.value.code == 2

@@ -32,6 +32,11 @@ echo "[editor-assist-quality] Running focused API and aggregation tests"
 	tests/api/test_editor_assist_quality_routes.py \
 	tests/dev/test_editor_assist_quality_status_cli.py \
 	tests/workers/test_ops_cadence_worker.py::test_editor_assist_quality_detection_records_bounded_read_only_evidence \
+	tests/workers/test_ops_cadence_worker.py::test_optional_diagnostics_default_to_hourly_without_changing_core_cadences \
+	tests/workers/test_ops_cadence_worker.py::test_due_tasks_obey_hourly_schedule_and_never_auto_run_quality \
+	tests/workers/test_ops_cadence_worker.py::test_manual_quality_is_reported_separately_without_stale_health_failure \
+	tests/workers/test_ops_cadence_worker.py::test_manual_quality_command_executes_once_without_worker_heartbeat \
+	tests/workers/test_ops_cadence_worker.py::test_manual_command_rejects_scheduled_tasks_before_loading_runtime \
 	-q
 
 echo "[editor-assist-quality] Running targeted Python lint"
@@ -64,8 +69,6 @@ grep -Fq '"automatic_router_mutation": False' \
 grep -Fq '"raw_content_retention": False' \
 	app/domain/observability/editor_assist_quality.py
 grep -Fq '"automatic_evaluation_trigger": False' \
-	app/workers/ops_cadence.py
-grep -Fq 'interval_seconds=lambda _settings: 24 * 60 * 60' \
 	app/workers/ops_cadence.py
 
 echo "[editor-assist-quality] Gate passed"
