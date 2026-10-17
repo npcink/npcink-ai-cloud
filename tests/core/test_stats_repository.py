@@ -352,7 +352,7 @@ def assert_rollup_batch_save_contract(engine: Engine) -> None:
         key = f"race:{batched}"
         injected = False
 
-        def race(_conn, _cursor, sql, _parameters, _context, _many):
+        def race(_conn, _cursor, sql, _parameters, _context, _many, *, batched: bool = batched):
             nonlocal injected
             if not injected and sql.startswith("SELECT") and "usage_rollups" in sql:
                 injected = True
