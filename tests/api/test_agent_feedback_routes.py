@@ -1077,3 +1077,30 @@ def test_agent_feedback_summary_reports_limited_window(
     assert data["events_total"] == 1
     assert data["limited"] is True
     assert data["max_events"] == 1
+
+
+def test_recommendation_metadata_survives_storage_without_content(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    metadata = {
+        "ranking_version": "internal_links.v1", "candidate_rank": 2,
+        "score_bucket": "high", "retrieval_source": "cloud_vector", "rerank_applied": False,
+    }
+    response = _post_feedback(client, _feedback_payload(**metadata))
+    assert response.status_code == 200
+    with get_session(database_url) as session:
+        event = session.scalar(select(UsageMeterEvent))
+        assert event is not None
+        assert {key: event.payload_json[key] for key in metadata} == metadata
+
+
+@pytest.mark.parametrize("override", [
+    {"candidate_rank": 0}, {"candidate_rank": 21}, {"candidate_rank": True},
+    {"rerank_applied": "false"}, {"score_bucket": "private title"},
+    {"ranking_version": "https://private.test"},
+])
+def test_recommendation_metadata_rejects_unbounded_values(tmp_path: Path, override) -> None:
+    _database_url, client = _build_client(tmp_path)
+    response = _post_feedback(client, _feedback_payload(
+        **{"ranking_version": "internal_links.v1", **override}
+    ))
+    assert response.status_code == 422

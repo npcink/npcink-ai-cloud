@@ -28,6 +28,7 @@ import {
   type AlipayForm,
   type EmailForm,
   type PlatformPreferencesForm,
+  providerBudgetOptions,
   type ProviderBudgetForm,
   type ProviderBudgetProviderForm,
   type NormalizedServiceSettingsData,
@@ -217,9 +218,7 @@ function serviceSettingsErrorDetail(
     if (/Name or service not known|getaddrinfo|ENOTFOUND/i.test(rawMessage)) {
       return t('admin.service_settings.error_email_host_lookup', {}, 'The SMTP host could not be resolved. Check the SMTP server domain.');
     }
-    return rawMessage
-      ? t('admin.service_settings.error_email_delivery_detail', { message: rawMessage }, 'Test email failed: {{message}}')
-      : t('admin.service_settings.error_email_delivery_failed', {}, 'Test email failed. Check the SMTP host, port, authentication, and encryption mode.');
+    return t('admin.service_settings.error_email_delivery_failed', {}, 'Test email failed. Check the SMTP host, port, authentication, and encryption mode.');
   }
   if (errorCode === 'service_settings.email_tls_mode_invalid') {
     return t('admin.service_settings.error_tls_mode_invalid', {}, 'SMTP 加密方式不能同时启用 SSL 和 STARTTLS。465 端口通常只使用 SSL，587 端口通常只使用 STARTTLS。');
@@ -256,9 +255,7 @@ function serviceSettingsErrorDetail(
     if (/Could not deserialize key data|ASN\.1|unsupported key type|incorrect format/i.test(rawMessage)) {
       return t('admin.service_settings.error_alipay_key_format', {}, '支付宝密钥格式无效。应用私钥请填写应用私钥，支付宝公钥请填写支付宝开放平台提供的支付宝公钥；支持 PEM 格式或裸 Base64 内容。');
     }
-    return rawMessage
-      ? t('admin.service_settings.error_alipay_config_detail', { message: rawMessage }, '支付宝配置检查失败：{{message}}')
-      : t('admin.service_settings.error_alipay_config_invalid', {}, '支付宝配置检查失败。请检查 App ID、应用私钥、支付宝公钥。');
+    return t('admin.service_settings.error_alipay_config_invalid', {}, '支付宝配置检查失败。请检查 App ID、应用私钥、支付宝公钥。');
   }
   return resolveUiErrorMessage(rawMessage, fallback);
 }
@@ -1636,13 +1633,22 @@ export default function AdminServiceSettingsPage() {
                       <div key={provider.row_id} className="grid gap-3 border-b border-slate-200 pb-3 last:border-b-0 last:pb-0 dark:border-slate-800 lg:grid-cols-[1.2fr_0.8fr_1fr_1fr_auto] lg:items-end">
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
                           {t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')}
-                          <input
+                          <select
                             className="input mt-1 w-full"
                             value={provider.provider_id}
-                            maxLength={64}
                             aria-label={`${t('admin.service_settings.provider_budget_provider_id', {}, 'Provider ID')} ${index + 1}`}
                             onChange={(event) => updateProviderBudgetRow(index, { provider_id: event.target.value })}
-                          />
+                          >
+                            <option value="">{t('admin.service_settings.provider_budget_select_provider', {}, 'Select a Provider')}</option>
+                            {provider.provider_id && !data?.settings.provider_budget.runtime?.connections.some((connection) => connection.provider_id === provider.provider_id) ? (
+                              <option value={provider.provider_id}>{provider.provider_id} ({t('admin.service_settings.provider_budget_unlisted_provider', {}, 'connection unavailable')})</option>
+                            ) : null}
+                            {providerBudgetOptions(data?.settings.provider_budget.runtime?.connections || []).map((option) => (
+                              <option key={option.value} value={option.value} disabled={providerBudgetForm.providers.some((row, rowIndex) => rowIndex !== index && row.provider_id === option.value)}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
                           {t('admin.service_settings.provider_budget_account_class', {}, '账户类型')}

@@ -129,7 +129,7 @@ test('runtime diagnostics shows evidence in three tabs with default selection an
   await expect(sourceError).toContainText(/could not refresh|刷新失败/i);
   await expect(sourceError.getByText(/last successfully loaded diagnostic snapshot|最近一次成功加载的诊断快照/i)).toBeVisible();
   await sourceError.getByRole('button').click();
-  await expect(page.getByRole('dialog').getByText('temporary diagnostic failure')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText(/加载运行诊断失败|Failed to load runtime diagnostics\./)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(sourceError.getByRole('button')).toBeFocused();
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
@@ -271,7 +271,7 @@ test('runtime diagnostics keeps total source failure actionable without exposing
   await expect(tableFrame).toContainText(/Runtime anomaly data unavailable|运行异常数据不可用/i);
   await expect(tableFrame).not.toContainText(/No active runtime anomalies|当前没有运行异常/i);
   await sourceError.getByRole('button').click();
-  await expect(page.getByRole('dialog').getByText('runtime source unavailable')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText(/加载运行诊断失败|Failed to load runtime diagnostics\./)).toBeVisible();
 });
 
 test('runtime diagnostics exposes direct secondary tools on desktop and mobile', async ({ page }, testInfo) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   projectServiceSettingsForms,
+  providerBudgetOptions,
   type ProviderBudgetSetting,
   type ServiceSetting,
   type ServiceSettingsData,
@@ -255,4 +256,15 @@ describe('service settings response projection', () => {
       timezone: 'Asia/Shanghai',
     });
   });
+});
+
+it('selects runtime budget keys once for aliased connections', () => {
+  expect(providerBudgetOptions([
+    {provider_id: 'openai', connection_id: 'mqzj', display_name: 'Npcink Cloud', enabled: true},
+    {provider_id: 'openai', connection_id: 'second', display_name: 'Backup', enabled: false},
+    {provider_id: 'deepseek', display_name: 'DeepSeek', enabled: true},
+  ])).toEqual([
+    {value: 'openai', label: 'Npcink Cloud / Backup (openai)'},
+    {value: 'deepseek', label: 'DeepSeek (deepseek)'},
+  ]);
 });

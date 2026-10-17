@@ -215,6 +215,10 @@ class RuntimeProviderExecutionService:
             )
             if claim is not None:
                 claim_ids = claim.claim_ids
+        if session is not None:
+            # Admission and spend reservations must survive an uncertain dispatch.
+            # Return the pooled connection and row locks before Provider I/O.
+            session.commit()
         try:
             result = provider.execute(request)
         except ProviderExecutionError:
@@ -417,6 +421,9 @@ class RuntimeProviderExecutionService:
                     preflight_usage_context = self.enforce_context_budget(
                         provider_request
                     )
+                    # Checkpoint admission, reservations and earlier attempt evidence;
+                    # the open Session acquires a new connection only after Provider I/O.
+                    repository.session.commit()
                     provider_result = provider.execute(
                         provider_request
                     )

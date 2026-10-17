@@ -7,7 +7,7 @@ const baseURL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||
   `http://127.0.0.1:${Number.isFinite(port) ? port : 3301}`;
 const useExternalServer = Boolean(process.env.NPCINK_CLOUD_FRONTEND_BASE_URL);
-const webServerEnv = {
+const webServerEnv: Record<string, string | undefined> = {
   ...process.env,
   NEXT_TELEMETRY_DISABLED: '1',
   NEXT_PUBLIC_ENV: process.env.NEXT_PUBLIC_ENV || 'test',

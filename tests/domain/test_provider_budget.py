@@ -533,3 +533,43 @@ def test_provider_budget_policy_edit_updates_limit_without_resetting_usage(
         assert len({claim.run_id for claim in claims}) == 2
 
     dispose_engine(database_url)
+
+
+def test_budget_projection_uses_runtime_provider_id_for_connection_aliases(tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'aliases.sqlite3'}"
+    init_schema(database_url)
+    with get_session(database_url) as session:
+        session.add(
+            ServiceSetting(
+                setting_id=SERVICE_SETTING_PROVIDER_ACCOUNT_SPEND_BUDGET,
+                setting_kind="runtime",
+                enabled=True,
+                status="ready",
+                config_json={
+                    "providers": {
+                        "openai": {"account_class": "paid", "daily_usd": 0.1, "monthly_usd": 0.1}
+                    }
+                },
+            )
+        )
+        for connection_id in ("mqzj", "second-gateway"):
+            session.add(
+                ProviderConnection(
+                    connection_id=connection_id,
+                    provider_type="openai_compatible",
+                    display_name=connection_id,
+                    enabled=True,
+                    config_json={"provider_id": "openai"},
+                )
+            )
+        session.commit()
+        projection = ProviderBudgetService().admin_projection(session=session)
+        assert projection["status"] == "ok"
+        assert projection["missing_provider_ids"] == []
+        assert len(projection["items"]) == 2  # one shared day/month pair
+        assert {row["provider_id"] for row in projection["connections"]} == {"openai"}
+        assert {row["connection_id"] for row in projection["connections"]} == {
+            "mqzj",
+            "second-gateway",
+        }
+    dispose_engine(database_url)

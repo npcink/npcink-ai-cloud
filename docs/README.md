@@ -15,6 +15,10 @@ as current truth.
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
 | 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
+| 回顾用户中心相关三个会话、确认当前进度和下一步 | [三会话综合纪要 — 2026-10-17](history/portal/2026/portal-three-session-synthesis-and-next-stage-2026-10-17.md) — UX、积分/预算、发布、异步状态与验证前移；补正旧摘要并区分方案与交付 |
+| 在生产人工验证邮箱、连接与草稿保存 | [生产验收步骤（2026-10-17 更新）](portal-production-validation-runbook-2026-10-16.md) — 操作者走正常流程，开发侧核对 run/预算/反馈；不是部署授权 |
+| 验收运行配置隔离、预算选择与 Addon 引导 | [运行配置与写作验收跟进 — 2026-10-17](runtime-configuration-acceptance-2026-10-17.md) — 候选行为、生产只读故障证据、零付费回归与后续人工验收；不是上线或真实调用恢复证明 |
+| 发布前跑零付费 Provider/Portal 关键回归 | [关键流程回归 v1](local-critical-regression-v1.md) — `verify:local -- --critical`、固定测试清单、隔离与逐步回执；不操作 M4/生产 |
 | 查合规工作底稿方法（四列结构、来源分级、触发线分离） | [开发会话操作经验记录](development-session-notes-compliance-2026-09-26.md) |
 | 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
 | 查本地 WordPress 草稿闭环证据 | [本地草稿闭环验证记录](history/engineering/2026/local-wordpress-draft-closed-loop-validation-2026-09-23.md) — fake Provider、预览/插入/显式保存、回读一致性与精确清理；不是商业或用户验收证据 |
@@ -22,6 +26,7 @@ as current truth.
 | 落实下一阶段计划（含新会话提示词 P1-P5） | [下一阶段执行计划](next-stage-plan-2026-09-22.md) — 含 2026-09-23 增补的开放前必做项 |
 | 查 Provider 账户级预算硬上限缺口（开放前必做） | [Provider 预算硬上限缺口盘点](provider-budget-hard-cap-inventory-2026-09-23.md) — 三层防线已合入 master（PR #1029/#1031）；剩余出口：M4 promotion、操作者武装与 smoke、裸 HTTP 付费路径收敛（见"实现合入更新"节） |
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
+| 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
@@ -120,6 +125,11 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Background Lightweight Mode](background-lightweight-mode-v1.md) — hourly optional diagnostics, manual quality analysis and unchanged cleanup/usage/callback responsibilities; runtime validation and release remain separate.
+
+- [Runtime Resource Baseline](runtime-resource-baseline-v1.md) — bounded GET-only sampling; begin with 15 minutes, inspect completeness and runtime identity, then explicitly extend the window. No automatic workload or runtime operation.
+- [资源采样恢复与会话收尾经验 — 2026-10-17](history/engineering/2026/resource-sampling-and-session-closeout-retrospective-2026-10-17.md) — stash recovery, historical resource evidence and remaining acceptance gaps; sampler validation, localization, OCR and safe closeout lessons.
+
 - [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。
 - [Free 试用前生产发布准备 — 2026-10-06](production-release-readiness-plan-2026-10-06.md) — 两处旧测试修复候选、累计部署范围、五项迁移与回滚条件；不是生产发布授权。
 - [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 已确认正常自注册、复用 Free 和四周判据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，启动状态待操作者核实。
@@ -159,6 +169,7 @@ deleting the old decision history.
 - [Cloud OpenCodeReview Usage Policy](ocr-review-usage-policy-v1.md) — repository-local advisory review cadence, quota controls, provider configuration, and 429 recovery rules
 - [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
 - [Pgy Primary M4 Access](decisions/052-pgy-primary-m4-access.md) — accepted default-path decision for Pgy SSH/direct transfer with LAN and Tailscale fallback
+- [LAN-first M4 Operation Routing](decisions/060-lan-first-m4-operation-routing.md) — current operator priority: office LAN, then Pgy, then Tailscale; select and pin the SSH host before each operation while keeping direct/relay transfer mode separate
 - [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery
 - [Managed Source Relay Closeout and Development Retrospective — 2026-09-04](history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md) — dated evidence for PRs `#891` and `#892`, relay failure diagnosis, bounded retry corrections, M4 promotion, and reusable development lessons; not current runtime or release authority
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)

@@ -16,6 +16,9 @@ The private source-transfer decision is recorded in
 [ADR-052](decisions/052-pgy-primary-m4-access.md) supersedes the default M4
 access and source-transfer path while preserving the relay contract for
 explicit recovery.
+[ADR-060](decisions/060-lan-first-m4-operation-routing.md) refines operator
+route selection to prefer office LAN, then Pgy, then Tailscale for all M4
+operations, using the existing explicit host override.
 The consolidated operator guidance is in
 [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md).
 
@@ -33,7 +36,8 @@ keeping two Cloud stacks in parallel. The current defaults are:
 
 | Boundary | Value |
 | --- | --- |
-| SSH transport | `muze@172.16.3.35` (Pgy primary) |
+| Preferred office LAN SSH | `muze@192.168.10.200` |
+| Pgy fallback / CLI host default | `muze@172.16.3.35` |
 | Tailscale fallback | `muze@100.102.170.79` |
 | Private source relay | `root@100.90.87.36` |
 | M4 source mirror | `/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev` |
@@ -48,9 +52,50 @@ does not authorize a production deploy or any
 Cloudflare DNS, Access, or Tunnel change. The existing tunnel continues to use
 `127.0.0.1:8010`.
 
+## LAN-first Operation Route Selection
+
+Before a new source sync, status query, test, lifecycle operation, or promotion,
+select LAN -> Pgy -> Tailscale using a bounded SSH check. The automatic browser
+tunnel already implements that order; other commands require the explicit
+host override below. Application health is not a route-selection prerequisite
+for lifecycle operations: SSH must still work when containers are stopped.
+
+```bash
+m4_route_host="${NPCINK_CLOUD_M4_SSH_HOST:-}"
+if [ -z "$m4_route_host" ]; then
+  for m4_candidate in muze@192.168.10.200 muze@172.16.3.35 muze@100.102.170.79; do
+    m4_connect_timeout=5
+    [ "$m4_candidate" != muze@192.168.10.200 ] || m4_connect_timeout=2
+    if ssh -o BatchMode=yes -o ConnectionAttempts=1 \
+      -o ConnectTimeout="$m4_connect_timeout" "$m4_candidate" /usr/bin/true; then
+      m4_route_host="$m4_candidate"
+      break
+    fi
+  done
+fi
+if [ -z "$m4_route_host" ]; then
+  echo 'M4 SSH unavailable through LAN, Pgy, and Tailscale.' >&2
+  exit 1
+fi
+printf 'selected_m4_ssh_host=%s\n' "$m4_route_host"
+NPCINK_CLOUD_M4_SSH_HOST="$m4_route_host" pnpm run m4:preview:status
+```
+
+Pass the same selected host to the subsequent authorized command. Do not
+overwrite an operator-pinned host, replace an existing working tunnel, or
+switch routes halfway through a transfer/operation. A failed in-flight
+operation requires inspecting its evidence and remote state before retrying.
+No script defaults or automatic mutation retries are changed by this procedure.
+For an explicitly pinned browser host, use `m4:preview:tunnel` rather than
+`m4:preview:auto`, which intentionally probes the automatic candidate list.
+
+`direct` means authoring Mac -> selected M4 SSH address over SCP, without the
+private source relay. It can run over LAN, Pgy, or Tailscale. Choosing a
+Tailscale SSH address does not imply `SOURCE_TRANSFER_MODE=relay`.
+
 ## Private Source Relay Contract
 
-The ordinary source-transfer default is direct SSH to the Pgy M4 address.
+The ordinary source-transfer default is direct SSH to the selected M4 address.
 The transient private relay remains available for an explicit operator
 recovery when the primary direct path is unavailable or degraded.
 
@@ -115,7 +160,7 @@ pass the existing size and SHA-256 checks. Relay downloads have a bounded
 15-minute budget and resume partial transfers so the accepted Peer Relay route
 can tolerate lower throughput without weakening integrity validation.
 
-The script fails visibly when the primary Pgy path is unavailable. For a
+The script fails visibly when the selected SSH path is unavailable. For a
 bounded operator-selected recovery, use the explicit Tailscale relay mode:
 
 ```bash

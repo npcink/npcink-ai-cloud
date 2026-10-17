@@ -196,7 +196,7 @@ test('customer detail failure preserves the PC shell and bounded retry', async (
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
 
   await expect(page.getByRole('heading', { name: /Customer detail is temporarily unavailable|客户详情暂时不可用/i })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: 'customer unavailable' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: /加载数据失败|Failed to load data\./ })).toBeVisible();
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(new RegExp(`/admin/accounts/${LONG_ACCOUNT_ID}$`));
@@ -277,8 +277,9 @@ test('customer detail operator profile keeps the draft when the bounded save fai
     .getByRole('button', { name: /Save|保存|儲存/i })
     .click();
 
-  await expect(page.getByText('operator profile rejected')).toBeVisible();
+  await expect(page.getByText(/保存失败|Failed to save changes\./)).toBeVisible();
   await expect(operatorNote).toHaveValue('Keep this unsaved note');
+  await expect(page.getByText('operator profile rejected', { exact: true })).toHaveCount(0);
 });
 
 test('customer detail operator profile preserves the save payload and success receipt', async ({ page }) => {

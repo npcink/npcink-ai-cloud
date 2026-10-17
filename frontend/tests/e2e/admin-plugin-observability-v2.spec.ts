@@ -114,10 +114,10 @@ test('administrator investigates errors and sites, preserves filters and manages
   await page.keyboard.press('Escape');
   harness.failNextRequest();
   await page.getByRole('button', {name:/^Refresh$|^刷新$/}).click();
-  await expect(page.getByRole('alert').filter({hasText:'temporary plugin telemetry failure'})).toBeVisible();
+  await expect(page.getByRole('alert').filter({hasText:/加载数据失败|Failed to load data\./})).toBeVisible();
   await expect(page.locator('[data-ui="plugin-problems"]')).toContainText(/Model service timed out|模型服务响应超时/);
   await page.getByRole('button', {name:/^Refresh$|^刷新$/}).click();
-  await expect(page.getByRole('alert').filter({hasText:'temporary plugin telemetry failure'})).toHaveCount(0);
+  await expect(page.getByRole('alert').filter({hasText:/加载数据失败|Failed to load data\./})).toHaveCount(0);
   await writeAdminVisualReceipt({page,testInfo,route:'/admin/plugin-observability',pageModel:'diagnostic',testedStates:['ready','selected','partial_error','disclosure'],humanAcceptance:'pending',dataMode:'mocked',pageTitle:page.getByRole('heading',{name:/^Plugin Observability$|^插件观测$/}),workingSurface:page.locator('[data-ui="plugin-problems"]'),browserEvidence,expectedConsoleErrors:[/^Failed to load resource: the server responded with a status of 503/],routeRuleResults:[{id:'single-primary-action',status:'pass',evidence:'Only resolve is primary inside the selected alert.'},{id:'action-object-proximity',status:'pass',evidence:'Inspect and site records actions are in their rows.'},{id:'distinct-interaction-states',status:'pass',evidence:'Filters expose selected state and alert actions disable while loading.'},{id:'context-stability',status:'pass',evidence:'Refresh failure retains scope data with an error notice.'},{id:'dialog-focus-recovery',status:'pass',evidence:'Escape closes shared inspector and restores the problem trigger.'},{id:'textual-status',status:'pass',evidence:'Error causes and evidence limits are stated in text.'}],interactionResults:[{id:'scope-and-investigation',status:'pass',evidence:'URL filters, issue-to-site records and alert state update exercised.'}]});
 });
 
@@ -158,8 +158,9 @@ test('failed scope change clears obsolete data and retry loads requested scope',
   harness.failNextRequest();
   await page.getByRole('button', {name:/Last 7 days|近 7 天/}).click();
   await expect(page).toHaveURL(/window=168/);
-  await expect(page.getByRole('alert').filter({hasText:'temporary plugin telemetry failure'})).toBeVisible();
+  await expect(page.getByRole('alert').filter({hasText:/加载数据失败|Failed to load data\./})).toBeVisible();
   await expect(page.locator('[data-ui="plugin-problems"]')).toHaveCount(0);
+  await expect(page.getByText('temporary plugin telemetry failure', { exact: true })).toHaveCount(0);
   await page.getByRole('button', {name:/^Refresh$|^刷新$/}).click();
   await expect(page.locator('[data-ui="plugin-problems"]')).toBeVisible();
 });

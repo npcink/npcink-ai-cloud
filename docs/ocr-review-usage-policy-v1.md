@@ -47,6 +47,25 @@ one concurrent review task, an eight-minute task timeout, a fifteen-minute
 action ceiling, and `max_tokens_budget=80000` for input plus output tokens.
 The action's overhead and failure reporting have a twenty-minute job ceiling.
 
+The review job sets `OCR_NO_UPDATE=1` before the composite action starts.
+The npm launcher's default background updater can invoke a global npm
+reinstall even from `ocr version`; the entry point can disappear between
+configuration commands despite a successful version check. Replaying that
+replacement window reproduces the `Cannot find module /usr/local/bin/ocr`
+failure signature observed on PR #1120. Disabling
+the updater keeps the explicit CLI pin stable throughout install validation,
+configuration, range resolution, and review. Upgrades remain deliberate pin
+changes; do not repair this race with retries or an unpinned latest install.
+
+`OCR Startup Check` exercises the same pinned CLI on the same runner image,
+using a fresh runner, no repository checkout, no secrets, an invalid example
+endpoint, and configuration commands only. It verifies the version again
+after configuration and rejects an updater timestamp. It can run on a PR or
+via manual dispatch; it makes no model call and does not access M4. Because
+`pull_request_target` uses the trusted base workflow, a PR changing the review
+workflow itself still runs the old reviewer until merged; the separate
+credential-free startup check validates the candidate without exposing secrets to it.
+
 The operator selected this bounded increase on 2026-10-13. The earlier 40,000
 budget stopped PR #1107 before any model request: the single workflow diff
 was estimated at 49,916 tokens, with zero actual tokens consumed. The 80,000

@@ -4616,7 +4616,10 @@ def test_admin_runtime_profiles_hides_evidence_for_a_changed_route(tmp_path: Pat
     assert "image_generation" not in image_instance["capability_evidence"]
 
 
-def test_admin_runtime_profiles_rejects_expired_capability_evidence(tmp_path: Path) -> None:
+@pytest.mark.parametrize("method", ["put", "patch"])
+def test_admin_runtime_profiles_rejects_expired_capability_evidence(
+    tmp_path: Path, method: str
+) -> None:
     database_url, client, _ = _build_client(tmp_path)
     with get_session(database_url) as session:
         evidence = session.scalar(
@@ -4638,7 +4641,7 @@ def test_admin_runtime_profiles_rejects_expired_capability_evidence(tmp_path: Pa
     image_instance = projection["available_instances"]["image_generation"][0]
     assert "image_generation" not in image_instance["capability_evidence"]
 
-    response = client.put(
+    response = getattr(client, method)(
         "/internal/service/admin/runtime-profiles",
         headers=merge_json_headers(
             build_internal_headers(idempotency_key="runtime-profiles-expired-evidence")
@@ -5380,3 +5383,44 @@ def test_wordpress_ai_connector_rejects_invalid_contract_source_before_provider(
         "wordpress_operation.ai_task_contract_identity_invalid"
     )
     assert provider.requests == []
+
+
+def test_admin_runtime_profile_patch_preserves_unrelated_failed_media(tmp_path: Path) -> None:
+    database_url, client, _ = _build_client(tmp_path)
+    with get_session(database_url) as session:
+        binding = session.get(RoutingBinding, WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID)
+        assert binding is not None
+        binding.candidate_instance_ids = ["unavailable-image-instance"]
+        binding.revision = "preserved-image-failure"
+        session.commit()
+    before = client.get(
+        "/internal/service/admin/runtime-profiles", headers=build_internal_headers()
+    ).json()["data"]
+    profiles = _runtime_profile_replacement_from_projection(before["profiles"])
+    selected = next(
+        item for item in profiles if item["profile_id"] == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
+    )
+    selected["note"] = "text change only"
+    response = client.patch(
+        "/internal/service/admin/runtime-profiles",
+        headers=merge_json_headers(build_internal_headers(idempotency_key="isolated-text-patch")),
+        json={
+            "contract_version": "cloud-hosted-runtime-profiles.v1",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
+            "profiles": [selected],
+        },
+    )
+    assert response.status_code == 200, response.text
+    after = response.json()["data"]["profiles"]
+    for profile in before["profiles"]:
+        current = next(item for item in after if item["profile_id"] == profile["profile_id"])
+        if profile["profile_id"] != WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID:
+            assert current == profile
+    assert (
+        next(item for item in after if item["profile_id"] == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID)[
+            "note"
+        ]
+        == "text change only"
+    )

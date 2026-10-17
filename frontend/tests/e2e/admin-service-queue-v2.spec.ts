@@ -101,7 +101,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
   });
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
   await expect(
-    page.getByRole('alert').filter({ hasText: /temporary queue refresh failure/i })
+    page.getByRole('alert').filter({ hasText: /加载数据失败|Failed to load data\./ })
   ).toBeVisible();
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Uncovered');
@@ -176,7 +176,7 @@ test('service status pilot emits the risk-tiered Admin visual receipt', async ({
   });
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
   await expect(
-    page.getByRole('alert').filter({ hasText: /temporary queue refresh failure/i })
+    page.getByRole('alert').filter({ hasText: /加载数据失败|Failed to load data\./ })
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Uncovered Account' })).toBeVisible();
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Uncovered');

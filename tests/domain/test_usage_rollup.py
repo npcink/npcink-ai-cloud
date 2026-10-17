@@ -4,11 +4,22 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from app.adapters.repositories.stats_repository import StatsRepository
-from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import ProviderCallRecord, RunRecord
+from app.core.db import dispose_engine, get_engine, get_session, init_schema
+from app.core.models import (
+    CatalogInstance,
+    CatalogModel,
+    CatalogProvider,
+    HealthSnapshot,
+    ProviderCallRecord,
+    RoutingBinding,
+    RoutingProfile,
+    RunRecord,
+    Site,
+    UsageRollup,
+)
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
@@ -20,11 +31,210 @@ from app.domain.usage.rollup import (
     ROUTER_PERFORMANCE_BATCH_SCOPE,
     UsageRollupService,
 )
+from app.domain.usage.service import UsageService
 from tests.conftest import seed_openai_model_allowlist, seed_site_auth
 
 
 def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{tmp_path / 'usage-rollup-domain.sqlite3'}"
+
+
+@pytest.fixture
+def health_rollup_database(tmp_path: Path):
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    now = datetime(2026, 10, 17, 8, tzinfo=UTC)
+    with get_session(database_url) as session:
+        session.add(CatalogProvider(provider_id="p", display_name="P", adapter_type="fake"))
+        session.add(
+            CatalogModel(
+                model_id="m",
+                provider_id="p",
+                family="text",
+                feature="text",
+                status="active",
+                revision="test",
+            )
+        )
+        for instance_id in ("a", "b", "unknown"):
+            session.add(
+                CatalogInstance(
+                    instance_id=instance_id,
+                    model_id="m",
+                    provider_id="p",
+                    endpoint_variant="default",
+                    region="test",
+                )
+            )
+        for profile_id, candidates in (("text.test", ["a", "b"]), ("text.empty", [])):
+            session.add(RoutingProfile(profile_id=profile_id, execution_kind="text"))
+            session.add(
+                RoutingBinding(
+                    profile_id=profile_id, candidate_instance_ids=candidates, revision="test"
+                )
+            )
+        for site_id in ("alpha", "beta"):
+            session.add(Site(site_id=site_id, name=site_id))
+        session.flush()
+        # Same timestamp: summary must retain the latest ID while profile/instance
+        # retain the earliest ID. Older and orphan rows must not leak into results.
+        for instance_id, status, measured_at in (
+            ("a", "unavailable", now - timedelta(hours=2)),
+            ("a", "healthy", now - timedelta(minutes=1)),
+            ("a", "degraded", now - timedelta(minutes=1)),
+            ("b", "healthy", now - timedelta(minutes=2)),
+            ("orphan", "unavailable", now),
+            (None, "unavailable", now),
+        ):
+            session.add(
+                HealthSnapshot(
+                    provider_id="p",
+                    instance_id=instance_id,
+                    status=status,
+                    reason="fixture",
+                    measured_at=measured_at,
+                )
+            )
+        session.flush()
+        for index, (site_id, age, error) in enumerate(
+            (
+                ("alpha", timedelta(minutes=10), None),
+                ("beta", timedelta(hours=12), "provider.timeout"),
+                ("alpha", timedelta(hours=25), None),
+            )
+        ):
+            run_id = f"r{index}"
+            at = now - age
+            session.add(
+                RunRecord(
+                    run_id=run_id,
+                    site_id=site_id,
+                    ability_name="test",
+                    channel="openapi",
+                    execution_kind="text",
+                    profile_id="text.test",
+                    status="failed" if error else "succeeded",
+                    trace_id=run_id,
+                    fallback_used=bool(error),
+                    started_at=at,
+                    finished_at=at,
+                )
+            )
+            session.flush()
+            session.add(
+                ProviderCallRecord(
+                    run_id=run_id,
+                    provider_id="p",
+                    model_id="m",
+                    instance_id="a",
+                    region="test",
+                    latency_ms=100 + index,
+                    tokens_in=10 + index,
+                    tokens_out=20,
+                    cost=0.01,
+                    fallback_used=bool(error),
+                    error_code=error,
+                    created_at=at,
+                )
+            )
+        session.commit()
+    yield database_url, now
+    dispose_engine(database_url)
+
+
+def _uncached_payloads(database_url: str, now: datetime) -> dict[str, dict]:
+    service = UsageService(database_url, now_factory=lambda: now)
+    expected = {}
+    for scope in (GLOBAL_SITE_SCOPE, "alpha", "beta"):
+        site_id = None if scope == GLOBAL_SITE_SCOPE else scope
+        expected[f"{scope}:summary:__summary__"] = service.get_usage_summary(site_id=site_id)
+        for profile_id in ("text.test", "text.empty"):
+            expected[f"{scope}:profile:{profile_id}"] = service.get_profile_stats(
+                profile_id, site_id=site_id
+            )
+        for instance_id in ("a", "b", "unknown"):
+            expected[f"{scope}:instance:{instance_id}"] = service.get_instance_stats(
+                instance_id, site_id=site_id
+            )
+    return expected
+
+
+def test_rollup_reuses_two_health_reads_without_changing_statistics(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    expected = _uncached_payloads(database_url, now)
+    health_queries = []
+
+    def count_health_queries(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "health_snapshots" in statement:
+            health_queries.append(statement)
+
+    engine = get_engine(database_url)
+    event.listen(engine, "before_cursor_execute", count_health_queries)
+    try:
+        result = UsageRollupService(database_url, now_factory=lambda: now).generate_rollups()
+    finally:
+        event.remove(engine, "before_cursor_execute", count_health_queries)
+
+    assert len(health_queries) == result["health_snapshot_reads"] == 2
+    assert result["sites_total"] == 2
+    assert result["counts"] == {"summary": 3, "profile": 6, "instance": 9}
+    assert result["rollups_total"] == 18
+    assert result["profile_rollups_total"] == 6
+    assert result["instance_rollups_total"] == 9
+    assert set(result["timings_ms"]) == {"total", "prepare", "health_read", "statistics", "write"}
+    assert all(value >= 0 for value in result["timings_ms"].values())
+    assert result["timings_ms"]["total"] >= result["timings_ms"]["prepare"]
+    assert result["timings_ms"]["prepare"] >= result["timings_ms"]["health_read"]
+    with get_session(database_url) as session:
+        actual = {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        }
+    assert actual == expected
+
+
+def test_rollup_refreshes_health_each_round_and_rolls_back_failed_writes(
+    health_rollup_database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, now = health_rollup_database
+    service = UsageRollupService(database_url, now_factory=lambda: now)
+    original_upsert = StatsRepository.upsert_usage_rollup
+    writes = 0
+
+    def fail_after_first_write(repository, **kwargs):
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise RuntimeError("injected rollup failure")
+        return original_upsert(repository, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(StatsRepository, "upsert_usage_rollup", fail_after_first_write)
+        with pytest.raises(RuntimeError, match="injected rollup failure"):
+            service.generate_rollups()
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(UsageRollup))) == []
+    service.generate_rollups()
+    before = _uncached_payloads(database_url, now)
+    with get_session(database_url) as session:
+        session.add(
+            HealthSnapshot(
+                provider_id="p",
+                instance_id="a",
+                status="unavailable",
+                reason="new round",
+                measured_at=now,
+            )
+        )
+        session.commit()
+    expected = _uncached_payloads(database_url, now)
+    assert expected != before
+    result = service.generate_rollups()
+    assert result["health_snapshot_reads"] == 2
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
 
 
 def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
