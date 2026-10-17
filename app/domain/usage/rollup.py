@@ -86,7 +86,9 @@ class UsageRollupService:
             # and keep the reader local so another invocation always reads afresh.
             health_started = perf_counter()
             health_snapshots = {
-                earliest: repository.list_latest_health_snapshots(earliest_on_tie=earliest)
+                earliest: repository.list_latest_health_snapshots(
+                    [instance.instance_id for instance in instances], earliest_on_tie=earliest
+                )
                 for earliest in (False, True)
             }
             health_read_seconds = perf_counter() - health_started

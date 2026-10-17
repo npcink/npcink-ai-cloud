@@ -1927,6 +1927,9 @@ class PluginObservabilityAttentionState(Base):
 
 class HealthSnapshot(Base):
     __tablename__ = "health_snapshots"
+    __table_args__ = (
+        Index("ix_health_snapshots_instance_measured_id", "instance_id", "measured_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider_id: Mapped[str] = mapped_column(String(64), index=True)

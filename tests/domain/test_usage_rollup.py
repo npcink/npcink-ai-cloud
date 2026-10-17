@@ -162,13 +162,28 @@ def _uncached_payloads(database_url: str, now: datetime) -> dict[str, dict]:
     return expected
 
 
-def test_rollup_reuses_two_health_reads_without_changing_statistics(health_rollup_database) -> None:
+def test_rollup_reuses_two_health_reads_without_changing_statistics(
+    health_rollup_database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     database_url, now = health_rollup_database
-    expected = _uncached_payloads(database_url, now)
+    original = StatsRepository.list_latest_health_snapshots
+
+    def global_reference(repository, instance_ids=None, *, earliest_on_tie=False):
+        rows = original(repository, earliest_on_tie=earliest_on_tie)
+        return rows if instance_ids is None else [
+            row for row in rows if row.instance_id in instance_ids
+        ]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(StatsRepository, "list_latest_health_snapshots", global_reference)
+        expected = _uncached_payloads(database_url, now)
     health_queries = []
 
     def count_health_queries(_connection, _cursor, statement, _parameters, _context, _many):
-        if statement.lstrip().upper().startswith("SELECT") and "health_snapshots" in statement:
+        if (
+            statement.lstrip().upper().startswith(("SELECT", "WITH"))
+            and "health_snapshots" in statement
+        ):
             health_queries.append(statement)
 
     engine = get_engine(database_url)
@@ -377,7 +392,10 @@ def test_rollup_statistic_queries_do_not_grow_with_catalog_size(health_rollup_da
     queries = []
 
     def capture(_connection, _cursor, statement, _parameters, _context, _many):
-        if statement.lstrip().upper().startswith("SELECT") and "usage_rollups" not in statement:
+        if (
+            statement.lstrip().upper().startswith(("SELECT", "WITH"))
+            and "usage_rollups" not in statement
+        ):
             queries.append(statement)
 
     engine = get_engine(database_url)
