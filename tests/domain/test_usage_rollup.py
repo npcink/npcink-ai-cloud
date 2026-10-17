@@ -46,6 +46,7 @@ def health_rollup_database(tmp_path: Path):
     now = datetime(2026, 10, 17, 8, tzinfo=UTC)
     with get_session(database_url) as session:
         session.add(CatalogProvider(provider_id="p", display_name="P", adapter_type="fake"))
+        session.flush()
         session.add(
             CatalogModel(
                 model_id="m",
@@ -56,6 +57,7 @@ def health_rollup_database(tmp_path: Path):
                 revision="test",
             )
         )
+        session.flush()
         for instance_id in ("a", "b", "unknown"):
             session.add(
                 CatalogInstance(
@@ -68,6 +70,7 @@ def health_rollup_database(tmp_path: Path):
             )
         for profile_id, candidates in (("text.test", ["a", "b"]), ("text.empty", [])):
             session.add(RoutingProfile(profile_id=profile_id, execution_kind="text"))
+            session.flush()
             session.add(
                 RoutingBinding(
                     profile_id=profile_id, candidate_instance_ids=candidates, revision="test"
