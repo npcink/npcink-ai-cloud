@@ -164,7 +164,8 @@ starts Eval automatically.
 
 ### Sample-stage gate for further instrumentation
 
-These stages also gate further instrumentation. While the daily detector reports
+These stages also gate further instrumentation. While the manually requested
+analysis reports
 `insufficient` or `validation`, the useful work is collecting ordinary editor
 sessions, not adding fields or views: a new breakdown over a handful of sessions
 produces empty or misleading buckets and makes the loop look more mature than
@@ -178,12 +179,13 @@ must therefore version Cloud's own scene prompt scaffold and record the version
 on the run. It must not be implemented by asking the Addon to upload a template
 identifier the Addon has no way to know.
 
-Start that stage when the daily detector reports `observation` — at least 50
-sessions in the seven-day window, ideally from more than one site. The detector
-is the existing `editor_assist.quality_detection.cadence` task in
-`app/workers/ops_cadence.py`, so the gate is already evaluated once every 24
-hours and needs no new machinery. Until it reports `observation`, collecting
-ordinary editor sessions is the only required work.
+Start that stage when the manually requested analysis reports `observation` —
+at least 50 sessions in the seven-day window, ideally from more than one site.
+Use the existing read-only quality CLI or the manual quality task in
+`app/workers/ops_cadence.py` to evaluate that gate when requested. It is no
+longer scheduled daily in the [background lightweight mode](background-lightweight-mode-v1.md).
+Until it reports `observation`, collecting ordinary editor sessions is the
+only required work.
 
 ## Runtime Diagnostics v1.1
 
@@ -225,21 +227,32 @@ An operator may inspect the exported file with a spreadsheet, notebook, or
 third-party analysis tool. Cloud remains the read-only evidence owner, while
 WordPress remains the adoption and final-write owner.
 
-## Daily Read-only Detection
+## Manual Read-only Detection
 
-The existing `ops-worker` cadence evaluates the seven-day summary once every
-24 hours. It records only aggregate counts and bounded candidate references in
-the existing cadence audit evidence:
+Quality analysis runs only on explicit operator request. The `ops-worker`
+keeps the existing bounded seven-day analysis available as a one-shot command:
 
-- issue code and task key;
-- sample size and confidence;
-- new or sustained persistence;
-- actionable candidate count.
+```bash
+python -m app.workers.ops_cadence --manual-task editor_assist_quality_detection
+```
 
-The detector creates no database table, notification, ticket, Eval run, or
-production configuration change. It remains useful while volume is low because
-the result distinguishes instrumentation validation from decision-grade
-evidence.
+Run it inside the already-authorized named runtime, not by copying secrets to
+the authoring Mac. It prints aggregate counts and bounded candidate references
+and exits without starting the daemon, writing a worker heartbeat, updating
+cadence freshness or making Provider calls. The richer existing
+`python -m app.ops.editor_assist_quality_status` command and Admin read-only
+quality detail remain available on demand.
+
+`build_cadence_summary` reports quality in `manual_tasks` with
+`execution_mode=manual`; the automatic task totals/freshness exclude it.
+Old quality cadence audit events remain historical evidence. An intentionally
+unscheduled analysis must not report missing/stale operational health.
+
+The metadata-only candidate references retain issue code, task key, sample
+size, confidence, persistence and actionable count. This creates no new table,
+notification, ticket, Eval run or production configuration change. Collection
+and existing retention still run; automatic prompt/model/router mutation is
+not enabled by the manual command.
 
 ## Existing Components Reused
 
