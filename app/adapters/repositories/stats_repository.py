@@ -4,7 +4,20 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, Integer, Select, and_, case, cast, distinct, func, select
+from sqlalchemy import (
+    ColumnElement,
+    Integer,
+    Select,
+    String,
+    and_,
+    case,
+    cast,
+    column,
+    distinct,
+    func,
+    select,
+    values,
+)
 from sqlalchemy.orm import Session
 
 from app.core.models import (
@@ -435,14 +448,43 @@ class StatsRepository:
         if instance_ids is not None and not instance_ids:
             return []
 
+        if instance_ids is not None:
+            # The caller already knows the scope. Seek within each instance's
+            # ordered index rather than aggregate its entire health history.
+            requested = values(column("instance_id", String(191))).data(
+                [(instance_id,) for instance_id in dict.fromkeys(instance_ids)]
+            ).cte("requested_health_instances")
+            latest = HealthSnapshot.__table__.alias("latest_health_time")
+            candidate = HealthSnapshot.__table__.alias("latest_health_candidate")
+            latest_time = (
+                select(func.max(latest.c.measured_at))
+                .where(latest.c.instance_id == requested.c.instance_id)
+                .correlate(requested)
+                .scalar_subquery()
+            )
+            chosen_id = (
+                select(candidate.c.id)
+                .where(
+                    candidate.c.instance_id == requested.c.instance_id,
+                    candidate.c.measured_at == latest_time,
+                )
+                .order_by(candidate.c.id.asc() if earliest_on_tie else candidate.c.id.desc())
+                .limit(1)
+                .correlate(requested)
+                .scalar_subquery()
+            )
+            statement = (
+                select(HealthSnapshot)
+                .where(HealthSnapshot.id.in_(select(chosen_id).select_from(requested)))
+                .order_by(HealthSnapshot.instance_id.asc(), HealthSnapshot.id.asc())
+            )
+            return list(self.session.scalars(statement))
+
+        # None retains the all-history contract, including orphan instances.
         latest_timestamps_statement = select(
             HealthSnapshot.instance_id.label("instance_id"),
             func.max(HealthSnapshot.measured_at).label("measured_at"),
         ).where(HealthSnapshot.instance_id.is_not(None))
-        if instance_ids is not None:
-            latest_timestamps_statement = latest_timestamps_statement.where(
-                HealthSnapshot.instance_id.in_(instance_ids)
-            )
         latest_timestamps = latest_timestamps_statement.group_by(
             HealthSnapshot.instance_id
         ).subquery()

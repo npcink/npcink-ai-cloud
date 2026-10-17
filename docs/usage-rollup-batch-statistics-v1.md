@@ -16,6 +16,9 @@ database schema, or connection-pool settings.
 - Read catalog instances, profiles, and routing bindings once per invocation.
   Read the latest health snapshots twice, retaining the two existing ID tie
   choices: summary chooses the latest ID; profile/instance choose the earliest.
+  Both reads use the invocation's catalog IDs. Health summaries already iterate
+  that catalog; orphan snapshots cannot contribute to their output. Explicit
+  instance/Profile/observability readers keep their requested instance scope.
 - Use the invocation's captured `now` for both UTC windows and all generated
   payload timestamps. Boundaries remain inclusive. Each new invocation reads
   fresh state; this is not a process-wide or cross-request cache.
@@ -47,6 +50,43 @@ Interactive statistics continue to use ordinary fresh readers. Cloud remains
 the owner of runtime/service evidence; no WordPress registry, approval, prompt,
 workflow, or final-write authority moves to Cloud.
 
+## Latest health lookup and index
+
+Explicit instance lists use one parameterized SQL batch: an instance-values CTE,
+an indexed seek for each instance's maximum `measured_at`, then a seek for its
+minimum or maximum ID at that time. The `(instance_id, measured_at, id)` B-tree
+supports both tie choices without loading or aggregating each instance's full
+history. Duplicate requested IDs do not duplicate output; missing/empty scopes,
+empty-string IDs, and original row ordering remain unchanged. Each invocation
+reads fresh database state. This is not a cross-request or cross-round cache.
+
+The generic repository's `instance_ids=None` still means every non-null
+historical instance, including instances absent from the catalog. Its global
+aggregation remains as a compatibility path. It must not silently become a
+catalog-only read. Usage summary and rollup know their catalog already and can
+use the scoped path without changing the generated health summary.
+
+Migration `20261017_0088` adds only
+`ix_health_snapshots_instance_measured_id`; retain the existing single-column
+indexes. PostgreSQL builds and drops it `CONCURRENTLY` in Alembic's autocommit
+block. SQLite uses ordinary index DDL. A retry after a completed build reuses
+only a valid, ready, non-unique B-tree with exactly those columns and no partial,
+sorting, or INCLUDE variation. An invalid or mismatched index stops migration;
+inspect the named index and repair only that exact build before retrying. Do
+not hide failed concurrent builds with `IF NOT EXISTS` or delete other indexes.
+
+Concurrent index construction still consumes CPU, I/O and storage and can wait
+for transactions; it is not an authorization for production DDL. Future release
+planning must check disk, migration timeout/cancellation, index validity and
+rollback. Historical rows and their meanings are not changed. The new index
+also adds maintenance work to health writes; include append/WAL costs in the
+runtime comparison rather than declaring success from read timing alone.
+
+Rollback application source and downgrade this index through a reviewed
+migration/release path; no health data, usage, ledger or callbacks are deleted.
+The unoptimized global lookup continues to work without the new index, and
+the scoped query remains correct if the index has been removed.
+
 ## Verification and rollback
 
 `tests/domain/test_usage_rollup.py` compares persisted batch payloads with the
@@ -55,6 +95,12 @@ inclusive boundaries, differing run/call timestamps, retries/errors, missing
 finishes, fallback, cost rounding, health ties, and repeated rounds. It also
 asserts statistics SELECT counts stay constant as instances/profiles grow.
 Existing usage and repository tests cover the unchanged interactive consumers.
+The health lookup contract compares complete selected rows with history,
+including tie IDs, backdated larger IDs, orphan/null/missing instances, duplicate
+and empty scopes, and fresh appends. Rollup payloads also compare against the
+global-health reference. Query counters count both `SELECT` and `WITH`, so a
+CTE must not disappear from the two-read and query-growth gates. Validate the
+same contract and migration upgrade/retry/downgrade against isolated PostgreSQL.
 
 M4 acceptance additionally requires PostgreSQL behavior and an isolated old/new
 1/2/4-concurrency comparison with identical fixture/resource limits. Record
@@ -71,5 +117,6 @@ reduce the experimental workload instead of weakening protection.
 GitHub required checks and merged
 clean-master promotion remain separate gates; production is not authorized.
 
-Rollback by reverting this focused PR. No migration, secret, or scheduler
-configuration rollback is required.
+The batch-statistics source change can be reverted without data, secret, or
+scheduler changes. The latest-health index has its own migration downgrade
+described above; application correctness does not depend on removing it.

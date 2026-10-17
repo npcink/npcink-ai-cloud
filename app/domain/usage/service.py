@@ -571,7 +571,9 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = self._read_latest_health_snapshots(repository)
+            health_snapshots = self._read_latest_health_snapshots(
+                repository, [instance.instance_id for instance in instances]
+            )
             sites_total = repository.count_sites()
             profiles_total = repository.count_profiles()
             today_run_metrics = repository.aggregate_runs_window(
