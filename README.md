@@ -234,6 +234,7 @@ Key M4 decisions and measurements remain directly discoverable:
 - [ADR-027 package proxy cache](docs/decisions/027-m4-package-proxy-streaming-cache.md)
 - [ADR-051 managed private source relay](docs/decisions/051-managed-private-source-relay-service.md)
 - [ADR-052 Pgy primary M4 access](docs/decisions/052-pgy-primary-m4-access.md)
+- [ADR-060 LAN-first M4 operation routing](docs/decisions/060-lan-first-m4-operation-routing.md) — prefer `192.168.10.200`, then Pgy `172.16.3.35`, then Tailscale `100.102.170.79`; explicitly select the host before operations that lack automatic route selection
 - [M4 remote development and overlay network standard](docs/m4-remote-development-and-overlay-network-standard-v1.md)
 - [Managed source relay closeout and retrospective](docs/history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md)
 - [Package proxy validation](docs/history/m4/2026/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
