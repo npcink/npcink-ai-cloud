@@ -65,6 +65,11 @@ permissions:
 
 jobs:
   code-review:
+    # The npm launcher otherwise starts a background global npm update from
+    # even `ocr version`. That can remove its own entry point during config.
+    # Keep the reviewed CLI pin stable for the whole composite action.
+    env:
+      OCR_NO_UPDATE: '1'
     # Pinned to the validated Ubuntu 26.04 image: the pilot's runner canary
     # proved the review action end-to-end on ubuntu-26.04 on 2026-10-04
     # (npcink-abilities-toolkit run 37258146682), ahead of the 2026-10-19

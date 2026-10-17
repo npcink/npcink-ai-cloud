@@ -1,0 +1,47 @@
+name: OCR Startup Check
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ocr-review.yml'
+      - '.github/workflows/ocr-startup-check.yml'
+      - 'tests/contract/test_ocr_startup_contract.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  startup:
+    name: OCR pinned startup
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      OCR_NO_UPDATE: '1'
+    steps:
+      - name: Install the pinned CLI
+        run: npm install --global '@alibaba-group/open-code-review@1.12.13'
+      - name: Verify startup and configuration without a provider call
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(ocr version)"
+          case "$version" in
+            'open-code-review v1.12.13 '*) ;;
+            *) echo '::error::Unexpected OCR version'; exit 1 ;;
+          esac
+          ocr config unset provider
+          ocr config set llm.auth_token ''
+          ocr config set llm.extra_headers ''
+          ocr config set llm.retry_codes ''
+          ocr config set llm.url 'https://ocr-startup.invalid/v1'
+          ocr config set llm.model 'startup-probe'
+          ocr config set llm.use_anthropic false
+          ocr config set llm.protocol openai
+          ocr config set llm.auth_header ''
+          ocr config set llm.auth_token_cmd 'printf ""'
+          ocr config set llm.extra_body '{"thinking":{"type":"disabled"}}'
+          ocr config set language English
+          test "$(ocr version)" = "$version"
+          test ! -e "${HOME}/.opencodereview/last-update-check"
+          echo 'Pinned OCR startup and configuration passed; no model call made.'
