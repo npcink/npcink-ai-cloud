@@ -163,16 +163,19 @@ def _uncached_payloads(database_url: str, now: datetime) -> dict[str, dict]:
 
 
 def test_rollup_reuses_two_health_reads_without_changing_statistics(
-    health_rollup_database, monkeypatch: pytest.MonkeyPatch,
+    health_rollup_database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url, now = health_rollup_database
     original = StatsRepository.list_latest_health_snapshots
 
     def global_reference(repository, instance_ids=None, *, earliest_on_tie=False):
         rows = original(repository, earliest_on_tie=earliest_on_tie)
-        return rows if instance_ids is None else [
-            row for row in rows if row.instance_id in instance_ids
-        ]
+        return (
+            rows
+            if instance_ids is None
+            else [row for row in rows if row.instance_id in instance_ids]
+        )
 
     with monkeypatch.context() as patch:
         patch.setattr(StatsRepository, "list_latest_health_snapshots", global_reference)
@@ -210,28 +213,42 @@ def test_rollup_reuses_two_health_reads_without_changing_statistics(
     assert actual == expected
 
 
+@pytest.mark.parametrize("existing", [False, True])
 def test_rollup_refreshes_health_each_round_and_rolls_back_failed_writes(
     health_rollup_database,
     monkeypatch: pytest.MonkeyPatch,
+    existing: bool,
 ) -> None:
     database_url, now = health_rollup_database
     service = UsageRollupService(database_url, now_factory=lambda: now)
-    original_upsert = StatsRepository.upsert_usage_rollup
+    if existing:
+        service.generate_rollups()
+    with get_session(database_url) as session:
+        before_failure = {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        }
+    service.now_factory = lambda: now + timedelta(minutes=5)
+    original_upsert = StatsRepository.upsert_usage_rollups
     writes = 0
 
-    def fail_after_first_write(repository, **kwargs):
+    def fail_after_first_write(repository, rows):
         nonlocal writes
         writes += 1
         if writes == 2:
             raise RuntimeError("injected rollup failure")
-        return original_upsert(repository, **kwargs)
+        return original_upsert(repository, rows)
 
     with monkeypatch.context() as patch:
-        patch.setattr(StatsRepository, "upsert_usage_rollup", fail_after_first_write)
+        patch.setattr(StatsRepository, "upsert_usage_rollups", fail_after_first_write)
         with pytest.raises(RuntimeError, match="injected rollup failure"):
-            service.generate_rollups()
+            service.generate_rollups(write_batch_size=2)
     with get_session(database_url) as session:
-        assert list(session.scalars(select(UsageRollup))) == []
+        assert {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        } == before_failure
+    service.now_factory = lambda: now
     service.generate_rollups()
     before = _uncached_payloads(database_url, now)
     with get_session(database_url) as session:
@@ -886,3 +903,84 @@ def test_usage_rollup_service_stores_alert_provider_degradation_batches(
     assert event["summary"]["provider"] == provider_id
 
     dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("batch_size", [128, 256])
+def test_rollup_saves_bounded_batches_with_one_commit(
+    health_rollup_database,
+    monkeypatch: pytest.MonkeyPatch,
+    batch_size: int,
+) -> None:
+    database_url, now = health_rollup_database
+    with get_session(database_url) as session:
+        session.add_all(
+            CatalogInstance(
+                instance_id=f"batch{index}",
+                model_id="m",
+                provider_id="p",
+                endpoint_variant="default",
+                region="test",
+            )
+            for index in range(262)
+        )
+        session.commit()
+    service = UsageRollupService(database_url, now_factory=lambda: now)
+    original_batch = StatsRepository.upsert_usage_rollups
+
+    def legacy_save(repository, rows):
+        for item in rows:
+            repository.upsert_usage_rollup(
+                rollup_key=item.rollup_key,
+                site_scope=item.site_scope,
+                scope_kind=item.scope_kind,
+                scope_id=item.scope_id,
+                payload_json=item.payload_json,
+            )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(StatsRepository, "upsert_usage_rollups", legacy_save)
+        service.generate_rollups()
+    with get_session(database_url) as session:
+        expected = {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        }
+
+    batches, queries, commits = [], [], []
+
+    def save(repository, rows):
+        if rows:
+            batches.append(len(rows))
+        original_batch(repository, rows)
+
+    def capture(_conn, _cursor, sql, _parameters, _context, _many):
+        if sql.lstrip().upper().startswith("SELECT") and "usage_rollups" in sql:
+            queries.append(sql)
+
+    def committed(_conn):
+        commits.append(True)
+
+    engine = get_engine(database_url)
+    monkeypatch.setattr(StatsRepository, "upsert_usage_rollups", save)
+    event.listen(engine, "before_cursor_execute", capture)
+    event.listen(engine, "commit", committed)
+    try:
+        result = service.generate_rollups(write_batch_size=batch_size)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+        event.remove(engine, "commit", committed)
+    assert batches == ([128, 128, 12] if batch_size == 128 else [256, 12]) * 3
+    assert len(queries) == len(batches)
+    assert len(commits) == 1
+    assert result["rollups_total"] == 804
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: (item.payload_json, item.generated_at)
+            for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+@pytest.mark.parametrize("batch_size", [0, -1, 257, 1.5, True, "128"])
+def test_rollup_rejects_unbounded_write_batch(batch_size: int) -> None:
+    with pytest.raises(ValueError, match="batch size"):
+        UsageRollupService("unused").generate_rollups(write_batch_size=batch_size)
