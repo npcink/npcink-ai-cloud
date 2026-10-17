@@ -221,6 +221,7 @@ print(completed.stdout.strip())
         }
         release_plan = {
             "schema": "npcink.production_release_plan.v2",
+            "base_sha": "a" * 40,
             "lane": release_plan_lane,
             **plan_flags,
         }
@@ -655,6 +656,7 @@ def _run_remote_cutover(
     preexisting_failure_phase: str = "initialize",
     preexisting_failure_previous: str | None = None,
     preserved_api_tag_drift: bool = False,
+    installed_revision: str | None = "a" * 40,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -669,6 +671,11 @@ def _run_remote_cutover(
 
     incoming.mkdir(parents=True)
     previous.mkdir(parents=True)
+    if installed_revision is not None:
+        _write(
+            previous / "release-bundle-manifest.json",
+            json.dumps({"source": {"revision": installed_revision}}),
+        )
     fake_bin.mkdir()
     recovery_running_state.mkdir()
     shared_config = remote_dir / "shared" / "config"
@@ -1582,6 +1589,22 @@ def test_post_commit_rollback_map_cleanup_failure_is_fail_closed(
     assert " up -d --pull never --no-build --force-recreate --remove-orphans" not in (
         log_path.read_text(encoding="utf-8")
     )
+
+
+@pytest.mark.parametrize("lane", ["backend", "migration", "frontend"])
+@pytest.mark.parametrize("installed_revision", [None, "b" * 40])
+def test_partial_cutover_rejects_unproved_installed_baseline_before_mutation(
+    tmp_path: Path, lane: str, installed_revision: str | None
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path, release_plan_lane=lane, installed_revision=installed_revision
+    )
+    assert completed.returncode != 0
+    assert "Partial deployment baseline mismatch" in completed.stderr
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    for mutation in ("load:", "docker:stop", "docker:rm", "migrate:", "refresh:"):
+        assert mutation not in log
 
 
 def test_backend_only_cutover_preserves_existing_frontend_container(
