@@ -4,6 +4,10 @@
 
 Accepted.
 
+Operator route priority superseded by
+[ADR-060](060-lan-first-m4-operation-routing.md) on 2026-10-16. The direct
+transfer and explicit relay recovery boundaries below remain applicable.
+
 ## Date
 
 2026-09-04.

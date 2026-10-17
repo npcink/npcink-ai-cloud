@@ -159,6 +159,7 @@ deleting the old decision history.
 - [Cloud OpenCodeReview Usage Policy](ocr-review-usage-policy-v1.md) — repository-local advisory review cadence, quota controls, provider configuration, and 429 recovery rules
 - [Managed Private Source Relay](decisions/051-managed-private-source-relay-service.md) — accepted refinement that keeps the Tailscale-only Nginx service available while source bundles and locks remain per-operation and transient
 - [Pgy Primary M4 Access](decisions/052-pgy-primary-m4-access.md) — accepted default-path decision for Pgy SSH/direct transfer with LAN and Tailscale fallback
+- [LAN-first M4 Operation Routing](decisions/060-lan-first-m4-operation-routing.md) — current operator priority: office LAN, then Pgy, then Tailscale; select and pin the SSH host before each operation while keeping direct/relay transfer mode separate
 - [M4 Remote Development and Overlay Network Standard](m4-remote-development-and-overlay-network-standard-v1.md) — active operating standard for M5 authoring, M4 Docker/Ollama runtime, overlay routing, mobile SSH, evidence, and recovery
 - [Managed Source Relay Closeout and Development Retrospective — 2026-09-04](history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md) — dated evidence for PRs `#891` and `#892`, relay failure diagnosis, bounded retry corrections, M4 promotion, and reusable development lessons; not current runtime or release authority
 - [Internal New-User Readiness Gate](internal-new-user-readiness-gate-v1.md)

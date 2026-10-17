@@ -26,8 +26,13 @@ The documents have separate responsibilities:
   a relay HTTP service may remain available while every source bundle remains
   per-operation, integrity-checked, and transient.
 - [ADR-052](decisions/052-pgy-primary-m4-access.md) records why Pgy is the
-  default M4 SSH and direct source-transfer path, with LAN and Tailscale
-  fallback for the automatic tunnel and explicit relay recovery.
+  earlier default M4 SSH/direct source-transfer path.
+- [ADR-060](decisions/060-lan-first-m4-operation-routing.md) records the current
+  operator priority: LAN, then Pgy, then Tailscale. For commands without
+  automatic route selection, probe SSH first and explicitly pass the selected
+  `NPCINK_CLOUD_M4_SSH_HOST`; pin it through the entire operation. Transfer mode
+  remains independent and a failed in-flight operation is not replayed on
+  another route automatically.
 - [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) records why
   public package artifacts stream through a bounded disposable M4 cache.
 - [ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md) records why

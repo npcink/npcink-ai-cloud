@@ -10,7 +10,8 @@ Cloud Docker runtime and native Ollama service. It consolidates the lessons
 from the LAN, Tailscale, private relay, and 贝锐蒲公英 trials into one
 repeatable operating model.
 
-The access-path decision is recorded in
+The current LAN-first operator access policy is recorded in
+[ADR-060](decisions/060-lan-first-m4-operation-routing.md), refining the earlier
 [ADR-052](decisions/052-pgy-primary-m4-access.md). The source relay history is
 preserved in [ADR-026](decisions/026-private-source-relay-transfer.md) and
 [ADR-051](decisions/051-managed-private-source-relay-service.md).
@@ -40,9 +41,9 @@ The current single-operator addresses are:
 | Purpose | Address |
 | --- | --- |
 | Office LAN SSH | `muze@192.168.10.200` |
-| Pgy primary M4 SSH | `muze@172.16.3.35` |
+| Pgy second-choice M4 SSH | `muze@172.16.3.35` |
 | Tailscale M4 fallback | `muze@100.102.170.79` |
-| Pgy source relay | `root@100.90.87.36` |
+| Optional Tailscale source relay | `root@100.90.87.36` |
 | M4 preview loopback | `127.0.0.1:8010` |
 | M5 tunnel endpoint | `127.0.0.1:18010` |
 
@@ -79,18 +80,27 @@ accepted.
 
 ## 4. Source Transfer and Runtime Operations
 
-Ordinary M4 source transfer defaults to direct SSH over Pgy:
+For source transfer, status, tests, lifecycle, and promotion, prefer office LAN,
+then Pgy, then Tailscale. The CLI's unoverridden host still defaults to Pgy;
+operators and AI agents must select a reachable route first and set
+`NPCINK_CLOUD_M4_SSH_HOST` explicitly, as shown in the
+[runbook](m4-preview-development-v1.md#lan-first-operation-route-selection).
+Keep that address fixed for the entire operation.
+
+For example, when office LAN SSH is reachable:
 
 ```text
-NPCINK_CLOUD_M4_SSH_HOST=muze@172.16.3.35
+NPCINK_CLOUD_M4_SSH_HOST=muze@192.168.10.200
 NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct
 ```
 
-Direct transfer is intentionally fail-closed. A failed Pgy transfer must not
+Direct transfer is intentionally fail-closed. A failed transfer must not
 silently switch to Tailscale or the relay, because that would hide a degraded
 network path and make timing evidence incomparable.
 
-Use the explicit recovery path when Pgy is unavailable:
+Selecting the Tailscale SSH route still permits direct transfer. Use the
+following separate, explicit relay recovery only when it is appropriate for
+the diagnosed transfer failure:
 
 ```bash
 NPCINK_CLOUD_M4_SSH_HOST=muze@100.102.170.79 \
@@ -184,7 +194,7 @@ create prettier timing samples.
 | Symptom | First check | Correct response |
 | --- | --- | --- |
 | `selected_route=lan` fails | office LAN SSH and M4 loopback health | allow automatic Pgy fallback |
-| Pgy SSH fails | Pgy client, virtual IP, M4 power, Remote Login | inspect status, then explicit Tailscale fallback |
+| Pgy SSH fails before an operation | Pgy client, virtual IP, M4 power, Remote Login | probe Tailscale and explicitly select it if reachable |
 | direct sync fails | exact transfer error and route | preserve evidence; use explicit relay recovery |
 | tunnel starts but no local readiness | `127.0.0.1:18010` owner and `/health/live` | choose another local port or stop the exact stale tunnel |
 | M4 containers stopped after reboot | `m4:preview:status` | use `m4:preview:recover` for the exact project |
