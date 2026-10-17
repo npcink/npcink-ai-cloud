@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { test } from './helpers/critical-network-fixture';
+import { expect, type Page } from '@playwright/test';
 import { installAdminMocks } from './helpers/admin-operator-fixture';
 
 const primaryInstance = {
@@ -177,7 +178,7 @@ async function installRuntimeProfilesHarness(page: Page) {
       return;
     }
 
-    if (request.method() !== 'PUT') {
+    if (request.method() !== 'PATCH') {
       await route.fulfill({
         status: 404,
         contentType: 'application/json',
@@ -198,16 +199,14 @@ async function installRuntimeProfilesHarness(page: Page) {
       idempotencyKey: request.headers()['idempotency-key'] || '',
       body,
     });
-    profiles = (body.profiles as typeof initialProfiles).map((profile) => {
-      const previous = profiles.find((item) => item.profile_id === profile.profile_id);
-      return {
-        ...(previous || initialProfiles[0]),
+    profiles = profiles.map((previous) => {
+      const profile = (body.profiles as typeof initialProfiles).find((item) => item.profile_id === previous.profile_id);
+      return profile ? {
+        ...previous,
         ...profile,
-        platform_kind: 'wordpress',
-        connector_id: 'wordpress_ai_connector',
         revision: 'runtime-profiles-e2e-saved',
         status: profile.candidate_instance_ids.length ? 'configured' : 'needs_candidates',
-      };
+      } : previous;
     });
     await route.fulfill({
       status: 200,
@@ -422,7 +421,7 @@ test('enabled models missing from the latest upstream catalog remain visible for
     await route.fallback();
   });
   await page.route('**/api/admin/runtime-profiles', async (route) => {
-    if (route.request().method() === 'PUT') {
+    if (route.request().method() === 'PATCH') {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       writes.push(body);
       const payloadProfiles = body.profiles as Array<Record<string, unknown>>;
@@ -607,7 +606,7 @@ test('candidate editing is dialog-bounded and PUT saves an auditable receipt', a
 
   await page.getByRole('button', { name: /Save profiles|保存配置/i }).click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0].method).toBe('PUT');
+  expect(writes[0].method).toBe('PATCH');
   expect(writes[0].idempotencyKey).toMatch(/^runtime_profiles_/);
   expect(writes[0].body).toMatchObject({
     contract_version: 'cloud-hosted-runtime-profiles.v1',
@@ -777,4 +776,44 @@ test('runtime profile table and workbench keep the accepted PC density', async (
     caret: 'hide',
     maxDiffPixelRatio: 0.015,
   });
+});
+
+// Saving text must never dispatch an unrelated, previously failed media probe.
+test('text edits save independently of failed image capability and preserve unchanged profiles', async ({ page }) => {
+  const writes = await installRuntimeProfilesHarness(page);
+  const image = {
+    ...primaryInstance,
+    instance_id: 'image.kolors',
+    model_id: 'Kwai-Kolors/Kolors',
+    model_feature: 'image_generation',
+    capability_evidence: {
+      image_generation: { state: 'failed', source: 'provider_probe', revision: 'failed', checked_at: '2026-10-17T06:00:00Z', error_code: 'provider.budget_configuration_missing' },
+    },
+  };
+  const profiles = [...structuredClone(initialProfiles), {
+    ...initialProfiles[0], profile_id: 'wp-ai.image-generation', execution_kind: 'image_generation',
+    label: 'Image generation', candidate_instance_ids: [image.instance_id],
+  }];
+  const data = { ...projection(profiles), available_instances: { ...projection(profiles).available_instances, image_generation: [image] } };
+  await page.route('**/api/admin/runtime-profiles', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    await route.fulfill({ json: envelope(data) });
+  });
+  let probes = 0;
+  await page.route('**/api/admin/runtime-profiles/capability-probe', async (route) => {
+    probes += 1;
+    await route.fulfill({ status: 409, json: { status: 'error', error_code: 'provider.budget_configuration_missing', message: 'budget missing', data: {} } });
+  });
+  await page.goto('/admin/runtime-profiles');
+  await expect(profileRow(page, 'wp-ai.image-generation')).toContainText(/Blocked|已阻断/);
+  await profileRow(page, 'wp-ai.image-generation').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await expect(candidateRow(page, image.instance_id)).toContainText(/Verification failed|验证失败/);
+  await page.keyboard.press('Escape');
+  await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/ }).click();
+  await candidateRow(page, 'text.backup').getByRole('radio', { name: /as fallback|设为兜底模型/ }).check();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /^Save profiles$|^保存配置$/ }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(probes).toBe(0);
+  expect(writes[0].body.profiles).toEqual([expect.objectContaining({ profile_id: 'route.classification', candidate_instance_ids: ['text.primary', 'text.backup'] })]);
 });

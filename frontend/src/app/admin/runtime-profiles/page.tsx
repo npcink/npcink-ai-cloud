@@ -415,10 +415,12 @@ function profileTone(profile: RuntimeProfile, instances: Map<string, RuntimeInst
     const instance = instances.get(instanceId);
     return instance && !instanceMatchesExecutionKind(instance, profile.execution_kind);
   })) return 'error';
-  const modelStatus = primary.model_status.trim().toLowerCase();
-  const healthStatus = primary.health_status.trim().toLowerCase();
-  if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
-  if (healthStatus !== 'healthy') return 'warning';
+  const tones = profile.candidate_instance_ids.map((id) => {
+    const instance = instances.get(id);
+    return instance ? instanceTone(instance, profile.execution_kind) : 'warning';
+  });
+  if (tones.includes('error')) return 'error';
+  if (tones.includes('warning')) return 'warning';
   return 'success';
 }
 
@@ -427,9 +429,9 @@ function instanceTone(instance: RuntimeInstance, executionKind = ''): 'success' 
   const healthStatus = instance.health_status.trim().toLowerCase();
   if (modelStatus !== 'available' || healthStatus === 'unhealthy') return 'error';
   if (requiresCapabilityVerification(executionKind)) {
-    return capabilityEvidence(instance, executionKind)?.state === 'verified'
-      ? 'success'
-      : 'warning';
+    const evidence = capabilityEvidence(instance, executionKind);
+    if (evidence?.state === 'verified') return 'success';
+    return evidence?.error_code ? 'error' : 'warning';
   }
   if (healthStatus !== 'healthy') return 'warning';
   return 'success';
@@ -621,9 +623,13 @@ export default function RuntimeProfilesPage() {
     () => new Map(allInstances.map((instance) => [instance.instance_id, instance])),
     [allInstances]
   );
+  const changedProfiles = useMemo(() => drafts.filter((profile) => {
+    const saved = data?.profiles.find((item) => item.profile_id === profile.profile_id);
+    return !saved || profileSnapshot([profile]) !== profileSnapshot([saved]);
+  }), [drafts, data]);
   const pendingSelectedProbes = useMemo(() => {
     const seen = new Set<string>();
-    return drafts.flatMap((profile) => {
+    return changedProfiles.flatMap((profile) => {
       if (!requiresCapabilityVerification(profile.execution_kind)) return [];
       return profile.candidate_instance_ids.flatMap((instanceId) => {
         const instance = instancesById.get(instanceId);
@@ -634,7 +640,7 @@ export default function RuntimeProfilesPage() {
         return [{ profile, instance }];
       });
     });
-  }, [drafts, instancesById]);
+  }, [changedProfiles, instancesById]);
   const editingProfile = drafts.find((profile) => profile.profile_id === editingProfileId) || null;
   const profileDirty = profileSnapshot(drafts) !== baseline;
   const mediaRecognitionDirty = mediaRecognitionPolicySnapshot(mediaRecognitionForm) !== mediaRecognitionBaseline;
@@ -818,6 +824,12 @@ export default function RuntimeProfilesPage() {
       ? cause.details as Record<string, unknown>
       : Object.create(null) as Record<string, unknown>;
     const errorCode = String(details.error_code || (cause instanceof ApiError ? cause.errorCode : '')).trim();
+    if (errorCode.startsWith('provider.budget_')) {
+      return copy('probe_failed_budget', '{{model}}: verification was blocked by the Provider budget ({{code}}). Check the budget configuration and remaining limit; this does not establish model capability.', {
+        model: instance.model_id,
+        code: errorCode,
+      });
+    }
     if (errorCode === 'provider.access_denied') {
       return copy('probe_failed_access_denied', '{{model}} 验证失败：供应商拒绝访问（{{code}}）。请检查 API 密钥、模型权限、额度或网关策略。', {
         model: instance.model_id,
@@ -847,7 +859,7 @@ export default function RuntimeProfilesPage() {
 
   async function saveProfiles() {
     if (!profileDirty || saving) return;
-    const incompatible = drafts.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
+    const incompatible = changedProfiles.find((profile) => profile.candidate_instance_ids.some((instanceId) => {
       const instance = instancesById.get(instanceId);
       return instance && (
         !instanceMatchesExecutionKind(instance, profile.execution_kind)
@@ -888,13 +900,13 @@ export default function RuntimeProfilesPage() {
       }
       setVerifyingBeforeSave(false);
       const response = await runtimeProfilesClient.request<RuntimeProfilesData>('/api/admin/runtime-profiles', {
-        method: 'PUT',
+        method: 'PATCH',
         body: {
           contract_version: 'cloud-hosted-runtime-profiles.v1',
           platform_kind: 'wordpress',
           connector_id: 'wordpress_ai_connector',
           operation_contract_version: 'wordpress_operation.v1',
-          profiles: drafts.map((profile) => ({
+          profiles: changedProfiles.map((profile) => ({
             profile_id: profile.profile_id,
             candidate_instance_ids: profile.candidate_instance_ids,
             timeout_ms: profile.timeout_ms,

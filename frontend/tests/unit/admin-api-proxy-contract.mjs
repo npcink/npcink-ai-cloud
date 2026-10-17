@@ -117,8 +117,8 @@ assert.match(
 
 assert.match(
   source,
-  /methods: \['PUT'\],[\s\S]*?pattern: \/\^runtime-profiles\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
-  'hosted runtime profiles must expose one exact can_manage_catalog PUT route'
+  /methods: \['PUT', 'PATCH'\],[\s\S]*?pattern: \/\^runtime-profiles\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_catalog'/,
+  'hosted runtime profiles must expose one exact can_manage_catalog PUT/PATCH route'
 );
 
 assert.match(

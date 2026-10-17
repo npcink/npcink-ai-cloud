@@ -1588,6 +1588,7 @@ def _validate_hosted_runtime_profile_payload(
     payload: HostedRuntimeProfileSettingsPayload,
     *,
     settings: Any | None = None,
+    require_complete: bool = True,
 ) -> tuple[list[HostedRuntimeProfilePayload], str]:
     if not payload.profiles:
         return [], "at least one hosted runtime profile is required"
@@ -1696,7 +1697,7 @@ def _validate_hosted_runtime_profile_payload(
                     )
 
     missing_profile_ids = sorted(known_profile_ids - seen_profile_ids)
-    if missing_profile_ids:
+    if require_complete and missing_profile_ids:
         return [], (
             "hosted runtime profiles must replace the complete catalog; missing: "
             + ", ".join(missing_profile_ids)
@@ -6041,6 +6042,7 @@ async def probe_admin_hosted_runtime_capability(
     )
 
 
+@router.patch("/admin/runtime-profiles")
 @router.put("/admin/runtime-profiles")
 async def update_admin_hosted_runtime_profiles(
     request: Request,
@@ -6054,6 +6056,7 @@ async def update_admin_hosted_runtime_profiles(
         services.settings.database_url,
         payload,
         settings=services.settings,
+        require_complete=request.method == "PUT",
     )
     if error_message:
         return JSONResponse(

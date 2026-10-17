@@ -247,9 +247,16 @@ class ProviderBudgetService:
                 select(ProviderConnection).order_by(ProviderConnection.connection_id)
             )
         )
+
+        def budget_provider_id(connection: ProviderConnection) -> str:
+            connection_config = (
+                connection.config_json if isinstance(connection.config_json, dict) else {}
+            )
+            return str(connection_config.get("provider_id") or connection.connection_id).strip()
+
         raw_providers = config.get("providers")
         provider_ids = set(raw_providers) if isinstance(raw_providers, dict) else set()
-        provider_ids.update(connection.connection_id for connection in connections)
+        provider_ids.update(budget_provider_id(connection) for connection in connections)
         counters = list(
             session.scalars(
                 select(ProviderBudgetCounter).where(
@@ -261,7 +268,9 @@ class ProviderBudgetService:
         warning_ratio = self._warning_ratio(config)
         items: list[dict[str, Any]] = []
         missing_ids: list[str] = []
-        active_ids = {connection.connection_id for connection in connections if connection.enabled}
+        active_ids = {
+            budget_provider_id(connection) for connection in connections if connection.enabled
+        }
         for provider_id in sorted(provider_ids):
             policy = self._resolve_policy(session, config, provider_id)
             if policy is None:
@@ -331,7 +340,8 @@ class ProviderBudgetService:
             "items": items,
             "connections": [
                 {
-                    "provider_id": connection.connection_id,
+                    "provider_id": budget_provider_id(connection),
+                    "connection_id": connection.connection_id,
                     "display_name": connection.display_name,
                     "enabled": bool(connection.enabled),
                 }
