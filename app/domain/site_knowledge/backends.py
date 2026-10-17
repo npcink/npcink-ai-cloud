@@ -95,7 +95,13 @@ class ZillizCloudSiteKnowledgeBackend:
         if database:
             kwargs["db_name"] = database
 
-        self.client = MilvusClient(**kwargs)
+        try:
+            self.client = MilvusClient(**kwargs)
+        except Exception as error:
+            raise SiteKnowledgeBackendError(
+                "site_knowledge.zilliz_connection_failed",
+                "Zilliz site knowledge connection is not ready",
+            ) from error
         self.data_type = DataType
         self.collection = collection
         self.dimension = int(settings.site_knowledge_embedding_dimensions)
