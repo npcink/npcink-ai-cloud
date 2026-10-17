@@ -241,6 +241,12 @@ def test_production_push_creates_exact_release_plan_evidence() -> None:
 
     assert "production-release-plan:" in workflow
     assert "Create exact production release plan" in workflow
+    assert "scripts/resolve-production-deployed-baseline.py" in workflow
+    release_job = workflow.split("  production-release-plan:", 1)[1].split(
+        "  production-promotion-evidence:", 1
+    )[0]
+    assert "BEFORE_SHA" not in release_job
+    assert 'git merge-base --is-ancestor "${base_sha}" "${GITHUB_SHA}"' in workflow
     assert "git diff --no-renames --name-only --diff-filter=ACMRD" in workflow
     assert '"${base_sha}" "${GITHUB_SHA}"' in workflow
     assert '"${base_sha}...${GITHUB_SHA}"' not in workflow
@@ -363,7 +369,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
         "specialized_quality_required: "
         "${{ steps.changed.outputs.specialized_quality_required }}" in workflow
     )
-    assert workflow.count("--diff-filter=ACMRD") == 5
+    assert workflow.count("--diff-filter=ACMRD") == 4
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
     assert (
