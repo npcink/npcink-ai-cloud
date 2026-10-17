@@ -198,5 +198,53 @@ def test_scoped_latest_health_avoids_scanning_history() -> None:
             details = [row[-1] for row in plan]
             assert not any("SCAN health_snapshots" in detail for detail in details), details
             assert any("ix_health_snapshots_instance_measured_id" in detail for detail in details)
+
+            at = datetime(2026, 10, 17, tzinfo=UTC)
+            session.add_all(
+                HealthSnapshot(
+                    provider_id="p",
+                    instance_id=instance_id,
+                    status="healthy",
+                    reason="latest",
+                    measured_at=at,
+                )
+                for instance_id in ["a", "b"]
+            )
+            session.commit()
+            raw = session.connection().connection.driver_connection
+
+            def read_steps():
+                steps = 0
+
+                def progress():
+                    nonlocal steps
+                    steps += 1
+                    return 0
+
+                raw.set_progress_handler(progress, 1)
+                try:
+                    assert (
+                        len(StatsRepository(session).list_latest_health_snapshots(["a", "b"])) == 2
+                    )
+                finally:
+                    raw.set_progress_handler(None, 0)
+                return steps
+
+            small_steps = read_steps()
+            session.add_all(
+                HealthSnapshot(
+                    provider_id="p",
+                    instance_id=instance_id,
+                    status="unknown",
+                    reason="older history",
+                    measured_at=at - timedelta(days=1),
+                )
+                for instance_id in ["a", "b"]
+                for _ in range(2000)
+            )
+            session.commit()
+            # VM work, not wall time: an indexed range aggregate still grows
+            # with history even though EXPLAIN labels it a SEARCH rather than SCAN.
+            assert read_steps() < small_steps * 3
     finally:
         engine.dispose()
