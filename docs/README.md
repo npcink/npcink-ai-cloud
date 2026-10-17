@@ -17,6 +17,7 @@ as current truth.
 | 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
 | 回顾用户中心相关三个会话、确认当前进度和下一步 | [三会话综合纪要 — 2026-10-17](history/portal/2026/portal-three-session-synthesis-and-next-stage-2026-10-17.md) — UX、积分/预算、发布、异步状态与验证前移；补正旧摘要并区分方案与交付 |
 | 在生产人工验证邮箱、连接与草稿保存 | [生产验收步骤（2026-10-17 更新）](portal-production-validation-runbook-2026-10-16.md) — 操作者走正常流程，开发侧核对 run/预算/反馈；不是部署授权 |
+| 验收运行配置隔离、预算选择与 Addon 引导 | [运行配置与写作验收跟进 — 2026-10-17](runtime-configuration-acceptance-2026-10-17.md) — 候选行为、生产只读故障证据、零付费回归与后续人工验收；不是上线或真实调用恢复证明 |
 | 发布前跑零付费 Provider/Portal 关键回归 | [关键流程回归 v1](local-critical-regression-v1.md) — `verify:local -- --critical`、固定测试清单、隔离与逐步回执；不操作 M4/生产 |
 | 查合规工作底稿方法（四列结构、来源分级、触发线分离） | [开发会话操作经验记录](development-session-notes-compliance-2026-09-26.md) |
 | 跑通 WordPress AI 三点链路（当前主线） | [链路验证清单](wordpress-ai-loop-verification-checklist-2026-09-22.md) — 六条 Done 标准与三步走 |
