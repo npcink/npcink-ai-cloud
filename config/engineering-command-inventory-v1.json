@@ -250,7 +250,6 @@
       ],
       "commands": {
         "check:changed": "Plan gates, diagnose prerequisites, and run the narrowest safe local checks for the current diff.",
-        "verify:local": "Run the development-lane local gates for the current diff; do not publish or invoke GitHub.",
         "ai:task:plan": "Create a structured ignored task envelope from the current diff and declared resource budgets.",
         "ai:task:verify": "Run the envelope's focused local gates and preserve per-command evidence.",
         "ai:task:receipt": "Render the current task evidence, source state, follow-ups, and rollback as Markdown or JSON.",
@@ -258,6 +257,17 @@
         "wordpress:editor:readiness": "Run read-only WordPress, plugin, database, site, and Cloud readiness checks.",
         "wordpress:editor:acceptance": "Run bounded read-only related-article and internal-link checks against existing WordPress posts.",
         "wordpress:editor:acceptance:summary": "Summarize natural editor acceptance samples without changing their evidence."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_browser_state",
+      "owner_doc": "docs/local-critical-regression-v1.md",
+      "used_by": ["runbook", "contract"],
+      "status": "active",
+      "evidence": ["README.md", "scripts/verify-local.sh", "scripts/verify_critical.py", "config/critical-regression-v1.json", "tests/contract/test_verify_critical_contract.py"],
+      "commands": {
+        "verify:local": "Run current-diff development gates; explicit --critical runs fixed zero-paid API/contract/loopback-browser regressions with receipts, never M4 or production."
       }
     },
     {

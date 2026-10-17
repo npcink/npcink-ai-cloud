@@ -195,6 +195,12 @@ Run it before publishing a branch. The merge and release lanes remain separate
 because they answer different questions: repository integration and production
 safety, respectively.
 
+For the fixed zero-paid Provider/Portal regression scope, use
+`pnpm run verify:local -- --critical --plan`, then `--doctor` or execution
+without either flag. The [critical regression runbook](docs/local-critical-regression-v1.md)
+defines the in-process Fake API, loopback Mock browser, fail-on-skip receipts,
+and separate M4/production evidence. The ordinary current-diff mode is unchanged.
+
 ## M4 Preview and Evidence
 
 The authoring Mac owns source edits, Git, and operator commands. M4 owns routine
