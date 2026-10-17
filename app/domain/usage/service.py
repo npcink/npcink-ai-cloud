@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -92,10 +93,20 @@ class UsageService:
         *,
         health_snapshot_reader: Callable[[list[str] | None, bool], list[HealthSnapshot]]
         | None = None,
+        statistics_repository: StatsRepository | None = None,
     ) -> None:
         self.database_url = database_url
         self.now_factory = now_factory or (lambda: datetime.now(UTC))
         self._health_snapshot_reader = health_snapshot_reader
+        self._statistics_repository = statistics_repository
+
+    @contextmanager
+    def _statistics_scope(self) -> Iterator[StatsRepository]:
+        if self._statistics_repository is not None:
+            yield self._statistics_repository
+        else:
+            with get_session(self.database_url) as session:
+                yield StatsRepository(session)
 
     def _read_latest_health_snapshots(
         self,
@@ -147,8 +158,7 @@ class UsageService:
         windows = self._build_windows(now)
         rolling_window = windows["rolling_24h"]
 
-        with get_session(self.database_url) as session:
-            repository = StatsRepository(session)
+        with self._statistics_scope() as repository:
             instance = repository.get_instance(instance_id)
             if instance is None:
                 raise UsageInstanceNotFoundError(instance_id)
@@ -286,8 +296,7 @@ class UsageService:
         windows = self._build_windows(now)
         rolling_window = windows["rolling_24h"]
 
-        with get_session(self.database_url) as session:
-            repository = StatsRepository(session)
+        with self._statistics_scope() as repository:
             profile = repository.get_profile(profile_id)
             if profile is None:
                 raise UsageProfileNotFoundError(profile_id)
@@ -554,8 +563,7 @@ class UsageService:
             else None
         )
 
-        with get_session(self.database_url) as session:
-            repository = StatsRepository(session)
+        with self._statistics_scope() as repository:
             instances = repository.list_instances()
             provider_calls = repository.list_provider_calls(
                 site_id,

@@ -46,6 +46,7 @@ def health_rollup_database(tmp_path: Path):
     now = datetime(2026, 10, 17, 8, tzinfo=UTC)
     with get_session(database_url) as session:
         session.add(CatalogProvider(provider_id="p", display_name="P", adapter_type="fake"))
+        session.flush()
         session.add(
             CatalogModel(
                 model_id="m",
@@ -56,6 +57,7 @@ def health_rollup_database(tmp_path: Path):
                 revision="test",
             )
         )
+        session.flush()
         for instance_id in ("a", "b", "unknown"):
             session.add(
                 CatalogInstance(
@@ -68,6 +70,7 @@ def health_rollup_database(tmp_path: Path):
             )
         for profile_id, candidates in (("text.test", ["a", "b"]), ("text.empty", [])):
             session.add(RoutingProfile(profile_id=profile_id, execution_kind="text"))
+            session.flush()
             session.add(
                 RoutingBinding(
                     profile_id=profile_id, candidate_instance_ids=candidates, revision="test"
@@ -235,6 +238,177 @@ def test_rollup_refreshes_health_each_round_and_rolls_back_failed_writes(
         assert {
             item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
         } == expected
+
+
+@pytest.mark.parametrize(
+    "site_ids,include_global", [(None, True), (["alpha"], False), (["absent"], True), ([], False)]
+)
+def test_rollup_batch_matches_live_statistics_at_window_boundaries(
+    health_rollup_database,
+    site_ids,
+    include_global,
+) -> None:
+    database_url, now = health_rollup_database
+    times = [
+        now - timedelta(hours=25),
+        now - timedelta(hours=24),
+        now.replace(hour=0),
+        now - timedelta(microseconds=1),
+        now,
+        now + timedelta(microseconds=1),
+    ]
+    with get_session(database_url) as session:
+        session.add(RoutingProfile(profile_id="text.unbound", execution_kind="text"))
+        binding = session.get(RoutingBinding, "text.test")
+        binding.candidate_instance_ids = ["a", "missing", "b", "a"]
+        for index in range(18):
+            at = times[index % len(times)]
+            run = RunRecord(
+                run_id=f"edge{index}",
+                site_id="alpha" if index % 2 else "beta",
+                ability_name="test",
+                channel="openapi",
+                execution_kind="text",
+                profile_id="text.test" if index % 3 else "text.empty",
+                status=["succeeded", "failed", "running"][index % 3],
+                trace_id=f"edge{index}",
+                fallback_used=index % 3 == 1,
+                started_at=at,
+                finished_at=at + timedelta(milliseconds=123 + index) if index % 4 else None,
+            )
+            session.add(run)
+            session.flush()
+            session.add(
+                ProviderCallRecord(
+                    run_id=run.run_id,
+                    provider_id="p",
+                    model_id="m",
+                    instance_id="a" if index % 2 else "b",
+                    region="test",
+                    latency_ms=90 + index,
+                    tokens_in=index,
+                    tokens_out=index + 1,
+                    cost=0.0000005 * index,
+                    fallback_used=index % 3 == 1,
+                    error_code=[None, "", "provider.timeout"][index % 3],
+                    # The run/call windows deliberately disagree, including retry calls
+                    # in-range for a run whose admission was outside the window.
+                    created_at=times[(index + 3) % len(times)],
+                )
+            )
+        session.commit()
+    scopes = list(site_ids or ["alpha", "beta"])
+    if include_global:
+        scopes.insert(0, GLOBAL_SITE_SCOPE)
+    live = UsageService(database_url, now_factory=lambda: now)
+    expected = {}
+    for scope in scopes:
+        site_id = None if scope == GLOBAL_SITE_SCOPE else scope
+        expected[f"{scope}:summary:__summary__"] = live.get_usage_summary(site_id=site_id)
+        for key in ["text.test", "text.empty", "text.unbound"]:
+            expected[f"{scope}:profile:{key}"] = live.get_profile_stats(key, site_id=site_id)
+        for key in ["a", "b", "unknown"]:
+            expected[f"{scope}:instance:{key}"] = live.get_instance_stats(key, site_id=site_id)
+    UsageRollupService(database_url, now_factory=lambda: now).generate_rollups(
+        site_ids=site_ids,
+        include_global=include_global,
+    )
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+def test_rollup_batch_accepts_naive_utc_clock_like_live_reader(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    now = now.replace(tzinfo=None)
+    expected = _uncached_payloads(database_url, now)
+    UsageRollupService(database_url, now_factory=lambda: now).generate_rollups()
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+def test_rollup_batch_refreshes_call_statistics_on_next_round(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    service = UsageRollupService(database_url, now_factory=lambda: now)
+    service.generate_rollups()
+    before = _uncached_payloads(database_url, now)
+    with get_session(database_url) as session:
+        session.add(
+            ProviderCallRecord(
+                run_id="r2",
+                provider_id="p",
+                model_id="m",
+                instance_id="b",
+                region="test",
+                latency_ms=999,
+                tokens_in=7,
+                tokens_out=3,
+                cost=0.1234567,
+                created_at=now,
+            )
+        )
+        session.commit()
+    expected = _uncached_payloads(database_url, now)
+    assert expected != before
+    service.generate_rollups()
+    with get_session(database_url) as session:
+        assert {
+            item.rollup_key: item.payload_json for item in session.scalars(select(UsageRollup))
+        } == expected
+
+
+def test_rollup_batch_keeps_empty_database_summary(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    now = datetime(2026, 10, 17, tzinfo=UTC)
+    expected = UsageService(database_url, now_factory=lambda: now).get_usage_summary()
+    result = UsageRollupService(database_url, now_factory=lambda: now).generate_rollups()
+    assert result["counts"] == {"summary": 1, "profile": 0, "instance": 0}
+    with get_session(database_url) as session:
+        assert session.get(UsageRollup, "__global__:summary:__summary__").payload_json == expected
+    dispose_engine(database_url)
+
+
+def test_rollup_statistic_queries_do_not_grow_with_catalog_size(health_rollup_database) -> None:
+    database_url, now = health_rollup_database
+    queries = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "usage_rollups" not in statement:
+            queries.append(statement)
+
+    engine = get_engine(database_url)
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        service = UsageRollupService(database_url, now_factory=lambda: now)
+        service.generate_rollups()
+        small_queries = len(queries)
+        with get_session(database_url) as session:
+            for index in range(20):
+                session.add(
+                    CatalogInstance(
+                        instance_id=f"extra{index}",
+                        model_id="m",
+                        provider_id="p",
+                        endpoint_variant="default",
+                        region="test",
+                    )
+                )
+                session.add(RoutingProfile(profile_id=f"extra{index}", execution_kind="text"))
+            session.commit()
+        queries.clear()
+        result = service.generate_rollups()
+        # The bound protects against returning to per-profile/per-instance reads;
+        # rollup row writes are deliberately outside this query-count assertion.
+        assert len(queries) == small_queries
+        assert small_queries < 50
+        assert result["health_snapshot_reads"] == 2
+        assert result["rollups_total"] == 138
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
 
 
 def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
