@@ -85,7 +85,7 @@ the existing complete replacement and rollback protections.
 For the 2026-10-17 isolated candidate, installed source `2af0074` to the frozen
 application candidate comprises the original 91 paths plus the three Milvus
 isolation paths: 94 application paths. The separately reviewed cumulative-plan
-repair adds six tool/test/policy paths, giving 100 paths in the complete release
+repair adds seven tool/test/policy paths, giving 101 paths in the complete release
 diff. Report their union explicitly; do not call the expanded Git diff 94 paths.
 PR #1133 and migration 0088 remain outside
 this release envelope.
