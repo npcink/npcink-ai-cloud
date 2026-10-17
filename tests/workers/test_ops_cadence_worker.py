@@ -133,6 +133,12 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "payment_order_expiration",
     }
     assert all(item["outcome"] == "succeeded" for item in first_results)
+    usage_rollup = next(item for item in first_results if item["task_id"] == "usage_rollup")
+    assert usage_rollup["payload"]["health_snapshot_reads"] == 2
+    assert usage_rollup["payload"]["profile_rollups_total"] > 0
+    assert usage_rollup["payload"]["instance_rollups_total"] > 0
+    assert usage_rollup["payload"]["timings_ms"]["total"] > 0
+    assert usage_rollup["payload"]["timings_ms"]["health_read"] >= 0
     retention_cleanup = next(
         item for item in first_results if item["task_id"] == "retention_cleanup"
     )
@@ -183,6 +189,10 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         include_payload=True,
     )["items"]
     assert len(first_events) == 11
+    usage_event = next(
+        item for item in first_events if item["event_kind"] == "usage.rollup_cadence"
+    )
+    assert usage_event["payload"] == usage_rollup["payload"]
     cleanup_event = next(
         item for item in first_events if item["event_kind"] == "runtime.artifact_cleanup.cadence"
     )

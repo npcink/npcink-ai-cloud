@@ -77,6 +77,47 @@ For M4 candidate/promotion use the
 runtime ownership and connection priority; never overwrite another task's
 candidate or seize its lock. Production remains separately authorized.
 
+## Usage rollup health reads and timing
+
+Each `generate_rollups` invocation loads latest health records at most twice,
+then reuses those site-independent records across global/site summaries,
+profiles and instances. The two reads preserve existing timestamp ties:
+summaries choose the highest record ID; profiles/instances choose the lowest.
+Only latest records are retained, not health history. The cache belongs to
+one invocation; the next invocation reads again. Live stats requests continue
+to read fresh health records. Health scores still use site-filtered Provider
+calls, and UTC today/rolling-24-hour windows, tokens, costs, fallback and
+callback/accounting behavior are unchanged. Snapshots stabilize health within
+one batch; the two reads are not a new cross-query transactional snapshot.
+
+Successful `usage.rollup_cadence` audit payloads include
+`health_snapshot_reads`, actual `sites_total`, `profile_rollups_total` and
+`instance_rollups_total`, plus `timings_ms` measured with a monotonic clock:
+
+| Field | Meaning |
+| --- | --- |
+| `total` | Entire successful invocation, including session close |
+| `prepare` | Catalog/site preparation and both health reads |
+| `health_read` | Both health reads, a subset of `prepare` |
+| `statistics` | Existing stats queries and payload construction |
+| `write` | Existing rollup upserts/flushes and final commit |
+
+Durations use milliseconds rounded to three decimal places. They are elapsed
+wall time, not PostgreSQL CPU time. `prepare`/`statistics`/`write` omit small
+unassigned overhead, and `health_read` must not be added to `prepare` again.
+Failed invocations retain existing failure audit behavior and transaction
+rollback; no partial success timings or rollup writes are reported. Earlier
+cadence events could show zero profile/instance/site totals due to missing
+result fields; historical events are not rewritten.
+
+Focused tests count actual health SELECTs and compare every persisted payload
+against uncached stats for multiple sites, empty bindings, missing health,
+same-timestamp ties and mixed time windows. They also cover new health on a
+later invocation, rollback after partial writes and audit metric persistence.
+Reducing repeated reads does not establish a concurrency or CPU improvement
+percentage. The remaining two global latest-health queries and per-scope stats
+queries still need passive measurement before a separate SQL/index change.
+
 ## Rollback
 
 Revert the reviewed config/cadence/Compose changes and this runbook through a
@@ -84,3 +125,5 @@ PR. Explicit diagnostic interval overrides can restore the old frequency,
 but restoring automatic quality scheduling requires a reviewed source change.
 No schema migration, historical event deletion, callback change or new runtime
 service is part of either direction.
+The health-reuse optimization can likewise be reverted through a reviewed
+source PR and M4 source sync; it adds no schema migration or runtime config.

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import Any, cast
 
 from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.db import get_session
+from app.core.models import HealthSnapshot
 from app.domain.usage.service import UsageInstanceNotFoundError, UsageService
 
 GLOBAL_SITE_SCOPE = "__global__"
@@ -67,12 +69,38 @@ class UsageRollupService:
         site_ids: list[str] | None = None,
         include_global: bool = True,
     ) -> dict[str, object]:
+        started = perf_counter()
         now = self.now_factory()
+        statistics_seconds = 0.0
+        write_seconds = 0.0
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)
             resolved_site_ids = site_ids or repository.list_site_ids()
             profiles = repository.list_profiles()
             instances = repository.list_instances()
+
+            # These records are site-independent. Keep both legacy tie choices,
+            # and keep the reader local so another invocation always reads afresh.
+            health_started = perf_counter()
+            health_snapshots = {
+                earliest: repository.list_latest_health_snapshots(earliest_on_tie=earliest)
+                for earliest in (False, True)
+            }
+            health_read_seconds = perf_counter() - health_started
+
+            def read_health(instance_ids: list[str] | None, earliest: bool) -> list[HealthSnapshot]:
+                snapshots = health_snapshots[earliest]
+                if instance_ids is None:
+                    return snapshots
+                selected = set(instance_ids)
+                return [item for item in snapshots if item.instance_id in selected]
+
+            usage_service = UsageService(
+                self.database_url,
+                now_factory=self.now_factory,
+                health_snapshot_reader=read_health,
+            )
+            prepare_seconds = perf_counter() - started
 
             site_scopes = list(resolved_site_ids)
             if include_global:
@@ -86,7 +114,10 @@ class UsageRollupService:
 
             for site_scope in site_scopes:
                 site_id = None if site_scope == GLOBAL_SITE_SCOPE else site_scope
-                summary_payload = self.usage_service.get_usage_summary(site_id=site_id)
+                statistics_started = perf_counter()
+                summary_payload = usage_service.get_usage_summary(site_id=site_id)
+                statistics_seconds += perf_counter() - statistics_started
+                write_started = perf_counter()
                 repository.upsert_usage_rollup(
                     rollup_key=self._build_rollup_key(site_scope, "summary", "__summary__"),
                     site_scope=site_scope,
@@ -94,13 +125,17 @@ class UsageRollupService:
                     scope_id="__summary__",
                     payload_json=summary_payload,
                 )
+                write_seconds += perf_counter() - write_started
                 counts["summary"] += 1
 
                 for profile in profiles:
-                    profile_payload = self.usage_service.get_profile_stats(
+                    statistics_started = perf_counter()
+                    profile_payload = usage_service.get_profile_stats(
                         profile.profile_id,
                         site_id=site_id,
                     )
+                    statistics_seconds += perf_counter() - statistics_started
+                    write_started = perf_counter()
                     repository.upsert_usage_rollup(
                         rollup_key=self._build_rollup_key(
                             site_scope,
@@ -112,13 +147,17 @@ class UsageRollupService:
                         scope_id=profile.profile_id,
                         payload_json=profile_payload,
                     )
+                    write_seconds += perf_counter() - write_started
                     counts["profile"] += 1
 
                 for instance in instances:
-                    instance_payload = self.usage_service.get_instance_stats(
+                    statistics_started = perf_counter()
+                    instance_payload = usage_service.get_instance_stats(
                         instance.instance_id,
                         site_id=site_id,
                     )
+                    statistics_seconds += perf_counter() - statistics_started
+                    write_started = perf_counter()
                     repository.upsert_usage_rollup(
                         rollup_key=self._build_rollup_key(
                             site_scope,
@@ -130,15 +169,29 @@ class UsageRollupService:
                         scope_id=instance.instance_id,
                         payload_json=instance_payload,
                     )
+                    write_seconds += perf_counter() - write_started
                     counts["instance"] += 1
 
+            write_started = perf_counter()
             session.commit()
+            write_seconds += perf_counter() - write_started
 
         return {
             "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
             "site_scopes": site_scopes,
             "counts": counts,
             "rollups_total": sum(counts.values()),
+            "sites_total": len(resolved_site_ids),
+            "profile_rollups_total": counts["profile"],
+            "instance_rollups_total": counts["instance"],
+            "health_snapshot_reads": len(health_snapshots),
+            "timings_ms": {
+                "total": round((perf_counter() - started) * 1000, 3),
+                "prepare": round(prepare_seconds * 1000, 3),
+                "health_read": round(health_read_seconds * 1000, 3),
+                "statistics": round(statistics_seconds * 1000, 3),
+                "write": round(write_seconds * 1000, 3),
+            },
         }
 
     def store_router_performance_snapshot_batches(
