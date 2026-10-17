@@ -125,6 +125,15 @@ historical production-only commits as release fixes. Resolve only the bounded
 deployment-path difference in a separately reviewed change, then generate a
 fresh promotion PR.
 
+When the complete production tree already equals an ancestor of the frozen
+reviewed master source, the bounded
+[reviewed-tree integration lane](production-reviewed-tree-integration-v1.md)
+may prepare a separately reviewable local `release-fix/*` candidate. It must
+prove whole-tree baseline equivalence, exact reviewed source-tree equality,
+and exact changed-path scope. It cannot publish, weaken the mergeability or
+approval gates, or authorize deployment. Non-equivalent production-only
+changes still require separate classification and review.
+
 The command waits up to 15 minutes for the exact production push Cloud CI and
 CodeQL runs, requires the unexpired SHA-bound deploy bundle, rejects another
 active deploy for the same revision, and checks only the names of repository
