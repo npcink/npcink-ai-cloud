@@ -120,6 +120,9 @@ deleting the old decision history.
 
 ## Engineering and Delivery Standards
 
+- [Runtime Resource Baseline](runtime-resource-baseline-v1.md) — bounded GET-only sampling; begin with 15 minutes, inspect completeness and runtime identity, then explicitly extend the window. No automatic workload or runtime operation.
+- [资源采样恢复与会话收尾经验 — 2026-10-17](history/engineering/2026/resource-sampling-and-session-closeout-retrospective-2026-10-17.md) — stash recovery, historical resource evidence and remaining acceptance gaps; sampler validation, localization, OCR and safe closeout lessons.
+
 - [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。
 - [Free 试用前生产发布准备 — 2026-10-06](production-release-readiness-plan-2026-10-06.md) — 两处旧测试修复候选、累计部署范围、五项迁移与回滚条件；不是生产发布授权。
 - [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 已确认正常自注册、复用 Free 和四周判据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，启动状态待操作者核实。
