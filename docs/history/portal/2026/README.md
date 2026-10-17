@@ -17,6 +17,10 @@ Current authority remains the
     acceptance
 - [普通站长 Portal 整改收尾与开发复盘](portal-stationmaster-closeout-2026-10-08.md)
   - PR `#1079` / `#1080` / `#1081`、M4 接受证据、上线后待办和工作区保留清单
+- [用户中心优化历史归纳与下一阶段建议 — 2026-10-16](portal-user-center-history-and-next-stage-2026-10-16.md)
+  - 本地历史稿恢复；2026-10-17 补正部署最终状态，后续以三会话纪要为入口
+- [用户中心、生产交付与验证前移：三会话综合纪要 — 2026-10-17](portal-three-session-synthesis-and-next-stage-2026-10-17.md)
+  - 三会话讨论与取舍、#1118 部署记录、尚未实现的关键验收命令、人工验证分工与下一步
 
 These records preserve their original status, commands, revisions, production
 evidence, and acceptance limits. Recheck current source and active standards
