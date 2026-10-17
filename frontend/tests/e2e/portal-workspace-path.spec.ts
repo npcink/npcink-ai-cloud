@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, type Page, type Route } from '@playwright/test';
+import { test } from './helpers/critical-network-fixture';
 
 const BASE_URL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||

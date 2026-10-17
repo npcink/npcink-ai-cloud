@@ -1,5 +1,26 @@
 import type { Page, Route } from '@playwright/test';
 
+type AccountFixtureItem = {
+  account: {
+    account_id: string;
+    name: string;
+    status: string;
+    created_at: string;
+    metadata?: Record<string, unknown>;
+  };
+  member_count: number;
+  site_count: number;
+  active_subscription_count: number;
+  top_plan_id: string;
+  package_alias: string;
+  plan_kind: string;
+  display_package_label: string;
+  package_kind: string;
+  coverage_state: string;
+  primary_subscription_id: string;
+  coverage_follow_up_required: boolean;
+  nearest_expiry_at: string;
+};
 
 export const BASE_URL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||
@@ -80,7 +101,7 @@ export async function installAdminMocks(
     ['acct_free_primary', 'free-owner@example.com'],
     ['acct_uncovered', 'uncovered-owner@example.com'],
   ]);
-  let accountItems = [
+  let accountItems: AccountFixtureItem[] = [
     {
       account: {
         account_id: LONG_ACCOUNT_ID,
