@@ -38,16 +38,19 @@ def resolve_baseline(repository: str, api: Callable[[str], bytes] = github_api) 
     runs = json.loads(
         api(
             f"{root}/workflows/deploy-production.yml/runs"
-            "?branch=production&event=workflow_dispatch&status=success&per_page=20"
+            "?branch=production&event=workflow_dispatch&per_page=20"
         )
     )["workflow_runs"]
     # Host mutation is serialized. Completion order also handles reruns of old SHAs.
     for run in sorted(runs, key=lambda item: item["updated_at"], reverse=True):
+        if run.get("conclusion") != "success":
+            raise ValueError(
+                "later deployment attempt is not successful; confirm installed baseline read-only"
+            )
         revision = run["head_sha"]
         run_id = run["id"]
         if (
-            run.get("conclusion") != "success"
-            or run.get("event") != "workflow_dispatch"
+            run.get("event") != "workflow_dispatch"
             or run.get("head_branch") != "production"
             or run.get("path") != ".github/workflows/deploy-production.yml"
             or re.fullmatch(r"[0-9a-f]{40}", revision) is None

@@ -152,6 +152,24 @@ def test_missing_retained_evidence_fails_closed():
         BASELINE.resolve_baseline(REPOSITORY, _api(missing=True))
 
 
+@pytest.mark.parametrize("conclusion", [None, "failure", "cancelled"])
+def test_later_unproven_attempt_cannot_hide_behind_an_older_success(conclusion):
+    api = _api()
+
+    def request(path):
+        if "deploy-production.yml/runs" in path:
+            assert "status=success" not in path
+        payload = api(path)
+        if "deploy-production.yml/runs" in path:
+            runs = json.loads(payload)
+            runs["workflow_runs"][0]["conclusion"] = conclusion
+            return json.dumps(runs).encode()
+        return payload
+
+    with pytest.raises(ValueError, match="later deployment attempt"):
+        BASELINE.resolve_baseline(REPOSITORY, request)
+
+
 @pytest.mark.parametrize("lane", ["full", "backend", "frontend", "migration", "config"])
 def test_missing_runtime_receipt_cannot_silently_select_an_older_deployment(lane):
     api = _api()

@@ -64,11 +64,13 @@ history back into `master` merely to make the branch graph look aligned.
 A promotion does not prove installation. Production CI computes the exact
 two-revision diff from the last evidenced successful runtime deployment to the
 new production SHA, rather than from the previous production push. The bounded
-read-only resolver inspects up to 20 successful `Deploy Production` dispatches
+read-only resolver inspects up to 20 recent `Deploy Production` dispatches
 and validates the retained runtime timing artifact against the repository, run,
 SHA, action, exit status, and successful remote sequence. It needs only Actions
 read permission, never production SSH credentials. A `no_deploy` or static
 dispatch does not advance the managed runtime baseline.
+An active, failed, or cancelled attempt newer than the proven runtime baseline
+stops planning: a failed workflow may already have changed the installed release.
 
 Dispatches without timing evidence are skipped only when their exact successful
 production CI artifact proves a `no_deploy` or static plan. Missing runtime
