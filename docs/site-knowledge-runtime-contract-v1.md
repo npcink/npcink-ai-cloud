@@ -153,6 +153,13 @@ the maintenance needed to keep an already-entitled Site Knowledge index fresh.
 
 ## Vector Backend
 
+Retained historical targets may use the existing `stale` qualification while
+keeping their SQL/vector content. The bounded development operator lane and
+additive public-text delivery-length evidence are specified in
+[Source Evidence v1](site-knowledge-source-evidence-v1.md). Upstream delivery
+clipping is separate from Cloud normalization clipping; neither a missing
+legacy counter nor `content_truncated=false` proves full WordPress-body coverage.
+
 Site Knowledge now uses one Cloud-owned vector profile as its configuration
 truth:
 
