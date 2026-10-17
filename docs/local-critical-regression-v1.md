@@ -60,7 +60,7 @@ doctor 缺项非零退出，不代操作者装依赖或退回其他运行环境�
 执行输出 `.tmp/critical-regression/run-*/receipt.json`、逐步骤日志、API JUnit
 和浏览器 JSON。回执记录 HEAD、脏状态、工作差异哈希、选中步骤、耗时、失败步骤及局部完成
 状态；它不把工作树脏候选标为 accepted，也不输出凭据。产物均为忽略本地状态。
-运行过程中源码差异变化会报告 incomplete；Next 自动生成的 `next-env.d.ts`
+运行过程中 HEAD 或源码差异变化会报告 incomplete；Next 自动生成的 `next-env.d.ts`
 单独排除哈希，该文件的生成差异不应提交。历史回执不会被后来一次执行覆盖。
 
 任一步失败立即非零退出，后续步骤不执行。JUnit 空测试或跳过不算通过；浏览器
@@ -111,3 +111,9 @@ pnpm run verify:local -- --critical --only browser
   仍按生产清单由操作者验证；不得用本地替身结果勾选这些验收项。
 
 完整回归后仅补充本文记录并移除 Next 自动生成的声明差异；功能输入未再修改。
+
+受保护发布前复核另补一个回执修复：首尾比较 HEAD，防止运行中提交改动后
+工作差异重新为空而掩盖版本变化。新增该失败场景后执行器契约为 13 项通过，
+聚焦 Ruff、6 个源码契约及 22 项隔离 API 再次通过；局部回执为
+`.tmp/critical-regression/run-40ct77yd/receipt.json`。本次未改变浏览器输入，
+复用此前浏览器证据；PR 检查和最终合并状态见本会话收口记录。

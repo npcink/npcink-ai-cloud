@@ -216,7 +216,11 @@ def main() -> int:
                 return 1
             finally:
                 step["seconds"] = round(time.monotonic() - started, 3)
-        if working_tree_hash() != receipt["working_diff_sha256"]:
+        current_source = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+        ).strip()
+        if (current_source != receipt["head"]
+                or working_tree_hash() != receipt["working_diff_sha256"]):
             receipt["failure"] = "source_changed_during_run"
             print("[fail] source changed during the selected stages; evidence is incomplete")
             return 1

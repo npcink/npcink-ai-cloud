@@ -123,3 +123,21 @@ def test_source_change_invalidates_an_otherwise_passed_run(tmp_path: Path, monke
     assert receipt["complete"] is False
     assert receipt["failure"] == "source_changed_during_run"
     assert receipt["selected"] == ["contracts"]
+
+
+def test_committing_during_run_cannot_hide_source_change(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "prerequisites", lambda _selected: [])
+    # Both snapshots are clean and have the same empty diff; their HEADs differ.
+    snapshots = iter(["before\n", "", "after\n"])
+    monkeypatch.setattr(runner.subprocess, "check_output", lambda *a, **kw: next(snapshots))
+    monkeypatch.setattr(runner, "working_tree_hash", lambda: "unchanged-empty-diff")
+    monkeypatch.setattr(runner, "run_stage", lambda *a: None)
+    monkeypatch.setattr(sys, "argv", ["verify_critical", "--only", "contracts"])
+    assert runner.main() == 1
+    report = next((tmp_path / ".tmp/critical-regression").glob("run-*/receipt.json"))
+    receipt = json.loads(report.read_text())
+    assert receipt["head"] == "before"
+    assert receipt["source_dirty"] is False
+    assert receipt["complete"] is False
+    assert receipt["failure"] == "source_changed_during_run"
