@@ -222,16 +222,7 @@ class StatsRepository:
         if normalized_site_ids is not None and not normalized_site_ids:
             return self._empty_provider_call_metrics()
         joins_run_record = bool(site_id) or normalized_site_ids is not None or constrain_run_started
-        statement = select(
-            func.count(ProviderCallRecord.id),
-            func.sum(case((ProviderCallRecord.error_code.is_(None), 1), else_=0)),
-            func.sum(case((ProviderCallRecord.fallback_used.is_(True), 1), else_=0)),
-            func.avg(ProviderCallRecord.latency_ms),
-            func.sum(ProviderCallRecord.tokens_in),
-            func.sum(ProviderCallRecord.tokens_out),
-            func.sum(ProviderCallRecord.cost),
-            func.max(ProviderCallRecord.created_at),
-        )
+        statement = self._provider_call_metrics_statement()
         if joins_run_record:
             statement = statement.select_from(ProviderCallRecord).join(
                 RunRecord,
@@ -259,6 +250,21 @@ class StatsRepository:
             end_at=end_at,
         )
         row = self.session.execute(statement).one()
+        return self._provider_call_metrics_from_row(row)
+
+    def _provider_call_metrics_statement(self) -> Select:
+        return select(
+            func.count(ProviderCallRecord.id),
+            func.sum(case((ProviderCallRecord.error_code.is_(None), 1), else_=0)),
+            func.sum(case((ProviderCallRecord.fallback_used.is_(True), 1), else_=0)),
+            func.avg(ProviderCallRecord.latency_ms),
+            func.sum(ProviderCallRecord.tokens_in),
+            func.sum(ProviderCallRecord.tokens_out),
+            func.sum(ProviderCallRecord.cost),
+            func.max(ProviderCallRecord.created_at),
+        )
+
+    def _provider_call_metrics_from_row(self, row: Any) -> dict[str, object]:
         return {
             "calls_total": int(row[0] or 0),
             "success_total": int(row[1] or 0),
@@ -336,15 +342,7 @@ class StatsRepository:
                 "active_sites_total": 0,
                 "avg_latency_ms": 0,
             }
-        run_latency_ms = self._run_latency_ms_expression()
-        statement = select(
-            func.count(RunRecord.run_id),
-            func.sum(case((RunRecord.status == "succeeded", 1), else_=0)),
-            func.sum(case((RunRecord.fallback_used.is_(True), 1), else_=0)),
-            func.max(func.coalesce(RunRecord.finished_at, RunRecord.started_at)),
-            func.count(distinct(RunRecord.site_id)),
-            func.avg(run_latency_ms) if run_latency_ms is not None else func.null(),
-        )
+        statement = self._run_metrics_statement()
         if normalized_site_ids is not None:
             statement = statement.where(RunRecord.site_id.in_(normalized_site_ids))
         if site_id:
@@ -357,6 +355,20 @@ class StatsRepository:
             end_at=end_at,
         )
         row = self.session.execute(statement).one()
+        return self._run_metrics_from_row(row)
+
+    def _run_metrics_statement(self) -> Select:
+        run_latency_ms = self._run_latency_ms_expression()
+        return select(
+            func.count(RunRecord.run_id),
+            func.sum(case((RunRecord.status == "succeeded", 1), else_=0)),
+            func.sum(case((RunRecord.fallback_used.is_(True), 1), else_=0)),
+            func.max(func.coalesce(RunRecord.finished_at, RunRecord.started_at)),
+            func.count(distinct(RunRecord.site_id)),
+            func.avg(run_latency_ms) if run_latency_ms is not None else func.null(),
+        )
+
+    def _run_metrics_from_row(self, row: Any) -> dict[str, object]:
         return {
             "runs_total": int(row[0] or 0),
             "success_total": int(row[1] or 0),

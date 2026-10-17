@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, cast
 
+from app.adapters.repositories.rollup_stats_repository import RollupStatsRepository
 from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.db import get_session
 from app.core.models import HealthSnapshot
@@ -78,6 +79,8 @@ class UsageRollupService:
             resolved_site_ids = site_ids or repository.list_site_ids()
             profiles = repository.list_profiles()
             instances = repository.list_instances()
+            bindings = repository.list_routing_bindings()
+            sites_total = repository.count_sites()
 
             # These records are site-independent. Keep both legacy tie choices,
             # and keep the reader local so another invocation always reads afresh.
@@ -95,11 +98,6 @@ class UsageRollupService:
                 selected = set(instance_ids)
                 return [item for item in snapshots if item.instance_id in selected]
 
-            usage_service = UsageService(
-                self.database_url,
-                now_factory=self.now_factory,
-                health_snapshot_reader=read_health,
-            )
             prepare_seconds = perf_counter() - started
 
             site_scopes = list(resolved_site_ids)
@@ -114,6 +112,23 @@ class UsageRollupService:
 
             for site_scope in site_scopes:
                 site_id = None if site_scope == GLOBAL_SITE_SCOPE else site_scope
+                statistics_started = perf_counter()
+                statistics_repository = RollupStatsRepository(
+                    session,
+                    site_id=site_id,
+                    windows=self.usage_service._build_windows(now),
+                    instances=instances,
+                    profiles=profiles,
+                    bindings=bindings,
+                    sites_total=sites_total,
+                )
+                usage_service = UsageService(
+                    self.database_url,
+                    now_factory=lambda: now,
+                    health_snapshot_reader=read_health,
+                    statistics_repository=statistics_repository,
+                )
+                statistics_seconds += perf_counter() - statistics_started
                 statistics_started = perf_counter()
                 summary_payload = usage_service.get_usage_summary(site_id=site_id)
                 statistics_seconds += perf_counter() - statistics_started
@@ -171,6 +186,7 @@ class UsageRollupService:
                     )
                     write_seconds += perf_counter() - write_started
                     counts["instance"] += 1
+                del usage_service, statistics_repository
 
             write_started = perf_counter()
             session.commit()
