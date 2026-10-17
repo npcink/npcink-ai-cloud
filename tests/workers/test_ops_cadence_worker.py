@@ -538,7 +538,7 @@ def test_optional_diagnostics_default_to_hourly_without_changing_core_cadences()
         "alert_provider_degradation_interval_seconds",
     ):
         assert getattr(settings, field) == 3600
-    assert settings.alert_worker_window_minutes == 60
+    assert settings.alert_worker_window_minutes == 30
     assert settings.provider_health_scan_interval_seconds == 900
     assert settings.usage_rollup_interval_seconds == 3600
     assert settings.retention_cleanup_interval_seconds == 3600
@@ -658,3 +658,44 @@ def test_manual_command_rejects_scheduled_tasks_before_loading_runtime(
     with pytest.raises(SystemExit) as error:
         ops_cadence_module.main()
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("interval", "configured_window", "expected_window"),
+    [
+        (900, None, 30),
+        (3600, None, 60),
+        (900, 30, 30),
+        (3600, 30, 60),
+        (3600, 120, 120),
+        (3600, 60, 60),
+        (3601, 30, 61),
+        (172800, 30, 1440),
+    ],
+)
+def test_degradation_window_covers_schedule_and_preserves_legacy_override_cost(
+    monkeypatch: pytest.MonkeyPatch,
+    interval: int,
+    configured_window: int | None,
+    expected_window: int,
+) -> None:
+    overrides = (
+        {"alert_worker_window_minutes": configured_window} if configured_window is not None else {}
+    )
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        alert_provider_degradation_interval_seconds=interval,
+        **overrides,
+    )
+    observed = []
+
+    def run(effective_settings: Settings) -> dict:
+        observed.append(effective_settings.alert_worker_window_minutes)
+        return {}
+
+    monkeypatch.setattr(ops_cadence_module, "run_alert_provider_degradation", run)
+    result = ops_cadence_module._run_alert_provider_degradation_summary(settings)
+    assert observed == [expected_window]
+    assert result["window_minutes"] == expected_window
+    assert settings.alert_worker_window_minutes == (configured_window or 30)

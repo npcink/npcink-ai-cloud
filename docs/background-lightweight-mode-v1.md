@@ -10,7 +10,7 @@ Scope: existing ops cadence, with no new scheduler, service, API or database.
 | --- | --- | --- |
 | Router diagnostics summary | 3600 seconds | Existing bounded read-only diagnostic batches |
 | Latency probe summary | 3600 seconds | Existing bounded latency evidence |
-| Provider degradation summary | 3600 seconds | Existing rule/metadata projection; default lookback 60 minutes |
+| Provider degradation summary | 3600 seconds | Existing rule/metadata projection; effective hourly lookback at least 60 minutes |
 | Editor-assist quality analysis | Manual only | Existing seven-day metadata-only analysis and natural-sample gate |
 | Provider health scan | Unchanged, 900 seconds | Health freshness and routing support |
 | Usage rollup | Unchanged, 3600 seconds | Usage projections; live accounting/entitlement enforcement unaffected |
@@ -19,15 +19,19 @@ Scope: existing ops cadence, with no new scheduler, service, API or database.
 | Runtime and callback workers | Unchanged | Durable execution, callback retry/recovery and worker heartbeats |
 
 Diagnostic work is less frequent, so those projections update less often. This
-is not a new real-time alerting guarantee. The degradation lookback grows from
-30 to 60 minutes with the hourly default to avoid an inherent half-hour gap;
-it is still a rolling window, not a durable gap-free event processor.
+is not a new real-time alerting guarantee. The degradation task uses the larger of its configured lookback and actual
+schedule interval (rounded up to minutes, bounded to the existing 24-hour
+query limit). This gives 60 minutes for hourly diagnostics while preserving
+the old 30-minute lookback under an explicit 15-minute interval. It is still
+a rolling window, not a durable gap-free event processor. Schedules longer
+than 24 hours require separate coverage planning.
 
 `Settings`, `.env.example` and production Compose fallbacks agree on the new
-defaults. Existing explicit environment values win, including an old 900-second
-interval or 30-minute lookback. A future operator-approved rollout must inspect
-those non-secret effective values and set hourly intervals/60-minute lookback
-explicitly when needed. This task does not alter any `.env.deploy` or live
+defaults. Existing explicit environment values win, including an old 900-second interval. The degradation runner reports its
+effective `window_minutes` in cadence evidence; a configured window shorter
+than its interval is raised within the 24-hour bound. A future operator-approved
+rollout must inspect these non-secret effective values and set the three
+intervals to 3600 explicitly when needed. This task does not alter any `.env.deploy` or live
 configuration. Do not set intervals to zero as a disabling mechanism.
 
 ## Manual quality analysis

@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     latency_probe_worker_recent_minutes: int = Field(default=360)
     latency_probe_worker_site_limit: int = Field(default=100)
     latency_probe_worker_instance_limit: int = Field(default=20)
-    alert_worker_window_minutes: int = Field(default=60)
+    alert_worker_window_minutes: int = Field(default=30)
     alert_worker_site_limit: int = Field(default=100)
     alert_worker_min_requests: int = Field(default=20)
     alert_worker_error_rate_threshold: float = Field(default=0.25)

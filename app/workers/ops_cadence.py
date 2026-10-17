@@ -168,8 +168,19 @@ def _run_latency_probe_summary(settings: Settings) -> dict[str, object]:
 
 
 def _run_alert_provider_degradation_summary(settings: Settings) -> dict[str, object]:
-    result = run_alert_provider_degradation(settings)
+    # Cover the configured schedule without doubling old 15-minute overrides.
+    # Keep the existing 24-hour query-window bound even for longer schedules.
+    window_minutes = min(
+        1440,
+        max(
+            settings.alert_worker_window_minutes,
+            (settings.alert_provider_degradation_interval_seconds + 59) // 60,
+        ),
+    )
+    effective_settings = settings.model_copy(update={"alert_worker_window_minutes": window_minutes})
+    result = run_alert_provider_degradation(effective_settings)
     return {
+        "window_minutes": window_minutes,
         "sites_total": int(result.get("sites_total") or 0),
         "stored_batches_total": int(result.get("stored_batches_total") or 0),
         "events_total": int(result.get("events_total") or 0),

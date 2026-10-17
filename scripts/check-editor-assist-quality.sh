@@ -37,6 +37,7 @@ echo "[editor-assist-quality] Running focused API and aggregation tests"
 	tests/workers/test_ops_cadence_worker.py::test_manual_quality_is_reported_separately_without_stale_health_failure \
 	tests/workers/test_ops_cadence_worker.py::test_manual_quality_command_executes_once_without_worker_heartbeat \
 	tests/workers/test_ops_cadence_worker.py::test_manual_command_rejects_scheduled_tasks_before_loading_runtime \
+	tests/workers/test_ops_cadence_worker.py::test_degradation_window_covers_schedule_and_preserves_legacy_override_cost \
 	-q
 
 echo "[editor-assist-quality] Running targeted Python lint"
