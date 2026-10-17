@@ -47,9 +47,28 @@ class AgentFeedbackPayload(BaseModel):
     source_reason_codes: list[str] = Field(default_factory=list, max_length=12)
     source_score: int | None = Field(default=None, ge=0, le=100)
     source_severity: str = Field(default="", max_length=64)
+    ranking_version: Literal["internal_links.v1", "related_content.v1"] | None = None
+    candidate_rank: int | None = Field(default=None, ge=1, le=20, strict=True)
+    score_bucket: Literal["low", "medium", "high", "unknown"] | None = None
+    retrieval_source: Literal[
+        "cloud_vector", "cloud_vector_rerank", "local_fallback",
+        "no_evidence", "unavailable", "unknown",
+    ] | None = None
+    rerank_applied: bool | None = Field(default=None, strict=True)
     redaction_status: str = Field(default="", max_length=64)
     retention_class: str = Field(default="", max_length=64)
     created_at: datetime
+
+    @model_validator(mode="after")
+    def validate_recommendation_metadata(self) -> AgentFeedbackPayload:
+        if self.ranking_version is None and any(
+            value is not None for value in (
+                self.candidate_rank, self.score_bucket, self.retrieval_source,
+                self.rerank_applied,
+            )
+        ):
+            raise ValueError("recommendation metadata requires ranking_version")
+        return self
 
     @model_validator(mode="before")
     @classmethod

@@ -86,12 +86,15 @@ class _RecordingBudgetGuard:
 class _RecordingProvider:
     provider_id = "openai"
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, events: list[str] | None = None) -> None:
         self.fail = fail
+        self.events = events
         self.calls: list[str] = []
 
     def execute(self, _request: ProviderExecutionRequest) -> SimpleNamespace:
         self.calls.append("execute")
+        if self.events is not None:
+            self.events.append("execute")
         if self.fail:
             raise ProviderExecutionError("provider.timeout", "boom")
         return SimpleNamespace(cost=0.02)
@@ -116,13 +119,13 @@ def _budget_request() -> ProviderExecutionRequest:
 
 def test_execute_provider_claims_before_dispatch_and_reconciles_after() -> None:
     guard = _RecordingBudgetGuard()
-    provider = _RecordingProvider()
+    provider = _RecordingProvider(events=guard.calls)
     service = RuntimeProviderExecutionService(usage_recorder=SimpleNamespace(), budget_guard=guard)
 
     result = service.execute_provider(
         provider,
         _budget_request(),
-        session=SimpleNamespace(),
+        session=SimpleNamespace(commit=lambda: guard.calls.append("commit")),
         run=RunRecord(
             run_id="run-dispatch-contract",
             site_id="site-dispatch-contract",
@@ -135,21 +138,21 @@ def test_execute_provider_claims_before_dispatch_and_reconciles_after() -> None:
     )
 
     assert result.cost == pytest.approx(0.02)
-    assert guard.calls == ["claim", "reconcile"]
+    assert guard.calls == ["claim", "commit", "execute", "reconcile"]
     assert provider.calls == ["execute"]
     assert guard.reconcile_costs == [pytest.approx(0.02)]
 
 
 def test_execute_provider_reconciles_reservation_when_dispatch_fails() -> None:
     guard = _RecordingBudgetGuard()
-    provider = _RecordingProvider(fail=True)
+    provider = _RecordingProvider(fail=True, events=guard.calls)
     service = RuntimeProviderExecutionService(usage_recorder=SimpleNamespace(), budget_guard=guard)
 
     with pytest.raises(ProviderExecutionError):
         service.execute_provider(
             provider,
             _budget_request(),
-            session=SimpleNamespace(),
+            session=SimpleNamespace(commit=lambda: guard.calls.append("commit")),
             run=RunRecord(
                 run_id="run-dispatch-contract",
                 site_id="site-dispatch-contract",
@@ -161,7 +164,7 @@ def test_execute_provider_reconciles_reservation_when_dispatch_fails() -> None:
             provider_id="openai",
         )
 
-    assert guard.calls == ["claim", "reconcile"]
+    assert guard.calls == ["claim", "commit", "execute", "reconcile"]
     assert guard.reconcile_costs == [None]
 
 

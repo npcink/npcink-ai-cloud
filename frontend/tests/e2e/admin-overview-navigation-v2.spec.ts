@@ -143,6 +143,7 @@ test('admin overview API failure preserves the page shell and safe retry', async
   await page.goto('/admin');
 
   await expect(page.getByRole('heading', { name: /Platform state comes first|先看平台概况/i })).toBeVisible();
-  await expect(page.locator('[role="alert"]').filter({ hasText: /overview unavailable/i })).toBeVisible();
+  await expect(page.locator('[role="alert"]').filter({ hasText: /加载数据失败|Failed to load data\./ })).toBeVisible();
+  await expect(page.getByText('overview unavailable', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
 });

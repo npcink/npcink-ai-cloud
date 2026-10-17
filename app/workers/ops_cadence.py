@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,7 +46,7 @@ def _dict_value(value: object) -> dict[str, object]:
 class CadenceTaskSpec:
     task_id: str
     event_kind: str
-    interval_seconds: Callable[[Settings], int]
+    interval_seconds: Callable[[Settings], int] | None
     runner: Callable[[Settings], dict[str, object]]
 
 
@@ -63,9 +65,9 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
     ).cleanup_expired_portal_auth_evidence(
         retention_days=settings.portal_auth_retention_days,
     )
-    customer_journey = CustomerJourneyService(
-        settings.database_url
-    ).cleanup_expired_events(retention_days=settings.customer_journey_retention_days)
+    customer_journey = CustomerJourneyService(settings.database_url).cleanup_expired_events(
+        retention_days=settings.customer_journey_retention_days
+    )
     return {
         "purged_runs": purged_runs,
         "retention_batch_limit": settings.retention_cleanup_batch_size,
@@ -98,13 +100,13 @@ def _run_usage_rollup(settings: Settings) -> dict[str, object]:
         "sites_total": _coerce_int(result.get("sites_total")),
         "profile_rollups_total": _coerce_int(result.get("profile_rollups_total")),
         "instance_rollups_total": _coerce_int(result.get("instance_rollups_total")),
+        "health_snapshot_reads": _coerce_int(result.get("health_snapshot_reads")),
+        "timings_ms": _dict_value(result.get("timings_ms")),
     }
 
 
 def _run_editor_assist_quality_detection(settings: Settings) -> dict[str, object]:
-    summary = EditorAssistQualityService(settings.database_url).get_summary(
-        window_hours=168
-    )
+    summary = EditorAssistQualityService(settings.database_url).get_summary(window_hours=168)
     raw_candidates = summary.get("issue_candidates")
     candidates = (
         [item for item in raw_candidates if isinstance(item, dict)]
@@ -116,9 +118,7 @@ def _run_editor_assist_quality_detection(settings: Settings) -> dict[str, object
         "contract_version": str(summary.get("contract_version") or ""),
         "window_hours": 168,
         "session_total": _coerce_int(totals.get("session_total")),
-        "resolved_session_total": _coerce_int(
-            totals.get("resolved_session_total")
-        ),
+        "resolved_session_total": _coerce_int(totals.get("resolved_session_total")),
         "sample_stage": str(totals.get("sample_stage") or "insufficient"),
         "issue_candidate_total": len(candidates),
         "sustained_issue_candidate_total": sum(
@@ -170,8 +170,19 @@ def _run_latency_probe_summary(settings: Settings) -> dict[str, object]:
 
 
 def _run_alert_provider_degradation_summary(settings: Settings) -> dict[str, object]:
-    result = run_alert_provider_degradation(settings)
+    # Cover the configured schedule without doubling old 15-minute overrides.
+    # Keep the existing 24-hour query-window bound even for longer schedules.
+    window_minutes = min(
+        1440,
+        max(
+            settings.alert_worker_window_minutes,
+            (settings.alert_provider_degradation_interval_seconds + 59) // 60,
+        ),
+    )
+    effective_settings = settings.model_copy(update={"alert_worker_window_minutes": window_minutes})
+    result = run_alert_provider_degradation(effective_settings)
     return {
+        "window_minutes": window_minutes,
         "sites_total": int(result.get("sites_total") or 0),
         "stored_batches_total": int(result.get("stored_batches_total") or 0),
         "events_total": int(result.get("events_total") or 0),
@@ -278,7 +289,7 @@ def cadence_task_specs() -> list[CadenceTaskSpec]:
         CadenceTaskSpec(
             task_id="editor_assist_quality_detection",
             event_kind="editor_assist.quality_detection.cadence",
-            interval_seconds=lambda _settings: 24 * 60 * 60,
+            interval_seconds=None,
             runner=_run_editor_assist_quality_detection,
         ),
         CadenceTaskSpec(
@@ -380,6 +391,8 @@ def build_cadence_summary(
     items: list[dict[str, object]] = []
 
     for spec in cadence_task_specs():
+        if spec.interval_seconds is None:
+            continue
         interval_seconds = max(60, int(spec.interval_seconds(settings)))
         last_event = _latest_event(commercial_service, event_kind=spec.event_kind)
         last_success = _latest_event(
@@ -436,6 +449,11 @@ def build_cadence_summary(
     return {
         "generated_at": current_time.isoformat().replace("+00:00", "Z"),
         "items": items,
+        "manual_tasks": [
+            {"task_id": spec.task_id, "execution_mode": "manual"}
+            for spec in cadence_task_specs()
+            if spec.interval_seconds is None
+        ],
         "totals": {
             "tasks_total": len(items),
             "fresh_total": sum(1 for item in items if item["freshness"] == "fresh"),
@@ -458,6 +476,8 @@ def run_due_tasks(
     results: list[dict[str, object]] = []
 
     for spec in cadence_task_specs():
+        if spec.interval_seconds is None:
+            continue
         interval_seconds = max(60, int(spec.interval_seconds(settings)))
         last_event = _latest_event(commercial_service, event_kind=spec.event_kind)
         last_run_at = _parse_timestamp((last_event or {}).get("created_at"))
@@ -513,16 +533,25 @@ def run_due_tasks(
 
 
 def main() -> None:
+    manual_tasks = {
+        spec.task_id: spec for spec in cadence_task_specs() if spec.interval_seconds is None
+    }
+    parser = argparse.ArgumentParser(description="Run scheduled operations or one manual analysis.")
+    parser.add_argument("--manual-task", choices=sorted(manual_tasks))
+    args = parser.parse_args()
     settings = get_settings()
     configure_logging(settings.log_level)
     require_database_connection(settings.database_url)
+    if args.manual_task:
+        print(json.dumps(manual_tasks[args.manual_task].runner(settings), sort_keys=True))
+        return
     logger = get_logger("npcink_ai_cloud.ops_cadence")
     heartbeat = WorkerHeartbeat(
         settings=settings,
         worker_id="ops_cadence",
         interval_seconds=settings.worker_heartbeat_interval_seconds,
     )
-    task_ids = [spec.task_id for spec in cadence_task_specs()]
+    task_ids = [spec.task_id for spec in cadence_task_specs() if spec.interval_seconds is not None]
     logger.info(
         "ops cadence worker started (poll=%ss, tasks=%s)",
         settings.ops_cadence_poll_seconds,

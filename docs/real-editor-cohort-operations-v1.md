@@ -104,10 +104,13 @@ WordPress administrator enables metadata-only monitoring
   -> Addon observability buffer flushes signed event batches
   -> Cloud stores metadata-only plugin events
   -> Cloud read model aggregates quality sessions
-  -> existing ops cadence evaluates a seven-day summary once per day
+  -> operator requests a seven-day quality analysis when needed
 ```
 
-The automatic path collects only the existing bounded fields, including:
+Collection and retention remain automatic; quality analysis is on demand under
+the [background lightweight mode](background-lightweight-mode-v1.md), without
+daily evaluation. The automatic collection path uses only the existing bounded
+fields, including:
 
 - `quality_session_id`, `task_key`, and `generation_sequence`;
 - site-keyed `object_scope_hash` and `actor_scope_hash`;

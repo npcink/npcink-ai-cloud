@@ -1,4 +1,4 @@
-import { ApiError } from './errors';
+import { ApiError, resolveUiErrorMessage } from './errors';
 import { formatDate } from './utils';
 
 type PortalTranslator = (
@@ -199,8 +199,7 @@ export function formatPortalErrorMessage(
   }
 
   if (error instanceof Error) {
-    const message = String(error.message || '').trim();
-    return message || fallbackMessage;
+    return resolveUiErrorMessage(error, fallbackMessage);
   }
 
   return fallbackMessage;

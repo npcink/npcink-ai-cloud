@@ -1,7 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { test } from './helpers/critical-network-fixture';
+import { expect, type Page } from '@playwright/test';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
+  installAdminMocks,
 } from './helpers/admin-operator-fixture';
 import {
   observeAdminBrowserEvidence,
@@ -498,4 +500,77 @@ test('payment configuration stays disabled until the operator saves a public bas
   await page.getByRole('switch', { name: /Enable Alipay payment|启用支付宝支付/i }).click();
   await expect(page.getByRole('button', { name: /Save Alipay configuration|保存支付宝配置/i })).toBeDisabled();
   await expect(page.locator('#service-settings-payment input[readonly]').first()).toHaveValue('');
+});
+
+
+test('SMTP test hides untranslated upstream details behind localized guidance', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installAdminMocks(page);
+  await page.route('**/api/admin/service-settings', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ settings: {
+      portal_public: setting('portal_public', 'ready', { public_base_url: 'https://cloud.example.test' }),
+      qq_login: setting('portal_qq_login', 'disabled', {}),
+      alipay_payment: setting('payment_alipay', 'disabled', {}),
+      site_relink_policy: setting('site_relink_policy', 'ready', { cooldown_days: 90 }),
+      platform_preferences: setting('platform_preferences', 'ready', { timezone: 'Asia/Shanghai' }),
+      portal_email: setting('portal_email', 'ready', {
+        smtp_host: 'smtp.example.test', smtp_port: 465, smtp_username: 'mail@example.test',
+        smtp_use_ssl: true, smtp_use_starttls: false, smtp_timeout_seconds: 20,
+        from_email: 'mail@example.test', from_name: 'Npcink AI Cloud', reply_to: '',
+      }, { smtp_password: { configured: true, display: '••••••••' } }),
+    } })) });
+  });
+  await page.route('**/api/admin/service-settings/email/test', async (route) => {
+    await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify(
+      buildAdminApiErrorEnvelope('SMTP upstream closed connection unexpectedly', 'service_settings.email_delivery_failed')
+    ) });
+  });
+  await page.goto('/admin/service-settings?tab=email');
+  await page.getByRole('textbox', { name: '测试收件人' }).fill('smoke@example.test');
+  await page.getByRole('button', { name: '发送测试邮件', exact: true }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/测试邮件发送失败|测试邮件失败/);
+  await expect(page.getByText('SMTP upstream closed connection unexpectedly', { exact: false })).toHaveCount(0);
+});
+
+
+test('Provider budget dropdown uses runtime IDs and retains unavailable saved entries', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/service-settings', async (route) => {
+    const base = setting('provider_account_spend_budget', 'ready', {
+      warning_ratio: 0.8, conservative_unpriced_cost_usd: 0.05, require_provider_configuration: true,
+      providers: [{ provider_id: 'retired-provider', account_class: 'paid', daily_usd: 0.1, monthly_usd: 0.1 }],
+    });
+    await route.fulfill({ json: buildAdminApiEnvelope({settings: {
+      portal_public: setting('portal_public', 'ready', {public_base_url: 'https://cloud.example.test'}),
+      qq_login: setting('portal_qq_login', 'disabled', {}),
+      portal_email: setting('portal_email', 'disabled', {}),
+      alipay_payment: setting('payment_alipay', 'disabled', {}),
+      accounting_fx: setting('commercial_accounting_fx', 'disabled', {}),
+      site_relink_policy: setting('site_relink_policy', 'disabled', {cooldown_days: 90}),
+      platform_preferences: setting('platform_preferences', 'ready', {timezone: 'Asia/Shanghai'}),
+      media_recognition_policy: setting('media_recognition_policy', 'disabled', {}),
+      provider_budget: {...base, runtime: {status: 'ok', warning_ratio: 0.8, configured_provider_count: 1,
+        missing_provider_ids: [], items: [], period_timezone: 'UTC', generated_at: '', connections: [
+          {provider_id: 'openai', connection_id: 'mqzj', display_name: 'Npcink Cloud', enabled: true},
+          {provider_id: 'openai', connection_id: 'alias', display_name: 'Backup', enabled: true},
+          {provider_id: 'deepseek', connection_id: 'deepseek', display_name: 'DeepSeek', enabled: true},
+        ]}},
+    }})});
+  });
+  await page.goto('/admin/service-settings?tab=provider-budget');
+  await page.getByRole('tab', { name: /Provider.*budget|Provider.*预算/i }).click();
+  await page.locator('[data-ui="provider-budget-provider-list"] > summary').click();
+  const first = page.getByRole('combobox', {name: 'Provider ID 1', exact: true});
+  await expect(first).toHaveValue('retired-provider');
+  await expect(first.locator('option[value="retired-provider"]')).toContainText(/unavailable|不可用/);
+  await first.selectOption('openai');
+  await expect(first).toHaveValue('openai');
+  await expect(first.locator('option[value="openai"]')).toHaveCount(1);
+  await expect(first.locator('option[value="openai"]')).toContainText('Npcink Cloud / Backup (openai)');
+  await page.getByRole('button', {name: /Add Provider|添加 Provider/i}).click();
+  const second = page.getByRole('combobox', {name: 'Provider ID 2', exact: true});
+  await expect(second.locator('option[value="openai"]')).toHaveJSProperty('disabled', true);
+  await second.selectOption('deepseek');
+  await expect(second).toHaveValue('deepseek');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

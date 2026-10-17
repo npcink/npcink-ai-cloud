@@ -331,6 +331,10 @@ function ProviderModelHealthPanel({ health, translate }: ProviderModelHealthPane
 function AiResourcesContent() {
   const { t } = useLocale();
   const toast = useToast();
+  const providerErrorMessage = useCallback(
+    (error: unknown, fallback: string) => resolveUiErrorMessage(error, fallback, t),
+    [t]
+  );
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -344,7 +348,7 @@ function AiResourcesContent() {
   const loading = directoryQuery.isPending;
   const refetchResources = directoryQuery.refetch;
   const directoryError = directoryQuery.error
-    ? resolveUiErrorMessage(
+    ? providerErrorMessage(
       directoryQuery.error,
       aiText('error_load', 'Failed to load provider management.')
     )
@@ -432,12 +436,12 @@ function AiResourcesContent() {
     setError('');
     const result = await refetchResources();
     if (result.error) {
-      setError(resolveUiErrorMessage(
+      setError(providerErrorMessage(
         result.error,
         aiText('error_load', 'Failed to load provider management.')
       ));
     }
-  }, [aiText, refetchResources]);
+  }, [aiText, providerErrorMessage, refetchResources]);
 
   const loadModelReferences = useCallback(async (providerId: string) => {
     const normalizedProviderId = providerId.trim().toLowerCase();
@@ -503,11 +507,11 @@ function AiResourcesContent() {
       setModelReferenceTotal(0);
       setModelReferenceSources([]);
       setLoadedModelReferenceProviderId('');
-      const referenceMessage = resolveUiErrorMessage(referenceError, aiText('error_load_model_references', 'Failed to load model reference data.'));
+      const referenceMessage = providerErrorMessage(referenceError, aiText('error_load_model_references', 'Failed to load model reference data.'));
       setLoadingModelReferences(failAsyncOperation(referenceMessage, normalizedProviderId));
       setError(referenceMessage);
     }
-  }, [aiText]);
+  }, [aiText, providerErrorMessage]);
 
   useEffect(() => {
     if (!providerFormOpen) return;
@@ -597,7 +601,7 @@ function AiResourcesContent() {
           'message_connection_saved_test_failed',
           'Provider connection saved, but the connection test failed: {{message}}',
           {
-            message: resolveUiErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
+            message: providerErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
           }
         );
       }
@@ -611,7 +615,7 @@ function AiResourcesContent() {
       }
       setSavingConnection(succeedAsyncOperation(normalizedConnectionId));
     } catch (saveError) {
-      const saveMessage = resolveUiErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.'));
+      const saveMessage = providerErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.'));
       setSavingConnection(failAsyncOperation(saveMessage, normalizedConnectionId));
       setError(saveMessage);
     }
@@ -656,7 +660,7 @@ function AiResourcesContent() {
       setPreflightingDelete(succeedAsyncOperation(connection.connection_id));
     } catch (preflightError) {
       if (deletePreflightRequestRevision.current !== requestRevision) return;
-      const preflightMessage = resolveUiErrorMessage(
+      const preflightMessage = providerErrorMessage(
         preflightError,
         aiText(
           'error_delete_connection_preflight',
@@ -731,7 +735,7 @@ function AiResourcesContent() {
             'error_delete_connection_conflict',
             'This provider connection changed after the deletion check. Review the refreshed row and try again.'
           )
-        : resolveUiErrorMessage(
+        : providerErrorMessage(
             deleteError,
             aiText('error_delete_connection', 'Failed to delete provider connection.')
           );
@@ -782,7 +786,7 @@ function AiResourcesContent() {
       );
       setApprovingImageHost(succeedAsyncOperation(connection.connection_id));
     } catch (approvalError) {
-      const approvalMessage = resolveUiErrorMessage(
+      const approvalMessage = providerErrorMessage(
         approvalError,
         aiText('image_host_repair_error', 'Failed to approve the detected image host.')
       );
@@ -822,7 +826,7 @@ function AiResourcesContent() {
         : probeErrorCode === 'provider_connection.image_generation_not_enabled'
           ? aiText('image_delivery_probe_capability_required', 'Enable image generation for this connection before testing delivery.')
           : aiText('image_delivery_probe_failed', 'Image delivery test failed.');
-      const probeMessage = resolveUiErrorMessage(
+      const probeMessage = providerErrorMessage(
         probeError,
         probeFallback
       );
@@ -853,7 +857,7 @@ function AiResourcesContent() {
       }
       setSyncingModelReferences(succeedAsyncOperation(normalizedProviderId));
     } catch (syncError) {
-      setSyncingModelReferences(failAsyncOperation(resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.')), normalizedProviderId));
+      setSyncingModelReferences(failAsyncOperation(providerErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.')), normalizedProviderId));
       throw syncError;
     }
   }
@@ -936,7 +940,7 @@ function AiResourcesContent() {
       try {
         await syncModelReferencesForProvider(referenceProviderId);
       } catch (syncError) {
-        referenceSyncFailed = resolveUiErrorMessage(
+        referenceSyncFailed = providerErrorMessage(
           syncError,
           aiText('error_sync_model_references', 'Failed to sync model reference data.')
         );
@@ -961,7 +965,7 @@ function AiResourcesContent() {
         setFetchingProviderCatalog(succeedAsyncOperation());
       }
     } catch (catalogError) {
-      const catalogMessage = resolveUiErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.'));
+      const catalogMessage = providerErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.'));
       setFetchingProviderCatalog(failAsyncOperation(catalogMessage));
       setError(catalogMessage);
     }
@@ -990,7 +994,7 @@ function AiResourcesContent() {
         modelReferenceProviderId
       );
       await loadModelReferences(effectiveReferenceProviderId);
-      const syncMessage = resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.'));
+      const syncMessage = providerErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.'));
       setModelReferenceAutoSyncError(syncMessage);
       toast.error(syncMessage, t('common.error'));
     }
@@ -1007,14 +1011,14 @@ function AiResourcesContent() {
       await loadModelReferences(providerId);
       setAutoSyncingModelReferences(succeedAsyncOperation(providerId));
     } catch (syncError) {
-      const syncMessage = resolveUiErrorMessage(syncError, aiText('model_reference_status_auto_sync_failed', 'Reference intelligence auto sync failed. Saved models and runtime calls are not affected.'));
+      const syncMessage = providerErrorMessage(syncError, aiText('model_reference_status_auto_sync_failed', 'Reference intelligence auto sync failed. Saved models and runtime calls are not affected.'));
       setAutoSyncingModelReferences(failAsyncOperation(syncMessage, providerId));
       await loadModelReferences(providerId);
       setModelReferenceAutoSyncError(
         syncMessage
       );
     }
-  }, [aiText, loadModelReferences]);
+  }, [aiText, loadModelReferences, providerErrorMessage]);
 
   async function runProviderConnectionTest(
     connectionId: string,
@@ -1060,14 +1064,14 @@ function AiResourcesContent() {
       }
       if (announce) {
         setLastReceipt(result?.receipt || null);
-        const testMessage = resolveUiErrorMessage(
+        const testMessage = providerErrorMessage(
           testError,
-          result?.message || aiText('error_test_connection', 'Provider connection test failed.')
+          aiText('error_test_connection', 'Provider connection test failed.')
         );
         setError(testMessage);
         toast.error(testMessage, t('common.error'));
       }
-      setTestingConnection(failAsyncOperation(resolveUiErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')), connectionId));
+      setTestingConnection(failAsyncOperation(providerErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')), connectionId));
       throw testError;
     }
   }
@@ -1191,6 +1195,9 @@ function AiResourcesContent() {
 
   const providerTestMessage = useCallback((result: ProviderConnectionTestResult): string => {
     const normalizedMessage = result.message.trim();
+    if (result.error_code || !result.ok) {
+      return providerErrorMessage(result, aiText('error_test_connection', 'Provider connection test failed.'));
+    }
     if (result.stage === 'web_search_probe') {
       return aiText('test_message_web_search_candidates', 'Search provider returned {{count}} source candidates.', {
         count: String(result.probe?.result_count ?? 0),
@@ -1214,8 +1221,8 @@ function AiResourcesContent() {
       'web search reader returned no readable content': aiText('test_message_web_search_reader_empty', 'Reader provider returned no readable content.'),
       'web search reader base URL is missing': aiText('test_message_web_search_reader_missing_base_url', 'Reader provider base URL is missing.'),
     };
-    return messages[normalizedMessage] || normalizedMessage || aiText('message_connection_tested', 'Provider connection tested.');
-  }, [aiText]);
+    return messages[normalizedMessage] || aiText('message_connection_tested', 'Provider connection tested.');
+  }, [aiText, providerErrorMessage]);
 
   const providerKindLabel = useCallback((kind: string): string => {
     switch (kind) {

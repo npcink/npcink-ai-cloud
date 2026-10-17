@@ -195,6 +195,12 @@ Run it before publishing a branch. The merge and release lanes remain separate
 because they answer different questions: repository integration and production
 safety, respectively.
 
+For the fixed zero-paid Provider/Portal regression scope, use
+`pnpm run verify:local -- --critical --plan`, then `--doctor` or execution
+without either flag. The [critical regression runbook](docs/local-critical-regression-v1.md)
+defines the in-process Fake API, loopback Mock browser, fail-on-skip receipts,
+and separate M4/production evidence. The ordinary current-diff mode is unchanged.
+
 ## M4 Preview and Evidence
 
 The authoring Mac owns source edits, Git, and operator commands. M4 owns routine
@@ -234,6 +240,7 @@ Key M4 decisions and measurements remain directly discoverable:
 - [ADR-027 package proxy cache](docs/decisions/027-m4-package-proxy-streaming-cache.md)
 - [ADR-051 managed private source relay](docs/decisions/051-managed-private-source-relay-service.md)
 - [ADR-052 Pgy primary M4 access](docs/decisions/052-pgy-primary-m4-access.md)
+- [ADR-060 LAN-first M4 operation routing](docs/decisions/060-lan-first-m4-operation-routing.md) — prefer `192.168.10.200`, then Pgy `172.16.3.35`, then Tailscale `100.102.170.79`; explicitly select the host before operations that lack automatic route selection
 - [M4 remote development and overlay network standard](docs/m4-remote-development-and-overlay-network-standard-v1.md)
 - [Managed source relay closeout and retrospective](docs/history/m4/2026/managed-source-relay-closeout-and-development-retrospective-2026-09-04.md)
 - [Package proxy validation](docs/history/m4/2026/m4-package-proxy-streaming-cache-validation-2026-07-25.md)

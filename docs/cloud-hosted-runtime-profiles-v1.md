@@ -81,9 +81,10 @@ The only internal service endpoints are:
 ```text
 GET /internal/service/admin/runtime-profiles
 PUT /internal/service/admin/runtime-profiles
+PATCH /internal/service/admin/runtime-profiles
 ```
 
-The browser proxy exposes the exact matching `GET` and `PUT` methods at
+The browser proxy exposes the exact matching `GET`, `PUT`, and `PATCH` methods at
 `/api/admin/runtime-profiles` after platform-admin and catalog-management
 authorization. Unknown methods and the retired `ability-models` paths fail
 closed.
@@ -96,7 +97,13 @@ The read projection contains:
 - the Cloud/local ownership boundary.
 
 The write request must repeat `contract_version`, `platform_kind`,
-`connector_id`, `operation_contract_version`, and the complete profile set.
+`connector_id`, `operation_contract_version`, and a profile set. `PUT` requires the complete catalog; `PATCH` accepts a
+nonempty subset, validates only that subset, and preserves omitted profiles
+including their binding revisions and failed or stale media evidence. Both
+methods return the complete read projection and retain the same permission,
+idempotency, candidate validation, and service audit requirements. The Admin
+page sends only edited profiles using `PATCH`; unchanged media profiles never
+trigger capability probes during a text-only save.
 Candidate instances, when present, must be available, enabled by the provider
 model allowlist, compatible with the profile execution kind, and limited to a
 primary plus one fallback. An empty candidate chain is an explicit fail-closed `needs_candidates` state, so a

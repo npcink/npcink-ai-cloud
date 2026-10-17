@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './helpers/critical-network-fixture';
 import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
@@ -981,6 +982,61 @@ test('save and test clears the transient testing message when the test fails', a
 
   await expect(dialog.getByText(/provider connection saved, but the connection test failed|Provider 连接已保存，但连接测试失败/i)).toBeVisible();
   await expect(page.getByText(/Provider connection saved\. Running connection test now\.|Provider 连接已保存，正在运行连接测试/i)).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /Save and test|保存并测试/i })).toBeEnabled();
+});
+
+test('catalog sync reaches a terminal state and can run again', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  let previewCount = 0;
+  let releasePreview!: () => void;
+  const previewPending = new Promise<void>((resolve) => { releasePreview = resolve; });
+  await page.route('**/api/admin/provider-connections/preview-catalog', async (route) => {
+    previewCount += 1;
+    if (previewCount === 1) await previewPending;
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({ models: [], model_ids: [], model_count: 0 })),
+    });
+  });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  const sync = dialog.locator('[data-ui="model-sync-primary"]');
+  await expect(sync).toBeEnabled();
+  await sync.click();
+  await expect(sync).toBeDisabled();
+  releasePreview();
+  await expect(sync).toBeEnabled();
+  await sync.click();
+  await expect.poll(() => previewCount).toBe(2);
+  await expect(sync).toBeEnabled();
+  await expect(sync).not.toContainText(/Syncing|同步中/i);
+});
+
+test('catalog success with reference failure remains retryable', async ({ page }) => {
+  await installProviderDirectoryHarness(page);
+  await page.route('**/api/admin/provider-connections/preview-catalog', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({ models: [], model_ids: [], model_count: 0 })),
+    });
+  });
+  await page.route('**/api/admin/model-references/sync', async (route) => {
+    await route.fulfill({
+      status: 503, contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('reference unavailable', 'service.unavailable')),
+    });
+  });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  const sync = dialog.locator('[data-ui="model-sync-primary"]');
+  await sync.click();
+  await expect(dialog.locator('[data-ui="model-reference-retry"]')).toBeVisible();
+  await expect(sync).toBeEnabled();
+  await expect(sync).not.toContainText(/Syncing|同步中/i);
 });
 
 test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({ page }, testInfo) => {
@@ -1111,4 +1167,43 @@ test('provider model health stays a collapsed read-only evidence panel', async (
   await page.goto('/admin/ai-resources#provider-model-health');
   await expect(healthPanel).toHaveAttribute('open', '');
   await expect(healthPanel.locator('table')).toBeVisible();
+});
+
+test('provider failures show localized reasons in toast and row feedback', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.addInitScript(() => localStorage.setItem('locale', 'zh-CN'));
+  await installProviderDirectoryHarness(page);
+  let errorCode = 'provider.auth_invalid';
+  await page.route('**/api/admin/provider-connections/model_ready/test', async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiErrorEnvelope('provider catalog request failed', errorCode, {
+        connection_id: 'model_ready', provider_id: 'openai', kind: 'openai_compatible',
+        status: 'failed', stage: 'catalog_fetch', ok: false, error_code: errorCode,
+        message: 'provider catalog request failed',
+        receipt: { event_kind: 'provider_connection.test', outcome: 'error' },
+      })),
+    });
+  });
+  await page.goto('/admin/ai-resources');
+  for (const [code, text] of [
+    ['provider.auth_invalid', '供应商认证失败'],
+    ['provider.network_error', '无法连接供应商'],
+    ['provider.timeout', '供应商请求超时'],
+    ['provider.rate_limited', '供应商请求受到限流'],
+    ['client.network_error', '无法连接云端服务'],
+    ['client.request_timeout', '云端服务请求超时'],
+    ['provider.unknown', '测试 provider 连接失败'],
+  ]) {
+    errorCode = code;
+    await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: '测试', exact: true }).click();
+    await expect(page.locator('[data-feedback-for="model_ready"]').getByRole('alert')).toContainText(text);
+    await expect(page.getByRole('alert').filter({ hasText: text })).toHaveCount(2);
+    if (code === 'provider.auth_invalid') {
+      await testInfo.attach('localized-provider-failure-pc', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+    }
+    await expect(page.getByText('provider catalog request failed', { exact: false })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
 });
