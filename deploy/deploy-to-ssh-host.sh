@@ -3027,7 +3027,7 @@ remote_run_timed "remote extract bundle" tar xzf "${REMOTE_BUNDLE_PATH}" -C "${R
 
 RELEASE_PLAN_PATH="${RELEASE_DIR}/release/production-release-plan.json"
 if [ -f "${RELEASE_PLAN_PATH}" ] && [ ! -L "${RELEASE_PLAN_PATH}" ]; then
-	RELEASE_PLAN_EXECUTION="$("${RELEASE_TOOL_PYTHON}" - "${RELEASE_PLAN_PATH}" <<'PY'
+	RELEASE_PLAN_EXECUTION="$("${RELEASE_TOOL_PYTHON}" - "${RELEASE_PLAN_PATH}" "${PREVIOUS_RELEASE_DIR}" <<'PY'
 from __future__ import annotations
 
 import json
@@ -3068,6 +3068,24 @@ frontend = {
     "static_payload_required": False,
 }
 typed_flags = all(type(value) is bool for value in flags.values())
+partial = {"backend": backend, "migration": migration, "frontend": frontend}
+if typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane in partial and flags == partial[lane]:
+    # A branch promotion is not proof that its previous revision was installed.
+    # Validate before preserving images, stopping services, migrations, or cutover.
+    previous = Path(sys.argv[2]) if sys.argv[2] else None
+    manifest_path = previous / "release-bundle-manifest.json" if previous else None
+    try:
+        if manifest_path is None or manifest_path.is_symlink():
+            raise ValueError("current managed manifest is unavailable")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        installed = manifest["source"]["revision"]
+        base_sha = plan.get("base_sha")
+        if not isinstance(base_sha, str) or len(base_sha) != 40 or any(char not in "0123456789abcdef" for char in base_sha):
+            raise ValueError("release plan base SHA is invalid")
+        if installed != base_sha:
+            raise ValueError("installed revision differs from the cumulative release plan base")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SystemExit(f"[fail] Partial deployment baseline mismatch: {exc}; regenerate the cumulative plan.") from exc
 if typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "backend" and flags == backend:
     print("backend\t0\t0\t1\t0")
 elif typed_flags and plan.get("schema") == "npcink.production_release_plan.v2" and lane == "migration" and flags == migration:
