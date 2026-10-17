@@ -100,6 +100,8 @@ def _run_usage_rollup(settings: Settings) -> dict[str, object]:
         "sites_total": _coerce_int(result.get("sites_total")),
         "profile_rollups_total": _coerce_int(result.get("profile_rollups_total")),
         "instance_rollups_total": _coerce_int(result.get("instance_rollups_total")),
+        "health_snapshot_reads": _coerce_int(result.get("health_snapshot_reads")),
+        "timings_ms": _dict_value(result.get("timings_ms")),
     }
 
 

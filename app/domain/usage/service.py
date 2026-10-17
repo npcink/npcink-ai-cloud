@@ -89,9 +89,26 @@ class UsageService:
         self,
         database_url: str,
         now_factory: Callable[[], datetime] | None = None,
+        *,
+        health_snapshot_reader: Callable[[list[str] | None, bool], list[HealthSnapshot]]
+        | None = None,
     ) -> None:
         self.database_url = database_url
         self.now_factory = now_factory or (lambda: datetime.now(UTC))
+        self._health_snapshot_reader = health_snapshot_reader
+
+    def _read_latest_health_snapshots(
+        self,
+        repository: StatsRepository,
+        instance_ids: list[str] | None = None,
+        *,
+        earliest_on_tie: bool = False,
+    ) -> list[HealthSnapshot]:
+        if self._health_snapshot_reader is not None:
+            return self._health_snapshot_reader(instance_ids, earliest_on_tie)
+        return repository.list_latest_health_snapshots(
+            instance_ids, earliest_on_tie=earliest_on_tie
+        )
 
     def _average_latency(self, latencies: list[int]) -> int:
         return _average_latency_value(latencies)
@@ -142,8 +159,8 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_latest_health_snapshots(
-                [instance_id], earliest_on_tie=True
+            health_snapshots = self._read_latest_health_snapshots(
+                repository, [instance_id], earliest_on_tie=True
             )
             today_metrics = repository.aggregate_provider_calls_window(
                 start_at=windows["today"]["start_at"],
@@ -286,8 +303,8 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_latest_health_snapshots(
-                candidate_instance_ids, earliest_on_tie=True
+            health_snapshots = self._read_latest_health_snapshots(
+                repository, candidate_instance_ids, earliest_on_tie=True
             )
             today_metrics = repository.aggregate_runs_window(
                 start_at=windows["today"]["start_at"],
@@ -546,7 +563,7 @@ class UsageService:
                 start_at=rolling_window["start_at"],
                 end_at=rolling_window["end_at"],
             )
-            health_snapshots = repository.list_latest_health_snapshots()
+            health_snapshots = self._read_latest_health_snapshots(repository)
             sites_total = repository.count_sites()
             profiles_total = repository.count_profiles()
             today_run_metrics = repository.aggregate_runs_window(
