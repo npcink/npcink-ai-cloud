@@ -61,20 +61,17 @@ jobs:
       - name: Create exact production release plan
         id: release_plan
         env:
-          BEFORE_SHA: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          base_sha="${BEFORE_SHA}"
-          if [ -z "${base_sha}" ] || [[ "${base_sha}" =~ ^0+$ ]]; then
-            base_sha="0000000000000000000000000000000000000000"
-            mapfile -t changed_files < <(
-              git diff-tree --root --no-commit-id --name-only -r --diff-filter=ACMRD "${GITHUB_SHA}"
-            )
-          else
-            mapfile -t changed_files < <(
-              git diff --no-renames --name-only --diff-filter=ACMRD \
-                "${base_sha}" "${GITHUB_SHA}"
-            )
+          base_sha="$(python3 scripts/resolve-production-deployed-baseline.py --repository "${GITHUB_REPOSITORY}")"
+          git merge-base --is-ancestor "${base_sha}" "${GITHUB_SHA}"
+          # Capture diff failure before mapfile: process substitution hides its status.
+          changed_paths="$(git diff --no-renames --name-only --diff-filter=ACMRD \
+            "${base_sha}" "${GITHUB_SHA}")"
+          changed_files=()
+          if [ -n "${changed_paths}" ]; then
+            mapfile -t changed_files <<< "${changed_paths}"
           fi
 
           mkdir -p artifacts/production-release-plan

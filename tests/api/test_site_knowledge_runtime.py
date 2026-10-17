@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -219,6 +221,7 @@ def _execute(
     site_id: str = "site_alpha",
     key_id: str = "key_default",
     idempotency_key: str = "site-knowledge-idem",
+    nonce: str | None = None,
 ) -> dict[str, object]:
     body = json.dumps(payload).encode("utf-8")
     headers = merge_json_headers(
@@ -228,7 +231,7 @@ def _execute(
             site_id=site_id,
             key_id=key_id,
             idempotency_key=idempotency_key,
-            nonce=f"nonce-{idempotency_key}",
+            nonce=nonce or f"nonce-{idempotency_key}",
             trace_id="siteknowledge000000000000000000",
             body=body,
         )
@@ -2186,6 +2189,77 @@ def test_zilliz_backend_requires_cloud_managed_credentials(tmp_path: Path) -> No
     assert settings.site_knowledge_embedding_model == "BAAI/bge-m3"
     assert settings.site_knowledge_embedding_dimensions == 1024
     assert settings.site_knowledge_vector_metric_type == "COSINE"
+
+
+def test_zilliz_connection_failure_finishes_run_and_worker_processes_next_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.domain.site_knowledge.backends import ZillizCloudSiteKnowledgeBackend
+
+    attempts: list[dict[str, object]] = []
+
+    class FakeClient:
+        def delete(self, **_kwargs: object) -> None:
+            return None
+
+        def upsert(self, **_kwargs: object) -> None:
+            return None
+
+    def connect(**kwargs: object) -> FakeClient:
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            raise RuntimeError("private Zilliz endpoint and token must not reach run errors")
+        return FakeClient()
+
+    monkeypatch.setitem(
+        sys.modules, "pymilvus", SimpleNamespace(DataType=object, MilvusClient=connect)
+    )
+    monkeypatch.setattr(ZillizCloudSiteKnowledgeBackend, "_ensure_collection", lambda _self: None)
+    database_url, settings, queue, client = _build_client(tmp_path)
+    first = _execute(client, _sync_payload(), idempotency_key="zilliz-failure")
+    second = _execute(
+        client,
+        _sync_payload(),
+        site_id="site_beta",
+        key_id="key_beta",
+        idempotency_key="zilliz-next",
+    )
+    first_id = first["json"]["data"]["run_id"]
+    second_id = second["json"]["data"]["run_id"]
+    worker_settings = settings.model_copy(
+        update={
+            "site_knowledge_vector_backend": "zilliz_cloud",
+            "site_knowledge_zilliz_uri": "https://vector.example.invalid",
+            "site_knowledge_zilliz_token": "test-only-token",
+        }
+    )
+    worker = RuntimeService(
+        database_url, settings=worker_settings, providers={}, runtime_queue=queue
+    )
+
+    processed = worker.process_queued_runs(max_runs=2, timeout_seconds=0)
+
+    assert [(run["run_id"], run["status"]) for run in processed] == [
+        (first_id, "failed"),
+        (second_id, "succeeded"),
+    ]
+    failed = worker.get_run(first_id, site_id="site_alpha")
+    assert failed["error_code"] == "site_knowledge.zilliz_connection_failed"
+    assert failed["error_message"] == "Zilliz site knowledge connection is not ready"
+    assert len(attempts) == 2
+    assert worker.process_queued_runs(max_runs=2, timeout_seconds=0) == []
+    replay = _execute(
+        client,
+        _sync_payload(),
+        idempotency_key="zilliz-failure",
+        nonce="nonce-zilliz-replay",
+    )
+    assert replay["json"]["data"]["run_id"] == first_id
+    assert replay["json"]["data"]["status"] == "failed"
+    assert len(attempts) == 2
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(ProviderCallRecord))) == []
+        assert list(session.scalars(select(CreditLedgerEntry))) == []
 
 
 def test_site_knowledge_tei_embedding_requires_configured_model(tmp_path: Path) -> None:
