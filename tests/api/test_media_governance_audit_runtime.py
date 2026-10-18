@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -21,6 +22,13 @@ from tests.conftest import (
     merge_json_headers,
     seed_site_auth,
 )
+
+
+@pytest.fixture(autouse=True)
+def retained_runtime_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retained implementation; default release availability is tested separately."""
+    from app.domain.runtime import availability
+    monkeypatch.setattr(availability, "PAUSED_RUNTIME_FEATURES", frozenset())
 
 
 def _build_client(tmp_path: Path) -> tuple[str, TestClient]:

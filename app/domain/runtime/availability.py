@@ -12,6 +12,18 @@ from app.domain.cloud_batch_runtime.contracts import (
     CLOUD_BATCH_RUNTIME_PROFILE_ID,
     CLOUD_BATCH_RUNTIME_REQUEST_CONTRACT,
 )
+from app.domain.media_batch_plans.contracts import (
+    MEDIA_BATCH_PLAN_ABILITIES,
+    MEDIA_BATCH_PLAN_EXECUTION_KIND,
+    MEDIA_BATCH_PLAN_PROFILE_ID,
+    MEDIA_BATCH_PLAN_REQUEST_CONTRACT,
+)
+from app.domain.media_governance.contracts import (
+    MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+    MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND,
+    MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+    MEDIA_GOVERNANCE_AUDIT_REQUEST_CONTRACT,
+)
 from app.domain.runtime.errors import RuntimeErrorBase
 from app.domain.site_ops_analysis.contracts import (
     SITE_OPS_ANALYSIS_ABILITIES,
@@ -20,9 +32,22 @@ from app.domain.site_ops_analysis.contracts import (
     SITE_OPS_ANALYSIS_REQUEST_CONTRACT,
 )
 
-PAUSED_RUNTIME_FEATURES = frozenset({"cloud_inspection", "audio_generation"})
+PAUSED_RUNTIME_FEATURES = frozenset({"cloud_inspection", "audio_generation", "advanced_media"})
 
 _FEATURE_MARKERS = {
+    "advanced_media": frozenset(
+        {
+            *MEDIA_BATCH_PLAN_ABILITIES,
+            MEDIA_BATCH_PLAN_EXECUTION_KIND,
+            MEDIA_BATCH_PLAN_PROFILE_ID,
+            MEDIA_BATCH_PLAN_REQUEST_CONTRACT,
+            *MEDIA_GOVERNANCE_AUDIT_ABILITIES,
+            MEDIA_GOVERNANCE_AUDIT_EXECUTION_KIND,
+            MEDIA_GOVERNANCE_AUDIT_PROFILE_ID,
+            MEDIA_GOVERNANCE_AUDIT_REQUEST_CONTRACT,
+            "media_derivative",
+        }
+    ),
     "audio_generation": frozenset(
         {
             *AUDIO_GENERATION_ABILITIES,

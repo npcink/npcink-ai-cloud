@@ -32,6 +32,8 @@ def test_pause_precedes_any_runtime_dependency(marker: str, field: str) -> None:
         service.execute(request)
     assert error.value.status_code == 409
     assert error.value.error_code == "runtime.feature_paused"
+    with pytest.raises(RuntimeErrorBase):
+        service.resolve(request)
 
 
 def test_old_queued_inspection_fails_without_provider_calls(
@@ -77,3 +79,10 @@ def test_old_completed_inspection_result_is_readable(
     finally:
         client.close()
         dispose_engine(database_url)
+
+
+def test_media_job_pause_precedes_artifact_reads() -> None:
+    service = object.__new__(RuntimeService)
+    with pytest.raises(RuntimeErrorBase) as error:
+        service.enqueue_media_job_run(site_id="retained-site", input_payload={})
+    assert error.value.error_code == "runtime.feature_paused"

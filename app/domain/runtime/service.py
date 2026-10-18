@@ -332,6 +332,10 @@ class RuntimeService:
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
+        require_runtime_available(
+            ability_name=request.ability_name, execution_kind=request.execution_kind,
+            contract_version=request.contract_version, profile_id=request.profile_id,
+        )
         self.contract_validator.validate_runtime_data_handling_contract(request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
@@ -906,6 +910,7 @@ class RuntimeService:
         idempotency_key: str | None = None,
         trace_id: str | None = None,
     ) -> RuntimeExecutionResponse:
+        require_runtime_available(ability_name="", execution_kind="media_derivative")
         return self.artifact_coordination_service.enqueue_media_job_run(
             site_id=site_id,
             input_payload=input_payload,

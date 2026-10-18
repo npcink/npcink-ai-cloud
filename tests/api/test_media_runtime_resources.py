@@ -61,6 +61,13 @@ UPLOAD_PATH = "/v1/runtime/media/uploads"
 JOB_PATH = "/v1/runtime/media/jobs"
 
 
+@pytest.fixture(autouse=True)
+def retained_runtime_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retained implementation; default release availability is tested separately."""
+    from app.domain.runtime import availability
+    monkeypatch.setattr(availability, "PAUSED_RUNTIME_FEATURES", frozenset())
+
+
 def _download_path(artifact_id: str) -> str:
     return f"/v1/runtime/media/artifacts/{artifact_id}/download"
 

@@ -78,3 +78,40 @@ flows and regeneration are unavailable; existing playback and preferences stay.
 - Addon default-pause and retained WordPress connector runtime tests passed.
 - Toolbox static contracts, provider behavior and evaluated editor JS passed;
   audio entries are absent while ordinary formatting remains available.
+
+## Advanced-media and final source evidence
+
+Advanced media planning, governance audits and new derivative/optimization jobs
+are paused. The dedicated media-jobs ingress is also guarded; ordinary uploads,
+image generation, ALT, artifact delivery and historical results remain usable.
+Addon dispatch stops before uploads, and its optimization-plan projection is
+unavailable. Toolbox withdraws the workbench, optimize bulk action and planning
+ability, and blocks new manifests, batches, confirmation and per-item processing.
+Backup restoration, retention cleanup and adopted media are unchanged.
+
+Final focused Cloud suite: **555 passed**, including pause defaults, ordinary
+runtime, WordPress connector, Site Knowledge-related connector regressions,
+media delivery and dormant implementations. Python correctness/import checks
+and targeted mypy passed. The two pytest warnings are Starlette/httpx test-client
+deprecation and an existing intentional interrupting-close fixture finalizer.
+
+Admin source gate passed. Full Admin visual run: **94 passed, 1 failed** because
+the old assertion expected the withdrawn Advisor link. That assertion was
+updated; focused diagnostic/navigation/paused-page PC and narrow browser
+coverage then passed **30 tests**. The other 94 tests were not rerun merely to
+repeat already-proved evidence. Local WordPress Site Check browser passed with
+Cloud entries absent and no Cloud analysis/Core execution.
+
+The single broad in-process contract/domain attempt was stopped after failures;
+a focused reproduction reports an expired authoritative image-supply validation
+window in unchanged supply-chain inputs. It is not a passing `check:fast` run.
+No Docker runtime was started locally and no security exception was renewed.
+M4 transfer remains unverified after private-relay SSH timeout; production and
+GitHub publication are outside the authorized development lane.
+
+The source pauses are complete; verification and distribution states above must
+not be conflated. Shared billing/security, Site Knowledge sync/search, existing
+external search, essential feedback, existing media/audio and first-party
+localization stay operational. Broader RAG/provider/commercial/dashboard/shim
+expansion is frozen pending operator evidence. Restoration is a reviewed source
+change against current consumers, never an automatic saved-option reactivation.
