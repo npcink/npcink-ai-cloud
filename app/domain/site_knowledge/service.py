@@ -45,6 +45,7 @@ from app.domain.site_knowledge.contracts import (
     normalize_source_passages,
     validate_site_knowledge_runtime_contract,
 )
+from app.domain.site_knowledge.delivery_evidence import normalize_delivery_evidence
 from app.domain.site_knowledge.embedding import (
     cosine_similarity,
     embed_text_deterministic,
@@ -501,9 +502,11 @@ class SiteKnowledgeService:
                 chunks
             ):
                 quota_limited = True
-            document_truncated = bool(
-                normalized.get("content_truncated")
-            ) or _chunks_include_limit_truncation(chunks)
+            document_truncated = (
+                bool(normalized.get("content_truncated"))
+                or bool(normalized.get("delivery_truncated"))
+                or _chunks_include_limit_truncation(chunks)
+            )
             if document_truncated:
                 truncated_documents += 1
             self._emit_sync_progress(
@@ -602,6 +605,8 @@ class SiteKnowledgeService:
                 run_id=run_id,
                 metadata={
                     "content_truncated": bool(normalized.get("content_truncated")),
+                    "delivery_evidence": normalized.get("delivery_evidence"),
+                    "delivery_truncated": normalized.get("delivery_truncated"),
                     "chunk_limit_truncated": _chunks_include_limit_truncation(chunks),
                     "truncated": document_truncated,
                     "source_content_chars": _coerce_int(
@@ -1706,6 +1711,9 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
         remove_markup_noise=True,
     )
     indexed_content_chars = len(content_excerpt)
+    delivery_evidence = normalize_delivery_evidence(
+        document.get("delivery_evidence"), document.get("content_excerpt", "")
+    )
     taxonomies = _normalize_public_taxonomies(document.get("taxonomies"))
     content_hash = str(document.get("content_hash") or "").strip()
     if not content_hash:
@@ -1729,6 +1737,10 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
         "source_content_chars": source_content_chars,
         "indexed_content_chars": indexed_content_chars,
         "content_truncated": source_content_chars > indexed_content_chars,
+        "delivery_evidence": delivery_evidence,
+        "delivery_truncated": (
+            delivery_evidence["truncated"] if delivery_evidence is not None else None
+        ),
         "taxonomies": taxonomies,
         "content_hash": content_hash[:128],
     }
