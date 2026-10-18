@@ -7,6 +7,11 @@ Status: operator-directed handoff record. 面向接续本工作的新 AI 会话�
 
 ### 2026-10-19 三会话合并交接
 
+后续已执行一次[零模型预检与试用前核对](history/trials/2026/trial-preflight-and-trace-minimum-plan-2026-10-19.md)：
+内部链路通过、外部Trace配置缺失，正式smoke未执行；同一标题的原生accepted
+反馈已查到1条，Free及拟用文字候选预算已核对。操作者要求先审阅最小Trace接入
+方案，再决定配置；试用和T+0仍未开始。
+
 产品头脑风暴、阶段1落实及推荐观察的完整脉络已归入
 [三会话综合纪要与接续清单](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md)。
 阶段A/B、注册即Free、Portal及预算设置已有交付；后续生产标题与人工保存回读
