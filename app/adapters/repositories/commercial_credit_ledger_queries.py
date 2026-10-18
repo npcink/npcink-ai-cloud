@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, cast
 
 from sqlalchemy import Integer, and_, case, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.models import CREDIT_LEDGER_EVENT_CONSUME, CreditLedgerEntry, RunRecord
@@ -13,6 +13,39 @@ from app.core.models import CREDIT_LEDGER_EVENT_CONSUME, CreditLedgerEntry, RunR
 class CommercialCreditLedgerQueries:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def list_runtime_credit_facts(
+        self,
+        *,
+        account_id: str,
+        subscription_id: str,
+        event_types: list[str],
+        since: datetime,
+        until: datetime,
+    ) -> list[CreditLedgerEntry]:
+        if not event_types:
+            return []
+        # Retain identity-map values and accumulation order, including local
+        # pending changes; a raw scalar SUM cannot provide that contract.
+        statement = (
+            select(CreditLedgerEntry)
+            .options(
+                load_only(
+                    CreditLedgerEntry.source_type,
+                    CreditLedgerEntry.ai_credit_delta,
+                    raiseload=True,
+                )
+            )
+            .where(
+                CreditLedgerEntry.account_id == account_id,
+                CreditLedgerEntry.subscription_id == subscription_id,
+                CreditLedgerEntry.event_type.in_(event_types),
+                CreditLedgerEntry.created_at >= since,
+                CreditLedgerEntry.created_at <= until,
+            )
+            .order_by(CreditLedgerEntry.created_at.desc(), CreditLedgerEntry.ledger_entry_id.desc())
+        )
+        return list(self.session.scalars(statement))
 
     def list_credit_ledger_entries(
         self,

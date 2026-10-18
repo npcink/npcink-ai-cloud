@@ -476,20 +476,19 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             session.commit()
             raise error
 
-        meter_events = repository.list_usage_meter_events(
+        meter_events = repository.list_runtime_usage_facts(
             site_id,
             subscription_id=subscription.subscription_id,
             period_start_at=period_start_at,
             period_end_at=period_end_at,
-            limit=None,
         )
         budgets = service._resolve_effective_subscription_budgets(
             plan_version=plan_version,
             subscription=subscription,
             snapshot=snapshot,
         )
-        credit_entries = repository.list_credit_ledger_entries(
-            account_ids=[subscription.account_id],
+        credit_entries = repository.list_runtime_credit_facts(
+            account_id=subscription.account_id,
             subscription_id=subscription.subscription_id,
             event_types=[
                 CREDIT_LEDGER_EVENT_CONSUME,
@@ -499,7 +498,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             ],
             since=period_start_at,
             until=period_end_at,
-            limit=None,
         )
         package_net_delta = package_credit_net_delta(credit_entries)
         used_ai_credits = package_credit_used_from_net_delta(package_net_delta)
@@ -940,8 +938,8 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             entry_metadata["package_credit_consumed"] = round(current_credits, 6)
             entry.metadata_json = entry_metadata
             return
-        period_entries = repository.list_credit_ledger_entries(
-            account_ids=[str(entry.account_id)],
+        period_entries = repository.list_runtime_credit_facts(
+            account_id=str(entry.account_id),
             subscription_id=subscription.subscription_id,
             event_types=[
                 CREDIT_LEDGER_EVENT_CONSUME,
@@ -951,7 +949,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             ],
             since=period_start_at,
             until=period_end_at,
-            limit=None,
         )
         package_net_after = package_credit_net_delta(period_entries)
         package_net_before = package_net_after + current_credits
