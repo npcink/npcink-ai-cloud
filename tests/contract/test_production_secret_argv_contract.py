@@ -93,6 +93,16 @@ request_body = ""
 if request_body_path:
     request_body = Path(request_body_path).read_text(encoding="utf-8")
 
+origin_headers = {}
+for line in request_headers.splitlines():
+    key, _, value = line.partition(":")
+    if key.lower() in {"host", "x-forwarded-host", "x-forwarded-proto"}:
+        origin_headers[key.lower()] = value.strip()
+origin_log = os.environ.get("SMOKE_ORIGIN_LOG")
+if origin_log:
+    with open(origin_log, "a") as handle:
+        handle.write(json.dumps({"url": url, "headers": origin_headers}) + "\n")
+
 path = urlparse(url).path
 status = "200"
 body: object = {"status": "ok", "data": {}}
@@ -272,6 +282,19 @@ if os.environ.get("FAKE_EDGE_DENY") == "1" and internal_path:
     elif os.environ.get("FAKE_PRIVATE_DOWN") == "1":
         status = "503"
         body = {"status": "error"}
+
+if (os.environ.get("FAKE_REQUIRE_CANONICAL_ORIGIN") == "1" and internal_path
+        and urlparse(url).hostname == "127.0.0.1"):
+    public = urlparse(os.environ.get("FAKE_PUBLIC_ORIGIN", "https://cloud.example.test"))
+    expected_headers = {"host": public.netloc, "x-forwarded-host": public.netloc,
+                        "x-forwarded-proto": public.scheme}
+    if origin_headers != expected_headers:
+        status = "400"
+        body = {"status": "error", "error_code": "request.forwarded_origin_invalid"}
+if (path == "/internal/service/observability/summary"
+        and os.environ.get("FAKE_TRACE_UNCONFIGURED") == "1" and status == "200"):
+    body["data"]["tracing"] = {"otlp_configured": False, "otlp_endpoint": "",
+                               "trace_query_configured": False, "trace_query_url": ""}
 
 response_headers[0] = f"HTTP/1.1 {status} Fixture"
 if output_path:
@@ -1352,6 +1375,7 @@ def test_smoke_splits_private_diagnostics_from_public_execution(
         "CURL_STATE_PATH": str(tmp_path / "state"),
         "FAKE_EDGE_DENY": "1",
         "FAKE_PRIVATE_DOWN": "1" if private_down else "0",
+        "FAKE_REQUIRE_CANONICAL_ORIGIN": "1",
         "NPCINK_CLOUD_INTERNAL_BASE_URL": "http://127.0.0.1:18011",
         "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "private-token-sentinel",
         "NPCINK_CLOUD_ADMIN_KEY": "admin-sentinel",
@@ -1404,13 +1428,14 @@ def test_release_preflight_never_executes_runtime_or_uses_otp(tmp_path: Path) ->
         "FAKE_EDGE_DENY": "1",
         "NPCINK_CLOUD_INTERNAL_BASE_URL": "http://127.0.0.1:18011",
         "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "private-token-sentinel",
-        "NPCINK_CLOUD_ADMIN_KEY": "admin-sentinel",
-        "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL": "member@example.test",
-        "NPCINK_CLOUD_RELEASE_SITE_ID": "site_runtime",
-        "NPCINK_CLOUD_RELEASE_KEY_ID": "key_runtime",
-        "NPCINK_CLOUD_RELEASE_KEY_SECRET": "runtime-sentinel",
+        "FAKE_REQUIRE_CANONICAL_ORIGIN": "1",
+        "SMOKE_ORIGIN_LOG": str(tmp_path / "origins.jsonl"),
+        "NPCINK_CLOUD_PORTAL_COOKIE_JAR": str(tmp_path / "untouched-portal-cookie"),
     })
-    environment.pop("NPCINK_CLOUD_PORTAL_LOGIN_CODE", None)
+    for key in ("NPCINK_CLOUD_PORTAL_LOGIN_CODE", "NPCINK_CLOUD_ADMIN_KEY",
+                "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL", "NPCINK_CLOUD_RELEASE_SITE_ID",
+                "NPCINK_CLOUD_RELEASE_KEY_ID", "NPCINK_CLOUD_RELEASE_KEY_SECRET"):
+        environment.pop(key, None)
     result = subprocess.run(
         ["/bin/bash", str(fixture / "deploy/small-customer-trial-preflight.sh"),
          "--base-url", "https://cloud.example.test", "--run-release-smoke",
@@ -1423,6 +1448,28 @@ def test_release_preflight_never_executes_runtime_or_uses_otp(tmp_path: Path) ->
     assert "/internal/service/observability/summary" in calls
     assert "/v1/runtime/execute" not in calls
     assert "/auth/" not in calls
+    assert not (tmp_path / "untouched-portal-cookie").exists()
+
+    from app.core.db import dispose_engine
+    from tests.api.test_web_routes import _build_client
+
+    origins = [json.loads(line) for line in (tmp_path / "origins.jsonl").read_text().splitlines()]
+    internal = next(x["headers"] for x in origins if x["url"].startswith("http://127.0.0.1:"))
+    assert all(not x["headers"] for x in origins if x["url"].startswith("https://"))
+    database_url, client = _build_client(tmp_path, settings_overrides={
+        "environment": "production",
+        "browser_origin_allowlist": "https://cloud.example.test",
+        "trusted_host_allowlist": "cloud.example.test,127.0.0.1",
+    })
+    try:
+        rejected = client.get("/health/live", headers={
+            "host": "127.0.0.1", "x-forwarded-host": "127.0.0.1", "x-forwarded-proto": "http",
+        })
+        assert rejected.status_code == 400
+        assert rejected.json()["error_code"] == "request.forwarded_origin_invalid"
+        assert client.get("/health/live", headers=internal).status_code == 200
+    finally:
+        dispose_engine(database_url)
 
 
 @pytest.mark.parametrize("origin", [
@@ -1514,3 +1561,92 @@ raise SystemExit(int(os.environ["FAKE_COMMAND_FAIL"]))
     assert ("-O exit" in calls) == started
     assert "private-token-sentinel" not in calls + result.stdout + result.stderr
     assert list(temp_root.iterdir()) == []
+
+
+@pytest.mark.parametrize("missing", [
+    "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN", "NPCINK_CLOUD_ADMIN_KEY",
+    "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL", "NPCINK_CLOUD_RELEASE_SITE_ID",
+    "NPCINK_CLOUD_RELEASE_KEY_ID", "NPCINK_CLOUD_RELEASE_KEY_SECRET",
+])
+def test_full_release_still_requires_credentials_before_any_request(
+    tmp_path: Path, missing: str,
+) -> None:
+    fixture = _copy_fixture(tmp_path, "deploy/common.sh", "deploy/release-smoke.sh")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _install_fake_curl(fake_bin)
+    log = tmp_path / "curl.log"
+    environment = os.environ.copy()
+    environment.update({
+        "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+        "CURL_ARGV_LOG": str(log),
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "fake-internal",
+        "NPCINK_CLOUD_ADMIN_KEY": "fake-admin",
+        "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL": "member@example.test",
+        "NPCINK_CLOUD_RELEASE_SITE_ID": "site_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_ID": "key_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_SECRET": "fake-hmac",
+    })
+    environment.pop(missing, None)
+    result = subprocess.run(
+        ["/bin/bash", str(fixture / "deploy/release-smoke.sh"),
+         "--base-url", "https://cloud.example.test"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0
+    assert not log.exists()
+
+
+def test_preflight_keeps_trace_gate_and_requires_internal_token(tmp_path: Path) -> None:
+    fixture = _copy_fixture(tmp_path, "deploy/common.sh", "deploy/release-smoke.sh")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _install_fake_curl(fake_bin)
+    log = tmp_path / "curl.log"
+    environment = os.environ.copy()
+    for key in tuple(environment):
+        if key.startswith("NPCINK_CLOUD_"):
+            environment.pop(key)
+    environment.update({
+        "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+        "CURL_ARGV_LOG": str(log), "CURL_STATE_PATH": str(tmp_path / "state"),
+        "FAKE_EDGE_DENY": "1", "FAKE_REQUIRE_CANONICAL_ORIGIN": "1",
+        "FAKE_TRACE_UNCONFIGURED": "1",
+        "NPCINK_CLOUD_INTERNAL_BASE_URL": "http://127.0.0.1:18011",
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "fake-internal",
+    })
+    args = ["/bin/bash", str(fixture / "deploy/release-smoke.sh"),
+            "--base-url", "https://cloud.example.test", "--preflight-only"]
+    missing_token = environment.copy()
+    missing_token.pop("NPCINK_CLOUD_INTERNAL_AUTH_TOKEN")
+    denied = subprocess.run(
+        args, env=missing_token, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert denied.returncode != 0
+    assert "INTERNAL_AUTH_TOKEN" in denied.stderr
+    assert not log.exists()
+    result = subprocess.run(
+        args, env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0
+    assert "external OTLP exporter" in result.stderr
+    assert "/internal/service/observability/summary" in log.read_text()
+    assert "/v1/runtime/execute" not in log.read_text()
+    assert "/auth/" not in log.read_text()
+
+
+@pytest.mark.parametrize("public_origin", [
+    "https://user:password@cloud.example.test", "https://cloud.example.test/extra",
+    "https://cloud.example.test\r\nX-Injected: value", "file:///etc/passwd",
+])
+def test_smoke_rejects_unsafe_public_header_origin(public_origin: str) -> None:
+    environment = os.environ.copy()
+    environment["NPCINK_CLOUD_INTERNAL_BASE_URL"] = "http://127.0.0.1:18011"
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT / "deploy/release-smoke.sh"),
+         "--base-url", public_origin, "--preflight-only"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0
+    assert "public must be an HTTP(S) origin" in result.stderr
+    assert "password" not in result.stderr

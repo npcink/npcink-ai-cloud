@@ -232,19 +232,20 @@ case "${HTTP_STATUS}" in
 		;;
 esac
 
-missing_env="0"
-for key in \
-	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN \
-	NPCINK_CLOUD_ADMIN_KEY \
-	NPCINK_CLOUD_RELEASE_MEMBER_EMAIL \
-	NPCINK_CLOUD_PORTAL_LOGIN_CODE \
-	NPCINK_CLOUD_RELEASE_SITE_ID \
-	NPCINK_CLOUD_RELEASE_KEY_ID \
+required_keys=(
+	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN
+	NPCINK_CLOUD_ADMIN_KEY
+	NPCINK_CLOUD_RELEASE_MEMBER_EMAIL
+	NPCINK_CLOUD_PORTAL_LOGIN_CODE
+	NPCINK_CLOUD_RELEASE_SITE_ID
+	NPCINK_CLOUD_RELEASE_KEY_ID
 	NPCINK_CLOUD_RELEASE_KEY_SECRET
-do
-	if [ "${PREFLIGHT_ONLY}" = "1" ] && [ "${key}" = "NPCINK_CLOUD_PORTAL_LOGIN_CODE" ]; then
-		continue
-	fi
+)
+if [ "${PREFLIGHT_ONLY}" = "1" ]; then
+	required_keys=(NPCINK_CLOUD_INTERNAL_AUTH_TOKEN)
+fi
+missing_env="0"
+for key in "${required_keys[@]}"; do
 	if ! require_env_key "${key}"; then
 		missing_env="1"
 	fi
@@ -252,9 +253,11 @@ done
 
 if [ "${missing_env}" = "1" ]; then
 	if [ "${REQUIRE_SMOKE_ENV}" = "1" ]; then
-		fail "formal release smoke credentials are incomplete"
+		fail "required smoke/preflight credentials are incomplete"
 	fi
-	warn "Formal deploy/release-smoke.sh is not runnable until the missing values are supplied."
+	warn "The requested smoke/preflight is not runnable until missing values are supplied."
+elif [ "${PREFLIGHT_ONLY}" = "1" ]; then
+	ok "Internal preflight credential is present; full login/runtime credentials were not checked"
 else
 	ok "formal release smoke credentials are present"
 fi
