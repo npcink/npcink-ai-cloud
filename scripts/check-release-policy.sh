@@ -1331,7 +1331,15 @@ require_marker ".github/workflows/release-smoke.yml" \
 require_marker ".github/workflows/release-smoke.yml" \
 	'[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]'
 require_marker ".github/workflows/release-smoke.yml" \
-	'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+	'echo "- tool_sha=${GITHUB_SHA}"'
+require_marker ".github/workflows/release-smoke.yml" \
+	'NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'
+require_marker ".github/workflows/release-smoke.yml" 'bash deploy/with-smoke-internal-tunnel.sh --'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'StrictHostKeyChecking=yes'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'ExitOnForwardFailure=yes'
+require_marker "deploy/with-smoke-internal-tunnel.sh" '127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'verify_installed_revision || fail'
+require_marker "deploy/with-smoke-internal-tunnel.sh" 'manifest.get("source", {}).get("revision") != sys.argv[2]'
 require_marker ".github/workflows/release-smoke.yml" \
 	"actions/workflows/deploy-production.yml/runs"
 require_marker ".github/workflows/release-smoke.yml" \

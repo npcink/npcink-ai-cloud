@@ -1,5 +1,7 @@
 # Npcink AI Cloud Documentation Index
 
+- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — temporary runtime availability and v3 inspection scores; history retained.
+
 Status: active repository index.
 
 Purpose: provide one maintained entry point for current Cloud authority while
@@ -16,6 +18,7 @@ as current truth.
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
 | 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
 | 回顾用户中心相关三个会话、确认当前进度和下一步 | [三会话综合纪要 — 2026-10-17](history/portal/2026/portal-three-session-synthesis-and-next-stage-2026-10-17.md) — UX、积分/预算、发布、异步状态与验证前移；补正旧摘要并区分方案与交付 |
+| 接续10月18日冻结生产发布、回退与未完成验收 | [生产部署收尾与开发复盘](history/production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md) — 精确4a版本已部署、Qwen目录降级、归档恢复边界、操作者验收台账及旧会话归档条件 |
 | 在生产人工验证邮箱、连接与草稿保存 | [生产验收步骤（2026-10-17 更新）](portal-production-validation-runbook-2026-10-16.md) — 操作者走正常流程，开发侧核对 run/预算/反馈；不是部署授权 |
 | 验收运行配置隔离、预算选择与 Addon 引导 | [运行配置与写作验收跟进 — 2026-10-17](runtime-configuration-acceptance-2026-10-17.md) — 候选行为、生产只读故障证据、零付费回归与后续人工验收；不是上线或真实调用恢复证明 |
 | 发布前跑零付费 Provider/Portal 关键回归 | [关键流程回归 v1](local-critical-regression-v1.md) — `verify:local -- --critical`、固定测试清单、隔离与逐步回执；不操作 M4/生产 |
@@ -28,6 +31,7 @@ as current truth.
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
 | 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
+| 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
@@ -83,6 +87,8 @@ New or materially revised documents should place a clear `Status:` line near
 the top. When replacing a normative document, name its successor instead of
 deleting the old decision history.
 
+- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — reversible task availability and new inspection score semantics; no data migration.
+
 ## Product Boundaries
 
 - [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
@@ -93,6 +99,9 @@ deleting the old decision history.
 - [WordPress AI Engineering Closeout](history/wordpress-ai-engineering-closeout-2026-09-08.md) - phase-1 source integration, verification and remaining decisions.
 - [WordPress AI Entry-to-Feedback Flow](current-wordpress-ai-entry-to-feedback-flow-v1.md) — current implementation boundary check for the WordPress入口, Addon, Cloud runtime/context, local review/write ownership, and metadata feedback loop.
 - [WordPress AI Request Path Map](wordpress-ai-request-path-map-v1.md) — end-to-end call chain from the editor button to the feedback events, with the code location of each step; visual companion to the flow document above, not a separate authority.
+- [DeepSeek 标题输出额度与推理兼容性](deepseek-title-output-compatibility-v1.md) — bounded endpoint-specific title policy, zero-paid reproduction, deployed fix, and linked real-title/operator acceptance; formal smoke blocked by the public/internal health access mismatch; fallback remains unverified.
+- [正式 Release Smoke 验收入口](formal-release-smoke-entry-v1.md) — 公网与内部SSH路径分离、精确安装SHA核对、零模型预检及下一次有界验收步骤。
+- [DeepSeek 标题生产人工验收与正式 smoke 交接 — 2026-10-19](history/production/2026/deepseek-title-production-acceptance-2026-10-19.md) — DeepSeek主路径真实成功、901/14/0 token、辅助向量与3积分分项、人工保存回读确认、正式smoke一次403失败及零调用/零积分增量、后续受控入口建议；时点证据，不是长期稳定或回退成功证明.
 - [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) — accepted; keeps `ONE_ACTIVE_CONTRACT_VERSION` pre-public and pre-declares the trigger that switches to a bounded compatibility window with `upgrade_required` semantics
 - [ADR-054: Responses Output Boundary and No Silent Endpoint Downgrade](decisions/054-responses-output-boundary-and-no-silent-downgrade.md) — accepted; keeps upstream Responses parsing endpoint-specific, fail-closed, and explicit about model evidence
 - [ADR-055: Provider Account-Level Spend Budget Kill Switch](decisions/055-provider-account-level-spend-budget.md) — accepted design record; single dispatch choke point reusing existing cost estimates, atomic per-account daily/monthly claims, warn at 80 percent, fail closed at 100 percent; implementation and paid-provider authorization remain separate operator decisions
@@ -129,6 +138,8 @@ deleting the old decision history.
 - [Background Lightweight Mode](background-lightweight-mode-v1.md) — hourly optional diagnostics, manual quality analysis and unchanged cleanup/usage/callback responsibilities; runtime validation and release remain separate.
 
 - [Runtime Resource Baseline](runtime-resource-baseline-v1.md) — bounded GET-only sampling; begin with 15 minutes, inspect completeness and runtime identity, then explicitly extend the window. No automatic workload or runtime operation.
+- [CPU 分配对照与性能专项收尾 — 2026-10-19](history/engineering/2026/cpu-allocation-performance-closeout-2026-10-19.md) — 校正采样后的18格对照；业务收益未稳定达10%，回调部分退化，不采用新分配并结束本次性能专项。
+- [回调签名与空队列退避验证 — 2026-10-19](history/engineering/2026/callback-dispatch-idle-backoff-validation-2026-10-19.md) — 同为2核预算、callback0.25核及连接池2+1的三轮对照；回调P95、CPU、空闲成本与冷空闲限制。
 - [资源采样恢复与会话收尾经验 — 2026-10-17](history/engineering/2026/resource-sampling-and-session-closeout-retrospective-2026-10-17.md) — stash recovery, historical resource evidence and remaining acceptance gaps; sampler validation, localization, OCR and safe closeout lessons.
 
 - [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。

@@ -255,9 +255,14 @@ Do not keep an old code as durable release configuration. If the deployment may
 outlast that TTL, leave `run_formal_release_smoke=false`, finish the deploy,
 request and store a fresh code through the protected operator path, then
 immediately dispatch `Release Smoke` from `production`, pasting the successful
-deploy's full SHA into `expected_deployed_sha`. The smoke fails before checkout
-unless that SHA equals the selected workflow revision and has a successful
-`Deploy Production` run. Before selecting the inline smoke, run the release
+deploy's full application SHA into `expected_deployed_sha`. The smoke fails
+before checkout without a successful `Deploy Production` run for that SHA.
+Tool and application revisions are recorded separately; the temporary SSH
+transport verifies the installed manifest before and after smoke. It uses the
+existing pinned `PROD_SSH_*` credentials without changing the server configuration.
+Run `preflight_only=true` before requesting a new OTP; only an explicitly
+authorized `preflight_only=false` run can provide full formal evidence. See
+[the entry runbook](../docs/formal-release-smoke-entry-v1.md). Before selecting the inline smoke, run the release
 preflight with `--require-formal-smoke`; missing
 secret names or a stale code must stop the smoke rather than be reported as a
 skip. The operator-only admin key must be captured at setup/rotation time and

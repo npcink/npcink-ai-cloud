@@ -12,6 +12,7 @@ BASE_URL="${NPCINK_CLOUD_BASE_URL:-https://cloud.npc.ink}"
 REQUIRE_SMOKE_ENV="0"
 REQUIRE_ALIPAY_ENABLED="0"
 RUN_RELEASE_SMOKE="0"
+PREFLIGHT_ONLY="0"
 
 usage() {
 	cat <<'USAGE'
@@ -22,6 +23,7 @@ Options:
   --require-smoke-env        Fail if formal release-smoke credentials are missing.
   --require-alipay-enabled   Fail if Alipay public callbacks are not enabled.
   --run-release-smoke        Run deploy/release-smoke.sh after preflight passes.
+  --preflight-only           With --run-release-smoke, stop before runtime/login; not a formal smoke pass.
   -h, --help                 Show this help.
 
 This script never prints secret values. Pass secrets through NPCINK_CLOUD_ENV_FILE
@@ -41,6 +43,10 @@ while [ "$#" -gt 0 ]; do
 			;;
 		--require-alipay-enabled)
 			REQUIRE_ALIPAY_ENABLED="1"
+			shift
+			;;
+		--preflight-only)
+			PREFLIGHT_ONLY="1"
 			shift
 			;;
 		--run-release-smoke)
@@ -105,7 +111,7 @@ http_request() {
 	HTTP_STATUS="${status}"
 	HTTP_BODY="$(cat "${tmp_body}")"
 	HTTP_LOCATION="$(
-		awk 'BEGIN{IGNORECASE=1} /^location:/ {print $2}' "${tmp_headers}" \
+		awk 'tolower($0) ~ /^location:/ {print $2}' "${tmp_headers}" \
 			| tr -d '\r' \
 			| tail -n 1
 	)"
@@ -226,16 +232,20 @@ case "${HTTP_STATUS}" in
 		;;
 esac
 
-missing_env="0"
-for key in \
-	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN \
-	NPCINK_CLOUD_ADMIN_KEY \
-	NPCINK_CLOUD_RELEASE_MEMBER_EMAIL \
-	NPCINK_CLOUD_PORTAL_LOGIN_CODE \
-	NPCINK_CLOUD_RELEASE_SITE_ID \
-	NPCINK_CLOUD_RELEASE_KEY_ID \
+required_keys=(
+	NPCINK_CLOUD_INTERNAL_AUTH_TOKEN
+	NPCINK_CLOUD_ADMIN_KEY
+	NPCINK_CLOUD_RELEASE_MEMBER_EMAIL
+	NPCINK_CLOUD_PORTAL_LOGIN_CODE
+	NPCINK_CLOUD_RELEASE_SITE_ID
+	NPCINK_CLOUD_RELEASE_KEY_ID
 	NPCINK_CLOUD_RELEASE_KEY_SECRET
-do
+)
+if [ "${PREFLIGHT_ONLY}" = "1" ]; then
+	required_keys=(NPCINK_CLOUD_INTERNAL_AUTH_TOKEN)
+fi
+missing_env="0"
+for key in "${required_keys[@]}"; do
 	if ! require_env_key "${key}"; then
 		missing_env="1"
 	fi
@@ -243,16 +253,22 @@ done
 
 if [ "${missing_env}" = "1" ]; then
 	if [ "${REQUIRE_SMOKE_ENV}" = "1" ]; then
-		fail "formal release smoke credentials are incomplete"
+		fail "required smoke/preflight credentials are incomplete"
 	fi
-	warn "Formal deploy/release-smoke.sh is not runnable until the missing values are supplied."
+	warn "The requested smoke/preflight is not runnable until missing values are supplied."
+elif [ "${PREFLIGHT_ONLY}" = "1" ]; then
+	ok "Internal preflight credential is present; full login/runtime credentials were not checked"
 else
 	ok "formal release smoke credentials are present"
 fi
 
 if [ "${RUN_RELEASE_SMOKE}" = "1" ]; then
 	ok "Running formal release smoke"
-	bash "${ROOT_DIR}/deploy/release-smoke.sh" --base-url "${BASE_URL}"
+	release_args=(--base-url "${BASE_URL}")
+	if [ "${PREFLIGHT_ONLY}" = "1" ]; then
+		release_args+=(--preflight-only)
+	fi
+	bash "${ROOT_DIR}/deploy/release-smoke.sh" "${release_args[@]}"
 fi
 
 ok "Small-customer trial preflight completed"

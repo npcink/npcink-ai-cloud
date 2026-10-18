@@ -16,7 +16,8 @@ from app.domain.cloud_batch_runtime.contracts import (
     validate_cloud_batch_runtime_contract,
 )
 
-SCORE_VERSION = "nightly_content_quality_score.v2"
+SCORE_VERSION = "nightly_content_quality_score.v3"
+SEO_METADATA_CHECKS_PAUSED = True
 NIGHTLY_INTELLIGENCE_SURFACE = "nightly_intelligence"
 NIGHTLY_INTELLIGENCE_CONTRACT = "nightly_intelligence_detail.v1"
 NIGHTLY_RUN_DETAIL_CONTRACT = "nightly_site_inspection_run_detail.v1"
@@ -330,7 +331,7 @@ def _score_item(item: dict[str, Any], *, sequence: int) -> dict[str, Any]:
             "short_title",
             evidence=f"title_length:{len(title)}",
         )
-    if not meta_description:
+    if not SEO_METADATA_CHECKS_PAUSED and not meta_description:
         score -= _add_reason(
             reason_codes,
             dimension_impacts,
@@ -339,7 +340,7 @@ def _score_item(item: dict[str, Any], *, sequence: int) -> dict[str, Any]:
             "missing_meta_description",
             evidence="meta_description:missing",
         )
-    elif len(meta_description) < 80:
+    elif not SEO_METADATA_CHECKS_PAUSED and len(meta_description) < 80:
         score -= _add_reason(
             reason_codes,
             dimension_impacts,
@@ -503,7 +504,12 @@ def _build_scoring_profile() -> dict[str, Any]:
             {"id": dimension, "label": SCORE_DIMENSION_LABELS[dimension]}
             for dimension in SCORE_DIMENSIONS
         ],
-        "reason_weights": dict(REASON_WEIGHTS),
+        "reason_weights": {
+            reason: weight
+            for reason, weight in REASON_WEIGHTS.items()
+            if not SEO_METADATA_CHECKS_PAUSED
+            or reason not in {"missing_meta_description", "short_meta_description"}
+        },
         "severity_thresholds": _severity_thresholds(),
         "cloud_role": "runtime_detail",
         "editorial_truth": "wordpress_local",
@@ -840,9 +846,11 @@ def _build_nightly_run_detail(
     raw_review_items = operational_summary.get("review_items")
     review_items: list[Any] = raw_review_items if isinstance(raw_review_items, list) else []
     raw_blocked_items = operational_summary.get("blocked_items")
-    blocked_items: list[dict[str, Any]] = [
-        item for item in raw_blocked_items if isinstance(item, dict)
-    ] if isinstance(raw_blocked_items, list) else []
+    blocked_items: list[dict[str, Any]] = (
+        [item for item in raw_blocked_items if isinstance(item, dict)]
+        if isinstance(raw_blocked_items, list)
+        else []
+    )
     raw_priority_queue = morning_brief.get("priority_queue")
     priority_queue: list[Any] = raw_priority_queue if isinstance(raw_priority_queue, list) else []
     raw_selected_review_item_ids = core_intake_package.get("selected_review_item_ids")
@@ -1023,11 +1031,7 @@ def _build_operational_summary(
     retry_guidance: dict[str, Any],
 ) -> dict[str, Any]:
     reviewable_actions = _reviewable_actions(actions)
-    operator_next_action = (
-        "review_cloud_batch_result"
-        if reviewable_actions
-        else "no_review_needed"
-    )
+    operator_next_action = "review_cloud_batch_result" if reviewable_actions else "no_review_needed"
     return {
         "eligibility_summary": {
             "items_total": len(actions),

@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.stats_repository import StatsRepository
@@ -246,5 +248,144 @@ def test_scoped_latest_health_avoids_scanning_history() -> None:
             # VM work, not wall time: an indexed range aggregate still grows
             # with history even though EXPLAIN labels it a SEARCH rather than SCAN.
             assert read_steps() < small_steps * 3
+    finally:
+        engine.dispose()
+
+
+def assert_rollup_batch_save_contract(engine: Engine) -> None:
+    """Exercise the same persistence contract on SQLite and isolated PostgreSQL."""
+    from app.core.models import UsageRollup
+
+    UsageRollup.__table__.create(engine)
+    sentinel = datetime(2020, 1, 1, tzinfo=UTC)
+
+    def row(prefix: str, key: str, payload: dict, *, scope: str = "site") -> UsageRollup:
+        return UsageRollup(
+            rollup_key=f"{prefix}:{key}",
+            site_scope=scope,
+            scope_kind="instance",
+            scope_id=key,
+            payload_json=payload,
+        )
+
+    with Session(engine, autoflush=False, expire_on_commit=False) as session:
+        for prefix in ["legacy", "batch"]:
+            for key, payload in [
+                ("same", {"value": 1}),
+                ("changed", {"value": 1}),
+                ("scope", {}),
+                ("equal", {"value": 1}),
+            ]:
+                item = row(prefix, key, payload)
+                item.generated_at = sentinel
+                session.add(item)
+        session.commit()
+
+        payloads = [
+            ("same", {"value": 1}, "site"),
+            ("changed", {"nested": [None, False, "中文" * 100000]}, "site"),
+            ("new", {"empty": []}, "site"),
+            ("scope", {}, "other"),
+            ("equal", {"value": True}, "site"),
+        ]
+        repository = StatsRepository(session)
+        for key, payload, scope in payloads:
+            repository.upsert_usage_rollup(
+                rollup_key=f"legacy:{key}",
+                site_scope=scope,
+                scope_kind="instance",
+                scope_id=key,
+                payload_json=payload,
+            )
+        queries = []
+        commits = []
+        event.listen(session, "after_commit", lambda _session: commits.append(True))
+
+        def capture(_conn, _cursor, sql, _parameters, _context, _many):
+            queries.append(sql.lstrip().upper())
+
+        event.listen(engine, "before_cursor_execute", capture)
+        try:
+            repository.upsert_usage_rollups([])
+            assert queries == []
+            with pytest.raises(ValueError, match="distinct keys"):
+                repository.upsert_usage_rollups([row("batch", "same", {})] * 2)
+            assert queries == []
+            repository.upsert_usage_rollups(
+                [row("batch", key, payload, scope=scope) for key, payload, scope in payloads]
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", capture)
+        assert sum(sql.startswith("SELECT") for sql in queries) == 1
+        assert commits == []
+        session.commit()
+        assert len(commits) == 1
+        session.expire_all()
+        stored = {item.rollup_key: item for item in session.scalars(select(UsageRollup))}
+        for key, _, _ in payloads:
+            legacy, batch = stored[f"legacy:{key}"], stored[f"batch:{key}"]
+            assert (legacy.site_scope, legacy.scope_kind, legacy.scope_id, legacy.payload_json) == (
+                batch.site_scope,
+                batch.scope_kind,
+                batch.scope_id,
+                batch.payload_json,
+            )
+            if key in {"same", "equal"}:
+                assert batch.generated_at.replace(tzinfo=None) == sentinel.replace(tzinfo=None)
+            else:
+                assert batch.generated_at.replace(tzinfo=None) > sentinel.replace(tzinfo=None)
+            if engine.dialect.name == "postgresql":
+                assert batch.generated_at == legacy.generated_at
+        # A later failed round must restore updates as well as discard inserts.
+        previous = stored["batch:changed"].payload_json
+        previous_generated_at = stored["batch:changed"].generated_at
+        repository.upsert_usage_rollups([row("batch", "changed", {"failed": True})])
+        repository.upsert_usage_rollups([row("batch", "uncommitted", {})])
+        session.rollback()
+        assert session.get(UsageRollup, "batch:uncommitted") is None
+        assert session.get(UsageRollup, "batch:changed").payload_json == previous
+        assert session.get(UsageRollup, "batch:changed").generated_at == previous_generated_at
+
+    # Both save paths must still fail if another transaction inserts a missing
+    # key between our read and flush, rather than silently overwriting its row.
+    for batched in [False, True]:
+        key = f"race:{batched}"
+        injected = False
+
+        def race(_conn, _cursor, sql, _parameters, _context, _many, *, batched: bool = batched):
+            nonlocal injected
+            if not injected and sql.startswith("SELECT") and "usage_rollups" in sql:
+                injected = True
+                with Session(engine) as other:
+                    other.add(row("race", str(batched), {"winner": True}))
+                    other.commit()
+
+        event.listen(engine, "after_cursor_execute", race)
+        try:
+            with Session(engine, autoflush=False) as session:
+                repository = StatsRepository(session)
+                with pytest.raises(IntegrityError):
+                    if batched:
+                        repository.upsert_usage_rollups([row("race", str(batched), {})])
+                    else:
+                        repository.upsert_usage_rollup(
+                            rollup_key=key,
+                            site_scope="site",
+                            scope_kind="instance",
+                            scope_id=str(batched),
+                            payload_json={},
+                        )
+                session.rollback()
+        finally:
+            event.remove(engine, "after_cursor_execute", race)
+        assert injected
+        with Session(engine) as session:
+            assert session.get(UsageRollup, key).payload_json == {"winner": True}
+
+
+def test_rollup_batch_save_matches_single_row_semantics(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'batch-save.sqlite3'}")
+    try:
+        assert_rollup_batch_save_contract(engine)
     finally:
         engine.dispose()

@@ -837,6 +837,7 @@ class OpenAIProviderAdapter:
             if isinstance(options.get("max_output_tokens"), int):
                 responses_payload["max_output_tokens"] = options["max_output_tokens"]
             self._apply_responses_request_options(responses_payload, options)
+            self._apply_deepseek_title_reasoning_default(responses_payload, options, request)
             self._apply_prompt_cache_affinity(responses_payload, request)
             return "/responses", responses_payload
 
@@ -857,8 +858,43 @@ class OpenAIProviderAdapter:
         if isinstance(options.get("max_tokens"), int):
             chat_payload["max_tokens"] = options["max_tokens"]
         self._apply_chat_request_options(chat_payload, options)
+        self._apply_deepseek_title_reasoning_default(chat_payload, options, request)
         self._apply_prompt_cache_affinity(chat_payload, request)
         return "/chat/completions", chat_payload
+
+    def _apply_deepseek_title_reasoning_default(
+        self,
+        payload: dict[str, Any],
+        options: dict[str, Any],
+        request: ProviderExecutionRequest,
+    ) -> None:
+        metadata = request.input_payload.get("metadata")
+        if (
+            request.ability_name != "npcink-cloud/connector-runtime"
+            or not isinstance(metadata, dict)
+            or metadata.get("source_surface") != "wordpress_ai_connector"
+            or metadata.get("task") != "title_generation"
+            or self._normalize_deepseek_model_id(request.model_id)
+            not in {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"}
+        ):
+            return
+        # A title needs visible output, not a hidden reasoning prefix consuming
+        # its entire output allowance. Keep explicit request/provider choices;
+        # only supply a task default using the endpoint's documented dialect.
+        explicit_mode = options.get("thinking") is not None or any(
+            key in payload for key in ("reasoning", "thinking")
+        )
+        extra = options.get("extra")
+        if explicit_mode and not (isinstance(extra, dict) and "reasoning_effort" in extra):
+            # Chat's generic provider default must not contradict an explicit
+            # per-request mode (for example thinking=enabled with default none).
+            payload.pop("reasoning_effort", None)
+        if explicit_mode or "reasoning_effort" in payload:
+            return
+        if request.endpoint_variant == "responses":
+            payload["reasoning"] = {"effort": self.default_reasoning_effort or "none"}
+        else:
+            payload["thinking"] = {"type": "disabled"}
 
     def _apply_prompt_cache_affinity(
         self,

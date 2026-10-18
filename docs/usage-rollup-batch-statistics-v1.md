@@ -41,7 +41,7 @@ database schema, or connection-pool settings.
 - Keep empty catalog/traffic results, routing candidate order/duplicates,
   missing candidates/bindings, site-specific/global outputs, and output keys.
   The internal batch reader rejects unsupported scopes/windows/filters.
-- Rollup writes retain the existing upsert path and one final transaction
+- Rollup writes use the bounded save path below and one final transaction
   commit. A failed round still rolls back all its writes. This change does not
   strengthen the database's ordinary transaction isolation or promise a
   transaction-wide snapshot under concurrent writes.
@@ -49,6 +49,39 @@ database schema, or connection-pool settings.
 Interactive statistics continue to use ordinary fresh readers. Cloud remains
 the owner of runtime/service evidence; no WordPress registry, approval, prompt,
 workflow, or final-write authority moves to Cloud.
+
+## Bounded rollup saving
+
+Only `generate_rollups` uses the batch save entry point. It buffers at most
+256 summary/profile/instance payloads and flushes each site's remainder before
+advancing to the next scope. Its internal `write_batch_size` keyword accepts
+1 through 256 for focused verification; it does not add a scheduler setting or
+change any public API. Memory includes the current batch's new and old JSON,
+in addition to the existing per-scope statistics reader. A row bound is not a
+byte bound; unusually large payloads still require memory validation.
+
+Each distinct-key batch reads its existing rows once, assigns the same fields
+as the single-row saver, and flushes once. Retain ORM dirty checking, database
+insert defaults, and the update-time `generated_at` expression. Unchanged
+values must not cause an UPDATE or change their database timestamp, including
+values that the existing ORM comparison considers equal. The payload timestamp
+still uses the invocation's captured clock. Do not replace this with an
+unconditional native upsert or silently change duplicate/concurrent-insert
+conflict behavior. Batch input keys are distinct; repeated site scopes remain
+separate batches with the existing count and overwrite behavior.
+
+Every batch belongs to the original session. There is exactly one commit at
+the end of a successful round; a later failure rolls back earlier inserts and
+updates together. The existing `write` timing includes buffering, batch reads,
+flushes, and the final commit. Separate commit/flush/connection-occupancy
+measurements belong to the isolated experiment, not invented from that total.
+Other router/diagnostics/probe/alert projection writers keep the single-row
+saver. No schema, retention, cadence, metering, credit or callback changes.
+
+Driver `executemany` or multi-row insert grouping can reduce cursor events;
+report batch size, event count, parameter-set count, and actual affected rows
+separately. Fewer events do not mean fewer updated rows or prove a fixed number
+of server executions/network round trips.
 
 ## Latest health lookup and index
 

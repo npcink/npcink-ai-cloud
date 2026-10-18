@@ -4,6 +4,11 @@ Status: dated discussion synthesis, checked source/delivery evidence and propose
 next-stage handoff; not live runtime authority, deployment authorization or
 real-user acceptance.
 
+后续交接（2026-10-18）：关键回归已落实为`verify:local -- --critical`，冻结
+Cloud版本4a已部署；正式smoke、配套Addon及真实写作仍待验收。当前接续入口见
+[生产部署收尾、开发经验与验收台账](../../production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md)。
+下文保留10月17日当时的讨论和证据，不将其“待实现/待部署”视为今天的状态。
+
 本文汇总两份引用会话与当前归纳会话，并用 2026-10-17 的仓库和 GitHub 只读
 查询校正历史状态。重点保留讨论为什么转向、哪些已经实现、哪些只是计划，
 以及开发侧与操作者各自的下一步。本文不启动部署、M4 操作、邮件发送或模型调用。

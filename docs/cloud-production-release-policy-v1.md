@@ -52,12 +52,45 @@ remain documented in the historical section below; they do not authorize an
 active-env edit and are not prerequisites for a fresh PG18 installation or a
 later PG18 deployment.
 
-Branch divergence is expected: `production` records the deployed release while
+Branch divergence is expected: `production` records the promoted source while
 `master` continues development. A production-only patch must not remain an
 unexplained long-term fork. Before the next promotion, classify it as already
 equivalent on `master`, forward-port it to `master`, or document why the old
 deployment behavior is obsolete. Do not merge the accumulated `production`
 history back into `master` merely to make the branch graph look aligned.
+
+### Cumulative release baseline
+
+A promotion does not prove installation. Production CI computes the exact
+two-revision diff from the last evidenced successful runtime deployment to the
+new production SHA, rather than from the previous production push. The bounded
+read-only resolver inspects up to 20 recent `Deploy Production` dispatches
+and validates the retained runtime timing artifact against the repository, run,
+SHA, action, exit status, and successful remote sequence. It needs only Actions
+read permission, never production SSH credentials. A `no_deploy` or static
+dispatch does not advance the managed runtime baseline.
+An active, failed, or cancelled attempt newer than the proven runtime baseline
+stops planning: a failed workflow may already have changed the installed release.
+
+Dispatches without timing evidence are skipped only when their exact successful
+production CI artifact proves a `no_deploy` or static plan. Missing runtime
+evidence, malformed evidence, or a baseline outside the candidate's ancestry
+stops plan generation. Artifact retention is an evidence window, not a
+permanent deployment registry. After expiration or an out-of-band rollback,
+re-establish the installed baseline read-only and repair the evidence in a
+separately reviewed change; do not substitute the previous push or hand-edit a
+verified bundle. Before preserving either application image, the deployment
+script requires the current managed manifest source revision to equal the plan
+base. A mismatch stops before service mutation or migration. A full plan retains
+the existing complete replacement and rollback protections.
+
+For the 2026-10-17 isolated candidate, installed source `2af0074` to the frozen
+application candidate comprises the original 91 paths plus the three Milvus
+isolation paths: 94 application paths. The separately reviewed cumulative-plan
+repair adds seven tool/test/policy paths, giving 101 paths in the complete release
+diff. Report their union explicitly; do not call the expanded Git diff 94 paths.
+PR #1133 and migration 0088 remain outside
+this release envelope.
 
 ## Current Promotion Gates
 
@@ -160,12 +193,19 @@ smoke fail closed when any protected credential is absent or stale; it never
 silently converts missing credentials into green evidence. For a deployment
 that may exceed the code TTL, leave it off, complete the deploy, issue and store
 a fresh code through the protected operator path, and immediately dispatch the
-separate fail-closed `Release Smoke` workflow from the exact `production`
-revision. Paste that successfully deployed full SHA into its required
-`expected_deployed_sha` input. The smoke workflow rejects a different selected
-revision and requires a successful `Deploy Production` run for the exact SHA
-before checkout. A deferred smoke is explicitly recorded as not-passed
-evidence.
+separate fail-closed `Release Smoke` workflow from `production`. Paste the
+successfully deployed application SHA into `expected_deployed_sha`. The workflow
+requires a successful `Deploy Production` run for that exact application SHA
+before checkout, and its SSH transport checks the installed release manifest
+against the same SHA before and after execution. The tool SHA is reported
+separately, so a reviewed tooling update does not require replacing a healthy
+application just to obtain smoke evidence. Public checks remain on the public
+origin; internal checks use a temporary loopback-only SSH forward with the
+existing pinned production identity. No internal endpoint is opened publicly.
+The default `preflight_only=true` performs no runtime execution or login and is
+explicitly not full acceptance; select false only for an authorized real smoke.
+A deferred smoke is explicitly recorded as not-passed evidence. See the
+[formal smoke entry runbook](formal-release-smoke-entry-v1.md).
 
 ### Bounded release verification
 

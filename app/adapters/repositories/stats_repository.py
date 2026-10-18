@@ -538,6 +538,34 @@ class StatsRepository:
         self.session.flush()
         return rollup
 
+    def upsert_usage_rollups(self, rollups: list[UsageRollup]) -> None:
+        """Save one bounded, distinct-key batch without committing the round.
+
+        Keep ORM dirty checking and defaults: an unchanged payload must not
+        acquire a new generated_at, and concurrent insert conflicts still fail.
+        """
+        if not rollups:
+            return
+        keys = [item.rollup_key for item in rollups]
+        if len(set(keys)) != len(keys):
+            raise ValueError("rollup batch requires distinct keys")
+        existing = {
+            item.rollup_key: item
+            for item in self.session.scalars(
+                select(UsageRollup).where(UsageRollup.rollup_key.in_(keys))
+            )
+        }
+        for item in rollups:
+            stored = existing.get(item.rollup_key)
+            if stored is None:
+                self.session.add(item)
+            else:
+                stored.site_scope = item.site_scope
+                stored.scope_kind = item.scope_kind
+                stored.scope_id = item.scope_id
+                stored.payload_json = item.payload_json
+        self.session.flush()
+
     def list_usage_rollups(
         self,
         *,
