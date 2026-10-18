@@ -55,13 +55,14 @@ Provider 预算预占、结算与用户积分逻辑不修改。当前预占代�
 先观察旧实现失败，再验证修复；这是合成协议复现，不是真实模型质量证明。
 
 ```bash
-.venv/bin/python -m pytest tests/api/test_wordpress_ai_connector_runtime.py tests/domain/test_openai_provider.py -q
+.venv/bin/python -m pytest tests/api/test_wordpress_ai_connector_runtime.py tests/domain/test_openai_provider.py tests/domain/test_wordpress_operation_runtime.py -q
 bash scripts/check-changed-python-quality.sh app/adapters/providers/openai.py app/domain/wordpress_ai_connector/runtime.py tests/domain/test_openai_provider.py tests/api/test_wordpress_ai_connector_runtime.py
 ```
 
 覆盖两个 endpoint、三个 DeepSeek 模型名、显式 effort/模式与额度优先级、
 非目标请求隔离、中文最终输出，以及 incomplete 用量保留和拒绝。
-本地两套测试合计 283 项通过，定向 Ruff/mypy、发布策略检查通过。
+本地前两套测试合计 283 项通过，独立 WordPress Runtime 模块 102 项通过；
+后者的旧 48-token 断言由正式 CI 揭示后同步修正。定向 Ruff/mypy、发布策略检查通过。
 本次不调用付费模型、不修改生产配置。M4 只验证候选，不等于合并或生产更新。
 
 ## 后续人工验收（修复经授权发布后执行）
