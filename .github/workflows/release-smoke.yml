@@ -11,6 +11,11 @@ on:
         description: "Production base URL to smoke."
         required: false
         default: "https://cloud.npc.ink"
+      preflight_only:
+        description: "Zero-model internal/public preflight only; NOT full formal acceptance"
+        required: false
+        default: true
+        type: boolean
       require_alipay_enabled:
         description: "Require Alipay public callbacks to be enabled."
         required: false
@@ -28,6 +33,7 @@ jobs:
   smoke:
     name: Formal release smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.ref == 'refs/heads/production'
     environment: production
     permissions:
@@ -44,7 +50,9 @@ jobs:
             command -v "${command_name}" >/dev/null
           done
           [[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"
+          # Tool revision can advance without replacing the installed application.
+          # The SSH transport verifies the installed manifest before and after smoke.
+          test -n "${GITHUB_SHA}"
           deploy_run="$(
             gh api --method GET \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs" \
@@ -60,6 +68,7 @@ jobs:
           {
             echo "## Exact Deployed Revision"
             echo ""
+            echo "- tool_sha=${GITHUB_SHA}"
             echo "- production_sha=${EXPECTED_DEPLOYED_SHA}"
             echo "- deploy_production_run=${deploy_run_id}"
           } >> "${GITHUB_STEP_SUMMARY}"
@@ -70,13 +79,35 @@ jobs:
       - name: Verify smoke tools
         run: |
           set -euo pipefail
-          for command_name in bash curl python3 openssl mktemp awk grep tail tr; do
+          for command_name in bash curl python3 openssl mktemp awk grep tail tr ssh ssh-keygen; do
             command -v "${command_name}" >/dev/null
           done
+
+      - name: Prepare existing production SSH identity
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "${PROD_SSH_KEY}"
+          test -n "${PROD_SSH_KNOWN_HOSTS}"
+          umask 077
+          mkdir "${RUNNER_TEMP}/smoke-ssh"
+          printf '%s\n' "${PROD_SSH_KEY}" > "${RUNNER_TEMP}/smoke-ssh/key"
+          printf '%s\n' "${PROD_SSH_KNOWN_HOSTS}" > "${RUNNER_TEMP}/smoke-ssh/known_hosts"
 
       - name: Run formal release smoke
         env:
           NPCINK_CLOUD_BASE_URL: ${{ inputs.base_url }}
+          NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+          SMOKE_PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
+          NPCINK_CLOUD_DEPLOY_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          NPCINK_CLOUD_DEPLOY_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE: ${{ runner.temp }}/smoke-ssh/key
+          NPCINK_CLOUD_DEPLOY_KNOWN_HOSTS_FILE: ${{ runner.temp }}/smoke-ssh/known_hosts
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
           NPCINK_CLOUD_ADMIN_KEY: ${{ secrets.NPCINK_CLOUD_ADMIN_KEY }}
           NPCINK_CLOUD_RELEASE_MEMBER_EMAIL: ${{ secrets.NPCINK_CLOUD_RELEASE_MEMBER_EMAIL }}
@@ -94,4 +125,13 @@ jobs:
           if [ "${{ inputs.require_alipay_enabled }}" = "true" ]; then
             args+=(--require-alipay-enabled)
           fi
-          bash deploy/small-customer-trial-preflight.sh "${args[@]}"
+          if [ "${SMOKE_PREFLIGHT_ONLY}" = "true" ]; then
+            args+=(--preflight-only)
+            echo "Preflight only; no runtime execution/login; NOT formal acceptance." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          bash deploy/with-smoke-internal-tunnel.sh -- \
+            bash deploy/small-customer-trial-preflight.sh "${args[@]}"
+
+      - name: Remove temporary SSH identity
+        if: always()
+        run: rm -rf -- "${RUNNER_TEMP}/smoke-ssh"

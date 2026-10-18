@@ -11,6 +11,8 @@ npcink_ai_cloud_require_cmd python3
 npcink_ai_cloud_require_cmd mktemp
 
 BASE_URL="${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}"
+# Public traffic stays on BASE_URL; operator diagnostics may use a private tunnel.
+INTERNAL_BASE_URL="${NPCINK_CLOUD_INTERNAL_BASE_URL:-${BASE_URL}}"
 INTERNAL_AUTH_TOKEN="${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN:-}"
 ADMIN_KEY="${NPCINK_CLOUD_ADMIN_KEY:-}"
 MEMBER_EMAIL="${NPCINK_CLOUD_RELEASE_MEMBER_EMAIL:-}"
@@ -20,9 +22,14 @@ RUNTIME_KEY_ID="${NPCINK_CLOUD_RELEASE_KEY_ID:-}"
 RUNTIME_SECRET="${NPCINK_CLOUD_RELEASE_KEY_SECRET:-}"
 PERSISTED_PORTAL_COOKIE_JAR="${NPCINK_CLOUD_PORTAL_COOKIE_JAR:-}"
 CREDENTIALS_FILE=""
+PREFLIGHT_ONLY="0"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+		--preflight-only)
+			PREFLIGHT_ONLY="1"
+			shift
+			;;
 		--base-url)
 			BASE_URL="$2"
 			shift 2
@@ -124,6 +131,7 @@ PY
 	unset assignments
 }
 
+
 if [ -n "${CREDENTIALS_FILE}" ]; then
 	load_credentials_file "${CREDENTIALS_FILE}" || fail "Release smoke credentials could not be loaded"
 fi
@@ -135,6 +143,27 @@ unset \
 	NPCINK_CLOUD_ADMIN_KEY \
 	NPCINK_CLOUD_PORTAL_LOGIN_CODE \
 	NPCINK_CLOUD_RELEASE_KEY_SECRET
+
+# A distinct diagnostic endpoint must be operator-local, never an arbitrary
+# destination for the internal token. BASE_URL remains the public TLS origin.
+if [ -z "${NPCINK_CLOUD_INTERNAL_BASE_URL:-}" ]; then
+	INTERNAL_BASE_URL="${BASE_URL}"
+elif ! python3 - "${INTERNAL_BASE_URL}" <<'PY_URL'
+import sys
+from urllib.parse import urlsplit
+try:
+    url = urlsplit(sys.argv[1])
+    valid = (url.scheme == "http" and url.hostname == "127.0.0.1"
+             and url.port is not None and url.username is None
+             and url.password is None and url.path in ("", "/")
+             and not url.query and not url.fragment)
+except ValueError:
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY_URL
+then
+	fail "NPCINK_CLOUD_INTERNAL_BASE_URL must be an explicit HTTP IPv4 loopback origin"
+fi
 
 if [ -z "${INTERNAL_AUTH_TOKEN}" ]; then
 	fail "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN is required through --credentials-file or the process environment"
@@ -304,6 +333,10 @@ http_request() {
 		"${url}"
 		--header "@${request_headers}"
 	)
+	# Internal loopback traffic must not inherit a caller's HTTP proxy.
+	case "${url}" in
+		http://127.0.0.1:*) curl_args+=(--noproxy 127.0.0.1) ;;
+	esac
 	local header=""
 	(
 		umask 077
@@ -341,9 +374,17 @@ fi
 http_request "GET" "${BASE_URL%/}/health/live" "${PORTAL_COOKIE_JAR}"
 assert_status "${HTTP_STATUS}" "200" "live health should load"
 
+http_request "GET" "${BASE_URL%/}/health/ready" "${PORTAL_COOKIE_JAR}"
+case "${HTTP_STATUS}" in
+	401 | 403) ;;
+	*) fail "public health/ready must remain protected (got ${HTTP_STATUS})" ;;
+esac
+http_request "GET" "${INTERNAL_BASE_URL%/}/health/ready" "${PORTAL_COOKIE_JAR}"
+assert_status "${HTTP_STATUS}" "401" "private health/ready still requires an internal token"
+
 http_request \
 	"GET" \
-	"${BASE_URL%/}/health/ready" \
+	"${INTERNAL_BASE_URL%/}/health/ready" \
 	"${PORTAL_COOKIE_JAR}" \
 	"" \
 	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
@@ -351,7 +392,7 @@ assert_status "${HTTP_STATUS}" "200" "ready health should load"
 
 http_request \
 	"GET" \
-	"${BASE_URL%/}/health/operational-ready" \
+	"${INTERNAL_BASE_URL%/}/health/operational-ready" \
 	"${PORTAL_COOKIE_JAR}" \
 	"" \
 	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
@@ -360,7 +401,7 @@ assert_json_non_empty "${HTTP_BODY}" "data.required_workers" "operational readin
 
 http_request \
 	"GET" \
-	"${BASE_URL%/}/internal/service/observability/summary" \
+	"${INTERNAL_BASE_URL%/}/internal/service/observability/summary" \
 	"${PORTAL_COOKIE_JAR}" \
 	"" \
 	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
@@ -380,6 +421,11 @@ case "${BASE_URL}" in
 		assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_url" "formal HTTPS release smoke requires an external trace query URL"
 		;;
 esac
+
+if [ "${PREFLIGHT_ONLY}" = "1" ]; then
+	ok "Release preflight passed; no runtime execution or login performed; NOT a formal smoke pass"
+	exit 0
+fi
 
 RUNTIME_IDEMPOTENCY_SUFFIX="${NPCINK_CLOUD_IDEMPOTENCY_SUFFIX:-release-smoke-$(date -u +%Y%m%d%H%M%S)}"
 NPCINK_CLOUD_INTERNAL_AUTH_TOKEN="${INTERNAL_AUTH_TOKEN}" \

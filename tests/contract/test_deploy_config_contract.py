@@ -2643,11 +2643,17 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert "actions: read" in release_smoke_workflow
     assert "EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}" in release_smoke_workflow
     assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
-    assert 'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"' in release_smoke_workflow
+    assert 'echo "- tool_sha=${GITHUB_SHA}"' in release_smoke_workflow
+    assert (
+        'NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'
+        in release_smoke_workflow
+    )
+    assert "bash deploy/with-smoke-internal-tunnel.sh --" in release_smoke_workflow
+    assert "preflight_only:" in release_smoke_workflow
     assert "actions/workflows/deploy-production.yml/runs" in release_smoke_workflow
     assert '.head_sha == $sha and .conclusion == "success"' in release_smoke_workflow
     assert release_smoke_workflow.index(
-        'test "${EXPECTED_DEPLOYED_SHA}" = "${GITHUB_SHA}"'
+        '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]'
     ) < release_smoke_workflow.index("uses: actions/checkout@v6")
     assert "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN" in release_smoke_workflow
     assert "NPCINK_CLOUD_ADMIN_KEY" in release_smoke_workflow
