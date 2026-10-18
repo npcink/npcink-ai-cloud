@@ -91,7 +91,7 @@ def _operation_payload(
             (
                 "title_generation",
                 "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
-                48,
+                256,
             ),
             (
                 "content_summary",
