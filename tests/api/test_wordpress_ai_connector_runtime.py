@@ -1993,7 +1993,7 @@ def test_wordpress_ai_connector_runtime_accepts_registered_task_projection(
     _, client, provider = _build_client(tmp_path)
     payload = _payload(
         {
-            "task": "seo_headline",
+            "task": "article_headline",
             "request": {
                 "prompt": "Write one accurate headline for this article.",
                 "site_knowledge_reference": {
@@ -2002,8 +2002,8 @@ def test_wordpress_ai_connector_runtime_accepts_registered_task_projection(
                 },
                 "task_contract": {
                     "contract_version": "ai_task_contract.v1",
-                    "ability_name": "example/seo-headline",
-                    "task": "seo_headline",
+                    "ability_name": "example/article-headline",
+                    "task": "article_headline",
                     "task_family": "generation",
                     "context_requirements": ["current_content", "site_style_profile"],
                     "constraints": ["single_value", "source_grounded", "no_new_numbers"],
@@ -2018,7 +2018,7 @@ def test_wordpress_ai_connector_runtime_accepts_registered_task_projection(
 
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
-    assert provider_input["metadata"]["ability_name"] == "example/seo-headline"
+    assert provider_input["metadata"]["ability_name"] == "example/article-headline"
     assert provider_input["metadata"]["task_family"] == "generation"
     assert provider_input["metadata"]["task_constraints"] == [
         "no_new_numbers",
@@ -4081,13 +4081,15 @@ def test_wordpress_ai_connector_runtime_preserves_existing_only_taxonomy_terms(
     }
 
 
+@pytest.mark.parametrize("paused_task", ["meta_description", "seo_headline"])
+@pytest.mark.parametrize("with_contract", [False, True])
 def test_wordpress_ai_connector_rejects_paused_meta_before_provider(
-    tmp_path: Path,
+    tmp_path: Path, paused_task: str, with_contract: bool,
 ) -> None:
     database_url, client, provider = _build_client(tmp_path)
     payload = _payload(
         {
-            "task": "meta_description",
+            "task": paused_task,
             "request": {
                 "source_text": (
                     "为这篇文章生成 SEO 描述：Npcink Cloud Addon 让 WordPress AI 插件"
@@ -4096,6 +4098,18 @@ def test_wordpress_ai_connector_rejects_paused_meta_before_provider(
             },
         }
     )
+
+    if with_contract:
+        payload["input"]["operation_contract"]["request"]["task_contract"] = {
+            "contract_version": "ai_task_contract.v1",
+            "ability_name": "example/seo-headline",
+            "task": paused_task,
+            "task_family": "generation",
+            "context_requirements": ["current_content"],
+            "constraints": ["single_value", "source_grounded"],
+            "output_schema": {"type": "string"},
+            "write_posture": "suggestion_only",
+        }
 
     response = _execute(client, payload, idempotency_key="wp-ai-connector-meta")
 

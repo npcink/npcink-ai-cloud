@@ -197,6 +197,7 @@ PAUSED_DISCOVERABILITY_TASKS = frozenset(
     {
         "meta_description",
         "seo_title",
+        "seo_headline",
         "seo_description",
         "seo_metadata",
         "aeo_summary",

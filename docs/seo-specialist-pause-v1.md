@@ -31,3 +31,5 @@ Cloud Addon. Toolkit, Core, Adapter and Eval are not modified by this task, so
 this record does not claim a platform-wide SEO write prohibition. See the
 [three-repository implementation record](../../npcink-workflow-toolbox/docs/seo-specialist-pause-implementation-2026-10-18.md)
 for the exact evidence state and remaining runtime limitations.
+
+已注册任务投影中的 `seo_headline` 同样属于暂停任务；通用自定义任务投影仍可传输。回归使用通用 article_headline 正向样例和 SEO 别名零调用负向样例，避免依靠旧的 SEO 成功样例证明暂停完整。
