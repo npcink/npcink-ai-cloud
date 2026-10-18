@@ -1,5 +1,11 @@
 """Bounded release pauses, not an ability registry or operator feature console."""
 
+from app.domain.audio_generation.contracts import (
+    AUDIO_GENERATION_ABILITIES,
+    AUDIO_GENERATION_CONTRACT,
+    AUDIO_GENERATION_EXECUTION_KIND,
+    AUDIO_GENERATION_PROFILE_ID,
+)
 from app.domain.cloud_batch_runtime.contracts import (
     CLOUD_BATCH_RUNTIME_ABILITIES,
     CLOUD_BATCH_RUNTIME_EXECUTION_KIND,
@@ -14,9 +20,17 @@ from app.domain.site_ops_analysis.contracts import (
     SITE_OPS_ANALYSIS_REQUEST_CONTRACT,
 )
 
-PAUSED_RUNTIME_FEATURES = frozenset({"cloud_inspection"})
+PAUSED_RUNTIME_FEATURES = frozenset({"cloud_inspection", "audio_generation"})
 
 _FEATURE_MARKERS = {
+    "audio_generation": frozenset(
+        {
+            *AUDIO_GENERATION_ABILITIES,
+            AUDIO_GENERATION_CONTRACT,
+            AUDIO_GENERATION_EXECUTION_KIND,
+            AUDIO_GENERATION_PROFILE_ID,
+        }
+    ),
     "cloud_inspection": frozenset(
         {
             *CLOUD_BATCH_RUNTIME_ABILITIES,

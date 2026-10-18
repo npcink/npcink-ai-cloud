@@ -12,7 +12,7 @@ from app.domain.runtime.service import RuntimeService
 from tests.api.test_cloud_batch_runtime import _build_client, _get_result, _payload, _post_execute
 
 
-@pytest.mark.parametrize("marker", sorted(availability._FEATURE_MARKERS["cloud_inspection"]))
+@pytest.mark.parametrize("marker", sorted(set().union(*availability._FEATURE_MARKERS.values())))
 @pytest.mark.parametrize(
     "field", ["ability_name", "execution_kind", "contract_version", "profile_id"]
 )

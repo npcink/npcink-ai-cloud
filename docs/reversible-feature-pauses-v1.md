@@ -64,3 +64,17 @@ exercise the real release policy separately.
 - Toolbox static contracts: 4223 passed; provider behavior suite passed.
 - M4: first source transfer failed reaching the private relay SSH endpoint.
   No source was applied. No direct fallback or production operation occurred.
+
+## Audio batch evidence
+
+Audio generation is paused by ability, execution kind, profile and contract
+at the ingress/queue seam. Addon refuses named and generic transport through
+the common pre-signing guard. Toolbox rejects narration and audio-summary
+editor intents before preparing their text context, including the preliminary
+summary model call, and rejects direct provider calls before filters. Audio
+flows and regeneration are unavailable; existing playback and preferences stay.
+
+- Cloud focused pauses, ordinary runtime and artifact characterization: 152 passed.
+- Addon default-pause and retained WordPress connector runtime tests passed.
+- Toolbox static contracts, provider behavior and evaluated editor JS passed;
+  audio entries are absent while ordinary formatting remains available.
