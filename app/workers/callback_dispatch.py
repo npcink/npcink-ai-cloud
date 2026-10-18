@@ -34,6 +34,29 @@ def _dict_items(value: object) -> list[dict[str, object]]:
     ]
 
 
+class _CallbackPollSchedule:
+    """Poll briefly after work, then return to the configured idle cadence."""
+
+    def __init__(self, *, poll_seconds: float) -> None:
+        self.poll_seconds = poll_seconds
+        self._next_empty_delay = poll_seconds
+        self._next_maintenance_at = 0.0
+
+    def after_dispatch(self, *, processed: bool) -> float:
+        if processed:
+            self._next_empty_delay = min(0.25, self.poll_seconds)
+            return 0.0
+        delay = self._next_empty_delay
+        self._next_empty_delay = min(self.poll_seconds, delay * 2)
+        return delay
+
+    def maintenance_due(self, *, now: float) -> bool:
+        if now < self._next_maintenance_at:
+            return False
+        self._next_maintenance_at = now + self.poll_seconds
+        return True
+
+
 def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -55,6 +78,7 @@ def main() -> None:
         worker_id="callback_dispatch",
         interval_seconds=settings.worker_heartbeat_interval_seconds,
     )
+    schedule = _CallbackPollSchedule(poll_seconds=settings.runtime_callback_worker_poll_seconds)
 
     logger.info(
         "callback dispatch worker started (poll=%ss, batch=%s)",
@@ -69,12 +93,15 @@ def main() -> None:
 
     try:
         while True:
-            auto_repair = service.run_bounded_auto_repairs(
-                worker_id="callback_dispatch",
-                max_stale_queued=0,
-                max_callback_overdue=settings.runtime_callback_batch_size,
-                max_running_stale_suggestions=0,
-            )
+            auto_repair: dict[str, object] = {}
+            # Fast queue probes must not multiply the maintenance DB workload.
+            if schedule.maintenance_due(now=time.monotonic()):
+                auto_repair = service.run_bounded_auto_repairs(
+                    worker_id="callback_dispatch",
+                    max_stale_queued=0,
+                    max_callback_overdue=settings.runtime_callback_batch_size,
+                    max_running_stale_suggestions=0,
+                )
             callbacks = service.dispatch_pending_callbacks(
                 max_callbacks=settings.runtime_callback_batch_size,
             )
@@ -94,6 +121,7 @@ def main() -> None:
                     ),
                 },
             )
+            delay = schedule.after_dispatch(processed=bool(callbacks))
             if not callbacks:
                 redelivered_total = _coerce_int(
                     auto_repair.get("redelivered_callback_overdue_total")
@@ -107,7 +135,7 @@ def main() -> None:
                             for item in _dict_items(auto_repair.get("redelivered_callback_overdue"))
                         ],
                     )
-                time.sleep(settings.runtime_callback_worker_poll_seconds)
+                time.sleep(delay)
                 continue
             logger.info(
                 "runtime callback batch processed: count=%s run_ids=%s",
