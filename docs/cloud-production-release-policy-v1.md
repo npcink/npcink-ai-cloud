@@ -193,12 +193,19 @@ smoke fail closed when any protected credential is absent or stale; it never
 silently converts missing credentials into green evidence. For a deployment
 that may exceed the code TTL, leave it off, complete the deploy, issue and store
 a fresh code through the protected operator path, and immediately dispatch the
-separate fail-closed `Release Smoke` workflow from the exact `production`
-revision. Paste that successfully deployed full SHA into its required
-`expected_deployed_sha` input. The smoke workflow rejects a different selected
-revision and requires a successful `Deploy Production` run for the exact SHA
-before checkout. A deferred smoke is explicitly recorded as not-passed
-evidence.
+separate fail-closed `Release Smoke` workflow from `production`. Paste the
+successfully deployed application SHA into `expected_deployed_sha`. The workflow
+requires a successful `Deploy Production` run for that exact application SHA
+before checkout, and its SSH transport checks the installed release manifest
+against the same SHA before and after execution. The tool SHA is reported
+separately, so a reviewed tooling update does not require replacing a healthy
+application just to obtain smoke evidence. Public checks remain on the public
+origin; internal checks use a temporary loopback-only SSH forward with the
+existing pinned production identity. No internal endpoint is opened publicly.
+The default `preflight_only=true` performs no runtime execution or login and is
+explicitly not full acceptance; select false only for an authorized real smoke.
+A deferred smoke is explicitly recorded as not-passed evidence. See the
+[formal smoke entry runbook](formal-release-smoke-entry-v1.md).
 
 ### Bounded release verification
 

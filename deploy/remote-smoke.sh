@@ -13,6 +13,8 @@ npcink_ai_cloud_require_cmd python3
 npcink_ai_cloud_require_cmd mktemp
 
 BASE_URL="${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}"
+# Public traffic stays on BASE_URL; operator diagnostics may use a private tunnel.
+INTERNAL_BASE_URL="${NPCINK_CLOUD_INTERNAL_BASE_URL:-${BASE_URL}}"
 INTERNAL_AUTH_TOKEN="${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN:-}"
 if [ -z "${INTERNAL_AUTH_TOKEN}" ]; then
 	INTERNAL_AUTH_TOKEN="$(npcink_ai_cloud_read_internal_token_projection "${ROOT_DIR}")"
@@ -92,6 +94,7 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
+
 # Keep credentials in this shell only. Child processes receive a credential
 # only through an explicit environment assignment or a protected request file.
 unset NPCINK_CLOUD_INTERNAL_AUTH_TOKEN NPCINK_CLOUD_SECRET
@@ -104,6 +107,27 @@ fail() {
 ok() {
 	echo "[ok] $*"
 }
+
+# A distinct diagnostic endpoint must be operator-local, never an arbitrary
+# destination for the internal token. BASE_URL remains the public TLS origin.
+if [ -z "${NPCINK_CLOUD_INTERNAL_BASE_URL:-}" ]; then
+	INTERNAL_BASE_URL="${BASE_URL}"
+elif ! python3 - "${INTERNAL_BASE_URL}" <<'PY_URL'
+import sys
+from urllib.parse import urlsplit
+try:
+    url = urlsplit(sys.argv[1])
+    valid = (url.scheme == "http" and url.hostname == "127.0.0.1"
+             and url.port is not None and url.username is None
+             and url.password is None and url.path in ("", "/")
+             and not url.query and not url.fragment)
+except ValueError:
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY_URL
+then
+	fail "NPCINK_CLOUD_INTERNAL_BASE_URL must be an explicit HTTP IPv4 loopback origin"
+fi
 
 if [ -z "${INTERNAL_AUTH_TOKEN}" ]; then
 	fail "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN for internal-only perimeter checks is required"
@@ -421,6 +445,10 @@ _http_request() {
 		curl_args+=(--max-time "${max_time}")
 	fi
 	curl_args+=("${url}" --header "@${request_headers}")
+	# Internal loopback traffic must not inherit a caller's HTTP proxy.
+	case "${url}" in
+		http://127.0.0.1:*) curl_args+=(--noproxy 127.0.0.1) ;;
+	esac
 	local header=""
 	(
 		umask 077
@@ -461,7 +489,7 @@ observability_summary_request() {
 		"${OBSERVABILITY_CADENCE_CONNECT_TIMEOUT_SECONDS}" \
 		"${OBSERVABILITY_CADENCE_MAX_TIME_SECONDS}" \
 		"GET" \
-		"${BASE_URL%/}/internal/service/observability/summary" \
+		"${INTERNAL_BASE_URL%/}/internal/service/observability/summary" \
 		"" \
 		"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
 }
@@ -589,20 +617,32 @@ http_request "GET" "${BASE_URL%/}/redoc" ""
 assert_status "${HTTP_STATUS}" "404" "redoc should stay disabled in production perimeter"
 
 http_request "GET" "${BASE_URL%/}/health/ready" ""
-assert_status "${HTTP_STATUS}" "401" "health/ready without token should fail closed"
+case "${HTTP_STATUS}" in
+	401 | 403) ;;
+	*) fail "public health/ready without token should fail closed (got ${HTTP_STATUS})" ;;
+esac
 
 http_request "POST" "${BASE_URL%/}/internal/catalog/refresh" '{"providers":[]}' \
 	"Idempotency-Key: idem-internal-refresh-001${IDEMPOTENCY_SUFFIX_NORMALIZED}"
-assert_status "${HTTP_STATUS}" "401" "internal/catalog/refresh without token should fail closed"
+case "${HTTP_STATUS}" in
+	401 | 403) ;;
+	*) fail "public internal/catalog/refresh without token should fail closed (got ${HTTP_STATUS})" ;;
+esac
 
-http_request "GET" "${BASE_URL%/}/health/ready" "" \
+http_request "GET" "${INTERNAL_BASE_URL%/}/health/ready" ""
+assert_status "${HTTP_STATUS}" "401" "private health/ready still requires an internal token"
+http_request "POST" "${INTERNAL_BASE_URL%/}/internal/catalog/refresh" '{"providers":[]}' \
+	"Idempotency-Key: idem-internal-refresh-private${IDEMPOTENCY_SUFFIX_NORMALIZED}"
+assert_status "${HTTP_STATUS}" "401" "private internal/catalog/refresh still requires an internal token"
+
+http_request "GET" "${INTERNAL_BASE_URL%/}/health/ready" "" \
 	"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
 assert_status "${HTTP_STATUS}" "200" "health/ready with internal token should succeed"
 
 OPERATIONAL_READY_ATTEMPTS="${NPCINK_CLOUD_OPERATIONAL_READY_WAIT_ATTEMPTS:-36}"
 OPERATIONAL_READY_DELAY_SECONDS="${NPCINK_CLOUD_OPERATIONAL_READY_WAIT_DELAY_SECONDS:-5}"
 for ((attempt = 1; attempt <= OPERATIONAL_READY_ATTEMPTS; attempt++)); do
-	http_request "GET" "${BASE_URL%/}/health/operational-ready" "" \
+	http_request "GET" "${INTERNAL_BASE_URL%/}/health/operational-ready" "" \
 		"X-Npcink-Internal-Token: ${INTERNAL_AUTH_TOKEN}"
 	if [ "${HTTP_STATUS}" = "200" ]; then
 		break

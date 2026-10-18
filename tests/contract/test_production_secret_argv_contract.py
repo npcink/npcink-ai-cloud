@@ -217,6 +217,14 @@ elif path == "/v1/usage/summary":
         "status": "ok",
         "data": {"windows": {"rolling_24h": {"provider_calls_total": 1}}},
     }
+elif path == "/admin/service-settings":
+    status = "303"
+    response_headers.append("Location: /admin/login")
+elif path == "/open/payments/alipay/return":
+    status = "303"
+    response_headers.append("Location: /portal/billing?payment_return=alipay")
+elif path == "/open/payments/alipay/notify":
+    status = "400"
 elif path == "/portal/v1/auth/code/request":
     body = {"status": "ok", "data": {"delivery": "smtp", "member_ref": "user:member@example.test"}}
 elif path == "/portal/v1/auth/code/verify":
@@ -252,6 +260,18 @@ elif path.endswith("/billing-snapshots/reconciliation"):
     body = {"status": "ok", "data": {"snapshot": {"totals": {"runs": 1}}}}
 elif path.endswith("/api-keys"):
     body = {"status": "ok", "data": {"items": [{"key_id": "key_runtime"}]}}
+
+# Model the production perimeter: an internal token never overrides the edge ACL.
+internal_path = path.startswith("/internal/") or path in {
+    "/health/ready", "/health/operational-ready",
+}
+if os.environ.get("FAKE_EDGE_DENY") == "1" and internal_path:
+    if urlparse(url).hostname != "127.0.0.1":
+        status = "403"
+        body = "<html>Forbidden</html>"
+    elif os.environ.get("FAKE_PRIVATE_DOWN") == "1":
+        status = "503"
+        body = {"status": "error"}
 
 response_headers[0] = f"HTTP/1.1 {status} Fixture"
 if output_path:
@@ -1307,4 +1327,185 @@ raise SystemExit(64)
     assert "portal-code-sentinel" not in evidence
     assert "--header\t@" in curl_log.read_text(encoding="utf-8")
     assert "--data-binary\t@" in curl_log.read_text(encoding="utf-8")
+    assert list(temp_root.iterdir()) == []
+
+
+@pytest.mark.parametrize("script", ["release-smoke.sh", "remote-smoke.sh"])
+@pytest.mark.parametrize("private_down", [False, True])
+def test_smoke_splits_private_diagnostics_from_public_execution(
+    tmp_path: Path, script: str, private_down: bool,
+) -> None:
+    fixture = _copy_fixture(
+        tmp_path, "deploy/common.sh", "deploy/release-smoke.sh", "deploy/remote-smoke.sh",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _install_fake_curl(fake_bin)
+    log = tmp_path / "curl.log"
+    temp_root = tmp_path / "requests"
+    temp_root.mkdir()
+    environment = os.environ.copy()
+    environment.update({
+        "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+        "TMPDIR": str(temp_root),
+        "CURL_ARGV_LOG": str(log),
+        "CURL_STATE_PATH": str(tmp_path / "state"),
+        "FAKE_EDGE_DENY": "1",
+        "FAKE_PRIVATE_DOWN": "1" if private_down else "0",
+        "NPCINK_CLOUD_INTERNAL_BASE_URL": "http://127.0.0.1:18011",
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "private-token-sentinel",
+        "NPCINK_CLOUD_ADMIN_KEY": "admin-sentinel",
+        "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL": "member@example.test",
+        "NPCINK_CLOUD_PORTAL_LOGIN_CODE": "otp-sentinel",
+        "NPCINK_CLOUD_RELEASE_SITE_ID": "site_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_ID": "key_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_SECRET": "runtime-sentinel",
+        "NPCINK_CLOUD_SECRET": "runtime-sentinel",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE": "1",
+        "NPCINK_CLOUD_SKIP_TERMS_CHECKS": "1",
+        "NPCINK_CLOUD_OPERATIONAL_READY_WAIT_ATTEMPTS": "1",
+    })
+    result = subprocess.run(
+        ["/bin/bash", str(fixture / "deploy" / script),
+         "--base-url", "https://cloud.example.test"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    evidence = result.stdout + result.stderr
+    calls = log.read_text()
+    assert (result.returncode != 0) == private_down, evidence
+    assert "http://127.0.0.1:18011/health/ready" in calls
+    assert calls.count("https://cloud.example.test/v1/runtime/execute") == (0 if private_down else 1)
+    assert "http://127.0.0.1:18011/v1/" not in calls
+    private_calls = [line for line in calls.splitlines() if "http://127.0.0.1:18011/" in line]
+    assert private_calls and all("--noproxy\t127.0.0.1" in line for line in private_calls)
+    assert "/portal/v1/auth/code/request" not in calls
+    if private_down:
+        assert "/portal/v1/auth/code/verify" not in calls
+    for secret in ("private-token-sentinel", "admin-sentinel", "otp-sentinel", "runtime-sentinel"):
+        assert secret not in calls + evidence
+    assert list(temp_root.iterdir()) == []
+
+
+def test_release_preflight_never_executes_runtime_or_uses_otp(tmp_path: Path) -> None:
+    fixture = _copy_fixture(tmp_path, "deploy/common.sh", "deploy/release-smoke.sh", "deploy/small-customer-trial-preflight.sh")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _install_fake_curl(fake_bin)
+    log = tmp_path / "curl.log"
+    environment = os.environ.copy()
+    environment.update({
+        "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+        "CURL_ARGV_LOG": str(log), "CURL_STATE_PATH": str(tmp_path / "state"),
+        "FAKE_EDGE_DENY": "1",
+        "NPCINK_CLOUD_INTERNAL_BASE_URL": "http://127.0.0.1:18011",
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "private-token-sentinel",
+        "NPCINK_CLOUD_ADMIN_KEY": "admin-sentinel",
+        "NPCINK_CLOUD_RELEASE_MEMBER_EMAIL": "member@example.test",
+        "NPCINK_CLOUD_RELEASE_SITE_ID": "site_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_ID": "key_runtime",
+        "NPCINK_CLOUD_RELEASE_KEY_SECRET": "runtime-sentinel",
+    })
+    environment.pop("NPCINK_CLOUD_PORTAL_LOGIN_CODE", None)
+    result = subprocess.run(
+        ["/bin/bash", str(fixture / "deploy/small-customer-trial-preflight.sh"),
+         "--base-url", "https://cloud.example.test", "--run-release-smoke",
+         "--require-smoke-env", "--require-alipay-enabled", "--preflight-only"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "NOT a formal smoke pass" in result.stdout
+    calls = log.read_text()
+    assert "/internal/service/observability/summary" in calls
+    assert "/v1/runtime/execute" not in calls
+    assert "/auth/" not in calls
+
+
+@pytest.mark.parametrize("origin", [
+    "https://evil.example.test", "http://127.0.0.1:18011@evil.example.test",
+    "http://127.0.0.1:18011/redirect", "http://127.0.0.1:18011?x=y",
+])
+def test_smoke_rejects_nonlocal_internal_origin(tmp_path: Path, origin: str) -> None:
+    environment = os.environ.copy()
+    environment["NPCINK_CLOUD_INTERNAL_BASE_URL"] = origin
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT / "deploy/release-smoke.sh"), "--preflight-only"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode != 0
+    assert "HTTP IPv4 loopback origin" in result.stderr
+
+
+@pytest.mark.parametrize("tunnel_fails,command_fails,revision_failure", [
+    (True, False, ""), (False, False, ""), (False, True, ""),
+    (False, False, "before"), (False, False, "after"),
+])
+def test_smoke_tunnel_is_loopback_only_fail_closed_and_cleaned(
+    tmp_path: Path, tunnel_fails: bool, command_fails: bool, revision_failure: str,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write(fake_bin / "ssh", r'''#!/usr/bin/env python3
+import os
+import socket
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+assert not os.environ.get("NPCINK_CLOUD_INTERNAL_AUTH_TOKEN")
+with open(os.environ["SSH_LOG"], "a") as log:
+    log.write(" ".join(args) + "\n")
+control = args[args.index("-S") + 1]
+if "-O" in args:
+    Path(control).unlink()
+elif "-M" not in args:
+    sys.stdin.read()
+    state = Path(os.environ["VERIFY_STATE"])
+    count = int(state.read_text()) + 1 if state.exists() else 1
+    state.write_text(str(count))
+    if (os.environ["REVISION_FAILURE"], count) in {("before", 1), ("after", 2)}:
+        raise SystemExit(1)
+elif os.environ["FAKE_SSH_FAIL"] == "1":
+    raise SystemExit(255)
+else:
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(control)
+''', executable=True)
+    _write(fake_bin / "smoke-command", r'''#!/usr/bin/env python3
+import os
+from pathlib import Path
+Path(os.environ["COMMAND_LOG"]).write_text(os.environ["NPCINK_CLOUD_INTERNAL_BASE_URL"])
+raise SystemExit(int(os.environ["FAKE_COMMAND_FAIL"]))
+''', executable=True)
+    key, hosts = tmp_path / "identity", tmp_path / "known_hosts"
+    key.touch()
+    hosts.touch()
+    temp_root = tmp_path / "temporary"
+    temp_root.mkdir()
+    ssh_log, command_log = tmp_path / "ssh.log", tmp_path / "command.log"
+    environment = os.environ.copy()
+    environment.update({
+        "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+        "TMPDIR": str(temp_root), "SSH_LOG": str(ssh_log), "COMMAND_LOG": str(command_log),
+        "NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA": "a" * 40,
+        "NPCINK_CLOUD_DEPLOY_SSH_HOST": "host.example.test",
+        "NPCINK_CLOUD_DEPLOY_SSH_USER": "root",
+        "NPCINK_CLOUD_DEPLOY_IDENTITY_FILE": str(key),
+        "NPCINK_CLOUD_DEPLOY_KNOWN_HOSTS_FILE": str(hosts),
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "private-token-sentinel",
+        "FAKE_SSH_FAIL": "1" if tunnel_fails else "0",
+        "FAKE_COMMAND_FAIL": "1" if command_fails else "0",
+        "REVISION_FAILURE": revision_failure,
+        "VERIFY_STATE": str(tmp_path / "verify-state"),
+    })
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT / "deploy/with-smoke-internal-tunnel.sh"), "--", "smoke-command"],
+        env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert (result.returncode != 0) == bool(tunnel_fails or command_fails or revision_failure)
+    started = not tunnel_fails and revision_failure != "before"
+    assert command_log.exists() == started
+    calls = ssh_log.read_text()
+    assert "StrictHostKeyChecking=yes" in calls and "ExitOnForwardFailure=yes" in calls
+    assert ("-L 127.0.0.1:18011:127.0.0.1:8010" in calls) == (revision_failure != "before")
+    assert ("-O exit" in calls) == started
+    assert "private-token-sentinel" not in calls + result.stdout + result.stderr
     assert list(temp_root.iterdir()) == []

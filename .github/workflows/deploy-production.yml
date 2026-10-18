@@ -469,6 +469,12 @@ jobs:
       - name: Formal release smoke
         if: steps.deploy.outputs.installation_state == 'complete' && steps.deploy.outputs.health_profile == 'runtime' && inputs.run_formal_release_smoke
         env:
+          NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ github.sha }}
+          NPCINK_CLOUD_DEPLOY_REMOTE_DIR: ${{ secrets.PROD_REMOTE_DIR || '/opt/npcink-ai-cloud' }}
+          NPCINK_CLOUD_DEPLOY_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          NPCINK_CLOUD_DEPLOY_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          NPCINK_CLOUD_DEPLOY_SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          NPCINK_CLOUD_DEPLOY_IDENTITY_FILE: /home/runner/.ssh/npcink_prod_deploy_key
           NPCINK_CLOUD_BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://cloud.npc.ink' }}
           NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${{ secrets.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN }}
           NPCINK_CLOUD_ADMIN_KEY: ${{ secrets.NPCINK_CLOUD_ADMIN_KEY }}
@@ -557,7 +563,8 @@ jobs:
             NPCINK_CLOUD_RELEASE_SITE_ID \
             NPCINK_CLOUD_RELEASE_KEY_ID \
             NPCINK_CLOUD_RELEASE_KEY_SECRET
-          bash deploy/release-smoke.sh --base-url "${NPCINK_CLOUD_BASE_URL}" \
+          bash deploy/with-smoke-internal-tunnel.sh -- \
+            bash deploy/release-smoke.sh --base-url "${NPCINK_CLOUD_BASE_URL}" \
             --credentials-file "${credential_file}"
 
       - name: Record deferred formal release smoke
