@@ -61,7 +61,7 @@ exercise the real release policy separately.
 
 - Cloud focused ingress/queue/history plus retained feature APIs: 52 passed.
 - Addon default-pause behavior and full PHP contract/behavior suite: passed.
-- Toolbox static contracts: 4223 passed; provider behavior suite passed.
+- Toolbox static contracts: 4224 passed; provider behavior suite passed.
 - M4: first source transfer failed reaching the private relay SSH endpoint.
   No source was applied. No direct fallback or production operation occurred.
 
@@ -115,3 +115,49 @@ external search, essential feedback, existing media/audio and first-party
 localization stay operational. Broader RAG/provider/commercial/dashboard/shim
 expansion is frozen pending operator evidence. Restoration is a reviewed source
 change against current consumers, never an automatic saved-option reactivation.
+
+
+## Development closeout receipt — 2026-10-19
+
+All three repositories use local branch
+`codex/reversible-feature-pauses-20261019`. No branch was published, PR opened,
+merge performed, plugin distributed or production deployment attempted.
+
+| Batch | Cloud | Addon | Toolbox |
+| --- | --- | --- | --- |
+| Advisor | `6286c134` | not applicable | not applicable |
+| Inspection/site analysis | `75c13129` | `deaff5d` | `788e590` |
+| Article audio | `212bb914` | `d7091da` | `b050233` |
+| Advanced media/product copy | `e4f109e6` | `dbe2d08` | `61ec0bf` |
+
+The central `composer quality:matrix:run` was executed once against these final
+code revisions, restricted to these three repositories. Toolbox and Addon
+`composer test:all` both passed (35.7s and 4.4s). Cloud is `needs_validation`:
+its exact-SHA GitHub gate refused the three unrelated staged documentation
+changes retained in this shared worktree. Those files were not included in any
+pause commit. No remote evidence was inferred and the overall matrix is not
+green. At closeout, Cloud origin/master also contains two newer commits
+(`#1148`, `#1149`) outside this candidate; integration with them remains a
+separate required step before merge validation. Toolbox emitted PHP dynamic-property deprecation notices from retained
+Provider_Client construction; they are recorded, not concealed by a passing exit.
+Toolbox coding standards and PHPStan passed separately.
+
+Candidate plugin ZIPs were generated and validated locally. Toolbox package
+integrity and its changed Settings, Admin_Page, Media_Optimization_Batches and
+editor JS payloads match the checked source. Addon release manifest verification
+passed. Their SHA256 values are:
+
+- Addon: `fa8cd68f8256733233c6e075df0ea1ab61cf5fd2ecb8c48258ac6891711db223`.
+- Toolbox: `03bb6bf839824439073d3fa0ca210b0cfc48451c96c23d309cd93157f32a7ba9`.
+
+The final M4 candidate sync used the required private relay and explicit
+non-master/dirty-candidate opt-ins. It failed before transfer while acquiring the
+relay lock (`SSH operation timed out`, exit 255). Two consecutive relay failures
+ended automatic retries. Three sync commands were attempted in total, including
+one branch-preflight refusal; zero source transfers were applied and zero deploys
+were attempted. Accepted-master promotion was not attempted. Runtime behavior
+and M4 acceptance remain unverified. The separate image-supply validation-window
+blocker above also remains unresolved; no security exception or scope expansion
+was introduced to make the receipt appear green.
+
+M4_OBSERVATION_RECEIPT date=2026-10-19; route=Pgy-control-and-Tailscale-private-relay; sync=failed-before-transfer; focused=not measured; promotion=not occurred; operations=sync3/deploy0/applied0; stable_502=not measured; m4_only=not observed; coordination=unrelated staged docs preserved
