@@ -138,6 +138,7 @@ deleting the old decision history.
 - [Background Lightweight Mode](background-lightweight-mode-v1.md) — hourly optional diagnostics, manual quality analysis and unchanged cleanup/usage/callback responsibilities; runtime validation and release remain separate.
 
 - [Runtime Resource Baseline](runtime-resource-baseline-v1.md) — bounded GET-only sampling; begin with 15 minutes, inspect completeness and runtime identity, then explicitly extend the window. No automatic workload or runtime operation.
+- [CPU 分配对照与性能专项收尾 — 2026-10-19](history/engineering/2026/cpu-allocation-performance-closeout-2026-10-19.md) — 校正采样后的18格对照；业务收益未稳定达10%，回调部分退化，不采用新分配并结束本次性能专项。
 - [回调签名与空队列退避验证 — 2026-10-19](history/engineering/2026/callback-dispatch-idle-backoff-validation-2026-10-19.md) — 同为2核预算、callback0.25核及连接池2+1的三轮对照；回调P95、CPU、空闲成本与冷空闲限制。
 - [资源采样恢复与会话收尾经验 — 2026-10-17](history/engineering/2026/resource-sampling-and-session-closeout-retrospective-2026-10-17.md) — stash recovery, historical resource evidence and remaining acceptance gaps; sampler validation, localization, OCR and safe closeout lessons.
 
