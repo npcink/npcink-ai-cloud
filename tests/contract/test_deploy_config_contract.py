@@ -2644,7 +2644,10 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert "EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}" in release_smoke_workflow
     assert '[[ "${EXPECTED_DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ ]]' in release_smoke_workflow
     assert 'echo "- tool_sha=${GITHUB_SHA}"' in release_smoke_workflow
-    assert 'NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}' in release_smoke_workflow
+    assert (
+        'NPCINK_CLOUD_EXPECTED_DEPLOYED_SHA: ${{ inputs.expected_deployed_sha }}'
+        in release_smoke_workflow
+    )
     assert "bash deploy/with-smoke-internal-tunnel.sh --" in release_smoke_workflow
     assert "preflight_only:" in release_smoke_workflow
     assert "actions/workflows/deploy-production.yml/runs" in release_smoke_workflow

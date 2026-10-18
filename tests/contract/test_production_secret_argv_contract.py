@@ -1374,7 +1374,9 @@ def test_smoke_splits_private_diagnostics_from_public_execution(
     calls = log.read_text()
     assert (result.returncode != 0) == private_down, evidence
     assert "http://127.0.0.1:18011/health/ready" in calls
-    assert calls.count("https://cloud.example.test/v1/runtime/execute") == (0 if private_down else 1)
+    assert calls.count("https://cloud.example.test/v1/runtime/execute") == (
+        0 if private_down else 1
+    )
     assert "http://127.0.0.1:18011/v1/" not in calls
     private_calls = [line for line in calls.splitlines() if "http://127.0.0.1:18011/" in line]
     assert private_calls and all("--noproxy\t127.0.0.1" in line for line in private_calls)
@@ -1387,7 +1389,10 @@ def test_smoke_splits_private_diagnostics_from_public_execution(
 
 
 def test_release_preflight_never_executes_runtime_or_uses_otp(tmp_path: Path) -> None:
-    fixture = _copy_fixture(tmp_path, "deploy/common.sh", "deploy/release-smoke.sh", "deploy/small-customer-trial-preflight.sh")
+    fixture = _copy_fixture(
+        tmp_path, "deploy/common.sh", "deploy/release-smoke.sh",
+        "deploy/small-customer-trial-preflight.sh",
+    )
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     _install_fake_curl(fake_bin)
