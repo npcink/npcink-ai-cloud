@@ -10,6 +10,8 @@ Current authority remains the
 - [Production release and WordPress text round-trip closeout](production-release-and-wordpress-text-roundtrip-closeout-2026-08-07.md)
 - [Production release historical issues closeout](production-release-historical-issues-closeout-and-retrospective-2026-08-14.md)
 - [Production user observability development retrospective](production-user-observability-development-retrospective-2026-08-19.md)
+- [冻结Cloud发布收尾、开发经验与验收交接 — 2026-10-18](frozen-cloud-release-closeout-and-retrospective-2026-10-18.md)
+  - 精确4a版本、101路径、成功部署与耗时；Qwen目录404、归档回退边界和未完成验收，不代表真人写作已通过
 
 Contract-bound backup, active-soak, and image round-trip evidence remains in
 the `docs/` root because executable tests reference those paths. The release
