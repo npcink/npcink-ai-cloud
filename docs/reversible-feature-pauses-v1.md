@@ -43,3 +43,24 @@ uses the development lane; publication and production are separate decisions.
 
 Rollback: revert the corresponding batch commit and verify current consumers.
 Do not treat old configuration or historic acceptance as restoration approval.
+
+## Inspection batch evidence
+
+Cloud ingress and queued-run execution check exact ability, execution kind,
+profile and contract markers before runtime work. A queued inspection fails
+with `runtime.feature_paused`; historical completed results remain readable.
+Nightly retries re-enter the same execute guard. Entitlements project paused
+availability without changing stored budgets or historical counts.
+
+Addon guards every runtime POST and inspection retry before signing/HTTP.
+Toolbox masks effective Pro inspection enablement without changing stored
+options, blocks provider and REST submission/retry, and removes Cloud detail
+and recovery actions while keeping local checks. Retained implementation
+suites explicitly unpause their in-process test fixtures; default-pause tests
+exercise the real release policy separately.
+
+- Cloud focused ingress/queue/history plus retained feature APIs: 52 passed.
+- Addon default-pause behavior and full PHP contract/behavior suite: passed.
+- Toolbox static contracts: 4223 passed; provider behavior suite passed.
+- M4: first source transfer failed reaching the private relay SSH endpoint.
+  No source was applied. No direct fallback or production operation occurred.
