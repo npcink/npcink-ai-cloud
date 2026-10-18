@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -106,11 +107,14 @@ class RuntimeCallbackDeliveryService:
 
         self._recover_stale_callback_dispatches(limit=max(1, max_callbacks))
         dispatched: list[dict[str, object]] = []
-        for _ in range(max(1, max_callbacks)):
-            result = self._dispatch_single_pending_callback()
-            if result is None:
-                break
-            dispatched.append(result)
+        # Optional adapter capability; dispatch-only implementations stay valid.
+        signing_batch = getattr(self.dispatcher, "signing_batch", None)
+        with signing_batch() if callable(signing_batch) else nullcontext():
+            for _ in range(max(1, max_callbacks)):
+                result = self._dispatch_single_pending_callback()
+                if result is None:
+                    break
+                dispatched.append(result)
         return dispatched
 
     def _resolve_registered_callback_config(self, site: Any) -> dict[str, object]:

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -20,6 +24,12 @@ from app.core.callback_security import (
 from app.core.security import build_hmac_signature, build_secret_hash
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class _BatchSigningKey:
+    identity: tuple[str, str, bytes] | None
+    key: str
+
+
 class HttpRuntimeCallbackDispatcher:
     def __init__(
         self,
@@ -32,6 +42,35 @@ class HttpRuntimeCallbackDispatcher:
         self.transport = transport
         self._client = client
         self._owns_client = client is None
+        self._batch_signing_key: ContextVar[_BatchSigningKey | None] = ContextVar(
+            "runtime_callback_batch_signing_key", default=None
+        )
+
+    @contextmanager
+    def signing_batch(self) -> Iterator[None]:
+        """Reuse at most one derived key in this context, never across batches."""
+        token = self._batch_signing_key.set(_BatchSigningKey(None, ""))
+        try:
+            yield
+        finally:
+            self._batch_signing_key.reset(token)
+
+    def _get_signing_key(self, request: RuntimeCallbackDispatchRequest) -> str:
+        cached = self._batch_signing_key.get()
+        if cached is None:
+            return build_secret_hash(request.secret)
+        # Registration is still read per attempt; rotation invalidates this entry
+        # even when the operator retains the same site and key ID.
+        identity = (
+            request.site_id,
+            request.key_id,
+            hashlib.sha256(request.secret.encode("utf-8")).digest(),
+        )
+        if cached.identity == identity:
+            return cached.key
+        key = build_secret_hash(request.secret)
+        self._batch_signing_key.set(_BatchSigningKey(identity, key))
+        return key
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -145,7 +184,7 @@ class HttpRuntimeCallbackDispatcher:
                 "X-Npcink-Key-Id": request.key_id,
                 "X-Npcink-Timestamp": timestamp,
                 "X-Npcink-Signature": build_hmac_signature(
-                    build_secret_hash(request.secret),
+                    self._get_signing_key(request),
                     canonical,
                 ),
                 "X-Npcink-Callback-Id": callback_id,
