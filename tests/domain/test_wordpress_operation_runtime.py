@@ -1032,13 +1032,13 @@ def test_registered_task_provider_input_projects_profile_metadata() -> None:
     runtime = _runtime()
     provider_input = runtime.build_provider_input(
         _operation_payload(
-            task="seo_headline",
+            task="article_headline",
             request={
                 "prompt": "Write one accurate headline for this article.",
                 "task_contract": {
                     "contract_version": "ai_task_contract.v1",
-                    "ability_name": "example/seo-headline",
-                    "task": "seo_headline",
+                    "ability_name": "example/article-headline",
+                    "task": "article_headline",
                     "task_family": "generation",
                     "context_requirements": ["current_content", "site_style_profile"],
                     "constraints": [
@@ -1055,8 +1055,8 @@ def test_registered_task_provider_input_projects_profile_metadata() -> None:
 
     assert provider_input["metadata"] == {
         "source_surface": "wordpress_ai_connector",
-        "task": "seo_headline",
-        "ability_name": "example/seo-headline",
+        "task": "article_headline",
+        "ability_name": "example/article-headline",
         "task_family": "generation",
         "task_constraints": ["no_new_numbers", "single_value", "source_grounded"],
         "suggestion_only": True,
