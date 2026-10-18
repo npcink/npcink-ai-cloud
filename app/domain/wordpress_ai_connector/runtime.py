@@ -166,9 +166,9 @@ class WordPressOperationRuntime:
         # references to the last evaluated payload pair so identity comparison
         # cannot be fooled by object reuse, at the cost of retaining that one
         # request's payloads until the next title evaluation replaces them.
-        self._title_quality_cache: (
-            tuple[dict[str, Any], dict[str, Any], tuple[str, ...]] | None
-        ) = None
+        self._title_quality_cache: tuple[dict[str, Any], dict[str, Any], tuple[str, ...]] | None = (
+            None
+        )
 
     def source_artifact_id(self, input_payload: dict[str, Any]) -> str:
         operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
@@ -251,12 +251,14 @@ class WordPressOperationRuntime:
             "editorial_notes": (
                 "Review the supplied block and return strict JSON matching the Ability "
                 "schema. Do not return Markdown or explanations. When review_types are "
-                "provided and the block contains a clear readability, grammar, SEO, or "
+                "provided and the block contains a clear readability, grammar, or "
                 "accessibility issue, return a concrete suggestion. Use the requested "
                 "review type and include review_type, text, and priority in each "
                 "suggestion. If an objective issue is present, an empty suggestions array "
                 "is invalid; return at least one actionable suggestion. An empty suggestions "
-                "array is valid only when there is no material, objective issue."
+                "array is valid only when there is no material, objective issue. "
+                "SEO/AEO/GEO review is paused. Review only readability, grammar, and "
+                "accessibility; never return search-ranking or AI-visibility suggestions."
             ),
             "editorial_updates": (
                 "Rewrite the supplied content according to the editorial notes. Return only "
@@ -301,7 +303,7 @@ class WordPressOperationRuntime:
                 "or numbers absent from the scene input. Return only the title text."
             ),
             "slug_generation": (
-                "Generate concise SEO-friendly slug suggestions and return strict JSON "
+                "Generate concise readable URL slug suggestions and return strict JSON "
                 "matching the Ability schema. Use lowercase ASCII letters and digits "
                 "separated by hyphens only. Never return Unicode characters, percent "
                 "encoded bytes, percent signs, underscores, spaces, or a full URL."
@@ -766,6 +768,20 @@ class WordPressOperationRuntime:
                 source_text=str(input_payload.get("text") or ""),
                 strategy=str(metadata.get("taxonomy_strategy") or ""),
             )
+        elif task == "editorial_notes":
+            try:
+                notes = json.loads(output_text)
+            except (ValueError, TypeError):
+                return {}
+            if not isinstance(notes, dict) or not isinstance(notes.get("suggestions"), list):
+                return {}
+            notes["suggestions"] = [
+                item
+                for item in notes["suggestions"]
+                if isinstance(item, dict)
+                and str(item.get("review_type") or "").strip().lower() not in {"seo", "aeo", "geo"}
+            ]
+            normalized_text = json.dumps(notes, ensure_ascii=False, separators=(",", ":"))
         elif task == "slug_generation":
             normalized_text = self._normalize_slug_output(output_text)
         elif task in (
@@ -1132,11 +1148,7 @@ class WordPressOperationRuntime:
         # evaluation is O(source length); memoize on the exact payload pair so
         # repeated evaluations of the same output run the scans once.
         cache = self._title_quality_cache
-        if (
-            cache is not None
-            and cache[0] is input_payload
-            and cache[1] is provider_output
-        ):
+        if cache is not None and cache[0] is input_payload and cache[1] is provider_output:
             return cache[2]
         reasons = self._compute_title_quality_reasons(
             input_payload=input_payload,

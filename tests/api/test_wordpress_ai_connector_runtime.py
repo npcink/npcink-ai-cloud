@@ -29,12 +29,14 @@ from app.core.models import (
     CatalogInstance,
     CatalogModel,
     MediaArtifact,
+    ProviderCallRecord,
     ProviderConnection,
     RoutingBinding,
     RoutingProfile,
     RunRecord,
     ServiceAuditEvent,
     Site,
+    UsageMeterEvent,
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
@@ -2265,6 +2267,12 @@ def test_wordpress_ai_connector_uses_task_bound_hidden_site_reference(
 
     response = _execute(client, payload, idempotency_key=f"wp-ai-{mode}")
 
+    if task == "meta_description":
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "wordpress_operation.feature_paused"
+        assert not provider.requests
+        return
+
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
     assert expected_marker in provider_input["input"]
@@ -2327,6 +2335,12 @@ def test_wordpress_ai_connector_new_style_tasks_fall_back_when_retrieval_fails(
         ),
         idempotency_key=f"wp-ai-{mode}-deferred",
     )
+
+    if task == "meta_description":
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "wordpress_operation.feature_paused"
+        assert not provider.requests
+        return
 
     assert response.status_code == 200
     provider_input = provider.requests[0].input_payload
@@ -4044,10 +4058,10 @@ def test_wordpress_ai_connector_runtime_preserves_existing_only_taxonomy_terms(
     }
 
 
-def test_wordpress_ai_connector_runtime_normalizes_meta_description_scene(
+def test_wordpress_ai_connector_rejects_paused_meta_before_provider(
     tmp_path: Path,
 ) -> None:
-    _, client, provider = _build_client(tmp_path)
+    database_url, client, provider = _build_client(tmp_path)
     payload = _payload(
         {
             "task": "meta_description",
@@ -4062,18 +4076,16 @@ def test_wordpress_ai_connector_runtime_normalizes_meta_description_scene(
 
     response = _execute(client, payload, idempotency_key="wp-ai-connector-meta")
 
-    assert response.status_code == 200
-    provider_input = provider.requests[0].input_payload
-    assert "120 to 155 characters" in provider_input["input"]
-    assert provider_input["max_tokens"] == 80
-    result_text = response.json()["data"]["result"]["output"]["output_text"]
-    assert "**" not in result_text
-    assert "###" not in result_text
-    assert len(result_text) <= 155
-    assert "云端运行时" in result_text
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "wordpress_operation.feature_paused"
+    assert not provider.requests
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(ProviderCallRecord))) == []
+        assert list(session.scalars(select(UsageMeterEvent))) == []
+        assert list(session.scalars(select(RunRecord))) == []
 
 
-def test_wordpress_ai_connector_runtime_falls_back_on_meta_boilerplate(
+def test_wordpress_ai_connector_paused_meta_has_no_fallback(
     tmp_path: Path,
 ) -> None:
     _, client, _ = _build_client(tmp_path)
@@ -4092,10 +4104,8 @@ def test_wordpress_ai_connector_runtime_falls_back_on_meta_boilerplate(
 
     response = _execute(client, payload, idempotency_key="wp-ai-connector-meta-boilerplate")
 
-    assert response.status_code == 200
-    result_text = response.json()["data"]["result"]["output"]["output_text"]
-    assert "以下是基于" not in result_text
-    assert "建议式输出" in result_text
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "wordpress_operation.feature_paused"
 
 
 def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(

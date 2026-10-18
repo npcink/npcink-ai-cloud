@@ -192,6 +192,22 @@ class WordPressOperationContractViolation(ValueError):
         self.message = message
 
 
+# Runtime availability only; local Ability truth and historical results are retained.
+PAUSED_DISCOVERABILITY_TASKS = frozenset(
+    {
+        "meta_description",
+        "seo_title",
+        "seo_description",
+        "seo_metadata",
+        "aeo_summary",
+        "answer_summary",
+        "geo_summary",
+        "structured_data_hints",
+        "content_discoverability",
+    }
+)
+
+
 def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise WordPressOperationContractViolation(
@@ -216,6 +232,21 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
             "wordpress_operation.request_required",
             "WordPress operation contract requires a scene request object",
         )
+    if task in PAUSED_DISCOVERABILITY_TASKS:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.feature_paused",
+            "SEO/AEO/GEO specialist assistance is paused",
+        )
+    if task == "editorial_notes" and isinstance(request.get("review_types"), list):
+        review_types = request["review_types"]
+        if review_types and all(str(item).strip().lower() in {"seo", "aeo", "geo"} for item in review_types):
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.feature_paused", "SEO editorial review is paused"
+            )
+        request = {
+            **request,
+            "review_types": [item for item in review_types if str(item).strip().lower() not in {"seo", "aeo", "geo"}],
+        }
     if task == "alt_text_suggest":
         request = validate_alt_text_suggest_request(request)
 
@@ -501,9 +532,9 @@ def validate_ai_task_contract(value: Any, *, task: str) -> None:
             ensure_ascii=True,
             separators=(",", ":"),
         ).replace("/", "\\/")
-        expected_hash = "sha256:" + hashlib.sha256(
-            canonical_schema_json.encode("utf-8")
-        ).hexdigest()
+        expected_hash = (
+            "sha256:" + hashlib.sha256(canonical_schema_json.encode("utf-8")).hexdigest()
+        )
         if expected_hash != schema_hash:
             raise WordPressOperationContractViolation(
                 "wordpress_operation.ai_task_contract_schema_hash_mismatch",
