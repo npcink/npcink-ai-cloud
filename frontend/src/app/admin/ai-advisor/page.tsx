@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { advisorActionCatalog, advisorActionHref, advisorMetrics, advisorScope } from '@/features/admin/ai-advisor/advisor-presentation';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1980,6 +1981,19 @@ function SafetyRow({
 }
 
 export default function AdminAiAdvisorPage() {
+  const { t } = useLocale();
+  if (OPERATIONS_ADVISOR_PAUSED) {
+    return (
+      <BackofficePageStack>
+        <BackofficePageHeader title={t('admin.ai_advisor.title', {}, 'Operations Advisor')} description={t('admin.ai_advisor.paused_description')} />
+        <BackofficeSectionPanel data-ui="ai-advisor-paused">
+          <p role="status">{t('admin.ai_advisor.paused')}</p>
+          <Link className="btn btn-secondary mt-4" href="/admin/troubleshooting">{t('admin.ai_advisor.back_to_diagnostics')}</Link>
+        </BackofficeSectionPanel>
+      </BackofficePageStack>
+    );
+  }
+
   return (
     <Suspense fallback={<LoadingFallback />}>
       <AdminAiAdvisorContent />

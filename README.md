@@ -14,6 +14,10 @@ It is not a second WordPress control plane, ability registry, workflow
 registry, prompt/preset source of truth, approval system, or final WordPress
 write owner.
 
+Operations Advisor is temporarily paused. New analysis and summary actions are
+unavailable; historical summary records remain readable through authenticated
+support interfaces. See [reversible pauses](docs/reversible-feature-pauses-v1.md).
+
 ## Current Focus
 
 The current product focus is the normal WordPress Ability -> Addon -> Cloud

@@ -92,11 +92,11 @@ test('observation navigation wraps on mobile and remains keyboard reachable', as
 
 test('diagnostic pages share visible entrances and retain an owning parent', async ({ page }, testInfo) => {
   await navigationMocks(page);
-  for (const route of ['/admin/audit', '/admin/agent-feedback', '/admin/ai-advisor']) {
+  for (const route of ['/admin/audit', '/admin/agent-feedback']) {
     await page.goto(route);
     await expectParent(page, '/admin/troubleshooting');
     const nav = page.locator('[data-ui="admin-diagnostic-navigation"]');
-    await expect(nav.getByRole('link')).toHaveCount(4);
+    await expect(nav.getByRole('link')).toHaveCount(3);
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
     await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('href', route === '/admin/agent-feedback' ? `${route}?window=24` : route);
     await page.screenshot({ path: testInfo.outputPath(`${route.split('/').at(-1)}-1440.png`), fullPage: true });
@@ -119,7 +119,7 @@ test('audit navigation translates supported site scope and exposes a return entr
   await expect(page).toHaveURL(/\/admin\/audit\?site_id=site_mvp$/);
   await expect(page.locator('input[name="site_id"]')).toHaveValue('site_mvp');
   await expect(nav.locator('a[href^="/admin/agent-feedback"]')).toHaveAttribute('href', '/admin/agent-feedback?window=24&site=site_mvp');
-  await expect(nav.locator('a[href^="/admin/ai-advisor"]')).toHaveAttribute('href', '/admin/ai-advisor?site=site_mvp');
+  await expect(nav.locator('a[href^="/admin/ai-advisor"]')).toHaveCount(0);
 });
 
 test('plugin navigation stays available on a load error and explains short-window transitions', async ({ page }) => {
@@ -165,12 +165,12 @@ test('every observation and diagnostic page fits the whole narrow viewport', asy
         : route.includes('view=quality') ? '/api/admin/editor-assist-quality'
           : route.includes('usage-statistics') || route === '/admin/troubleshooting' ? '/api/admin/runtime-telemetry'
             : `/api${route}`;
-    const loaded = page.waitForResponse(response => new URL(response.url()).pathname === endpoint);
+    const loaded = route === '/admin/ai-advisor' ? Promise.resolve() : page.waitForResponse(response => new URL(response.url()).pathname === endpoint);
     await page.goto(route);
     await loaded;
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expectParent(page, route.includes('observability') || route.includes('usage-statistics') ? '/admin/usage-statistics' : '/admin/troubleshooting');
-    if (route === '/admin/ai-advisor') await expect(page.locator('[data-ui="advisor-current-diagnosis"]')).toBeVisible();
+    if (route === '/admin/ai-advisor') await expect(page.locator('[data-ui="ai-advisor-paused"]')).toBeVisible();
     await expectWholePageFits(page);
     await page.screenshot({ path: testInfo.outputPath(`${route.split('/').at(-1)!.replace('?', '-')}-390.png`), fullPage: true });
   }
@@ -203,23 +203,16 @@ test('summary windows match controls, URL and requests while runtime keeps 90 da
   await expect(nav.locator('a[href^="/admin/media-observability"]')).toHaveAttribute('title', /近 30 天|last 30 days/);
 });
 
-test('populated and failed advisor states stay readable on narrow screens without AI calls', async ({ page }) => {
+test('paused advisor stays readable on narrow screens without any advisor calls', async ({ page }) => {
   await navigationMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  const aiRequests: string[] = [];
-  page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/advisor/')) aiRequests.push(request.url()); });
+  const requests: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/admin/advisor/')) requests.push(request.url()); });
   await page.goto('/admin/ai-advisor');
-  const panel = page.locator('[data-ui="advisor-current-diagnosis"]');
-  await expect(panel).toBeVisible();
-  await expect(panel).toContainText(/高置信度|High confidence/);
+  await expect(page.locator('[data-ui="ai-advisor-paused"]')).toBeVisible();
   await expectWholePageFits(page);
-  await page.route('**/api/admin/advisor/ops-summary-preview?*', route => route.fulfill({ status: 503, json: {} }));
-  await page.reload();
-  await expect(page.locator('[data-ui="admin-diagnostic-navigation"]')).toBeVisible();
-  await expectWholePageFits(page);
-  expect(aiRequests).toEqual([]);
+  expect(requests).toEqual([]);
 });
-
 
 test('diagnostic tool footer uses destination capabilities for every direct entrance', async ({ page }) => {
   await navigationMocks(page);
