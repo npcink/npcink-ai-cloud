@@ -1,5 +1,11 @@
 # Npcink AI Cloud
 
+SEO/AEO/GEO specialist runtime tasks are temporarily paused from 2026-10-18.
+New specialist requests fail before Provider execution, including the legacy
+and task-contract paths. Ordinary titles, excerpts, summaries, translation,
+slug suggestions, ALT and other general runtime remain supported. Existing
+records are retained; ownership permission below does not enable paused tasks.
+
 Npcink AI Cloud is the hosted runtime enhancement layer for Npcink AI. It
 owns hosted execution, provider adapters, usage and entitlement evidence,
 health diagnostics, artifacts, and bounded Cloud operator/customer surfaces.

@@ -196,7 +196,7 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
     assert result["runtime_owner"] == "npcink-local-automation-runtime"
     assert result["cloud_role"] == "runtime_detail"
     assert result["summary"]["items_scanned"] == 2
-    assert result["summary"]["score_version"] == "nightly_content_quality_score.v2"
+    assert result["summary"]["score_version"] == "nightly_content_quality_score.v3"
     assert result["eligibility_summary"] == {
         "items_total": 2,
         "eligible_count": 1,
@@ -224,16 +224,16 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
     assert result["safety"]["final_write_path"] == "core_proposal_required"
     assert result["safety"]["article_body_generated"] is False
     assert result["actions"][0]["status"] == "succeeded"
-    assert "missing_meta_description" in result["actions"][0]["reason_codes"]
+    assert "missing_meta_description" not in result["actions"][0]["reason_codes"]
     assert result["actions"][0]["score_breakdown"]["score_version"] == (
-        "nightly_content_quality_score.v2"
+        "nightly_content_quality_score.v3"
     )
     score_dimensions = {
         item["id"]: item for item in result["actions"][0]["score_breakdown"]["dimensions"]
     }
-    assert "missing_meta_description" in score_dimensions[
-        "metadata_completeness"
-    ]["reason_codes"]
+    assert (
+        "missing_meta_description" not in score_dimensions["metadata_completeness"]["reason_codes"]
+    )
     assert score_dimensions["media_accessibility"]["impact"] == 10
     assert result["actions"][0]["priority_reason"] == "critical_score"
     assert result["review_items"][0]["action_id"] == "action_001"
@@ -311,11 +311,10 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
         "action_id": "action_001",
         "object_type": "post",
         "object_id": "123",
-        "score": 35,
+        "score": 49,
         "severity": "critical",
         "reason_codes": [
             "short_title",
-            "missing_meta_description",
             "thin_content",
             "missing_internal_links",
             "missing_image_alt_text",
@@ -375,9 +374,10 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
         "cloud_scheduler_truth": False,
         "direct_wordpress_write": False,
     }
-    assert "automatic_seo_meta_write" in result["nightly_intelligence_detail"][
-        "forbidden_outputs_absent"
-    ]
+    assert (
+        "automatic_seo_meta_write"
+        in result["nightly_intelligence_detail"]["forbidden_outputs_absent"]
+    )
     assert result["nightly_run_detail"]["contract_version"] == (
         "nightly_site_inspection_run_detail.v1"
     )
@@ -388,8 +388,8 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
         "selected_count": 1,
         "warning_count": 0,
         "critical_count": 1,
-        "average_score": 67.5,
-        "score_version": "nightly_content_quality_score.v2",
+        "average_score": 74.5,
+        "score_version": "nightly_content_quality_score.v3",
     }
     assert result["nightly_run_detail"]["review_queue"] == {
         "available": True,
@@ -405,9 +405,10 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
         "cloud_scheduler_truth": False,
         "direct_wordpress_write": False,
     }
-    assert result["nightly_run_detail"]["core_handoff_summary"][
-        "proposal_state_owner"
-    ] == "npcink-governance-core"
+    assert (
+        result["nightly_run_detail"]["core_handoff_summary"]["proposal_state_owner"]
+        == "npcink-governance-core"
+    )
     assert result["nightly_run_detail"]["read_only_boundary"] == {
         "cloud_role": "runtime_detail",
         "cloud_scheduler_truth": False,

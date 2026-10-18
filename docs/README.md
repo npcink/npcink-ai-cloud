@@ -1,5 +1,7 @@
 # Npcink AI Cloud Documentation Index
 
+- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — temporary runtime availability and v3 inspection scores; history retained.
+
 Status: active repository index.
 
 Purpose: provide one maintained entry point for current Cloud authority while
@@ -84,6 +86,8 @@ explicitly names.
 New or materially revised documents should place a clear `Status:` line near
 the top. When replacing a normative document, name its successor instead of
 deleting the old decision history.
+
+- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — reversible task availability and new inspection score semantics; no data migration.
 
 ## Product Boundaries
 
