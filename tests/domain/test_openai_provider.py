@@ -9,7 +9,215 @@ import pytest
 from app.adapters.providers import openai as openai_provider
 from app.adapters.providers.base import ProviderExecutionError, ProviderExecutionRequest
 from app.adapters.providers.openai import OpenAIProviderAdapter
+from app.core.config import Settings
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
+from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
+
+
+@pytest.mark.parametrize("endpoint_variant", ["responses", "chat_completions"])
+@pytest.mark.parametrize(
+    "model_id", ["deepseek/deepseek-v4-flash", "deepseek-v4-pro", "deepseek-flash"]
+)
+def test_deepseek_title_has_visible_output_without_spending_budget_on_reasoning(
+    endpoint_variant: str, model_id: str
+) -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        calls.append(payload)
+        if endpoint_variant == "responses":
+            complete = payload.get("reasoning") == {"effort": "none"}
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed" if complete else "incomplete",
+                    "incomplete_details": None if complete else {"reason": "max_output_tokens"},
+                    "output": (
+                        [
+                            {
+                                "type": "message",
+                                "content": [{"type": "output_text", "text": "AI时代的写作困境"}],
+                            }
+                        ]
+                        if complete
+                        else []
+                    ),
+                    "usage": {
+                        "input_tokens": 925,
+                        "output_tokens": 12 if complete else 48,
+                        "output_tokens_details": {"reasoning_tokens": 0 if complete else 48},
+                    },
+                },
+            )
+        complete = payload.get("thinking") == {"type": "disabled"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop" if complete else "length",
+                        "message": {
+                            "role": "assistant",
+                            "content": "AI时代的写作困境" if complete else "",
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 925, "completion_tokens": 12 if complete else 48},
+            },
+        )
+
+    provider_input = WordPressOperationRuntime(
+        settings=Settings(_env_file=None), providers={}
+    ).build_provider_input(
+        {
+            "operation_contract": {
+                "task": "title_generation",
+                "request": {"source_text": "文章正文。" * 60},
+            }
+        }
+    )
+    adapter = OpenAIProviderAdapter(api_key="mock-key", transport=httpx.MockTransport(handler))
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant=endpoint_variant,
+        model_id=model_id,
+        input_payload=provider_input,
+    )
+    request.ability_name = "npcink-cloud/connector-runtime"
+    result = adapter.execute(request)
+
+    assert result.output["output_text"] == "AI时代的写作困境"
+    assert len(calls) == 1
+    assert calls[0]["max_output_tokens" if endpoint_variant == "responses" else "max_tokens"] == 256
+
+
+@pytest.mark.parametrize("endpoint_variant", ["responses", "chat_completions"])
+@pytest.mark.parametrize("effort", ["none", "high"])
+def test_deepseek_title_preserves_explicit_provider_reasoning_effort(
+    endpoint_variant: str, effort: str
+) -> None:
+    adapter = OpenAIProviderAdapter(default_reasoning_effort=effort)
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant=endpoint_variant,
+        model_id="deepseek-v4-flash",
+        input_payload={
+            "input": "标题",
+            "metadata": {
+                "source_surface": "wordpress_ai_connector",
+                "task": "title_generation",
+            },
+        },
+    )
+    request.ability_name = "npcink-cloud/connector-runtime"
+    _, payload = adapter._build_http_request(request)
+    if endpoint_variant == "responses":
+        assert payload["reasoning"] == {"effort": effort}
+        assert "reasoning_effort" not in payload
+    else:
+        assert payload["reasoning_effort"] == effort
+        assert "thinking" not in payload
+
+
+@pytest.mark.parametrize(
+    "endpoint_variant,explicit",
+    [
+        ("responses", {"reasoning": {"effort": "high"}}),
+        ("chat_completions", {"thinking": {"type": "enabled"}}),
+    ],
+)
+def test_deepseek_title_preserves_explicit_request_reasoning(
+    endpoint_variant: str, explicit: dict[str, object]
+) -> None:
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant=endpoint_variant,
+        model_id="deepseek-v4-flash",
+        input_payload={
+            "input": "标题",
+            "extra": explicit,
+            "metadata": {"source_surface": "wordpress_ai_connector", "task": "title_generation"},
+        },
+    )
+    request.ability_name = "npcink-cloud/connector-runtime"
+    _, payload = OpenAIProviderAdapter(default_reasoning_effort="none")._build_http_request(request)
+    for key, value in explicit.items():
+        assert payload[key] == value
+    assert ("thinking" in payload) == ("thinking" in explicit)
+    assert ("reasoning" in payload) == ("reasoning" in explicit)
+    assert "reasoning_effort" not in payload
+
+
+@pytest.mark.parametrize(
+    "model_id,task,ability_name",
+    [
+        ("gpt-5.4", "title_generation", "npcink-cloud/connector-runtime"),
+        ("deepseek-reasoner", "title_generation", "npcink-cloud/connector-runtime"),
+        ("deepseek-v4-flash", "content_rewrite", "npcink-cloud/connector-runtime"),
+        ("deepseek-v4-flash", "title_generation", "other/ability"),
+    ],
+)
+@pytest.mark.parametrize("endpoint_variant", ["responses", "chat_completions"])
+def test_deepseek_title_reasoning_default_is_scoped(
+    model_id: str, task: str, ability_name: str, endpoint_variant: str
+) -> None:
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant=endpoint_variant,
+        model_id=model_id,
+        input_payload={
+            "input": "正文",
+            "metadata": {
+                "source_surface": "wordpress_ai_connector",
+                "task": task,
+            },
+        },
+    )
+    request.ability_name = ability_name
+    _, payload = OpenAIProviderAdapter()._build_http_request(request)
+    assert not {"reasoning", "thinking", "reasoning_effort"} & payload.keys()
+
+
+def test_deepseek_title_incomplete_keeps_reasoning_usage_and_fails_closed() -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="mock-key",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                    "output": [{"type": "reasoning", "summary": []}],
+                    "usage": {
+                        "input_tokens": 925,
+                        "output_tokens": 48,
+                        "output_tokens_details": {"reasoning_tokens": 48},
+                    },
+                },
+            )
+        ),
+    )
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant="responses",
+        model_id="deepseek/deepseek-v4-flash",
+        input_payload={
+            "input": "标题",
+            "max_output_tokens": 48,
+            "extra": {"reasoning": {"effort": "high"}},
+            "metadata": {"source_surface": "wordpress_ai_connector", "task": "title_generation"},
+        },
+    )
+    request.ability_name = "npcink-cloud/connector-runtime"
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(request)
+    assert error.value.error_code == "provider.output_contract_invalid"
+    assert error.value.tokens_in == 925
+    assert error.value.tokens_out == 48
+    assert error.value.usage_context["reasoning_tokens"] == 48
+    assert error.value.usage_context["response_status"] == "incomplete"
+    assert error.value.cost > 0
 
 
 def test_openai_chat_projection_prefers_complete_input_over_source_text() -> None:

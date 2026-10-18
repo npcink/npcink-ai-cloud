@@ -507,7 +507,10 @@ class WordPressOperationRuntime:
             "editorial_updates": 256,
             "excerpt_generation": 140,
             "meta_description": 80,
-            "title_generation": 48,
+            # Leave bounded headroom for CJK titles and a JSON schema envelope.
+            # DeepSeek's default reasoning is handled by the provider adapter;
+            # raising this alone must not substitute for the correct mode.
+            "title_generation": 256,
         }.get(
             task,
             {
