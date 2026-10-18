@@ -644,3 +644,37 @@ If the next queue is controlled production validation, create a durable
 handoff but do not treat that record as deployment authorization. Freeze the
 exact candidate only after the stage-close conditions hold, then follow the
 current production release policy and checklist.
+
+## Reversible Pauses and Deferred Release Acceptance
+
+The October 2026 specialist pause established these closeout distinctions:
+
+- A reversible pause needs both a runtime availability guard and a positive
+  generic-capability regression. Cover registered aliases, legacy requests and
+  task contracts before Provider execution; hiding an entry point alone is not
+  evidence that execution stopped. Classify tasks by contract, not body keywords.
+- Preserve historical results and configuration. Mask paused settings in the
+  effective runtime context without deleting the stored values. Restoration is
+  a newly reviewed change against current consumers, not permission inherited
+  from old approvals, cached responses or retained implementations.
+- Bind a release to its merged PR, source tree, image IDs and bundle checksum.
+  A squash merge can replace the topic SHA. Reuse exact-tree CI evidence only
+  through the governed evidence validator; skipped lanes prove no test execution.
+- Report source merged into `production`, bundle verified, metadata preflight
+  ready, server deployed and business smoke accepted separately. A live probe
+  does not prove readiness or authenticated smoke, and secret-name presence
+  does not prove a short-lived credential remains usable.
+- If production acceptance is deferred, record the installed revision, pending
+  smoke failures, expiring scan exceptions and artifact retention. Recheck them
+  against the next release scope; a previous validation is not deployment authority.
+- Distinguish an offline verified rollback bundle from host recoverability.
+  Actual daemon image mappings, protected configuration and backup restoration
+  require their own evidence. Reassess rollback compatibility when later releases
+  introduce migrations or configuration changes; never archive secret values.
+
+For task cleanup, follow the existing
+[worktree lifecycle](single-session-worktree-lifecycle-v1.md): clean files,
+merged source, removed worktrees and deleted branches are separate outcomes.
+Preserve required release candidates, ignored evidence and rollback materials
+outside a disposable checkout before exact-path cleanup. Other tasks are out
+of scope even when their branches look old.
