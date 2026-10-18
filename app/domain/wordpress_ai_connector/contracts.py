@@ -239,13 +239,19 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
         )
     if task == "editorial_notes" and isinstance(request.get("review_types"), list):
         review_types = request["review_types"]
-        if review_types and all(str(item).strip().lower() in {"seo", "aeo", "geo"} for item in review_types):
+        if review_types and all(
+            str(item).strip().lower() in {"seo", "aeo", "geo"} for item in review_types
+        ):
             raise WordPressOperationContractViolation(
                 "wordpress_operation.feature_paused", "SEO editorial review is paused"
             )
         request = {
             **request,
-            "review_types": [item for item in review_types if str(item).strip().lower() not in {"seo", "aeo", "geo"}],
+            "review_types": [
+                item
+                for item in review_types
+                if str(item).strip().lower() not in {"seo", "aeo", "geo"}
+            ],
         }
     if task == "alt_text_suggest":
         request = validate_alt_text_suggest_request(request)
