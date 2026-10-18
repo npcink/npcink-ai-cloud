@@ -144,11 +144,12 @@ unset \
 	NPCINK_CLOUD_PORTAL_LOGIN_CODE \
 	NPCINK_CLOUD_RELEASE_KEY_SECRET
 
+INTERNAL_ORIGIN_HEADERS=""
 # A distinct diagnostic endpoint must be operator-local, never an arbitrary
 # destination for the internal token. BASE_URL remains the public TLS origin.
 if [ -z "${NPCINK_CLOUD_INTERNAL_BASE_URL:-}" ]; then
 	INTERNAL_BASE_URL="${BASE_URL}"
-elif ! python3 - "${INTERNAL_BASE_URL}" <<'PY_URL'
+elif ! INTERNAL_ORIGIN_HEADERS="$(python3 - "${INTERNAL_BASE_URL}" "${BASE_URL}" <<'PY_URL'
 import sys
 from urllib.parse import urlsplit
 try:
@@ -159,23 +160,45 @@ try:
              and not url.query and not url.fragment)
 except ValueError:
     valid = False
-raise SystemExit(0 if valid else 1)
+if not valid:
+    raise SystemExit(1)
+# The proxy must see the same trusted origin as the public HTTPS request.
+# Reject userinfo/control characters rather than interpolate them into headers.
+try:
+    public = urlsplit(sys.argv[2])
+    valid = (public.scheme in ("http", "https") and bool(public.hostname)
+             and public.username is None and public.password is None
+             and public.path in ("", "/") and not public.query and not public.fragment
+             and not any(ord(c) <= 32 or ord(c) == 127 for c in sys.argv[2]))
+    host = (public.hostname or "").encode("idna").decode("ascii").lower()
+    if ":" in host:
+        host = f"[{host}]"
+    if public.port is not None and public.port != {"http": 80, "https": 443}.get(public.scheme):
+        host = f"{host}:{public.port}"
+except (ValueError, UnicodeError):
+    valid = False
+if not valid:
+    raise SystemExit(1)
+print(f"Host: {host}\nX-Forwarded-Host: {host}\nX-Forwarded-Proto: {public.scheme}")
 PY_URL
-then
-	fail "NPCINK_CLOUD_INTERNAL_BASE_URL must be an explicit HTTP IPv4 loopback origin"
+)"; then
+	fail "Invalid smoke origin: internal must be an HTTP IPv4 loopback origin; public must be an HTTP(S) origin"
 fi
 
 if [ -z "${INTERNAL_AUTH_TOKEN}" ]; then
 	fail "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN is required through --credentials-file or the process environment"
 fi
-if [ -z "${ADMIN_KEY}" ]; then
-	fail "operator-only NPCINK_CLOUD_ADMIN_KEY is required through --credentials-file or the process environment"
-fi
-if [ -z "${MEMBER_EMAIL}" ]; then
-	fail "--member-email or NPCINK_CLOUD_RELEASE_MEMBER_EMAIL is required"
-fi
-if [ -z "${RUNTIME_SITE_ID}" ] || [ -z "${RUNTIME_KEY_ID}" ] || [ -z "${RUNTIME_SECRET}" ]; then
-	fail "release smoke requires signed runtime credentials through --credentials-file or the process environment"
+# Pure preflight never uses login, mailbox, or signed-runtime credentials.
+if [ "${PREFLIGHT_ONLY}" != "1" ]; then
+	if [ -z "${ADMIN_KEY}" ]; then
+		fail "operator-only NPCINK_CLOUD_ADMIN_KEY is required through --credentials-file or the process environment"
+	fi
+	if [ -z "${MEMBER_EMAIL}" ]; then
+		fail "--member-email or NPCINK_CLOUD_RELEASE_MEMBER_EMAIL is required"
+	fi
+	if [ -z "${RUNTIME_SITE_ID}" ] || [ -z "${RUNTIME_KEY_ID}" ] || [ -z "${RUNTIME_SECRET}" ]; then
+		fail "release smoke requires signed runtime credentials through --credentials-file or the process environment"
+	fi
 fi
 
 json_read_path() {
@@ -280,7 +303,7 @@ cleanup_tmp_dir() {
 }
 trap cleanup_tmp_dir EXIT
 chmod 0700 "${TMP_DIR}"
-if [ -n "${PERSISTED_PORTAL_COOKIE_JAR}" ]; then
+if [ "${PREFLIGHT_ONLY}" != "1" ] && [ -n "${PERSISTED_PORTAL_COOKIE_JAR}" ]; then
 	if [ -L "${PERSISTED_PORTAL_COOKIE_JAR}" ]; then
 		fail "NPCINK_CLOUD_PORTAL_COOKIE_JAR must not be a symbolic link"
 	fi
@@ -341,6 +364,11 @@ http_request() {
 	(
 		umask 077
 		printf '%s\n' "Accept: application/json" >"${request_headers}"
+		if [ -n "${INTERNAL_ORIGIN_HEADERS}" ]; then
+			case "${url}" in
+				"${INTERNAL_BASE_URL%/}/"*) printf '%s\n' "${INTERNAL_ORIGIN_HEADERS}" >>"${request_headers}" ;;
+			esac
+		fi
 		for header in "$@"; do
 			if [ -n "${header}" ]; then
 				printf '%s\n' "${header}" >>"${request_headers}"
