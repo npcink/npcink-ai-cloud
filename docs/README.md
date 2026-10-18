@@ -29,6 +29,7 @@ as current truth.
 | 查 Provider 账户预算实现与零成本验证边界 | [Provider 预算实现说明](provider-account-spend-budget-implementation-v1.md) — 记录单点 dispatch 闸门、日/月 claim、阈值、未知结果保留和本地验证边界 |
 | 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
+| 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
