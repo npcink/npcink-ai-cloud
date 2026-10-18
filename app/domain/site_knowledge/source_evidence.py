@@ -145,7 +145,10 @@ def reconcile_source_evidence(
         normalized = _normalize_public_document(document)
         if normalized is None or not isinstance(normalized["delivery_evidence"], dict):
             raise ValueError("public document with delivery evidence required")
-        key = (normalized["source_type"], normalized["source_id"])
+        source_type, source_id = normalized["source_type"], normalized["source_id"]
+        if not isinstance(source_type, str) or not isinstance(source_id, int):
+            raise ValueError("normalized evidence source key is invalid")
+        key = (source_type, source_id)
         row = indexed.get(key)
         if (
             key not in keep
