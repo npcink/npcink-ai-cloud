@@ -44,7 +44,12 @@ ownership, and must not expose provider reasoning or raw diagnostic output.
 4. **Keep reasoning controls explicit and endpoint-appropriate.** Provider
    defaults that belong to Chat Completions are not injected into Responses.
    Responses reasoning options are passed only when the request explicitly
-   supplies the supported Responses option.
+   supplies the supported Responses option, or a documented, model-scoped
+   runtime policy provides a verified endpoint-specific mapping. The
+   [DeepSeek title policy](../deepseek-title-output-compatibility-v1.md)
+   is limited to WordPress connector title generation on its listed DeepSeek
+   models: default non-thinking, explicit request mode first, then explicit
+   Provider effort. This is not a gateway-wide default or endpoint downgrade.
 
 5. **Separate model evidence.** The response keeps the requested model ID and
    the gateway-reported model ID as separate fields. The reported ID is
