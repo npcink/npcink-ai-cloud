@@ -869,6 +869,29 @@ def _get_result(
     return client.get(path, headers=headers)
 
 
+@pytest.mark.parametrize("max_tokens", [32, 512])
+def test_wordpress_ai_connector_title_preserves_explicit_output_limit(
+    tmp_path: Path, max_tokens: int
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    response = _execute(
+        client,
+        _payload(
+            {
+                "request": {
+                    "source_text": "A source article for a short title.",
+                    "max_tokens": max_tokens,
+                }
+            }
+        ),
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "succeeded"
+    assert len(provider.requests) == 1
+    assert provider.requests[0].input_payload["max_tokens"] == max_tokens
+    assert provider.requests[0].input_payload["max_output_tokens"] == max_tokens
+
+
 def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path) -> None:
     database_url, client, provider = _build_client(tmp_path)
 
@@ -919,8 +942,8 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         "through a hosted runtime.</content>"
     )
     assert provider_input["input"].count(provider_input["text"]) == 1
-    assert provider_input["max_tokens"] == 48
-    assert provider_input["max_output_tokens"] == 48
+    assert provider_input["max_tokens"] == 256
+    assert provider_input["max_output_tokens"] == 256
     assert provider_input["metadata"]["source_surface"] == "wordpress_ai_connector"
     assert provider_input["metadata"]["suggestion_only"] is True
     assert "site_url" not in provider_input
