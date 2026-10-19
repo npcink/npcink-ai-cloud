@@ -47,6 +47,7 @@ test('read-only navigation blocks administrative GET mutations and URL credentia
   for (const path of ['/wp-admin/post.php?post=42&action=trash',
     '/wp-admin/post.php?post=43&action=edit', '/wp-admin/edit.php?action2=trash',
     '/wp-admin/admin-post.php?action=plugin_operation', '/wp-admin/admin-ajax.php',
+    '/wp-admin/post-new.php', '/wp-admin/admin.php?page=unrelated_plugin',
     '/wp-login.php?action=logout']) assert.equal(p.allow(target.site_url + path, 'GET'), false);
   assert.equal(p.allow('https://user:secret@wordpress.example.test/wp-admin/', 'GET'), false);
   assert.equal(p.allow(target.site_url + '/wp-admin/post.php?post=42&action=edit', 'GET'), true);

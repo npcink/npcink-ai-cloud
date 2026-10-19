@@ -63,7 +63,9 @@ export class RequestBoundary {
     }
     if (['GET', 'HEAD'].includes(method)) {
       // WordPress also exposes state changes through administrative GET links.
-      if (/^\/wp-admin\/(?:admin-post|admin-ajax)\.php$/.test(u.pathname)) return reject(true);
+      if (u.pathname.startsWith('/wp-admin/') && u.pathname.endsWith('.php')
+        && !['/wp-admin/index.php', '/wp-admin/post.php', '/wp-admin/load-scripts.php',
+          '/wp-admin/load-styles.php'].includes(u.pathname)) return reject(true);
       if ((u.pathname.startsWith('/wp-admin/') || u.pathname === '/wp-login.php')
         && (u.searchParams.has('action') || u.searchParams.has('action2'))) {
         const allowedEdit = u.pathname === '/wp-admin/post.php'
