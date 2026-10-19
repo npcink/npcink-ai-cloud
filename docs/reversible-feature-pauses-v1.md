@@ -189,3 +189,32 @@ outbound HTTP attempts and zero content writes. Addon Playground activation,
 PHPStan, WordPress.org guard and strict Plugin Check passed. POT freshness was
 repaired by the normal i18n refresh; compiled translation mappings are identical.
 Publication, CI, merged-source and M4 acceptance receipts follow separately.
+
+
+Merge-continuation verification also covered the retained internal audio
+workbench. Its article-audio-summary path previously prepared a text script
+before the runtime audio pause. The route now rejects before constructing the
+workbench, and direct workbench callers reject before payload/context/script
+work. A new default-policy API suite covers both audio intents, authentication,
+direct calls and recent-history reads. Retained workbench tests explicitly
+unpause only their own fixture. The related audio/provider/media-observability
+suite passes 61 tests after the fix; the new tests failed before the fix.
+There is no browser audio-preview entrypoint to remove (existing frontend
+contracts already forbid it).
+
+Full Admin visual matrix on the isolated current-base worktree: 95 passed.
+The initial startup-only failure from dependency symlinks was corrected with a
+frozen-lockfile offline install (451 packages, zero downloads); no dependency
+source changed. M4 LAN candidate sync succeeded without an image build, its
+focused API/domain suite passed 116 tests, and the actual M4-served paused page
+passed its browser check. Source was subsequently updated for the audio
+workbench guard, requiring a new candidate sync before final acceptance.
+
+Addon PR #296 merged as `6750794e`; every PHP compatibility, WordPress AI,
+release-static and advisory PHPStan check passed. Its pre-publish local OCR is
+incomplete (13 selected, zero successfully reviewed; 5,890 tokens before budget
+stopped dispatch). Addon and Toolbox OCR workflows are disabled_manually and
+are not re-enabled by this task. Toolbox PR #281 follows the documented
+publisher exception path with the unavailable-review reason recorded in its
+body. Cloud CNA PR #1153's bounded OCR also failed; mandatory deterministic
+checks remain the merge authority. No missing review is described as clean.

@@ -42,6 +42,14 @@ from tests.conftest import (
 )
 
 
+@pytest.fixture(autouse=True)
+def retained_audio_workbench_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise retained implementation separately from default-pause API tests."""
+    from app.domain.runtime import availability
+
+    monkeypatch.setattr(availability, "PAUSED_RUNTIME_FEATURES", frozenset())
+
+
 class FixedAudioSummaryScriptProvider:
     provider_id = "openai"
     display_name = "Fixed Text Provider"

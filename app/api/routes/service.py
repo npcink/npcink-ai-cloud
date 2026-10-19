@@ -33,6 +33,7 @@ from app.domain.agent_workflow_metadata import (
     get_agent_workflow_metadata_projection,
     get_workflow_metadata,
 )
+from app.domain.audio_generation.contracts import AUDIO_GENERATION_CLOUD_ABILITY
 from app.domain.audio_generation.workbench import (
     AudioWorkbenchError,
     AudioWorkbenchService,
@@ -71,6 +72,7 @@ from app.domain.provider_connections.service import (
     ProviderConnectionAdminService,
 )
 from app.domain.provider_resources import build_admin_ai_resource_projection
+from app.domain.runtime.availability import paused_runtime_feature
 from app.domain.runtime.models import (
     RUNTIME_BACKLOG_SCOPE_KIND_PATTERN,
     RUNTIME_DIAGNOSTIC_ISSUE_KIND_PATTERN,
@@ -6267,6 +6269,18 @@ async def create_admin_audio_job(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    feature = paused_runtime_feature(ability_name=AUDIO_GENERATION_CLOUD_ABILITY)
+    if feature:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="runtime.feature_paused",
+                message=f"{feature} is temporarily paused",
+                data={"feature": feature, "retryable": False},
+                revision="m6",
+            ),
+        )
     service = _audio_workbench_service(request)
     try:
         result = service.create_job(payload.model_dump(mode="json"))

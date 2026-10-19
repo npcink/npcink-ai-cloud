@@ -23,6 +23,7 @@ from app.domain.audio_generation.contracts import (
     AUDIO_GENERATION_EXECUTION_KIND,
 )
 from app.domain.routing.errors import RoutingError
+from app.domain.runtime.availability import require_runtime_available
 from app.domain.runtime.errors import RuntimeErrorBase
 from app.domain.runtime.models import RUNTIME_STORAGE_MODE_RESULT_ONLY, RuntimeRequest
 from app.domain.runtime.service import (
@@ -79,6 +80,7 @@ class AudioWorkbenchService:
     callback_dispatcher: RuntimeCallbackDispatcher | None = None
 
     def create_job(self, payload: dict[str, Any]) -> dict[str, object]:
+        require_runtime_available(ability_name=AUDIO_GENERATION_CLOUD_ABILITY)
         request_payload = self._normalize_create_payload(payload)
         request_payload["site_id"] = self._resolve_preview_site_id(str(request_payload["site_id"]))
         runtime_service = self._runtime_service()
