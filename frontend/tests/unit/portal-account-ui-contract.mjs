@@ -56,7 +56,7 @@ assert.match(
 
 assert.match(
   navbarSource,
-  /href: '\/portal\/account'/,
+  /href="\/portal\/account"/,
   'portal navigation must include the account center'
 );
 

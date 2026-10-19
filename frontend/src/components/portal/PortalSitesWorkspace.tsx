@@ -13,6 +13,7 @@ import { useSession } from '@/hooks/useSession';
 import {
   getPortalSiteDisplayName,
   getPortalSiteUrl,
+  getPortalWordPressAdminUrl,
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
@@ -362,6 +363,17 @@ function PortalSitesWorkspaceContent() {
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
+  const connectionGuide = (
+    <>
+      <ol className="mt-4 list-decimal space-y-3 pl-5 text-base leading-7 text-slate-700 dark:text-slate-300">
+        <li>{t('portal.home.connection_step_open')}</li>
+        <li>{t('portal.home.connection_step_plugin')}</li>
+        <li>{t('portal.home.connection_step_confirm')}</li>
+      </ol>
+      <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">{t('portal.home.connection_guide_help')}</p>
+    </>
+  );
+
   return (
     <section id="sites" className="scroll-mt-24" data-portal-home="sites-workspace">
       <PortalSection className="space-y-4" variant="portal">
@@ -401,28 +413,19 @@ function PortalSitesWorkspaceContent() {
           </div>
         </div>
 
-        {visibleSites.length > 0 ? (
-          <details className="border-b border-slate-200 py-3 text-sm dark:border-slate-800" data-portal-sites="connect-guide">
-            <summary className="cursor-pointer font-medium text-blue-700 dark:text-blue-300">{t('portal.sites.connect_hint_title')}</summary>
-            <p className="mt-2 text-slate-600 dark:text-slate-300">{t('portal.sites.connect_hint_desc')}</p>
-          </details>
-        ) : null}
-        {visibleSites.length === 0 && !searchQuery.trim() ? (
-          <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
-            <p className="font-semibold">
-              {visibleSites.length
-                ? t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')
-                : t('portal.sites.connect_first_hint_title', {}, 'Connect your first WordPress site')}
-            </p>
-            <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
-              {t(
-                'portal.sites.connect_hint_desc',
-                {},
-                'Open npcink-cloud-addon in WordPress and start the connection there. After binding, the site will appear here.'
-              )}
-            </p>
-          </div>
-        ) : null}
+        <div id="connection-guide" className="scroll-mt-28" data-portal-sites="connect-guide">
+          {visibleSites.length ? (
+            <details className="border-b border-slate-200 pb-3 text-sm dark:border-slate-800">
+              <summary className="cursor-pointer font-medium text-blue-700 dark:text-blue-300">{t('portal.sites.connect_hint_title')}</summary>
+              {connectionGuide}
+            </details>
+          ) : (
+            <div>
+              <h3 className="text-lg font-semibold text-slate-950 dark:text-white">{t('portal.home.connection_guide_title')}</h3>
+              {connectionGuide}
+            </div>
+          )}
+        </div>
 
         {removeNotice ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
@@ -447,14 +450,10 @@ function PortalSitesWorkspaceContent() {
 
         <div className="hidden overflow-x-auto lg:block" data-portal-sites="desktop-table">
           {sortedSites.length === 0 ? (
-            <PortalEmptyState
-              title={visibleSites.length
-                ? t('portal.sites.empty_title', {}, 'No sites match this search')
-                : t('portal.no_sites', {}, 'No sites')}
-              description={visibleSites.length
-                ? t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')
-                : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.')}
-            />
+            visibleSites.length ? <PortalEmptyState
+              title={t('portal.sites.empty_title', {}, 'No sites match this search')}
+              description={t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')}
+            /> : null
           ) : (
             <table className="w-full min-w-[760px] text-left text-sm">
               <caption className="sr-only">
@@ -495,6 +494,17 @@ function PortalSitesWorkspaceContent() {
                     </td>
                     <td className="px-3 py-4">
                       <div className="flex flex-wrap justify-end gap-2">
+                        {getPortalWordPressAdminUrl(site) ? (
+                          <a
+                            href={getPortalWordPressAdminUrl(site)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-primary btn-sm"
+                          >
+                            {t('portal.home.open_wordpress')}
+                            <span className="sr-only">{t('portal.home.opens_new_tab')}</span>
+                          </a>
+                        ) : null}
                         <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
                           {t('portal.site_record', {}, 'Open site')}
                         </Link>
@@ -546,14 +556,10 @@ function PortalSitesWorkspaceContent() {
 
         <div className="grid gap-3 lg:hidden">
           {sortedSites.length === 0 ? (
-            <PortalEmptyState
-              title={visibleSites.length
-                ? t('portal.sites.empty_title', {}, 'No sites match this search')
-                : t('portal.no_sites', {}, 'No sites')}
-              description={visibleSites.length
-                ? t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')
-                : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.')}
-            />
+            visibleSites.length ? <PortalEmptyState
+              title={t('portal.sites.empty_title', {}, 'No sites match this search')}
+              description={t('portal.sites.empty_desc', {}, 'No connected site matches the current search term. Clear the search to see every site.')}
+            /> : null
           ) : sortedSites.map((site) => (
             <PortalCard key={site.site_id} variant="portal">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -580,6 +586,17 @@ function PortalSitesWorkspaceContent() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+                  {getPortalWordPressAdminUrl(site) ? (
+                    <a
+                      href={getPortalWordPressAdminUrl(site)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary btn-sm"
+                    >
+                      {t('portal.home.open_wordpress')}
+                      <span className="sr-only">{t('portal.home.opens_new_tab')}</span>
+                    </a>
+                  ) : null}
                   <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200">
                     {t('portal.site_record', {}, 'Site record')}
                   </Link>
@@ -625,6 +642,7 @@ function PortalSitesWorkspaceContent() {
             </PortalCard>
           ))}
         </div>
+
       </PortalSection>
 
       <Modal
