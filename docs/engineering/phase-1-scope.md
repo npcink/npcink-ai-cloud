@@ -1,0 +1,44 @@
+# Phase 1 Scope (Cloud)
+
+Status: active product-focus pointer for agents.
+
+## In scope
+
+- Make the normal WordPress editor assist path usable and comfortable:
+  title / excerpt / summary / translation / slug / ALT and related general
+  runtime through official WordPress AI + Cloud Addon + Cloud runtime.
+- Collect bounded Outcome / feedback evidence (no prompts or article bodies in
+  telemetry). See
+  [early-product-validation-and-minimal-telemetry-standard-v1.md](../early-product-validation-and-minimal-telemetry-standard-v1.md).
+- Keep ordinary blog users simple; SEO users get stronger **general** editorial
+  help in this phase — not the paused SEO/AEO/GEO specialist pack.
+
+## Audience split
+
+| Audience | Phase 1 meaning |
+| --- | --- |
+| Ordinary blog | One-click / low-friction generate → review → save |
+| SEO-oriented | More control within general tasks; specialist SEO/AEO/GEO remains paused |
+
+## Paused (do not expand)
+
+Link, do not re-list every ability marker here:
+
+- [reversible-feature-pauses-v1.md](../reversible-feature-pauses-v1.md)
+- [seo-specialist-pause-v1.md](../seo-specialist-pause-v1.md)
+
+Includes Operations Advisor, nightly inspection / site-ops analysis, article
+audio generation, advanced media batch / governance entrypoints, and SEO/AEO/GEO
+specialist tasks. Code is retained; restoration needs a reviewed source change.
+
+## Out of scope for Phase 1
+
+- Second CMS platforms (Typecho / Hexo / Astro) and broad multi-platform runtime
+- Broad Admin governance / alert-ranking / commercial front-office expansion
+  before the editor loop has sufficient real evidence
+- Production Deploy without explicit human authorization
+- Manufacturing paid Provider traffic only for dashboards
+
+## Loop checklist
+
+[wordpress-ai-loop-verification-checklist-2026-09-22.md](../wordpress-ai-loop-verification-checklist-2026-09-22.md)
