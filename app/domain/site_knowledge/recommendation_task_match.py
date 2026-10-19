@@ -11,9 +11,6 @@ from app.domain.site_knowledge.text_evidence import shared_text_terms
 _BROAD_TERMS = (
     "wordpress",
     "woocommerce",
-    "javascript",
-    "html",
-    "php",
     "https",
     "http",
     "plugin",
