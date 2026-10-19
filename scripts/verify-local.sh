@@ -9,6 +9,10 @@ if [ "${1:-}" = '--critical' ]; then
 	shift
 	exec python3 "${SCRIPT_DIR}/verify_critical.py" "$@"
 fi
+if [ "${1:-}" = '--business' ]; then
+	shift
+	exec python3 "${SCRIPT_DIR}/verify_business.py" "$@"
+fi
 
 # Keep the development lane explicit while preserving check_changed's normal
 # option parsing and single ownership of path/risk classification.
