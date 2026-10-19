@@ -79,6 +79,21 @@ evidence as **separate** states. Do not collapse them.
 Closeout and runbooks live under `docs/` and `docs/history/`; dated closeouts
 are not automatic present truth unless an active standard names them.
 
+## AI Production Operation Rules
+
+Normative detail: [cloud-production-release-policy-v1.md](docs/cloud-production-release-policy-v1.md)
+and [agents-session-protocol-detail.md](docs/engineering/agents-session-protocol-detail.md).
+
+- Production source branch is `production`; development integration branch is
+  `master`.
+- Do not directly edit production application code on the server.
+- Any emergency server fix must be backported to Git before the next deploy.
+- Do not commit SMTP passwords, provider keys, database credentials, internal
+  tokens, SSH keys, or `.env.deploy`.
+- Do not push or deploy to Gitee. Current project source control is GitHub-only.
+- After changing release policy, run `pnpm run check:release-policy`.
+- Never Deploy Production unless a human explicitly authorizes that exact action.
+
 ## Detailed procedures (do not duplicate here)
 
 Long session, M4, and gate procedures:
