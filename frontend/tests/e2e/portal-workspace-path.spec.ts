@@ -2144,7 +2144,12 @@ test('[readiness:new_account_no_site] a new account gets a WordPress connection 
   await expect(page.locator('[data-portal-home-state="setup"]')).toBeVisible();
   await expect(page.locator('[data-portal-sites="connect-guide"]')).toHaveCount(1);
   await page.getByRole('link', { name: /Connect my website|连接我的网站/i }).click();
-  await expect(page.locator('#connection-guide ol li')).toHaveCount(3);
+  const connectionFlow = page.locator('[data-portal-connection-flow]');
+  await expect(connectionFlow).toHaveAttribute('data-current-step', '1');
+  await expect(connectionFlow.getByText(/Step 1 of 3|第 1 步，共 3 步/i)).toBeVisible();
+  await connectionFlow.getByRole('button', { name: /Next step|下一步/i }).click();
+  await expect(connectionFlow).toHaveAttribute('data-current-step', '2');
+  await expect(connectionFlow.getByRole('button', { name: /Previous step|上一步/i })).toBeVisible();
   await expect(page.locator('[data-portal-home="current-focus"]')).toHaveCount(0);
   await expect(page.locator('[data-portal-home="setup-checklist"]')).toHaveCount(0);
   await expect(page.getByText(/Not connected|尚未接入/i).first()).toBeVisible();
@@ -2749,7 +2754,7 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     if (nextStatus === 'archived') {
       await expect(siteRow).toHaveCount(0);
     } else {
-      await expect(siteRow.getByRole('button', { name: /^(Activate|激活)$/i })).toBeEnabled();
+      await expect(siteRow.getByRole('button', { name: /^(Continue connection|继续连接)$/i })).toBeEnabled();
     }
   });
 }

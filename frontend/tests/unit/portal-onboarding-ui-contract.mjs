@@ -27,6 +27,10 @@ assert.doesNotMatch(
 assert.match(source, /filter\(\(site\) => portalSiteNeedsAttention\(site\)\)/);
 assert.match(source, /\/portal\/sites\/\$\{encodeURIComponent\(site\.site_id\)\}#service-status/);
 assert.equal((sitesSource.match(/data-portal-sites="connect-guide"/g) || []).length, 1);
+assert.match(sitesSource, /data-portal-connection-flow data-current-step=\{connectionStep\}/, 'connection guidance must expose a current desktop step');
+assert.match(sitesSource, /setConnectionStep\(\(step\) => step \+ 1\)[\s\S]*portal\.home\.connection_next/, 'connection guidance must advance one step at a time');
+assert.match(sitesSource, /setConnectionStep\(\(step\) => step - 1\)[\s\S]*portal\.home\.connection_previous/, 'connection guidance must allow returning to the previous step');
+assert.match(sitesSource, /portal\.home\.connection_step_count/, 'connection guidance must announce progress through the steps');
 for (const step of ['connection_step_open', 'connection_step_plugin', 'connection_step_confirm']) {
   assert.match(sitesSource, new RegExp(`portal\\.home\\.${step}`));
 }
