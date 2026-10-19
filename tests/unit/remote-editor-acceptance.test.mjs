@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -88,10 +89,27 @@ test('private session cannot be tracked or placed in a new unignored Git directo
     assert.equal(privateSessionPath(path, true), path);
     writeFileSync(path, JSON.stringify({ cookies: [], origins: [] }), { mode: 0o600 });
     assert.deepEqual(readSession(path, target), { cookies: [], origins: [] });
+    chmodSync(path, 0o644); assert.throws(() => readSession(path, target)); chmodSync(path, 0o600);
+    const link = join(dir, '.private', 'link.json'); symlinkSync(path, link);
+    assert.throws(() => readSession(link, target));
     writeFileSync(path, JSON.stringify({ cookies: [{ domain: 'cloud.example.test' }], origins: [] }));
     assert.throws(() => readSession(path, target));
     execFileSync('git', ['-C', dir, 'add', '-f', '.private/session.json']);
     assert.throws(() => privateSessionPath(path));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('default CLI mode from another directory only prints a plan without browser dependencies', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'npcink-default-plan-'));
+  try {
+    const path = join(dir, 'target.json'); writeFileSync(path, JSON.stringify(target));
+    const output = execFileSync(process.execPath, [
+      fileURLToPath(new URL('../../scripts/remote-editor-acceptance.mjs', import.meta.url)),
+      '--target', path,
+    ], { cwd: dir, encoding: 'utf8' });
+    const plan = JSON.parse(output);
+    assert.equal(plan.mode, 'plan'); assert.equal(plan.real_provider_workflow, 'not_run');
+    assert.equal(plan.wordpress_write, 'not_run'); assert.equal(plan.production_accepted, false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
