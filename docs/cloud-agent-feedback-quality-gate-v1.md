@@ -193,3 +193,9 @@ existing event JSON; there is no migration, write authority, or raw-content
 telemetry. Batch saved/undo events may carry up to eight `candidate_rank_N`
 reason codes instead of pretending that a batch has one candidate position.
 Developer smoke observations do not constitute human adoption or gold labels.
+
+Recommendation version compatibility also accepts `internal_links.v2` and
+`related_content.v2` for the independently versioned reading-task/abstention
+policy. v1 events remain valid. Empty impressions omit candidate rank; raw
+query, target content and anchor text remain excluded. See
+[abstention v2](site-knowledge-reading-task-abstention-v2.md).

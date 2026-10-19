@@ -1079,11 +1079,20 @@ def test_agent_feedback_summary_reports_limited_window(
     assert data["max_events"] == 1
 
 
-def test_recommendation_metadata_survives_storage_without_content(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "version",
+    ["internal_links.v1", "related_content.v1", "internal_links.v2", "related_content.v2"],
+)
+def test_recommendation_metadata_survives_storage_without_content(
+    tmp_path: Path, version: str
+) -> None:
     database_url, client = _build_client(tmp_path)
     metadata = {
-        "ranking_version": "internal_links.v1", "candidate_rank": 2,
-        "score_bucket": "high", "retrieval_source": "cloud_vector", "rerank_applied": False,
+        "ranking_version": version,
+        "candidate_rank": 2,
+        "score_bucket": "high",
+        "retrieval_source": "cloud_vector",
+        "rerank_applied": False,
     }
     response = _post_feedback(client, _feedback_payload(**metadata))
     assert response.status_code == 200

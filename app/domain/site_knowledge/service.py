@@ -65,7 +65,7 @@ from app.domain.site_knowledge.media_search_quality import (
     rank_media_search_results,
 )
 from app.domain.site_knowledge.recommendation_quality import (
-    apply_recommendation_quality_controls,
+    apply_recommendation_quality_controls_v2,
 )
 from app.domain.site_knowledge.related_content_search_quality import (
     rank_related_content_search_results,
@@ -1292,14 +1292,15 @@ class SiteKnowledgeService:
         candidate_count = len(reranked)
         collapsed_count = 0
         duplicate_media_count = 0
-        recommendation_quality = {
+        recommendation_quality: dict[str, object] = {
             "document_duplicates_collapsed": 0,
             "weak_candidates_suppressed": 0,
             "strong_or_review_candidates": 0,
         }
         if intent in {"internal_links", "related_content"}:
-            reranked, recommendation_quality = apply_recommendation_quality_controls(
+            reranked, recommendation_quality = apply_recommendation_quality_controls_v2(
                 reranked,
+                query=query,
                 max_results=max_results,
             )
         if result_granularity == "document":
@@ -1322,6 +1323,10 @@ class SiteKnowledgeService:
                 "duplicate_media_collapsed": duplicate_media_count,
                 "recommendation_quality": recommendation_quality,
                 "ranking_strategy": _ranking_strategy_for_intent(intent),
+                **(
+                    {"ranking_version": f"{intent}.v2"}
+                    if intent in {"internal_links", "related_content"} else {}
+                ),
             },
         )
 

@@ -1,5 +1,52 @@
 from __future__ import annotations
 
+import math
+
+from app.domain.site_knowledge.recommendation_task_match import reading_task_evidence
+from app.domain.site_knowledge.text_evidence import coerce_float, semantic_score
+
+RECOMMENDATION_POLICY_VERSION = "reading_task_abstention.v2"
+MIN_RECOMMENDATION_SCORE = 0.75
+
+
+def apply_recommendation_quality_controls_v2(
+    results: list[dict[str, object]],
+    *,
+    query: str,
+    max_results: int,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Filter before dedup/Top K; never fill an empty list with weak matches.
+
+    The frozen v1 function below remains available for read-only evaluation.
+    v2 is a stable subsequence of the existing scorer, with no weight changes.
+    """
+    eligible: list[dict[str, object]] = []
+    rejected_score = rejected_task = 0
+    for result in results:
+        raw_score = coerce_float(
+            result.get("rerank_score") if result.get("reranked") is True else result.get("score")
+        )
+        score = semantic_score(result)
+        if not math.isfinite(raw_score) or score < MIN_RECOMMENDATION_SCORE:
+            rejected_score += 1
+            continue
+        evidence = reading_task_evidence(query, result)
+        if evidence == "insufficient_task_evidence":
+            rejected_task += 1
+            continue
+        eligible.append({**result, "reading_task_evidence": evidence})
+    selected, metrics = apply_recommendation_quality_controls(eligible, max_results=max_results)
+    return selected, {
+        **metrics,
+        "policy_version": RECOMMENDATION_POLICY_VERSION,
+        "below_evidence_floor": rejected_score,
+        "insufficient_task_evidence": rejected_task,
+        "abstained": not selected,
+        "reason": "insufficient_recommendation_evidence"
+        if not selected
+        else "evidence_candidates_available",
+    }
+
 
 def apply_recommendation_quality_controls(
     results: list[dict[str, object]],
