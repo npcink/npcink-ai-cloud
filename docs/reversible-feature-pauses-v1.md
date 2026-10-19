@@ -250,3 +250,21 @@ old positive browser contracts remain recoverable from Git history. The exact
 CI core-browser list then passed all 48 tests locally in 43.9s against the
 unchanged built frontend. Existing 95-test visual evidence remains valid.
 The backend impacted lane on the prior exact head also passed all 586 tests.
+
+
+Updating the metadata browser smoke first selected an incompatible specialized
+CI command: it assumed both a browser cache and a running Cloud at localhost
+on the source runner. The metadata rule now runs the existing authenticated,
+read-only API projection contract in source/CI, with the browser check retained
+as an explicit M4 follow-up. A router regression prevents recoupling the source
+gate to live browsers; all specialized commands must reference existing package
+scripts or bounded repository pytest nodes. No M4 credentials or deployment
+operation was added to CI, and package/dependency/image inputs are unchanged.
+The router plus API contract suite passed 36 tests, the specialized-only command
+passed, anti-drift passed, and the metadata API contract passed on M4.
+
+The full external metadata-browser attempt remained unverified: its existing
+dev-entry redirect selected the configured Cloudflare Access origin and did not
+complete login. No Access/auth/production configuration was changed. This is
+recorded separately from the passing M4 paused-page browser check and M4 API
+contracts; it is not described as a successful live metadata-browser acceptance.

@@ -203,7 +203,7 @@ def test_boundary_document_is_not_misclassified_as_low_risk_docs_only() -> None:
     assert ["pnpm", "run", "check:anti-drift"] in plan["specialized_commands"]
 
 
-def test_all_specialized_pnpm_commands_exist() -> None:
+def test_all_specialized_commands_reference_existing_source_gates() -> None:
     package_scripts = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["scripts"]
     plans = [
         _plan("app/domain/agent_feedback/service.py"),
@@ -216,8 +216,15 @@ def test_all_specialized_pnpm_commands_exist() -> None:
 
     for plan in plans:
         for command in plan["specialized_commands"]:
-            assert command[:2] == ["pnpm", "run"]
-            assert command[2] in package_scripts
+            if command[:2] == ["pnpm", "run"]:
+                assert command[2] in package_scripts
+            else:
+                assert command[:3] == [".venv/bin/python", "-m", "pytest"]
+                assert command[-1] == "-q"
+                for node_id in command[3:-1]:
+                    path = (ROOT / node_id.split("::", 1)[0]).resolve()
+                    assert path.is_relative_to(ROOT / "tests")
+                    assert path.is_file()
 
 
 def test_build_runtime_plan_never_mutates_m4_automatically() -> None:
@@ -495,3 +502,15 @@ def test_changed_path_collection_includes_deletions() -> None:
     source = CHECKER.read_text(encoding="utf-8")
 
     assert source.count("--diff-filter=ACMRD") == 3
+
+
+def test_metadata_source_gate_does_not_require_a_live_browser_runtime() -> None:
+    plan = _plan("frontend/tests/e2e/agent-workflow-metadata-smoke.spec.ts")
+    assert "agent_workflow_metadata" in plan["domains"]
+    assert [
+        ".venv/bin/python", "-m", "pytest",
+        "tests/api/test_service_advisor_routes.py::test_admin_agent_workflow_metadata_projection_is_read_only",
+        "-q",
+    ] in plan["specialized_commands"]
+    assert ["pnpm", "run", "check:agent-workflow-metadata"] not in plan["specialized_commands"]
+    assert any("explicitly selected M4 browser URL" in item for item in plan["followups"])
