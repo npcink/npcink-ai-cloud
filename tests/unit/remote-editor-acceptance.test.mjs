@@ -48,14 +48,20 @@ test('read-only navigation blocks administrative GET mutations and URL credentia
     '/wp-admin/post.php?post=43&action=edit', '/wp-admin/edit.php?action2=trash',
     '/wp-admin/admin-post.php?action=plugin_operation', '/wp-admin/admin-ajax.php',
     '/wp-admin/post-new.php', '/wp-admin/admin.php?page=unrelated_plugin',
+    '/wp-admin/post-new.php/extra', '/wp-admin/post.php?post=42&post=43&action=edit',
+    '/wp-admin/post.php?post=42&action=edit&action=trash', '/wp-admin/post.php?post=43',
     '/wp-login.php?action=logout']) assert.equal(p.allow(target.site_url + path, 'GET'), false);
   assert.equal(p.allow('https://user:secret@wordpress.example.test/wp-admin/', 'GET'), false);
   assert.equal(p.allow(target.site_url + '/wp-admin/post.php?post=42&action=edit', 'GET'), true);
+  assert.equal(p.allow(save + '?_method=DELETE', 'GET'), false);
+  assert.equal(p.allow(save, 'GET', null, { 'X-HTTP-Method-Override': 'DELETE' }), false);
+  assert.equal(p.allow(target.site_url + '/?rest_route=/wp/v2/posts/42&rest_route=/other', 'GET'), false);
 });
 
 test('save cannot publish, change title, save another post, autosave or save twice', () => {
   const p = new RequestBoundary(target, 'execute');
   p.phase = 'saving'; p.saveContent = 'reviewed'; p.saveTitle = 'unchanged';
+  assert.equal(p.allow(save, 'POST', { content: 'reviewed' }, { 'x-http-method-override': 'DELETE' }), false);
   for (const [url, body] of [[save, { content: 'unreviewed' }], [save, { content: 'reviewed', status: 'publish' }],
     [save, { content: 'reviewed', title: 'changed' }], [save + '/autosaves', { content: 'reviewed' }],
     [save, { content: 'reviewed', author: 99 }], [save, { content: 'reviewed', meta: { hidden: true } }],
