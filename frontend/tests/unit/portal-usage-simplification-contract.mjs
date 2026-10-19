@@ -222,6 +222,17 @@ assert.doesNotMatch(
   'customer point ledger translations must not keep the removed quantity column'
 );
 
-console.log('portal_usage_simplification_contract: ok');
+assert.match(
+  source,
+  /PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES\.map\(\(feature\)/,
+  'credit event service filter must use the shared active-service feature list'
+);
+assert.doesNotMatch(
+  source,
+  /PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES[^;]*audio_generation/,
+  'usage page must not inline paused audio_generation into the shared filter list'
+);
 
 assert.doesNotMatch(source, /getUsageBundle|getAccountUsageSummary/);
+
+console.log('portal_usage_simplification_contract: ok');

@@ -27,6 +27,7 @@ import {
   type PortalCreditTrendPayload,
   type PortalCreditTrendWindow,
 } from '@/lib/portal-client';
+import { PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES } from '@/lib/portal-usage-credit-event-features';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import type { Locale } from '@/lib/i18n';
 import { formatDateTime, formatNumber } from '@/lib/utils';
@@ -632,7 +633,7 @@ function PortalUsageContent() {
               <span>{t('portal.usage.credit_events_feature_label', {}, 'Service')}</span>
               <select className="input" value={creditEventFeature} disabled={creditEventLoading} onChange={(event) => { setCreditEventFeature(event.target.value as PortalCreditEventFeature); setCreditEventOffset(0); }}>
                 <option value="">{t('portal.usage.credit_events_feature_all', {}, 'All services')}</option>
-                {['content_generation', 'topic_research', 'web_search', 'site_knowledge', 'image_assistance', 'audio_generation'].map((feature) => (
+                {PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES.map((feature) => (
                   <option key={feature} value={feature}>{t(`portal.usage.credit_ledger_feature_${feature}_title`)}</option>
                 ))}
               </select>

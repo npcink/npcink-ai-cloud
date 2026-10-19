@@ -1,6 +1,6 @@
 # Reversible Feature Pauses v1
 
-Status: development candidate, 2026-10-19. Not production deployment evidence.
+Status: merged to `master`; M4 development preview accepted, 2026-10-19. Does not claim the production server has loaded these pauses, and does not authorize plugin distribution. Authoritative closeout: [reversible-pauses-final-closeout-and-cleanup-2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md).
 
 ## Policy
 
