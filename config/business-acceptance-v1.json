@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "areas": {
+    "writing": {
+      "cloud": [
+        "tests/api/test_wordpress_ai_connector_runtime.py::test_wordpress_ai_connector_runtime_executes_scene_bound_text",
+        "tests/api/test_wordpress_ai_connector_runtime.py::test_wordpress_ai_connector_runtime_normalizes_rewrite_variant_bundle",
+        "tests/api/test_wordpress_ai_connector_runtime.py::test_connector_runtime_replay_returns_identical_persisted_result"
+      ],
+      "addon": ["tests/behavior-wordpress-ai-connector-runtime.php", "tests/behavior-wordpress-ai-failure-projection.php", "tests/behavior-editor-assist-quality.php"],
+      "production_gap": "指定测试草稿：真实编辑器正文润色、采用前不替换、采用保存、刷新回读、草稿状态与相邻段落保持；文字质量由用户判断。"
+    },
+    "usage": {
+      "cloud": [
+        "tests/api/test_internal_alpha_onboarding_flow.py::test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit",
+        "tests/api/test_entitlement_routes.py::test_current_entitlement_uses_gross_consumption_for_ai_credit_summary",
+        "tests/api/test_portal_routes.py::test_portal_entitlement_summary_keeps_credit_usage_separate_from_topups",
+        "tests/domain/test_ai_credit_policy.py::test_record_credit_ledger_component_is_idempotent",
+        "tests/domain/test_runtime_usage_statistics.py::test_usage_counts_sites_statuses_and_utc_days_without_payloads"
+      ],
+      "addon": ["tests/behavior-entitlement-summary.php"],
+      "production_gap": "同一次真实写作的 run、Provider/model、回退和附带调用、token、账单分项与前后积分对账；实际计费与异步延迟尚未实测。"
+    },
+    "quota": {
+      "cloud": [
+        "tests/api/test_runtime_execute.py::test_execute_route_rejects_budget_exhaustion",
+        "tests/domain/test_provider_budget.py::test_provider_budget_claim_is_idempotent_and_fails_closed",
+        "tests/domain/test_provider_budget.py::test_provider_budget_rolls_day_and_month_counters_forward",
+        "tests/domain/test_provider_budget.py::test_provider_budget_policy_edit_updates_limit_without_resetting_usage",
+        "tests/domain/test_commercial_runtime_defaults.py::test_authorize_runtime_request_still_rejects_exhausted_finite_credit_limit"
+      ],
+      "addon": ["tests/behavior-entitlement-summary.php", "tests/behavior-wordpress-ai-failure-projection.php"],
+      "production_gap": "只读核对当前主连接及回退预算、套餐余额和站点容量。耗尽拦截、周期切换、并发必须用隔离身份或另行批准的环境，不能耗尽生产额度或修改共享预算。"
+    },
+    "permissions": {
+      "cloud": [
+        "tests/api/test_portal_routes.py::test_portal_routes_require_authenticated_session",
+        "tests/api/test_portal_routes.py::test_portal_revoked_account_membership_blocks_site_access",
+        "tests/api/test_portal_routes.py::test_disabled_principal_cannot_read_or_write",
+        "tests/api/test_runtime_execute.py::test_execute_route_rejects_revoked_key",
+        "tests/api/test_entitlement_routes.py::test_current_entitlement_requires_entitlement_scope"
+      ],
+      "addon": ["tests/behavior-wordpress-ai-connector-registration.php"],
+      "production_gap": "真实 WordPress 管理员/编辑者/无编辑权限角色、未登录与过期会话的后端拒绝和无内容写入证据；需要专用测试身份，不撤销真实用户权限或密钥。"
+    },
+    "isolation": {
+      "cloud": [
+        "tests/api/test_portal_routes.py::test_portal_site_access_rejects_principal_without_account_membership",
+        "tests/api/test_portal_routes.py::test_portal_addon_connection_rejects_cross_account_membership_escalation",
+        "tests/api/test_wordpress_ai_connector_runtime.py::test_connector_runtime_requires_and_binds_explicit_site_id",
+        "tests/api/test_wordpress_ai_connector_runtime.py::test_connector_runtime_result_is_site_isolated",
+        "tests/api/test_entitlement_routes.py::test_current_entitlement_rejects_cross_site_object"
+      ],
+      "addon": ["tests/behavior-entitlement-summary.php"],
+      "production_gap": "两个专用账户/站点的真实会话，核对运行结果、权益及用量列表均不能越界；当前用例不等于所有资源已完成隔离审计。"
+    }
+  }
+}

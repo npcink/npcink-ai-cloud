@@ -8,6 +8,11 @@ production, SMTP delivery, real model quality or human adoption evidence.
 
 ## 入口与边界
 
+面向写作、用量、额度、权限、账户隔离的一次性汇总入口见
+[WordPress → Cloud 最小业务自动验收](wordpress-cloud-business-acceptance-v1.md)。
+它复用本模式的离线环境/网络保护与现有测试，额外检查固定 Addon 提交；
+不会运行真实 WordPress 或模型，也不会替代本页的完整 Portal 浏览器回归。
+
 ```bash
 # 默认行为不变：按当前 diff 选 development gates。
 pnpm run verify:local
