@@ -19,17 +19,14 @@ async function expectNoConsoleFailures(page: Page) {
   return () => expect(messages).toEqual([]);
 }
 
-test('admin agent and workflow metadata panels render from Cloud metadata projection responses', async ({ page }) => {
+test('paused Advisor and retained read-only runtime metadata remain correctly separated', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const assertNoConsoleFailures = await expectNoConsoleFailures(page);
 
   await page.goto('/admin/dev-entry?redirect=%2Fadmin%2Fai-advisor');
   await expect(page).toHaveURL(/\/admin\/ai-advisor/);
-  await page.getByText(/AI evaluation details|AI 评估详情/u).click();
-  await expect(page.getByText(/Agent boundary|Agent 边界/u)).toBeVisible();
-  await expect(page.getByText('internal_ops_advisor_agent', { exact: true })).toBeVisible();
-  await expect(page.getByText(/write blocked|Write blocked|禁止写入/u)).toBeVisible();
-  await expect(page.getByText(/Cloud Workflow Truth/i)).toBeVisible();
+  await expect(page.locator('[data-ui="ai-advisor-paused"]')).toBeVisible();
+  await expect(page.getByText(/AI evaluation details|AI 评估详情/u)).toHaveCount(0);
 
   await page.goto('/admin/ai-resources?view=connections&supplier=capability');
   await expect(page.getByText(/Cloud runtime metadata|Cloud 运行时元数据/u)).toBeVisible();

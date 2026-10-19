@@ -236,3 +236,17 @@ usage-detail test also asserts paused availability while retaining its original
 used/remaining counters. This correction changes only tests and this receipt,
 not runtime behavior or saved quota evidence. It is a task-related stale
 contract expectation, not a flaky/pre-existing failure claim.
+
+
+The frontend critical-path lane exposed three additional superseded assertions:
+the acceptance matrix expected a withdrawn quick-switcher entry, and two
+Advisor PC tests expected the former diagnosis/scope controls. Those contracts
+now explicitly check the paused bookmark, absent discovery/actions, zero
+Advisor requests, preserved PC layout, legacy-scope reloads, and return to
+normal diagnostics (including its own focus parameter). Read-only metadata
+smoke expectations were reconciled separately; runtime metadata remains intact.
+No tests are skipped and the retained page/service implementation is unchanged;
+old positive browser contracts remain recoverable from Git history. The exact
+CI core-browser list then passed all 48 tests locally in 43.9s against the
+unchanged built frontend. Existing 95-test visual evidence remains valid.
+The backend impacted lane on the prior exact head also passed all 586 tests.
