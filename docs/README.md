@@ -12,6 +12,7 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
+| 所有 AI 代理开工前读统一约束 | 根目录 [AGENTS.md](../AGENTS.md) — 工具无关；细则见 [engineering/](engineering/)（DoD、验证命令、Phase 1、PR 契约指针） |
 | 接续产品头脑风暴、阶段1试用与推荐观察三个旧会话 | [三会话综合纪要与接续清单 — 2026-10-19](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md) — 140轮历史；第11节列完整未完事项，区分当前试用、推荐优化暂缓、工具小修、商业候选及已完成旧项 |
 | 接续首批3人免费试用（Trace暂缓/起步验收/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 复用运行、反馈和费用记录；四周计划第0节为起步口径，完整正式smoke仍未通过 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
@@ -92,6 +93,13 @@ deleting the old decision history.
 - [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — reversible task availability and new inspection score semantics; no data migration.
 
 ## Product Boundaries
+
+- [AGENTS.md](../AGENTS.md) — tool-agnostic agent entry.
+- [engineering/definition-of-done.md](engineering/definition-of-done.md) — agent Definition of Done.
+- [engineering/phase-1-scope.md](engineering/phase-1-scope.md) — Phase 1 WP editor loop scope and pauses.
+- [engineering/verification-commands.md](engineering/verification-commands.md) — real package/Make verification entry points.
+- [engineering/pr-contract.md](engineering/pr-contract.md) — PR Scope/Boundary/Verification/Risk pointer.
+- [engineering/agents-session-protocol-detail.md](engineering/agents-session-protocol-detail.md) — long session/M4/lane procedures.
 
 - [Reversible Feature Pauses](reversible-feature-pauses-v1.md) — paused entrypoints, retained data and implementation, restoration and verification receipts.
 - [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
