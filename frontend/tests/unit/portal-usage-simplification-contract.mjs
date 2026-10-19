@@ -224,13 +224,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\['content_generation', 'topic_research', 'web_search', 'site_knowledge', 'image_assistance'\]\.map\(\(feature\)/,
-  'credit event service filter must list active services only'
+  /PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES\.map\(\(feature\)/,
+  'credit event service filter must use the shared active-service feature list'
 );
 assert.doesNotMatch(
   source,
-  /\['content_generation', 'topic_research', 'web_search', 'site_knowledge', 'image_assistance', 'audio_generation'\]/,
-  'credit event service filter must not expose paused audio_generation as a selectable option'
+  /PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES[^;]*audio_generation/,
+  'usage page must not inline paused audio_generation into the shared filter list'
 );
 
 assert.doesNotMatch(source, /getUsageBundle|getAccountUsageSummary/);
