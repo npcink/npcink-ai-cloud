@@ -198,13 +198,6 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
     evidence.stage = 'validate_draft';
     validateDraft(before, target);
     evidence.before_sha256 = hash(stored(before));
-    if (mode === 'preflight') {
-      assert(boundary.abilityRequests === 0 && boundary.saveRequests === 0 && boundary.violations === 0,
-        'Unexpected request attempt during read-only preflight');
-      evidence.complete = true;
-      evidence.real_provider_workflow = 'not_run';
-      return evidence;
-    }
     await page.evaluate((id) => window.wp.data.dispatch('core/block-editor').selectBlock(id), before.targetId);
     evidence.stage = 'rephrase';
     const frame = page.frameLocator('iframe[name="editor-canvas"], iframe.wp-block-editor-iframe__iframe').first();
@@ -216,6 +209,15 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
       accept: window.wp.i18n.__('Accept', 'ai') }));
     const rephrase = await control([page.getByRole('menuitem', { name: labels.rephrase, exact: true }),
       frame.getByRole('menuitem', { name: labels.rephrase, exact: true })]);
+    assert(!(await rephrase.isDisabled()), 'Rephrase control is disabled');
+    if (mode === 'preflight') {
+      assert(boundary.abilityRequests === 0 && boundary.saveRequests === 0 && boundary.violations === 0,
+        'Unexpected request attempt during read-only preflight');
+      evidence.complete = true;
+      evidence.stage = 'complete';
+      evidence.real_provider_workflow = 'not_run';
+      return evidence;
+    }
     boundary.phase = 'generating';
     await rephrase.click();
     const modal = await control([page.locator('.ai-content-resizing-modal'), frame.locator('.ai-content-resizing-modal')]);
@@ -224,7 +226,12 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
     assert(await panels.count() === 2, 'Expected Original/Suggested review panels');
     const suggested = panels.nth(1).locator('.ai-content-resizing-modal__text:not(.ai-content-resizing-modal__loading)');
     await suggested.waitFor({ state: 'visible', timeout: timeoutMs });
-    const suggestion = text(await suggested.innerText());
+    let suggestion = '';
+    const deadline = Date.now() + timeoutMs;
+    do {
+      suggestion = text(await suggested.innerText());
+      if (!suggestion) await new Promise((done) => setTimeout(done, 100));
+    } while (!suggestion && Date.now() < deadline);
     const original = text(await panels.first().locator('.ai-content-resizing-modal__text--original').innerText());
     assert(suggestion && suggestion !== original, 'Empty or unchanged rewrite');
     assert(boundary.abilityRequests === 1 && boundary.violations === 0, 'Unexpected generation attempt');
@@ -316,7 +323,7 @@ export async function main(argv = process.argv.slice(2)) {
   const statePath = privateSessionPath(v.session, mode === 'login');
   const state = mode !== 'login' ? readSession(statePath, target) : null;
   const source = { revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
-    driver_sha256: hash(readFileSync(fileURLToPath(import.meta.url), 'utf8')) };
+    driver_sha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex') };
   const { chromium, env } = await loadBrowser(v['playwright-root']);
   const browser = await chromium.launch({ headless: mode !== 'login', env });
   let context;
@@ -352,7 +359,7 @@ export async function main(argv = process.argv.slice(2)) {
       failure: 'editor_acceptance_failed_no_retry',
     }, null, 2));
     throw new Error('Editor acceptance failed; inspect the private receipt. No automatic retry.');
-  } finally { await context?.close(); await browser.close(); }
+  } finally { await context?.close().catch(() => {}); await browser.close(); }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -109,11 +109,11 @@ test('missing execution authorizations fail before browser loading or session re
 // Opt-in local DOM fixture; every admitted request is fulfilled in-process.
 // No WordPress, Cloud, Provider, SSH, M4 or production connection is made.
 if (process.env.NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT) {
-  test('browser substitute proves preflight, review/adopt/save/reload, and wrong-draft rejection', async () => {
+  test('browser substitute proves the loop and stops on wrong drafts, missing controls, save failure or retry', async () => {
     const { chromium, env } = await loadBrowser(process.env.NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT);
     const browser = await chromium.launch({ env });
     try {
-      for (const scenario of ['preflight', 'execute', 'wrong-draft', 'save-failure', 'repeat']) {
+      for (const scenario of ['preflight', 'execute', 'wrong-draft', 'no-ai-control', 'save-failure', 'repeat']) {
         let abilities = 0, writes = 0;
         const blocks = [
           { name: 'core/paragraph', attributes: { content: 'Sentinel before' }, innerBlocks: [] },
@@ -125,8 +125,11 @@ if (process.env.NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT) {
         const context = await browser.newContext({ serviceWorkers: 'block' });
         const transport = async (route) => {
           const path = restPath(route.request().url());
-          if (path === '/wp-admin/post.php') return route.fulfill({ contentType: 'text/html',
-            body: readFileSync(new URL('../fixtures/business-editor.html', import.meta.url), 'utf8') });
+          if (path === '/wp-admin/post.php') {
+            let html = readFileSync(new URL('../fixtures/business-editor.html', import.meta.url), 'utf8');
+            if (scenario === 'no-ai-control') html = html.replace('class="ai-content-resizing-toolbar__icon"', 'class="fixture-absent"');
+            return route.fulfill({ contentType: 'text/html', body: html });
+          }
           if (path === '/wp-abilities/v1/abilities/ai/content-resizing/run') {
             abilities += 1; return route.fulfill({ json: { output: 'One clear rewritten paragraph.', retry: scenario === 'repeat' } });
           }
@@ -141,11 +144,15 @@ if (process.env.NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT) {
         try {
           if (scenario === 'wrong-draft') {
             await assert.rejects(editorFlow(context, target, 'execute', { transport }), /dedicated draft/);
+          } else if (scenario === 'no-ai-control') {
+            await assert.rejects(editorFlow(context, target, 'preflight', { transport, timeoutMs: 1200 }), /unavailable/);
           } else if (['save-failure', 'repeat'].includes(scenario)) {
             await assert.rejects(editorFlow(context, target, 'execute', { transport, timeoutMs: 1200 }));
           } else {
             const result = await editorFlow(context, target, scenario, { transport });
             assert.equal(result.complete, true); assert.equal(result.production_accepted, false);
+            assert.equal(result.evidence_kind, 'browser_dom_stub');
+            assert.equal(result.real_provider_workflow, 'not_run');
             assert.equal(result.ability_requests, abilities); assert.equal(result.draft_save_requests, writes);
           }
           assert.equal(abilities, ['execute', 'save-failure', 'repeat'].includes(scenario) ? 1 : 0);
