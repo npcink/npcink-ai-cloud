@@ -16,6 +16,7 @@ as current truth.
 | 接续首批3人免费试用（Trace暂缓/起步验收/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 复用运行、反馈和费用记录；四周计划第0节为起步口径，完整正式smoke仍未通过 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
+| 收口可恢复暂停、音频播放与 M4 状态 | [可恢复暂停最终收口与清理 — 2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md) — 合并链、M4 accepted、历史音频播放、分支/worktree 清理与下一阶段建议 |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
 | 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
 | 回顾用户中心相关三个会话、确认当前进度和下一步 | [三会话综合纪要 — 2026-10-17](history/portal/2026/portal-three-session-synthesis-and-next-stage-2026-10-17.md) — UX、积分/预算、发布、异步状态与验证前移；补正旧摘要并区分方案与交付 |
