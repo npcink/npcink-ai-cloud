@@ -43,7 +43,7 @@ export class RequestBoundary {
     this.saveContent = null;
     this.saveTitle = null;
   }
-  allow(url, method, body = null) {
+  allow(url, method, body = null, headers = {}) {
     const reject = (critical = false) => {
       this.blocked += 1;
       if (critical) this.violations += 1;
@@ -51,6 +51,8 @@ export class RequestBoundary {
     };
     const u = new URL(url);
     if (u.origin !== this.target.site_url || u.protocol !== 'https:' || u.username || u.password) return reject(true);
+    if (u.searchParams.has('_method') || u.searchParams.getAll('rest_route').length > 1
+      || Object.keys(headers).some((key) => key.toLowerCase() === 'x-http-method-override')) return reject(true);
     const path = restPath(url);
     const ability = /\/wp-abilities\/v1\/abilities\/.*\/run$/.test(path);
     if (ability) {
@@ -63,12 +65,14 @@ export class RequestBoundary {
     }
     if (['GET', 'HEAD'].includes(method)) {
       // WordPress also exposes state changes through administrative GET links.
-      if (u.pathname.startsWith('/wp-admin/') && u.pathname.endsWith('.php')
+      if (u.pathname.startsWith('/wp-admin/') && /\.php(?:\/|$)/.test(u.pathname)
         && !['/wp-admin/index.php', '/wp-admin/post.php', '/wp-admin/load-scripts.php',
           '/wp-admin/load-styles.php'].includes(u.pathname)) return reject(true);
       if ((u.pathname.startsWith('/wp-admin/') || u.pathname === '/wp-login.php')
-        && (u.searchParams.has('action') || u.searchParams.has('action2'))) {
+        && (u.pathname === '/wp-admin/post.php'
+          || u.searchParams.has('action') || u.searchParams.has('action2'))) {
         const allowedEdit = u.pathname === '/wp-admin/post.php'
+          && u.searchParams.getAll('action').length === 1 && u.searchParams.getAll('post').length === 1
           && u.searchParams.get('action') === 'edit'
           && u.searchParams.get('post') === String(this.target.post_id)
           && !u.searchParams.has('action2');
@@ -196,7 +200,7 @@ export async function editorFlow(context, target, mode, { transport, screenshotD
     const request = route.request();
     let body;
     try { body = request.postDataJSON(); } catch { body = null; }
-    if (!boundary.allow(request.url(), request.method(), body)) return route.abort('blockedbyclient');
+    if (!boundary.allow(request.url(), request.method(), body, request.headers())) return route.abort('blockedbyclient');
     return transport ? transport(route) : route.continue();
   });
   await context.routeWebSocket('**/*', (socket) => socket.close());
@@ -347,7 +351,8 @@ export async function main(argv = process.argv.slice(2)) {
       ...(state ? { storageState: state } : {}) });
     if (mode === 'login') {
       const policy = new RequestBoundary(target, mode);
-      await context.route('**/*', (route) => policy.allow(route.request().url(), route.request().method())
+      await context.route('**/*', (route) => policy.allow(route.request().url(), route.request().method(),
+        null, route.request().headers())
         ? route.continue() : route.abort('blockedbyclient'));
       await context.routeWebSocket('**/*', (socket) => socket.close());
       const page = await context.newPage();
