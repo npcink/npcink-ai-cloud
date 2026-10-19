@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Offline editor substitute</title>
+<body>
+<main id="blocks"></main>
+<button id="resize"><span class="ai-content-resizing-toolbar__icon">Rewrite</span></button>
+<button role="menuitem" id="rephrase" hidden>Rephrase</button>
+<section class="ai-content-resizing-modal" hidden>
+  <div class="ai-content-resizing-modal__panel"><div class="ai-content-resizing-modal__text--original"></div></div>
+  <div class="ai-content-resizing-modal__panel"><div class="ai-content-resizing-modal__text" hidden></div></div>
+  <button id="accept">Accept</button>
+</section>
+<button class="editor-post-save-draft">Save draft</button>
+<script>
+// This is deliberately a DOM/store substitute, not a WordPress installation.
+let post, blocks, selected, dirty = false, failed = false, saving = false, generated;
+const $ = (s) => document.querySelector(s);
+const pure = (b) => ({ name: b.name, attributes: b.attributes, innerBlocks: b.innerBlocks || [] });
+function render() {
+  $('#blocks').replaceChildren(...blocks.map((b) => {
+    const p = document.createElement('p'); p.dataset.block = b.clientId;
+    p.innerHTML = b.attributes.content; p.onclick = () => { selected = b.clientId; }; return p;
+  }));
+}
+window.wp = {
+  i18n: { __: (value) => value },
+  apiFetch: async ({ path, method }) => {
+    const response = await fetch('/wp-json' + path, { method });
+    if (!response.ok) throw new Error('offline fixture request failed');
+    return response.json();
+  },
+  blocks: { parse: (raw) => JSON.parse(raw) },
+  data: {
+    select: (store) => store === 'core/editor' ? {
+      getCurrentPostId: () => post?.id || 0,
+      isEditedPostDirty: () => dirty,
+      getEditedPostContent: () => JSON.stringify(blocks.map(pure)),
+      isSavingPost: () => saving,
+      didPostSaveRequestFail: () => failed,
+    } : { getBlocks: () => blocks, getBlock: (id) => blocks.find((b) => b.clientId === id) },
+    dispatch: (store) => store === 'core/editor' ? {
+      lockPostAutosaving: () => {}, unlockPostAutosaving: () => {},
+    } : { selectBlock: (id) => { selected = id; } },
+  },
+};
+$('#resize').onclick = () => { $('#rephrase').hidden = false; };
+$('#rephrase').onclick = async () => {
+  $('#rephrase').hidden = true;
+  const input = { action: 'rephrase', post_id: post.id,
+    content: blocks.find((b) => b.clientId === selected).attributes.content };
+  const response = await fetch('/wp-json/wp-abilities/v1/abilities/ai/content-resizing/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }),
+  });
+  if (!response.ok) return;
+  const result = await response.json();
+  if (result.retry) {
+    await fetch('/wp-json/wp-abilities/v1/abilities/ai/content-resizing/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }),
+    }).catch(() => {});
+  }
+  generated = result.output;
+  $('.ai-content-resizing-modal__text--original').textContent = input.content;
+  const suggested = $('.ai-content-resizing-modal__panel:nth-child(2) .ai-content-resizing-modal__text');
+  suggested.textContent = generated; suggested.hidden = false;
+  $('.ai-content-resizing-modal').hidden = false;
+};
+$('#accept').onclick = () => {
+  const b = blocks.find((block) => block.clientId === selected);
+  b.attributes.content = generated; b.attributes.aiResized = true; dirty = true;
+  $('.ai-content-resizing-modal').hidden = true; render();
+};
+$('.editor-post-save-draft').onclick = async () => {
+  saving = true;
+  const response = await fetch('/wp-json/wp/v2/posts/' + post.id, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: JSON.stringify(blocks.map(pure)), status: 'draft', title: post.title.raw }),
+  });
+  failed = !response.ok; saving = false;
+  if (response.ok) { post = await response.json(); dirty = false; }
+};
+(async () => {
+  post = await wp.apiFetch({ path: '/wp/v2/posts/42?context=edit', method: 'GET' });
+  blocks = JSON.parse(post.content.raw).map((b, i) => ({ ...b, clientId: 'block-' + i }));
+  render();
+})();
+</script></body></html>
