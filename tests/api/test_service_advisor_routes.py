@@ -28,6 +28,7 @@ from tests.conftest import (
     seed_site_auth,
 )
 
+
 @pytest.fixture(autouse=True)
 def retained_advisor_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep dormant implementation coverage; default pause is tested separately."""

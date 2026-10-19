@@ -161,3 +161,31 @@ blocker above also remains unresolved; no security exception or scope expansion
 was introduced to make the receipt appear green.
 
 M4_OBSERVATION_RECEIPT date=2026-10-19; route=Pgy-control-and-Tailscale-private-relay; sync=failed-before-transfer; focused=not measured; promotion=not occurred; operations=sync3/deploy0/applied0; stable_502=not measured; m4_only=not observed; coordination=unrelated staged docs preserved
+
+
+## Merge continuation — 2026-10-19
+
+The operator subsequently authorized resolving the remaining blockers,
+integrating current master, publishing and merging, with no production deploy.
+A clean, locked task worktree replays the four batches on origin/master
+`6f3a1dae` (including #1148–#1150). The original checkout's three unrelated
+staged documents remain untouched. Addon and Toolbox were already current.
+The weekly CNA evidence renewal is isolated in prerequisite Cloud PR #1153;
+live ranges still match and its 48 focused supply-chain tests pass.
+
+The operator explicitly selected office LAN direct transfer for this bounded
+recovery, covering candidate validation and clean-master accepted promotion.
+Pin `NPCINK_CLOUD_M4_SSH_HOST=muze@192.168.10.200` and
+`NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct` for this task only. The old relay
+endpoint timed out and a second documented relay endpoint rejected the
+available identity; no relay service, public firewall, SSH configuration or
+production runtime was changed. Initial M4 status was accepted master PR #1150.
+
+Current-base focused source regression: 555 passed. Changed-Python Ruff/mypy
+passed after a fixture-spacing-only repair; its seven Advisor implementation
+tests passed separately. Real mounted Local WordPress Addon calls for audio,
+inspection, media planning and governance all returned feature-paused with zero
+outbound HTTP attempts and zero content writes. Addon Playground activation,
+PHPStan, WordPress.org guard and strict Plugin Check passed. POT freshness was
+repaired by the normal i18n refresh; compiled translation mappings are identical.
+Publication, CI, merged-source and M4 acceptance receipts follow separately.
