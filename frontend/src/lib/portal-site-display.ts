@@ -2,6 +2,7 @@ import type { Site } from '@/lib/portal-client';
 
 type SiteLike = Pick<Site, 'site_id' | 'name' | 'site_url'> & {
   status?: string;
+  platform_kind?: string;
 };
 
 function normalizeString(value: unknown): string {
@@ -57,4 +58,21 @@ export function portalSiteNeedsAttention(site: SiteLike | null | undefined): boo
   }
 
   return normalizeString(site.status).toLowerCase() !== 'active' || !getPortalSiteUrl(site);
+}
+
+/** Navigation only: no Cloud credentials or connection state leave the Portal. */
+export function getPortalWordPressAdminUrl(site: SiteLike | null | undefined): string {
+  if (site?.platform_kind !== 'wordpress') return '';
+  try {
+    const url = new URL(getPortalSiteUrl(site));
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) {
+      return '';
+    }
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/wp-admin/`;
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  } catch {
+    return '';
+  }
 }

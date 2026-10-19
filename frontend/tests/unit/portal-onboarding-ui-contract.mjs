@@ -12,43 +12,24 @@ const sitesSource = readFileSync(
   'utf8'
 );
 
-assert.match(source, /setupChecklistItems/);
-assert.match(source, /portal\.home\.onboarding_title/);
-assert.match(
-  source,
-  /onboarding_site_title[\s\S]*onboarding_package_title/,
-  'first-use checklist must cover only site connection and package readiness'
-);
+assert.match(source, /homeState = primaryOperationFocusItem \? 'attention' : hasVisibleSites \? 'daily' : 'setup'/);
+assert.doesNotMatch(source, /setupChecklistItems|onboarding_package_title/, 'first use must not duplicate connection instructions or require a package review');
 assert.doesNotMatch(
   source,
   /onboarding_qq_|getIdentityProviders|currentSiteActiveKeyCount|getSiteDiagnostics/,
   'Portal home onboarding must not load identity, key, or diagnostic detail'
 );
-assert.match(
-  source,
-  /const selectedSite = session\.selected_context\?\.site \|\| null/,
-  'onboarding readiness must use the explicit selected context site'
-);
 assert.doesNotMatch(
   source,
   /sites\s*\[\s*0\s*\]|const selectedSite\s*=\s*(?:getVisiblePortalSites|session\??\.sites)/,
-  'onboarding may show the bounded site list but must not infer current context from it'
+  'home composition must not infer or mutate current account/site context'
 );
-assert.match(
-  source,
-  /selectedSite\?\.status === 'active'[\s\S]*Boolean\(selectedSiteUrl\)/,
-  'site readiness must use the session site status and URL'
-);
-assert.match(
-  source,
-  /\/portal\/sites\/\$\{encodeURIComponent\(selectedSite\.site_id\)\}#service-status/,
-  'site follow-up must open the lazy-loaded site detail status section'
-);
-assert.match(
-  source,
-  /requiredAttentionItems = setupChecklistItems\.filter[\s\S]*shouldShowOnboardingChecklist = requiredAttentionItems\.length > 0/,
-  'first-use checklist must hide after all required steps are complete'
-);
+assert.match(source, /filter\(\(site\) => portalSiteNeedsAttention\(site\)\)/);
+assert.match(source, /\/portal\/sites\/\$\{encodeURIComponent\(site\.site_id\)\}#service-status/);
+assert.equal((sitesSource.match(/data-portal-sites="connect-guide"/g) || []).length, 1);
+for (const step of ['connection_step_open', 'connection_step_plugin', 'connection_step_confirm']) {
+  assert.match(sitesSource, new RegExp(`portal\\.home\\.${step}`));
+}
 assert.doesNotMatch(source, /localStorage|sessionStorage/);
 
 const connectClientCalls = Array.from(

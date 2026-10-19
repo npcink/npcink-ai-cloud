@@ -94,14 +94,9 @@ assert.match(
   'Portal home must present site connection as a separate account summary metric'
 );
 assert.match(source, /data-portal-home="operation-overview"/);
-assert.match(source, /shouldShowFollowUpSection/);
-assert.match(
-  source,
-  /primaryOperationFocusItem = operationFocusItems\[0\][\s\S]*remainingOperationFocusItems = operationFocusItems\.slice\(1\)[\s\S]*!showBothFollowUpPanels && 'xl:max-w-3xl'/,
-  'Portal home must place the primary issue in the header and keep only additional follow-up panels below'
-);
-assert.match(source, /remainingOperationFocusItems\.length > 0 \? \(/);
-assert.match(source, /data-portal-home="setup-checklist"/);
+assert.match(source, /data-portal-home-state=\{homeState\}/);
+assert.doesNotMatch(source, /setupChecklistItems|data-portal-home="setup-checklist"/, 'connection instructions belong to one site workspace guide');
+assert.match(source, /remainingOperationFocusItems\.map/, 'additional issues must all remain accessible');
 assert.doesNotMatch(source, /data-portal-home="no-action-summary"/);
 assert.doesNotMatch(
   source,
@@ -156,10 +151,10 @@ assert.doesNotMatch(
 const overviewIndex = source.indexOf('data-portal-home="operation-overview"');
 const summaryIndex = source.indexOf('metrics={showAccountSummary ? operationSummaryItems : []}');
 const focusIndex = source.indexOf('data-portal-home="current-focus"');
-const checklistIndex = source.indexOf('data-portal-home="setup-checklist"');
+const guideCount = (sitesWorkspaceSource.match(/data-portal-sites="connect-guide"/g) || []).length;
 assert.ok(overviewIndex >= 0);
 assert.ok(focusIndex > overviewIndex);
 assert.ok(summaryIndex > focusIndex);
-assert.ok(checklistIndex > summaryIndex);
+assert.equal(guideCount, 1);
 
 console.log('portal_home_layout_contract: ok');

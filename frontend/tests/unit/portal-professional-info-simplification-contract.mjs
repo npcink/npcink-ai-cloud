@@ -175,7 +175,7 @@ assert.match(
 );
 assert.match(
   sitesSource,
-  /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc/,
+  /portal\.home\.connection_step_open[\s\S]*portal\.home\.connection_step_plugin[\s\S]*portal\.home\.connection_step_confirm[\s\S]*portal\.sites\.connect_hint_title/,
   'Portal site list should explain that new site connections start from the WordPress addon'
 );
 assert.doesNotMatch(
