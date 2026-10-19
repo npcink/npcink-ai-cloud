@@ -145,7 +145,7 @@ deleting the old decision history.
 
 - [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。
 - [Free 试用前生产发布准备 — 2026-10-06](production-release-readiness-plan-2026-10-06.md) — 两处旧测试修复候选、累计部署范围、五项迁移与回滚条件；不是生产发布授权。
-- [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 10月19日更新首批3人起步验收，外部Trace暂缓，复用Free及现有证据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，邀请准备待确认。
+- [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 10月19日更新首批3人起步验收，外部Trace暂缓，复用Free及现有证据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，操作者安排正常注册使用，实际T+0尚未记录。
 - [ADR-058: Registration-Verified Account Free Entitlement](decisions/058-registration-verified-account-free-entitlement.md) — verified registration grants account-owned Free; Addon still owns proof of site connection, with legacy fallback preserved.
 - [ADR-059: Existing-Catalog Provider Refresh Is Advisory During Release](decisions/059-provider-refresh-advisory-release.md) — production cutovers may retain a historical provider catalog when an individual upstream credential is unavailable; bootstrap, persistence, routing, health, and runtime provider failures remain fail-closed.
 - [Free Trial Development Candidate — 2026-10-06](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md) — local backend evidence and retained implementation; frontend dependency and M4 relay blockers, not merge or deployment evidence.
