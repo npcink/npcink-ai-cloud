@@ -497,3 +497,5 @@ Run `python3 scripts/report-maintainability-inventory.py` for the advisory,
 read-only large-file trend, source-text-contract, behavior-test, and document
 lifecycle inventory. Its counts are navigation signals, not quality targets or
 merge gates.
+
+- [Site Knowledge reading-task abstention v2](site-knowledge-reading-task-abstention-v2.md): independently versioned evidence qualification and successful empty recommendations.

@@ -733,7 +733,11 @@ def test_media_projection_sync_and_natural_language_search(tmp_path: Path) -> No
 
 
 def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
-    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True, "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3"}, providers={"tei": _FakeEmbeddingProvider()},
+    )
     sync_result = _execute(client, _sync_payload(), idempotency_key="sync-then-search")
     run_id = sync_result["json"]["data"]["run_id"]
 
@@ -770,7 +774,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     worker = RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
         runtime_queue=runtime_queue,
     )
     processed = worker.process_next_queued_run(timeout_seconds=0)
@@ -783,7 +787,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     worker_result = RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
     ).get_run_result(run_id, site_id="site_alpha")
     assert worker_result["result"]["contract_version"] == "site_knowledge_sync.v1"
     assert worker_result["result"]["ownership"]["index_lifecycle_owner"] == "cloud_service"
@@ -811,7 +815,7 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     search_result = _execute(
         client,
         _search_payload(
-            "semantic search internal links",
+            "Cloud managed site knowledge",
             source_passages=[
                 "Editors use Cloud managed site knowledge before applying reviewed links."
             ],
@@ -928,7 +932,11 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
 def test_related_content_defaults_to_unique_documents_and_excludes_current_post(
     tmp_path: Path,
 ) -> None:
-    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True, "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3"}, providers={"tei": _FakeEmbeddingProvider()},
+    )
     payload = _sync_payload()
     sync_input = payload["input"]
     assert isinstance(sync_input, dict)
@@ -960,7 +968,7 @@ def test_related_content_defaults_to_unique_documents_and_excludes_current_post(
     worker = RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
         runtime_queue=runtime_queue,
     )
     assert worker.process_next_queued_run(timeout_seconds=0) is not None
@@ -1309,12 +1317,16 @@ def test_search_intents_return_product_workflow_metadata(tmp_path: Path) -> None
 def test_search_intents_support_copilot_duplicate_and_cluster_workflows(
     tmp_path: Path,
 ) -> None:
-    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    database_url, settings, runtime_queue, client = _build_client(
+        tmp_path, settings_overrides={"site_knowledge_embedding_provider": "tei",
+            "tei_provider_enabled": True, "tei_base_url": "http://tei.local",
+            "tei_model_ids": "BAAI/bge-m3"}, providers={"tei": _FakeEmbeddingProvider()},
+    )
     _execute(client, _sync_payload(), idempotency_key="high-value-workflows-sync")
     RuntimeService(
         database_url,
         settings=settings,
-        providers={},
+        providers={"tei": _FakeEmbeddingProvider()},
         runtime_queue=runtime_queue,
     ).process_next_queued_run(timeout_seconds=0)
 
@@ -2395,3 +2407,24 @@ def test_sync_uses_cloud_managed_siliconflow_embedding_provider(tmp_path: Path) 
         chunk = session.query(SiteKnowledgeChunk).one()
     assert chunk.embedding_model == "siliconflow:BAAI/bge-m3"
     assert chunk.embedding_json == [0.25] * 1024
+
+
+@pytest.mark.parametrize("intent", ["related_content", "internal_links"])
+def test_recommendations_abstain_healthy_without_task_evidence(tmp_path: Path, intent: str) -> None:
+    database_url, settings, queue, client = _build_client(tmp_path)
+    _execute(client, _sync_payload(), idempotency_key="abstention-sync")
+    RuntimeService(
+        database_url, settings=settings, providers={}, runtime_queue=queue
+    ).process_next_queued_run(timeout_seconds=0)
+    response = _execute(
+        client,
+        _search_payload("夏日奶茶限时促销", intent=intent),
+        idempotency_key="abstention-search",
+    )
+    assert response["status_code"] == 200
+    result = response["json"]["data"]["result"]
+    assert result["status"] == "ready"
+    assert result["results"] == []
+    assert result["result_grouping"]["ranking_version"] == intent + ".v2"
+    assert result["result_grouping"]["recommendation_quality"]["abstained"] is True
+    assert result["direct_wordpress_write"] is False

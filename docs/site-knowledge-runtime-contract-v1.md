@@ -691,3 +691,11 @@ Smoke evidence is written under `.tmp/site-knowledge-real-chain-smoke/` and must
 not be committed. Evidence contains only redacted configuration and pass/fail
 counts; it must not include provider keys, Cloud secrets, raw embeddings, query
 text, or chunk text.
+
+## Recommendation abstention version
+
+The recommendation intents now report their independently versioned v2 policy
+in `result_grouping.ranking_version`; search transport remains
+`site_knowledge_search.v1`. See [reading-task abstention v2](site-knowledge-reading-task-abstention-v2.md)
+for the successful-empty contract, evidence counters and unchanged v1 control.
+Other search intents retain their existing policy and response shape.
