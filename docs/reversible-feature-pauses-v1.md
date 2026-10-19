@@ -227,3 +227,12 @@ reachability gate because the new pause record was linked from root README
 but absent from the owning docs index. The index entry is now added in the
 isolated task checkout; the original shared checkout's staged docs remain
 untouched. This is a documentation-only correction to the tested runtime.
+
+
+The exact-head CI impacted API lane then completed 585 passing tests and one
+failure in an old full-equality entitlement expectation. The expectation now
+includes `available=false` and `availability_state=paused`; the existing seeded
+usage-detail test also asserts paused availability while retaining its original
+used/remaining counters. This correction changes only tests and this receipt,
+not runtime behavior or saved quota evidence. It is a task-related stale
+contract expectation, not a flaky/pre-existing failure claim.
