@@ -210,7 +210,7 @@ focused API/domain suite passed 116 tests, and the actual M4-served paused page
 passed its browser check. Source was subsequently updated for the audio
 workbench guard, requiring a new candidate sync before final acceptance.
 
-Addon PR #296 merged as `6750794e`; every PHP compatibility, WordPress AI,
+Addon PR #296 merged as `e69879fc`; every PHP compatibility, WordPress AI,
 release-static and advisory PHPStan check passed. Its pre-publish local OCR is
 incomplete (13 selected, zero successfully reviewed; 5,890 tokens before budget
 stopped dispatch). Addon and Toolbox OCR workflows are disabled_manually and
@@ -218,3 +218,12 @@ are not re-enabled by this task. Toolbox PR #281 follows the documented
 publisher exception path with the unavailable-review reason recorded in its
 body. Cloud CNA PR #1153's bounded OCR also failed; mandatory deterministic
 checks remain the merge authority. No missing review is described as clean.
+
+
+The final merged Addon ref is verified against origin/master as `e69879fc`
+(PR #296); Toolbox is `2dfc3fef` (PR #281). Both local mounted plugin checkouts
+were fast-forwarded to clean master. Cloud PR #1155 initially failed the docs
+reachability gate because the new pause record was linked from root README
+but absent from the owning docs index. The index entry is now added in the
+isolated task checkout; the original shared checkout's staged docs remain
+untouched. This is a documentation-only correction to the tested runtime.
