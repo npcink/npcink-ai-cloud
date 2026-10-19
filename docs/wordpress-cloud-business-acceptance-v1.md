@@ -86,8 +86,9 @@ Cloud 运行前后的 HEAD/差异指纹必须一致，否则本轮不完整。
 
 ## 生产实测交接
 
-本轮只交付离线入口和缺口，尚未实现或执行远程单草稿浏览器驱动。
-后续实现时复用现有编辑器断言，单独明确测试站点、草稿与权限身份，不移除本地脚本保护。
+远程单草稿浏览器入口已作为独立本地候选实现，尚未在真实 WordPress/生产执行。
+它复用官方 AI 编辑器的 Rephrase/Original/Suggested/Accept 控件语义，不移除 Addon
+原有本地脚本的域名或环境保护。它只操作事先存在的专用草稿，不自动创建文章、账户或密钥。
 
 1. 只读核对生产实际版本、插件版本、现有连接、主/回退预算与余额。
 2. 操作者在受保护浏览器中登录；已有 SSH 信息可复用，聊天不传密码、验证码或 Token。
@@ -103,3 +104,81 @@ Cloud 运行前后的 HEAD/差异指纹必须一致，否则本轮不完整。
 正式发布 smoke、真实业务验收、语义质量判断分别记录，不互相代替。
 
 回退：移除 `--business` 分流、新执行器、用例清单和本说明；不涉及生产配置、数据库或插件升级。
+
+## 远程单草稿入口（默认不联网）
+
+先准备一个已有的测试草稿：slug 为 `npcink-acceptance-` 前缀，至少三个顶层普通段落，
+其中仅一个段落含唯一标记；字数满足官方插件要求。其他段落充当不应被改写的对照。
+不要选择真实业务文章。离线检查不会创建或修改线上草稿；准备测试站草稿须另有操作者授权。
+
+在忽略目录 `.tmp/business-editor/` 保存无秘密的 `target.json`，例如：
+
+```json
+{
+  "site_url": "https://test.getimg.net",
+  "post_id": 123,
+  "expected_slug": "npcink-acceptance-polish-20261019",
+  "target_marker": "NPCINK_ACCEPTANCE_TARGET"
+}
+```
+
+`123` 是占位符，必须替换为专用草稿真实 ID。入口拒绝普通文章 slug、非 HTTPS、
+URL 用户凭据、路径、query 和未知配置字段。保存草稿前后均核对同一 ID、slug 与 draft 状态。
+
+```bash
+# 默认/显式 plan：只读本地目标文件，不启动浏览器、不联网。
+pnpm run verify:local -- --business-editor \
+  --target .tmp/business-editor/target.json --plan
+
+# 后续获准连接测试站后，一次登录：用户在独立的受保护浏览器填写 WordPress 登录信息。
+# 新会话文件不得已存在；不覆盖其他会话，不在聊天/命令行传密码。
+pnpm run verify:local -- --business-editor \
+  --target .tmp/business-editor/target.json --allow-origin https://test.getimg.net \
+  --session /absolute/private/wordpress-session.json --login
+
+# 只读远程预检：仅验证会话、实际草稿及编辑器可读；不运行模型、不采用、不保存。
+pnpm run verify:local -- --business-editor \
+  --target .tmp/business-editor/target.json --allow-origin https://test.getimg.net \
+  --session /absolute/private/wordpress-session.json --preflight
+```
+
+已安装的 `@playwright/test` 默认从 Cloud `frontend` 解析；若当前工作树没有依赖，
+显式增加 `--playwright-root /absolute/path/to/frontend` 复用已有安装。
+缺少模块或 Chromium 就停止，不自动安装或下载。登录会话仅允许目标 WordPress 域，
+文件须为普通文件、权限 0600，位于 Git 外或忽略目录，不能被 Git 跟踪。
+登录窗口最多等待 20 分钟，登录成功后保存会话并关闭；超时停止，不自动重试。
+
+真实执行需要把 `--preflight` 换成 **同时具备**
+`--execute --allow-real-workflow --allow-draft-write`。这些旗标是工具执行边界，
+不替代操作者对真实调用/写入的授权；本轮明确不执行。一次 WordPress 请求仍可能引发
+Cloud 内部回退和附带调用，不能把它当作一次 Provider 计费或硬金额上限。
+
+执行器只放行目标域的一次 `ai/content-resizing`、`action=rephrase` 请求，以及一次
+匹配采用内容、保留标题和 draft 状态的目标草稿保存；拒绝其他能力、重试、其他文章写入、
+自动保存、批量写入、发布、跨域网络及 WebSocket。浏览器使用独立上下文，不接管现有浏览器。
+管理 GET 写操作（删除、退出、admin-post/admin-ajax 等）也被拦截；保存载荷仅允许
+ID、正文、保持不变的标题/slug 与 draft 状态，出现额外字段即停止。
+同时拒绝 HTTP 方法覆盖与重复控制参数，避免只读请求被服务端解释为写操作。
+失败立即停止，保留专用草稿，不做删除、补写、第二次生成或自动恢复配置。
+
+先检查生成前与采用前持久化内容未改变；通过现有 Accept 控件采用，确认采用内容等于预览，
+对照段落保持，再通过现有 Save draft 控件保存并刷新回读。Cloud 始终不直接写 WordPress。
+官方插件 UI/接口出现版本差异时保持失败，不绕过 UI 直接写数据库来凑通过。
+
+回执位于 `.tmp/business-editor/run-*/receipt.json`，含阶段、源码身份、内容指纹、放行请求数，
+不保存 Cookie、nonce、密码、请求正文或文章原文。默认不截图、不录制 trace；
+只对专用测试内容获准时增加 `--screenshots`。`complete=true` 只表示所选预检/编辑器链路完成，
+`production_accepted=false` 与 `billing_status=not_verified` 仍保留：需单独核对实际模型、token、
+回退与积分，并完成人工语义质量判断、权限与账户隔离验收。
+
+离线验证命令：
+
+```bash
+node --test tests/unit/remote-editor-acceptance.test.mjs
+NPCINK_EDITOR_TEST_PLAYWRIGHT_ROOT=/absolute/path/to/frontend \
+  node --test tests/unit/remote-editor-acceptance.test.mjs
+```
+
+第二条显式运行本地浏览器 DOM/接口替身，所有请求由内存 fixture 应答，验证预检、
+采用/保存/刷新、错误草稿、保存失败及重复能力请求阻断；它不是已安装 WordPress、
+实际 Cloud 或真实 Provider 的证据。远程入口可单独回退，不影响 `--business` 离线入口。

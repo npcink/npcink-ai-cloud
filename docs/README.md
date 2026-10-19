@@ -12,7 +12,8 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
-| 接续阶段 1 试用（口径确认/机制盘点/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 判据/流程/待办台账，新会话先读这个 |
+| 接续产品头脑风暴、阶段1试用与推荐观察三个旧会话 | [三会话综合纪要与接续清单 — 2026-10-19](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md) — 140轮历史；第11节列完整未完事项，区分当前试用、推荐优化暂缓、工具小修、商业候选及已完成旧项 |
+| 接续首批3人免费试用（Trace暂缓/起步验收/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 复用运行、反馈和费用记录；四周计划第0节为起步口径，完整正式smoke仍未通过 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
@@ -91,6 +92,7 @@ deleting the old decision history.
 
 ## Product Boundaries
 
+- [Reversible Feature Pauses](reversible-feature-pauses-v1.md) — paused entrypoints, retained data and implementation, restoration and verification receipts.
 - [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
 - [Background Evidence and Cron Handoff](background-evidence-and-cron-handoff-2026-09-09.md) — reused acceptance, candidate identity and pending natural upload observation.
 
@@ -144,7 +146,7 @@ deleting the old decision history.
 
 - [本地 WordPress 功能验收 — 2026-10-06](history/engineering/2026/wordpress-local-functional-acceptance-2026-10-06.md) — 五项编辑器替身场景和 272 项契约断言通过；一例真实本地标题保存/扣额已关联，第三方、云端反馈及文生图仍待补证据，保留首轮阻塞历史。
 - [Free 试用前生产发布准备 — 2026-10-06](production-release-readiness-plan-2026-10-06.md) — 两处旧测试修复候选、累计部署范围、五项迁移与回滚条件；不是生产发布授权。
-- [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 已确认正常自注册、复用 Free 和四周判据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，启动状态待操作者核实。
+- [阶段 1 免费试用商业验证计划 — 2026-10-06](trial-stage-commercial-validation-plan-2026-10-06.md) — 10月19日更新首批3人起步验收，外部Trace暂缓，复用Free及现有证据；配套[账户与额度机制盘点](trial-account-and-quota-mechanism-2026-10-06.md)，操作者安排正常注册使用，实际T+0尚未记录。
 - [ADR-058: Registration-Verified Account Free Entitlement](decisions/058-registration-verified-account-free-entitlement.md) — verified registration grants account-owned Free; Addon still owns proof of site connection, with legacy fallback preserved.
 - [ADR-059: Existing-Catalog Provider Refresh Is Advisory During Release](decisions/059-provider-refresh-advisory-release.md) — production cutovers may retain a historical provider catalog when an individual upstream credential is unavailable; bootstrap, persistence, routing, health, and runtime provider failures remain fail-closed.
 - [Free Trial Development Candidate — 2026-10-06](history/engineering/2026/trial-free-entitlement-development-candidate-2026-10-06.md) — local backend evidence and retained implementation; frontend dependency and M4 relay blockers, not merge or deployment evidence.

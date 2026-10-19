@@ -25,6 +25,7 @@ from app.core.db import get_session
 from app.core.logging import get_logger
 from app.core.models import CatalogInstance, CatalogModel, RunRecord
 from app.core.security import extract_trace_id
+from app.domain.advisor.availability import OPERATIONS_ADVISOR_PAUSED
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_feedback.service import AgentFeedbackService
 from app.domain.agent_workflow_metadata import (
@@ -32,6 +33,7 @@ from app.domain.agent_workflow_metadata import (
     get_agent_workflow_metadata_projection,
     get_workflow_metadata,
 )
+from app.domain.audio_generation.contracts import AUDIO_GENERATION_CLOUD_ABILITY
 from app.domain.audio_generation.workbench import (
     AudioWorkbenchError,
     AudioWorkbenchService,
@@ -70,6 +72,7 @@ from app.domain.provider_connections.service import (
     ProviderConnectionAdminService,
 )
 from app.domain.provider_resources import build_admin_ai_resource_projection
+from app.domain.runtime.availability import paused_runtime_feature
 from app.domain.runtime.models import (
     RUNTIME_BACKLOG_SCOPE_KIND_PATTERN,
     RUNTIME_DIAGNOSTIC_ISSUE_KIND_PATTERN,
@@ -3141,6 +3144,17 @@ async def get_runtime_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_runtime_advisor,
         site_id=site_id,
@@ -3163,6 +3177,17 @@ async def get_commercial_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_commercial_advisor,
         usage_window_days=usage_window_days,
@@ -3186,6 +3211,17 @@ async def get_routing_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         result = await run_in_threadpool(
             _get_advisor_service(request).get_routing_advisor,
@@ -3220,6 +3256,17 @@ async def get_site_diagnostic_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_site_diagnostic_advisor,
         site_id=site_id,
@@ -3244,6 +3291,17 @@ async def get_operations_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     result = await run_in_threadpool(
         _get_advisor_service(request).get_operations_advisor,
         site_id=site_id,
@@ -3278,6 +3336,17 @@ async def get_ops_summary_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         result = await run_in_threadpool(
             _get_advisor_service(request).get_ops_summary,
@@ -3332,6 +3401,17 @@ async def get_ops_summary_preview_advisor(
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         result = await run_in_threadpool(
             _get_advisor_service(request).get_ops_summary_preview,
@@ -3375,6 +3455,17 @@ async def review_ops_summary_disclosure(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    if OPERATIONS_ADVISOR_PAUSED:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="advisor.feature_paused",
+                message="Operations Advisor is temporarily paused",
+                data={"feature": "operations_advisor", "retryable": False},
+                revision="m1",
+            ),
+        )
     try:
         actor_context = _build_audit_context(request)
         result = await run_in_threadpool(
@@ -6178,6 +6269,18 @@ async def create_admin_audio_job(
     auth = await authorize_internal_request(request, require_idempotency=True)
     if auth is not None:
         return auth
+    feature = paused_runtime_feature(ability_name=AUDIO_GENERATION_CLOUD_ABILITY)
+    if feature:
+        return JSONResponse(
+            status_code=409,
+            content=build_envelope(
+                status="error",
+                error_code="runtime.feature_paused",
+                message=f"{feature} is temporarily paused",
+                data={"feature": feature, "retryable": False},
+                revision="m6",
+            ),
+        )
     service = _audio_workbench_service(request)
     try:
         result = service.create_job(payload.model_dump(mode="json"))

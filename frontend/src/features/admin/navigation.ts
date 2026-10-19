@@ -1,3 +1,4 @@
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
 import { normalizeObservationWindow, observationCapability, observationWindows } from '@/features/admin/observability/window';
 import { translate } from '@/lib/i18n';
 
@@ -20,11 +21,12 @@ export const diagnosticNavigation: readonly AdminNavigationItem[] = [
   { href: '/admin/audit', labelKey: 'admin.audit_workspace.title', fallback: 'Audit evidence' },
   { href: '/admin/agent-feedback', labelKey: 'admin.nav_agent_feedback', fallback: 'Agent feedback quality' },
   { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor' },
-];
+].filter(item => !OPERATIONS_ADVISOR_PAUSED || item.href !== '/admin/ai-advisor');
 
 const pathOf = (href: string) => href.split('?')[0];
 
 export function adminSecondaryParentHref(pathname: string): string | null {
+  if (pathname === '/admin/ai-advisor') return '/admin/troubleshooting';
   if (observationNavigation.some(item => pathOf(item.href) === pathname)) return '/admin/usage-statistics';
   if (diagnosticNavigation.some(item => pathOf(item.href) === pathname)) return '/admin/troubleshooting';
   return null;

@@ -1,3 +1,4 @@
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
 import { formatNumber } from '@/lib/utils';
 import { statusTone } from '@/features/admin/observability/runtimeTelemetry';
 
@@ -61,7 +62,7 @@ export const evidenceLanes: EvidenceLane[] = [
     descKey: 'admin.advanced.ai_advisor_desc',
     descFallback: 'AI-assisted diagnosis for selected operational signals.',
   },
-];
+].filter(lane => !OPERATIONS_ADVISOR_PAUSED || lane.id !== 'advisor');
 
 export const runtimeEvidenceItems = [
   {

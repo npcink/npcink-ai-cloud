@@ -12,6 +12,7 @@ from app.core.security import extract_trace_id
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
 from app.domain.routing.service import RoutingService
+from app.domain.runtime.availability import PAUSED_RUNTIME_FEATURES
 from app.domain.wordpress_ai_connector.readiness import build_wordpress_ai_capabilities
 
 router = APIRouter(prefix="/v1/entitlements", tags=["entitlements"])
@@ -154,6 +155,10 @@ def _resolve_pro_cloud_runtime(policy: dict[str, object]) -> dict[str, object]:
     return {
         "contract_version": "pro-cloud-runtime-entitlement-v1",
         "feature_id": "nightly_site_inspection",
+        "available": "cloud_inspection" not in PAUSED_RUNTIME_FEATURES,
+        "availability_state": "paused"
+        if "cloud_inspection" in PAUSED_RUNTIME_FEATURES
+        else "available",
         "execution_pattern": "whole_run_offload",
         "meter_key": "ai_credits",
         "limit_enforced": False,
