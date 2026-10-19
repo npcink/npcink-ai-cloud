@@ -12,7 +12,7 @@ as current truth.
 
 | 现在要做什么 | 从这里开始 |
 | --- | --- |
-| 接续产品头脑风暴、阶段1试用与推荐观察三个旧会话 | [三会话综合纪要与接续清单 — 2026-10-19](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md) — 140轮历史、决定演变、后续收口证据、正式验收及3人四周试用待办 |
+| 接续产品头脑风暴、阶段1试用与推荐观察三个旧会话 | [三会话综合纪要与接续清单 — 2026-10-19](history/strategy/2026/three-chat-synthesis-and-continuation-2026-10-19.md) — 140轮历史；第11节列完整未完事项，区分当前试用、推荐优化暂缓、工具小修、商业候选及已完成旧项 |
 | 接续首批3人免费试用（Trace暂缓/起步验收/周报） | [阶段 1 试用交接与待办](trial-stage-handoff-2026-10-06.md) — 复用运行、反馈和费用记录；四周计划第0节为起步口径，完整正式smoke仍未通过 |
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
