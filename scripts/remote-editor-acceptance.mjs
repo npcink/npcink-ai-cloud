@@ -50,7 +50,7 @@ export class RequestBoundary {
       return false;
     };
     const u = new URL(url);
-    if (u.origin !== this.target.site_url || !['https:'].includes(u.protocol)) return reject(true);
+    if (u.origin !== this.target.site_url || u.protocol !== 'https:' || u.username || u.password) return reject(true);
     const path = restPath(url);
     const ability = /\/wp-abilities\/v1\/abilities\/.*\/run$/.test(path);
     if (ability) {
@@ -62,6 +62,16 @@ export class RequestBoundary {
       return true;
     }
     if (['GET', 'HEAD'].includes(method)) {
+      // WordPress also exposes state changes through administrative GET links.
+      if (/^\/wp-admin\/(?:admin-post|admin-ajax)\.php$/.test(u.pathname)) return reject(true);
+      if ((u.pathname.startsWith('/wp-admin/') || u.pathname === '/wp-login.php')
+        && (u.searchParams.has('action') || u.searchParams.has('action2'))) {
+        const allowedEdit = u.pathname === '/wp-admin/post.php'
+          && u.searchParams.get('action') === 'edit'
+          && u.searchParams.get('post') === String(this.target.post_id)
+          && !u.searchParams.has('action2');
+        if (!allowedEdit) return reject(true);
+      }
       // Do not allow generative GET shortcuts or unrelated REST/plugin RPCs.
       if (/\/(?:run|execute|generate|test|verify)(?:\/|$)/i.test(path)) return reject(true);
       if (u.pathname.startsWith('/wp-json/') || u.searchParams.has('rest_route')) {
@@ -74,6 +84,8 @@ export class RequestBoundary {
       && (!u.searchParams.has('action') || u.searchParams.get('action') === 'login')) return true;
     if (this.mode === 'execute' && this.phase === 'saving' && method === 'POST'
       && path === `/wp/v2/posts/${this.target.post_id}` && this.saveRequests === 0
+      && body && Object.keys(body).every((key) => ['id', 'content', 'status', 'title', 'slug'].includes(key))
+      && (body.id === undefined || body.id === this.target.post_id)
       && body?.content === this.saveContent && (body.status === undefined || body.status === 'draft')
       && (body.title === undefined || body.title === this.saveTitle)
       && (body.slug === undefined || body.slug === this.target.expected_slug)) {
@@ -339,7 +351,7 @@ export async function main(argv = process.argv.slice(2)) {
       const page = await context.newPage();
       await page.goto(`${target.site_url}/wp-login.php`);
       console.log('Log in in the protected browser; do not paste credentials into the terminal.');
-      await page.waitForURL(`${target.site_url}/wp-admin/**`, { timeout: 300000 });
+      await page.waitForURL(`${target.site_url}/wp-admin/**`, { timeout: 1200000 });
       const state = await context.storageState();
       mkdirSync(dirname(statePath), { recursive: true, mode: 0o700 });
       writeFileSync(statePath, JSON.stringify(state), { mode: 0o600, flag: 'wx' });

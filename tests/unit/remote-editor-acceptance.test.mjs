@@ -42,11 +42,23 @@ test('execution admits one exact rephrase and blocks retries or other abilities'
   assert.equal(p.abilityRequests, 1);
 });
 
+test('read-only navigation blocks administrative GET mutations and URL credentials', () => {
+  const p = new RequestBoundary(target, 'preflight');
+  for (const path of ['/wp-admin/post.php?post=42&action=trash',
+    '/wp-admin/post.php?post=43&action=edit', '/wp-admin/edit.php?action2=trash',
+    '/wp-admin/admin-post.php?action=plugin_operation', '/wp-admin/admin-ajax.php',
+    '/wp-login.php?action=logout']) assert.equal(p.allow(target.site_url + path, 'GET'), false);
+  assert.equal(p.allow('https://user:secret@wordpress.example.test/wp-admin/', 'GET'), false);
+  assert.equal(p.allow(target.site_url + '/wp-admin/post.php?post=42&action=edit', 'GET'), true);
+});
+
 test('save cannot publish, change title, save another post, autosave or save twice', () => {
   const p = new RequestBoundary(target, 'execute');
   p.phase = 'saving'; p.saveContent = 'reviewed'; p.saveTitle = 'unchanged';
   for (const [url, body] of [[save, { content: 'unreviewed' }], [save, { content: 'reviewed', status: 'publish' }],
     [save, { content: 'reviewed', title: 'changed' }], [save + '/autosaves', { content: 'reviewed' }],
+    [save, { content: 'reviewed', author: 99 }], [save, { content: 'reviewed', meta: { hidden: true } }],
+    [save, { content: 'reviewed', id: 43 }],
     [save.replace('/42', '/43'), { content: 'reviewed' }]]) assert.equal(p.allow(url, 'POST', body), false);
   assert.equal(p.allow(save, 'POST', { content: 'reviewed', status: 'draft', title: 'unchanged' }), true);
   assert.equal(p.allow(save, 'POST', { content: 'reviewed' }), false);

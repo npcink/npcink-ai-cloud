@@ -109,7 +109,7 @@ Cloud 运行前后的 HEAD/差异指纹必须一致，否则本轮不完整。
 
 先准备一个已有的测试草稿：slug 为 `npcink-acceptance-` 前缀，至少三个顶层普通段落，
 其中仅一个段落含唯一标记；字数满足官方插件要求。其他段落充当不应被改写的对照。
-不要选择真实业务文章。本轮未创建或修改线上草稿。
+不要选择真实业务文章。离线检查不会创建或修改线上草稿；准备测试站草稿须另有操作者授权。
 
 在忽略目录 `.tmp/business-editor/` 保存无秘密的 `target.json`，例如：
 
@@ -146,6 +146,7 @@ pnpm run verify:local -- --business-editor \
 显式增加 `--playwright-root /absolute/path/to/frontend` 复用已有安装。
 缺少模块或 Chromium 就停止，不自动安装或下载。登录会话仅允许目标 WordPress 域，
 文件须为普通文件、权限 0600，位于 Git 外或忽略目录，不能被 Git 跟踪。
+登录窗口最多等待 20 分钟，登录成功后保存会话并关闭；超时停止，不自动重试。
 
 真实执行需要把 `--preflight` 换成 **同时具备**
 `--execute --allow-real-workflow --allow-draft-write`。这些旗标是工具执行边界，
@@ -155,6 +156,8 @@ Cloud 内部回退和附带调用，不能把它当作一次 Provider 计费或�
 执行器只放行目标域的一次 `ai/content-resizing`、`action=rephrase` 请求，以及一次
 匹配采用内容、保留标题和 draft 状态的目标草稿保存；拒绝其他能力、重试、其他文章写入、
 自动保存、批量写入、发布、跨域网络及 WebSocket。浏览器使用独立上下文，不接管现有浏览器。
+管理 GET 写操作（删除、退出、admin-post/admin-ajax 等）也被拦截；保存载荷仅允许
+ID、正文、保持不变的标题/slug 与 draft 状态，出现额外字段即停止。
 失败立即停止，保留专用草稿，不做删除、补写、第二次生成或自动恢复配置。
 
 先检查生成前与采用前持久化内容未改变；通过现有 Accept 控件采用，确认采用内容等于预览，
