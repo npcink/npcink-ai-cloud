@@ -161,7 +161,9 @@ export default function PortalPage() {
             ? t('portal.home.site_connecting_issue')
             : t('portal.home.site_inactive_issue'),
       href: `/portal/sites/${encodeURIComponent(site.site_id)}#service-status`,
-      action: t('portal.site_record', {}, 'View site'),
+      action: site.status === 'inactive'
+        ? t('portal.continue_site_connection_action', {}, 'Continue connection')
+        : t('portal.site_record', {}, 'View site'),
     }));
   if (currentSubscription?.status && currentSubscription.status !== 'active') {
     restrictionItems.unshift({
