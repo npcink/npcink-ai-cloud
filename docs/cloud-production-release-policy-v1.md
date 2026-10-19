@@ -209,6 +209,19 @@ A deferred smoke is explicitly recorded as not-passed evidence. See the
 
 ### Bounded release verification
 
+#### First three-user free-trial acceptance (operator decision, 2026-10-19)
+
+The first three-person, four-week free trial uses the business acceptance scope in
+[the trial plan](trial-stage-commercial-validation-plan-2026-10-06.md#0-2026-10-19首批3人免费试用验收口径).
+External Trace is deferred; a complete formal Release Smoke pass is not a start
+prerequisite for that bounded trial. Reuse existing runtime, feedback, credit and
+supplier-cost evidence, recording missing observations as unknown. Keep the actual
+formal smoke result as not passed; do not remove its Trace assertions or change
+release gates, authentication, network isolation, budget protection or final-write
+ownership. This decision does not authorize deployment, paid or public launch,
+expansion, or a claim that formal smoke passed. Reassess the applicable gates before
+those later stages.
+
 #### Production PR base and readiness prechecks
 
 Before opening a normal production-promotion PR, run:
