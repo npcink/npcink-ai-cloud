@@ -67,10 +67,11 @@
         "docs/cloud-agent-workflow-metadata-projection-v1.md"
       ],
       "commands": [
-        ["pnpm", "run", "check:agent-workflow-metadata"]
+        [".venv/bin/python", "-m", "pytest", "tests/api/test_service_advisor_routes.py::test_admin_agent_workflow_metadata_projection_is_read_only", "-q"]
       ],
       "followups": [
-        "Verify the projection remains display/detail truth only, with no workflow execution, approval, prompt, preset, MCP, OpenClaw, or WordPress-write ownership."
+        "Verify the projection remains display/detail truth only, with no workflow execution, approval, prompt, preset, MCP, OpenClaw, or WordPress-write ownership.",
+        "Run pnpm run check:agent-workflow-metadata against an explicitly selected M4 browser URL for runtime evidence; the source/CI gate must not assume a live Cloud server or browser cache."
       ]
     },
     {

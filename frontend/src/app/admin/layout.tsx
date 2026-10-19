@@ -1,5 +1,7 @@
 'use client';
 
+import { OPERATIONS_ADVISOR_PAUSED } from '@/features/admin/ai-advisor/availability';
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -367,7 +369,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         { href: '/admin/vector-observability', labelKey: 'admin.vector_obs.title', fallback: 'Vector Observability', collapsedLabel: 'VO' },
         { href: '/admin/agent-feedback', labelKey: 'admin.agent_feedback.title', fallback: 'Agent Feedback Quality', collapsedLabel: 'AF' },
         { href: '/admin/ai-advisor', labelKey: 'admin.ai_advisor.title', fallback: 'Operations Advisor', collapsedLabel: 'OA' },
-      ].map((item) => ({
+      ].filter(item => !OPERATIONS_ADVISOR_PAUSED || item.href !== '/admin/ai-advisor').map((item) => ({
         ...item,
         groupLabel: diagnosticsGroupLabel,
         groupFallback: 'Diagnostics',

@@ -68,10 +68,12 @@ async function expectDesktopRouteBaseline(page: Page, route: RouteAcceptance) {
   await expect(page.locator('[data-ui="admin-route-breadcrumb"]')).toContainText((await activeNav.innerText()).trim());
 
   if (!route.routePattern.includes('[') && route.routePattern !== '/admin/login') {
-    // Every standalone page is findable from the global quick switcher.
+    // Active pages are discoverable; a paused bookmark must stay withdrawn.
     await page.getByRole('button', { name: /打开快速跳转|Open quick switcher/i }).click();
     const command = page.getByRole('dialog');
-    await expect(command.locator(`a[href="${route.routePattern}"]`)).toBeVisible();
+    const entry = command.locator(`a[href="${route.routePattern}"]`);
+    if (route.routePattern === '/admin/ai-advisor') await expect(entry).toHaveCount(0);
+    else await expect(entry).toBeVisible();
     await page.keyboard.press('Escape');
   }
 }

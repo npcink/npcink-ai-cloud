@@ -87,6 +87,13 @@ from tests.conftest import (
 )
 
 
+@pytest.fixture(autouse=True)
+def retained_runtime_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retained runtime behavior; default release pauses have separate tests."""
+    from app.domain.runtime import availability
+    monkeypatch.setattr(availability, "PAUSED_RUNTIME_FEATURES", frozenset())
+
+
 def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{tmp_path / 'runtime-api.sqlite3'}"
 

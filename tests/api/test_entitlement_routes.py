@@ -116,6 +116,8 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
     assert data["entitlement"]["pro_cloud_runtime"] == {
         "contract_version": "pro-cloud-runtime-entitlement-v1",
         "feature_id": "nightly_site_inspection",
+        "available": False,
+        "availability_state": "paused",
         "execution_pattern": "whole_run_offload",
         "meter_key": "ai_credits",
         "limit_enforced": False,
@@ -337,6 +339,8 @@ def test_current_entitlement_returns_pro_cloud_runtime_usage_detail(
 
     assert response.status_code == 200
     pro_runtime = response.json()["data"]["entitlement"]["pro_cloud_runtime"]
+    assert pro_runtime["available"] is False
+    assert pro_runtime["availability_state"] == "paused"
     assert pro_runtime["meter_key"] == "ai_credits"
     assert pro_runtime["limit_enforced"] is False
     assert pro_runtime["max_nightly_inspection_runs_per_period"] == 3

@@ -123,6 +123,7 @@ from app.domain.runtime.artifact_coordination import (
     RuntimeArtifactCoordinationDependencies,
     RuntimeArtifactCoordinationService,
 )
+from app.domain.runtime.availability import paused_runtime_feature, require_runtime_available
 from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
 from app.domain.runtime.contract_validation import RuntimeContractValidator
 from app.domain.runtime.diagnostics_query import RuntimeDiagnosticsQueryService
@@ -331,6 +332,10 @@ class RuntimeService:
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
+        require_runtime_available(
+            ability_name=request.ability_name, execution_kind=request.execution_kind,
+            contract_version=request.contract_version, profile_id=request.profile_id,
+        )
         self.contract_validator.validate_runtime_data_handling_contract(request)
         self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
@@ -428,6 +433,12 @@ class RuntimeService:
         }
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
+        require_runtime_available(
+            ability_name=request.ability_name,
+            execution_kind=request.execution_kind,
+            contract_version=request.contract_version,
+            profile_id=request.profile_id,
+        )
         self.contract_validator.validate_runtime_data_handling_contract(request)
         if request.ability_name == CONTENT_FORMAT_ABILITY:
             return execute_formatting(self, request)
@@ -899,6 +910,7 @@ class RuntimeService:
         idempotency_key: str | None = None,
         trace_id: str | None = None,
     ) -> RuntimeExecutionResponse:
+        require_runtime_available(ability_name="", execution_kind="media_derivative")
         return self.artifact_coordination_service.enqueue_media_job_run(
             site_id=site_id,
             input_payload=input_payload,
@@ -2576,6 +2588,20 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
     ) -> None:
+        feature = paused_runtime_feature(
+            ability_name=run.ability_name,
+            execution_kind=run.execution_kind,
+            contract_version=run.contract_version or "",
+            profile_id=run.profile_id,
+        )
+        if feature:
+            self.run_lifecycle_service.fail_run(
+                repository,
+                run,
+                error_code="runtime.feature_paused",
+                error_message=f"{feature} is temporarily paused",
+            )
+            return
         if self._is_cloud_batch_runtime_run(run):
             self._execute_cloud_batch_runtime_run(run, repository=repository)
             return

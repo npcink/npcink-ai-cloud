@@ -92,6 +92,7 @@ deleting the old decision history.
 
 ## Product Boundaries
 
+- [Reversible Feature Pauses](reversible-feature-pauses-v1.md) — paused entrypoints, retained data and implementation, restoration and verification receipts.
 - [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
 - [Background Evidence and Cron Handoff](background-evidence-and-cron-handoff-2026-09-09.md) — reused acceptance, candidate identity and pending natural upload observation.
 

@@ -282,7 +282,7 @@ test('runtime diagnostics exposes direct secondary tools on desktop and mobile',
   const toolLinks = lanes;
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /More diagnostic tools|更多诊断工具/ })).toHaveCount(0);
-  await expect(toolLinks.getByRole('link')).toHaveCount(7);
+  await expect(toolLinks.getByRole('link')).toHaveCount(6);
   await expect(lanes).toBeVisible();
   await expect(lanes.locator('summary')).toHaveCount(0);
   await expect(toolLinks.locator('a[href="/admin/audit"]')).toBeVisible();
@@ -290,7 +290,7 @@ test('runtime diagnostics exposes direct secondary tools on desktop and mobile',
   await expect(toolLinks.locator('a[href^="/admin/media-observability"]')).toBeVisible();
   await expect(toolLinks.locator('a[href^="/admin/vector-observability"]')).toBeVisible();
   await expect(toolLinks.locator('a[href^="/admin/agent-feedback"]')).toBeVisible();
-  await expect(toolLinks.locator('a[href^="/admin/ai-advisor"]')).toBeVisible();
+  await expect(toolLinks.locator('a[href^="/admin/ai-advisor"]')).toHaveCount(0);
   await expect(lanes.getByRole('combobox')).toHaveCount(0);
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
