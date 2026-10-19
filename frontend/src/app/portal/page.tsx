@@ -13,7 +13,7 @@ import {
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
-import { cn, formatNumber } from '@/lib/utils';
+import { formatNumber } from '@/lib/utils';
 import {
   portalClient,
   type Entitlements,
@@ -21,11 +21,9 @@ import {
 import {
   PortalPageStack,
   PortalSection,
-  PortalCard,
 } from '@/components/portal/PortalScaffold';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
-import { PortalTag } from '@/components/portal/PortalTag';
 import { PortalSitesWorkspace } from '@/components/portal/PortalSitesWorkspace';
 
 type RestrictionItem = {
@@ -43,41 +41,6 @@ type AccountEntitlementsError = {
   code: string;
   message: string;
 };
-
-function buildRestrictionItems({
-  t,
-  siteStatus,
-  subscriptionStatus,
-}: {
-  t: (key: string, params?: Record<string, string>, fallback?: string) => string;
-  siteStatus: string;
-  subscriptionStatus: string;
-}): RestrictionItem[] {
-  return [
-    siteStatus !== 'active'
-      ? {
-          tone: 'warn',
-          label: t('portal.home.restriction_setup_label', {}, 'Site setup still needs attention'),
-          detail: t(
-            'portal.home.restriction_setup_desc',
-            {},
-            'This site is not active yet. Connect or reactivate the WordPress site to enable hosted service access.'
-          ),
-        }
-      : null,
-    subscriptionStatus && subscriptionStatus !== 'active'
-      ? {
-          tone: 'warn',
-          label: t('portal.home.restriction_plan_label', {}, 'Current plan is not fully active'),
-          detail: t(
-            'portal.home.restriction_plan_desc',
-            {},
-            'Open Package to review the current account package state.'
-          ),
-        }
-      : null,
-  ].filter(Boolean) as RestrictionItem[];
-}
 
 export default function PortalPage() {
   const { t } = useLocale();
@@ -168,20 +131,12 @@ export default function PortalPage() {
   }
 
   const visibleSites = getVisiblePortalSites(session.sites);
-  const selectedSite = session.selected_context?.site || null;
   const hasVisibleSites = visibleSites.length > 0;
-  const hasSelectedSite = Boolean(selectedSite);
   const currentSubscription = accountEntitlements?.current_subscription
     || session.selected_context?.current_subscription
     || null;
   const isFreePackage = currentSubscription?.plan_kind === 'default_free'
     || currentSubscription?.plan_id === 'free';
-  const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
-  const contextLabel = selectedSite
-    ? getPortalSiteDisplayName(selectedSite)
-    : hasVisibleSites
-      ? t('portal.home.account_context_label', {}, 'Account overview')
-      : t('portal.home.no_site_context_label', {}, 'Account overview · no connected sites');
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
     planVersionId: currentSubscription?.plan_version_id,
@@ -189,81 +144,35 @@ export default function PortalPage() {
     planKind: currentSubscription?.plan_kind,
     coverageState: currentSubscription ? 'covered' : 'uncovered',
   });
-  const restrictionItems = selectedSite
-    ? buildRestrictionItems({
-        t,
-        siteStatus: selectedSite.status,
-        subscriptionStatus: currentSubscription?.status || '',
-      })
-    : hasVisibleSites
-      ? []
-    : [
-        {
-          tone: 'warn' as const,
-          label: t('portal.home.restriction_setup_label', {}, 'Site setup still needs attention'),
-          detail: t(
-            'portal.home.no_sites_empty_desc',
-            {},
-            'Open npcink-cloud-addon in WordPress and start the connection there. Account package and credits are shown separately; binding adds site status and service access.'
-          ),
-        },
-      ];
   const restrictedCount = visibleSites.filter((site) => portalSiteNeedsAttention(site)).length;
   const hasPackageLabel = currentPackageDisplay.coverage_state === 'covered'
     && Boolean(currentPackageDisplay.display_package_label);
-  const selectedSiteRecordHref = selectedSite
-    ? `/portal/sites/${encodeURIComponent(selectedSite.site_id)}#service-status`
-    : '/portal#sites';
-  const isSelectedSiteConnected =
-    Boolean(selectedSite) &&
-    selectedSite?.status === 'active' &&
-    Boolean(selectedSiteUrl);
-  const setupChecklistItems = [
-    {
-      key: 'site',
-      done: isSelectedSiteConnected,
-      title: !hasVisibleSites
-        ? t('portal.home.onboarding_first_site_title', {}, 'Connect your first WordPress site')
-        : !selectedSite && hasVisibleSites
-        ? t('portal.home.choose_site_record_title', {}, 'Choose a site record')
-        : t('portal.home.onboarding_site_title', {}, 'Confirm site connection'),
-      detail: !hasVisibleSites
-        ? t(
-            'portal.home.onboarding_first_site_desc',
-            {},
-            '1. Open npcink-cloud-addon in WordPress. 2. Start the connection from the addon. 3. Return here to confirm the connected site. Account entitlement is shown separately.'
-          )
-        : !selectedSite && hasVisibleSites
-        ? t(
-            'portal.home.choose_site_record_desc',
-            {},
-            'Choose a site only when you want to inspect its connection status. Account service details remain available without a site selection.'
-          )
-        : isSelectedSiteConnected
-        ? t('portal.home.onboarding_site_ready', {}, 'The WordPress site is connected and can use the service.')
-        : t('portal.home.onboarding_site_needed', {}, 'Open the WordPress plugin to reconnect the site if the address or service connection is not ready.'),
-      href: !hasVisibleSites ? '#sites' : selectedSiteRecordHref,
-      action: !hasVisibleSites
-        ? t('portal.home.onboarding_first_site_action', {}, 'Open connection guide')
-        : t('portal.home.onboarding_site_action', {}, 'View site'),
-    },
-    ...(isSelectedSiteConnected
-      ? [{
-          key: 'package',
-          done: Boolean(currentSubscription?.status === 'active' || hasPackageLabel),
-          title: t('portal.home.onboarding_package_title', {}, 'Review Free package'),
-          detail:
-            currentSubscription?.status === 'active'
-              ? t('portal.home.onboarding_package_ready', {}, 'The current package is available.')
-              : t('portal.home.onboarding_package_needed', {}, 'Review the current package and what remains this period.'),
-          href: '/portal/billing',
-          action: t('portal.home.onboarding_package_action', {}, 'View package'),
-        }]
-      : []),
-  ];
-  const requiredAttentionItems = setupChecklistItems.filter((item) => !item.done);
-  const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0
-    && (hasSelectedSite || !hasVisibleSites);
+  const restrictionItems: RestrictionItem[] = visibleSites
+    .filter((site) => portalSiteNeedsAttention(site))
+    .map((site) => ({
+      id: site.site_id,
+      tone: 'warn',
+      label: t('portal.home.site_issue_title', { site: getPortalSiteDisplayName(site) }),
+      detail: site.status === 'active' && !getPortalSiteUrl(site)
+        ? t('portal.home.site_address_issue')
+        : site.status === 'suspended'
+          ? t('portal.home.site_suspended_issue')
+          : site.status === 'provisioning'
+            ? t('portal.home.site_connecting_issue')
+            : t('portal.home.site_inactive_issue'),
+      href: `/portal/sites/${encodeURIComponent(site.site_id)}#service-status`,
+      action: t('portal.site_record', {}, 'View site'),
+    }));
+  if (currentSubscription?.status && currentSubscription.status !== 'active') {
+    restrictionItems.unshift({
+      id: 'package',
+      tone: 'warn',
+      label: t('portal.home.restriction_plan_label'),
+      detail: t('portal.home.restriction_plan_desc'),
+      href: '/portal/billing',
+      action: t('portal.home.billing_action'),
+    });
+  }
   const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
@@ -349,12 +258,34 @@ export default function PortalPage() {
         ? restrictedCount > 0
           ? t('portal.home.site_status_attention_detail', { count: String(restrictedCount) }, `${restrictedCount} sites need attention.`)
           : t('portal.home.site_status_ready_detail', {}, 'All connected sites look ready.')
-        : t('portal.home.no_sites_empty_desc', {}, 'Open npcink-cloud-addon in WordPress and start the connection there.'),
+        : t('portal.home.connect_summary'),
       size: 'compact' as const,
     },
   ];
   const operationFocusItems: RestrictionItem[] = [
-    ...restrictionItems,
+    ...(accountEntitlementsUnavailable
+      ? [{
+          tone: 'warn' as const,
+          label: accountEntitlementsError?.code === 'commercial.quota_exceeded'
+            ? t('portal.home.credit_attention_title', {}, 'AI credits need attention')
+            : t('portal.home.entitlements_failed_title', {}, 'Package usage is unavailable'),
+          detail: accountEntitlementsError?.message || t(
+              'portal.home.entitlements_failed_desc',
+              {},
+              'Package usage could not be loaded. Retry before relying on the service status.'
+            ),
+          href: accountEntitlementsError?.code === 'commercial.quota_exceeded'
+            ? '/portal/usage'
+            : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
+              ? '/portal/support?new=1&topic=account'
+              : undefined,
+          action: accountEntitlementsError?.code === 'commercial.quota_exceeded'
+            ? t('error.portal_recovery_review_account_quota', {}, 'Review account usage')
+            : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
+              ? t('error.portal_recovery_contact_support', {}, 'Contact support')
+              : undefined,
+        }]
+      : []),
     ...(creditUnavailable
       ? [{
           tone: 'warn' as const,
@@ -404,187 +335,79 @@ export default function PortalPage() {
         action: t('portal.home.billing_action', {}, 'Review package'),
       };
     }),
-    ...(accountEntitlementsUnavailable
-      ? [{
-          tone: 'warn' as const,
-          label: accountEntitlementsError?.code === 'commercial.quota_exceeded'
-            ? t('portal.home.credit_attention_title', {}, 'AI credits need attention')
-            : t('portal.home.entitlements_failed_title', {}, 'Package usage is unavailable'),
-          detail: accountEntitlementsError?.message || t(
-              'portal.home.entitlements_failed_desc',
-              {},
-              'Package usage could not be loaded. Retry before relying on the service status.'
-            ),
-          href: accountEntitlementsError?.code === 'commercial.quota_exceeded'
-            ? '/portal/usage'
-            : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
-              ? '/portal/support?new=1&topic=account'
-              : undefined,
-          action: accountEntitlementsError?.code === 'commercial.quota_exceeded'
-            ? t('error.portal_recovery_review_account_quota', {}, 'Review account usage')
-            : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
-              ? t('error.portal_recovery_contact_support', {}, 'Contact support')
-              : undefined,
-        }]
-      : []),
+    ...restrictionItems,
   ];
   const showAccountSummary = true;
   const primaryOperationFocusItem = operationFocusItems[0] || null;
   const remainingOperationFocusItems = operationFocusItems.slice(1);
-  const shouldShowFollowUpSection =
-    remainingOperationFocusItems.length > 0 || shouldShowOnboardingChecklist;
-  const showBothFollowUpPanels =
-    remainingOperationFocusItems.length > 0 && shouldShowOnboardingChecklist;
+  const homeState = primaryOperationFocusItem ? 'attention' : hasVisibleSites ? 'daily' : 'setup';
 
   return (
     <PortalPageStack>
-      <section className="space-y-5" data-portal-home="operation-overview">
+      <section className="space-y-5" data-portal-home="operation-overview" data-portal-home-state={homeState}>
         <PortalWorkspaceHeader
           title={t('portal.home.title', {}, 'My service')}
-          description={t('portal.home.concise_desc')}
+          description={homeState === 'setup' ? t('portal.home.setup_desc') : homeState === 'attention' ? t('portal.home.attention_desc') : t('portal.home.daily_desc')}
           currentPage="home"
           titleAccessory={!primaryOperationFocusItem ? (
             <PortalStatusBadge
-              status={currentServiceStatusToken}
-              label={currentServiceStatusLabel}
-              className="shrink-0 text-[0.68rem]"
+              status={accountEntitlementsPending || !hasVisibleSites ? 'neutral' : currentServiceStatusToken}
+              label={accountEntitlementsPending
+                ? t('common.loading')
+                : !hasVisibleSites
+                  ? t('portal.home.site_connection_none_value')
+                  : currentServiceStatusLabel}
             />
           ) : null}
-          metadata={(
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-portal-home="context-summary">
-              <span className="font-semibold text-slate-700 dark:text-slate-200">{contextLabel}</span>
-
-            </div>
-          )}
           contextPanel={primaryOperationFocusItem ? (
             <div
-              className={cn(
-                'flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border px-3 py-2',
-                primaryOperationFocusItem.tone === 'warn'
-                  ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
-                  : 'border-slate-200/80 bg-white/75 dark:border-slate-800 dark:bg-slate-950/55'
-              )}
+              className="rounded-xl border border-amber-200 bg-amber-50/75 p-4 dark:border-amber-900/70 dark:bg-amber-950/25"
               data-portal-home="current-focus"
             >
-              <p className="text-sm font-semibold text-gray-950 dark:text-white">
+              <h2 className="text-base font-semibold text-gray-950 dark:text-white">
                 {primaryOperationFocusItem.label}
-              </p>
-              <p className="text-xs leading-5 text-gray-600 dark:text-gray-300">
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
                 {primaryOperationFocusItem.detail}
               </p>
               {primaryOperationFocusItem.href && primaryOperationFocusItem.action ? (
-                <Link
-                  href={primaryOperationFocusItem.href}
-                  className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                >
+                <Link href={primaryOperationFocusItem.href} className="btn btn-primary mt-3">
                   {primaryOperationFocusItem.action}
                 </Link>
               ) : null}
             </div>
           ) : null}
+          actions={homeState === 'setup' ? (
+            <Link href="#connection-guide" className="btn btn-primary">
+              {t('portal.home.connect_action')}
+            </Link>
+          ) : null}
           metrics={showAccountSummary ? operationSummaryItems : []}
           metricsColumnsClassName="md:grid-cols-3"
         />
-
-        {shouldShowFollowUpSection ? (
-          <PortalSection
-            variant="portal"
-            className={cn(!showBothFollowUpPanels && 'xl:max-w-3xl')}
-          >
-            <div
-              className={cn(
-                'grid items-start gap-4',
-                showBothFollowUpPanels && 'xl:grid-cols-[1.1fr_0.9fr]'
-              )}
-            >
-              {remainingOperationFocusItems.length > 0 ? (
-                <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="additional-focus">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                        {t('common.status')}
-                      </p>
-                      <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-                        {t('portal.home.current_status_title', {}, 'Service status')}
-                      </h2>
-                    </div>
-                    <PortalTag tone={currentServiceStatusToken === 'active' ? 'success' : 'warning'}>
-                      {currentServiceStatusLabel}
-                    </PortalTag>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {remainingOperationFocusItems.slice(0, 3).map((item) => (
-                      <div
-                        key={item.id || item.label}
-                        className={cn(
-                          'rounded-xl border px-3 py-3',
-                          item.tone === 'warn'
-                            ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
-                            : 'border-slate-200/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/35'
-                        )}
-                      >
-                        <p className="text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
-                        <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">{item.detail}</p>
-                        {item.href && item.action ? (
-                          <Link
-                            href={item.href}
-                            className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                          >
-                            {item.action}
-                          </Link>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                </PortalCard>
-              ) : null}
-
-              {shouldShowOnboardingChecklist ? (
-                <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="setup-checklist">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                        {t('portal.home.onboarding_label', {}, 'Needs attention')}
-                      </p>
-                      <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-                        {t('portal.home.onboarding_title', {}, 'Before you continue')}
-                      </h2>
-                    </div>
-                    <PortalTag tone="warning">
-                      {requiredAttentionItems.length} {t('portal.home.filter_attention_only', {}, 'Needs attention')}
-                    </PortalTag>
-                  </div>
-                  <div className="mt-4 divide-y divide-slate-200/80 dark:divide-slate-800">
-                    {requiredAttentionItems.map((item, index) => (
-                      <Link
-                        key={item.key}
-                        href={item.href}
-                        className="group flex gap-3 py-3 text-sm transition first:pt-0 last:pb-0 hover:text-blue-700 dark:hover:text-blue-300"
-                      >
-                        <span
-                          className={cn(
-                            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[0.68rem] font-semibold',
-                            'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-200'
-                          )}
-                        >
-                          {String(index + 1)}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-slate-950 dark:text-white">{item.title}</span>
-                          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            {item.detail}
-                          </span>
-                        </span>
+        {remainingOperationFocusItems.length > 0 ? (
+          <PortalSection variant="portal">
+            <details data-portal-home="additional-focus">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-200">
+                {t('portal.home.other_issues', { count: String(remainingOperationFocusItems.length) })}
+              </summary>
+              <div className="mt-3 divide-y divide-slate-200 dark:divide-slate-800">
+                {remainingOperationFocusItems.map((item) => (
+                  <div key={item.id || item.label} className="py-3 first:pt-0 last:pb-0">
+                    <h3 className="font-semibold text-slate-950 dark:text-white">{item.label}</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.detail}</p>
+                    {item.href && item.action ? (
+                      <Link href={item.href} className="mt-2 inline-flex text-sm font-semibold text-blue-700 underline underline-offset-4 dark:text-blue-300">
+                        {item.action}
                       </Link>
-                    ))}
+                    ) : null}
                   </div>
-                </PortalCard>
-              ) : null}
-            </div>
+                ))}
+              </div>
+            </details>
           </PortalSection>
         ) : null}
       </section>
-
       <PortalSitesWorkspace />
     </PortalPageStack>
   );

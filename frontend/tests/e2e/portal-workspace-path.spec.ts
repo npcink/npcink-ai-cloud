@@ -437,10 +437,10 @@ async function installPortalMocks(
             },
             {
               key: 'bound_sites',
-              used: options.emptySites ? 0 : 2,
+              used: options.emptySites ? 0 : options.singleReadySite ? 1 : 2,
               limit: options.emptySites ? 3 : 1,
               remaining: options.emptySites ? 3 : 0,
-              status: options.emptySites ? 'ok' : 'limited',
+              status: options.emptySites || options.singleReadySite ? 'ok' : 'limited',
             },
             {
               key: 'vector_documents',
@@ -1681,12 +1681,12 @@ test('portal workspace interaction path: account overview to site detail and ser
   await page.goto('/portal');
 
   const portalPrimaryNav = page.locator('[data-ui="portal-primary-nav"]');
-  await expect(portalPrimaryNav.locator('> a')).toHaveCount(5);
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Account service$|^账号服务$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Tickets$|^工单$|^工單$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toBeVisible();
+  await expect(portalPrimaryNav.locator('> a')).toHaveCount(4);
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Home$|^首页$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Help & support$|^帮助与客服$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Billing$|^账单$|^帳單$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Monitoring$|^监控$|^監控$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^AI Insights$|^AI 分析$/i })).toHaveCount(0);
@@ -1705,7 +1705,7 @@ test('portal workspace interaction path: account overview to site detail and ser
       .locator('[data-portal-home="operation-overview"]')
       .getByText(/^(Tickets|工单|工單)$/i)
   ).toHaveCount(0);
-  await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /^My sites$|^我的站点$/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
   await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toHaveCount(0);
   await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toHaveCount(0);
@@ -1733,7 +1733,7 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
 
-  await expect(page.locator('a[href="/portal/sites/site_attention#service-status"]').first()).toBeVisible();
+  await expect(sitesWorkspace.locator('[data-portal-sites="desktop-table"] a[href="/portal/sites/site_attention#service-status"]')).toBeVisible();
   await page.goto('/portal/sites/site_attention');
   await expect(page).toHaveURL(/\/portal\/sites\/site_attention$/);
   await expect(page.getByRole('heading', { level: 1, name: /attention site/i })).toBeVisible();
@@ -1743,7 +1743,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   });
 
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
   await expect(page.getByText(/^612$|^612 点$/i).first()).toBeVisible();
   const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
@@ -1910,6 +1910,7 @@ for (const scenario of [
     if (scenario.name === 'text and image overage') {
       await page.goto('/portal');
       await expect(page.getByText(/文字知识库已使用 105 \/ 100/)).toBeVisible();
+      await page.locator('[data-portal-home="additional-focus"] summary').click();
       await expect(page.getByText(/图片知识库已使用 105 \/ 100/)).toBeVisible();
       expect(consoleErrors).toEqual([]);
     }
@@ -2089,9 +2090,9 @@ test('account projections remain available without a selected site context', asy
   await expect(overview.getByText(/^Available$|^可用$/i)).toHaveCount(0);
 
   await page.goto('/portal/billing');
-  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
   await page.goto('/portal/audit');
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
 
@@ -2140,9 +2141,15 @@ test('[readiness:new_account_no_site] a new account gets a WordPress connection 
   await installPortalMocks(page, { emptySites: true });
 
   await page.goto('/portal');
+  await expect(page.locator('[data-portal-home-state="setup"]')).toBeVisible();
+  await expect(page.locator('[data-portal-sites="connect-guide"]')).toHaveCount(1);
+  await page.getByRole('link', { name: /Connect my website|连接我的网站/i }).click();
+  await expect(page.locator('#connection-guide ol li')).toHaveCount(3);
+  await expect(page.locator('[data-portal-home="current-focus"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-home="setup-checklist"]')).toHaveCount(0);
   await expect(page.getByText(/Not connected|尚未接入/i).first()).toBeVisible();
   await expect(
-    page.getByText(/Open npcink-cloud-addon in WordPress|在 WordPress 中打开 npcink-cloud-addon/i).first()
+    page.getByText(/Npcink Cloud Addon/i).first()
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Select site|选择站点/i })).toHaveCount(0);
   await expect(page.getByText(/^Bound sites needs attention$|^绑定站点需处理$/i)).toHaveCount(0);
@@ -2157,7 +2164,13 @@ test('[readiness:single_site_ready] one ready site shows healthy account and sit
   await installPortalMocks(page, { singleReadySite: true });
 
   await page.goto('/portal');
-  await expect(page.getByText(/1 connected|1 个已连接/i)).toBeVisible();
+  await expect(page.getByText(/1 connected|已接入 1 个/i)).toBeVisible();
+  await expect(page.locator('[data-portal-home-state="daily"]')).toBeVisible();
+  const wordpress = page.getByRole('link', { name: /Open WordPress dashboard|打开 WordPress 后台/i });
+  await expect(wordpress).toHaveAttribute('href', 'https://clear.example.test/wp-admin/');
+  await expect(wordpress).toHaveAttribute('target', '_blank');
+  await expect(wordpress).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(page.locator('[data-portal-home="current-focus"]')).toHaveCount(0);
   await page.goto('/portal/sites/site_clear');
   await expect(page.getByRole('heading', { level: 1, name: 'Clear Site' })).toBeVisible();
   await expect(page.getByText(/^Connected$|^已接入$/i)).toBeVisible();
@@ -2168,7 +2181,7 @@ test('[readiness:multi_site_account_context] multi-site home keeps account servi
   await installPortalMocks(page);
 
   await page.goto('/portal');
-  await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /^My sites$|^我的站点$/i })).toBeVisible();
   await expect(page.getByRole('combobox', {
     name: /Current management site|当前管理站点/i,
   })).toHaveCount(0);
@@ -2253,6 +2266,8 @@ test('[readiness:service_temporarily_unavailable] retry is bounded, support-awar
   await page.goto('/portal');
   const retryButton = page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i });
   await expect(retryButton).toBeVisible();
+  await expect(page.locator('[data-portal-home-state="attention"]')).toBeVisible();
+  await expect(page.getByText(/Sites connected|网站已连接/i)).toHaveCount(0);
   await expect(page.getByText(/internal backend detail/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Contact support|联系支持/i })).toHaveAttribute(
     'href',
@@ -2452,26 +2467,42 @@ for (const navigation of [
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
     const nav = page.locator(navigation.selector);
+    const accountMenu = page.locator('[data-ui="portal-account-menu"]');
+    if (navigation.name !== 'mobile') {
+      await accountMenu.locator('summary').focus();
+      await page.keyboard.press('Enter');
+      await expect(accountMenu).toHaveAttribute('open', '');
+      await page.keyboard.press('Escape');
+      await expect(accountMenu).not.toHaveAttribute('open', '');
+      await expect(accountMenu.locator('summary')).toBeFocused();
+      await page.keyboard.press('Enter');
+    }
+    const accountNav = navigation.name === 'mobile' ? nav : accountMenu;
     await expect(nav).toBeVisible();
-    await expect(nav.locator('a[aria-current]')).toHaveCount(1);
-    await expect(nav.locator('a[aria-current="true"]')).toHaveAttribute('href', '/portal/account');
+    await expect(accountNav.locator('a[aria-current]')).toHaveCount(1);
+    await expect(accountNav.locator('a[aria-current="true"]')).toHaveAttribute('href', '/portal/account');
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
 
     await page.goto('/portal/usage');
-    await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
     if (navigation.name === 'mobile') {
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(1);
     await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/usage');
-    await expect(nav.locator('a[href="/portal/account"]')).not.toHaveAttribute('aria-current', 'page');
-    await nav.locator('a[href="/portal/account"]').focus();
+    if (navigation.name !== 'mobile') {
+      await accountMenu.locator('summary').focus();
+      await page.keyboard.press('Enter');
+    }
+    await expect(accountNav.locator('a[href="/portal/account"]')).not.toHaveAttribute('aria-current', 'page');
+    await accountNav.locator('a[href="/portal/account"]').focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/portal\/account$/);
     if (navigation.name === 'mobile') {
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
-    await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
+    if (navigation.name !== 'mobile') await accountMenu.locator('summary').click();
+    await expect(accountNav.locator('a[aria-current="page"]')).toHaveAttribute('href', '/portal/account');
   });
 }
 
@@ -2484,7 +2515,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
 
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
   await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
 
@@ -2493,7 +2524,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
-  await expect(packageDialog.getByRole('link', { name: /Tickets|工单/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /Help & support|帮助与客服/i })).toBeVisible();
   await expect(packageDialog).toBeInViewport();
   await page.keyboard.press('Escape');
 
@@ -2515,7 +2546,7 @@ test('portal read failures retain context and retry without showing empty result
     else await route.fallback();
   });
   await page.goto('/portal/usage?view=records');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
   await expect(page.getByText(/0 service events|共 0 次服务|暂无服务记录/i)).toHaveCount(0);
   failRecords = false;
@@ -2583,7 +2614,8 @@ for (const endpoint of ['audit-summary', 'audit-events'] as const) {
       await filter.selectOption('');
       await expect(page).toHaveURL(/\/portal\/audit$/);
       await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
-      await page.locator('[data-ui="portal-primary-nav"] a[href="/portal/account"]').click();
+      await page.locator('[data-ui="portal-account-menu"] summary').click();
+      await page.locator('[data-ui="portal-account-menu"] a[href="/portal/account"]').click();
       await expect(page).toHaveURL(/\/portal\/account$/);
     });
   }
@@ -2737,4 +2769,47 @@ test('usage balance and records do not wait for the unused runtime summary', asy
   await expect.poll(() => records.getByRole('row').count()).toBeGreaterThan(1);
   expect(unusedSummaryRequests).toBe(0);
   expect(calls.accountProjectionRequests().some((request) => request.startsWith('/account/usage-summary'))).toBe(false);
+});
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const scenario of [
+    { state: 'setup', options: { emptySites: true } },
+    { state: 'daily', options: { singleReadySite: true } },
+    { state: 'attention', options: { singleReadySite: true, failInitialEntitlements: true } },
+  ] as const) {
+    test(`portal simple home: ${scenario.state} in ${theme}`, async ({ page }, testInfo) => {
+      await page.addInitScript(({ theme }) => {
+        localStorage.setItem('locale', 'zh-CN');
+        localStorage.setItem('theme', theme);
+      }, { theme });
+      const pageErrors: string[] = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await installPortalMocks(page, scenario.options);
+      await page.goto('/portal');
+      await expect(page.locator(`[data-portal-home-state="${scenario.state}"]`)).toBeVisible();
+      // Wait for account data as well as session data before capturing the candidate.
+      await expect(page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i })).toHaveCount(scenario.state === 'attention' ? 1 : 0);
+      if (scenario.state !== 'attention') await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+      await testInfo.attach(`portal-home-${scenario.state}-${theme}`, {
+        body: await page.screenshot({ path: testInfo.outputPath(`portal-home-${scenario.state}-${theme}.png`), fullPage: true }),
+        contentType: 'image/png',
+      });
+      expect(pageErrors).toEqual([]);
+    });
+  }
+}
+
+test('portal simple home keeps WordPress and account settings reachable on mobile', async ({ page }) => {
+  await installPortalMocks(page, { singleReadySite: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portal');
+  await expect(page.getByRole('link', { name: /Open WordPress dashboard|打开 WordPress 后台/i })).toHaveAttribute('href', 'https://clear.example.test/wp-admin/');
+  await page.getByRole('button', { name: /Open menu|打开菜单/i }).click();
+  const nav = page.locator('#portal-mobile-nav');
+  await expect(nav.getByRole('link')).toHaveCount(5);
+  await nav.getByRole('link', { name: /Account settings|账号设置/i }).click();
+  await expect(page).toHaveURL(/\/portal\/account$/);
+  await expect(nav).not.toBeVisible();
 });
