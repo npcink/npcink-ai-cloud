@@ -23,7 +23,9 @@ anchor generation and anchor-eligibility v2 are unchanged. It requires:
    interview preparation, related posts, photography/portfolio, image hosting
    and debugging/performance. Alternatives can meet a task without sharing a
    project name. These bounded multilingual guards contain no article IDs or
-   target allowlists. They are development rules, not a general semantic judge.
+   target allowlists. Consumer offers also require both offer action and subject;
+   a milk-tea/coffee theme is not a matching promotion. Food content is not banned.
+   These are development rules, not a general semantic judge.
 
 No qualifying document means a successful empty result, never a weak-result
 backfill. `status=ready` and retrieval readiness retain their real meanings;
