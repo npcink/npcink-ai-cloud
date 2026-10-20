@@ -7,7 +7,7 @@ const account = read('src/app/portal/account/page.tsx');
 const audit = read('src/app/portal/audit/PortalAuditClient.tsx');
 const billing = read('src/app/portal/billing/page.tsx');
 const accountCommerce = read('src/components/portal/PortalAccountCommercePanels.tsx');
-const globals = read('src/app/globals.css');
+const portalCss = read('src/app/portal/portal.css');
 const layout = read('src/app/portal/layout.tsx');
 const monitoringRedirectPath = resolve('src/app/portal/monitoring/page.tsx');
 const sitesRedirectPath = resolve('src/app/portal/sites/page.tsx');
@@ -91,7 +91,7 @@ assert.match(globals, /\.portal-shell \.btn-primary[\s\S]*background: #0066cc[\s
 assert.match(globals, /\.portal-shell \.btn:active:not\(:disabled\)[\s\S]*scale\(0\.98\)/);
 assert.match(globals, /\.portal-shell \.portal-commercial-dialog[\s\S]*border-radius: 18px/);
 assert.match(layout, /bg-\[#f5f5f7\][\s\S]*portal-content[\s\S]*--portal-content-max-width/);
-assert.match(globals, /--portal-content-max-width:\s*80rem/);
+assert.match(portalCss, /--portal-content-max-width:\s*80rem/);
 assert.match(globals, /--portal-header-min-height:\s*5rem/);
 assert.match(globals, /--portal-row-min-height:\s*4rem/);
 assert.match(globals, /--portal-btn-height:\s*2\.75rem/);
@@ -191,7 +191,7 @@ assert.match(
   'PortalMetricStrip must support a compact rail layout for home without changing grid pages'
 );
 assert.match(
-  globals,
+  portalCss,
   /--portal-content-max-width:\s*80rem/,
   'Global portal content max-width stays 80rem; home narrows via page-local max-w-[65rem]'
 );
