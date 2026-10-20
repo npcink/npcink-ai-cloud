@@ -56,8 +56,13 @@ assert.match(
 
 assert.match(
   navbarSource,
-  /href="\/portal\/account"/,
+  /href:\s*['"]\/portal\/account['"]/,
   'portal navigation must include the account center'
+);
+assert.match(
+  navbarSource,
+  /primaryNavItems[\s\S]*href:\s*['"]\/portal\/account['"]/,
+  'account center must stay in the primary portal navigation'
 );
 
 assert.match(

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const billingSource = readFileSync(resolve('src/app/portal/billing/page.tsx'), 'utf8');
+const commerceSource = readFileSync(resolve('src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
 const packagePanelSource = readFileSync(resolve('src/components/portal/PortalPackageChangePanel.tsx'), 'utf8');
 const clientSource = readFileSync(resolve('src/lib/portal-client.ts'), 'utf8');
 const i18nSource = readFileSync(resolve('src/lib/i18n.ts'), 'utf8');
@@ -18,8 +18,8 @@ assert.doesNotMatch(
   'Portal plan comparison must not retain legacy scalar rights'
 );
 
-assert.match(billingSource, /const comparisonTiers = planOffers\?\.comparison_tiers \|\| \[\]/);
-assert.match(billingSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{comparisonTiers\}/);
+assert.match(commerceSource, /const comparisonTiers = planOffers\?\.comparison_tiers \|\| \[\]/);
+assert.match(commerceSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{comparisonTiers\}/);
 assert.match(packagePanelSource, /package_comparison_title[\s\S]*package_only_differences[\s\S]*<table/);
 assert.match(
   packagePanelSource,
