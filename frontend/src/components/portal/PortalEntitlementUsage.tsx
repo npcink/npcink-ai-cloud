@@ -243,16 +243,36 @@ export function PortalEntitlementUsage({
                       ) : null}
                     </>
                   ) : null;
+                  const periodUsed = isCredit
+                    ? Math.max(0, Number(
+                      quotaSummary?.ai_credit_ledger_summary?.consumed_ai_credits
+                      ?? metric.used
+                      ?? 0
+                    ))
+                    : 0;
+                  const creditAvailable = isCredit
+                    ? Math.max(0, Number(metric.total_remaining ?? remaining ?? 0))
+                    : 0;
+                  const creditDenom = periodUsed + creditAvailable;
+                  const creditPeriodRatio = creditDenom > 0
+                    ? Math.min(100, Math.max(0, (periodUsed / creditDenom) * 100))
+                    : 0;
+                  const creditUsedLabel = formatQuotaValue(periodUsed, { unlimited: false, unlimitedLabel });
+                  const creditDenomLabel = formatQuotaValue(creditDenom, { unlimited: false, unlimitedLabel });
+                  const creditAvailableLabel = formatQuotaValue(creditAvailable, { unlimited: false, unlimitedLabel });
+                  const remainingPrefix = t('portal.usage.remaining_ai_credits', {}, 'Remaining');
                   const secondaryStat = exceeded > 0
                     ? t(
                         'portal.usage.exceeded_label',
                         { count: formatNumber(Math.round(exceeded)) },
                         `Exceeded by ${formatNumber(Math.round(exceeded))}`
                       )
-                    : (!isCredit
-                      ? `${t('portal.usage.remaining_ai_credits', {}, 'Remaining')}: ${remainingLabel}`
-                      : '');
+                    : (isCredit
+                      ? `${remainingPrefix}: ${creditAvailableLabel}`
+                      : `${remainingPrefix}: ${remainingLabel}`);
                   const tileLabel = resourceLabel(key, t);
+                  const barRatio = isCredit ? creditPeriodRatio : ratio;
+                  const showProgressBar = isCredit || !unlimited;
 
                   return (
                     <article
@@ -288,9 +308,27 @@ export function PortalEntitlementUsage({
 
                       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         {isCredit ? (
-                          <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                            {formatQuotaValue(metric.total_remaining ?? remaining, { unlimited: false, unlimitedLabel })}
-                          </p>
+                          onOpenUsage ? (
+                            <button
+                              type="button"
+                              className="text-left text-xl font-semibold tracking-tight text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
+                              onClick={onOpenUsage}
+                              data-portal-billing="open-usage-from-credits-period"
+                              aria-label={t(
+                                'portal.usage.period_used_inline',
+                                { count: formatNumber(Math.round(periodUsed)) },
+                                'Deducted this period: {{count}}'
+                              )}
+                            >
+                              {creditUsedLabel}
+                              <span className="text-base font-normal text-slate-500"> / {creditDenomLabel}</span>
+                            </button>
+                          ) : (
+                            <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white" data-portal-billing="credits-period-used">
+                              {creditUsedLabel}
+                              <span className="text-base font-normal text-slate-500"> / {creditDenomLabel}</span>
+                            </p>
+                          )
                         ) : (
                           <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
                             {usedLabel}
@@ -301,85 +339,12 @@ export function PortalEntitlementUsage({
                           <p className="text-xs text-slate-500 dark:text-slate-400">{secondaryStat}</p>
                         ) : null}
                       </div>
-                      {isCredit ? (() => {
-                        const periodUsed = Math.max(0, Number(
-                          quotaSummary?.ai_credit_ledger_summary?.consumed_ai_credits
-                          ?? metric.used
-                          ?? 0
-                        ));
-                        const totalAvailable = Math.max(0, Number(metric.total_remaining ?? remaining ?? 0));
-                        const periodDenom = periodUsed + totalAvailable;
-                        const periodRatio = periodDenom > 0
-                          ? Math.min(100, Math.max(0, (periodUsed / periodDenom) * 100))
-                          : 0;
-                        const periodUsedLabel = t(
-                          'portal.usage.period_used_inline',
-                          { count: formatNumber(Math.round(periodUsed)) },
-                          'Deducted this period: {{count}}'
-                        );
-                        const packageRemaining = Number(metric.package_remaining ?? 0);
-                        const paidRemaining = Number(metric.paid_remaining ?? 0);
-                        const showPaid = paidRemaining > 0;
-                        const showPackage = showPaid || Math.round(packageRemaining) !== Math.round(totalAvailable);
-                        const breakdownItems = [
-                          ...(showPackage ? [{
-                            label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
-                            value: packageRemaining,
-                          }] : []),
-                          ...(showPaid ? [{
-                            label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
-                            value: paidRemaining,
-                          }] : []),
-                        ];
-                        return (
-                          <>
-                            {onOpenUsage ? (
-                              <button
-                                type="button"
-                                className="mt-1.5 self-start text-xs font-medium text-slate-500 underline-offset-2 hover:text-blue-700 hover:underline dark:text-slate-400 dark:hover:text-blue-300"
-                                onClick={onOpenUsage}
-                                data-portal-billing="open-usage-from-credits-period"
-                              >
-                                {periodUsedLabel}
-                              </button>
-                            ) : (
-                              <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400" data-portal-billing="credits-period-used">
-                                {periodUsedLabel}
-                              </p>
-                            )}
-                            <div className="mt-3" data-portal-billing="credits-period-progress">
-                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                                <div
-                                  className={cn(
-                                    'h-full rounded-full',
-                                    tone === 'error'
-                                      ? 'bg-red-500'
-                                      : tone === 'warning'
-                                        ? 'bg-amber-500'
-                                        : 'bg-slate-400'
-                                  )}
-                                  style={{ width: `${periodRatio}%` }}
-                                />
-                              </div>
-                            </div>
-                            {breakdownItems.length > 0 ? (
-                              <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200/70 pt-2.5 text-xs dark:border-slate-800">
-                                {breakdownItems.map((item) => (
-                                  <div key={item.label} className="inline-flex min-w-0 items-baseline gap-1.5">
-                                    <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
-                                    <dd className="text-sm font-semibold text-slate-950 dark:text-white">
-                                      {formatQuotaValue(item.value, { unlimited: false, unlimitedLabel })}
-                                    </dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            ) : null}
-                          </>
-                        );
-                      })() : null}
 
-                      {!unlimited && !isCredit ? (
-                        <div className="mt-3">
+                      {showProgressBar ? (
+                        <div
+                          className="mt-3"
+                          data-portal-billing={isCredit ? 'credits-period-progress' : undefined}
+                        >
                           <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                             <div
                               className={cn(
@@ -390,11 +355,41 @@ export function PortalEntitlementUsage({
                                     ? 'bg-amber-500'
                                     : 'bg-slate-400'
                               )}
-                              style={{ width: `${ratio}%` }}
+                              style={{ width: `${barRatio}%` }}
                             />
                           </div>
                         </div>
                       ) : null}
+
+                      {isCredit ? (() => {
+                        const packageRemaining = Number(metric.package_remaining ?? 0);
+                        const paidRemaining = Number(metric.paid_remaining ?? 0);
+                        const showPaid = paidRemaining > 0;
+                        const showPackage = showPaid || Math.round(packageRemaining) !== Math.round(creditAvailable);
+                        const breakdownItems = [
+                          ...(showPackage ? [{
+                            label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
+                            value: packageRemaining,
+                          }] : []),
+                          ...(showPaid ? [{
+                            label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
+                            value: paidRemaining,
+                          }] : []),
+                        ];
+                        if (breakdownItems.length === 0) return null;
+                        return (
+                          <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200/70 pt-2.5 text-xs dark:border-slate-800">
+                            {breakdownItems.map((item) => (
+                              <div key={item.label} className="inline-flex min-w-0 items-baseline gap-1.5">
+                                <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
+                                <dd className="text-sm font-semibold text-slate-950 dark:text-white">
+                                  {formatQuotaValue(item.value, { unlimited: false, unlimitedLabel })}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        );
+                      })() : null}
 
                       {key === 'vector_documents' ? (
                         <div className="mt-auto pt-2.5">
