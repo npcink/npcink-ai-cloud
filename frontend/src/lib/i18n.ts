@@ -3959,7 +3959,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.billing.package_rights_title': 'Included in this package',
     'portal.billing.package_rights_desc':
       'Review the main rights included in this account package. Package changes start from the upgrade entry.',
-    'portal.billing.upgrade_action': 'Manage package',
+    'portal.billing.upgrade_action': 'Upgrade package',
     'portal.billing.manage_title': 'Manage package',
     'portal.billing.manage_desc':
       'Open an option only when you need to change the package, add AI credits, or review trial eligibility.',
@@ -10500,7 +10500,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.billing.package_rights_label': '套餐权益',
     'portal.billing.package_rights_title': '当前套餐包含',
     'portal.billing.package_rights_desc': '查看当前账号套餐包含的主要权益。需要变更套餐时，从升级入口开始。',
-    'portal.billing.upgrade_action': '管理套餐',
+    'portal.billing.upgrade_action': '升级套餐',
     'portal.billing.manage_title': '管理套餐',
     'portal.billing.manage_desc': '需要更换套餐、购买 AI 积分或查看试用资格时，再打开对应选项。',
     'portal.billing.package_dialog_title': '选择套餐',
