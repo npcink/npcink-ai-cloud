@@ -35,12 +35,6 @@ type PortalEntitlementUsageProps = {
   attentionSurfaceActive?: boolean;
   /** Opens package usage drawer (period usage / site usage entry). */
   onOpenUsage?: () => void;
-  /** Current package display name (e.g. Free) — shown in the quota card header. */
-  packageLabel?: string;
-  /** Current billing period range label. */
-  periodLabel?: string;
-  /** Optional period end detail for the header meta. */
-  periodEndDetail?: string;
 };
 
 function formatQuotaValue(
@@ -97,9 +91,6 @@ export function PortalEntitlementUsage({
   locale,
   attentionSurfaceActive = false,
   onOpenUsage,
-  packageLabel,
-  periodLabel,
-  periodEndDetail,
 }: PortalEntitlementUsageProps) {
   const [siteKnowledgeUsage, setSiteKnowledgeUsage] = useState<PortalAccountSiteKnowledgeUsagePayload | null>(null);
   const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
@@ -149,39 +140,30 @@ export function PortalEntitlementUsage({
       <span className="mt-1 block text-slate-500 dark:text-slate-400">{knowledgeCapacityDetail}</span>
     </>
   );
-  const headerMetaParts = [packageLabel, periodLabel].filter((part) => Boolean(part && String(part).trim()));
 
   return (
     <section className="space-y-3" data-portal-entitlement-usage="included">
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-              {title}
-            </h2>
-            <PortalInfoHint
-              label={title}
-              aria-label={`${description} ${sharedQuotaNote} ${knowledgeCapacityDetail}`}
-              data-portal-billing="entitlements-help"
-              detail={rightsHelpDetail}
-            />
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+            {title}
+          </h2>
+          <PortalInfoHint
+            label={title}
+            aria-label={`${description} ${sharedQuotaNote} ${knowledgeCapacityDetail}`}
+            data-portal-billing="entitlements-help"
+            detail={rightsHelpDetail}
+          />
         </div>
-        {headerMetaParts.length > 0 ? (
-          <div className="min-w-0 text-right" data-portal-billing="quota-card-meta">
-            {packageLabel ? (
-              <p className="text-sm font-semibold text-slate-950 dark:text-white">{packageLabel}</p>
-            ) : null}
-            {periodLabel ? (
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                <span className="sr-only">{t('portal.usage.period_label', {}, 'Period')}: </span>
-                {periodLabel}
-              </p>
-            ) : null}
-            {periodEndDetail ? (
-              <p className="mt-0.5 text-[0.7rem] text-slate-400 dark:text-slate-500">{periodEndDetail}</p>
-            ) : null}
-          </div>
+        {onOpenUsage ? (
+          <button
+            type="button"
+            className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+            onClick={onOpenUsage}
+            data-portal-billing="open-usage"
+          >
+            {t('portal.billing.view_period_usage', {}, 'View period usage')}
+          </button>
         ) : null}
       </div>
 
@@ -299,9 +281,6 @@ export function PortalEntitlementUsage({
                         {isCredit ? (
                           <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
                             {formatQuotaValue(metric.total_remaining ?? remaining, { unlimited: false, unlimitedLabel })}
-                            <span className="ml-1.5 text-xs font-normal text-slate-500">
-                              {t('portal.usage.total_remaining_label', {}, 'Total available')}
-                            </span>
                           </p>
                         ) : (
                           <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
@@ -314,31 +293,36 @@ export function PortalEntitlementUsage({
                         ) : null}
                       </div>
 
-                      {isCredit ? (
-                        <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200/70 pt-2.5 text-xs dark:border-slate-800">
-                          {[
-                            {
-                              label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
-                              value: metric.package_remaining,
-                            },
-                            {
-                              label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
-                              value: metric.paid_remaining,
-                            },
-                            {
-                              label: t('portal.usage.total_remaining_label', {}, 'Total available'),
-                              value: metric.total_remaining ?? remaining,
-                            },
-                          ].map((item) => (
-                            <div key={item.label} className="inline-flex min-w-0 items-baseline gap-1.5">
-                              <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
-                              <dd className="text-sm font-semibold text-slate-950 dark:text-white">
-                                {formatQuotaValue(item.value, { unlimited: false, unlimitedLabel })}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
-                      ) : null}
+                      {isCredit ? (() => {
+                        const packageRemaining = Number(metric.package_remaining ?? 0);
+                        const paidRemaining = Number(metric.paid_remaining ?? 0);
+                        const totalAvailable = Number(metric.total_remaining ?? remaining ?? 0);
+                        const showPaid = paidRemaining > 0;
+                        const showPackage = showPaid || Math.round(packageRemaining) !== Math.round(totalAvailable);
+                        const breakdownItems = [
+                          ...(showPackage ? [{
+                            label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
+                            value: packageRemaining,
+                          }] : []),
+                          ...(showPaid ? [{
+                            label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
+                            value: paidRemaining,
+                          }] : []),
+                        ];
+                        if (breakdownItems.length === 0) return null;
+                        return (
+                          <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200/70 pt-2.5 text-xs dark:border-slate-800">
+                            {breakdownItems.map((item) => (
+                              <div key={item.label} className="inline-flex min-w-0 items-baseline gap-1.5">
+                                <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
+                                <dd className="text-sm font-semibold text-slate-950 dark:text-white">
+                                  {formatQuotaValue(item.value, { unlimited: false, unlimitedLabel })}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        );
+                      })() : null}
 
                       {!unlimited && !isCredit ? (
                         <div className="mt-3">

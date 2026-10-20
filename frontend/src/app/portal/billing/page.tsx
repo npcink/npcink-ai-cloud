@@ -223,6 +223,20 @@ function PortalBillingContent() {
       : t('common.ok', {}, 'OK');
   const pressureCta = resolveBillingPressureCta({ quotaSummary, t });
   const manageHref = pressureCta.href;
+  const packageSummaryMetrics = [
+    {
+      label: t('portal.current_subscription_label', {}, 'Current package'),
+      value: packageLabel,
+      size: 'compact' as const,
+    },
+    {
+      label: t('portal.usage.period_label', {}, 'Period'),
+      value: currentPeriodLabel,
+      detail: currentPeriodEndDetail || undefined,
+      size: 'compact' as const,
+    },
+  ];
+
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
@@ -242,18 +256,16 @@ function PortalBillingContent() {
             ]}
           />
         )}
-        primaryAction={(
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={openUsageDrawer} data-portal-billing="open-usage">
-              {t('portal.billing.view_period_usage', {}, 'View period usage')}
-            </button>
-            {packageStatus !== 'warning' ? (
-              <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
-                {t('portal.billing.manage_title', {}, 'Manage package')}
-              </Link>
-            ) : null}
-          </div>
-        )}
+        primaryAction={
+          packageStatus !== 'warning' ? (
+            <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
+              {t('portal.billing.manage_title', {}, 'Manage package')}
+            </Link>
+          ) : null
+        }
+        metrics={packageSummaryMetrics}
+        metricsLayout="rail"
+        metricsPlacement="title-end"
       />
 
       <PortalPaymentReturnNotice
@@ -304,9 +316,6 @@ function PortalBillingContent() {
               locale={locale}
               attentionSurfaceActive={packageStatus === 'warning'}
               onOpenUsage={openUsageDrawer}
-              packageLabel={packageLabel}
-              periodLabel={currentPeriodLabel}
-              periodEndDetail={currentPeriodEndDetail || undefined}
             />
           </div>
         </PortalCard>
