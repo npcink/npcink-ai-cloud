@@ -165,16 +165,6 @@ export function PortalEntitlementUsage({
             data-portal-billing="entitlements-help"
             detail={rightsHelpDetail}
           />
-          {onOpenUsage ? (
-            <button
-              type="button"
-              className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              onClick={onOpenUsage}
-              data-portal-billing="open-usage-from-rights"
-            >
-              {t('portal.billing.view_period_usage', {}, 'View period usage')}
-            </button>
-          ) : null}
         </div>
       </div>
 
@@ -367,36 +357,18 @@ export function PortalEntitlementUsage({
                         </div>
                       ) : null}
 
-                      {key === 'vector_documents' && onOpenUsage ? (
+                      {key === 'vector_documents' ? (
                         <div className="mt-auto pt-2.5">
                           <button
                             type="button"
                             className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={onOpenUsage}
+                            onClick={() => {
+                              if (onOpenUsage) onOpenUsage();
+                              else void openSiteKnowledgeUsage();
+                            }}
                             data-portal-billing="open-usage-from-knowledge"
                           >
                             {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
-                          </button>
-                        </div>
-                      ) : key === 'vector_documents' ? (
-                        <div className="mt-auto pt-2.5">
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={() => void openSiteKnowledgeUsage()}
-                          >
-                            {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
-                          </button>
-                        </div>
-                      ) : isCredit && onOpenUsage ? (
-                        <div className="mt-auto pt-2.5">
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={onOpenUsage}
-                            data-portal-billing="open-usage-from-credits"
-                          >
-                            {t('portal.billing.view_period_usage', {}, 'View period usage')}
                           </button>
                         </div>
                       ) : null}

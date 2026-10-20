@@ -455,31 +455,50 @@ export function PortalUsagePanel({
     {},
     "Review this period's account AI credit usage, records, and trends."
   );
-  const usageOverviewMetrics = [
-    {
-      label: t('portal.usage.total_remaining_label', {}, 'Total available'),
-      value: formatQuotaValue(availableCredits),
-      detail: t('portal.usage.overview_available_detail', {}, 'Package and paid AI credits available now.'),
-    },
-    {
-      label: t('portal.usage.period_used_label', {}, 'AI credits deducted this period'),
-      value: formatQuotaValue(usedCredits),
-      detail: t('portal.usage.trend_points_detail', {}, 'Actual service deductions in the current package period.'),
-    },
-    ...(paidCredits > 0 ? [    {
-      label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
-      value: formatQuotaValue(paidCredits),
-      detail: t('portal.usage.overview_paid_detail', {}, 'Purchased AI credits that remain available.'),
-    },
-    {
-      label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
-      value: formattedNextPaidCreditExpiry || t('common.not_available', {}, 'Not available'),
-      detail: formattedNextPaidCreditExpiry
-        ? t('portal.usage.paid_credit_expiry_hint', { date: formattedNextPaidCreditExpiry }, `The next paid credit grant expires on ${formattedNextPaidCreditExpiry}.`)
-        : t('portal.usage.overview_no_expiry_detail', {}, 'No paid-credit expiry is currently recorded.'),
-      size: 'compact' as const,
-    },] : []),
-  ];
+  // Drawer omits "total available" — already on the package tiles. Keep deduction + optional paid expiry.
+  const usageOverviewMetrics = inDrawer
+    ? [
+        {
+          label: t('portal.usage.period_used_label', {}, 'AI credits deducted this period'),
+          value: formatQuotaValue(usedCredits),
+          detail: t('portal.usage.trend_points_detail', {}, 'Actual service deductions in the current package period.'),
+        },
+        ...(paidCredits > 0
+          ? [{
+              label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
+              value: formattedNextPaidCreditExpiry || t('common.not_available', {}, 'Not available'),
+              detail: formattedNextPaidCreditExpiry
+                ? t('portal.usage.paid_credit_expiry_hint', { date: formattedNextPaidCreditExpiry }, `The next paid credit grant expires on ${formattedNextPaidCreditExpiry}.`)
+                : t('portal.usage.overview_no_expiry_detail', {}, 'No paid-credit expiry is currently recorded.'),
+              size: 'compact' as const,
+            }]
+          : []),
+      ]
+    : [
+        {
+          label: t('portal.usage.total_remaining_label', {}, 'Total available'),
+          value: formatQuotaValue(availableCredits),
+          detail: t('portal.usage.overview_available_detail', {}, 'Package and paid AI credits available now.'),
+        },
+        {
+          label: t('portal.usage.period_used_label', {}, 'AI credits deducted this period'),
+          value: formatQuotaValue(usedCredits),
+          detail: t('portal.usage.trend_points_detail', {}, 'Actual service deductions in the current package period.'),
+        },
+        ...(paidCredits > 0 ? [{
+          label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
+          value: formatQuotaValue(paidCredits),
+          detail: t('portal.usage.overview_paid_detail', {}, 'Purchased AI credits that remain available.'),
+        },
+        {
+          label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
+          value: formattedNextPaidCreditExpiry || t('common.not_available', {}, 'Not available'),
+          detail: formattedNextPaidCreditExpiry
+            ? t('portal.usage.paid_credit_expiry_hint', { date: formattedNextPaidCreditExpiry }, `The next paid credit grant expires on ${formattedNextPaidCreditExpiry}.`)
+            : t('portal.usage.overview_no_expiry_detail', {}, 'No paid-credit expiry is currently recorded.'),
+          size: 'compact' as const,
+        }] : []),
+      ];
   const handleSiteFilterChange = (nextSiteId: string) => {
     const nextParams = new URLSearchParams(searchParams.toString());
     if (nextSiteId) nextParams.set('site', nextSiteId);
@@ -776,7 +795,7 @@ export function PortalUsagePanel({
           role="dialog"
           aria-modal="true"
           aria-labelledby="portal-usage-drawer-title"
-          className="absolute right-0 top-0 flex h-full w-full max-w-2xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+          className="absolute right-0 top-0 flex h-full w-full max-w-4xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
         >
           <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
             <h2 id="portal-usage-drawer-title" className="text-lg font-semibold text-slate-950 dark:text-white">
