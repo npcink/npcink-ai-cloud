@@ -151,7 +151,9 @@ assert.doesNotMatch(
   /site\.site_id\.toLowerCase\(\)\.includes\(query\)|account_id[^;]+includes\(query\)/,
   'Portal site search must not encourage internal site or account ID lookup'
 );
-assert.match(sitesSource, /portal\.sites\.table_status[\s\S]*portal\.sites\.table_ready/);
+assert.match(sitesSource, /portal\.sites\.table_status/);
+assert.match(sitesSource, /portal\.sites\.table_ready/);
+assert.match(sitesSource, /PortalStatusInline|PortalRowActions/);
 assert.match(i18nSource, /'portal\.sites\.table_status': '接入状态'[\s\S]*'portal\.sites\.table_ready': '已接入'/);
 assert.doesNotMatch(
   sitesSource,

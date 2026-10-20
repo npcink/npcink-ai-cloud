@@ -9,6 +9,7 @@ import {
   PortalCard,
 } from '@/components/portal/PortalScaffold';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
+import { PortalAccountCommercePanels } from '@/components/portal/PortalAccountCommercePanels';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import {
@@ -253,7 +254,7 @@ function AccountPageContent() {
         description={t(
           'portal.account.description',
           undefined,
-          'Manage the email used for verification codes and optional quick login.'
+          'Manage sign-in contact, package changes, AI credits, and payment orders.'
         )}
         currentPage="account"
         actions={
@@ -460,6 +461,28 @@ function AccountPageContent() {
             </PortalCard>
           </PortalSection>
         </div>
+      </div>
+
+      <div className="space-y-3" data-portal-account="billing-commerce">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+              {t('portal.account.commerce_eyebrow', undefined, 'Plan & orders')}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+              {t('portal.account.commerce_title', undefined, 'Package and payments')}
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Link href="/portal/account#package-options" className="btn btn-primary btn-sm">
+              {t('portal.billing.manage_title', {}, 'Manage package')}
+            </Link>
+            <Link href="/portal/account#payment-orders" className="btn btn-secondary btn-sm">
+              {t('portal.account.menu_orders', {}, 'Orders & billing')}
+            </Link>
+          </div>
+        </div>
+        <PortalAccountCommercePanels />
       </div>
 
       <Modal

@@ -9,6 +9,7 @@ const accountSource = readFileSync(resolve(root, 'src/app/portal/account/page.ts
 const homeSource = readFileSync(resolve(root, 'src/app/portal/page.tsx'), 'utf8');
 const usageSource = readFileSync(resolve(root, 'src/app/portal/usage/page.tsx'), 'utf8');
 const billingSource = readFileSync(resolve(root, 'src/app/portal/billing/page.tsx'), 'utf8');
+const accountCommerceSource = readFileSync(resolve(root, 'src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
 const auditSource = readFileSync(resolve(root, 'src/app/portal/audit/PortalAuditClient.tsx'), 'utf8');
 const monitoringPath = resolve(root, 'src/app/portal/monitoring/page.tsx');
 const headerSource = readFileSync(resolve(root, 'src/components/portal/PortalWorkspaceHeader.tsx'), 'utf8');
@@ -21,7 +22,7 @@ assert.match(sitesSource, /visibleSites\.length/);
 assert.match(sitesSource, /htmlFor="portal-service-site-search"[\s\S]*id="portal-service-site-search"/);
 assert.equal(existsSync(sitesRedirectPath), false);
 assert.equal(existsSync(monitoringPath), false);
-assert.match(homeSource, /<PortalSitesWorkspace \/>/);
+assert.match(homeSource, /<PortalSitesWorkspace(?:\s+capacityAlerts=\{capacityAttentionItems\})?\s*\/>/);
 assert.doesNotMatch(homeSource, /getSiteSummary|getSiteDiagnostics|siteSummaryCache/);
 assert.doesNotMatch(sitesSource, /siteSummaries|PortalSiteSummaryRecord/);
 assert.match(
@@ -58,13 +59,27 @@ assert.match(
   /useLayoutEffect\([\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditTrend\(null\)/,
   'usage must clear account projections immediately when the site filter changes'
 );
-assert.match(billingSource, /id="package-options"[\s\S]*setActiveCommercialDialog\('package'\)/);
-assert.doesNotMatch(billingSource, /href="#package-options"/);
+assert.match(accountCommerceSource, /id="package-options"[\s\S]*setActiveCommercialDialog\('package'\)/);
+assert.doesNotMatch(billingSource, /id="package-options"/);
+assert.match(billingSource, /href=\{\s*manageHref\s*\}|href="\/portal\/account#package-options"/);
 assert.match(auditSource, /SUCCESSFUL_AUDIT_OUTCOMES[\s\S]*succeeded[\s\S]*completed/);
 assert.match(headerSource, /onSiteChange[\s\S]*<select[\s\S]*onSiteChange\(event\.target\.value\)/);
 
 assert.match(paginationSource, /common\.next_page/);
 assert.match(loadingSource, /role="status"[\s\S]*motion-safe:animate-pulse/);
 assert.doesNotMatch(loadingSource, /⏳/);
+
+
+assert.match(
+  homeSource,
+  /if \(isLoading\)[\s\S]*PortalLoadingState/,
+  'portal home isLoading must render PortalLoadingState'
+);
+assert.doesNotMatch(homeSource, /⏳/, 'portal home must not use hourglass loading');
+assert.doesNotMatch(
+  sitesSource + accountSource + usageSource + billingSource + accountCommerceSource + auditSource,
+  /⏳/,
+  'portal surfaces under contract must not use hourglass loading'
+);
 
 console.log('portal_customer_correctness_contract: ok');

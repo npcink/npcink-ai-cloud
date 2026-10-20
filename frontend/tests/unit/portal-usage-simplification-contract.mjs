@@ -78,7 +78,7 @@ assert.match(
 );
 assert.match(
   source,
-  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="context"/,
+  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="context"[\s\S]*siteSelectorPlacement="inline"/,
   'portal usage must expose the shared current-site selector'
 );
 assert.match(

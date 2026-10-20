@@ -1035,6 +1035,92 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
+    def update_portal_site_profile(
+        self,
+        site_id: str,
+        *,
+        principal_id: str,
+        name: str,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        """Rename an owned portal site (display name only)."""
+        resolved_name = str(name or "").strip()
+        if not resolved_name:
+            raise CommercialValidationError(
+                "service.portal_site_name_required",
+                "site name is required",
+            )
+        if len(resolved_name) > 191:
+            raise CommercialValidationError(
+                "service.portal_site_name_too_long",
+                "site name must be at most 191 characters",
+            )
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            access_row = repository.get_portal_site_access(
+                principal_id=principal_id,
+                site_id=site_id,
+            )
+            if access_row is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            access_site, account, identity, membership, site_binding = access_row
+            if (
+                account is None
+                or str(account.status or "") != ACCOUNT_STATUS_ACTIVE
+                or identity is None
+                or str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE
+                or membership is None
+                or str(membership.status or "")
+                != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or USER_ALLOWED_ACTION_PROVISION_SITES
+                not in {
+                    str(action).strip()
+                    for action in (membership.allowed_actions_json or [])
+                    if str(action).strip()
+                }
+                or site_binding is None
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_site_access_required",
+                    "portal site access is required",
+                )
+            site = repository.get_site_for_update(site_id)
+            if site is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            if str(site.status or "") == SITE_STATUS_ARCHIVED:
+                raise CommercialPermissionError(
+                    "service.portal_site_removed",
+                    "removed sites must reconnect before they can be managed",
+                )
+            previous_name = str(site.name or "")
+            if previous_name == resolved_name:
+                return {"site": self._serialize_site(site)}
+            site.name = resolved_name
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="site.rename",
+                outcome="succeeded",
+                account_id=str(access_site.account_id or site.account_id or ""),
+                site_id=site.site_id,
+                scope_kind="site",
+                scope_id=site.site_id,
+                payload_json={
+                    **self._serialize_site(site),
+                    "previous_name": previous_name,
+                },
+            )
+            session.flush()
+            result = {"site": self._serialize_site(site)}
+            session.commit()
+            return result
+
     def remove_portal_site(
         self,
         site_id: str,

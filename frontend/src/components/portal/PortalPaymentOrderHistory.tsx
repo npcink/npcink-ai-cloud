@@ -12,6 +12,7 @@ import {
   normalizePortalCurrency,
 } from '@/lib/currency';
 import { formatDate, formatNumber } from '@/lib/utils';
+import { PortalLoadingState } from '@/components/portal/PortalPageState';
 
 export const PORTAL_PAYMENT_ORDER_PAGE_SIZE = 10;
 
@@ -272,9 +273,7 @@ export function PortalPaymentOrderHistory({
         {error ? <p className="mt-3 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
         <div className="mt-4" role="tabpanel">
           {isLoading && orders.length === 0 ? (
-            <p className="rounded-xl border border-slate-200 px-4 py-6 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              {t('portal.usage.payment_orders_loading', {}, 'Loading payment orders...')}
-            </p>
+            <PortalLoadingState message={t('portal.usage.payment_orders_loading', {}, 'Loading payment orders...')} compact />
           ) : orders.length > 0 ? (
             <>
               <div className="hidden overflow-x-auto lg:block" data-portal-billing="payment-orders-table">

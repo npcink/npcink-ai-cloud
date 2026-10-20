@@ -479,6 +479,7 @@ function PortalUsageContent() {
         sites={session.sites}
         onSiteChange={handleSiteFilterChange}
         siteSelectorMode="context"
+        siteSelectorPlacement="inline"
         titleAccessory={!bundleLoading && !bundleError && quotaSummary && !usageNeedsAttention ? (
           <PortalStatusBadge status="active" label={usageStatusLabel} className="text-[0.68rem]" />
         ) : null}
@@ -506,16 +507,15 @@ function PortalUsageContent() {
         )}
         contextPanel={!bundleError && quotaSummary && usageNeedsAttention ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
-            <p className="text-sm font-semibold text-gray-950 dark:text-white">{usageStatusLabel}</p>
-            <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
-              {t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more AI credits.')}
-            </p>
-            <Link
-              href="/portal/billing#package-options"
-              className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-            >
-              {t('portal.home.billing_action', {}, 'Review package')}
-            </Link>
+            <div className="flex items-start justify-between gap-3">
+              <p className="min-w-0 text-sm font-semibold text-gray-950 dark:text-white">{usageStatusLabel}</p>
+              <Link
+                href="/portal/account#package-options"
+                className="btn btn-secondary btn-sm shrink-0"
+              >
+                {t('portal.home.billing_action', {}, 'Review package')}
+              </Link>
+            </div>
           </div>
         ) : null}
       />
@@ -535,7 +535,7 @@ function PortalUsageContent() {
               {t('portal.usage.overview_desc', {}, 'See what is available, what was used, and whether paid AI credits are nearing expiry.')}
             </p>
           </div>
-          <PortalMetricStrip items={usageOverviewMetrics} variant="header" columnsClassName={paidCredits > 0 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2"} />
+          <PortalMetricStrip items={usageOverviewMetrics} variant="header" />
         </PortalSection>
       ) : null}
 

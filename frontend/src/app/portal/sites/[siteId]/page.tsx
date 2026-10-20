@@ -1,13 +1,14 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { PortalPageStack, PortalSection } from '@/components/portal/PortalScaffold';
+import { PortalPageStack } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import { PortalSiteKnowledgePanel } from '@/components/portal/PortalSiteKnowledgePanel';
 import { PortalSiteServiceStatus } from '@/components/portal/PortalSiteServiceStatus';
+import { PortalActionIcon, PortalRowActions } from '@/components/portal/PortalRowActions';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalErrorState, PortalLoadingState, PortalSignedOutState } from '@/components/portal/PortalPageState';
 import { Modal } from '@/components/ui/Modal';
@@ -24,14 +25,20 @@ import {
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
+  getPortalCustomerIssueDetail,
   getPortalCustomerIssueTitle,
   getPortalMonitoringIssueCategory,
-  hasPortalServiceAttention,
+  hasPortalQuotaPressure,
+  isPortalCustomerPluginMissingAction,
+  isPortalPluginMissingAction,
+  isPortalRecheckHelpfulForAction,
 } from '@/lib/portal-monitoring-display';
 import { formatDate } from '@/lib/utils';
 import {
   getPortalSiteDisplayName,
   getPortalSiteUrl,
+  getPortalSiteUrlDisplay,
+  getPortalWordPressAdminUrl,
 } from '@/lib/portal-site-display';
 
 type PortalSiteLoadError = {
@@ -96,6 +103,10 @@ function PortalSiteRecordContent() {
   const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
   const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const [hasOpenedRemoveModal, setHasOpenedRemoveModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState('');
+  const [isRenamingSite, setIsRenamingSite] = useState(false);
   const siteMonitoring = usePortalSiteMonitoring(siteId, t);
   const siteKnowledge = usePortalSiteKnowledge(siteId, t);
 
@@ -180,7 +191,7 @@ function PortalSiteRecordContent() {
         <PortalErrorState
           title={t('common.error')}
           description={error.message}
-          retryLabel={t('common.retry')}
+          retryLabel={t('portal.retry.reload_page', {}, 'Reload page')}
           onRetry={() => window.location.reload()}
           recoveryLabel={recovery?.label}
           recoveryHref={recovery?.href}
@@ -198,12 +209,22 @@ function PortalSiteRecordContent() {
     status: summary?.site?.status || sessionSite?.status || 'inactive',
   };
   const siteUrl = getPortalSiteUrl(site);
-  const monitoringNeedsAttention = siteMonitoring.overview
-    ? hasPortalServiceAttention(siteMonitoring.overview)
-    : false;
+  // Quiet default: banner only for concrete customer actions (not soft component scores).
+  const monitoringNeedsAttention = Boolean(
+    siteMonitoring.overview
+    && (
+      hasPortalQuotaPressure(siteMonitoring.overview)
+      || siteMonitoring.overview.action_required.some((item) => {
+        if (getPortalMonitoringIssueCategory(item) === 'knowledge') return false;
+        if (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item)) {
+          return false;
+        }
+        return true;
+      })
+    )
+  );
   const siteNeedsAttention = site.status !== 'active'
     || !siteUrl
-    || Boolean(summary?.customer_status?.needs_attention)
     || monitoringNeedsAttention;
   const siteConnectionStatusLabel = site.status === 'active'
     ? t('portal.sites.table_ready', {}, 'Connected')
@@ -213,7 +234,14 @@ function PortalSiteRecordContent() {
         ? t('portal.site_status_provisioning', {}, 'Provisioning')
         : t('portal.site_status_suspended', {}, 'Suspended');
   const primaryMonitoringAction = siteMonitoring.overview?.action_required.find(
-    (item) => getPortalMonitoringIssueCategory(item) !== 'knowledge'
+    (item) => {
+      if (getPortalMonitoringIssueCategory(item) === 'knowledge') return false;
+      // Optional Magick plugins must not become the page attention.
+      if (isPortalPluginMissingAction(item) && !isPortalCustomerPluginMissingAction(item)) {
+        return false;
+      }
+      return true;
+    }
   ) || null;
   const primaryIssueCategory = primaryMonitoringAction
     ? getPortalMonitoringIssueCategory(primaryMonitoringAction)
@@ -221,6 +249,8 @@ function PortalSiteRecordContent() {
   const latestActivityAt = siteMonitoring.overview?.activity.last_seen_at
     || siteMonitoring.overview?.generated_at
     || '';
+  const pluginMissingPrimary = isPortalCustomerPluginMissingAction(primaryMonitoringAction);
+  const recheckHelpful = isPortalRecheckHelpfulForAction(primaryMonitoringAction);
   const attentionTitle = site.status === 'inactive'
     ? t('portal.site_connection_status_attention', {}, 'Site connection needs confirmation')
     : primaryMonitoringAction
@@ -237,17 +267,7 @@ function PortalSiteRecordContent() {
         'Reconnect this site from the WordPress plugin first. If it still remains inactive, submit a ticket and include the site name.'
       )
     : primaryMonitoringAction
-      ? primaryIssueCategory === 'quota'
-      ? t(
-          'portal.monitoring.quota_evidence_attention',
-          {},
-          'Usage is near or over the current package limit.'
-        )
-        : t(
-          'portal.monitoring.customer_issue_detail',
-          {},
-          'If this keeps showing, contact support and include the site name.'
-        )
+      ? getPortalCustomerIssueDetail(primaryMonitoringAction, t)
       : !siteUrl
       ? t(
           'portal.site_record_address_missing_detail',
@@ -264,11 +284,65 @@ function PortalSiteRecordContent() {
     && site.status !== 'archived'
     && site.status !== 'suspended'
   );
+  const canRenameThisSite = Boolean(
+    sessionSite?.allowed_actions?.includes('provision_sites')
+    && site.status !== 'archived'
+  );
 
   const closeRemoveModal = () => {
     if (isRemovingSite) return;
     setShowRemoveModal(false);
     setRemoveError('');
+  };
+
+  const closeRenameModal = () => {
+    if (isRenamingSite) return;
+    setShowRenameModal(false);
+    setRenameError('');
+  };
+
+  const openRenameModal = () => {
+    setRenameValue(getPortalSiteDisplayName(site));
+    setRenameError('');
+    setShowRenameModal(true);
+  };
+
+  const handleRenameSite = async () => {
+    if (!canRenameThisSite) return;
+    const nextName = renameValue.trim();
+    if (!nextName) {
+      setRenameError(t('portal.site_rename_required', {}, 'Enter a site name.'));
+      return;
+    }
+    setIsRenamingSite(true);
+    setRenameError('');
+    try {
+      const response = await portalClient.updateSiteName(site.site_id, nextName);
+      const renamed = response.data.site;
+      setSummary((current) => (
+        current
+          ? {
+              ...current,
+              site: {
+                ...current.site,
+                name: renamed.name,
+              },
+            }
+          : current
+      ));
+      await refresh().catch(() => undefined);
+      setShowRenameModal(false);
+    } catch (err) {
+      setRenameError(
+        formatPortalErrorMessage(
+          err,
+          t,
+          t('portal.site_rename_failed', {}, 'Failed to rename this site.')
+        )
+      );
+    } finally {
+      setIsRenamingSite(false);
+    }
   };
 
   const handleRemoveSite = async () => {
@@ -311,66 +385,169 @@ function PortalSiteRecordContent() {
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
-  const renderAttentionAction = () => {
-    if (site.status === 'inactive') {
-      return <Link href="/portal#sites" className="btn btn-secondary btn-sm mt-3">{t('portal.activate_site_action')}</Link>;
-    }
-    if (!siteUrl) {
-      return <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm mt-3">{t('portal.support_request_new_action')}</Link>;
-    }
-    if (primaryIssueCategory === 'quota') {
-      return <Link href="/portal/billing" className="btn btn-secondary btn-sm mt-3">{t('portal.nav_billing')}</Link>;
-    }
-    return <button type="button" className="btn btn-secondary btn-sm mt-3" disabled={siteMonitoring.isLoading} onClick={siteMonitoring.refresh}>{t('common.retry')}</button>;
-  };
+  const supportHref = `/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`;
+  const errorCount = Number(siteMonitoring.overview?.activity.plugin_errors_total || 0);
+  const recheckActionLabel = siteMonitoring.isRefreshing
+    ? t('portal.retry.rechecking', {}, 'Checking…')
+    : t('portal.retry.recheck_service', {}, 'Recheck service');
+  const attentionActionLabel = site.status === 'inactive'
+    ? t('portal.activate_site_action', {}, 'Activate')
+    : !siteUrl
+      ? t('portal.support_request_new_action', {}, 'Submit ticket')
+      : primaryIssueCategory === 'quota'
+        ? t('portal.nav_billing', {}, 'View package')
+        : pluginMissingPrimary || !recheckHelpful
+          ? t('portal.site_attention_contact_support', {}, 'Contact support')
+          : recheckActionLabel;
+
+  const attentionAction = site.status === 'inactive'
+    ? {
+        label: attentionActionLabel,
+        href: '/portal#sites',
+        testId: 'attention-cta',
+      }
+    : !siteUrl
+      ? {
+          label: attentionActionLabel,
+          href: supportHref,
+          testId: 'attention-cta',
+        }
+      : primaryIssueCategory === 'quota'
+        ? {
+            label: attentionActionLabel,
+            href: '/portal/account#package-options',
+            testId: 'attention-cta',
+          }
+        : pluginMissingPrimary || !recheckHelpful
+          ? {
+              label: attentionActionLabel,
+              href: supportHref,
+              testId: 'attention-cta',
+            }
+          : {
+              label: attentionActionLabel,
+              onClick: siteMonitoring.refresh,
+              disabled: siteMonitoring.isLoading || siteMonitoring.isRefreshing,
+              testId: 'attention-cta',
+            };
+
+  const attentionSecondaryAction = (
+    siteNeedsAttention
+    && !error
+    && site.status !== 'inactive'
+    && siteUrl
+    && primaryIssueCategory !== 'quota'
+    && (pluginMissingPrimary || !recheckHelpful)
+  )
+    ? {
+        label: recheckActionLabel,
+        onClick: siteMonitoring.refresh,
+        disabled: siteMonitoring.isLoading || siteMonitoring.isRefreshing,
+        testId: 'attention-secondary',
+      }
+    : null;
+
+  const showSupportBesideAttention = errorCount > 0
+    && !String(attentionAction.href || '').includes('/portal/support')
+    && !pluginMissingPrimary;
+
+  const wpAdminUrl = getPortalWordPressAdminUrl(site);
+  const displayName = getPortalSiteDisplayName(site);
 
   return (
-    <PortalPageStack>
+    <PortalPageStack className="mx-auto w-full max-w-[56rem] space-y-3" data-portal-site-record="page">
       <PortalWorkspaceHeader
-        title={getPortalSiteDisplayName(site)}
-        description={t(
-          'portal.site_record.description',
-          {},
-          'Check whether this site is connected and whether AI can use its content.'
-        )}
+        title={displayName}
         currentPage="record"
         selectedSiteId={siteId}
         sites={session.sites}
-        titleAccessory={(
-          <PortalStatusBadge
-            status={site.status === 'active' ? 'active' : 'warning'}
-            label={siteConnectionStatusLabel}
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.site_breadcrumb', {}, 'Site location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.home.my_sites_title', {}, 'My sites'),
+                href: '/portal#sites',
+              },
+              { label: displayName },
+            ]}
           />
         )}
+        titleAccessory={(
+          <>
+            {canRenameThisSite ? (
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:text-white"
+                onClick={openRenameModal}
+                aria-label={t('portal.site_rename_action', {}, 'Rename site')}
+                title={t('portal.site_rename_action', {}, 'Rename site')}
+                data-portal-site="rename"
+              >
+                <PortalActionIcon id="rename" />
+              </button>
+            ) : null}
+            {!(siteNeedsAttention && !error) ? (
+              <PortalStatusBadge
+                status={site.status === 'active' ? 'active' : 'warning'}
+                label={siteConnectionStatusLabel}
+              />
+            ) : null}
+            {(wpAdminUrl || canRemoveThisSite) ? (
+              <div data-portal-site="other-actions">
+                <PortalRowActions
+                  moreLabel={t('portal.site_other_actions', {}, 'Other actions')}
+                  overflow={[
+                    ...(wpAdminUrl
+                      ? [{
+                          id: 'wp-admin',
+                          label: t('portal.sites.open_wordpress_admin', {}, 'Open WordPress admin'),
+                          href: wpAdminUrl,
+                          external: true as const,
+                        }]
+                      : []),
+                    ...(canRemoveThisSite
+                      ? [{
+                          id: 'remove-site',
+                          label: t('portal.remove_site_action', {}, 'Remove site'),
+                          danger: true as const,
+                          confirm: false as const,
+                          onClick: () => {
+                            setHasOpenedRemoveModal(true);
+                            setShowRemoveModal(true);
+                          },
+                        }]
+                      : []),
+                  ]}
+                />
+              </div>
+            ) : null}
+          </>
+        )}
         metadata={(
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600 dark:text-slate-300">
-            <span className="break-all">
-              {siteUrl || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-portal-site="context-summary">
+            <span className="truncate" title={siteUrl || undefined}>
+              {getPortalSiteUrlDisplay(site) || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
             </span>
             <span>
-              {t('portal.monitoring.last_activity', {}, 'Last activity')}: {' '}
+              {t('portal.monitoring.last_activity', {}, 'Last activity')}:{' '}
               {latestActivityAt
                 ? formatDate(latestActivityAt)
                 : t('portal.home.package_pending_label', {}, 'To confirm')}
             </span>
           </div>
         )}
-        contextPanel={siteNeedsAttention && !error ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">{attentionTitle}</p>
-              <p className="mt-1 text-sm leading-5 text-amber-800 dark:text-amber-200">{attentionDetail}</p>
-            </div>
-            {renderAttentionAction()}
-          </div>
-        ) : undefined}
       />
 
       {error ? (
         <PortalErrorState
           title={t('common.error')}
           description={error.message}
-          retryLabel={t('common.retry')}
+          retryLabel={t('portal.retry.reload_page', {}, 'Reload page')}
           onRetry={() => window.location.reload()}
           recoveryLabel={recovery?.label}
           recoveryHref={recovery?.href}
@@ -383,6 +560,16 @@ function PortalSiteRecordContent() {
         isLoading={siteMonitoring.isLoading}
         error={siteMonitoring.error}
         onRefresh={siteMonitoring.refresh}
+        isRefreshing={siteMonitoring.isRefreshing}
+        refreshNotice={siteMonitoring.refreshNotice}
+        attention={siteNeedsAttention && !error ? {
+          title: attentionTitle,
+          detail: attentionDetail,
+          action: attentionAction,
+          secondaryAction: attentionSecondaryAction,
+          supportHref: showSupportBesideAttention ? supportHref : null,
+          supportLabel: t('portal.site_attention_contact_support', {}, 'Contact support'),
+        } : null}
       />
 
       <PortalSiteKnowledgePanel
@@ -392,27 +579,61 @@ function PortalSiteRecordContent() {
         onRetry={siteKnowledge.refresh}
       />
 
-      {canRemoveThisSite ? (
-        <PortalSection className="py-3 md:py-3" variant="portal">
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">
-              {t('portal.site_other_actions', {}, 'Other actions')}
-            </summary>
-            <div className="mt-3 border-t border-slate-200/80 pt-3 dark:border-slate-800">
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
-                onClick={() => {
-                  setHasOpenedRemoveModal(true);
-                  setShowRemoveModal(true);
-                }}
-              >
-                {t('portal.remove_site_action', {}, 'Remove site')}
-              </button>
-            </div>
-          </details>
-        </PortalSection>
-      ) : null}
+      <Modal
+        isOpen={showRenameModal}
+        onClose={closeRenameModal}
+        closeLabel={t('common.close', {}, 'Close')}
+        closeOnOverlay={!isRenamingSite}
+        title={t('portal.site_rename_action', {}, 'Rename site')}
+        description={t(
+          'portal.site_rename_desc',
+          {},
+          'Update the display name for this site in the portal. The WordPress site address does not change.'
+        )}
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={closeRenameModal} disabled={isRenamingSite}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => void handleRenameSite()} disabled={isRenamingSite}>
+              {isRenamingSite ? t('common.saving') : t('common.save', {}, 'Save')}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+          <label className="block space-y-1.5" htmlFor="portal-site-rename-input">
+            <span className="font-medium text-slate-950 dark:text-white">
+              {t('portal.site_rename_label', {}, 'Site name')}
+            </span>
+            <input
+              id="portal-site-rename-input"
+              className="input w-full"
+              value={renameValue}
+              maxLength={191}
+              placeholder={t('portal.site_rename_placeholder', {}, 'Enter a site name')}
+              disabled={isRenamingSite}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                // IME composition uses Enter to confirm glyphs; do not save mid-composition.
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleRenameSite();
+                }
+              }}
+              autoComplete="off"
+              autoFocus
+              data-portal-site="rename-input"
+            />
+          </label>
+          {renameError ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+              {renameError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showRemoveModal}
@@ -433,7 +654,7 @@ function PortalSiteRecordContent() {
         }
       >
         <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-950 dark:text-white">{getPortalSiteDisplayName(site)}</p>
+          <p className="font-semibold text-slate-950 dark:text-white">{displayName}</p>
           <p className="break-words">
             {siteUrl || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
           </p>

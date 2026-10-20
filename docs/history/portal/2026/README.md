@@ -4,6 +4,8 @@ Status: historical evidence index; not current Portal authority.
 
 Current authority remains the
 [Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md).
+Current home / density layout Spec (incl. preview self-check gate):
+[Portal UI Spec](../../../portal-ui-spec.md) §9「交付门禁 / 自检」.
 
 - [Cloud Account and Portal stage closeout](cloud-account-portal-stage-closeout-summary-2026-06-29.md)
 - [Portal customer surface simplification](portal-customer-surface-simplification-history-2026-07-04.md)

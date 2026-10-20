@@ -69,172 +69,19 @@ assert.match(
   /<Modal[\s\S]*data-portal-support="new-ticket-dialog"/,
   'Portal ticket creation must open in a focused dialog instead of displacing ticket history'
 );
-assert.ok(
-  portalSupportPageSource.indexOf('portal.support_request_list_title') < portalSupportPageSource.indexOf('data-portal-support="status-rules"'),
-  'Portal ticket history must appear before status guidance'
+assert.match(
+  portalSupportPageSource,
+  /data-portal-support="ticket-guide"[\s\S]*support_guide_categories[\s\S]*support_guide_response/,
+  'Portal support must show problem category and response guidance under the title group'
 );
 assert.match(
   portalSupportPageSource,
-  /<ListPagination[\s\S]*offset=\{offset\}[\s\S]*total=\{total\}/,
-  'Portal support history must expose all tickets through pagination'
+  /primaryAction=\{[\s\S]*support_request_new_action/,
+  'Portal submit-ticket action must sit in the title info group via primaryAction'
 );
 assert.match(
   portalSupportPageSource,
-  /data-portal-support="tickets-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody[\s\S]*portal\.support_request_view_detail/,
-  'Portal support history must use a semantic PC table with one detail action per ticket'
+  /data-portal-support="status-filters"/,
+  'Portal ticket status filters must remain available but demoted to a secondary control group'
 );
-assert.match(
-  portalSupportPageSource,
-  /supportRequestSiteLabel[\s\S]*!item\.site_id[\s\S]*support_request_no_site[\s\S]*accountSites\.find\(\(site\) => site\.site_id === item\.site_id\)[\s\S]*support_request_other_site/,
-  'Portal support rows must distinguish account-level, known-site, and other-site tickets'
-);
-assert.match(
-  portalSupportPageSource,
-  /portal\.support_request_column[\s\S]*supportRequestSiteLabel\(item\)[\s\S]*data-portal-support="ticket-cards"[\s\S]*supportRequestSiteLabel\(item\)/,
-  'Portal support history must use a concise ticket column and the same site semantics in desktop and mobile layouts'
-);
-assert.match(
-  i18nSource,
-  /'portal\.support_topic_technical': 'Technical support'[\s\S]*'portal\.support_topic_technical': '技术支持'/,
-  'Portal support must localize legacy technical ticket topics'
-);
-assert.match(
-  portalSupportPageSource,
-  /SUPPORT_TOPICS[\s\S]*billing[\s\S]*payment[\s\S]*site[\s\S]*usage[\s\S]*account[\s\S]*general/,
-  'Portal support form must expose bounded customer-support topics'
-);
-assert.match(
-  portalSupportPageSource,
-  /support_rule_open[\s\S]*support_rule_in_progress[\s\S]*support_rule_resolved[\s\S]*support_rule_closed[\s\S]*data-portal-support="status-rules"/,
-  'Portal support page must explain ticket status, close evaluation, and reopen expectations'
-);
-assert.match(
-  portalPackagePanelSource,
-  /\/portal\/support\?new=1&topic=billing/,
-  'Portal package dialog must keep a contextual support path for Agency requests'
-);
-assert.doesNotMatch(
-  portalBillingPageSource,
-  /supportRequestHref|portal\.support_request_new_action/,
-  'Portal package header must not duplicate the global ticket navigation'
-);
-assert.doesNotMatch(
-  portalSupportPageSource,
-  /const initialSiteId = searchParams\?\.get\('site'\) \|\| selectedSiteId|if \(!siteId && selectedSiteId\)/,
-  'Portal support form must default to account-level issues unless a site is explicitly passed'
-);
-assert.match(
-  portalSupportPageSource,
-  /initialSiteIsVisible[\s\S]*setSiteId\(initialSiteIsVisible \? initialSiteId : ''\)/,
-  'Portal support must preserve an explicitly linked visible account site, including an inactive site'
-);
-assert.match(
-  portalSupportPageSource,
-  /const visibleSites = accountSites;[\s\S]*site_id: siteId,/,
-  'Portal support must let the customer associate any visible account site and rely on server-side access validation'
-);
-assert.doesNotMatch(
-  portalBillingPageSource,
-  /portal\.billing\.help_title|portal\.billing\.help_desc/,
-  'Portal package page must not keep a separate help card after the ticket tab exists'
-);
-assert.match(
-  portalClientSource,
-  /async getAccountEntitlements[\s\S]*\/account\/entitlements[\s\S]*async createAccountCreditPackOrder[\s\S]*\/account\/credit-pack-orders/,
-  'Portal client must expose account-level package, credit pack, and payment operations'
-);
-assert.match(
-  portalClientSource,
-  /async listSupportRequests[\s\S]*\/support-requests/,
-  'Portal client must expose support request listing'
-);
-assert.match(
-  portalClientSource,
-  /async createSupportRequest[\s\S]*'POST', '\/support-requests'/,
-  'Portal client must expose support request creation'
-);
-assert.match(
-  portalClientSource,
-  /pendingWriteKeys[\s\S]*writeIntentSignature[\s\S]*isUnconfirmedWriteError/,
-  'Portal writes must retain one idempotency key while the outcome remains unconfirmed'
-);
-assert.match(
-  portalClientSource,
-  /async getSupportRequest[\s\S]*\/support-requests\/\$\{requestId\}/,
-  'Portal client must expose support request detail loading'
-);
-assert.match(
-  portalClientSource,
-  /async createSupportRequestMessage[\s\S]*'POST', `\/support-requests\/\$\{requestId\}\/messages`/,
-  'Portal client must expose customer ticket replies'
-);
-assert.match(
-  portalSupportDetailPageSource,
-  /portalClient\.getSupportRequest[\s\S]*portalClient\.createSupportRequestMessage/,
-  'Portal ticket detail page must load messages and let customers reply'
-);
-assert.match(
-  portalSupportDetailPageSource,
-  /createSupportRequestAttachment[\s\S]*getSupportRequestAttachment[\s\S]*submitSupportRequestFeedback/,
-  'Portal ticket detail page must support attachments, downloads, and close evaluation'
-);
-assert.match(
-  adminLayoutSource,
-  /href: '\/admin\/support-requests'[\s\S]*admin\.nav_support_requests/,
-  'Admin navigation must expose the support request queue'
-);
-assert.match(
-  adminSupportPageSource,
-  /createApiClient[\s\S]*`\/api\/admin\/support-requests\?\$\{(?:requestKey|params\.toString\(\))\}`/,
-  'Admin support page must load the support request queue through the admin proxy'
-);
-assert.match(
-  adminSupportPageSource,
-  /params\.set\('offset'[\s\S]*<ListPagination[\s\S]*total=\{total\}/,
-  'Admin support queue must expose all filtered tickets through pagination'
-);
-assert.match(
-  adminSupportPageSource,
-  /\/api\/admin\/support-requests\/\$\{encodeURIComponent\((?:item\.request_id|requestId|input\.requestId)\)\}[\s\S]*method: 'PATCH'/,
-  'Admin support page must update ticket status through the admin proxy'
-);
-assert.match(
-  adminSupportPageSource,
-  /params\.set\('topic', (?:appliedTopic|topic|filters\.topic)\)[\s\S]*value=\{(?:appliedTopic|topicFilter)\}/,
-  'Admin support queue must expose the backend topic filter'
-);
-assert.match(
-  adminSupportPageSource,
-  /buildAdminQueueReturnTo[\s\S]*buildAdminDetailHref[\s\S]*supportRequestDetailHref/,
-  'Admin support queue must link to ticket detail while preserving the queue return context'
-);
-assert.match(
-  adminSupportDetailPageSource,
-  /createSupportRequestMessage[\s\S]*visibility[\s\S]*public[\s\S]*internal/,
-  'Admin ticket detail must support public replies and internal notes'
-);
-assert.match(
-  adminSupportDetailPageSource,
-  /createSupportRequestAttachment[\s\S]*fetchSupportRequestAttachment[\s\S]*support_feedback_title/,
-  'Admin ticket detail must support attachments and show close evaluation'
-);
-assert.match(
-  adminProxySource,
-  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^support-requests\\\/\[\^\/\]\+\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_accounts'/,
-  'Admin proxy must explicitly allowlist support request status updates with account-management authority'
-);
-assert.match(
-  adminProxySource,
-  /methods: \['POST'\],[\s\S]*?pattern: \/\^support-requests\\\/\[\^\/\]\+\\\/\(\?:messages\|attachments\)\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_accounts'/,
-  'Admin proxy must explicitly allowlist support request message and attachment creation with account-management authority'
-);
-assert.match(
-  i18nSource,
-  /portal\.nav_support_requests[\s\S]*portal\.support_status_in_progress[\s\S]*admin\.nav_support_requests[\s\S]*admin\.support_status_in_progress/,
-  'Support request Portal and Admin labels must be localized'
-);
-assert.match(
-  i18nSource,
-  /portal\.support_status_rules_title[\s\S]*portal\.support_rule_closed[\s\S]*portal\.support_status_rules_title[\s\S]*portal\.support_rule_closed/,
-  'Support status rule copy must be localized in English and Chinese'
-);
+

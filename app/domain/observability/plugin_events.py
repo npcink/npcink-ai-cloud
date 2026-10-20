@@ -116,6 +116,11 @@ EXPECTED_PLUGIN_SLUGS = (
     "npcink-ai-client-adapter",
     "npcink-cloud-addon",
 )
+# Portal customer attention: only the Cloud connection baseline.
+# Optional Magick plugins (toolkit / governance / adapter) must not yellow-warn Portal.
+PORTAL_BASELINE_PLUGIN_SLUGS = (
+    "npcink-cloud-addon",
+)
 ERROR_RATE_HIGH_THRESHOLD = 0.05
 LATENCY_WARNING_MS = 3000
 CATALOG_CHURN_THRESHOLD = 4
@@ -210,6 +215,7 @@ class PluginObservabilityService:
         window_hours: int = 24,
         plugin_slug: str = "",
         now: datetime | None = None,
+        expected_plugin_slugs: Sequence[str] | None = None,
     ) -> dict[str, object]:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
         bounded_hours = min(168, max(1, int(window_hours or 24)))
@@ -333,6 +339,11 @@ class PluginObservabilityService:
             window_hours=bounded_hours,
             include_missing_plugins="" == plugin_slug,
             site_id=site_id,
+            expected_plugin_slugs=(
+                tuple(expected_plugin_slugs)
+                if expected_plugin_slugs is not None
+                else EXPECTED_PLUGIN_SLUGS
+            ),
         )
         attention, attention_workflow = self._apply_attention_states(
             attention,
@@ -1182,6 +1193,7 @@ class PluginObservabilityService:
         window_hours: int,
         include_missing_plugins: bool,
         site_id: str = "",
+        expected_plugin_slugs: Sequence[str] = EXPECTED_PLUGIN_SLUGS,
     ) -> tuple[dict[str, object], list[dict[str, object]]]:
         health = self._build_health(
             events_total=self._coerce_int(totals.get("events_total")),
@@ -1311,7 +1323,8 @@ class PluginObservabilityService:
 
         if include_missing_plugins:
             observed = {str(plugin.get("plugin_slug") or "") for plugin in plugins}
-            missing = [slug for slug in EXPECTED_PLUGIN_SLUGS if slug not in observed]
+            expected = tuple(expected_plugin_slugs) or EXPECTED_PLUGIN_SLUGS
+            missing = [slug for slug in expected if slug not in observed]
             if missing:
                 attention.append(
                     self._attention_item(

@@ -41,10 +41,17 @@ export function Modal({
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
   const descriptionId = useId();
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   // Keep keyboard focus inside the active dialog and return it to the trigger.
+  // onClose is read via ref so unstable parent callbacks (common with inline
+  // handlers) do not re-run this effect on every keystroke and steal focus.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -66,13 +73,30 @@ export function Modal({
 
     const focusFrame = window.requestAnimationFrame(() => {
       const focusableElements = visibleFocusableElements();
-      (focusableElements[0] || dialogRef.current)?.focus();
+      const preferred = focusableElements.find((element) => (
+        element instanceof HTMLInputElement
+        || element instanceof HTMLTextAreaElement
+        || element instanceof HTMLSelectElement
+      )) || focusableElements[0] || dialogRef.current;
+      preferred?.focus();
+      // Avoid select-all on open: it fights CJK IME composition and feels like the field won't accept input.
+      if (
+        preferred instanceof HTMLInputElement
+        && (preferred.type === 'text' || preferred.type === 'search' || preferred.type === '' || !preferred.type)
+      ) {
+        const end = preferred.value.length;
+        try {
+          preferred.setSelectionRange(end, end);
+        } catch {
+          // Some input types reject setSelectionRange; focus alone is enough.
+        }
+      }
     });
 
     const handleDialogKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -105,7 +129,7 @@ export function Modal({
       previousActiveElementRef.current?.focus();
       previousActiveElementRef.current = null;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   // Preserve the previous body scroll state while the dialog is active.
   useEffect(() => {
@@ -154,7 +178,7 @@ export function Modal({
       {/* 模态框内容 */}
       <div
         className={cn(
-          'relative w-full rounded-xl bg-white dark:bg-gray-900 shadow-2xl',
+          'relative z-10 w-full rounded-xl bg-white dark:bg-gray-900 shadow-2xl',
           'border border-gray-200 dark:border-gray-800',
           'flex flex-col max-h-full',
           sizeStyles[size],

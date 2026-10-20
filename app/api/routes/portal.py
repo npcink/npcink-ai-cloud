@@ -129,6 +129,12 @@ class PortalSiteLifecyclePayload(BaseModel):
     replace_site_ids: list[str] = Field(default_factory=list, max_length=25)
 
 
+class PortalSiteProfilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=191)
+
+
 class PortalLoginCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1049,6 +1055,13 @@ def _portal_remove_site_data(value: object) -> dict[str, object]:
                 relink_policy.get("relink_available_at") or ""
             ),
         },
+    }
+
+
+def _portal_site_profile_data(value: object) -> dict[str, object]:
+    result = _dict_value(value)
+    return {
+        "site": _portal_public_site_data(result.get("site")),
     }
 
 
@@ -4533,6 +4546,52 @@ async def update_portal_site_lifecycle(
     return _portal_route_envelope(
         message="portal site lifecycle updated",
         data=_portal_site_lifecycle_data(result),
+    )
+
+
+@router.patch("/sites/{site_id}/profile")
+async def update_portal_site_profile(
+    request: Request,
+    site_id: str,
+    payload: PortalSiteProfilePayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    access = _authorize_portal_site_access(
+        request,
+        site_id=site_id,
+        principal_id=auth.principal_id,
+        required_action=USER_ALLOWED_ACTION_PROVISION_SITES,
+    )
+    if isinstance(access, JSONResponse):
+        return access
+    replay = portal_idempotency_replay_response(request)
+    if replay is not None:
+        return replay
+    try:
+        result = await run_in_threadpool(
+            _get_commercial_service(request).update_portal_site_profile,
+            site_id,
+            principal_id=auth.principal_id,
+            name=payload.name,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal site profile updated",
+        data=_portal_site_profile_data(result),
     )
 
 

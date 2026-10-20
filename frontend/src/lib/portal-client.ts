@@ -106,6 +106,10 @@ export interface PortalSiteLifecycleResult {
   };
 }
 
+export interface PortalSiteProfileResult {
+  site: Site;
+}
+
 export interface PortalSiteDetail extends Site {
   created_at: string;
 }
@@ -1916,6 +1920,13 @@ export class PortalClient {
       status,
       replace_site_ids: replaceSiteIds,
     });
+  }
+
+  async updateSiteName(
+    siteId: string,
+    name: string
+  ): Promise<PortalEnvelope<PortalSiteProfileResult>> {
+    return this.request('PATCH', `/sites/${siteId}/profile`, { name });
   }
 
   /**
