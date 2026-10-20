@@ -264,14 +264,14 @@ function PortalBillingContent() {
       ) : null}
 
       {!error && quotaSummary ? (
-        <PortalCard variant="portal" className="bg-white dark:bg-slate-950" data-portal-billing="entitlements">
+        <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950" data-portal-billing="entitlements">
           {packageStatus === 'warning' ? (
             <div
-              className="mb-4 w-fit max-w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
+              className="mb-3 w-fit max-w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
               data-portal-billing="attention"
             >
-              <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-                <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
+                <div className="min-w-0 max-w-prose">
                   <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
                   <p className="mt-0.5 text-xs leading-5 text-amber-900/90 dark:text-amber-100/90">
                     {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
