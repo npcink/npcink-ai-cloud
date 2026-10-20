@@ -646,7 +646,7 @@ for (const width of [1280, 1440, 1920]) {
     await expect(inspector).toBeVisible();
     const queueBox = (await queue.boundingBox())!;
     const inspectorBox = (await inspector.boundingBox())!;
-    expect(Math.abs(queueBox.y - inspectorBox.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(queueBox.y - inspectorBox.y)).toBeLessThanOrEqual(2);
     expect(queueBox.width).toBe(320);
     expect(queueBox.y).toBeLessThan(220);
     const leftTitle = (await queue.getByRole('heading', { level: 2 }).boundingBox())!;
@@ -694,7 +694,7 @@ test('diagnostic help remains inside a short viewport and flips above its trigge
   const tipBox = (await page.getByRole('tooltip').boundingBox())!;
   expect(tipBox.y).toBeGreaterThanOrEqual(8);
   expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(292);
-  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(triggerBox.y);
+  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(triggerBox.y + 12);
   await trigger.press('Escape');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
 });

@@ -1681,12 +1681,12 @@ test('portal workspace interaction path: account overview to site detail and ser
   await page.goto('/portal');
 
   const portalPrimaryNav = page.locator('[data-ui="portal-primary-nav"]');
-  await expect(portalPrimaryNav.locator('> a')).toHaveCount(4);
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Home$|^首页$/i })).toBeVisible();
+  await expect(portalPrimaryNav.locator('> a')).toHaveCount(5);
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Service$|^服务$|^服務$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage history$|^使用记录$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Help & support$|^帮助与客服$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toHaveCount(0);
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Tickets$|^工单$|^工單$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Billing$|^账单$|^帳單$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Monitoring$|^监控$|^監控$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^AI Insights$|^AI 分析$/i })).toHaveCount(0);
@@ -1743,7 +1743,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   });
 
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
   await expect(page.getByText(/^612$|^612 点$/i).first()).toBeVisible();
   const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
@@ -2092,7 +2092,7 @@ test('account projections remain available without a selected site context', asy
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await page.goto('/portal/audit');
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
 
@@ -2489,7 +2489,7 @@ for (const navigation of [
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
 
     await page.goto('/portal/usage');
-    await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
     if (navigation.name === 'mobile') {
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
@@ -2520,7 +2520,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
 
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
 
@@ -2551,7 +2551,7 @@ test('portal read failures retain context and retry without showing empty result
     else await route.fallback();
   });
   await page.goto('/portal/usage?view=records');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
   await expect(page.getByText(/0 service events|共 0 次服务|暂无服务记录/i)).toHaveCount(0);
   failRecords = false;
