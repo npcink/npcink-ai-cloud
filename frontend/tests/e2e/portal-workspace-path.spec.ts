@@ -1728,11 +1728,11 @@ test('portal workspace interaction path: account overview to site detail and ser
     sitesWorkspace.locator('[data-portal-sites="desktop-table"]').getByText(/^Connected$|^已接入$/i)
   ).toHaveCount(2);
   const selectedSiteRow = sitesWorkspace.getByRole('row', { name: /Attention Site/i });
-  await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await selectedSiteRow.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
   await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   const unselectedSiteRow = sitesWorkspace.getByRole('row', { name: /Clear Site/i });
-  await unselectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await unselectedSiteRow.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
   await expect(unselectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
@@ -2744,7 +2744,7 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     const actionScope = scenario === 'remove-from-detail'
       ? page
       : page.locator('[data-portal-sites="desktop-table"]').getByRole('row').filter({ hasText: 'Attention Site' });
-    await actionScope.getByText(/^(Other actions|其他操作)$/i).click();
+    await actionScope.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
     const actionName = scenario === 'deactivate' ? /^(Deactivate|停用)$/i : /^(Remove site|移除站点)$/i;
     await actionScope.getByRole('button', { name: actionName }).click();
     await page.getByRole('dialog').getByRole('button', { name: actionName }).click();
