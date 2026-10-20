@@ -12,6 +12,10 @@ const manifest = JSON.parse(readFileSync(fromFrontendRoot('admin-ui-manifest.jso
 const standardSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-ui-standard-v1.md'), 'utf8');
 const architectureSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-information-architecture-v2.md'), 'utf8');
 const agentsSource = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
+const sessionDetailSource = readFileSync(
+  join(repositoryRoot, 'docs/engineering/agents-session-protocol-detail.md'),
+  'utf8'
+);
 const pullRequestTemplateSource = readFileSync(join(repositoryRoot, '.github/pull_request_template.md'), 'utf8');
 const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'), 'utf8');
 const tailwindConfigSource = readFileSync(fromFrontendRoot('tailwind.config.ts'), 'utf8');
@@ -345,6 +349,10 @@ assert.deepEqual(
   'new route-local credential fields are forbidden; use AdminCredentialField and reduce the legacy list'
 );
 
+assert.ok(
+  agentsSource.includes('docs/engineering/agents-session-protocol-detail.md'),
+  'AGENTS.md must link docs/engineering/agents-session-protocol-detail.md'
+);
 for (const requiredEntry of [
   'docs/cloud-admin-ui-standard-v1.md',
   'frontend/admin-ui-manifest.json',
@@ -352,7 +360,10 @@ for (const requiredEntry of [
   'pnpm run check:admin-ui:visual',
   'border-dashed',
 ]) {
-  assert.ok(agentsSource.includes(requiredEntry), `AGENTS.md must require ${requiredEntry}`);
+  assert.ok(
+    sessionDetailSource.includes(requiredEntry),
+    `agents-session-protocol-detail.md must require ${requiredEntry}`
+  );
 }
 for (const requiredPullRequestField of [
   'Page model:',
