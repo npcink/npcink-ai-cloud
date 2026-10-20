@@ -50,6 +50,8 @@ const paymentOrdersHookSource = readFileSync(paymentOrdersHookPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEntitlementUsage.tsx');
 const entitlementComponentSource = readFileSync(entitlementComponentPath, 'utf8');
+const billingStatusPath = resolve(root, 'src/lib/portal-billing-status.ts');
+const billingStatusSource = readFileSync(billingStatusPath, 'utf8');
 const usagePageSource = readFileSync(usagePagePath, 'utf8');
 const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
@@ -88,19 +90,29 @@ assert.doesNotMatch(
   'Portal package page must not send users to a site record to understand the account package'
 );
 assert.match(
-  billingPageSource,
+  billingStatusSource,
   /portal\.billing\.upgrade_action/,
-  'Portal package page must own package upgrade entry points'
+  'Portal package pressure CTA must own package upgrade entry points'
 );
 assert.match(
   billingPageSource,
-  /resolvePackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
+  /resolveBillingPressureCta|resolveBillingPackageStatusLabel/,
+  'Portal package page must use the shared billing quiet-status helpers'
+);
+assert.match(
+  billingStatusSource,
+  /resolveBillingPackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
   'Portal package status must name the customer-visible limit instead of showing a generic attention label'
 );
 assert.match(
   billingPageSource,
-  /active_sites[\s\S]*package_status_active_site_limited[\s\S]*package_status_site_label/,
-  'Portal package status must classify active-site capacity as a site limit and explain its usage'
+  /active_sites[\s\S]*package_status_active_site_limited/,
+  'Portal package status must explain active-site capacity usage on the package page'
+);
+assert.match(
+  billingStatusSource,
+  /active_sites[\s\S]*package_status_site_label/,
+  'Portal package status must classify active-site capacity as a site limit'
 );
 assert.match(
   accountCommerceSource,

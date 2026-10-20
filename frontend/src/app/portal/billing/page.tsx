@@ -23,6 +23,12 @@ import { usePortalPaymentOrders } from '@/hooks/usePortalPaymentOrders';
 import { useSession } from '@/hooks/useSession';
 import { type Entitlements } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
+import {
+  billingPackageNeedsAttention,
+  findLimitedBillingResources,
+  resolveBillingPackageStatusLabel,
+  resolveBillingPressureCta,
+} from '@/lib/portal-billing-status';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -45,13 +51,6 @@ function formatBillingPeriodRange(startValue: string, endValue: string, locale: 
   return `${formatter.format(start)} – ${formatter.format(end)}`;
 }
 
-function findLimitedResources(quotaSummary: QuotaSummary | null): QuotaResource[] {
-  return (quotaSummary?.resource_limits || []).filter((resource) => (
-    !resource.unlimited
-    && Number(resource.limit || 0) > 0
-    && (resource.status === 'limited' || Number(resource.used || 0) > Number(resource.limit || 0))
-  ));
-}
 
 function formatLimitedResourceDetail(resource: QuotaResource, packageLabel: string, t: TranslateFn): string {
   const used = formatNumber(Number(resource.used || 0));
@@ -91,7 +90,7 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
       'The package has no AI credits remaining. Buy AI credits or change the package to continue.'
     );
   }
-  const limitedResources = findLimitedResources(quotaSummary);
+  const limitedResources = findLimitedBillingResources(quotaSummary);
   if (limitedResources.length > 1) {
     return limitedResources.map((resource) => formatLimitedResourceDetail(resource, packageLabel, t)).join(' ');
   }
@@ -101,29 +100,6 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
     : t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
 }
 
-function resolvePackageStatusLabel(quotaSummary: QuotaSummary | null, t: TranslateFn): string {
-  if (quotaSummary?.ai_credits?.status === 'limited') {
-    return t('portal.billing.package_status_credit_label', {}, 'AI credits unavailable');
-  }
-  const limitedResources = findLimitedResources(quotaSummary);
-  if (limitedResources.length > 1) {
-    return t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention');
-  }
-  const limitedResource = limitedResources[0];
-  if (limitedResource?.key === 'vector_documents') {
-    return t('portal.billing.package_status_knowledge_label', {}, 'Text capacity needs attention');
-  }
-  if (limitedResource?.key === 'media_images') {
-    return t('portal.billing.package_status_media_label', {}, 'Image capacity needs attention');
-  }
-  if (limitedResource?.key === 'active_sites' || limitedResource?.key === 'bound_sites') {
-    return t('portal.billing.package_status_site_label', {}, 'Site limit exceeded');
-  }
-  if (limitedResource) {
-    return t('portal.billing.package_status_capacity_label', {}, 'Package limit exceeded');
-  }
-  return t('common.ok', {}, 'OK');
-}
 
 function PortalBillingContent() {
   const searchParams = useSearchParams();
@@ -212,20 +188,15 @@ function PortalBillingContent() {
         `Ends ${formatDate(currentPeriodEnd)}`
       )
     : '';
-  const packageStatus =
-    !quotaSummary || error
-      ? 'unknown'
-      : String(quotaSummary.status) === 'limited'
-      ? 'warning'
-      : 'ok';
+  const packageStatus = billingPackageNeedsAttention(quotaSummary, error)
+    ? 'warning'
+    : (!quotaSummary || error ? 'unknown' : 'ok');
   const packageStatusLabel =
     packageStatus === 'warning'
-      ? resolvePackageStatusLabel(quotaSummary, t)
+      ? resolveBillingPackageStatusLabel(quotaSummary, t)
       : t('common.ok', {}, 'OK');
-  const creditNeedsAttention = quotaSummary?.ai_credits?.status === 'limited';
-  const manageHref = creditNeedsAttention
-    ? '/portal/account#package-options'
-    : '/portal/account#package-options';
+  const pressureCta = resolveBillingPressureCta({ quotaSummary, t });
+  const manageHref = pressureCta.href;
   const packageSummaryMetrics = [
     {
       label: t('portal.current_subscription_label', {}, 'Current package'),
@@ -307,9 +278,7 @@ function PortalBillingContent() {
                   </p>
                 </div>
                 <Link href={manageHref} className="btn btn-secondary btn-sm shrink-0">
-                  {creditNeedsAttention
-                    ? t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')
-                    : t('portal.billing.upgrade_action', {}, 'Upgrade package')}
+                  {pressureCta.label}
                 </Link>
               </div>
             </div>
