@@ -33,6 +33,8 @@ WordPress write owner. See [cloud-content-generation-boundary-v1.md](docs/cloud-
 
 跨仓发版/联调以 [docs/compatibility-matrix.md](docs/compatibility-matrix.md) 为单一真相源；Cloud 发版须更新该表一行；不做运行时硬拒。
 
+跨仓联调排障从 Cloud/门户往下时，优先用 `run_id` 关联；勿用 Toolbox/Addon 本地可读 trace（如 `web_search_*`）直接搜 Cloud（会与 Cloud 侧 `traceparent` hex/hash 对不上）。后续有痛再完善；不改 runtime/trace 代码。
+
 ## Hard stops (ask a human)
 
 - No production Deploy, host mutation, or `production` promotion unless a human
