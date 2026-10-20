@@ -214,6 +214,80 @@ def test_credit_ledger_queries_preserve_filters_order_pagination_and_counts(
     "repository_type",
     [CommercialRepository, CommercialCreditLedgerQueries],
 )
+def test_credit_ledger_site_filter_can_include_unscoped_account_rows(
+    tmp_path: Path,
+    repository_type: type[CommercialCreditLedgerQueries],
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / repository_type.__name__}-unscoped.sqlite3"
+    init_schema(database_url)
+    now = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
+
+    with get_session(database_url) as session:
+        session.add_all(
+            [
+                _entry(
+                    "ledger-site-consume",
+                    site_id="site-credit-a",
+                    delta=-2.0,
+                    created_at=now - timedelta(minutes=10),
+                ),
+                _entry(
+                    "ledger-account-topup",
+                    site_id=None,
+                    event_type=CREDIT_LEDGER_EVENT_GRANT,
+                    source_type="subscription_topup",
+                    delta=10000.0,
+                    created_at=now - timedelta(minutes=5),
+                ),
+                _entry(
+                    "ledger-other-site",
+                    site_id="site-credit-b",
+                    delta=-1.0,
+                    created_at=now,
+                ),
+            ]
+        )
+        session.flush()
+        repository = repository_type(session)
+
+        scoped = repository.list_credit_ledger_entries(
+            account_ids=["account-credit"],
+            site_ids=["site-credit-a"],
+        )
+        assert [row.ledger_entry_id for row in scoped] == ["ledger-site-consume"]
+        assert repository.count_credit_ledger_entries(
+            account_ids=["account-credit"],
+            site_ids=["site-credit-a"],
+        ) == 1
+
+        with_unscoped = repository.list_credit_ledger_entries(
+            account_ids=["account-credit"],
+            site_ids=["site-credit-a"],
+            include_unscoped=True,
+        )
+        assert [row.ledger_entry_id for row in with_unscoped] == [
+            "ledger-account-topup",
+            "ledger-site-consume",
+        ]
+        assert repository.count_credit_ledger_entries(
+            account_ids=["account-credit"],
+            site_ids=["site-credit-a"],
+            include_unscoped=True,
+        ) == 2
+        assert repository.count_credit_ledger_entries(
+            account_ids=["account-credit"],
+            site_ids=["site-credit-a"],
+            include_unscoped=True,
+            event_types=[CREDIT_LEDGER_EVENT_GRANT],
+        ) == 1
+
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "repository_type",
+    [CommercialRepository, CommercialCreditLedgerQueries],
+)
 def test_credit_ledger_queries_preserve_portal_group_and_bucket_semantics(
     tmp_path: Path,
     repository_type: type[CommercialCreditLedgerQueries],

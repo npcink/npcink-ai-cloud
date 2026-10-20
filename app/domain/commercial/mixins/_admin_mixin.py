@@ -2653,6 +2653,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         offset: int = 0,
         source_type: str | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
         event_types: list[str] | None = None,
     ) -> dict[str, object]:
         now = self.now_factory()
@@ -2705,6 +2706,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
                 event_types=resolved_event_types,
                 source_types=source_types,
@@ -2716,6 +2718,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             total = credit_repository.count_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
                 event_types=resolved_event_types,
                 source_types=source_types,
@@ -2725,6 +2728,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             summary_entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
                 event_types=resolved_event_types,
                 source_types=source_types,
@@ -2865,6 +2869,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 25,
         offset: int = 0,
         site_id: str | None = None,
+        include_unscoped: bool = False,
         event_types: list[str] | None = None,
     ) -> dict[str, object]:
         normalized_site_id = str(site_id or "").strip()
@@ -2873,6 +2878,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             limit=min(50, max(1, int(limit or 25))),
             offset=max(0, int(offset or 0)),
             site_ids=[normalized_site_id] if normalized_site_id else None,
+            # Account Sources keeps site_id NULL grants (subscription_topup).
+            # Site-scoped ledger stays strict so site summaries are not inflated.
+            include_unscoped=include_unscoped,
             event_types=event_types,
         )
         raw_summary = ledger.get("summary")

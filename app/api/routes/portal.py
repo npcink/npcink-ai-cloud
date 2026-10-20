@@ -3587,6 +3587,7 @@ async def get_portal_account_credit_ledger(
             limit=limit,
             offset=offset,
             site_id=resolved_site_id,
+            include_unscoped=True,
             event_types=_portal_credit_ledger_event_types(event_types),
         )
     except CommercialServiceError as error:

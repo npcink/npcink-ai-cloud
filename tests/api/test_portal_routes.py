@@ -7967,6 +7967,36 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     }
 
     # Acquisition-only filter must not reuse the consume-heavy total (Sources tab bug).
+    # Account-level grants (site_id NULL), e.g. subscription_topup, must still appear
+    # while the portal request is scoped to the selected site.
+    with get_session(database_url) as session:
+        subscription = session.scalar(
+            select(AccountSubscription).where(
+                AccountSubscription.account_id == "acct_portal_reads"
+            )
+        )
+        assert subscription is not None
+        CommercialRepository(session).record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id=None,
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id=None,
+            provider_call_id=None,
+            event_type=CREDIT_LEDGER_EVENT_GRANT,
+            source_type="subscription_topup",
+            source_id="topup_portal_reads_001",
+            ai_credit_delta=10000,
+            quantity=10000,
+            unit="ai_credits",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="subscription_topup:topup_portal_reads_001",
+            created_at=datetime.now(UTC),
+        )
+        session.commit()
+
     acquisition_ledger_response = client.get(
         "/portal/v1/account/credit-ledger"
         "?limit=10&event_types=grant,adjustment,refund",
@@ -7974,8 +8004,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert acquisition_ledger_response.status_code == 200
     acquisition_ledger_data = acquisition_ledger_response.json()["data"]
-    assert acquisition_ledger_data["pagination"]["total"] == 0
-    assert acquisition_ledger_data["items"] == []
+    assert acquisition_ledger_data["pagination"]["total"] == 1
+    assert len(acquisition_ledger_data["items"]) == 1
+    topup_item = acquisition_ledger_data["items"][0]
+    assert topup_item["source_type"] == "subscription_topup"
+    assert float(topup_item["ai_credit_delta"]) == 10000.0
+    assert not str(topup_item.get("site_id") or "").strip()
 
     with get_session(database_url) as session:
         CommercialRepository(session).record_credit_ledger_entry(

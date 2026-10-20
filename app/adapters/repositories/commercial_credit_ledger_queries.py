@@ -47,11 +47,32 @@ class CommercialCreditLedgerQueries:
         )
         return list(self.session.scalars(statement))
 
+    def _credit_ledger_site_scope(
+        self,
+        site_ids: list[str] | None,
+        *,
+        include_unscoped: bool = False,
+    ) -> ColumnElement[bool] | None:
+        """Build site filter; optionally keep account-level rows (site_id IS NULL).
+
+        Portal Sources needs account-level grants such as subscription_topup, which
+        are written with site_id=NULL while the portal always scopes by selected site.
+        """
+        if site_ids is None:
+            return None
+        if not site_ids:
+            return None
+        site_scope = CreditLedgerEntry.site_id.in_(site_ids)
+        if include_unscoped:
+            site_scope = or_(site_scope, CreditLedgerEntry.site_id.is_(None))
+        return site_scope
+
     def list_credit_ledger_entries(
         self,
         *,
         account_ids: list[str] | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
         subscription_id: str | None = None,
         event_types: list[str] | None = None,
         source_types: list[str] | None = None,
@@ -68,7 +89,12 @@ class CommercialCreditLedgerQueries:
         if site_ids is not None:
             if not site_ids:
                 return []
-            statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
+            site_scope = self._credit_ledger_site_scope(
+                site_ids, include_unscoped=include_unscoped
+            )
+            if site_scope is None:
+                return []
+            statement = statement.where(site_scope)
         if subscription_id is not None:
             statement = statement.where(CreditLedgerEntry.subscription_id == subscription_id)
         if event_types is not None:
@@ -394,6 +420,7 @@ class CommercialCreditLedgerQueries:
         *,
         account_ids: list[str] | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
         subscription_id: str | None = None,
         event_types: list[str] | None = None,
         source_types: list[str] | None = None,
@@ -408,7 +435,12 @@ class CommercialCreditLedgerQueries:
         if site_ids is not None:
             if not site_ids:
                 return 0
-            statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
+            site_scope = self._credit_ledger_site_scope(
+                site_ids, include_unscoped=include_unscoped
+            )
+            if site_scope is None:
+                return 0
+            statement = statement.where(site_scope)
         if subscription_id is not None:
             statement = statement.where(CreditLedgerEntry.subscription_id == subscription_id)
         if event_types is not None:
