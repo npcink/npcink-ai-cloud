@@ -121,7 +121,7 @@ export function PortalEntitlementUsage({
     {},
     'Saved text and images have separate capacities that do not reset monthly. AI work uses execution allowances separately.',
   );
-  const title = t('portal.billing.quota_card_title', {}, 'Quota');
+  const softSubtitle = t('portal.billing.quota_soft_subtitle', {}, 'Available in this package');
   const description = t(
     'portal.billing.current_entitlements_desc',
     {},
@@ -140,16 +140,17 @@ export function PortalEntitlementUsage({
       <span className="mt-1 block text-slate-500 dark:text-slate-400">{knowledgeCapacityDetail}</span>
     </>
   );
+  const includedLine = t('portal.billing.entitlement_included_line', {}, 'Included in this package');
 
   return (
     <section className="space-y-3" data-portal-entitlement-usage="included">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {title}
-          </h2>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400" data-portal-billing="quota-soft-subtitle">
+            {softSubtitle}
+          </p>
           <PortalInfoHint
-            label={title}
+            label={softSubtitle}
             aria-label={`${description} ${sharedQuotaNote} ${knowledgeCapacityDetail}`}
             data-portal-billing="entitlements-help"
             detail={rightsHelpDetail}
@@ -210,7 +211,7 @@ export function PortalEntitlementUsage({
                     ? t('portal.usage.resource_vector_documents_detail', {}, 'Indexed articles, pages, and comments; images count separately.')
                     : key === 'media_images'
                       ? t('portal.usage.resource_media_images_detail', {}, 'Indexed media-library images, whether or not used in an article. Reusing the same site attachment adds no capacity.')
-                      : t('portal.billing.entitlement_included_line', {}, 'Included in this package');
+                      : '';
                   const resourceDetail = isKnowledge
                     ? `${baseResourceDetail} ${knowledgeCapacityDetail}`
                     : baseResourceDetail;
@@ -219,9 +220,15 @@ export function PortalEntitlementUsage({
                       ? t('portal.usage.media_capacity_full_detail', {}, 'New image indexing is paused. Existing images remain usable and refreshable; AI work still needs execution allowances. Remove unneeded index entries or change the package.')
                       : t('portal.usage.text_capacity_full_detail', {}, 'New text indexing is paused. Existing text remains usable and updatable. Remove unneeded index entries or change the package.'))
                     : '';
-                  const hintDetail = (
+                  // Prefer no ⓘ over an empty「当前套餐包含」shell with no number/detail.
+                  const hasUsefulHint = Boolean(
+                    (resourceDetail && resourceDetail.trim() && resourceDetail.trim() !== includedLine)
+                    || paidExpiryDate
+                    || overflowGuidance
+                  );
+                  const hintDetail = hasUsefulHint ? (
                     <>
-                      <span className="block">{resourceDetail}</span>
+                      {resourceDetail ? <span className="block">{resourceDetail}</span> : null}
                       {paidExpiryDate ? (
                         <span className="mt-1 block text-slate-500 dark:text-slate-400">
                           {t(
@@ -235,7 +242,7 @@ export function PortalEntitlementUsage({
                         <span className="mt-1 block text-amber-800 dark:text-amber-200">{overflowGuidance}</span>
                       ) : null}
                     </>
-                  );
+                  ) : null;
                   const secondaryStat = exceeded > 0
                     ? t(
                         'portal.usage.exceeded_label',
@@ -257,12 +264,14 @@ export function PortalEntitlementUsage({
                         <p className="text-sm font-semibold text-slate-950 dark:text-white">
                           {tileLabel}
                         </p>
-                        <PortalInfoHint
-                          label={tileLabel}
-                          aria-label={resourceDetail}
-                          data-portal-billing={`quota-help-${key}`}
-                          detail={hintDetail}
-                        />
+                        {hintDetail ? (
+                          <PortalInfoHint
+                            label={tileLabel}
+                            aria-label={typeof resourceDetail === 'string' ? resourceDetail : tileLabel}
+                            data-portal-billing={`quota-help-${key}`}
+                            detail={hintDetail}
+                          />
+                        ) : null}
                         {metricBadgeLabel ? (
                           <span
                             className={cn(
