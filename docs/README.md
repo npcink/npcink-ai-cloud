@@ -36,6 +36,7 @@ as current truth.
 | 修改 Provider 等待与数据库事务边界 | [Provider 事务边界](runtime-provider-transaction-boundary-v1.md) — 出网前持久化准入与额度预留、释放连接，保留幂等、计量、回调及未知结果恢复语义 |
 | 优化用量汇总批量统计 | [Usage Rollup 批量统计](usage-rollup-batch-statistics-v1.md) — 按站点和窗口聚合，保留统计、计量和回调语义 |
 | 优化商业准入和扣费读取 | [商业运行时轻量读取](commercial-runtime-light-reads-v1.md) — 字段投影、事务可见性与舍入约束，保留完整明细读取和计量、回调语义 |
+| 查 Cloud/Addon/Toolbox 最低配与发版地板（内测） | [最低配兼容表](compatibility-matrix.md) — 内测文档台账；契约精确匹配仍是唯一硬门；发版改一行；不做运行时硬拒（见 ADR-053） |
 | 查 WordPress AI 能力兼容矩阵与验证状态 | [WordPress AI 能力兼容矩阵](wordpress-ai-capability-compatibility-matrix-v1.md) — 官方 Ability、Cloud task、Addon 投影、M4 与自动验收状态 |
 | 查 WordPress AI Provider 合同边界 | [WordPress AI Provider 合同边界](wordpress-ai-provider-contract-boundary-v1.md) — Toolkit、WordPress Abilities API、Addon、Cloud 与 Eval Lab 的合同来源和验证边界 |
 | 查支付与境内就绪度现状 | [支付与境内就绪度状态记录](payment-and-domestic-readiness-note-2026-09-22.md) — 操作者口头事实，证据待补 |
@@ -114,6 +115,7 @@ deleting the old decision history.
 - [DeepSeek 标题输出额度与推理兼容性](deepseek-title-output-compatibility-v1.md) — bounded endpoint-specific title policy, zero-paid reproduction, deployed fix, and linked real-title/operator acceptance; formal smoke blocked by the public/internal health access mismatch; fallback remains unverified.
 - [正式 Release Smoke 验收入口](formal-release-smoke-entry-v1.md) — 公网与内部SSH路径分离、精确安装SHA核对、零模型预检及下一次有界验收步骤。
 - [DeepSeek 标题生产人工验收与正式 smoke 交接 — 2026-10-19](history/production/2026/deepseek-title-production-acceptance-2026-10-19.md) — DeepSeek主路径真实成功、901/14/0 token、辅助向量与3积分分项、人工保存回读确认、正式smoke一次403失败及零调用/零积分增量、后续受控入口建议；时点证据，不是长期稳定或回退成功证明.
+- [最低配兼容表（内测）](compatibility-matrix.md) — single source of truth for recommended Cloud/Addon/Toolbox floors during closed beta; docs only; exact contract-string match remains the only hard gate; related to [ADR-053](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) (文档先行，暂不引入 `minimum_supported_connector_version`)
 - [ADR-053: Defer Bounded Contract Compatibility Until Public Ecosystem Distribution](decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md) — accepted; keeps `ONE_ACTIVE_CONTRACT_VERSION` pre-public and pre-declares the trigger that switches to a bounded compatibility window with `upgrade_required` semantics
 - [ADR-054: Responses Output Boundary and No Silent Endpoint Downgrade](decisions/054-responses-output-boundary-and-no-silent-downgrade.md) — accepted; keeps upstream Responses parsing endpoint-specific, fail-closed, and explicit about model evidence
 - [ADR-055: Provider Account-Level Spend Budget Kill Switch](decisions/055-provider-account-level-spend-budget.md) — accepted design record; single dispatch choke point reusing existing cost estimates, atomic per-account daily/monthly claims, warn at 80 percent, fail closed at 100 percent; implementation and paid-provider authorization remain separate operator decisions
