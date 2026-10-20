@@ -68,11 +68,9 @@ This document supplements [Cloud Portal Customer Workspace UI Standard](cloud-po
 
 ### 3.2 Service Status
 
-服务正常时只显示一条结论：
+**安静默认**：无注意力、无证据行、无加载/重检失败、无额度压力时，**整块「服务状态」不渲染**（勿留空标题壳）。
 
-> 服务正常，最近检查未发现影响使用的问题。
-
-正常状态不显示完整监控表，也不显示刷新按钮。
+有可展示内容时才出现该卡；正常态不显示完整监控表，也不显示刷新按钮。
 
 只有以下情况才显示详细检查项或“重新检查”：
 
@@ -95,14 +93,19 @@ This document supplements [Cloud Portal Customer Workspace UI Standard](cloud-po
 
 > 内容变化后会自动更新。
 
+介绍与范围说明收进标题旁 ⓘ（勿固定成正文段落）。偶发/软更新提示只进「最近更新」指标旁 ⓘ，标题 ⓘ 不再提；正文默认不出现。ⓘ 必须用 FloatingPortal / 等价容器弹出（仅打开时挂载），禁止同层 absolute CSS 气泡被指标条盖住后看起来像正文漏字。
+
+安静默认正文只保留：标题 + ⓘ + 状态徽章 +（必要时）刷新 + 指标条。
+
 允许的用户状态：
 
 | 内部条件 | 默认文案 | 默认操作 |
 | --- | --- | --- |
 | 尚无收录内容 | 尚未开始 | 无；等待站点接入和自动更新 |
 | 已收录且正常 | 知识库正常 | 无 |
-| 状态暂不完整或过期 | 待确认 | 仅在确有必要时重新检查 |
-| 更新请求明确失败 | 更新失败 | 重新检查 |
+| 健康为 warning，内容仍可用 | 需要关注 | 图标刷新 |
+| 健康为 error，但已有收录且多数更新成功（软问题） | 徽章「知识库可用」（非黄）；「近 N 天有 M 次更新未成功，已收录页仍可用」仅写入「最近更新」ⓘ，正文不渲染 | 图标刷新 |
+| 空索引或连续更新失败（硬失败） | 更新失败（正文可见黄/红徽章） | 图标刷新 |
 
 知识库正常时不得展示手动同步或刷新入口。索引生命周期和自动更新仍由 Cloud 与插件既有契约负责，Portal 只展示结果摘要。
 
@@ -131,6 +134,14 @@ This document supplements [Cloud Portal Customer Workspace UI Standard](cloud-po
 - 让正常状态渲染无操作的刷新、重试或“查看详情”按钮。
 
 ## 5. Action Rules
+
+缺插件上报（`plugin_observability.plugin_missing`）时：
+
+- **Portal 客户面**只把 `npcink-cloud-addon`（Cloud 连接基线）视为缺上报；`npcink-governance-core`、`npcink-ai-client-adapter`、`npcink-abilities-toolkit` 等可选插件不得触发 Portal 黄条。Admin 观测可继续使用完整 `EXPECTED_PLUGIN_SLUGS`。
+- 顶部注意力必须写出插件名，主 CTA 为联系支持（或修复 WordPress 插件），「重新检查」仅为次要；「服务运行」行不得再挂第二枚「需要关注」黄徽，改用中性「见上方说明」。
+- 「明确错误事件」行仅在 `plugin_errors_total > 0` 时渲染；为 0 时安静默认，不写「当前没有…」。
+
+服务运行状态与顶部注意力只消费**可操作的** `action_required`（及额度压力）；仅有组件软分（例如 runtime 延迟偏高但未生成 action）时不得黄条或「需要确认」。
 
 每个状态最多有一个最佳下一步：
 
@@ -167,7 +178,7 @@ This document supplements [Cloud Portal Customer Workspace UI Standard](cloud-po
 - [ ] 顶部告警包含具体对象、具体条件和一个下一步。
 - [ ] 正常状态没有泛化的“需要关注”。
 - [ ] 正常状态没有无意义的刷新或重试按钮。
-- [ ] 知识库文案说明内容变化会自动更新。
+- [ ] 知识库文案说明内容变化会自动更新（介绍/范围/软更新提示在 ⓘ，勿固定占正文）。
 - [ ] 知识库异常不会改变服务运行状态。
 - [ ] 容量问题指向套餐，而不是提交连接工单。
 - [ ] 页面默认只展示用户能采取行动的内容，技术详情留在低频入口或 Cloud 运营面。
@@ -181,6 +192,7 @@ This document supplements [Cloud Portal Customer Workspace UI Standard](cloud-po
 - `getPortalServiceOperationStatus()` 排除知识库和额度对服务运行的错误归因；
 - 站点详情页顶部告警只消费服务相关分类；
 - 正常服务和正常知识库隐藏刷新入口；
+- 知识介绍/范围收进标题 ⓘ；偶发软更新提示收进「最近更新」ⓘ，正文默认不渲染 `knowledge-soft-note`；
 - 增加状态分类单元测试及 Portal 页面契约验证。
 
 本规范不授权新增 Cloud API、WordPress 写操作、知识库生命周期控制或本地第二套索引真相。

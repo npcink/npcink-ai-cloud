@@ -1681,25 +1681,24 @@ test('portal workspace interaction path: account overview to site detail and ser
   await page.goto('/portal');
 
   const portalPrimaryNav = page.locator('[data-ui="portal-primary-nav"]');
-  await expect(portalPrimaryNav.locator('> a')).toHaveCount(4);
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Home$|^首页$/i })).toBeVisible();
+  await expect(portalPrimaryNav.locator('> a')).toHaveCount(5);
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Service$|^服务$|^服務$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage history$|^使用记录$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Help & support$|^帮助与客服$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toHaveCount(0);
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Tickets$|^工单$|^工單$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Billing$|^账单$|^帳單$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Monitoring$|^监控$|^監控$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^AI Insights$|^AI 分析$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Keys$|^密钥$|^金鑰$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Audit$|^审计$|^稽核$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Settings$|^设置$|^設定$/i })).toHaveCount(0);
-  await expect(page.getByRole('heading', { level: 1, name: /account service|账号服务|my service|我的服务|服務/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^(Service|服务|服務|My service|我的服务|Account service|账号服务)$/i })).toBeVisible();
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
   await expect(page.getByText(/2,419|2419/i).first()).toBeVisible();
   const operationOverview = page.locator('[data-portal-home="operation-overview"]');
-  await expect(operationOverview.getByText(/^Bound sites needs attention$|^绑定站点需处理$/i)).toBeVisible();
-  await expect(operationOverview.getByText(/Bound sites usage is 2 of 1, exceeding the package by 1|绑定站点已使用 2 \/ 1，超出套餐上限 1/i)).toBeVisible();
-  await expect(operationOverview.getByRole('link', { name: /Review package|查看套餐/i }).first()).toBeVisible();
+  // Capacity alerts live on My Sites card top (not floating in operation overview).
+  await expect(operationOverview.getByText(/^Bound sites needs attention$|^绑定站点需处理$/i)).toHaveCount(0);
   await expect(
     page
       .locator('[data-portal-home="operation-overview"]')
@@ -1707,6 +1706,13 @@ test('portal workspace interaction path: account overview to site detail and ser
   ).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: /^My sites$|^我的站点$/i })).toBeVisible();
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
+  await expect(
+    sitesWorkspace.getByText(/Multiple capacities need attention|多个容量需要处理|Bound sites needs attention|绑定站点需处理/i).first()
+  ).toBeVisible();
+  await expect(
+    sitesWorkspace.getByText(/Bound sites usage is 2 of 1|绑定站点已使用 2 \/ 1|活动站点容量已使用/i).first()
+  ).toBeVisible();
+  await expect(sitesWorkspace.locator('[data-portal-sites="view-plan"]').first()).toBeVisible();
   await expect(sitesWorkspace.getByText(/2 enabled sites · Plan limit 5|已启用 2 个站点 · 套餐上限 5 个/i)).toHaveCount(0);
   await expect(sitesWorkspace.getByText(/2 bound sites · Binding limit 15|已绑定 2 个站点 · 最多可绑定 15 个/i)).toHaveCount(0);
   await expect(sitesWorkspace.getByPlaceholder(/Search site name or URL|搜索站点名称或网址/i)).toHaveCount(0);
@@ -1722,18 +1728,21 @@ test('portal workspace interaction path: account overview to site detail and ser
     sitesWorkspace.locator('[data-portal-sites="desktop-table"]').getByText(/^Connected$|^已接入$/i)
   ).toHaveCount(2);
   const selectedSiteRow = sitesWorkspace.getByRole('row', { name: /Attention Site/i });
-  await selectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await selectedSiteRow.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
   await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
+  await page.keyboard.press('Escape');
   const unselectedSiteRow = sitesWorkspace.getByRole('row', { name: /Clear Site/i });
-  await unselectedSiteRow.getByText(/Other actions|其他操作/i).click();
+  await unselectedSiteRow.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
   await expect(unselectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
   await testInfo.attach('p4-e03-portal-service-home', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
 
-  await expect(sitesWorkspace.locator('[data-portal-sites="desktop-table"] a[href="/portal/sites/site_attention#service-status"]')).toBeVisible();
+  await expect(
+    sitesWorkspace.locator('[data-portal-sites="desktop-table"] a[data-portal-sites="site-name"][href="/portal/sites/site_attention#service-status"]')
+  ).toBeVisible();
   await page.goto('/portal/sites/site_attention');
   await expect(page).toHaveURL(/\/portal\/sites\/site_attention$/);
   await expect(page.getByRole('heading', { level: 1, name: /attention site/i })).toBeVisible();
@@ -1743,7 +1752,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   });
 
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
   await expect(page.getByText(/^612$|^612 点$/i).first()).toBeVisible();
   const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
@@ -1797,7 +1806,9 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
-  await page.getByRole('button', { name: /Manage package|管理套餐/i }).click();
+  await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
+  await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
+  await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
   const packageConfirmButton = packageDialog.getByRole('button', { name: /^Select package$|^选择套餐$/i });
@@ -2092,7 +2103,7 @@ test('account projections remain available without a selected site context', asy
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await page.goto('/portal/audit');
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
 
@@ -2429,7 +2440,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     }, variant);
     await page.reload();
 
-    await expect(page.getByRole('heading', { level: 1, name: /account service|账号服务|my service|我的服务/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^(Service|服务|服務|My service|我的服务|Account service|账号服务)$/i })).toBeVisible();
     await expect(page.locator('[data-portal-sites="desktop-table"]')).toBeVisible();
     expect(await page.locator('html').evaluate((element) => element.classList.contains('dark'))).toBe(
       variant.theme === 'dark'
@@ -2450,8 +2461,10 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await expectNoPageOverflow();
 
     await page.goto('/portal/billing');
+    await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
+    await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
     await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
-    await page.getByRole('button', { name: /Manage package|管理套餐/i }).click();
+    await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
     await expect(page.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
     await expectNoPageOverflow();
     await page.keyboard.press('Escape');
@@ -2489,7 +2502,7 @@ for (const navigation of [
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
 
     await page.goto('/portal/usage');
-    await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
     if (navigation.name === 'mobile') {
       await page.locator('button[aria-controls="portal-mobile-nav"]').click();
     }
@@ -2516,16 +2529,18 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto('/portal');
-  await expect(page.getByRole('heading', { level: 1, name: /account service|账号服务|my service|我的服务|服務/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^(Service|服务|服務|My service|我的服务|Account service|账号服务)$/i })).toBeVisible();
   await expect(page.getByText(/Current package|当前套餐|目前方案/i).first()).toBeVisible();
 
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
 
   await page.goto('/portal/billing');
-  await page.getByRole('button', { name: /Manage package|管理套餐/i }).click();
+  await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
+  await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
+  await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
@@ -2551,7 +2566,7 @@ test('portal read failures retain context and retry without showing empty result
     else await route.fallback();
   });
   await page.goto('/portal/usage?view=records');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage history$|^使用记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
   await expect(page.getByText(/0 service events|共 0 次服务|暂无服务记录/i)).toHaveCount(0);
   failRecords = false;
@@ -2738,7 +2753,7 @@ for (const scenario of ['deactivate', 'remove', 'remove-from-detail'] as const) 
     const actionScope = scenario === 'remove-from-detail'
       ? page
       : page.locator('[data-portal-sites="desktop-table"]').getByRole('row').filter({ hasText: 'Attention Site' });
-    await actionScope.getByText(/^(Other actions|其他操作)$/i).click();
+    await actionScope.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
     const actionName = scenario === 'deactivate' ? /^(Deactivate|停用)$/i : /^(Remove site|移除站点)$/i;
     await actionScope.getByRole('button', { name: actionName }).click();
     await page.getByRole('dialog').getByRole('button', { name: actionName }).click();

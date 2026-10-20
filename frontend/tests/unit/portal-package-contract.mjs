@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 const root = process.cwd();
 const packageDisplayPath = resolve(root, 'src/lib/customer-package-display.ts');
 const billingPagePath = resolve(root, 'src/app/portal/billing/page.tsx');
+const accountCommercePath = resolve(root, 'src/components/portal/PortalAccountCommercePanels.tsx');
+const accountPagePath = resolve(root, 'src/app/portal/account/page.tsx');
 const creditPackDialogPath = resolve(root, 'src/components/portal/PortalCreditPackDialog.tsx');
 const packagePanelPath = resolve(root, 'src/components/portal/PortalPackageChangePanel.tsx');
 const paymentOrderHistoryPath = resolve(root, 'src/components/portal/PortalPaymentOrderHistory.tsx');
@@ -38,6 +40,8 @@ assert.match(
 );
 
 const billingPageSource = readFileSync(billingPagePath, 'utf8');
+const accountCommerceSource = readFileSync(accountCommercePath, 'utf8');
+const accountPageSource = readFileSync(accountPagePath, 'utf8');
 const creditPackDialogSource = readFileSync(creditPackDialogPath, 'utf8');
 const packagePanelSource = readFileSync(packagePanelPath, 'utf8');
 const paymentOrderHistorySource = readFileSync(paymentOrderHistoryPath, 'utf8');
@@ -99,9 +103,9 @@ assert.match(
   'Portal package status must classify active-site capacity as a site limit and explain its usage'
 );
 assert.match(
-  billingPageSource,
+  accountCommerceSource,
   /creditNeedsAttention[\s\S]*creditNeedsAttention \? 'btn-secondary' : 'btn-primary'[\s\S]*creditNeedsAttention \? 'btn-primary' : 'btn-secondary'/,
-  'Portal package actions must prioritize credit purchase only when AI credits are the active issue'
+  'Portal account commerce actions must prioritize credit purchase only when AI credits are the active issue'
 );
 assert.match(
   creditPackDialogSource,
@@ -119,14 +123,24 @@ assert.match(
   'Portal package page must keep the payment summary visible and fold lower-priority order actions behind disclosure'
 );
 assert.equal(
-  (billingPageSource.match(/const paymentOrdersCard =/g) || []).length,
+  (accountCommerceSource.match(/const paymentOrdersCard =/g) || []).length,
   1,
-  'Portal package page must define one reusable payment order card'
+  'Portal account commerce must define one reusable payment order card'
 );
 assert.equal(
-  (billingPageSource.match(/\{paymentOrdersCard\}/g) || []).length,
+  (accountCommerceSource.match(/\{paymentOrdersCard\}/g) || []).length,
   1,
-  'Portal package page must render the folded payment order card once in the account package view'
+  'Portal account commerce must render the folded payment order card once'
+);
+assert.match(
+  accountPageSource,
+  /PortalAccountCommercePanels/,
+  'Portal account page must host manage-package and payment-orders commerce panels'
+);
+assert.doesNotMatch(
+  billingPageSource,
+  /const paymentOrdersCard =|id="package-options"/,
+  'Portal billing/plan page must not keep manage-package or payment-orders blocks'
 );
 assert.match(
   paymentReturnNoticeSource,
@@ -302,7 +316,7 @@ assert.match(
 );
 assert.match(
   entitlementComponentSource,
-  /data-portal-entitlement-group=\{group\.key\}[\s\S]*?className="grid gap-3 md:grid-cols-2"/,
+  /data-portal-entitlement-group=\{group\.key\}[\s\S]*?divide-y/,
   'Shared entitlement summary must keep knowledge capacities in paired desktop columns'
 );
 assert.match(
@@ -326,7 +340,7 @@ assert.match(
   'Portal payment order history must use a semantic PC table while preserving server-owned actions'
 );
 assert.match(
-  billingPageSource,
+  accountCommerceSource,
   /preparePaymentWindow[\s\S]*window\.open\('about:blank', '_blank'\)[\s\S]*paymentWindow\.location\.replace/,
   'Portal package purchases must pre-open a separate payment tab before the async order request completes'
 );
@@ -382,3 +396,5 @@ assert.doesNotMatch(
   /This is the clearest place to confirm the current package, service status, and connected site address\./,
   'Site record body must not repeat package and service status cards after the header summary'
 );
+
+console.log('portal_package_contract: ok');

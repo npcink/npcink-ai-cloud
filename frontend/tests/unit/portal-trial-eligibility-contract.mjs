@@ -2,25 +2,25 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const billingSource = readFileSync(resolve('src/app/portal/billing/page.tsx'), 'utf8');
+const commerceSource = readFileSync(resolve('src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
 const clientSource = readFileSync(resolve('src/lib/portal-client.ts'), 'utf8');
 const i18nSource = readFileSync(resolve('src/lib/i18n.ts'), 'utf8');
 
-assert.match(billingSource, /activeCommercialDialog === 'trial'/);
-assert.match(billingSource, /portal\.package\.trial_dialog_title/);
-assert.match(billingSource, /trial\?\.allowed_tiers/);
-assert.match(billingSource, /trialState === 'eligible'/);
-assert.match(billingSource, /trialState === 'active'/);
-assert.match(billingSource, /trialState === 'used'/);
-assert.match(billingSource, /trialState === 'blocked'/);
+assert.match(commerceSource, /activeCommercialDialog === 'trial'/);
+assert.match(commerceSource, /portal\.package\.trial_dialog_title/);
+assert.match(commerceSource, /trial\?\.allowed_tiers/);
+assert.match(commerceSource, /trialState === 'eligible'/);
+assert.match(commerceSource, /trialState === 'active'/);
+assert.match(commerceSource, /trialState === 'used'/);
+assert.match(commerceSource, /trialState === 'blocked'/);
 assert.match(
-  billingSource,
+  commerceSource,
   /trial\?\.available === true[\s\S]*'eligible'[\s\S]*'unavailable'/,
   'missing trial evidence must not be presented as an eligible trial'
 );
-assert.doesNotMatch(billingSource, /canTrialTier/);
+assert.doesNotMatch(commerceSource, /canTrialTier/);
 assert.equal(
-  (billingSource.match(/handleStartPlanTrial\(/g) || []).length,
+  (commerceSource.match(/handleStartPlanTrial\(/g) || []).length,
   1,
   'trial mutation should be invoked only from the trial dialog'
 );

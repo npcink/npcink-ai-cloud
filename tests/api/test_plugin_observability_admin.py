@@ -10,7 +10,10 @@ from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import PluginObservabilityEvent, Site
 from app.core.services import CloudServices
-from app.domain.observability.plugin_events import EXPECTED_PLUGIN_SLUGS
+from app.domain.observability.plugin_events import (
+    EXPECTED_PLUGIN_SLUGS,
+    PORTAL_BASELINE_PLUGIN_SLUGS,
+)
 from tests.conftest import build_internal_headers, seed_site_auth
 
 
@@ -150,6 +153,7 @@ def test_plugin_observability_expected_plugins_include_cloud_addon() -> None:
         "npcink-ai-client-adapter",
         "npcink-cloud-addon",
     )
+    assert PORTAL_BASELINE_PLUGIN_SLUGS == ("npcink-cloud-addon",)
 
 
 def test_admin_plugin_observability_returns_cross_site_aggregation(tmp_path: Path) -> None:

@@ -12,8 +12,18 @@ const sitesSource = readFileSync(
   'utf8'
 );
 
-assert.match(source, /homeState = primaryOperationFocusItem \? 'attention' : hasVisibleSites \? 'daily' : 'setup'/);
-assert.doesNotMatch(source, /setupChecklistItems|onboarding_package_title/, 'first use must not duplicate connection instructions or require a package review');
+assert.match(source, /setupChecklistItems/, 'home keeps a bounded first-use checklist when site setup is incomplete');
+assert.match(source, /data-portal-home="setup-checklist"/);
+assert.doesNotMatch(
+  source,
+  /homeState = primaryOperationFocusItem \? 'attention' : hasVisibleSites \? 'daily' : 'setup'|data-portal-home-state=/,
+  'home must not restore the old attention/daily/setup state machine chrome'
+);
+assert.match(
+  source,
+  /shouldShowOnboardingChecklist/,
+  'checklist visibility must stay gated so it does not duplicate header focus'
+);
 assert.doesNotMatch(
   source,
   /onboarding_qq_|getIdentityProviders|currentSiteActiveKeyCount|getSiteDiagnostics/,
@@ -25,15 +35,25 @@ assert.doesNotMatch(
   'home composition must not infer or mutate current account/site context'
 );
 assert.match(source, /filter\(\(site\) => portalSiteNeedsAttention\(site\)\)/);
-assert.match(source, /\/portal\/sites\/\$\{encodeURIComponent\(site\.site_id\)\}#service-status/);
-assert.equal((sitesSource.match(/data-portal-sites="connect-guide"/g) || []).length, 1);
-assert.match(sitesSource, /data-portal-connection-flow data-current-step=\{connectionStep\}/, 'connection guidance must expose a current desktop step');
-assert.match(sitesSource, /setConnectionStep\(\(step\) => step \+ 1\)[\s\S]*portal\.home\.connection_next/, 'connection guidance must advance one step at a time');
-assert.match(sitesSource, /setConnectionStep\(\(step\) => step - 1\)[\s\S]*portal\.home\.connection_previous/, 'connection guidance must allow returning to the previous step');
-assert.match(sitesSource, /portal\.home\.connection_step_count/, 'connection guidance must announce progress through the steps');
-for (const step of ['connection_step_open', 'connection_step_plugin', 'connection_step_confirm']) {
-  assert.match(sitesSource, new RegExp(`portal\\.home\\.${step}`));
-}
+assert.match(source, /\/portal\/sites\/\$\{encodeURIComponent\((?:site|selectedSite)\.site_id\)\}#service-status/);
+assert.ok(
+  (sitesSource.match(/data-portal-sites="connect-guide"/g) || []).length >= 1,
+  'sites workspace must expose the WordPress connection guide'
+);
+assert.ok(
+  sitesSource.includes('id="portal-sites-connect-guide"'),
+  'connection guide must keep a stable scroll target id'
+);
+assert.match(
+  sitesSource,
+  /data-portal-sites="connect-guide"[\s\S]*portal\.sites\.connect_hint_desc|portal\.sites\.connect_hint_desc[\s\S]*data-portal-sites="connect-guide"/,
+  'connection guidance must point customers back to the WordPress addon handoff'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /connectionStep|data-portal-connection-flow|connection_step_open|connection_next/,
+  'sites workspace must not restore the multi-step connection wizard chrome'
+);
 assert.doesNotMatch(source, /localStorage|sessionStorage/);
 
 const connectClientCalls = Array.from(

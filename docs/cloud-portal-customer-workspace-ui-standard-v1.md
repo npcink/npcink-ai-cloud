@@ -446,6 +446,11 @@ current origin/master baseline
 
 ### 13.3 Treat contracts and review as product evidence
 
+- Layout / density / attention UX for the current home workspace also follows
+  [Portal UI Spec](portal-ui-spec.md) §9「交付门禁 / 自检」: after `m4:preview:sync`,
+  open `http://127.0.0.1:18010/portal` (or affected routes), visually check that
+  Spec’s acceptance checklist, fix residuals, then report done — **contracts alone
+  are not UI delivery**.
 - Static source contracts are executable ownership rules. When a behavior is
   intentionally retired, update every contract that still requires it and run
   the complete contract suite before publication.

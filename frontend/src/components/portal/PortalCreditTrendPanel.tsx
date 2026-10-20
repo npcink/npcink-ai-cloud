@@ -7,6 +7,7 @@ import type {
   PortalCreditTrendWindow,
 } from '@/lib/portal-client';
 import { formatNumber } from '@/lib/utils';
+import { PortalLoadingState } from '@/components/portal/PortalPageState';
 
 type PortalCreditTrendPanelProps = {
   payload: PortalCreditTrendPayload | null;
@@ -96,9 +97,7 @@ export function PortalCreditTrendPanel({
         data-trend-points={points.length}
       >
         {isLoading ? (
-          <div className="flex min-h-40 items-center justify-center rounded-xl border border-slate-200 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-            {t('common.loading', {}, 'Loading...')}
-          </div>
+          <PortalLoadingState message={t('common.loading', {}, 'Loading...')} compact />
         ) : error ? (
           <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-xl border border-red-200 bg-red-50/50 px-6 text-center dark:border-red-900/60 dark:bg-red-950/20">
             <p className="text-sm text-red-700 dark:text-red-300">{error}</p>

@@ -39,8 +39,13 @@ assert.doesNotMatch(
 assert.match(source, /operationSummaryItems\s*=\s*\[/);
 assert.match(
   source,
-  /<PortalWorkspaceHeader[\s\S]*contextPanel=\{primaryOperationFocusItem[\s\S]*metrics=\{showAccountSummary \? operationSummaryItems : \[\]\}/,
-  'Portal home must use the shared compact header for its primary status and account summary'
+  /<PortalWorkspaceHeader[\s\S]*metrics=\{showAccountSummary \? operationSummaryItems : \[\]\}/,
+  'Portal home must use the shared compact header for account summary without a dual-column attention aside'
+);
+assert.doesNotMatch(
+  source,
+  /contextPanel=\{primaryOperationFocusItem/,
+  'Portal home must not put attention alerts in the header contextPanel aside'
 );
 assert.match(
   source,
@@ -69,9 +74,11 @@ assert.match(
 );
 assert.match(
   source,
-  /capacity_attention_title[\s\S]*capacity_attention_desc[\s\S]*href: '\/portal\/billing#package-options'/,
+  /capacity_attention_title[\s\S]*href: '\/portal\/account#package-options'/,
   'Portal home must explain an over-limit warning and provide a customer action'
 );
+assert.match(source, /capacity_attention_desc/, 'Portal home capacity alerts must keep used/limit detail copy');
+
 assert.match(
   source,
   /active_sites[\s\S]*active_site_capacity_label/,
@@ -94,9 +101,30 @@ assert.match(
   'Portal home must present site connection as a separate account summary metric'
 );
 assert.match(source, /data-portal-home="operation-overview"/);
-assert.match(source, /data-portal-home-state=\{homeState\}/);
-assert.doesNotMatch(source, /setupChecklistItems|data-portal-home="setup-checklist"/, 'connection instructions belong to one site workspace guide');
-assert.match(source, /remainingOperationFocusItems\.map/, 'additional issues must all remain accessible');
+assert.match(source, /shouldShowFollowUpSection/);
+assert.match(
+  source,
+  /attentionFocusItems = operationFocusItems[\s\S]*data-portal-home="follow-up"/,
+  'Portal home must keep a single full-width attention stack below the header'
+);
+assert.match(source, /attentionFocusItems\.length > 0 \? \(/);
+assert.match(source, /data-portal-home="attention-focus"/);
+assert.doesNotMatch(
+  source,
+  /xl:max-w-3xl|xl:grid-cols-\[1\.1fr_0\.9fr\]/,
+  'Portal home follow-up must not cap width or use a two-column empty-aside layout'
+);
+assert.match(
+  source,
+  /flex w-full flex-col items-start gap-2/,
+  'Portal home follow-up must stack shrink-to-content attention surfaces left-aligned'
+);
+assert.doesNotMatch(
+  source,
+  /data-portal-home="follow-up"[\s\S]*PortalSection[\s\S]*PortalCard|data-portal-home="attention-focus"[\s\S]*PortalCard/,
+  'Portal home attention must be a single-surface list (no card-in-card wrappers)'
+);
+assert.match(source, /data-portal-home="setup-checklist"/);
 assert.doesNotMatch(source, /data-portal-home="no-action-summary"/);
 assert.doesNotMatch(
   source,
@@ -106,7 +134,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /<PortalSitesWorkspace \/>/,
+  /<PortalSitesWorkspace(?:\s+capacityAlerts=\{capacityAttentionItems\})?\s*\/>/,
   'Portal home must render the session-backed site workspace without summary props'
 );
 assert.doesNotMatch(
@@ -131,13 +159,33 @@ assert.doesNotMatch(
 );
 assert.match(
   sitesWorkspaceSource,
-  /data-portal-sites="desktop-table"[\s\S]*data-portal-sites="desktop-actions"[\s\S]*openLifecycleModal[\s\S]*setPendingRemoveSite/,
-  'Portal desktop site rows must retain authorized lifecycle and removal controls behind a low-frequency disclosure'
+  /data-portal-sites="desktop-table"[\s\S]*PortalRowActions[\s\S]*overflow=\{rowActions\.overflow\}[\s\S]*overflowTestId="desktop-actions"[\s\S]*openLifecycleModal[\s\S]*setPendingRemoveSite/,
+  'Portal desktop site rows must use PortalRowActions with danger ops in the overflow menu'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /flex-nowrap justify-end/,
+  'Portal desktop site row actions must stay on a single nowrap line'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /id: 'wp-admin'[\s\S]*open_wordpress_admin/,
+  'Portal WP admin icon button must keep a full accessible label'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /getPortalWordPressAdminUrl|portal\.sites\.open_wordpress_admin/,
+  'Portal site rows must expose WordPress admin as the shared secondary action when a site URL exists'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /PortalStatusInline/,
+  'Connected sites must use a quiet inline mark instead of a green status capsule'
 );
 assert.doesNotMatch(
   sitesWorkspaceSource,
-  /data-portal-sites="desktop-actions"[\s\S]{0,500}className="absolute/,
-  'Portal desktop action disclosure must not be clipped by the table overflow container'
+  /data-portal-sites="desktop-actions"[\s\S]{0,200}<details/,
+  'Portal site row actions must not use ad-hoc details menus'
 );
 
 const siteRegisterIndex = sitesWorkspaceSource.indexOf('portal.site_register');
@@ -150,11 +198,273 @@ assert.doesNotMatch(
 
 const overviewIndex = source.indexOf('data-portal-home="operation-overview"');
 const summaryIndex = source.indexOf('metrics={showAccountSummary ? operationSummaryItems : []}');
-const focusIndex = source.indexOf('data-portal-home="current-focus"');
-const guideCount = (sitesWorkspaceSource.match(/data-portal-sites="connect-guide"/g) || []).length;
+const focusIndex = source.indexOf('data-portal-home="attention-focus"');
+const checklistIndex = source.indexOf('data-portal-home="setup-checklist"');
 assert.ok(overviewIndex >= 0);
-assert.ok(focusIndex > overviewIndex);
-assert.ok(summaryIndex > focusIndex);
-assert.equal(guideCount, 1);
+assert.ok(summaryIndex > overviewIndex);
+assert.ok(focusIndex > summaryIndex || checklistIndex > summaryIndex);
+assert.doesNotMatch(source, /data-portal-home="current-focus"|data-portal-home="additional-focus"/);
+
+assert.doesNotMatch(
+  source,
+  /metricsColumnsClassName="md:grid-cols-3"/,
+  'Portal home must not force a 3-column metric strip that pads empty cells'
+);
+
+assert.match(
+  sitesWorkspaceSource,
+  /PortalSection className="space-y-2 p-3/,
+  'Portal My Sites section must use tight padding and spacing between title and table'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource,
+  /lg:max-w-3xl[\s\S]{0,80}showSiteSearch/,
+  'Portal My Sites must not reserve an empty max-w-3xl actions column when search is hidden'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites-guide="under-connect"/,
+  'Portal connect guide for existing sites must expand under the Connect new site control'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites-guide="empty"/,
+  'Portal empty-state connect guide may remain after the site list'
+);
+assert.match(
+  sitesWorkspaceSource.slice(sitesWorkspaceSource.indexOf('data-portal-sites="section"'), sitesWorkspaceSource.indexOf('data-portal-sites="desktop-table"')),
+  /data-portal-sites-guide="under-connect"/,
+  'Portal under-connect guide must sit between the title row and the desktop table'
+);
+
+assert.match(
+  source,
+  /max-w-\[56rem\][\s\S]*data-portal-home="page"|data-portal-home="page"[\s\S]*max-w-\[56rem\]/,
+  'Portal home must use a tighter centered ~896px content band without changing global billing width'
+);
+assert.match(
+  source,
+  /metricsLayout="rail"/,
+  'Portal home must use the compact left-aligned metric rail'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="connect-new"[\s\S]*connectGuideOpen \? 'connect-collapse' : 'connect-new'|PortalActionIcon id=\{connectGuideOpen \? 'connect-collapse' : 'connect-new'\}/,
+  'Portal Connect new site icon must toggle plus (closed) / minus (open)'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /const nextOpen = !connectGuideOpen[\s\S]*setConnectGuideOpen\(nextOpen\)/,
+  'Portal Connect new site must toggle both ways: plus opens guide, minus collapses and returns to plus'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource.slice(
+    sitesWorkspaceSource.indexOf('data-portal-sites-guide="under-connect"'),
+    sitesWorkspaceSource.indexOf('data-portal-sites-guide="under-connect"') + 900
+  ),
+  /common\.close|btn btn-secondary btn-sm/,
+  'Portal under-connect guide must not keep a separate Close text button'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /iconOnly: true[\s\S]*id: 'view-site'|id: 'view-site'[\s\S]*iconOnly: true/,
+  'Portal Open site row action must be icon-only'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /if \(wpAdmin\) \{[\s\S]*overflow\.push\(wpAdmin\)/,
+  'Portal WP admin must live in the overflow menu, not as a visible secondary control'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource.slice(
+    sitesWorkspaceSource.indexOf('let primary'),
+    sitesWorkspaceSource.indexOf('return { primary, secondary, inline, overflow }')
+  ),
+  /secondary = wpAdmin|secondary: PortalRowActionItem \| null = wpAdmin/,
+  'Portal site rows must not expose WP admin as a visible secondary action'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="view-plan"[\s\S]*PortalActionIcon id="view-plan"/,
+  'Portal capacity View plan action must be an icon button with aria-label from the action label'
+);
+assert.match(
+  readFileSync(resolve(root, 'src/components/portal/PortalRowActions.tsx'), 'utf8'),
+  /iconOnly\?: boolean[\s\S]*PortalActionIcon|function PortalActionIcon/,
+  'PortalRowActions must support iconOnly actions with shared glyphs'
+);
+assert.match(
+  source,
+  /btn btn-secondary btn-sm shrink-0[\s\S]*item\.action/,
+  'Portal home attention rows must place the CTA on the right of each alert'
+);
+assert.match(
+  source,
+  /attentionFocusItems\.length > 0 \? \([\s\S]*data-portal-home="attention-focus"/,
+  'Portal home must hide the Service Status / attention card when there are zero pending items'
+);
+assert.match(
+  source,
+  /attentionFocusItems\.length === 0 && capacityAttentionItems\.length === 0 \? \([\s\S]*PortalStatusBadge/,
+  'Portal home must show the header status badge only when attention and My Sites capacity alerts are both absent'
+);
+assert.match(
+  source,
+  /capacityAttentionItems\.length === 0[\s\S]*PortalStatusBadge/,
+  'Portal home must hide the header status badge when My Sites card-top capacity alerts are present (no same-cause duplicate)'
+);
+assert.doesNotMatch(
+  source.slice(source.indexOf('data-portal-home="attention-focus"'), source.indexOf('data-portal-home="setup-checklist"') > 0 ? source.indexOf('data-portal-home="setup-checklist"') : source.length),
+  /PortalTag|current_status_title/,
+  'Portal attention card must not repeat capacity/status pills or a Service Status title chrome'
+);
+assert.match(
+  source,
+  /group-hover:block group-focus-within:block[\s\S]*item\.detail|title=\{item\.detail\}/,
+  'Portal attention long copy must reveal on hover/focus (tooltip), not as a permanent second row'
+);
+assert.doesNotMatch(
+  source.slice(source.indexOf('data-portal-home="attention-list"'), source.indexOf('data-portal-home="setup-checklist"') > 0 ? source.indexOf('data-portal-home="setup-checklist"') : source.length),
+  /<details/,
+  'Portal attention list must not use always-visible Details disclosure rows'
+);
+
+
+assert.match(
+  source,
+  /capacity-summary|overLimitResources\.length === 1/,
+  'Portal home must merge multiple capacity alerts into one summary row when needed'
+);
+assert.doesNotMatch(
+  source,
+  /data-portal-home="attention-list"[\s\S]*justify-between/,
+  'Portal home attention rows must keep title and CTA adjacent (no justify-between stretch)'
+);
+assert.match(
+  source,
+  /icon:\s*packageMetricIcon|packageMetricIcon/,
+  'Portal home metrics must support icon+number rail glyphs'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="site-url"[\s\S]*getPortalSiteUrlDisplay/,
+  'Portal site short URL must render inline next to the site name'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /items-baseline gap-2[\s\S]*data-portal-sites="site-name"[\s\S]*data-portal-sites="site-url"/,
+  'Portal desktop site rows must show name and short URL on one inline line'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /visibleSites\.length > 0 && connectGuideOpen/,
+  'Portal connect guide for existing sites must open only from Connect new site (not always-on details)'
+);
+
+
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="site-name"[\s\S]*getPortalSiteDisplayName/,
+  'Portal desktop site rows must show the site display name as the primary cell'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource,
+  /portal\.site_register[\s\S]{0,120}my_sites_title|my_sites_title[\s\S]{0,80}portal\.site_register/,
+  'Portal My Sites must not keep a redundant Sites/站点清单 eyebrow above the title'
+);
+assert.doesNotMatch(
+  source,
+  /data-portal-home="context-summary"|account_context_label/,
+  'Portal home must not show a redundant Account overview eyebrow/metadata line'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /overflow\.push\([\s\S]*deactivate[\s\S]*overflow\.push\([\s\S]*remove|overflow\.push\([\s\S]*id: 'deactivate'[\s\S]*id: 'remove'/,
+  'Portal site deactivate/remove must live in the overflow menu with parent-owned confirm'
+);
+assert.match(
+  readFileSync(resolve(root, 'src/components/portal/PortalRowActions.tsx'), 'utf8'),
+  /flex-nowrap/,
+  'PortalRowActions must default to a single-line nowrap action cluster'
+);
+assert.match(
+  source,
+  /metricsPlacement="title-end"/,
+  'Portal home metrics rail must sit on the header title row (right), not a full-width empty band'
+);
+assert.doesNotMatch(
+  source,
+  /<PortalWorkspaceHeader[\s\S]*description=\{t\('portal\.home\.concise_desc'\)/,
+  'Portal home must hide the long header description by default'
+);
+assert.match(
+  source,
+  /w-fit max-w-full[\s\S]*data-portal-home="attention-focus"|data-portal-home="attention-focus"[\s\S]*w-fit max-w-full/,
+  'Portal attention strip must shrink to content and stay left-aligned'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /w-0 whitespace-nowrap[\s\S]*table_actions|whitespace-nowrap px-2 py-1\.5 text-right/,
+  'Portal sites actions column must be auto-width nowrap on the right'
+);
+
+
+assert.match(
+  source,
+  /capacityAttentionItems[\s\S]*PortalSitesWorkspace capacityAlerts=\{capacityAttentionItems\}/,
+  'Portal home capacity alerts must be passed into My Sites, not left floating alone between header and sites'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="capacity-alerts"/,
+  'Portal My Sites must render capacity alerts at the top of the sites card'
+);
+assert.match(
+  sitesWorkspaceSource,
+  /data-portal-sites="capacity-alert-row"[\s\S]*data-portal-sites="view-plan"[\s\S]*data-portal-sites="capacity-alert-detail"/,
+  'Portal capacity alerts must use a 2-row layout: title+CTA on top, detail below'
+);
+assert.doesNotMatch(
+  sitesWorkspaceSource.slice(
+    sitesWorkspaceSource.indexOf('data-portal-sites="capacity-alerts"'),
+    sitesWorkspaceSource.indexOf('data-portal-sites="capacity-alerts"') + 1200
+  ),
+  /ⓘ|cursor-help/,
+  'Portal capacity alerts must not use an ⓘ tooltip for detail'
+);
+assert.match(
+  readFileSync(resolve(root, 'src/components/portal/PortalRowActions.tsx'), 'utf8'),
+  /data-portal-row-actions="overflow-menu"[\s\S]*fixed z-\[80\]|fixed z-\[80\][\s\S]*overflow-menu/,
+  'PortalRowActions overflow menu must use fixed positioning so table overflow cannot clip it'
+);
+
+
+assert.doesNotMatch(
+  sitesWorkspaceSource.slice(
+    sitesWorkspaceSource.indexOf('portal.home.my_sites_title'),
+    sitesWorkspaceSource.indexOf('data-portal-sites="connect-new"')
+  ),
+  /visibleSites\.length[\s\S]{0,80}common\.site/,
+  'Portal My Sites title must not show an N-sites count subtitle'
+);
+
+
+assert.match(
+  source,
+  /if \(isLoading\)[\s\S]*<PortalLoadingState message=\{t\('common\.loading'\)\}/,
+  'Portal home session loading must use PortalLoadingState skeleton, not hourglass'
+);
+assert.doesNotMatch(
+  source,
+  /⏳/,
+  'Portal home must not use hourglass emoji loading'
+);
+assert.match(
+  source,
+  /import \{[\s\S]*PortalLoadingState[\s\S]*\} from '@\/components\/portal\/PortalPageState'/,
+  'Portal home must import PortalLoadingState'
+);
 
 console.log('portal_home_layout_contract: ok');
+
+

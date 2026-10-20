@@ -159,18 +159,18 @@ export function PortalEntitlementUsage({
       </div>
 
       {metrics.length > 0 ? (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {metricGroups.map((group) => (
             <section key={group.key} data-portal-entitlement-group={group.key} aria-label={group.title || undefined}>
               {group.title ? (
-                <div className="mb-3">
+                <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{group.title}</h3>
                   <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
                     {group.description}
                   </p>
                 </div>
               ) : null}
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="divide-y divide-slate-200/80 overflow-hidden rounded-xl border border-slate-200/80 bg-white/70 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950/35">
                 {group.metrics.map((metric) => {
                   const key = String(metric.key || '');
                   const used = Number(metric.used || 0);
@@ -188,7 +188,7 @@ export function PortalEntitlementUsage({
                   const remainingLabel = formatQuotaValue(displayRemaining, { unlimited, unlimitedLabel });
                   const isCredit = key === 'ai_credits';
                   const isKnowledge = KNOWLEDGE_RESOURCE_KEYS.includes(key);
-                  let metricBadgeLabel = t('portal.home.risk_level_normal', {}, 'Normal');
+                  let metricBadgeLabel = '';
                   if (tone === 'warning') {
                     metricBadgeLabel = t('portal.usage.headroom_watch', {}, 'Close to limit');
                   } else if (tone === 'error') {
@@ -202,42 +202,71 @@ export function PortalEntitlementUsage({
                   const paidExpiryDate = metric.paid_next_expires_at
                     ? formatDateOnly(metric.paid_next_expires_at, locale)
                     : '';
+                  const detail = key === 'vector_documents'
+                    ? t('portal.usage.resource_vector_documents_detail', {}, 'Indexed articles, pages, and comments; images count separately.')
+                    : key === 'media_images'
+                      ? t('portal.usage.resource_media_images_detail', {}, 'Indexed media-library images, whether or not used in an article. Reusing the same site attachment adds no capacity.')
+                      : t('portal.billing.entitlement_included_line', {}, 'Included in this package');
 
                   return (
                     <div
                       key={key}
                       data-portal-quota-resource={key}
-                      className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35"
+                      className="px-4 py-3.5"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                            {resourceLabel(key, t)}
-                          </p>
+                      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                              {resourceLabel(key, t)}
+                            </p>
+                            {metricBadgeLabel ? (
+                              <span
+                                className={cn(
+                                  'rounded-full px-2 py-0.5 text-[0.68rem] font-semibold',
+                                  tone === 'error'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200'
+                                    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
+                                )}
+                              >
+                                {metricBadgeLabel}
+                              </span>
+                            ) : null}
+                          </div>
                           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            {key === 'vector_documents'
-                              ? t('portal.usage.resource_vector_documents_detail', {}, 'Indexed articles, pages, and comments; images count separately.')
-                              : key === 'media_images'
-                                ? t('portal.usage.resource_media_images_detail', {}, 'Indexed media-library images, whether or not used in an article. Reusing the same site attachment adds no capacity.')
-                                : t('portal.billing.entitlement_included_line', {}, 'Included in this package')}
+                            {detail}
                           </p>
                         </div>
-                        <span
-                          className={cn(
-                            'rounded-full px-2.5 py-1 text-xs font-semibold',
-                            tone === 'error'
-                              ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200'
-                              : tone === 'warning'
-                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
-                                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                        <div className="shrink-0 text-right">
+                          {isCredit ? (
+                            <p className="text-base font-semibold text-slate-950 dark:text-white">
+                              {formatQuotaValue(metric.total_remaining ?? remaining, { unlimited: false, unlimitedLabel })}
+                              <span className="ml-1 text-xs font-normal text-slate-500">
+                                {t('portal.usage.total_remaining_label', {}, 'Total available')}
+                              </span>
+                            </p>
+                          ) : (
+                            <p className="text-base font-semibold text-slate-950 dark:text-white">
+                              {usedLabel}
+                              <span className="text-sm font-normal text-slate-500"> / {limitLabel}</span>
+                            </p>
                           )}
-                        >
-                          {metricBadgeLabel}
-                        </span>
+                          {exceeded > 0 || !isCredit ? (
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                              {exceeded > 0
+                                ? t(
+                                    'portal.usage.exceeded_label',
+                                    { count: formatNumber(Math.round(exceeded)) },
+                                    `Exceeded by ${formatNumber(Math.round(exceeded))}`
+                                  )
+                                : `${t('portal.usage.remaining_ai_credits', {}, 'Remaining')}: ${remainingLabel}`}
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
 
                       {isCredit ? (
-                        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                        <dl className="mt-3 grid gap-2 border-t border-slate-200/70 pt-3 text-xs dark:border-slate-800 sm:grid-cols-3">
                           {[
                             {
                               label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
@@ -252,11 +281,11 @@ export function PortalEntitlementUsage({
                               value: metric.total_remaining ?? remaining,
                             },
                           ].map((item) => (
-                            <div key={item.label} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900/60">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">{item.label}</p>
-                              <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                            <div key={item.label} className="min-w-0">
+                              <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
+                              <dd className="mt-0.5 text-sm font-semibold text-slate-950 dark:text-white">
                                 {formatQuotaValue(item.value, { unlimited: false, unlimitedLabel })}
-                              </p>
+                              </dd>
                             </div>
                           ))}
                           {paidExpiryDate ? (
@@ -268,32 +297,12 @@ export function PortalEntitlementUsage({
                               )}
                             </p>
                           ) : null}
-                        </div>
-                      ) : (
-                      <div className="mt-4 flex items-end justify-between gap-3">
-                        <div>
-                          <p className="text-2xl font-semibold text-slate-950 dark:text-white">
-                            {usedLabel} <span className="text-base font-normal text-slate-500">/ {limitLabel}</span>
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {t('portal.usage.used_of_limit_label', {}, 'Used / included')}
-                          </p>
-                        </div>
-                        <p className="text-right text-sm text-slate-600 dark:text-slate-300">
-                          {exceeded > 0
-                            ? t(
-                                'portal.usage.exceeded_label',
-                                { count: formatNumber(Math.round(exceeded)) },
-                                `Exceeded by ${formatNumber(Math.round(exceeded))}`
-                              )
-                            : `${t('portal.usage.remaining_ai_credits', {}, 'Remaining')}: ${remainingLabel}`}
-                        </p>
-                      </div>
-                      )}
+                        </dl>
+                      ) : null}
 
                       {!unlimited && !isCredit ? (
-                        <div className="mt-4">
-                          <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                        <div className="mt-3">
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                             <div
                               className={cn(
                                 'h-full rounded-full',
@@ -301,25 +310,22 @@ export function PortalEntitlementUsage({
                                   ? 'bg-red-500'
                                   : tone === 'warning'
                                     ? 'bg-amber-500'
-                                    : 'bg-emerald-500'
+                                    : 'bg-slate-400'
                               )}
                               style={{ width: `${ratio}%` }}
                             />
                           </div>
-                          <div className="mt-1 flex items-center justify-between gap-3">
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {usedLabel} / {limitLabel}
-                            </p>
-                            {key === 'vector_documents' ? (
+                          {key === 'vector_documents' ? (
+                            <div className="mt-1.5 flex justify-end">
                               <button type="button" className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200" onClick={() => void openSiteKnowledgeUsage()}>
                                 {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
                               </button>
-                            ) : null}
-                          </div>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                       {isKnowledge && tone === 'error' ? (
-                        <p className="mt-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                        <p className="mt-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
                           {key === 'media_images'
                             ? t('portal.usage.media_capacity_full_detail', {}, 'New image indexing is paused. Existing images remain usable and refreshable; AI work still needs execution allowances. Remove unneeded index entries or change the package.')
                             : t('portal.usage.text_capacity_full_detail', {}, 'New text indexing is paused. Existing text remains usable and updatable. Remove unneeded index entries or change the package.')}

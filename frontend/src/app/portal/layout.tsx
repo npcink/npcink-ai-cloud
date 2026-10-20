@@ -1,3 +1,4 @@
+import './portal.css';
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { PortalNavbar } from '@/components/portal/PortalNavbar';
@@ -32,7 +33,7 @@ export default function PortalLayout({
             <PortalNavbar />
           </Suspense>
           <main id="main-content" tabIndex={-1} className="flex-1 bg-[#f5f5f7] dark:bg-slate-950">
-            <div className="container mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
+            <div className="portal-content container mx-auto max-w-[var(--portal-content-max-width)] px-4 py-8 sm:px-6 lg:px-8">
               {children}
             </div>
           </main>

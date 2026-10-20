@@ -17,6 +17,34 @@ export function getPortalSiteUrl(site: SiteLike | null | undefined): string {
   return normalizeString(site.site_url);
 }
 
+
+export function getPortalSiteUrlDisplay(site: SiteLike | null | undefined, maxLen = 40): string {
+  const siteUrl = getPortalSiteUrl(site);
+  if (!siteUrl) {
+    return '';
+  }
+
+  let display = siteUrl.trim();
+  try {
+    const normalized = display.includes('://') ? display : `https://${display}`;
+    const url = new URL(normalized);
+    const host = url.host;
+    const path = url.pathname.replace(/\/+$/, '');
+    display = path && path !== '/' ? `${host}${path}` : host;
+    if (url.search) {
+      display += url.search;
+    }
+  } catch {
+    display = display.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  }
+
+  if (display.length <= maxLen) {
+    return display;
+  }
+  const keep = Math.max(12, maxLen - 1);
+  return `${display.slice(0, keep)}…`;
+}
+
 export function getPortalSiteDisplayName(site: SiteLike | null | undefined): string {
   if (!site) {
     return '';

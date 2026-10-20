@@ -107,7 +107,13 @@ assert.doesNotMatch(
   /usage\.tokens_month|usage\.requests_month|site_record_runtime_label|site_record_runtime_title|resolveCustomerPackageDisplay|common\.package|packageLabel/,
   'Portal site record must not default to runtime, token, request, or package terminology'
 );
-assert.match(siteRecordSource, /titleAccessory=[\s\S]*metadata=[\s\S]*contextPanel=/);
+assert.match(siteRecordSource, /titleAccessory=[\s\S]*metadata=/);
+assert.match(siteRecordSource, /PortalBreadcrumb/, 'Site detail must keep the service / my sites breadcrumb');
+assert.doesNotMatch(
+  siteRecordSource,
+  /contextPanel=/,
+  'Site detail must not reserve a header contextPanel aside'
+);
 assert.match(
   siteRecordSource,
   /siteConnectionStatusLabel = site\.status === 'active'[\s\S]*portal\.sites\.table_ready[\s\S]*status=\{site\.status === 'active' \? 'active' : 'warning'\}/,
@@ -115,8 +121,13 @@ assert.match(
 );
 assert.match(
   siteServiceStatusSource,
-  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
-  'Portal service status should use a compact semantic table'
+  /portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
+  'Portal service status should keep service operation, recorded errors, and quota pressure evidence'
+);
+assert.doesNotMatch(
+  siteServiceStatusSource,
+  /<table[\s\S]*portal\.monitoring\.service_operation/,
+  'Portal service status must not restore the old semantic table chrome'
 );
 assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
@@ -126,18 +137,23 @@ assert.doesNotMatch(
 );
 assert.match(
   siteRecordSource,
-  /<PortalSiteServiceStatus[\s\S]*<PortalSiteKnowledgePanel[\s\S]*<details>[\s\S]*portal\.site_other_actions/,
-  'Portal site record should keep service and knowledge summaries visible while placing destructive actions in low-frequency disclosure'
+  /<PortalSiteServiceStatus[\s\S]*<PortalSiteKnowledgePanel/,
+  'Portal site record should keep service and knowledge summaries visible'
+);
+assert.match(
+  siteRecordSource,
+  /portal\.site_other_actions[\s\S]*PortalRowActions|PortalRowActions[\s\S]*portal\.site_other_actions/,
+  'Destructive and secondary site actions stay in the header overflow menu'
+);
+assert.doesNotMatch(
+  siteRecordSource,
+  /<details>[\s\S]*portal\.site_other_actions/,
+  'Site other-actions must not restore a page-body details disclosure'
 );
 assert.match(
   siteRecordSource,
   /site\.status === 'inactive'[\s\S]*portal\.site_inactive_recovery_detail[\s\S]*WordPress plugin/,
   'An inactive site must direct customers to reconnect from WordPress before escalating to support'
-);
-assert.match(
-  siteServiceStatusSource,
-  /<table[\s\S]*portal\.monitoring\.service_operation[\s\S]*portal\.monitoring\.recorded_errors[\s\S]*portal\.monitoring\.quota_pressure/,
-  'Portal service status should use a compact semantic table'
 );
 assert.match(siteKnowledgeSource, /<PortalMetricStrip[\s\S]*variant="header"/);
 assert.doesNotMatch(
@@ -151,7 +167,9 @@ assert.doesNotMatch(
   /site\.site_id\.toLowerCase\(\)\.includes\(query\)|account_id[^;]+includes\(query\)/,
   'Portal site search must not encourage internal site or account ID lookup'
 );
-assert.match(sitesSource, /portal\.sites\.table_status[\s\S]*portal\.sites\.table_ready/);
+assert.match(sitesSource, /portal\.sites\.table_status/);
+assert.match(sitesSource, /portal\.sites\.table_ready/);
+assert.match(sitesSource, /PortalStatusInline|PortalRowActions/);
 assert.match(i18nSource, /'portal\.sites\.table_status': '接入状态'[\s\S]*'portal\.sites\.table_ready': '已接入'/);
 assert.doesNotMatch(
   sitesSource,
@@ -175,8 +193,13 @@ assert.match(
 );
 assert.match(
   sitesSource,
-  /portal\.home\.connection_step_open[\s\S]*portal\.home\.connection_step_plugin[\s\S]*portal\.home\.connection_step_confirm[\s\S]*portal\.sites\.connect_hint_title/,
-  'Portal site list should explain that new site connections start from the WordPress addon'
+  /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc|data-portal-sites="connect-guide"/,
+  'Portal sites empty and connect states must keep the WordPress-first connection hint'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /portal\.home\.connection_step_open|connection_step_plugin|connection_step_confirm/,
+  'Portal sites must not restore the multi-step connection wizard copy'
 );
 assert.doesNotMatch(
   sitesSource,

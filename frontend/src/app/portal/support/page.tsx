@@ -16,7 +16,6 @@ import {
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
-import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { Modal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -266,10 +265,10 @@ function PortalSupportContent() {
           'Send billing, site, usage, or account issues to the support queue.'
         )}
         currentPage="support"
-        actions={
+        primaryAction={
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-primary btn-sm"
             disabled={listErrorCode === 'portal.site_selection_required'}
             onClick={() => {
               setFormError('');
@@ -279,7 +278,29 @@ function PortalSupportContent() {
             {t('portal.support_request_new_action', {}, 'Submit ticket')}
           </button>
         }
-      />
+      >
+        <div
+          className="flex flex-col gap-1 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900/40 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          data-portal-support="ticket-guide"
+        >
+          <p className="text-slate-700 dark:text-slate-200">
+            <span className="font-medium text-slate-950 dark:text-white">
+              {t('portal.support_guide_categories_label', {}, 'Problem types')}:
+            </span>{' '}
+            {t(
+              'portal.support_guide_categories',
+              {},
+              'Billing, payment, site, usage, or account issues.'
+            )}
+          </p>
+          <p className="shrink-0 text-slate-600 dark:text-slate-300">
+            <span className="font-medium text-slate-950 dark:text-white">
+              {t('portal.support_guide_response_label', {}, 'Typical first response')}:
+            </span>{' '}
+            {t('portal.support_guide_response', {}, 'Within 1 business day.')}
+          </p>
+        </div>
+      </PortalWorkspaceHeader>
 
       {notice ? (
         <div role="status" className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
@@ -455,26 +476,31 @@ function PortalSupportContent() {
             )}
           </div>
           ) : <p className="text-sm text-slate-500">{t('portal.support_account_scope_label')}</p>}
-          <div className="flex flex-wrap gap-2" aria-label={t('portal.support_status_rules_title', {}, 'Ticket status')}>
-            {SUPPORT_STATUSES.map((status) => (
-              <button
-                key={status || 'all'}
-                type="button"
-                className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                aria-pressed={statusFilter === status}
-                onClick={() => {
-                  setOffset(0);
-                  setStatusFilter(status);
-                }}
-              >
-                {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-              </button>
-            ))}
+          <div className="flex flex-col items-start gap-1.5 sm:items-end" data-portal-support="status-filters">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              {t('portal.support_filter_label', {}, 'Filter by status')}
+            </p>
+            <div className="flex flex-wrap gap-2" aria-label={t('portal.support_filter_label', {}, 'Filter by status')}>
+              {SUPPORT_STATUSES.map((status) => (
+                <button
+                  key={status || 'all'}
+                  type="button"
+                  className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
+                  aria-pressed={statusFilter === status}
+                  onClick={() => {
+                    setOffset(0);
+                    setStatusFilter(status);
+                  }}
+                >
+                  {status ? t(`portal.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {isListLoading ? (
-          <LoadingFallback />
+          <PortalLoadingState message={t('common.loading', {}, 'Loading...')} compact />
         ) : listError ? null : items.length ? (
           <>
             <div className="hidden overflow-x-auto lg:block" data-portal-support="tickets-table">
@@ -600,7 +626,7 @@ function PortalSupportContent() {
               'Use tickets for package, payment, site, usage, or account issues; support updates the status as the issue moves.'
             )}
           </p>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {supportStatusRules.map((rule) => (
               <div key={rule.key} className="rounded-xl border border-slate-200 bg-white/70 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300">
                 <p className="font-semibold text-slate-950 dark:text-white">
@@ -618,7 +644,7 @@ function PortalSupportContent() {
 
 export default function PortalSupportPage() {
   return (
-    <Suspense fallback={<LoadingFallback />}>
+    <Suspense fallback={<div className="min-h-[12rem]" aria-hidden="true" />}>
       <PortalSupportContent />
     </Suspense>
   );

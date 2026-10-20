@@ -83,7 +83,7 @@ that floods the same monitoring surface it is meant to support.
 | `plugin_observability.error_rate_high` | `error` | Error rate is at or above 5 percent. |
 | `plugin_observability.error_rate_elevated` | `warning` | Error rate is above zero but below the high threshold. |
 | `plugin_observability.plugin_error` | `warning` or `error` | A specific plugin has error events. |
-| `plugin_observability.plugin_missing` | `warning` | One or more expected Magick AI plugins did not report in the selected window. |
+| `plugin_observability.plugin_missing` | `warning` | One or more expected Magick AI plugins did not report in the selected window. Admin uses the full expected set; Portal site monitoring only expects the Cloud Addon baseline (`npcink-cloud-addon`). |
 | `plugin_observability.reporting_stale` | `warning` | Last event is stale for the selected window. |
 | `plugin_observability.latency_high` | `warning` | Average latency is at or above 3000 ms. |
 | `plugin_observability.catalog_churn` | `warning` | Ability catalog changed repeatedly in the selected window. |

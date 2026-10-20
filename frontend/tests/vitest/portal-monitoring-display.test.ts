@@ -9,6 +9,8 @@ import {
   getPortalMonitoringIssueCategory,
   getPortalServiceOperationStatus,
   hasPortalQuotaPressure,
+  isPortalCustomerPluginMissingAction,
+  PORTAL_BASELINE_PLUGIN_SLUGS,
 } from '@/lib/portal-monitoring-display';
 
 const translate = (
@@ -160,4 +162,39 @@ describe('Portal monitoring display categories', () => {
       ],
     }))).toBe('active');
   });
+
+  it('only surfaces Cloud Addon baseline as customer-facing plugin_missing', () => {
+    expect(PORTAL_BASELINE_PLUGIN_SLUGS).toEqual(['npcink-cloud-addon']);
+    const optionalOnly = action(
+      'plugins',
+      'plugin_observability.plugin_missing',
+      'Expected plugin not reporting'
+    );
+    optionalOnly.detail = 'Missing plugin telemetry: npcink-governance-core, npcink-ai-client-adapter';
+    expect(isPortalCustomerPluginMissingAction(optionalOnly)).toBe(false);
+
+    const addonMissing = action(
+      'plugins',
+      'plugin_observability.plugin_missing',
+      'Expected plugin not reporting'
+    );
+    addonMissing.detail = 'Missing plugin telemetry: npcink-cloud-addon';
+    expect(isPortalCustomerPluginMissingAction(addonMissing)).toBe(true);
+    expect(getPortalCustomerIssueTitle(addonMissing, translate)).toBe(
+      'Cloud Addon is not reporting'
+    );
+
+    // Optional-only plugin_missing and soft component scores must stay silent.
+    expect(getPortalServiceOperationStatus(overview({
+      health: { status: 'warning', score: 80, summary: '', components_count: 1 },
+      action_required: [optionalOnly],
+      components: [{ component: 'plugins', status: 'warning', score: 80, summary: '' }],
+    }))).toBe('active');
+    expect(getPortalServiceOperationStatus(overview({
+      health: { status: 'warning', score: 80, summary: '', components_count: 1 },
+      action_required: [optionalOnly],
+      components: [{ component: 'runtime', status: 'warning', score: 85, summary: '' }],
+    }))).toBe('active');
+  });
+
 });

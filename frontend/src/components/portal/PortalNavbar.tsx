@@ -22,6 +22,7 @@ export function PortalNavbar() {
       { href: '/portal/billing', label: t('portal.nav_package', {}, 'Package') },
       { href: '/portal/usage', label: t('portal.nav_usage', {}, 'Usage') },
       { href: '/portal/support', label: t('portal.nav_support_requests', {}, 'Tickets') },
+      { href: '/portal/account', label: t('portal.nav_account', {}, 'Account') },
     ],
     [t]
   );
@@ -50,6 +51,30 @@ export function PortalNavbar() {
   }, [logout, router]);
 
   const isLoginPage = pathname === '/portal/login';
+
+  const logoutLabel = t('portal.logout', {}, 'Logout');
+  const logoutControl = isAuthenticated ? (
+    <button
+      type="button"
+      data-portal-nav="logout"
+      aria-label={logoutLabel}
+      title={logoutLabel}
+      className={cn(
+        'hidden h-11 w-11 items-center justify-center rounded-full text-slate-600 transition md:inline-flex',
+        'hover:bg-slate-100 hover:text-slate-950',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
+        'dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+      )}
+      onClick={() => void handleLogout()}
+    >
+      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1" />
+        <path d="M15 12H3" />
+        <path d="m6 9-3 3 3 3" />
+      </svg>
+    </button>
+  ) : null;
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/78 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
       <div className="container mx-auto px-4">
@@ -95,39 +120,8 @@ export function PortalNavbar() {
               <LocaleSwitcher />
               <ThemeToggle />
             </div>
-            {isAuthenticated ? (
-              <details
-                key={pathname}
-                className="relative hidden md:block"
-                data-ui="portal-account-menu"
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.currentTarget.open = false;
-                    event.currentTarget.querySelector('summary')?.focus();
-                  }
-                }}
-                onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
-                }}
-              >
-                <summary className={cn(
-                  'cursor-pointer rounded-full px-3 py-2 text-sm font-medium',
-                  isActive('/portal/account')
-                    ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                )}>
-                  {t('portal.nav_account', {}, 'Account')}
-                </summary>
-                <div className="absolute right-0 z-50 mt-2 min-w-40 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                  <Link href="/portal/account" aria-current={ariaCurrent('/portal/account')} className="block rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
-                    {t('portal.account_settings')}
-                  </Link>
-                  <button type="button" onClick={() => void handleLogout()} className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
-                    {t('portal.logout')}
-                  </button>
-                </div>
-              </details>
-            ) : !isLoginPage ? (
+            {logoutControl}
+            {!isAuthenticated && !isLoginPage ? (
               <Link
                 href="/portal/login"
                 className="hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
@@ -217,21 +211,17 @@ export function PortalNavbar() {
               <ThemeToggle />
             </div>
             {isAuthenticated ? (
-              <>
-                <Link href="/portal/account" aria-current={ariaCurrent('/portal/account')} className="block rounded-2xl px-4 py-3 text-sm font-medium" onClick={() => setMobileNavOpen(false)}>
-                  {t('portal.account_settings')}
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileNavOpen(false);
-                    void handleLogout();
-                  }}
-                  className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-                >
-                  {t('portal.logout')}
-                </button>
-              </>
+              <button
+                type="button"
+                data-portal-nav="logout-mobile"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  void handleLogout();
+                }}
+                className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                {t('portal.logout', {}, 'Logout')}
+              </button>
             ) : !isLoginPage ? (
               <Link
                 href="/portal/login"

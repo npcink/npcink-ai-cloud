@@ -9,7 +9,10 @@ from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.db import get_session
 from app.core.models import SiteApiKey
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
-from app.domain.observability.plugin_events import PluginObservabilityService
+from app.domain.observability.plugin_events import (
+    PORTAL_BASELINE_PLUGIN_SLUGS,
+    PluginObservabilityService,
+)
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.usage.value_helpers import _calculate_percentile, _safe_rate
 
@@ -35,6 +38,8 @@ class SiteMonitoringOverviewService:
             site_id=site_id,
             window_hours=bounded_hours,
             now=current_time,
+            # Customer Portal only warns when Cloud Addon baseline is missing.
+            expected_plugin_slugs=PORTAL_BASELINE_PLUGIN_SLUGS,
         )
         media_summary = MediaDerivativeObservabilityService(self.database_url).get_summary(
             site_id=site_id,

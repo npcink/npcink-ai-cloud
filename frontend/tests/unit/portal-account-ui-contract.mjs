@@ -56,8 +56,13 @@ assert.match(
 
 assert.match(
   navbarSource,
-  /href="\/portal\/account"/,
+  /href:\s*['"]\/portal\/account['"]/,
   'portal navigation must include the account center'
+);
+assert.match(
+  navbarSource,
+  /primaryNavItems[\s\S]*href:\s*['"]\/portal\/account['"]/,
+  'account center must stay in the primary portal navigation'
 );
 
 assert.match(
@@ -145,4 +150,10 @@ assert.match(
   'QQ unbind must treat revoked-session sign-in as the success path'
 );
 
+assert.match(
+  accountSource,
+  /PortalAccountCommercePanels[\s\S]*data-portal-account="billing-commerce"|data-portal-account="billing-commerce"[\s\S]*PortalAccountCommercePanels/,
+  'account center must host package management and payment orders'
+);
 console.log('portal_account_ui_contract: ok');
+

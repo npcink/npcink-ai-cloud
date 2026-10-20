@@ -15,6 +15,7 @@ from urllib.request import urlopen
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+SESSION_DETAIL = ROOT / "docs" / "engineering" / "agents-session-protocol-detail.md"
 SCRIPT = ROOT / "scripts" / "m4-preview.sh"
 REDACTOR = ROOT / "scripts" / "redact-m4-preview-logs.py"
 PACKAGE_PROXY = ROOT / "scripts" / "m4-package-proxy.py"
@@ -2723,6 +2724,7 @@ def test_m4_package_proxy_decision_is_linked_measured_and_bounded() -> None:
     runbook = RUNBOOK.read_text(encoding="utf-8")
     standard = AI_STANDARD.read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    session_detail = SESSION_DETAIL.read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     decision_name = "027-m4-package-proxy-streaming-cache.md"
     validation_name = "m4-package-proxy-streaming-cache-validation-2026-07-25.md"
@@ -2739,17 +2741,20 @@ def test_m4_package_proxy_decision_is_linked_measured_and_bounded() -> None:
     assert "42,303,110" in validation
     assert "12.07 seconds" in validation
     assert "M4 candidate" in validation
-    assert "package proxy cache documented in ADR-027" in agents
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert "package proxy cache documented in ADR-027" in session_detail
 
 
 def test_m4_ai_development_standard_is_actionable_and_linked() -> None:
     standard = AI_STANDARD.read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    session_detail = SESSION_DETAIL.read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     runbook = RUNBOOK.read_text(encoding="utf-8")
     standard_path = "docs/m4-preview-ai-development-standard-v1.md"
 
-    assert standard_path in agents
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert standard_path in session_detail
     assert standard_path in readme
     assert "m4-preview-ai-development-standard-v1.md" in runbook
 
@@ -2802,14 +2807,16 @@ def test_m4_checkpoint_dispatch_decision_is_linked_and_bounded() -> None:
     standard = AI_STANDARD.read_text(encoding="utf-8")
     runbook = RUNBOOK.read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    session_detail = SESSION_DETAIL.read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     decision_name = "025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md"
 
     assert decision_name in standard
     assert decision_name in runbook
     assert decision_name in readme
-    assert "coherent task checkpoint" in agents
-    assert "without waiting for the user to ask again" in agents
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert "coherent task checkpoint" in session_detail
+    assert "without waiting for the user to ask again" in session_detail
     assert "M4 is the routine Cloud Docker environment" in decision
     assert "without waiting for a second deployment request" in decision
     assert "does not silently fall back to local Docker" in decision
@@ -2824,13 +2831,15 @@ def test_m4_private_source_relay_decision_and_validation_are_linked() -> None:
     standard = AI_STANDARD.read_text(encoding="utf-8")
     runbook = RUNBOOK.read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    session_detail = SESSION_DETAIL.read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     decision_name = "026-private-source-relay-transfer.md"
 
     assert decision_name in standard
     assert decision_name in runbook
     assert decision_name in readme
-    assert "Tailscale-only source relay" in agents
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert "Tailscale-only source relay" in session_detail
     assert "does not become source or Git truth" in decision
     assert "explicit direct fallback" in decision
     assert "4,823,040" in validation
