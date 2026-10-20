@@ -146,7 +146,6 @@ from app.domain.runtime.models import (
     RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-    RUNTIME_INLINE_RUN_ABORTED_ERROR_CODE,
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
     RUNTIME_STORAGE_MODE_NO_STORE,
     RUNTIME_STORAGE_MODE_RESULT_ONLY,
@@ -621,52 +620,18 @@ class RuntimeService:
                     connector_envelope=connector_envelope or {},
                 )
 
-            try:
-                self._execute_candidate_chain(
-                    run,
-                    repository=repository,
-                    candidates=resolution.candidates,
-                    input_payload=provider_input_payload,
-                    connector_envelope=connector_envelope,
-                )
-            except BaseException:
-                # The run row is already committed as `running` and the provider
-                # call is in flight or has escaped with an unexpected exception.
-                # Leave a durable terminal state instead of an orphan that holds
-                # the site's concurrency slot forever. This records status only:
-                # no usage, credit or callback evidence is manufactured.
-                self._abandon_inline_run_without_terminal_state(run_id)
-                raise
+            self._execute_candidate_chain(
+                run,
+                repository=repository,
+                candidates=resolution.candidates,
+                input_payload=provider_input_payload,
+                connector_envelope=connector_envelope,
+            )
             session.commit()
             return self._build_execution_response(
                 run,
                 repository=repository,
                 idempotent_replay=False,
-            )
-
-    def _abandon_inline_run_without_terminal_state(self, run_id: str) -> None:
-        """Best-effort terminal state for an inline run left behind by a crash."""
-        try:
-            with get_session(self.database_url) as session:
-                repository = RuntimeRepository(session)
-                run = repository.get_run(run_id)
-                if run is None or run.status != "running":
-                    return
-                self.run_lifecycle_service.fail_run(
-                    repository,
-                    run,
-                    error_code=RUNTIME_INLINE_RUN_ABORTED_ERROR_CODE,
-                    error_message=(
-                        "inline execution ended without a terminal state; "
-                        "provider outcome unknown"
-                    ),
-                )
-                session.commit()
-        except Exception:  # pragma: no cover - recovery must not mask the cause
-            logger.warning(
-                "inline run terminal guard failed: run_id=%s",
-                run_id,
-                exc_info=True,
             )
 
     def _execute_site_knowledge_request(

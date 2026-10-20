@@ -55,6 +55,10 @@ services:
       uvicorn app.api.main:app
       --host 0.0.0.0
       --port 8000
+      --reload
+      --reload-dir app
+      --reload-dir migrations
+      --reload-exclude app/workers/*
       --timeout-graceful-shutdown 5
     env_file:
       - ./.env
