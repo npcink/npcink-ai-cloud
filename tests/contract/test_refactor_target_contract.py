@@ -231,13 +231,17 @@ def test_active_refactor_rules_use_the_current_central_matrix_repository() -> No
     retired_matrix_root = "/Users/muze/gitee/npcink-toolbox"
 
     for path in (
-        "AGENTS.md",
+        "docs/engineering/agents-session-protocol-detail.md",
         "docs/refactor-master-plan-v1.md",
         "docs/runtime-stability-performance-evidence-v1.md",
     ):
         source = _read(path)
         assert current_matrix_root in source
         assert retired_matrix_root not in source
+
+    agents = _read("AGENTS.md")
+    assert "docs/engineering/agents-session-protocol-detail.md" in agents
+    assert retired_matrix_root not in agents
 
 
 def test_p4_inventory_has_no_stale_remaining_work_after_closeout() -> None:

@@ -1100,7 +1100,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 )
             previous_name = str(site.name or "")
             if previous_name == resolved_name:
-                return {"site": self._serialize_site(site)}
+                noop: dict[str, object] = {"site": self._serialize_site(site)}
+                return noop
             site.name = resolved_name
             self._record_service_audit_in_session(
                 repository=repository,
@@ -1117,7 +1118,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 },
             )
             session.flush()
-            result = {"site": self._serialize_site(site)}
+            result: dict[str, object] = {"site": self._serialize_site(site)}
             session.commit()
             return result
 
