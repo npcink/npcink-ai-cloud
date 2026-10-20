@@ -277,23 +277,51 @@ export function PortalEntitlementUsage({
                   const barRatio = isCredit ? creditPeriodRatio : ratio;
                   const showProgressBar = isCredit || !unlimited;
 
+                  const creditSourcesClickable = isCredit && Boolean(onOpenCreditSources);
+                  const openCreditSourcesDialog = () => onOpenCreditSources?.();
+
                   return (
                     <article
                       key={key}
                       data-portal-quota-resource={key}
-                      className="flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40"
+                      data-portal-billing={creditSourcesClickable ? 'open-credit-sources' : undefined}
+                      role={creditSourcesClickable ? 'button' : undefined}
+                      tabIndex={creditSourcesClickable ? 0 : undefined}
+                      aria-label={creditSourcesClickable
+                        ? t('portal.usage.sources_title', {}, 'Credit sources')
+                        : undefined}
+                      className={cn(
+                        'flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40',
+                        creditSourcesClickable
+                          && 'cursor-pointer transition hover:border-blue-300/80 hover:bg-blue-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 dark:hover:border-blue-700/60 dark:hover:bg-blue-950/20',
+                      )}
+                      onClick={creditSourcesClickable ? openCreditSourcesDialog : undefined}
+                      onKeyDown={creditSourcesClickable
+                        ? (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              openCreditSourcesDialog();
+                            }
+                          }
+                        : undefined}
                     >
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <p className="text-sm font-semibold text-slate-950 dark:text-white">
                           {tileLabel}
                         </p>
                         {hintDetail ? (
-                          <PortalInfoHint
-                            label={tileLabel}
-                            aria-label={typeof resourceDetail === 'string' ? resourceDetail : tileLabel}
-                            data-portal-billing={`quota-help-${key}`}
-                            detail={hintDetail}
-                          />
+                          <span
+                            className="inline-flex"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <PortalInfoHint
+                              label={tileLabel}
+                              aria-label={typeof resourceDetail === 'string' ? resourceDetail : tileLabel}
+                              data-portal-billing={`quota-help-${key}`}
+                              detail={hintDetail}
+                            />
+                          </span>
                         ) : null}
                         {metricBadgeLabel ? (
                           <span
@@ -311,27 +339,10 @@ export function PortalEntitlementUsage({
 
                       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         {isCredit ? (
-                          onOpenCreditSources ? (
-                            <button
-                              type="button"
-                              className="text-left text-xl font-semibold tracking-tight text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
-                              onClick={() => onOpenCreditSources?.()}
-                              data-portal-billing="open-credit-sources"
-                              aria-label={t(
-                                'portal.usage.sources_title',
-                                {},
-                                'Credit sources'
-                              )}
-                            >
-                              {creditUsedLabel}
-                              <span className="text-base font-normal text-slate-500"> / {creditDenomLabel}</span>
-                            </button>
-                          ) : (
-                            <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white" data-portal-billing="credits-period-used">
-                              {creditUsedLabel}
-                              <span className="text-base font-normal text-slate-500"> / {creditDenomLabel}</span>
-                            </p>
-                          )
+                          <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white" data-portal-billing="credits-period-used">
+                            {creditUsedLabel}
+                            <span className="text-base font-normal text-slate-500"> / {creditDenomLabel}</span>
+                          </p>
                         ) : (
                           <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
                             {usedLabel}
