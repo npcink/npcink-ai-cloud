@@ -25,7 +25,7 @@
 | Token | 约定 |
 |-------|------|
 | 用户服务中心内容宽 | **统一 ~880–920px**：`--portal-content-max-width: 56rem`（`portal/layout` → `.portal-content`）；**概览（`/portal`）为参照**；套餐 / 账号 / 工单 / 站点详情等同壳，勿单独加宽或收窄；两侧空白为页边距 |
-| 顶栏内行宽 | 顶栏 **背景可通栏**（full-bleed）；**内行**（logo + 主导航 + 语言/主题/退出）与正文同列 **`max-w-[var(--portal-content-max-width)]`（56rem）居中**，左右 padding 与 `.portal-content` 对齐。目标态：**导航内行不得宽于内容列**；现状若 `container` 无 56rem 约束，实现须改齐（见 §10 待确认） |
+| 顶栏内行宽 | 顶栏 **背景可通栏**（full-bleed）；**内行**（logo + 主导航 + 语言/主题/退出）与正文同列 **`max-w-[var(--portal-content-max-width)]`（56rem）居中**，左右 padding 与 `.portal-content` 对齐。目标态：**导航内行不得宽于内容列**；内行已与内容列对齐（见 §10） |
 | 套餐容量黄条 | **对齐概览「我的站点」容量条**（`PortalSitesWorkspace` `data-portal-sites="capacity-alerts"`）：黄条表面 **`w-full`** 铺满内容列；行内标题区 `flex-1` + CTA `shrink-0`；**正文描述**加 **`max-w-md`**（28rem / 448px）提前换行，勿一行拉到 CTA；**禁止**对黄条表面用 `w-fit` / `max-w-prose` 收成半宽留白 |
 | Header | 无 `contextPanel` 时 **单列 stack**（`data-portal-header-layout=stack`）；描述全宽，禁止预留空右列 |
 | 行高 | `--portal-row-min-height` 等现有 portal shell；站点表标题与表间距约 **8–12px** |
@@ -139,7 +139,7 @@
 - 不新增 admin 式 visual governance / receipt 门禁  
 - 不把 Admin 宽表 shells 并进门户；门户服务中心已统一 56rem（见 §2）  
 - 不改 Alipay `payment_return` 仍落在 `/portal/billing` 的后端契约（可另迭代）  
-- 不做本 Spec 未列的 IA 大迁；**§10 所列顶栏对齐 + 套餐/用量合并**须用户确认 Spec 后再实现（见下）  
+- 不做本 Spec 未列的 IA 大迁；**§10 顶栏对齐 + 套餐/用量合并**已按用户确认落地（见下）  
 
 ---
 
@@ -160,17 +160,17 @@
 
 ---
 
-## 10. 待用户确认后再实现（与 PR #1168）
+## 10. 已确认并实现（与 PR #1168）
 
-下列条目已写入本 Spec 为**目标态**，但 **实现阻塞于用户点头**。当前 PR [#1168](https://github.com/npcink/npcink-ai-cloud/pull/1168)（`codex/portal-billing-quiet-ux-20261020`）已落地的安静 UX / 密度磁贴 / 56rem 内容宽 / 黄条规则可继续验收；**不要**在未确认前擅自改顶栏宽或合并导航。
+用户已确认推荐默认（go-recommended）。PR [#1168](https://github.com/npcink/npcink-ai-cloud/pull/1168) 在安静 UX / 密度磁贴 / 内容 56rem / 黄条规则之上落地：
 
-| 项 | 目标 | 推荐默认 | 备选 / 备注 |
-|----|------|----------|-------------|
-| 顶栏内行宽 | 内行对齐 `--portal-content-max-width`（56rem）；背景可 full-bleed | 内行 `mx-auto w-full max-w-[var(--portal-content-max-width)]` + 与正文相同水平 padding | — |
-| 套餐+用量合并 | 顶栏一项；页内权益 + 用量 | 导航文案 **「套餐」**；URL **`/portal/billing`**；用量 **`#usage`**；`/portal/usage` → redirect/`#usage` | 文案备选「套餐与用量」；分区可用 tabs 或上下堆叠；用量区保留站点选择器 |
-| 不在范围 | — | 账号、工单保持独立顶栏项 | 管理套餐/支付订单仍在账号页 |
+| 项 | 状态 | 实现要点 |
+|----|------|----------|
+| 顶栏内行宽 | **已实现** | `PortalNavbar` 内行 `max-w-[var(--portal-content-max-width)]` + 与 `.portal-content` 相同 `px-4 sm:px-6 lg:px-8`；header 背景仍通栏 |
+| 套餐+用量合并 | **已实现** | 顶栏仅「套餐」→ `/portal/billing`；页内 `#entitlements` + `#usage`（`PortalUsagePanel embedded`，用量区保留站点选择器）；`/portal/usage` 客户端 redirect 到 `/portal/billing#usage`（保留 query） |
+| 账号 / 工单 | 未合并 | 仍为独立顶栏项；管理套餐/订单仍在账号页 |
 
-用户确认本 §10 后，再开实现提交（可同 PR 或后续 PR）。
+备选文案「套餐与用量」未采用（保持短标签「套餐」）。
 
 ---
 

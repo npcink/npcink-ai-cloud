@@ -9,6 +9,7 @@ import {
 } from '@/components/portal/PortalScaffold';
 import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
+import { PortalUsagePanel } from '@/components/portal/PortalUsagePanel';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import {
   PortalErrorState,
@@ -126,6 +127,30 @@ function PortalBillingContent() {
   });
 
   // Upgrade / manage intents now live on Account.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash !== '#usage') return;
+    let cancelled = false;
+    const tryScroll = () => {
+      const target = document.getElementById('usage');
+      if (!target) return false;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    };
+    if (!tryScroll()) {
+      const timer = window.setTimeout(() => {
+        if (!cancelled) tryScroll();
+      }, 120);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+      };
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [entitlements, isLoading]);
+
   useEffect(() => {
     const requestedAction = searchParams.get('action');
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
@@ -283,14 +308,18 @@ function PortalBillingContent() {
               </div>
             </div>
           ) : null}
-          <PortalEntitlementUsage
-            quotaSummary={quotaSummary}
-            t={t}
-            locale={locale}
-            attentionSurfaceActive={packageStatus === 'warning'}
-          />
+          <div id="entitlements" className="scroll-mt-24">
+            <PortalEntitlementUsage
+              quotaSummary={quotaSummary}
+              t={t}
+              locale={locale}
+              attentionSurfaceActive={packageStatus === 'warning'}
+            />
+          </div>
         </PortalCard>
       ) : null}
+
+      <PortalUsagePanel embedded />
     </PortalPageStack>
   );
 }

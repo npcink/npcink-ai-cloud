@@ -20,7 +20,6 @@ export function PortalNavbar() {
     () => [
       { href: '/portal', label: t('portal.nav_service', {}, 'Service') },
       { href: '/portal/billing', label: t('portal.nav_package', {}, 'Package') },
-      { href: '/portal/usage', label: t('portal.nav_usage', {}, 'Usage') },
       { href: '/portal/support', label: t('portal.nav_support_requests', {}, 'Tickets') },
       { href: '/portal/account', label: t('portal.nav_account', {}, 'Account') },
     ],
@@ -71,7 +70,7 @@ export function PortalNavbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/78 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
-      <div className="container mx-auto px-4">
+      <div className="mx-auto w-full max-w-[var(--portal-content-max-width)] px-4 sm:px-6 lg:px-8">
         <div className="grid min-h-[3.9rem] grid-cols-[auto_1fr] items-center gap-4 py-2.5 lg:grid-cols-[auto_1fr_auto]">
           <Link href="/portal" className="flex min-h-11 items-center gap-3">
             <span className="brand-mark" aria-hidden="true">
@@ -180,7 +179,7 @@ export function PortalNavbar() {
           mobileNavOpen ? 'block' : 'hidden'
         )}
       >
-        <div className="container mx-auto space-y-4 px-4 py-4">
+        <div className="mx-auto w-full max-w-[var(--portal-content-max-width)] space-y-4 px-4 py-4 sm:px-6 lg:px-8">
           {isAuthenticated ? (
             primaryNavItems.map((item) => (
               <Link
