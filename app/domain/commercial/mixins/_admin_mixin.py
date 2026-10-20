@@ -109,6 +109,7 @@ AI_CREDIT_ACQUISITION_LEDGER_EVENT_TYPES = [
 AI_CREDIT_LEDGER_CATEGORY_LABELS = {
     "monthly_plan_grant": "Monthly plan grant",
     "credit_pack_purchase": "Credit pack purchase",
+    "subscription_topup": "Top-up pack",
     "ai_usage": "AI usage",
     "refund_adjustment": "Refund adjustment",
     "operator_adjustment": "Operator adjustment",
@@ -2691,6 +2692,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             subscription_id = (
                 primary_subscription.subscription_id if primary_subscription is not None else None
             )
+            if primary_subscription is not None:
+                # Backfill visibility grants for historical operator top-ups that
+                # only raised package_limit (no ledger row at apply time).
+                cast(Any, self)._ensure_subscription_topup_ledger_entries_in_session(
+                    repository=cast(Any, credit_repository),
+                    subscription=primary_subscription,
+                    period_start_at=period_start_at,
+                    period_end_at=period_end_at,
+                )
+                session.commit()
             entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
@@ -3041,6 +3052,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         if event_type == CREDIT_LEDGER_EVENT_GRANT:
             if source_type == "credit_pack_purchase":
                 return "credit_pack_purchase"
+            if source_type == "subscription_topup":
+                return "subscription_topup"
             if source_type == "operator_credit_adjustment":
                 return "operator_adjustment"
             return "monthly_plan_grant"
@@ -3072,6 +3085,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             return f"Monthly package grant added {credits} AI credits to the current period."
         if category == "credit_pack_purchase":
             return f"Credit pack payment added {credits} AI credits after payment confirmation."
+        if category == "subscription_topup":
+            return f"Operator top-up pack added {credits} AI credits to the package limit this period."
         if category == "ai_usage":
             label = AI_CREDIT_COMPONENT_LABELS.get(source_type, source_type or "AI capability")
             return f"{label} consumed {credits} AI credits."

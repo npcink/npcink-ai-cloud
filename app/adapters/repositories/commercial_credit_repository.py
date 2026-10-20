@@ -78,6 +78,16 @@ class CommercialCreditRepository(CommercialCreditLedgerQueries):
         self.session.flush()
         return entry
 
+    def get_credit_ledger_entry_by_idempotency_key(
+        self,
+        idempotency_key: str,
+    ) -> CreditLedgerEntry | None:
+        return self.session.scalar(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.idempotency_key == idempotency_key
+            )
+        )
+
     def get_paid_credit_grant_by_order(
         self,
         payment_order_id: str,

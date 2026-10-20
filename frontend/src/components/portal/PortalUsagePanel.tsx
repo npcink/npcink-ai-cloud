@@ -57,6 +57,7 @@ const PORTAL_PAID_OR_OPERATOR_SOURCE_TYPES = new Set([
   'credit_pack_purchase',
   'credit_pack_refund',
   'operator_credit_adjustment',
+  'subscription_topup',
 ]);
 
 function resolvePortalUsageView(value: string | null): PortalUsageView {
@@ -546,6 +547,9 @@ export function PortalUsagePanel({
     }
     if (sourceType === 'operator_credit_adjustment' || category === 'operator_adjustment') {
       return t('portal.usage.source_label_operator', {}, 'Manual adjustment');
+    }
+    if (sourceType === 'subscription_topup' || category === 'subscription_topup') {
+      return t('portal.usage.source_label_topup', {}, 'Top-up pack');
     }
     if (category === 'monthly_plan_grant' || sourceType.includes('plan') || sourceType.includes('subscription')) {
       return t('portal.usage.source_label_package', {}, 'Package');
