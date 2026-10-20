@@ -29,6 +29,10 @@ Cloud must **not** become a second WordPress control plane, ability/workflow
 registry, approval/preflight/audit truth, prompt/router/preset owner, or
 WordPress write owner. See [cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md).
 
+## Cross-repo floors (最低配)
+
+跨仓发版/联调以 [docs/compatibility-matrix.md](docs/compatibility-matrix.md) 为单一真相源；Cloud 发版须更新该表一行；不做运行时硬拒。
+
 ## Hard stops (ask a human)
 
 - No production Deploy, host mutation, or `production` promotion unless a human
