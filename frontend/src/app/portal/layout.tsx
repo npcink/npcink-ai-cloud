@@ -1,3 +1,4 @@
+import './portal.css';
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { PortalNavbar } from '@/components/portal/PortalNavbar';

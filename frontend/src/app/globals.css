@@ -29,23 +29,6 @@
   --admin-compact-control-height: 2rem;
   --admin-compact-row-height: 2.5rem;
   --admin-compact-radius: 0.25rem;
-
-  /* Portal density tokens (service center). Prefer these over page-level pixel literals. */
-  --portal-content-max-width: 80rem; /* 1280px */
-  --portal-header-min-height: 5rem; /* 80px */
-  --portal-header-target-height: 7.5rem; /* 120px soft ceiling for title zone */
-  --portal-row-min-height: 4rem; /* 64px */
-  --portal-row-max-height: 5rem; /* 80px */
-  --portal-btn-height: 2.75rem;
-  --portal-btn-height-sm: 2.25rem;
-  --portal-btn-radius: 9999px;
-  --portal-control-radius: 0.75rem;
-  --portal-section-radius: 1.125rem; /* 18px */
-  --portal-card-radius: 0.75rem;
-  --portal-title-size: 1.75rem;
-  --portal-body-size: 0.875rem; /* 14px */
-  --portal-body-size-lg: 1rem; /* 16px */
-  --portal-leading: 1.6;
 }
 
 .dark {
@@ -851,8 +834,8 @@ h4,
   }
 
   .portal-shell .btn {
-    min-height: var(--portal-btn-height);
-    border-radius: var(--portal-btn-radius);
+    min-height: 2.75rem;
+    border-radius: 9999px;
     box-shadow: none;
     font-weight: 600;
     transform: none;
@@ -863,119 +846,8 @@ h4,
       transform 120ms ease;
   }
 
-  .portal-shell .btn-danger {
-    border-color: #d70015;
-    background: #d70015;
-    color: #ffffff;
-    box-shadow: none;
-  }
-
-  .portal-shell .btn-danger:hover {
-    border-color: #ff3b30;
-    background: #ff3b30;
-  }
-
-  .portal-shell .btn-outline {
-    border-color: #d2d2d7;
-    background: transparent;
-    color: #1d1d1f;
-    box-shadow: none;
-  }
-
-  .portal-shell .btn-outline:hover {
-    border-color: #b8b8bd;
-    background: #fafafc;
-  }
-
   .portal-shell {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
-  }
-
-  .portal-content {
-    max-width: var(--portal-content-max-width);
-  }
-
-  .portal-workspace-header {
-    min-height: var(--portal-header-min-height);
-  }
-
-  .portal-shell .btn-sm,
-  .portal-shell .btn.btn-sm,
-  .portal-shell .portal-row-action-btn {
-    min-height: var(--portal-btn-height-sm);
-    padding-block: 0.35rem;
-    padding-inline: 0.9rem;
-    font-size: 0.8125rem;
-    line-height: 1.25;
-    border-radius: var(--portal-btn-radius);
-    box-shadow: none;
-    white-space: nowrap;
-  }
-
-  .portal-shell .portal-row-more-btn {
-    min-width: var(--portal-btn-height-sm);
-    padding-inline: 0.55rem;
-    font-size: 1.1rem;
-    letter-spacing: 0.05em;
-  }
-
-  .portal-shell .portal-row-menu-item {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    padding: 0.55rem 0.85rem;
-    text-align: left;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: #1d1d1f;
-    background: transparent;
-    border: 0;
-  }
-
-  .portal-shell .portal-row-menu-item:hover,
-  .portal-shell .portal-row-menu-item:focus-visible {
-    background: #f5f5f7;
-    outline: none;
-  }
-
-  .portal-shell .portal-row-menu-item:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .portal-shell .portal-row-menu-item-danger {
-    color: #d70015;
-  }
-
-  .dark .portal-shell .portal-row-menu-item {
-    color: #f8fafc;
-  }
-
-  .dark .portal-shell .portal-row-menu-item:hover,
-  .dark .portal-shell .portal-row-menu-item:focus-visible {
-    background: #1f2937;
-  }
-
-  .dark .portal-shell .portal-row-menu-item-danger {
-    color: #ff453a;
-  }
-
-  .portal-shell .portal-list-row > th,
-  .portal-shell .portal-list-row > td {
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
-    vertical-align: middle;
-  }
-
-  .portal-list-row {
-    min-height: var(--portal-row-min-height);
-    max-height: none;
-  }
-
-  @media (min-width: 768px) {
-    .portal-list-row {
-      min-height: var(--portal-row-min-height);
-    }
   }
 
   .portal-shell .btn:hover {
@@ -1045,28 +917,6 @@ h4,
   }
 
   .dark .portal-shell .btn-secondary:hover {
-    border-color: #475569;
-    background: #1f2937;
-  }
-
-  .dark .portal-shell .btn-danger {
-    border-color: #ff453a;
-    background: #ff453a;
-    color: #07111f;
-  }
-
-  .dark .portal-shell .btn-danger:hover {
-    border-color: #ff6961;
-    background: #ff6961;
-  }
-
-  .dark .portal-shell .btn-outline {
-    border-color: #334155;
-    background: transparent;
-    color: #f8fafc;
-  }
-
-  .dark .portal-shell .btn-outline:hover {
     border-color: #475569;
     background: #1f2937;
   }
