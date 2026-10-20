@@ -27,19 +27,16 @@ type EntitlementMetric = {
 
 const KNOWLEDGE_RESOURCE_KEYS: readonly string[] = ['vector_documents', 'media_images'];
 
-export type PortalUsageDrawerView = 'trend' | 'records' | 'sources';
-
 type PortalEntitlementUsageProps = {
   quotaSummary?: QuotaSummary | null;
   t: TranslateFn;
   locale: Locale;
   /** When true, limited-row scream badges / red bars / overflow copy defer to the attention strip. */
   attentionSurfaceActive?: boolean;
-  /**
-   * Opens package usage drawer.
-   * Pass `{ view: 'sources' }` from the AI-credits tile; omit (or trend) from「查看本期用量」.
-   */
-  onOpenUsage?: (options?: { view?: PortalUsageDrawerView }) => void;
+  /** Opens package usage drawer (period usage / trend / records). */
+  onOpenUsage?: () => void;
+  /** Opens the light credit-sources dialog (grants / top-ups). */
+  onOpenCreditSources?: () => void;
 };
 
 function formatQuotaValue(
@@ -96,6 +93,7 @@ export function PortalEntitlementUsage({
   locale,
   attentionSurfaceActive = false,
   onOpenUsage,
+  onOpenCreditSources,
 }: PortalEntitlementUsageProps) {
   const [siteKnowledgeUsage, setSiteKnowledgeUsage] = useState<PortalAccountSiteKnowledgeUsagePayload | null>(null);
   const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
@@ -313,16 +311,16 @@ export function PortalEntitlementUsage({
 
                       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         {isCredit ? (
-                          onOpenUsage ? (
+                          onOpenCreditSources ? (
                             <button
                               type="button"
                               className="text-left text-xl font-semibold tracking-tight text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
-                              onClick={() => onOpenUsage?.({ view: 'sources' })}
-                              data-portal-billing="open-usage-from-credits-period"
+                              onClick={() => onOpenCreditSources?.()}
+                              data-portal-billing="open-credit-sources"
                               aria-label={t(
-                                'portal.usage.period_used_inline',
-                                { count: formatNumber(Math.round(periodUsed)) },
-                                'Deducted this period: {{count}}'
+                                'portal.usage.sources_title',
+                                {},
+                                'Credit sources'
                               )}
                             >
                               {creditUsedLabel}

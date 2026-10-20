@@ -10,6 +10,7 @@ import {
 import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
 import { PortalUsagePanel } from '@/components/portal/PortalUsagePanel';
+import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import {
   PortalErrorState,
@@ -127,24 +128,20 @@ function PortalBillingContent() {
   });
 
   const [usageDrawerOpen, setUsageDrawerOpen] = useState(false);
+  const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
 
-  const openUsageDrawer = useCallback((options?: { view?: 'trend' | 'records' | 'sources' }) => {
-    const nextParams = new URLSearchParams(
-      typeof window !== 'undefined' ? window.location.search : searchParams.toString()
-    );
-    const view = options?.view ?? 'trend';
-    if (view === 'trend') nextParams.delete('view');
-    else nextParams.set('view', view);
-    const query = nextParams.toString();
-    if (typeof window !== 'undefined') {
-      window.history.replaceState(
-        window.history.state,
-        '',
-        `/portal/billing${query ? `?${query}` : ''}#usage`,
-      );
-    }
+  const openUsageDrawer = useCallback(() => {
     setUsageDrawerOpen(true);
-  }, [searchParams]);
+    if (typeof window === 'undefined') return;
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.delete('view');
+    const qs = nextParams.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/portal/billing${qs ? `?${qs}` : ''}#usage`,
+    );
+  }, []);
 
   const closeUsageDrawer = useCallback(() => {
     setUsageDrawerOpen(false);
@@ -154,6 +151,10 @@ function PortalBillingContent() {
     nextParams.delete('view');
     const qs = nextParams.toString();
     window.history.replaceState(window.history.state, '', `/portal/billing${qs ? `?${qs}` : ''}`);
+  }, []);
+
+  const openCreditSources = useCallback(() => {
+    setCreditSourcesOpen(true);
   }, []);
 
   useEffect(() => {
@@ -328,6 +329,7 @@ function PortalBillingContent() {
               locale={locale}
               attentionSurfaceActive={packageStatus === 'warning'}
               onOpenUsage={openUsageDrawer}
+              onOpenCreditSources={openCreditSources}
             />
           </div>
         </PortalCard>
@@ -337,6 +339,12 @@ function PortalBillingContent() {
         variant="drawer"
         open={usageDrawerOpen}
         onClose={closeUsageDrawer}
+      />
+
+      <PortalCreditSourcesDialog
+        isOpen={creditSourcesOpen}
+        onClose={() => setCreditSourcesOpen(false)}
+        quotaSummary={quotaSummary}
       />
     </PortalPageStack>
   );
