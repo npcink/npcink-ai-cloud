@@ -129,14 +129,21 @@ function formatCreditEventTime(value: string, locale: Locale): string {
 }
 
 export type PortalUsagePanelProps = {
-  /** When true, render as a section on the package page (no page stack / signed-out chrome). */
-  embedded?: boolean;
+  /** `drawer` = package-page detail surface; `page` = full-page shell. */
+  variant?: 'page' | 'drawer';
+  open?: boolean;
+  onClose?: () => void;
 };
 
-export function PortalUsagePanel({ embedded = false }: PortalUsagePanelProps) {
-  const usageBasePath = embedded ? '/portal/billing' : '/portal/usage';
+export function PortalUsagePanel({
+  variant = 'page',
+  open = false,
+  onClose,
+}: PortalUsagePanelProps) {
+  const inDrawer = variant === 'drawer';
+  const usageBasePath = inDrawer ? '/portal/billing' : '/portal/usage';
   const withUsageHash = (pathAndQuery: string) => (
-    embedded
+    inDrawer
       ? `${pathAndQuery}${pathAndQuery.includes('#') ? '' : '#usage'}`
       : pathAndQuery
   );
@@ -283,7 +290,7 @@ export function PortalUsagePanel({ embedded = false }: PortalUsagePanelProps) {
         withUsageHash(`${usageBasePath}${query ? `?${query}` : ''}`),
       );
     }
-  }, [searchParams, usageBasePath, embedded]);
+  }, [searchParams, usageBasePath, inDrawer]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -376,7 +383,7 @@ export function PortalUsagePanel({ embedded = false }: PortalUsagePanelProps) {
   }
 
   if (!isAuthenticated || !session) {
-    if (embedded) return null;
+    if (inDrawer) return null;
     return (
       <PortalSignedOutState
         title={t('auth.not_signed_in')}
@@ -481,18 +488,43 @@ export function PortalUsagePanel({ embedded = false }: PortalUsagePanelProps) {
     router.replace(withUsageHash(`${usageBasePath}${query ? `?${query}` : ''}`));
   };
 
-  const usageHeader = (
+  const usageHeader = inDrawer ? (
+        <div className="space-y-3" data-portal-usage="drawer-toolbar">
+          <PortalWorkspaceHeader
+            title={t('portal.usage.drawer_context_title', {}, 'This period')}
+            currentPage="billing"
+            selectedSiteId={siteFilterId}
+            sites={session.sites}
+            onSiteChange={handleSiteFilterChange}
+            siteSelectorMode="context"
+            siteSelectorPlacement="inline"
+            metadata={(
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                <span>
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    {t('portal.usage.period_label', {}, 'Period')}:
+                  </span>{' '}
+                  {currentPeriodRange || t('common.not_found')}
+                </span>
+                {updatedAt ? (
+                  <span>{t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}</span>
+                ) : null}
+              </div>
+            )}
+          />
+        </div>
+      ) : (
         <PortalWorkspaceHeader
           title={t('portal.nav_usage', {}, 'Usage')}
-          description={embedded ? undefined : usageHeaderDescription}
-          currentPage={embedded ? 'billing' : 'usage'}
+          description={usageHeaderDescription}
+          currentPage="usage"
           selectedSiteId={siteFilterId}
           sites={session.sites}
           onSiteChange={handleSiteFilterChange}
           siteSelectorMode="context"
           siteSelectorPlacement="inline"
           titleAccessory={
-            !embedded && !bundleLoading && !bundleError && quotaSummary && !usageNeedsAttention ? (
+            !bundleLoading && !bundleError && quotaSummary && !usageNeedsAttention ? (
               <PortalStatusBadge status="active" label={usageStatusLabel} className="text-[0.68rem]" />
             ) : null
           }
@@ -504,24 +536,22 @@ export function PortalUsagePanel({ embedded = false }: PortalUsagePanelProps) {
                 </span>{' '}
                 {currentPeriodRange || t('common.not_found')}
               </span>
-              {!embedded ? (
-                <span>
-                  {currentPeriodEndDetail
-                    ? t(
-                        'portal.usage.period_end_detail',
-                        { time: currentPeriodEndDetail },
-                        'Ends {{time}}'
-                      )
-                    : t('portal.usage.header_period_detail', {}, 'Current package period.')}
-                </span>
-              ) : null}
+              <span>
+                {currentPeriodEndDetail
+                  ? t(
+                      'portal.usage.period_end_detail',
+                      { time: currentPeriodEndDetail },
+                      'Ends {{time}}'
+                    )
+                  : t('portal.usage.header_period_detail', {}, 'Current package period.')}
+              </span>
               {updatedAt ? (
                 <span>{t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}</span>
               ) : null}
             </div>
           )}
           contextPanel={
-            !embedded && !bundleError && quotaSummary && usageNeedsAttention ? (
+            !bundleError && quotaSummary && usageNeedsAttention ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 text-sm font-semibold text-gray-950 dark:text-white">{usageStatusLabel}</p>
@@ -732,11 +762,35 @@ export function PortalUsagePanel({ embedded = false }: PortalUsagePanelProps) {
     </>
   );
 
-  if (embedded) {
+  if (inDrawer) {
+    if (!open) return null;
     return (
-      <section id="usage" className="space-y-4 scroll-mt-24" data-portal-usage="embedded">
-        {body}
-      </section>
+      <div className="fixed inset-0 z-50" data-portal-usage="drawer">
+        <button
+          type="button"
+          className="absolute inset-0 bg-slate-950/45"
+          aria-label={t('common.close')}
+          onClick={() => onClose?.()}
+        />
+        <aside
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="portal-usage-drawer-title"
+          className="absolute right-0 top-0 flex h-full w-full max-w-2xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <h2 id="portal-usage-drawer-title" className="text-lg font-semibold text-slate-950 dark:text-white">
+              {t('portal.nav_usage', {}, 'Usage')}
+            </h2>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onClose?.()}>
+              {t('common.close')}
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5" id="usage">
+            {body}
+          </div>
+        </aside>
+      </div>
     );
   }
 

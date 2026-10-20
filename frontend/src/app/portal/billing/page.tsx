@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -126,31 +126,32 @@ function PortalBillingContent() {
     t,
   });
 
-  // Upgrade / manage intents now live on Account.
-  useEffect(() => {
+  const [usageDrawerOpen, setUsageDrawerOpen] = useState(false);
+
+  const openUsageDrawer = useCallback(() => {
+    setUsageDrawerOpen(true);
+    if (typeof window === 'undefined') return;
+    const qs = searchParams.toString();
+    const next = `/portal/billing${qs ? `?${qs}` : ''}#usage`;
+    window.history.replaceState(window.history.state, '', next);
+  }, [searchParams]);
+
+  const closeUsageDrawer = useCallback(() => {
+    setUsageDrawerOpen(false);
     if (typeof window === 'undefined') return;
     if (window.location.hash !== '#usage') return;
-    let cancelled = false;
-    const tryScroll = () => {
-      const target = document.getElementById('usage');
-      if (!target) return false;
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return true;
-    };
-    if (!tryScroll()) {
-      const timer = window.setTimeout(() => {
-        if (!cancelled) tryScroll();
-      }, 120);
-      return () => {
-        cancelled = true;
-        window.clearTimeout(timer);
-      };
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [entitlements, isLoading]);
+    const qs = searchParams.toString();
+    window.history.replaceState(window.history.state, '', `/portal/billing${qs ? `?${qs}` : ''}`);
+  }, [searchParams]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash === '#usage') {
+      setUsageDrawerOpen(true);
+    }
+  }, [entitlements, isLoading, searchParams]);
+
+  // Upgrade / manage intents now live on Account.
   useEffect(() => {
     const requestedAction = searchParams.get('action');
     const hash = typeof window !== 'undefined' ? window.location.hash : '';
@@ -255,13 +256,18 @@ function PortalBillingContent() {
             ]}
           />
         )}
-        primaryAction={
-          packageStatus !== 'warning' ? (
-            <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
-              {t('portal.billing.manage_title', {}, 'Manage package')}
-            </Link>
-          ) : null
-        }
+        primaryAction={(
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={openUsageDrawer} data-portal-billing="open-usage">
+              {t('portal.billing.view_period_usage', {}, 'View period usage')}
+            </button>
+            {packageStatus !== 'warning' ? (
+              <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
+                {t('portal.billing.manage_title', {}, 'Manage package')}
+              </Link>
+            ) : null}
+          </div>
+        )}
         metrics={packageSummaryMetrics}
         metricsLayout="rail"
         metricsPlacement="title-end"
@@ -314,12 +320,17 @@ function PortalBillingContent() {
               t={t}
               locale={locale}
               attentionSurfaceActive={packageStatus === 'warning'}
+              onOpenUsage={openUsageDrawer}
             />
           </div>
         </PortalCard>
       ) : null}
 
-      <PortalUsagePanel embedded />
+      <PortalUsagePanel
+        variant="drawer"
+        open={usageDrawerOpen}
+        onClose={closeUsageDrawer}
+      />
     </PortalPageStack>
   );
 }
