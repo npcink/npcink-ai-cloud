@@ -60,6 +60,14 @@ RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS = (
     RUNTIME_DIAGNOSTIC_CALLBACK_DISPATCHING_STALE_AFTER_SECONDS
 )
 RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE = "runtime.callback_dispatch_lease_recovered"
+# An inline run is admitted, committed as `running` and then handed to an external
+# Provider. An unexpected exception or process loss can leave that durable
+# `running` row behind. Admission stops counting such a run once it is older than
+# this lease, so a single orphan cannot hold a site's whole inline concurrency
+# budget. The run row itself is never rewritten here: the provider outcome is
+# unknown and fabricating terminal usage or callback evidence stays forbidden.
+RUNTIME_INLINE_RUN_LEASE_SECONDS = 180
+RUNTIME_INLINE_RUN_ABORTED_ERROR_CODE = "runtime.inline_execution_aborted"
 ABUSE_GUARD_ATTENTION_RATIO = 0.8
 ABUSE_GUARD_CRITICAL_RATIO = 1.0
 RUNTIME_STORAGE_MODE_NO_STORE = "no_store"
