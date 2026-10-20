@@ -3111,3 +3111,45 @@ def test_runtime_image_prepares_writable_shared_artifact_volume() -> None:
         compose = (cloud_root / compose_name).read_text()
         assert "NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts" in compose
         assert "cloud-artifacts-" in compose
+
+def test_prod_and_runtime_compose_require_service_healthchecks() -> None:
+    cloud_root = _cloud_root()
+    for compose_name in ("docker-compose.prod.yml", "docker-compose.runtime.yml"):
+        compose = (cloud_root / compose_name).read_text()
+        proxy = _compose_service_block(compose, "proxy")
+        api = _compose_service_block(compose, "api")
+        frontend = _compose_service_block(compose, "frontend")
+
+        assert "healthcheck:" in api
+        assert "/health/live" in api
+        assert "healthcheck:" in frontend
+        assert "/api/health" in frontend
+        assert "healthcheck:" in proxy
+        assert "/health/live" in proxy
+        assert "condition: service_healthy" in proxy
+        assert "condition: service_started" not in proxy
+        assert "127.0.0.1:${NPCINK_CLOUD_PORT:-8010}:8080" in proxy
+        release_one_off = _compose_service_block(compose, "release-one-off")
+        assert "healthcheck:" in release_one_off
+        assert "disable: true" in release_one_off
+
+
+def test_prod_compose_does_not_passthrough_provider_api_key_env() -> None:
+    compose = (_cloud_root() / "docker-compose.prod.yml").read_text()
+    forbidden = (
+        "NPCINK_CLOUD_OPENAI_API_KEY",
+        "NPCINK_CLOUD_ANTHROPIC_API_KEY",
+        "NPCINK_CLOUD_LITELLM_API_KEY",
+        "NPCINK_CLOUD_VLLM_API_KEY",
+        "NPCINK_CLOUD_TEI_API_KEY",
+        "NPCINK_CLOUD_OPENROUTER_API_KEY",
+        "NPCINK_CLOUD_SILICONFLOW_API_KEY",
+        "NPCINK_CLOUD_SITE_KNOWLEDGE_JINA_API_KEY",
+        "NPCINK_CLOUD_HUGGINGFACE_API_TOKEN",
+        "NPCINK_CLOUD_SITE_KNOWLEDGE_ZILLIZ_TOKEN",
+    )
+    for key in forbidden:
+        assert key not in compose
+
+    env_example = (_cloud_root() / ".env.example").read_text()
+    assert "/admin/ai-resources" in env_example

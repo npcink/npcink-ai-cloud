@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import math
 import re
+import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -45,6 +46,7 @@ HMAC_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SECRET_HASH_ALGORITHM = "pbkdf2_sha256"
 SECRET_HASH_ITERATIONS = 210_000
 SECRET_HASH_SALT = b"npcink-ai-cloud-secret-hash-v2"
+SECRET_HASH_SALT_BYTES = 16
 REPLAY_SCOPE_PUBLIC_POST_SITE = "public_post_site"
 REPLAY_SCOPE_PUBLIC_POST_KEY = "public_post_key"
 REPLAY_SCOPE_PUBLIC_POST_IP = "public_post_ip"
@@ -105,7 +107,12 @@ def build_body_digest(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def build_secret_hash(secret: str) -> str:
+def derive_stable_secret_digest(secret: str) -> str:
+    """Deterministic PBKDF2 digest for lookup keys and callback HMAC material.
+
+    Existing identity / addon lookup rows and callback signatures depend on this
+    staying stable. Do not switch those call sites to build_secret_hash.
+    """
     digest = hashlib.pbkdf2_hmac(
         "sha256",
         secret.encode("utf-8"),
@@ -115,9 +122,63 @@ def build_secret_hash(secret: str) -> str:
     return f"{SECRET_HASH_ALGORITHM}${SECRET_HASH_ITERATIONS}${digest}"
 
 
+def build_secret_hash(secret: str, *, salt: bytes | None = None) -> str:
+    """Per-secret salted PBKDF2 hash for stored secrets (API keys, OTP codes).
+
+    Format: pbkdf2_sha256$iterations$salt_hex$digest_hex
+    Legacy global-salt hashes (three $-separated fields) remain verifiable via
+    verify_secret_hash; no Alembic migration is required.
+    """
+    salt_bytes = secrets.token_bytes(SECRET_HASH_SALT_BYTES) if salt is None else salt
+    if len(salt_bytes) < 8:
+        raise ValueError("salt must be at least 8 bytes")
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        salt_bytes,
+        SECRET_HASH_ITERATIONS,
+    ).hex()
+    return (
+        f"{SECRET_HASH_ALGORITHM}${SECRET_HASH_ITERATIONS}"
+        f"${salt_bytes.hex()}${digest}"
+    )
+
+
 def verify_secret_hash(secret: str, stored_hash: str) -> bool:
-    expected = build_secret_hash(secret)
-    return hmac.compare_digest(expected, str(stored_hash or ""))
+    raw = str(stored_hash or "")
+    parts = raw.split("$")
+    if len(parts) == 4 and parts[0] == SECRET_HASH_ALGORITHM:
+        _algorithm, iterations_raw, salt_hex, digest = parts
+        try:
+            iterations = int(iterations_raw)
+            salt_bytes = bytes.fromhex(salt_hex)
+        except ValueError:
+            return False
+        if iterations < 1 or len(salt_bytes) < 8:
+            return False
+        expected = hashlib.pbkdf2_hmac(
+            "sha256",
+            secret.encode("utf-8"),
+            salt_bytes,
+            iterations,
+        ).hex()
+        return hmac.compare_digest(expected, digest)
+    if len(parts) == 3 and parts[0] == SECRET_HASH_ALGORITHM:
+        _algorithm, iterations_raw, digest = parts
+        try:
+            iterations = int(iterations_raw)
+        except ValueError:
+            return False
+        if iterations < 1:
+            return False
+        expected = hashlib.pbkdf2_hmac(
+            "sha256",
+            secret.encode("utf-8"),
+            SECRET_HASH_SALT,
+            iterations,
+        ).hex()
+        return hmac.compare_digest(expected, digest)
+    return False
 
 
 def build_canonical_request(

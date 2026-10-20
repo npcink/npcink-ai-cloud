@@ -139,15 +139,15 @@ def _signed_request(**overrides: str) -> RuntimeCallbackDispatchRequest:
 def test_batch_reuses_key_but_signs_each_attempt_and_rotation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.core.security import build_hmac_signature, build_secret_hash
+    from app.core.security import build_hmac_signature, derive_stable_secret_digest
 
     derivations: list[str] = []
 
     def derive(secret: str) -> str:
         derivations.append(secret)
-        return build_secret_hash(secret)
+        return derive_stable_secret_digest(secret)
 
-    monkeypatch.setattr("app.adapters.callbacks.http.build_secret_hash", derive)
+    monkeypatch.setattr("app.adapters.callbacks.http.derive_stable_secret_digest", derive)
     dispatcher = HttpRuntimeCallbackDispatcher()
     signatures: list[str] = []
     requests = [
@@ -177,7 +177,7 @@ def test_batch_reuses_key_but_signs_each_attempt_and_rotation(
                     hashlib.sha256(body).hexdigest(),
                 ]
             )
-            expected = build_hmac_signature(build_secret_hash(request.secret), canonical)
+            expected = build_hmac_signature(derive_stable_secret_digest(request.secret), canonical)
             assert headers["X-Npcink-Signature"] == expected
             signatures.append(expected)
         assert len(derivations) == 5
@@ -196,7 +196,7 @@ def test_signing_batch_restores_nested_scope_and_clears_after_exception(
 ) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
-        "app.adapters.callbacks.http.build_secret_hash",
+        "app.adapters.callbacks.http.derive_stable_secret_digest",
         lambda secret: calls.append(secret) or "synthetic-derived-key",
     )
     dispatcher = HttpRuntimeCallbackDispatcher()
@@ -234,7 +234,7 @@ def test_signing_batches_are_independent_between_threads_and_dispatchers(
             calls.append(secret)
         return "synthetic-derived-key"
 
-    monkeypatch.setattr("app.adapters.callbacks.http.build_secret_hash", derive)
+    monkeypatch.setattr("app.adapters.callbacks.http.derive_stable_secret_digest", derive)
     dispatcher = HttpRuntimeCallbackDispatcher()
 
     def sign() -> None:

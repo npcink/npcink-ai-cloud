@@ -28,7 +28,7 @@ from app.core.models import (
     PRINCIPAL_STATUS_DISABLED,
     Site,
 )
-from app.core.security import build_secret_hash, verify_secret_hash
+from app.core.security import build_secret_hash, derive_stable_secret_digest, verify_secret_hash
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
@@ -86,7 +86,7 @@ def _hash_provider_subject(provider: str, value: str) -> str:
             "service.portal_identity_subject_required",
             "identity provider subject is required",
         )
-    return build_secret_hash(f"{provider}:{normalized_value}")
+    return derive_stable_secret_digest(f"{provider}:{normalized_value}")
 
 
 def _hash_external_identity(provider: str, value: str, *, kind: str = "subject") -> str:
@@ -96,7 +96,7 @@ def _hash_external_identity(provider: str, value: str, *, kind: str = "subject")
             "service.portal_identity_subject_required",
             "identity provider subject is required",
         )
-    return build_secret_hash(f"{provider}:{kind}:{normalized_value}")
+    return derive_stable_secret_digest(f"{provider}:{kind}:{normalized_value}")
 
 
 def _serialize_identity_provider_binding(

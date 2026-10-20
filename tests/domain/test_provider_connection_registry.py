@@ -54,9 +54,11 @@ def _sqlite_url(tmp_path: Path) -> str:
 
 
 def _settings(database_url: str) -> Settings:
+    # Use test env so optional env openai credentials remain available for
+    # dual-channel adapter tests; production-like Settings reject those keys.
     return Settings(
         _env_file=None,
-        environment="production",
+        environment="test",
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
         internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,

@@ -339,7 +339,8 @@ passwords, SSH keys, or encryption roots.
 - Keep development-only values in ignored `.env.local` when local Docker needs
   them.
 - Configure provider connections and service settings through their current
-  Admin surfaces; retired provider/service `.env` fallbacks must not return.
+  Admin surfaces (`/admin/ai-resources`); production rejects provider `*_API_KEY`
+  env fallbacks so compose cannot dual-channel override Admin-managed secrets.
 - Runtime-data encryption key rotation follows `deploy/OPS_PLAYBOOK.md`; it is
   not an ordinary environment edit.
 - Test fixtures belong under `tests/fixtures/`; runtime output belongs under
