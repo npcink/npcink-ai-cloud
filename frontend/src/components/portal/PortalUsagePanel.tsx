@@ -294,10 +294,12 @@ export function PortalUsagePanel({
     setCreditLedgerLoading(true);
     setCreditLedgerError('');
     try {
-      // Account-period ledger (no site filter): grants/packs/adjustments are account-scoped.
+      // Account-period acquisition ledger: server-filter grant/adjustment/refund so
+      // pagination.total matches the Sources list (not the consume-heavy full ledger).
       const response = await portalClient.getAccountCreditLedger({
         limit: creditLedgerPageSize,
         offset: nextOffset,
+        eventTypes: Array.from(PORTAL_ACQUISITION_EVENT_TYPES),
       });
       if (
         requestVersion !== creditLedgerRequestVersionRef.current
@@ -514,8 +516,13 @@ export function PortalUsagePanel({
   const grantedCredits = Number(ledgerSummary?.granted_ai_credits ?? 0);
   const adjustmentCredits = Number(ledgerSummary?.adjustment_ai_credits ?? 0);
   const refundCredits = Number(ledgerSummary?.refund_ai_credits ?? 0);
+  // Server already filters by acquisition event_types; keep client filter as a safety net.
   const sourceLedgerItems = (creditLedger?.items || []).filter(isPortalAcquisitionLedgerEntry);
-  const sourceLedgerTotal = Number(creditLedger?.pagination?.total ?? sourceLedgerItems.length);
+  const sourceLedgerTotal = Number(
+    Number.isFinite(Number(creditLedger?.pagination?.total))
+      ? creditLedger?.pagination?.total
+      : sourceLedgerItems.length
+  );
   const sourceLedgerUpdatedAt = creditLedger?.generated_at
     ? formatUsageUpdatedAt(creditLedger.generated_at, locale)
     : '';
@@ -1028,7 +1035,7 @@ export function PortalUsagePanel({
               </p>
             )}
 
-            {!creditLedgerError && creditLedger ? (
+            {!creditLedgerError && creditLedger && sourceLedgerTotal > 0 ? (
               <ListPagination
                 offset={creditLedgerOffset}
                 limit={creditLedgerPageSize}

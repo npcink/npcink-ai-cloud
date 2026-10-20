@@ -100,6 +100,12 @@ AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
     CREDIT_LEDGER_EVENT_REFUND,
 ]
 
+AI_CREDIT_ACQUISITION_LEDGER_EVENT_TYPES = [
+    CREDIT_LEDGER_EVENT_GRANT,
+    CREDIT_LEDGER_EVENT_ADJUSTMENT,
+    CREDIT_LEDGER_EVENT_REFUND,
+]
+
 AI_CREDIT_LEDGER_CATEGORY_LABELS = {
     "monthly_plan_grant": "Monthly plan grant",
     "credit_pack_purchase": "Credit pack purchase",
@@ -2646,12 +2652,22 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         offset: int = 0,
         source_type: str | None = None,
         site_ids: list[str] | None = None,
+        event_types: list[str] | None = None,
     ) -> dict[str, object]:
         now = self.now_factory()
         normalized_limit = min(100, max(1, int(limit or 50)))
         normalized_offset = max(0, int(offset or 0))
         normalized_source_type = str(source_type or "").strip()
         source_types = [normalized_source_type] if normalized_source_type else None
+        visible_event_types = set(AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES)
+        if event_types is None:
+            resolved_event_types = list(AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES)
+        else:
+            resolved_event_types = [
+                str(item or "").strip().lower()
+                for item in event_types
+                if str(item or "").strip().lower() in visible_event_types
+            ]
         with get_session(self.database_url) as session:
             account_site_repository = CommercialAccountSiteRepository(session)
             subscription_repository = CommercialSubscriptionRepository(session)
@@ -2679,7 +2695,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 account_ids=[account_id],
                 site_ids=site_ids,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2690,7 +2706,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 account_ids=[account_id],
                 site_ids=site_ids,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2699,7 +2715,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 account_ids=[account_id],
                 site_ids=site_ids,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2838,6 +2854,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 25,
         offset: int = 0,
         site_id: str | None = None,
+        event_types: list[str] | None = None,
     ) -> dict[str, object]:
         normalized_site_id = str(site_id or "").strip()
         ledger = self.get_admin_account_credit_ledger(
@@ -2845,6 +2862,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             limit=min(50, max(1, int(limit or 25))),
             offset=max(0, int(offset or 0)),
             site_ids=[normalized_site_id] if normalized_site_id else None,
+            event_types=event_types,
         )
         raw_summary = ledger.get("summary")
         summary: dict[str, object] = (

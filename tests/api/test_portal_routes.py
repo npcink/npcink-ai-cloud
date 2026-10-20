@@ -7966,6 +7966,17 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "site_portal_reads"
     }
 
+    # Acquisition-only filter must not reuse the consume-heavy total (Sources tab bug).
+    acquisition_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger"
+        "?limit=10&event_types=grant,adjustment,refund",
+        headers=portal_reads_headers(),
+    )
+    assert acquisition_ledger_response.status_code == 200
+    acquisition_ledger_data = acquisition_ledger_response.json()["data"]
+    assert acquisition_ledger_data["pagination"]["total"] == 0
+    assert acquisition_ledger_data["items"] == []
+
     with get_session(database_url) as session:
         CommercialRepository(session).record_credit_ledger_entry(
             account_id="acct_portal_reads",

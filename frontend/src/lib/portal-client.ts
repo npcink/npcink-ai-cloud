@@ -2089,12 +2089,21 @@ export class PortalClient {
   }
 
   async getAccountCreditLedger(
-    options?: { limit?: number; offset?: number; siteId?: string }
+    options?: {
+      limit?: number;
+      offset?: number;
+      siteId?: string;
+      /** Comma-joined server filter: grant, adjustment, refund, consume */
+      eventTypes?: string[];
+    }
   ): Promise<PortalEnvelope<PortalCreditLedgerPayload>> {
     const params = new URLSearchParams();
     if (options?.limit) params.set('limit', String(options.limit));
     if (options?.offset) params.set('offset', String(options.offset));
     if (options?.siteId) params.set('site_id', options.siteId);
+    if (options?.eventTypes && options.eventTypes.length > 0) {
+      params.set('event_types', options.eventTypes.join(','));
+    }
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/account/credit-ledger${query}`, undefined);

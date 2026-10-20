@@ -651,6 +651,33 @@ def _portal_payment_order_list_data(
     return data
 
 
+
+def _portal_credit_ledger_event_types(value: str) -> list[str] | None:
+    """Parse comma-separated event_types for credit-ledger filters.
+
+    Empty input keeps the default (all visible ledger event types).
+    Unknown tokens are dropped; an all-unknown list becomes an empty filter.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    allowed = {
+        "consume",
+        "grant",
+        "adjustment",
+        "refund",
+    }
+    parsed = [
+        part.strip().lower()
+        for part in raw.split(",")
+        if part.strip() and part.strip().lower() in allowed
+    ]
+    # Preserve caller intent: explicit filter that matched nothing → empty list
+    # (server returns zero rows) rather than falling back to all types.
+    if not parsed and raw:
+        return []
+    return parsed or None
+
 def _portal_credit_ledger_entry_data(value: object) -> dict[str, object]:
     entry = _dict_value(value)
     return {
@@ -3525,6 +3552,7 @@ async def get_portal_account_credit_ledger(
     limit: int = Query(default=25, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     site_id: str = Query(default="", max_length=191),  # noqa: B008
+    event_types: str = Query(default="", max_length=128),  # noqa: B008
 ) -> Any:
     auth = await resolve_portal_request_context(
         request,
@@ -3559,6 +3587,7 @@ async def get_portal_account_credit_ledger(
             limit=limit,
             offset=offset,
             site_id=resolved_site_id,
+            event_types=_portal_credit_ledger_event_types(event_types),
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -5113,6 +5142,7 @@ async def get_portal_site_credit_ledger(
     site_id: str,
     limit: int = Query(default=25, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
+    event_types: str = Query(default="", max_length=128),  # noqa: B008
 ) -> Any:
     auth = await resolve_portal_request_context(
         request,
@@ -5136,6 +5166,7 @@ async def get_portal_site_credit_ledger(
             limit=limit,
             offset=offset,
             site_id=site_id,
+            event_types=_portal_credit_ledger_event_types(event_types),
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
