@@ -5,6 +5,7 @@ import {
   findLimitedBillingResources,
   resolveBillingPackageStatusLabel,
   resolveBillingPressureCta,
+  resolveBillingQuotaRowPresentation,
 } from '@/lib/portal-billing-status';
 
 const t = (key: string, _params?: Record<string, string>, fallback?: string) => fallback || key;
@@ -63,5 +64,47 @@ describe('Portal billing quiet status', () => {
         'Failed to load'
       )
     ).toBe(false);
+  });
+
+  it('quiets limited entitlement rows when attention strip already covers the cause', () => {
+    expect(
+      resolveBillingQuotaRowPresentation({
+        status: 'limited',
+        attentionSurfaceActive: true,
+      })
+    ).toEqual({
+      tone: 'error',
+      displayTone: 'ok',
+      suppressAlarmBadge: true,
+      suppressOverflowDetail: true,
+    });
+  });
+
+  it('keeps limited scream presentation when attention strip is inactive', () => {
+    expect(
+      resolveBillingQuotaRowPresentation({
+        status: 'limited',
+        attentionSurfaceActive: false,
+      })
+    ).toEqual({
+      tone: 'error',
+      displayTone: 'error',
+      suppressAlarmBadge: false,
+      suppressOverflowDetail: false,
+    });
+  });
+
+  it('keeps near_limit watch tone even when attention strip is active', () => {
+    expect(
+      resolveBillingQuotaRowPresentation({
+        status: 'near_limit',
+        attentionSurfaceActive: true,
+      })
+    ).toEqual({
+      tone: 'warning',
+      displayTone: 'warning',
+      suppressAlarmBadge: false,
+      suppressOverflowDetail: false,
+    });
   });
 });

@@ -90,3 +90,36 @@ export function resolveBillingPackageStatusLabel(
   }
   return t('common.ok', {}, 'OK');
 }
+
+export type BillingQuotaRowTone = 'ok' | 'warning' | 'error';
+
+export function billingQuotaStatusTone(status: string | undefined): BillingQuotaRowTone {
+  if (status === 'limited') return 'error';
+  if (status === 'near_limit') return 'warning';
+  return 'ok';
+}
+
+/**
+ * When the package attention strip already names a limited quota cause,
+ * entitlement rows for that same cause stay numerical: no scream badge,
+ * no alarm-red progress, no duplicated overflow explainer under the row.
+ * near_limit (watch) rows are not covered by the limited strip and keep amber.
+ */
+export function resolveBillingQuotaRowPresentation(options: {
+  status?: string;
+  attentionSurfaceActive?: boolean;
+}): {
+  tone: BillingQuotaRowTone;
+  displayTone: BillingQuotaRowTone;
+  suppressAlarmBadge: boolean;
+  suppressOverflowDetail: boolean;
+} {
+  const tone = billingQuotaStatusTone(options.status);
+  const coveredByAttention = Boolean(options.attentionSurfaceActive) && tone === 'error';
+  return {
+    tone,
+    displayTone: coveredByAttention ? 'ok' : tone,
+    suppressAlarmBadge: coveredByAttention,
+    suppressOverflowDetail: coveredByAttention,
+  };
+}

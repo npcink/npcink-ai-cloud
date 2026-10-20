@@ -6,6 +6,7 @@ import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
 import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { resolveBillingQuotaRowPresentation } from '@/lib/portal-billing-status';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 type QuotaSummary = NonNullable<Entitlements['quota_summary']>;
@@ -30,13 +31,9 @@ type PortalEntitlementUsageProps = {
   quotaSummary?: QuotaSummary | null;
   t: TranslateFn;
   locale: Locale;
+  /** When true, limited-row scream badges / red bars / overflow copy defer to the attention strip. */
+  attentionSurfaceActive?: boolean;
 };
-
-function quotaStatusTone(status: string | undefined): 'ok' | 'warning' | 'error' {
-  if (status === 'limited') return 'error';
-  if (status === 'near_limit') return 'warning';
-  return 'ok';
-}
 
 function formatQuotaValue(
   value: unknown,
@@ -90,6 +87,7 @@ export function PortalEntitlementUsage({
   quotaSummary,
   t,
   locale,
+  attentionSurfaceActive = false,
 }: PortalEntitlementUsageProps) {
   const [siteKnowledgeUsage, setSiteKnowledgeUsage] = useState<PortalAccountSiteKnowledgeUsagePayload | null>(null);
   const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
@@ -196,21 +194,27 @@ export function PortalEntitlementUsage({
                   const ratio = unlimited
                     ? 0
                     : Math.min(100, Math.max(0, Number(metric.usage_ratio || 0) * 100));
-                  const tone = quotaStatusTone(metric.status);
+                  const rowPresentation = resolveBillingQuotaRowPresentation({
+                    status: metric.status,
+                    attentionSurfaceActive,
+                  });
+                  const tone = rowPresentation.displayTone;
                   const limitLabel = formatQuotaValue(limit, { unlimited, unlimitedLabel });
                   const usedLabel = formatQuotaValue(used, { unlimited: false, unlimitedLabel });
                   const remainingLabel = formatQuotaValue(displayRemaining, { unlimited, unlimitedLabel });
                   const isCredit = key === 'ai_credits';
                   const isKnowledge = KNOWLEDGE_RESOURCE_KEYS.includes(key);
                   let metricBadgeLabel = '';
-                  if (tone === 'warning') {
-                    metricBadgeLabel = t('portal.usage.headroom_watch', {}, 'Close to limit');
-                  } else if (tone === 'error') {
-                    metricBadgeLabel = t('portal.home.filter_attention_only', {}, 'Needs attention');
-                    if (isKnowledge) {
-                      metricBadgeLabel = exceeded > 0
-                        ? t('portal.usage.capacity_exceeded', {}, 'Over limit')
-                        : t('portal.usage.capacity_full', {}, 'Full');
+                  if (!rowPresentation.suppressAlarmBadge) {
+                    if (rowPresentation.tone === 'warning') {
+                      metricBadgeLabel = t('portal.usage.headroom_watch', {}, 'Close to limit');
+                    } else if (rowPresentation.tone === 'error') {
+                      metricBadgeLabel = t('portal.home.filter_attention_only', {}, 'Needs attention');
+                      if (isKnowledge) {
+                        metricBadgeLabel = exceeded > 0
+                          ? t('portal.usage.capacity_exceeded', {}, 'Over limit')
+                          : t('portal.usage.capacity_full', {}, 'Full');
+                      }
                     }
                   }
                   const paidExpiryDate = metric.paid_next_expires_at
@@ -338,7 +342,7 @@ export function PortalEntitlementUsage({
                           ) : null}
                         </div>
                       ) : null}
-                      {isKnowledge && tone === 'error' ? (
+                      {isKnowledge && rowPresentation.tone === 'error' && !rowPresentation.suppressOverflowDetail ? (
                         <p className="mt-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
                           {key === 'media_images'
                             ? t('portal.usage.media_capacity_full_detail', {}, 'New image indexing is paused. Existing images remain usable and refreshable; AI work still needs execution allowances. Remove unneeded index entries or change the package.')

@@ -287,6 +287,7 @@ function PortalBillingContent() {
             quotaSummary={quotaSummary}
             t={t}
             locale={locale}
+            attentionSurfaceActive={packageStatus === 'warning'}
           />
         </PortalCard>
       ) : null}
