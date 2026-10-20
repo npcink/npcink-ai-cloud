@@ -32,7 +32,7 @@ WordPress write owner. See [cloud-content-generation-boundary-v1.md](docs/cloud-
 ## Cross-repo floors (最低配)
 
 跨仓发版/联调以 [docs/compatibility-matrix.md](docs/compatibility-matrix.md) 为单一真相源；Cloud 发版须更新该表一行；不做运行时硬拒。
-决策摘要见同文档「决策摘要」节（一人开发不做运行时硬拒；边界 Toolbox/编排门户/Addon；有痛再完善）。
+决策摘要见同文档「决策摘要」节（一人开发不做运行时硬拒；契约变更默认旧契约保留约 3 个 Cloud 小版本后硬切、不做长期双契约；边界 Toolbox/编排门户/Addon；有痛再完善）。
 
 跨仓联调排障从 Cloud/门户往下时，优先用 `run_id` 关联；勿用 Toolbox/Addon 本地可读 trace（如 `web_search_*`）直接搜 Cloud（会与 Cloud 侧 `traceparent` hex/hash 对不上）。后续有痛再完善；不改 runtime/trace 代码。
 

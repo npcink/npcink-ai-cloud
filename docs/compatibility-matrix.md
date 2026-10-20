@@ -8,6 +8,7 @@ Status: active documentation sole source of truth for recommended Cloud ↔ Addo
 - **兼容**：以本表为单一真相源；发版手改一行；契约字符串精确匹配仍是唯一硬门。
 - **排障**：从 Cloud / 门户往下，优先 `run_id`；勿用 Toolbox / Addon 本地可读 trace 直接搜 Cloud。
 - **边界**：Toolbox = 能力库；ai-cloud = 编排 / 门户；Addon = 站内插件。
+- **契约变更默认**：旧契约保留约 **3 个 Cloud 小版本**（约 3–6 周）——期间提示升级但功能正常，到期硬切停旧；**不做长期双契约**。
 - **完善时机**：有真实痛再补；避免提前设计。
 
 ## 规则（必读）
