@@ -1740,7 +1740,9 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
 
-  await expect(sitesWorkspace.locator('[data-portal-sites="desktop-table"] a[href="/portal/sites/site_attention#service-status"]')).toBeVisible();
+  await expect(
+    sitesWorkspace.locator('[data-portal-sites="desktop-table"] a[data-portal-sites="site-name"][href="/portal/sites/site_attention#service-status"]')
+  ).toBeVisible();
   await page.goto('/portal/sites/site_attention');
   await expect(page).toHaveURL(/\/portal\/sites\/site_attention$/);
   await expect(page.getByRole('heading', { level: 1, name: /attention site/i })).toBeVisible();
