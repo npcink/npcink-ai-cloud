@@ -127,6 +127,9 @@
 3. **先修残留**（空栏、套娃描边、危险操作暴露、换行撑高等），再向用户报告「完成」。
 4. **仅 contracts / type-check 绿 ≠ 交付**；无预览目视不得宣称 UI 已交付。
 
+过程教训（题分支、e2e 选择器、同因不重复等）见历史复盘
+[Portal 安静状态 UX 交付复盘 — 2026-10-20](history/portal/2026/portal-status-ux-quiet-delivery-retrospective-2026-10-20.md)。
+
 ---
 
 *确认本 Spec 后，再按页切片改 UI；未确认前不批量改版。*
