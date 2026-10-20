@@ -9,8 +9,10 @@ import {
 } from '@/components/portal/PortalScaffold';
 import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
-import { PortalUsagePanel } from '@/components/portal/PortalUsagePanel';
+import { PortalBillingSiteUsageList } from '@/components/portal/PortalBillingSiteUsageList';
+import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog';
 import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
+import type { Site } from '@/lib/portal-client';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import {
   PortalErrorState,
@@ -127,40 +129,43 @@ function PortalBillingContent() {
     t,
   });
 
-  const [usageDrawerOpen, setUsageDrawerOpen] = useState(false);
   const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
+  const [siteUsageSite, setSiteUsageSite] = useState<Site | null>(null);
 
-  const openUsageDrawer = useCallback(() => {
-    setUsageDrawerOpen(true);
+  const focusSiteUsageList = useCallback(() => {
     if (typeof window === 'undefined') return;
     const nextParams = new URLSearchParams(window.location.search);
     nextParams.delete('view');
+    nextParams.delete('site');
     const qs = nextParams.toString();
     window.history.replaceState(
       window.history.state,
       '',
-      `/portal/billing${qs ? `?${qs}` : ''}#usage`,
+      `/portal/billing${qs ? `?${qs}` : ''}#site-usage`,
     );
-  }, []);
-
-  const closeUsageDrawer = useCallback(() => {
-    setUsageDrawerOpen(false);
-    if (typeof window === 'undefined') return;
-    if (window.location.hash !== '#usage') return;
-    const nextParams = new URLSearchParams(window.location.search);
-    nextParams.delete('view');
-    const qs = nextParams.toString();
-    window.history.replaceState(window.history.state, '', `/portal/billing${qs ? `?${qs}` : ''}`);
+    requestAnimationFrame(() => {
+      document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }, []);
 
   const openCreditSources = useCallback(() => {
     setCreditSourcesOpen(true);
   }, []);
 
+  const openSiteUsage = useCallback((site: Site) => {
+    setSiteUsageSite(site);
+  }, []);
+
+  const closeSiteUsage = useCallback(() => {
+    setSiteUsageSite(null);
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (window.location.hash === '#usage') {
-      setUsageDrawerOpen(true);
+    if (window.location.hash === '#usage' || window.location.hash === '#site-usage') {
+      requestAnimationFrame(() => {
+        document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     }
   }, [entitlements, isLoading, searchParams]);
 
@@ -328,17 +333,27 @@ function PortalBillingContent() {
               t={t}
               locale={locale}
               attentionSurfaceActive={packageStatus === 'warning'}
-              onOpenUsage={openUsageDrawer}
+              onOpenUsage={focusSiteUsageList}
               onOpenCreditSources={openCreditSources}
             />
           </div>
         </PortalCard>
       ) : null}
 
-      <PortalUsagePanel
-        variant="drawer"
-        open={usageDrawerOpen}
-        onClose={closeUsageDrawer}
+      {!error ? (
+        <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950">
+          <PortalBillingSiteUsageList
+            sites={session.sites}
+            t={t}
+            onSelectSite={openSiteUsage}
+          />
+        </PortalCard>
+      ) : null}
+
+      <PortalSiteUsageDialog
+        isOpen={Boolean(siteUsageSite)}
+        onClose={closeSiteUsage}
+        site={siteUsageSite}
       />
 
       <PortalCreditSourcesDialog

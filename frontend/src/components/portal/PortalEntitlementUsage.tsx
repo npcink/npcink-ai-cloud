@@ -33,7 +33,7 @@ type PortalEntitlementUsageProps = {
   locale: Locale;
   /** When true, limited-row scream badges / red bars / overflow copy defer to the attention strip. */
   attentionSurfaceActive?: boolean;
-  /** Opens package usage drawer (period usage / trend / records). */
+  /** Focuses the billing-page site list (pick a site for trend / records). */
   onOpenUsage?: () => void;
   /** Opens the light credit-sources dialog (grants / top-ups). */
   onOpenCreditSources?: () => void;
@@ -410,10 +410,7 @@ export function PortalEntitlementUsage({
                           <button
                             type="button"
                             className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={() => {
-                              if (onOpenUsage) onOpenUsage();
-                              else void openSiteKnowledgeUsage();
-                            }}
+                            onClick={() => { void openSiteKnowledgeUsage(); }}
                             data-portal-billing="open-usage-from-knowledge"
                           >
                             {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}

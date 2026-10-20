@@ -161,18 +161,47 @@ const entitlement = readFileSync(entitlementPath, 'utf8');
 const sourcesDialog = readFileSync(sourcesDialogPath, 'utf8');
 assert.match(
   entitlement,
-  /onOpenCreditSources\?\.\(\)[\s\S]{0,120}data-portal-billing="open-credit-sources"/,
+  /onOpenCreditSources\?\.\(\)[\s\S]{0,400}open-credit-sources/,
   'AI credits primary ratio must open the credit-sources dialog'
 );
 assert.match(
   entitlement,
   /onClick=\{\(\) => onOpenUsage\?\.\(\)\}[\s\S]{0,80}data-portal-billing="open-usage"/,
-  'View period usage must keep opening the usage drawer'
+  'View period usage must focus the billing-page site list'
+);
+assert.match(
+  billingPage,
+  /focusSiteUsageList[\s\S]*PortalBillingSiteUsageList[\s\S]*PortalSiteUsageDialog/,
+  'billing page must default to a site list and open site usage in a dialog'
+);
+assert.doesNotMatch(
+  billingPage,
+  /PortalUsagePanel/,
+  'billing page must not use the full usage drawer as the primary path'
 );
 assert.match(
   billingPage,
   /<PortalCreditSourcesDialog[\s\S]*isOpen=\{creditSourcesOpen\}/,
   'billing page must mount the credit-sources dialog'
+);
+const siteUsageDialog = readFileSync(
+  resolve(process.cwd(), 'src/components/portal/PortalSiteUsageDialog.tsx'),
+  'utf8',
+);
+assert.match(
+  siteUsageDialog,
+  /view_tab_trend[\s\S]*view_tab_records/,
+  'site usage dialog must keep trend and AI credit record tabs'
+);
+assert.doesNotMatch(
+  siteUsageDialog,
+  /view_tab_sources|PortalCreditSourcesContent/,
+  'site usage dialog must not embed account-level sources'
+);
+assert.match(
+  siteUsageDialog,
+  /getAccountCreditTrend[\s\S]*getAccountCreditEvents[\s\S]*<Modal/,
+  'site usage dialog must load site-scoped trend and credit events in a Modal'
 );
 assert.match(
   sourcesDialog,
@@ -304,5 +333,15 @@ assert.doesNotMatch(
 );
 
 assert.doesNotMatch(source, /getUsageBundle|getAccountUsageSummary/);
+
+
+for (const key of [
+  'portal.billing.site_usage_list_title',
+  'portal.billing.site_usage_list_desc',
+  'portal.billing.site_usage_dialog_title',
+  'portal.billing.site_usage_pick_hint',
+]) {
+  assert.match(i18nSource, new RegExp(`'${key}'`), `${key} must be translated`);
+}
 
 console.log('portal_usage_simplification_contract: ok');
