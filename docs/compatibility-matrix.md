@@ -9,6 +9,9 @@ Status: active documentation sole source of truth for recommended Cloud ↔ Addo
 - **排障**：从 Cloud / 门户往下，优先 `run_id`；勿用 Toolbox / Addon 本地可读 trace 直接搜 Cloud。
 - **边界**：Toolbox = 能力库；ai-cloud = 编排 / 门户；Addon = 站内插件。
 - **契约变更默认**：旧契约保留约 **3 个 Cloud 小版本**（约 3–6 周）——期间提示升级但功能正常，到期硬切停旧；**不做长期双契约**。
+- **联调环境（Cloud）**：`m4:preview:sync` → M4 Docker；Air 隧道 `127.0.0.1:18010`。
+- **联调环境（Addon / Toolbox）**：不进 M4；本机 Local `magick-ai` 插件目录 symlink → gitee 仓。
+- **联调方式**：开隧道 + magick-ai Base URL 指本机隧道；纯 PHP 改动默认不同步 M4。
 - **完善时机**：有真实痛再补；避免提前设计。
 
 ## 规则（必读）
