@@ -1731,6 +1731,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await selectedSiteRow.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
   await expect(selectedSiteRow.getByRole('button', { name: /Deactivate|停用/i })).toBeVisible();
   await expect(selectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
+  await page.keyboard.press('Escape');
   const unselectedSiteRow = sitesWorkspace.getByRole('row', { name: /Clear Site/i });
   await unselectedSiteRow.getByRole('button', { name: /More actions|更多操作|Other actions|其他操作/i }).click();
   await expect(unselectedSiteRow.getByRole('button', { name: /Remove site|移除站点/i })).toBeVisible();
