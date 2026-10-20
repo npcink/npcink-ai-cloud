@@ -270,10 +270,10 @@ function PortalBillingContent() {
               className="mb-3 w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
               data-portal-billing="attention"
             >
-              <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <div className="flex flex-wrap items-start gap-2 px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
-                  <p className="mt-1 text-xs leading-5 text-amber-900/85 dark:text-amber-100/85">
+                  <p className="mt-1 max-w-xl text-xs leading-5 text-amber-900/85 dark:text-amber-100/85">
                     {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
                   </p>
                 </div>
