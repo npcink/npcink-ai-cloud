@@ -476,7 +476,7 @@ export default function PortalPage() {
     attentionFocusItems.length > 0 || shouldShowOnboardingChecklist;
 
   return (
-    <PortalPageStack className="mx-auto w-full max-w-[56rem] space-y-3" data-portal-home="page">
+    <PortalPageStack className="space-y-3" data-portal-home="page">
       <section className="space-y-3" data-portal-home="operation-overview">
         <PortalWorkspaceHeader
           title={t('portal.home.title', {}, 'My service')}

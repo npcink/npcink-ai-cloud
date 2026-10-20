@@ -455,7 +455,7 @@ function PortalSiteRecordContent() {
   const displayName = getPortalSiteDisplayName(site);
 
   return (
-    <PortalPageStack className="mx-auto w-full max-w-[56rem] space-y-3" data-portal-site-record="page">
+    <PortalPageStack className="space-y-3" data-portal-site-record="page">
       <PortalWorkspaceHeader
         title={displayName}
         currentPage="record"
