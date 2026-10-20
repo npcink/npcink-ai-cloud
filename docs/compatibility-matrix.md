@@ -2,6 +2,14 @@
 
 Status: active documentation sole source of truth for recommended Cloud ↔ Addon ↔ Toolbox floors during the closed beta. **Docs only** — no runtime hard reject and no dual-phase gate.
 
+## 决策摘要
+
+- **一人开发、用户少**：不做运行时硬拒 / 双阶段版本门禁。
+- **兼容**：以本表为单一真相源；发版手改一行；契约字符串精确匹配仍是唯一硬门。
+- **排障**：从 Cloud / 门户往下，优先 `run_id`；勿用 Toolbox / Addon 本地可读 trace 直接搜 Cloud。
+- **边界**：Toolbox = 能力库；ai-cloud = 编排 / 门户；Addon = 站内插件。
+- **完善时机**：有真实痛再补；避免提前设计。
+
 ## 规则（必读）
 
 1. **内测阶段仅文档。** 本表记录推荐最低配与发版顺序备注；不实现、也不授权实现运行时硬拒、双阶段门禁或 `minimum_supported_connector_version`。
