@@ -154,6 +154,11 @@ Useful local endpoints:
 - `http://127.0.0.1:8010/admin/login`
 - `http://127.0.0.1:8010/portal/login`
 
+`docker-compose.dev.yml` publishes Postgres/Redis/proxy on `127.0.0.1` only
+(localhost UX unchanged). Override `NPCINK_CLOUD_DEV_POSTGRES_PASSWORD` in
+`.env` if you want a non-default local DB password; do not run this stack
+bound to shared/public networks.
+
 For setup, service settings, PostgreSQL 18, and production-style configuration,
 follow the [first-install runbook](docs/cloud-first-install-rds-pg18-runbook.md)
 instead of copying values from a dated evidence record.

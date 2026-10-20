@@ -94,6 +94,45 @@ and [agents-session-protocol-detail.md](docs/engineering/agents-session-protocol
 - After changing release policy, run `pnpm run check:release-policy`.
 - Never Deploy Production unless a human explicitly authorizes that exact action.
 
+## Security review anti-false-positive checklist
+
+When reporting security / system findings, follow this to avoid overstating risk:
+
+1. **Label scope before severity** — each finding must say production / local-dev /
+   smoke-only / default-value-only. Call **严重** only when the public surface is
+   exploitable without misconfiguration theater.
+2. **Compare same-repo counterexamples** — if another compose/path already binds
+   loopback or uses strong secrets, treat the weak copy as debt, not “全线裸奔”.
+3. **Secrets need two-step evidence** — (a) tracked in the current tree, and
+   (b) present in full Git history (or `gitleaks --all`). Without (b), do not claim
+   “可能泄密”. Host/IP/`root` in a public repo is **target exposure**, not key leak.
+4. **Defaults ≠ live prod** — weak `config` defaults or empty `${VAR:-}` passthrough
+   are misconfig footguns unless prod `env_file` / ops is shown to use them.
+5. **Severity table** — **严重**: public exploit or confirmed real secret/private key
+   in history; **中等**: needs LAN / misconfig / rolling window; **改进**: defense-in-depth,
+   doc drift, missing non-secret keys.
+6. **Tone** — if tests/prod login were not run, write “未核实”. Do not say “沦陷” /
+   “裸奔” unless production entry is internet-facing and unauthenticated.
+
+## Local deploy target and loopback conventions
+
+Keep workstation UX easy without putting real SSH targets in Git:
+
+- Real `NPCINK_CLOUD_DEPLOY_SSH_*` / domain values live in
+  `.deploy-secrets/workspace-target.env.sh` (gitignored). One-time:
+  copy `deploy/workspace-target.env.example` there, then keep using
+  `source deploy/workspace-target.env.sh`.
+- Tracked `deploy/workspace-target.env.sh` is a loader + placeholders only.
+  Details: [deploy/WORKSPACE_TARGET.md](deploy/WORKSPACE_TARGET.md).
+- Local `docker-compose.dev.yml` publishes Postgres/Redis/proxy on `127.0.0.1`
+  only; URLs stay `http://127.0.0.1:8010`. Optional
+  `NPCINK_CLOUD_DEV_POSTGRES_PASSWORD` in `.env`.
+- Deploy-bundle smoke Postgres must bind loopback
+  (`NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_BIND`, default `127.0.0.1`).
+- Do not commit real host IPs into docs or tracked env files; public product
+  origin `https://cloud.npc.ink` in ops docs is fine. Dated `docs/history/**`
+  may mention retired hosts — do not copy them into `.deploy-secrets/`.
+
 ## Detailed procedures (do not duplicate here)
 
 Long session, M4, and gate procedures:
