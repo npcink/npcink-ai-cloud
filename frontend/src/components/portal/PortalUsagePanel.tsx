@@ -23,6 +23,8 @@ import {
   type PortalCreditEventFeature,
   type PortalCreditEventsPayload,
   type PortalCreditEventWindow,
+  type PortalCreditLedgerEntry,
+  type PortalCreditLedgerPayload,
   type PortalCreditTrendPayload,
   type PortalCreditTrendWindow,
 } from '@/lib/portal-client';
@@ -48,11 +50,30 @@ function quotaStatusTone(status: string | undefined): 'ok' | 'warning' | 'error'
   return 'ok';
 }
 
-type PortalUsageView = 'trend' | 'records';
-const PORTAL_USAGE_VIEWS: PortalUsageView[] = ['trend', 'records'];
+type PortalUsageView = 'trend' | 'records' | 'sources';
+const PORTAL_USAGE_VIEWS: PortalUsageView[] = ['trend', 'records', 'sources'];
+const PORTAL_ACQUISITION_EVENT_TYPES = new Set(['grant', 'adjustment', 'refund']);
+const PORTAL_PAID_OR_OPERATOR_SOURCE_TYPES = new Set([
+  'credit_pack_purchase',
+  'credit_pack_refund',
+  'operator_credit_adjustment',
+]);
 
 function resolvePortalUsageView(value: string | null): PortalUsageView {
-  return value === 'records' ? value : 'trend';
+  if (value === 'records' || value === 'sources') return value;
+  return 'trend';
+}
+
+function isPortalAcquisitionLedgerEntry(entry: PortalCreditLedgerEntry): boolean {
+  const eventType = String(entry.event_type || '').trim().toLowerCase();
+  if (PORTAL_ACQUISITION_EVENT_TYPES.has(eventType)) return true;
+  if (eventType === 'consume') return false;
+  const sourceType = String(entry.source_type || '').trim().toLowerCase();
+  if (PORTAL_PAID_OR_OPERATOR_SOURCE_TYPES.has(sourceType)) return true;
+  const category = String(entry.category || '').trim().toLowerCase();
+  if (category && category !== 'ai_usage') return true;
+  const delta = Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0);
+  return delta > 0;
 }
 
 function parseUsageDate(value: string): Date | null {
@@ -169,10 +190,15 @@ export function PortalUsagePanel({
   const [creditTrend, setCreditTrend] = useState<PortalCreditTrendPayload | null>(null);
   const [creditTrendLoading, setCreditTrendLoading] = useState(true);
   const [creditTrendError, setCreditTrendError] = useState('');
+  const [creditLedger, setCreditLedger] = useState<PortalCreditLedgerPayload | null>(null);
+  const [creditLedgerOffset, setCreditLedgerOffset] = useState(0);
+  const [creditLedgerLoading, setCreditLedgerLoading] = useState(false);
+  const [creditLedgerError, setCreditLedgerError] = useState('');
   const siteFilterIdRef = useRef(siteFilterId);
   const bundleRequestVersionRef = useRef(0);
   const creditEventRequestVersionRef = useRef(0);
   const creditTrendRequestVersionRef = useRef(0);
+  const creditLedgerRequestVersionRef = useRef(0);
   const [activeUsageView, setActiveUsageView] = useState<PortalUsageView>(
     () => resolvePortalUsageView(searchParams.get('view'))
   );
@@ -259,11 +285,46 @@ export function PortalUsagePanel({
     }
   }, [creditTrendWindow, isAuthenticated, siteContextReady, t]);
 
+  const creditLedgerPageSize = 50;
+
+  const loadCreditLedgerPage = useCallback(async (nextOffset: number) => {
+    const requestSiteFilterId = siteFilterIdRef.current;
+    if (!isAuthenticated || !siteContextReady) return;
+    const requestVersion = ++creditLedgerRequestVersionRef.current;
+    setCreditLedgerLoading(true);
+    setCreditLedgerError('');
+    try {
+      // Account-period ledger (no site filter): grants/packs/adjustments are account-scoped.
+      const response = await portalClient.getAccountCreditLedger({
+        limit: creditLedgerPageSize,
+        offset: nextOffset,
+      });
+      if (
+        requestVersion !== creditLedgerRequestVersionRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
+      ) return;
+      setCreditLedger(response.data);
+      setCreditLedgerOffset(nextOffset);
+    } catch (err) {
+      if (
+        requestVersion !== creditLedgerRequestVersionRef.current
+        || requestSiteFilterId !== siteFilterIdRef.current
+      ) return;
+      setCreditLedgerError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+    } finally {
+      if (
+        requestVersion === creditLedgerRequestVersionRef.current
+        && requestSiteFilterId === siteFilterIdRef.current
+      ) setCreditLedgerLoading(false);
+    }
+  }, [isAuthenticated, siteContextReady, t]);
+
   useLayoutEffect(() => {
     siteFilterIdRef.current = siteFilterId;
     bundleRequestVersionRef.current += 1;
     creditEventRequestVersionRef.current += 1;
     creditTrendRequestVersionRef.current += 1;
+    creditLedgerRequestVersionRef.current += 1;
     setEntitlements(null);
     setCreditEvents(null);
     setCreditEventOffset(0);
@@ -273,16 +334,23 @@ export function PortalUsagePanel({
     setCreditTrend(null);
     setCreditTrendLoading(false);
     setCreditTrendError('');
+    setCreditLedger(null);
+    setCreditLedgerOffset(0);
+    setCreditLedgerLoading(false);
+    setCreditLedgerError('');
     setBundleError('');
     setBundleLoading(Boolean(isAuthenticated));
   }, [siteFilterId, isAuthenticated]);
 
   useEffect(() => {
     const requestedView = searchParams.get('view');
-    setActiveUsageView(resolvePortalUsageView(requestedView));
-    if (requestedView && requestedView !== 'records') {
+    const resolvedView = resolvePortalUsageView(requestedView);
+    setActiveUsageView(resolvedView);
+    // Drop unknown view= values so the URL stays canonical.
+    if (requestedView && requestedView !== resolvedView) {
       const nextParams = new URLSearchParams(searchParams.toString());
-      if (requestedView !== 'records') nextParams.delete('view');
+      if (resolvedView === 'trend') nextParams.delete('view');
+      else nextParams.set('view', resolvedView);
       const query = nextParams.toString();
       window.history.replaceState(
         window.history.state,
@@ -321,6 +389,15 @@ export function PortalUsagePanel({
       creditTrendRequestVersionRef.current += 1;
     };
   }, [activeUsageView, isAuthenticated, loadCreditTrend, siteFilterId]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (activeUsageView !== 'sources') return;
+    void loadCreditLedgerPage(0);
+    return () => {
+      creditLedgerRequestVersionRef.current += 1;
+    };
+  }, [activeUsageView, isAuthenticated, loadCreditLedgerPage, siteFilterId]);
 
   const closeCreditEvent = useCallback(() => setSelectedCreditEvent(null), []);
   const creditEventDrawerRef = useDialogFocusManagement<HTMLElement>(
@@ -430,8 +507,93 @@ export function PortalUsagePanel({
   const creditRecordsUpdatedAt = creditEvents?.generated_at
     ? formatUsageUpdatedAt(creditEvents.generated_at, locale)
     : '';
+  const packageRemaining = Number(quotaSummary?.ai_credits?.package_remaining ?? 0);
+  const packageLimit = Number(quotaSummary?.ai_credits?.package_limit ?? quotaSummary?.ai_credits?.limit ?? 0);
+  const paidGrantCount = Number(quotaSummary?.ai_credits?.paid_grant_count ?? 0);
+  const ledgerSummary = creditLedger?.summary || quotaSummary?.ai_credit_ledger_summary || null;
+  const grantedCredits = Number(ledgerSummary?.granted_ai_credits ?? 0);
+  const adjustmentCredits = Number(ledgerSummary?.adjustment_ai_credits ?? 0);
+  const refundCredits = Number(ledgerSummary?.refund_ai_credits ?? 0);
+  const sourceLedgerItems = (creditLedger?.items || []).filter(isPortalAcquisitionLedgerEntry);
+  const sourceLedgerTotal = Number(creditLedger?.pagination?.total ?? sourceLedgerItems.length);
+  const sourceLedgerUpdatedAt = creditLedger?.generated_at
+    ? formatUsageUpdatedAt(creditLedger.generated_at, locale)
+    : '';
   const formatCreditPoints = (value: number) =>
     t('portal.usage.credit_points_value', { count: formatNumber(Math.abs(Math.round(value))) }, '{{count}} AI credits');
+  const formatSourceCreditAmount = (value: number) => {
+    const rounded = Math.round(Number(value || 0));
+    const points = formatCreditPoints(rounded);
+    if (rounded > 0) return `+${points}`;
+    if (rounded < 0) return `-${points}`;
+    return points;
+  };
+  const sourceEntryLabel = (entry: PortalCreditLedgerEntry) => {
+    const sourceType = String(entry.source_type || '').trim().toLowerCase();
+    const category = String(entry.category || '').trim().toLowerCase();
+    if (sourceType === 'credit_pack_purchase' || category === 'credit_pack_purchase') {
+      return t('portal.usage.source_label_credit_pack', {}, 'Credit pack');
+    }
+    if (sourceType === 'credit_pack_refund' || category === 'refund_adjustment') {
+      return t('portal.usage.source_label_credit_pack_refund', {}, 'Credit pack refund');
+    }
+    if (sourceType === 'operator_credit_adjustment' || category === 'operator_adjustment') {
+      return t('portal.usage.source_label_operator', {}, 'Manual adjustment');
+    }
+    if (category === 'monthly_plan_grant' || sourceType.includes('plan') || sourceType.includes('subscription')) {
+      return t('portal.usage.source_label_package', {}, 'Package');
+    }
+    if (category === 'refund' || String(entry.event_type || '').toLowerCase() === 'refund') {
+      return t('portal.usage.source_label_refund', {}, 'Refund');
+    }
+    const categoryLabel = String(entry.category_label || '').trim();
+    if (categoryLabel) return categoryLabel;
+    const explanation = String(entry.explanation || '').trim();
+    if (explanation) return explanation;
+    return sourceType || String(entry.event_type || '').trim() || t('common.not_available', {}, 'Not available');
+  };
+  const sourceSummaryMetrics = [
+    {
+      label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
+      value: formatQuotaValue(packageRemaining),
+      detail: packageLimit > 0
+        ? t(
+            'portal.usage.sources_package_detail',
+            { limit: formatQuotaValue(packageLimit) },
+            'Of {{limit}} package AI credits this period.'
+          )
+        : t('portal.usage.sources_package_detail_fallback', {}, 'Package AI credits still available this period.'),
+    },
+    {
+      label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
+      value: formatQuotaValue(paidCredits),
+      detail: paidGrantCount > 0
+        ? t(
+            'portal.usage.sources_paid_detail',
+            { count: formatQuotaValue(paidGrantCount) },
+            '{{count}} paid grant(s) still available.'
+          )
+        : t('portal.usage.sources_paid_detail_empty', {}, 'No paid credit balance right now.'),
+    },
+    ...(grantedCredits > 0 ? [{
+      label: t('portal.usage.sources_granted_label', {}, 'Granted this period'),
+      value: formatQuotaValue(grantedCredits),
+      detail: t('portal.usage.sources_granted_detail', {}, 'Credits added by package grants or purchases.'),
+      size: 'compact' as const,
+    }] : []),
+    ...(adjustmentCredits !== 0 ? [{
+      label: t('portal.usage.sources_adjustment_label', {}, 'Adjustments'),
+      value: formatSourceCreditAmount(adjustmentCredits),
+      detail: t('portal.usage.sources_adjustment_detail', {}, 'Manual credit adjustments this period.'),
+      size: 'compact' as const,
+    }] : []),
+    ...(refundCredits > 0 ? [{
+      label: t('portal.usage.sources_refund_label', {}, 'Refunds'),
+      value: formatQuotaValue(refundCredits),
+      detail: t('portal.usage.sources_refund_detail', {}, 'Credits returned by refunds this period.'),
+      size: 'compact' as const,
+    }] : []),
+  ];
   const eventFeatureText = (entry: PortalCreditEvent, field: 'title' | 'detail') =>
     t(
       `portal.usage.credit_ledger_feature_${entry.feature_key}_${field}`,
@@ -604,6 +766,7 @@ export function PortalUsagePanel({
           {([
             { value: 'trend', label: t('portal.usage.view_tab_trend', {}, 'Trend') },
             { value: 'records', label: t('portal.usage.view_tab_records', {}, 'AI credit records') },
+            { value: 'sources', label: t('portal.usage.view_tab_sources', {}, 'Sources') },
           ] as Array<{ value: PortalUsageView; label: string }>).map((view) => (
             <button
               key={view.value}
@@ -742,6 +905,149 @@ export function PortalUsagePanel({
           /> : null}
             </div>
           ) : null}
+      </PortalSection>
+
+      <PortalSection
+        id="portal-usage-panel-sources"
+        role="tabpanel"
+        aria-labelledby="portal-usage-tab-sources"
+        hidden={activeUsageView !== 'sources'}
+        className="space-y-5"
+        data-portal-usage="sources-detail"
+      >
+        {activeUsageView === 'sources' && siteContextReady && entitlements ? (
+          <div className="space-y-5" data-portal-usage="credit-sources">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
+                {t('portal.usage.sources_title', {}, 'Credit sources')}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+                {t(
+                  'portal.usage.sources_desc',
+                  {},
+                  'See how package and paid credits were added this period.'
+                )}
+                {sourceLedgerUpdatedAt
+                  ? ` · ${t('portal.usage.updated_at_inline', { time: sourceLedgerUpdatedAt }, 'Updated {{time}}')}`
+                  : ''}
+              </p>
+            </div>
+
+            <div data-portal-usage="sources-summary">
+              <PortalMetricStrip items={sourceSummaryMetrics} variant="header" />
+            </div>
+
+            {creditLedgerError ? (
+              <PortalErrorState
+                title={t('error.failed_load')}
+                description={creditLedgerError}
+                retryLabel={t('common.retry')}
+                onRetry={() => void loadCreditLedgerPage(creditLedgerOffset)}
+              />
+            ) : creditLedgerLoading && !creditLedger ? (
+              <div className="space-y-2" aria-label={t('common.loading')}>
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />
+                ))}
+              </div>
+            ) : sourceLedgerItems.length > 0 ? (
+              <>
+                <div className="hidden overflow-x-auto lg:block" data-portal-usage="sources-table">
+                  <table className="w-full min-w-[560px] text-left text-sm">
+                    <caption className="sr-only">{t('portal.usage.sources_title', {}, 'Credit sources')}</caption>
+                    <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800">
+                      <tr>
+                        <th scope="col" className="px-3 py-3 font-medium">
+                          {t('portal.usage.sources_column_source', {}, 'Source')}
+                        </th>
+                        <th scope="col" className="px-3 py-3 text-right font-medium">
+                          {t('portal.usage.sources_column_credits', {}, 'AI credits')}
+                        </th>
+                        <th scope="col" className="px-3 py-3 text-right font-medium">
+                          {t('portal.usage.credit_ledger_time', {}, 'Time')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {sourceLedgerItems.map((entry) => {
+                        const delta = Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0);
+                        return (
+                          <tr key={entry.ledger_entry_id || `${entry.source_type}-${entry.created_at}`}>
+                            <th scope="row" className="px-3 py-4 font-medium text-slate-950 dark:text-white">
+                              {sourceEntryLabel(entry)}
+                            </th>
+                            <td className={`px-3 py-4 text-right font-semibold ${
+                              delta > 0
+                                ? 'text-emerald-700 dark:text-emerald-300'
+                                : delta < 0
+                                  ? 'text-rose-700 dark:text-rose-300'
+                                  : 'text-slate-950 dark:text-white'
+                            }`}>
+                              {formatSourceCreditAmount(delta)}
+                            </td>
+                            <td className="px-3 py-4 text-right text-slate-500 dark:text-slate-400">
+                              {entry.created_at ? formatCreditEventTime(entry.created_at, locale) : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="divide-y divide-slate-200 dark:divide-slate-800 lg:hidden">
+                  {sourceLedgerItems.map((entry) => {
+                    const delta = Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0);
+                    return (
+                      <div
+                        key={entry.ledger_entry_id || `${entry.source_type}-${entry.created_at}`}
+                        className="flex items-start justify-between gap-4 py-4"
+                      >
+                        <span>
+                          <strong className="text-slate-950 dark:text-white">{sourceEntryLabel(entry)}</strong>
+                          <span className="mt-1 block text-xs text-slate-500">
+                            {entry.created_at ? formatCreditEventTime(entry.created_at, locale) : '-'}
+                          </span>
+                        </span>
+                        <strong className={
+                          delta > 0
+                            ? 'text-emerald-700 dark:text-emerald-300'
+                            : delta < 0
+                              ? 'text-rose-700 dark:text-rose-300'
+                              : ''
+                        }>
+                          {formatSourceCreditAmount(delta)}
+                        </strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="py-6 text-sm text-slate-500">
+                {t('portal.usage.sources_empty', {}, 'No credit grants recorded this period.')}
+              </p>
+            )}
+
+            {!creditLedgerError && creditLedger ? (
+              <ListPagination
+                offset={creditLedgerOffset}
+                limit={creditLedgerPageSize}
+                total={sourceLedgerTotal}
+                isLoading={creditLedgerLoading}
+                onOffsetChange={(nextOffset) => void loadCreditLedgerPage(nextOffset)}
+                className="px-0 pb-0"
+              />
+            ) : null}
+
+            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {t(
+                'portal.usage.sources_package_grant_note',
+                {},
+                'Package allowance may appear as remaining balance above when no separate grant row is recorded for the period start.'
+              )}
+            </p>
+          </div>
+        ) : null}
       </PortalSection>
 
       {selectedCreditEvent ? (

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
-const usagePagePath = resolve(process.cwd(), 'src/app/portal/usage/page.tsx');
+const usagePagePath = resolve(process.cwd(), 'src/components/portal/PortalUsagePanel.tsx');
 const creditTrendPath = resolve(process.cwd(), 'src/components/portal/PortalCreditTrendPanel.tsx');
 const i18nPath = resolve(process.cwd(), 'src/lib/i18n.ts');
 const source = readFileSync(usagePagePath, 'utf8');
@@ -12,8 +12,10 @@ const headerBeforeSummary = source.slice(
   source.indexOf('<PortalWorkspaceHeader'),
   source.indexOf('data-portal-usage="usage-records"')
 );
-const headerStart = source.lastIndexOf('<PortalWorkspaceHeader');
-const headerDefinition = source.slice(headerStart, source.indexOf('\n      />', headerStart));
+const headerStart = source.indexOf("title={t('portal.nav_usage'");
+const headerDefinitionStart = source.lastIndexOf('<PortalWorkspaceHeader', headerStart);
+const headerDefinitionEnd = source.indexOf('/>', source.indexOf('contextPanel=', headerDefinitionStart));
+const headerDefinition = source.slice(headerDefinitionStart, headerDefinitionEnd + 2);
 
 assert.match(
   source,
@@ -49,7 +51,7 @@ assert.doesNotMatch(
 assert.match(source, /updated_at_inline/, 'latest update time must remain as subtle inline context');
 assert.match(
   headerDefinition,
-  /titleAccessory=\{!bundleLoading[\s\S]*!usageNeedsAttention[\s\S]*metadata=[\s\S]*contextPanel=\{!bundleError[\s\S]*usageNeedsAttention/,
+  /titleAccessory=\{\s*!bundleLoading[\s\S]*!usageNeedsAttention[\s\S]*metadata=[\s\S]*contextPanel=\{\s*!bundleError[\s\S]*usageNeedsAttention/,
   'portal usage header must keep normal status and period compact while reserving the right panel for attention states'
 );
 assert.doesNotMatch(
@@ -60,14 +62,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /view_tab_trend[\s\S]*view_tab_records/,
-  'trend and point records must be available as task tabs'
+  /view_tab_trend[\s\S]*view_tab_records[\s\S]*view_tab_sources/,
+  'trend, point records, and credit sources must be available as task tabs'
 );
 assert.doesNotMatch(source, /view_tab_details|PortalUsageAdvancedDetails|usage-detail/);
 assert.doesNotMatch(source, /<details[\s\S]*data-portal-usage="ledger-detail"/);
 assert.match(
   source,
-  /searchParams\.get\('view'\)[\s\S]*window\.history\.replaceState[\s\S]*`\/portal\/usage/,
+  /searchParams\.get\('view'\)[\s\S]*window\.history\.replaceState[\s\S]*usageBasePath/,
   'usage tabs and retired view links must keep the URL canonical'
 );
 
@@ -114,11 +116,26 @@ assert.doesNotMatch(
 );
 assert.match(source, /formatUsagePeriodRange[\s\S]*month:[\s\S]*day:/);
 assert.match(source, /formatUsagePeriodEnd[\s\S]*year:[\s\S]*hour:/);
-assert.match(source, /PORTAL_USAGE_VIEWS[^=]*= \['trend', 'records'\]/);
+assert.match(source, /PORTAL_USAGE_VIEWS[^=]*= \['trend', 'records', 'sources'\]/);
 assert.doesNotMatch(
   source,
-  /entry\.explanation|entry\.unit|formatSignedCreditDelta/,
-  'customer point ledger must not render raw backend explanations, units, or signed technical deltas'
+  /formatSignedCreditDelta|formatLedgerQuantity/,
+  'customer surfaces must not reuse admin signed-delta or quantity helpers'
+);
+assert.doesNotMatch(
+  source,
+  /data-portal-usage="usage-records"[\s\S]*entry\.explanation|data-portal-usage="usage-records"[\s\S]*entry\.unit/,
+  'AI credit records must not render raw backend explanations or units'
+);
+assert.match(
+  source,
+  /data-portal-usage="credit-sources"[\s\S]*getAccountCreditLedger|getAccountCreditLedger[\s\S]*data-portal-usage="credit-sources"/,
+  'sources tab must load the account credit ledger'
+);
+assert.match(
+  source,
+  /view_tab_sources[\s\S]*sources_empty|sources_empty[\s\S]*view_tab_sources/,
+  'sources tab must keep a friendly empty state'
 );
 assert.match(source, /eventFeatureText\(entry, 'title'\)[\s\S]*formatCreditPoints\(entry.consumed_ai_credits\)/);
 assert.match(
@@ -175,6 +192,12 @@ for (const key of [
   'portal.usage.view_tabs_label',
   'portal.usage.view_tab_trend',
   'portal.usage.view_tab_records',
+  'portal.usage.view_tab_sources',
+  'portal.usage.sources_title',
+  'portal.usage.sources_empty',
+  'portal.usage.source_label_package',
+  'portal.usage.source_label_credit_pack',
+  'portal.usage.source_label_operator',
   'portal.usage.trend_window_label',
   'portal.usage.trend_window_1h',
   'portal.usage.trend_window_24h',
