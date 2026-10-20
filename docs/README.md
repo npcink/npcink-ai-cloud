@@ -1,6 +1,6 @@
 # Npcink AI Cloud Documentation Index
 
-- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — temporary runtime availability and v3 inspection scores; history retained.
+- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — temporary runtime availability and v3 inspection scores; history retained. Cross-repo对照: [Reversible Feature Pauses](reversible-feature-pauses-v1.md#cross-repo对照-parallel-lists).
 
 Status: active repository index.
 
@@ -18,6 +18,7 @@ as current truth.
 | 查 AI 会话流程经验（docs 任务、子代理、门禁坑） | [开发会话操作经验记录](development-session-notes-2026-09-22.md) |
 | 查测试与 CI 治理诊断经验（flaky 判定、选择盲点、空洞绿） | [开发会话操作经验记录](development-session-notes-2026-09-23.md) |
 | 收口可恢复暂停、音频播放与 M4 状态 | [可恢复暂停最终收口与清理 — 2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md) — 合并链、M4 accepted、历史音频播放、分支/worktree 清理与下一阶段建议 |
+| 查三仓 pause 对照（任务 id / runtime 键 / 错误码 / 冒烟行归属） | [可恢复功能暂停 v1 — Cross-repo对照](reversible-feature-pauses-v1.md#cross-repo对照-parallel-lists) — Cloud `PAUSED_*`；互链 Addon [PR #309](https://github.com/npcink/npcink-cloud-addon/pull/309) / `docs/reversible-feature-pauses-v1.md` 与 Toolbox 同名文档；**不解冻** |
 | 查预算收口会话经验（squash 丢提交回收、门禁死锁、Row 变参、共享 M4 让位判定） | [开发会话操作经验记录](development-session-notes-2026-09-26.md) |
 | 接续普通站长 Portal 整改、验收和上线后待办 | [Portal 收尾与开发复盘](history/portal/2026/portal-stationmaster-closeout-2026-10-08.md) — 三项已合并 PR、验证边界、原生反馈缺口及保留工作区；不是生产验收证明 |
 | 回顾用户中心相关三个会话、确认当前进度和下一步 | [三会话综合纪要 — 2026-10-17](history/portal/2026/portal-three-session-synthesis-and-next-stage-2026-10-17.md) — UX、积分/预算、发布、异步状态与验证前移；补正旧摘要并区分方案与交付 |
@@ -90,7 +91,7 @@ New or materially revised documents should place a clear `Status:` line near
 the top. When replacing a normative document, name its successor instead of
 deleting the old decision history.
 
-- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — reversible task availability and new inspection score semantics; no data migration.
+- [SEO Specialist Runtime Pause](seo-specialist-pause-v1.md) — reversible task availability and new inspection score semantics; no data migration; points to cross-repo对照 in reversible-feature-pauses-v1.md.
 
 ## Product Boundaries
 
@@ -101,7 +102,7 @@ deleting the old decision history.
 - [engineering/pr-contract.md](engineering/pr-contract.md) — PR Scope/Boundary/Verification/Risk pointer.
 - [engineering/agents-session-protocol-detail.md](engineering/agents-session-protocol-detail.md) — long session/M4/lane procedures.
 
-- [Reversible Feature Pauses](reversible-feature-pauses-v1.md) — paused entrypoints, retained data and implementation, restoration and verification receipts.
+- [Reversible Feature Pauses](reversible-feature-pauses-v1.md) — paused entrypoints, retained data and implementation, restoration and verification receipts; **cross-repo对照** (Cloud `PAUSED_*` / Addon `is_task_paused` + `$paused_runtime_features` / Toolbox faces), error codes, publish order Cloud→Addon→Toolbox, smoke matrix rows D7–D8 / C6 / A5 / M5.
 - [Generation Context Evidence](generation-context-evidence-v1.md) — validated Cloud-owned snapshot, storage and compatibility semantics.
 - [Background Evidence and Cron Handoff](background-evidence-and-cron-handoff-2026-09-09.md) — reused acceptance, candidate identity and pending natural upload observation.
 

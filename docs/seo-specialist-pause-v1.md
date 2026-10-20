@@ -33,6 +33,17 @@ this record does not claim a platform-wide SEO write prohibition. See the
 [three-repository implementation record](../../npcink-workflow-toolbox/docs/seo-specialist-pause-implementation-2026-10-18.md)
 for the exact evidence state and remaining runtime limitations.
 
+Cross-repo task-id / runtime-key对照, error-code differences, publish order
+(Cloud → Addon → Toolbox), and smoke matrix row map (Cloud owns **D7–D8, C6,
+A5, M5**) live in the
+[Cross-repo对照 section of reversible-feature-pauses-v1.md](reversible-feature-pauses-v1.md#cross-repo对照-parallel-lists).
+Addon inventory (Tables A–C):
+[npcink-cloud-addon `docs/reversible-feature-pauses-v1.md`](https://github.com/npcink/npcink-cloud-addon/blob/master/docs/reversible-feature-pauses-v1.md)
+via [Addon PR #309](https://github.com/npcink/npcink-cloud-addon/pull/309) until
+merge. Addon has no `$paused_specialist_tasks` property — the ten ids are
+inline in `Npcink_Cloud_Discoverability_Pause::is_task_paused()`. This
+document does not authorize unfreeze.
+
 已注册任务投影中的 `seo_headline` 同样属于暂停任务；通用自定义任务投影仍可传输。回归使用通用 article_headline 正向样例和 SEO 别名零调用负向样例，避免依靠旧的 SEO 成功样例证明暂停完整。
 
 ## Merge and Deferred Deployment Record

@@ -1,6 +1,6 @@
 # Reversible Feature Pauses v1
 
-Status: merged to `master`; M4 development preview accepted, 2026-10-19. Does not claim the production server has loaded these pauses, and does not authorize plugin distribution. Authoritative closeout: [reversible-pauses-final-closeout-and-cleanup-2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md).
+Status: merged to `master`; M4 development preview accepted, 2026-10-19; cross-repo对照 added 2026-10-20. Does not claim the production server has loaded these pauses, and does not authorize plugin distribution or any pause unfreeze. Authoritative closeout: [reversible-pauses-final-closeout-and-cleanup-2026-10-19](history/engineering/2026/reversible-pauses-final-closeout-and-cleanup-2026-10-19.md). SEO specialist detail: [seo-specialist-pause-v1.md](seo-specialist-pause-v1.md).
 
 ## Policy
 
@@ -32,6 +32,93 @@ restore availability. Retention and artifact cleanup continue normally.
 Each batch has a focused local commit and regression evidence. A candidate M4
 sync does not establish merge, accepted-master or production state. This task
 uses the development lane; publication and production are separate decisions.
+
+## Cross-repo对照 (parallel lists)
+
+Three repositories enforce availability **independently**. There is no shared
+cross-repo constant package. Publish and unpause in order
+**Cloud → Addon → Toolbox** so UI never advertises a path that Cloud still
+rejects. Do not restore SEO/AEO/GEO or the three runtime keys from
+documentation alone.
+
+Sibling inventories (same faces, parallel enforcement):
+
+| Repo | Inventory |
+| --- | --- |
+| **Cloud (this file)** | `PAUSED_DISCOVERABILITY_TASKS` (10 ids) in `app/domain/wordpress_ai_connector/contracts.py`; `PAUSED_RUNTIME_FEATURES` (`cloud_inspection`, `audio_generation`, `advanced_media`) in `app/domain/runtime/availability.py`; Cloud-only `OPERATIONS_ADVISOR_PAUSED`. |
+| **Addon** | [`docs/reversible-feature-pauses-v1.md`](https://github.com/npcink/npcink-cloud-addon/blob/master/docs/reversible-feature-pauses-v1.md) — Tables A–C, error codes, release order, smoke matrix row map. Cross-repo对照 expanded in [Addon PR #309](https://github.com/npcink/npcink-cloud-addon/pull/309) (still the landing PR until merge; post-merge path is the same blob URL on `master`). **Naming:** Addon has no `$paused_specialist_tasks`; the ten SEO/AEO/GEO ids live inside `Npcink_Cloud_Discoverability_Pause::is_task_paused()`. Runtime map: `$paused_runtime_features`. |
+| **Toolbox** | [`docs/reversible-feature-pauses-v1.md`](https://github.com/npcink/npcink-workflow-toolbox/blob/master/docs/reversible-feature-pauses-v1.md) — mirrors the same faces (`DISCOVERABILITY_PAUSED` whole-surface boolean; `$paused_cloud_features` for the three runtime keys). |
+
+Verified smoke baselines (Asia/Shanghai 2026-10-20, read-only, **no unpause**):
+
+| Repo | HEAD used for matrix v1 |
+| --- | --- |
+| Cloud (`npcink-ai-cloud`) | `fe12ce2c` |
+| Addon (`npcink-cloud-addon`) | `ae15b90` (matrix run); package/docs baseline later `6100e23` / **0.4.4** (pause policy unchanged) |
+| Toolbox (`npcink-workflow-toolbox`) | `2dfc3fe` |
+
+### Table A — SEO/AEO/GEO specialist
+
+| Capability | Cloud | Addon | Toolbox | State |
+| --- | --- | --- | --- | --- |
+| Specialist task set | `PAUSED_DISCOVERABILITY_TASKS`: **10** ids (`meta_description`, `seo_title`, `seo_headline`, `seo_description`, `seo_metadata`, `aeo_summary`, `answer_summary`, `geo_summary`, `structured_data_hints`, `content_discoverability`). Reject: `wordpress_operation.feature_paused` **400** | `is_task_paused()` same 10 ids; filter `editorial_notes` seo/aeo/geo; hide Meta Description host feature; reject `cloud_feature_paused` **409** | **No per-task array.** `Settings::DISCOVERABILITY_PAUSED = true`; hide Site Profile SEO/AEO/GEO tabs; do not register `build-content-discoverability-brief`; specialist plan/brief → `npcink_toolbox_feature_paused` **409** | All three paused; Cloud↔Addon task ids match; Toolbox is a whole-surface boolean |
+| `editorial_notes` specialist | Pure specialist → pause; mixed → filter then continue | Legacy runtime may reject whole payload; connector path filters specialist types | No specialist brief exposed; generic writing still available | Specialist side paused |
+
+### Table B — runtime feature keys (same names)
+
+| Key | Cloud `PAUSED_RUNTIME_FEATURES` | Addon `$paused_runtime_features` | Toolbox `$paused_cloud_features` | State |
+| --- | --- | --- | --- | --- |
+| `cloud_inspection` | Nightly / site-ops markers; `runtime.feature_paused` **409** | Same key + markers; Hosted Runtime entitlement forced paused/hidden | `true`; hide Cloud analysis entry; Provider **409**; local Site Check kept | All three paused |
+| `audio_generation` | `generate-audio`; intents `article_narration` / `article_audio_summary` | Same key; pre-sign reject | `true`; both intents paused; editor entries removed; existing players kept | All three paused |
+| `advanced_media` | `plan-media-derivative-batch` / `audit-media-governance` etc. | Same key; transport / plan reject | `true`; withdraw batch optimize; omit `build-media-derivative-handoff`; backup restore kept | All three paused |
+
+### Table C — asymmetric / Cloud-only notes
+
+| Item | Notes |
+| --- | --- |
+| Operations Advisor | Cloud-only (`OPERATIONS_ADVISOR_PAUSED`); Addon/Toolbox have no matching key |
+| `wordpress_ai_generation_tests` | Addon `$paused_admin_surfaces` cleared (P0 restored 2026-10-20); unrelated to SEO pause |
+| Toolbox specialist granularity | Whole-surface `DISCOVERABILITY_PAUSED` closes the gap vs Cloud’s 10 task ids |
+| Error codes (do not cross-search) | Cloud task: `wordpress_operation.feature_paused` **400**; Cloud runtime: `runtime.feature_paused` **409**; Addon: `cloud_feature_paused` **409**; Toolbox: `npcink_toolbox_feature_paused` **409** |
+
+### Risks when aligning
+
+1. Do not invent `$paused_specialist_tasks` for Addon.
+2. Do not force Toolbox to grow a 10-id task array — map to “entry hidden + whole-surface reject.”
+3. Keep the three error-code families distinct in logs and tests.
+4. Addon `ACTIVE=false` unpauses SEO **and** all three runtime keys at once; restore one face by editing the list/map only.
+5. Tables above are source-policy truth; live sites must match the deployed SHA. This document does **not** authorize unfreeze.
+
+### Pause smoke matrix v1 (row map)
+
+Convention: every row must satisfy **entry not visible / not registered** and
+**execute path returns the expected code**, with **zero outbound Cloud HTTP**
+on Addon/Toolbox reject paths. “Visible but rejected” = fail.
+
+| Rows | Owner | Cloud / sibling coverage |
+| --- | --- | --- |
+| D1–D4 | Toolbox | SEO UI/projection/register/API |
+| D5–D6 | Addon | Meta Description + copy; 10 tasks / editorial → `cloud_feature_paused` 409 |
+| **D7–D8** | **Cloud** | Same 10 tasks + editorial → **400** `wordpress_operation.feature_paused` |
+| C1–C3 | Toolbox | `cloud_inspection` UI/projection/API |
+| C4–C5 | Addon | Overview Hosted Runtime paused/hidden; nightly/site-ops markers 409 |
+| **C6** | **Cloud** | analyze-nightly → **409** `runtime.feature_paused` |
+| A1–A3 | Toolbox | audio UI/API |
+| A4 | Addon | `execute_toolbox_audio_generation_runtime` → 409 `audio_generation` |
+| **A5** | **Cloud** | generate-audio → **409** `runtime.feature_paused` |
+| M1–M3 | Toolbox | advanced_media UI/register/API |
+| M4 | Addon | Transport / Plan_Projection / markers → 409 `advanced_media` |
+| **M5** | **Cloud** | plan-media-derivative-batch etc. → **409** `runtime.feature_paused` |
+
+Cloud matrix v1 result on `fe12ce2c`: **D7 D8 C6 A5 M5 all PASS** (read-only,
+no unfreeze). Addon and Toolbox reported matching PASS for their rows the same
+day.
+
+Still available while paused: generic title/excerpt/translate/classify/slug
+(non-SEO specialist), ALT, ordinary images, Site Knowledge, search, verified
+connection, historical run/result reads, existing artifact download/ACK,
+optional monitoring; Toolbox local Site Check; existing audio playback;
+media backup restore; Cloud Advisor history read-only.
 
 ## First-batch evidence
 
