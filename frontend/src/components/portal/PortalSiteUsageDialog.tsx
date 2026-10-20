@@ -9,7 +9,6 @@ import {
   PortalErrorState,
 } from '@/components/portal/PortalPageState';
 import { useLocale } from '@/contexts/LocaleContext';
-import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 import {
   portalClient,
   type PortalCreditEvent,
@@ -120,10 +119,13 @@ export function PortalSiteUsageDialog({
   const eventRequestVersionRef = useRef(0);
 
   const closeCreditEvent = useCallback(() => setSelectedCreditEvent(null), []);
-  const creditEventDrawerRef = useDialogFocusManagement<HTMLElement>(
-    Boolean(selectedCreditEvent),
-    closeCreditEvent,
-  );
+  const handleModalClose = useCallback(() => {
+    if (selectedCreditEvent) {
+      setSelectedCreditEvent(null);
+      return;
+    }
+    onClose();
+  }, [onClose, selectedCreditEvent]);
 
   const loadCreditTrend = useCallback(async () => {
     const requestSiteId = siteIdRef.current;
@@ -228,24 +230,76 @@ export function PortalSiteUsageDialog({
   const siteTitle = site ? getPortalSiteDisplayName(site) : t('common.site', {}, 'Site');
   const siteUrl = site ? getPortalSiteUrlDisplay(site) : '';
 
+  const dialogTitle = selectedCreditEvent
+    ? eventFeatureText(selectedCreditEvent, 'title')
+    : t('portal.billing.site_usage_dialog_title', {}, 'Site usage');
+  const dialogDescription = siteUrl ? `${siteTitle} · ${siteUrl}` : siteTitle;
+
   return (
-    <>
-      <Modal
-        isOpen={isOpen && Boolean(site)}
-        onClose={onClose}
-        closeLabel={t('common.close', {}, 'Close')}
-        title={t('portal.billing.site_usage_dialog_title', {}, 'Site usage')}
-        description={siteUrl ? `${siteTitle} · ${siteUrl}` : siteTitle}
-        size="xl"
-        className="max-w-4xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
-      >
-        <div className="max-h-[min(75vh,40rem)] space-y-4 overflow-y-auto pr-1" data-portal-billing="site-usage-dialog">
-          {!siteId ? (
-            <PortalEmptyState
-              title={t('portal.usage.choose_site_title', {}, 'Choose a site to view its usage')}
-              description={t('portal.billing.site_usage_pick_hint', {}, 'Pick a connected site to review its trend and AI credit records.')}
-            />
-          ) : (
+    <Modal
+      isOpen={isOpen && Boolean(site)}
+      onClose={handleModalClose}
+      closeLabel={t('common.close', {}, 'Close')}
+      title={dialogTitle}
+      description={dialogDescription}
+      size="xl"
+      className="max-h-[min(90vh,48rem)] max-w-4xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+    >
+      <div className="space-y-4 pb-2" data-portal-billing="site-usage-dialog">
+        {!siteId ? (
+          <PortalEmptyState
+            title={t('portal.usage.choose_site_title', {}, 'Choose a site to view its usage')}
+            description={t('portal.billing.site_usage_pick_hint', {}, 'Pick a connected site to review its trend and AI credit records.')}
+          />
+        ) : selectedCreditEvent ? (
+          <div className="space-y-6" data-portal-usage="site-dialog-event-detail">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={closeCreditEvent}
+            >
+              {t('common.back', {}, 'Back')}
+            </button>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-slate-500">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</dt>
+                <dd className="mt-1 text-lg font-semibold">
+                  {formatCreditPoints(selectedCreditEvent.consumed_ai_credits || selectedCreditEvent.net_ai_credit_delta)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">{t('portal.usage.credit_ledger_time', {}, 'Time')}</dt>
+                <dd className="mt-1 font-medium">{formatUsagePeriodEnd(selectedCreditEvent.created_at, locale)}</dd>
+              </div>
+            </dl>
+            <section>
+              <h3 className="font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3>
+              <div className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                {selectedCreditEvent.components.map((component) => (
+                  <div key={component.key} className="flex justify-between gap-4 px-4 py-3 text-sm">
+                    <span>{t(`portal.usage.credit_events_component_${component.key}`)}</span>
+                    <strong>{formatCreditPoints(component.ai_credits)}</strong>
+                  </div>
+                ))}
+              </div>
+              {selectedCreditEvent.component_count > 1 ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  {t(
+                    'portal.usage.credit_events_grouped_hint',
+                    { count: String(selectedCreditEvent.component_count) },
+                    '{{count}} billing entries were combined into this service event.',
+                  )}
+                </p>
+              ) : null}
+            </section>
+            <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+              <summary className="cursor-pointer font-medium">{t('portal.support_information', {}, 'Support information')}</summary>
+              <p className="mt-3 break-all text-sm text-slate-500">
+                {t('portal.usage.credit_events_support_reference', {}, 'Reference')}: {selectedCreditEvent.support_reference}
+              </p>
+            </details>
+          </div>
+        ) : (
             <>
               <div className="border-b border-slate-200 dark:border-slate-800" data-portal-usage="site-dialog-tabs">
                 <div
@@ -305,6 +359,7 @@ export function PortalSiteUsageDialog({
                     error={creditTrendError}
                     onWindowChange={setCreditTrendWindow}
                     onRetry={() => void loadCreditTrend()}
+                    embedded
                   />
                 ) : null}
               </div>
@@ -319,26 +374,21 @@ export function PortalSiteUsageDialog({
               >
                 {activeView === 'records' ? (
                   <div className="space-y-5">
-                    <div>
-                      <h2 className="text-lg font-semibold text-gray-950 dark:text-white">
-                        {t('portal.usage.credit_events_title', {}, 'AI credit records')}
-                      </h2>
-                      <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
-                        {!creditEventLoading && !creditEventError && creditEvents
-                          ? t(
-                              'portal.usage.credit_events_summary',
-                              {
-                                credits: formatQuotaValue(filteredConsumedCredits),
-                                count: formatQuotaValue(creditEventCount),
-                              },
-                              '{{credits}} AI credits used across {{count}} services.',
-                            )
-                          : t('portal.usage.credit_events_desc', {}, 'Service events that consumed AI credits.')}
-                        {creditRecordsUpdatedAt
-                          ? ` · ${t('portal.usage.updated_at_inline', { time: creditRecordsUpdatedAt }, 'Updated {{time}}')}`
-                          : ''}
-                      </p>
-                    </div>
+                    <p className="text-sm leading-6 text-gray-600 dark:text-gray-400">
+                      {!creditEventLoading && !creditEventError && creditEvents
+                        ? t(
+                            'portal.usage.credit_events_summary',
+                            {
+                              credits: formatQuotaValue(filteredConsumedCredits),
+                              count: formatQuotaValue(creditEventCount),
+                            },
+                            '{{credits}} AI credits used across {{count}} services.',
+                          )
+                        : t('portal.usage.credit_events_desc', {}, 'Service events that consumed AI credits.')}
+                      {creditRecordsUpdatedAt
+                        ? ` · ${t('portal.usage.updated_at_inline', { time: creditRecordsUpdatedAt }, 'Updated {{time}}')}`
+                        : ''}
+                    </p>
                     <div className="grid gap-3 sm:grid-cols-2" aria-label={t('portal.usage.credit_events_filters', {}, 'AI credit record filters')}>
                       <label className="space-y-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                         <span>{t('portal.usage.credit_events_window_label', {}, 'Time range')}</span>
@@ -464,80 +514,8 @@ export function PortalSiteUsageDialog({
                 ) : null}
               </div>
             </>
-          )}
-        </div>
-      </Modal>
-
-      {selectedCreditEvent ? (
-        <div className="fixed inset-0 z-[60]">
-          <button
-            type="button"
-            className="absolute inset-0 bg-slate-950/45"
-            aria-label={t('common.close')}
-            onClick={() => setSelectedCreditEvent(null)}
-          />
-          <aside
-            ref={creditEventDrawerRef}
-            tabIndex={-1}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="site-credit-event-detail-title"
-            className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-              <div>
-                <h2 id="site-credit-event-detail-title" className="text-xl font-semibold text-slate-950 dark:text-white">
-                  {eventFeatureText(selectedCreditEvent, 'title')}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{siteTitle}</p>
-              </div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedCreditEvent(null)}>
-                {t('common.close')}
-              </button>
-            </div>
-            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
-              <dl className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs text-slate-500">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</dt>
-                  <dd className="mt-1 text-lg font-semibold">
-                    {formatCreditPoints(selectedCreditEvent.consumed_ai_credits || selectedCreditEvent.net_ai_credit_delta)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-slate-500">{t('portal.usage.credit_ledger_time', {}, 'Time')}</dt>
-                  <dd className="mt-1 font-medium">{formatUsagePeriodEnd(selectedCreditEvent.created_at, locale)}</dd>
-                </div>
-              </dl>
-              <section>
-                <h3 className="font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3>
-                <div className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                  {selectedCreditEvent.components.map((component) => (
-                    <div key={component.key} className="flex justify-between gap-4 px-4 py-3 text-sm">
-                      <span>{t(`portal.usage.credit_events_component_${component.key}`)}</span>
-                      <strong>{formatCreditPoints(component.ai_credits)}</strong>
-                    </div>
-                  ))}
-                </div>
-                {selectedCreditEvent.component_count > 1 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    {t(
-                      'portal.usage.credit_events_grouped_hint',
-                      { count: String(selectedCreditEvent.component_count) },
-                      '{{count}} billing entries were combined into this service event.',
-                    )}
-                  </p>
-                ) : null}
-              </section>
-              <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-                <summary className="cursor-pointer font-medium">{t('portal.support_information', {}, 'Support information')}</summary>
-                <p className="mt-3 break-all text-sm text-slate-500">
-                  {t('portal.usage.credit_events_support_reference', {}, 'Reference')}: {selectedCreditEvent.support_reference}
-                </p>
-              </details>
-            </div>
-          </aside>
-        </div>
-      ) : null}
-    </>
+        )}
+      </div>
+    </Modal>
   );
 }

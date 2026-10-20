@@ -16,6 +16,8 @@ type PortalCreditTrendPanelProps = {
   error: string;
   onWindowChange: (window: PortalCreditTrendWindow) => void;
   onRetry: () => void;
+  /** Hide the page-level H2 when the panel already sits under a matching tab/dialog title. */
+  embedded?: boolean;
 };
 
 const WINDOW_OPTIONS: Array<{ value: PortalCreditTrendWindow; key: string; fallback: string }> = [
@@ -32,6 +34,7 @@ export function PortalCreditTrendPanel({
   error,
   onWindowChange,
   onRetry,
+  embedded = false,
 }: PortalCreditTrendPanelProps) {
   const { locale, t } = useLocale();
   const points = payload?.points || [];
@@ -55,21 +58,32 @@ export function PortalCreditTrendPanel({
       : { month: 'numeric', day: 'numeric' },
   ).format(new Date(value));
 
+  const Frame = embedded ? 'div' : PortalSection;
+  const frameClassName = embedded
+    ? 'space-y-4'
+    : 'space-y-5';
+
   return (
-    <PortalSection className="space-y-5" data-portal-usage="primary-trend">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-            {t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+    <Frame className={frameClassName} data-portal-usage="primary-trend">
+      <div className={`flex flex-col gap-4 ${embedded ? 'sm:flex-row sm:items-center sm:justify-between' : 'lg:flex-row lg:items-end lg:justify-between'}`}>
+        {embedded ? (
+          <p className="text-sm leading-6 text-gray-600 dark:text-gray-400">
             {t('portal.usage.primary_trend_desc', {}, 'Review actual AI credit consumption over time before opening individual usage records.')}
           </p>
-        </div>
+        ) : (
+          <div>
+            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
+              {t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {t('portal.usage.primary_trend_desc', {}, 'Review actual AI credit consumption over time before opening individual usage records.')}
+            </p>
+          </div>
+        )}
         <div
           role="tablist"
           aria-label={t('portal.usage.trend_window_label', {}, 'Trend range')}
-          className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 dark:bg-slate-900"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900"
         >
           {WINDOW_OPTIONS.map((option) => (
             <button
@@ -129,7 +143,7 @@ export function PortalCreditTrendPanel({
             <div
               role="img"
               aria-label={t('portal.usage.trend_chart_label', {}, 'AI credit usage over time')}
-              className="mt-4 flex h-44 items-end gap-1"
+              className="mt-4 flex h-44 items-end gap-1 overflow-visible"
             >
               {points.map((point, index) => {
                 const credits = Number(point.ai_credits || 0);
@@ -153,10 +167,10 @@ export function PortalCreditTrendPanel({
                 );
               })}
             </div>
-            <div className="h-7" aria-hidden="true" />
+            <div className="h-8" aria-hidden="true" />
           </div>
         )}
       </div>
-    </PortalSection>
+    </Frame>
   );
 }

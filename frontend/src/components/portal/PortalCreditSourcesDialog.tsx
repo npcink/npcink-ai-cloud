@@ -110,7 +110,7 @@ export function PortalCreditSourcesDialog({
       size="lg"
       className="max-w-3xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
     >
-      <div className="max-h-[min(70vh,36rem)] overflow-y-auto pr-1" data-portal-billing="credit-sources-dialog">
+      <div className="space-y-0 pb-2" data-portal-billing="credit-sources-dialog">
         <PortalCreditSourcesContent
           t={t}
           locale={locale}
