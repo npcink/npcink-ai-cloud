@@ -166,11 +166,11 @@ export function PortalEntitlementUsage({
       </div>
 
       {metrics.length > 0 ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {metricGroups.map((group) => (
             <section key={group.key} data-portal-entitlement-group={group.key} aria-label={group.title || undefined}>
               {group.title ? (
-                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{group.title}</h3>
                   {group.description ? (
                     <PortalInfoHint
@@ -182,7 +182,7 @@ export function PortalEntitlementUsage({
                   ) : null}
                 </div>
               ) : null}
-              <div className="divide-y divide-slate-200/80 overflow-hidden rounded-xl border border-slate-200/80 bg-white/70 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950/35">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {group.metrics.map((metric) => {
                   const key = String(metric.key || '');
                   const used = Number(metric.used || 0);
@@ -220,12 +220,33 @@ export function PortalEntitlementUsage({
                   const paidExpiryDate = metric.paid_next_expires_at
                     ? formatDateOnly(metric.paid_next_expires_at, locale)
                     : '';
-                  const detail = key === 'vector_documents'
+                  const resourceDetail = key === 'vector_documents'
                     ? t('portal.usage.resource_vector_documents_detail', {}, 'Indexed articles, pages, and comments; images count separately.')
                     : key === 'media_images'
                       ? t('portal.usage.resource_media_images_detail', {}, 'Indexed media-library images, whether or not used in an article. Reusing the same site attachment adds no capacity.')
                       : t('portal.billing.entitlement_included_line', {}, 'Included in this package');
-
+                  const overflowGuidance = isKnowledge && rowPresentation.tone === 'error' && !rowPresentation.suppressOverflowDetail
+                    ? (key === 'media_images'
+                      ? t('portal.usage.media_capacity_full_detail', {}, 'New image indexing is paused. Existing images remain usable and refreshable; AI work still needs execution allowances. Remove unneeded index entries or change the package.')
+                      : t('portal.usage.text_capacity_full_detail', {}, 'New text indexing is paused. Existing text remains usable and updatable. Remove unneeded index entries or change the package.'))
+                    : '';
+                  const hintDetail = (
+                    <>
+                      <span className="block">{resourceDetail}</span>
+                      {paidExpiryDate ? (
+                        <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                          {t(
+                            'portal.usage.paid_credit_expiry_hint',
+                            { date: paidExpiryDate },
+                            `The next paid credit grant expires on ${paidExpiryDate}.`
+                          )}
+                        </span>
+                      ) : null}
+                      {overflowGuidance ? (
+                        <span className="mt-1 block text-amber-800 dark:text-amber-200">{overflowGuidance}</span>
+                      ) : null}
+                    </>
+                  );
                   const secondaryStat = exceeded > 0
                     ? t(
                         'portal.usage.exceeded_label',
@@ -235,17 +256,27 @@ export function PortalEntitlementUsage({
                     : (!isCredit
                       ? `${t('portal.usage.remaining_ai_credits', {}, 'Remaining')}: ${remainingLabel}`
                       : '');
+                  const tileLabel = resourceLabel(key, t);
 
                   return (
-                    <div
+                    <article
                       key={key}
                       data-portal-quota-resource={key}
-                      className="px-3.5 py-2.5"
+                      className={cn(
+                        'flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40',
+                        group.metrics.length === 1 && 'md:col-span-2',
+                      )}
                     >
-                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                          {resourceLabel(key, t)}
+                          {tileLabel}
                         </p>
+                        <PortalInfoHint
+                          label={tileLabel}
+                          aria-label={resourceDetail}
+                          data-portal-billing={`quota-help-${key}`}
+                          detail={hintDetail}
+                        />
                         {metricBadgeLabel ? (
                           <span
                             className={cn(
@@ -258,38 +289,29 @@ export function PortalEntitlementUsage({
                             {metricBadgeLabel}
                           </span>
                         ) : null}
-                        {key === 'vector_documents' ? (
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-                            onClick={() => void openSiteKnowledgeUsage()}
-                          >
-                            {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
-                          </button>
-                        ) : null}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         {isCredit ? (
-                          <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                          <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
                             {formatQuotaValue(metric.total_remaining ?? remaining, { unlimited: false, unlimitedLabel })}
-                            <span className="ml-1 text-xs font-normal text-slate-500">
+                            <span className="ml-1.5 text-xs font-normal text-slate-500">
                               {t('portal.usage.total_remaining_label', {}, 'Total available')}
                             </span>
                           </p>
                         ) : (
-                          <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                          <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
                             {usedLabel}
-                            <span className="text-sm font-normal text-slate-500"> / {limitLabel}</span>
+                            <span className="text-base font-normal text-slate-500"> / {limitLabel}</span>
                           </p>
                         )}
                         {secondaryStat ? (
                           <p className="text-xs text-slate-500 dark:text-slate-400">{secondaryStat}</p>
                         ) : null}
                       </div>
-                      <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {detail}
-                      </p>
 
                       {isCredit ? (
-                        <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-slate-200/70 pt-2 text-xs dark:border-slate-800">
+                        <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200/70 pt-2.5 text-xs dark:border-slate-800">
                           {[
                             {
                               label: t('portal.usage.package_remaining_label', {}, 'Package remaining'),
@@ -311,21 +333,12 @@ export function PortalEntitlementUsage({
                               </dd>
                             </div>
                           ))}
-                          {paidExpiryDate ? (
-                            <p className="basis-full text-xs text-slate-500 dark:text-slate-400">
-                              {t(
-                                'portal.usage.paid_credit_expiry_hint',
-                                { date: paidExpiryDate },
-                                `The next paid credit grant expires on ${paidExpiryDate}.`
-                              )}
-                            </p>
-                          ) : null}
                         </dl>
                       ) : null}
 
                       {!unlimited && !isCredit ? (
-                        <div className="mt-2">
-                          <div className="h-1.5 max-w-md overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                        <div className="mt-3">
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                             <div
                               className={cn(
                                 'h-full rounded-full',
@@ -340,14 +353,19 @@ export function PortalEntitlementUsage({
                           </div>
                         </div>
                       ) : null}
-                      {isKnowledge && rowPresentation.tone === 'error' && !rowPresentation.suppressOverflowDetail ? (
-                        <p className="mt-1.5 text-xs leading-5 text-amber-800 dark:text-amber-200">
-                          {key === 'media_images'
-                            ? t('portal.usage.media_capacity_full_detail', {}, 'New image indexing is paused. Existing images remain usable and refreshable; AI work still needs execution allowances. Remove unneeded index entries or change the package.')
-                            : t('portal.usage.text_capacity_full_detail', {}, 'New text indexing is paused. Existing text remains usable and updatable. Remove unneeded index entries or change the package.')}
-                        </p>
+
+                      {key === 'vector_documents' ? (
+                        <div className="mt-auto pt-2.5">
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                            onClick={() => void openSiteKnowledgeUsage()}
+                          >
+                            {t('portal.usage.site_knowledge_breakdown_action', {}, 'View site usage details')}
+                          </button>
+                        </div>
                       ) : null}
-                    </div>
+                    </article>
                   );
                 })}
               </div>
@@ -359,6 +377,7 @@ export function PortalEntitlementUsage({
           {t('portal.billing.no_feature_detail', {}, 'No package rights are available yet.')}
         </div>
       )}
+
       {siteKnowledgeUsageOpen ? (
         <div className="fixed inset-0 z-50">
           <button type="button" className="absolute inset-0 bg-slate-950/45" aria-label={t('common.close')} onClick={() => setSiteKnowledgeUsageOpen(false)} />
