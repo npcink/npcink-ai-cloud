@@ -1616,64 +1616,13 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         }
         topup_items.append(topup_record)
         subscription_metadata["operator_managed_topups"] = topup_items[-20:]
-        subscription_metadata["current_period_topup_totals"] = {
-            "ai_credits": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("ai_credits")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-            "runs": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("runs")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-            "tokens": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("tokens")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-            "cost_cny": round(
-                sum(
-                    self._coerce_float(
-                        item.get("increments", {}).get("cost_cny")
-                        if isinstance(item.get("increments"), dict)
-                        else 0.0
-                    )
-                    for item in topup_items
-                    if isinstance(item, dict)
-                    and str(item.get("target_period_start_at") or "") == expected_period_start
-                    and str(item.get("target_period_end_at") or "") == expected_period_end
-                ),
-                6,
-            ),
-        }
+        subscription_metadata["current_period_topup_totals"] = (
+            self._sum_operator_managed_topup_totals_for_period(
+                topup_items,
+                expected_period_start=expected_period_start,
+                expected_period_end=expected_period_end,
+            )
+        )
 
         subscription.metadata_json = subscription_metadata
         if normalized_ai_credits > 0:
@@ -3022,6 +2971,73 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             if existing is None:
                 materialized += 1
         return materialized
+
+
+    def _sum_operator_managed_topup_totals_for_period(
+        self,
+        topup_items: Sequence[object],
+        *,
+        expected_period_start: str | None,
+        expected_period_end: str | None,
+    ) -> dict[str, float]:
+        """Sum same-period operator top-up increments (does not touch ledger)."""
+
+        expected_start = str(expected_period_start or "")
+        expected_end = str(expected_period_end or "")
+        totals = {
+            "ai_credits": 0.0,
+            "runs": 0.0,
+            "tokens": 0.0,
+            "cost_cny": 0.0,
+        }
+        for item in topup_items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("target_period_start_at") or "") != expected_start:
+                continue
+            if str(item.get("target_period_end_at") or "") != expected_end:
+                continue
+            increments = item.get("increments")
+            increments = increments if isinstance(increments, dict) else {}
+            for key in totals:
+                totals[key] += self._coerce_float(increments.get(key))
+        return {key: round(value, 6) for key, value in totals.items()}
+
+    def _carry_forward_operator_managed_topup_metadata(
+        self,
+        *,
+        source_subscription: AccountSubscription | None,
+        period_start_at: datetime,
+        period_end_at: datetime,
+    ) -> dict[str, object]:
+        """Keep same-subscription, same-period operator top-ups across activate.
+
+        Upgrade/renewal reuses the subscription row but replaces metadata from the
+        order payload, which drops ``operator_managed_topups``. Carry the history
+        forward and recompute ``current_period_topup_totals`` for the activated
+        period so ``_resolve_effective_subscription_budgets`` still adds them
+        (and ledger ``subscription_topup`` grants stay visibility-only).
+        """
+
+        if source_subscription is None:
+            return {}
+        source_metadata = dict(source_subscription.metadata_json or {})
+        raw_topups = source_metadata.get("operator_managed_topups")
+        if not isinstance(raw_topups, list) or not raw_topups:
+            return {}
+        topup_items = [dict(item) for item in raw_topups if isinstance(item, dict)]
+        if not topup_items:
+            return {}
+        expected_start = self._serialize_datetime(period_start_at)
+        expected_end = self._serialize_datetime(period_end_at)
+        return {
+            "operator_managed_topups": topup_items[-20:],
+            "current_period_topup_totals": self._sum_operator_managed_topup_totals_for_period(
+                topup_items,
+                expected_period_start=expected_start,
+                expected_period_end=expected_end,
+            ),
+        }
 
     def _build_subscription_topup_summary(
         self,
