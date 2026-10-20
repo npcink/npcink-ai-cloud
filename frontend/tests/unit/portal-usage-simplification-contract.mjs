@@ -137,6 +137,32 @@ assert.match(
   /view_tab_sources[\s\S]*sources_empty|sources_empty[\s\S]*view_tab_sources/,
   'sources tab must keep a friendly empty state'
 );
+
+assert.match(
+  source,
+  /inDrawer \|\| !open[\s\S]*window\.location\.search[\s\S]*setActiveUsageView\(resolvePortalUsageView/,
+  'drawer open must re-read view= from the live URL (credits tile → sources)'
+);
+
+const billingPagePath = resolve(process.cwd(), 'src/app/portal/billing/page.tsx');
+const entitlementPath = resolve(process.cwd(), 'src/components/portal/PortalEntitlementUsage.tsx');
+const billingPage = readFileSync(billingPagePath, 'utf8');
+const entitlement = readFileSync(entitlementPath, 'utf8');
+assert.match(
+  entitlement,
+  /onOpenUsage\?\.\(\{ view: 'sources' \}\)[\s\S]{0,120}data-portal-billing="open-usage-from-credits-period"/,
+  'AI credits primary ratio must open the usage drawer on the sources tab'
+);
+assert.match(
+  entitlement,
+  /onClick=\{\(\) => onOpenUsage\?\.\(\)\}[\s\S]{0,80}data-portal-billing="open-usage"/,
+  'View period usage must open the drawer without forcing sources'
+);
+assert.match(
+  billingPage,
+  /openUsageDrawer = useCallback\(\(options\?: \{ view\?:[\s\S]*nextParams\.set\('view', view\)/,
+  'billing openUsageDrawer must write view= into the billing URL before opening'
+);
 assert.match(source, /eventFeatureText\(entry, 'title'\)[\s\S]*formatCreditPoints\(entry.consumed_ai_credits\)/);
 assert.match(
   source,

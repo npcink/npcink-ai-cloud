@@ -128,21 +128,33 @@ function PortalBillingContent() {
 
   const [usageDrawerOpen, setUsageDrawerOpen] = useState(false);
 
-  const openUsageDrawer = useCallback(() => {
+  const openUsageDrawer = useCallback((options?: { view?: 'trend' | 'records' | 'sources' }) => {
+    const nextParams = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : searchParams.toString()
+    );
+    const view = options?.view ?? 'trend';
+    if (view === 'trend') nextParams.delete('view');
+    else nextParams.set('view', view);
+    const query = nextParams.toString();
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `/portal/billing${query ? `?${query}` : ''}#usage`,
+      );
+    }
     setUsageDrawerOpen(true);
-    if (typeof window === 'undefined') return;
-    const qs = searchParams.toString();
-    const next = `/portal/billing${qs ? `?${qs}` : ''}#usage`;
-    window.history.replaceState(window.history.state, '', next);
   }, [searchParams]);
 
   const closeUsageDrawer = useCallback(() => {
     setUsageDrawerOpen(false);
     if (typeof window === 'undefined') return;
     if (window.location.hash !== '#usage') return;
-    const qs = searchParams.toString();
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.delete('view');
+    const qs = nextParams.toString();
     window.history.replaceState(window.history.state, '', `/portal/billing${qs ? `?${qs}` : ''}`);
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

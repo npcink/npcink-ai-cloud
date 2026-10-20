@@ -27,14 +27,19 @@ type EntitlementMetric = {
 
 const KNOWLEDGE_RESOURCE_KEYS: readonly string[] = ['vector_documents', 'media_images'];
 
+export type PortalUsageDrawerView = 'trend' | 'records' | 'sources';
+
 type PortalEntitlementUsageProps = {
   quotaSummary?: QuotaSummary | null;
   t: TranslateFn;
   locale: Locale;
   /** When true, limited-row scream badges / red bars / overflow copy defer to the attention strip. */
   attentionSurfaceActive?: boolean;
-  /** Opens package usage drawer (period usage / site usage entry). */
-  onOpenUsage?: () => void;
+  /**
+   * Opens package usage drawer.
+   * Pass `{ view: 'sources' }` from the AI-credits tile; omit (or trend) from「查看本期用量」.
+   */
+  onOpenUsage?: (options?: { view?: PortalUsageDrawerView }) => void;
 };
 
 function formatQuotaValue(
@@ -160,7 +165,7 @@ export function PortalEntitlementUsage({
           <button
             type="button"
             className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
-            onClick={onOpenUsage}
+            onClick={() => onOpenUsage?.()}
             data-portal-billing="open-usage"
           >
             {t('portal.billing.view_period_usage', {}, 'View period usage')}
@@ -312,7 +317,7 @@ export function PortalEntitlementUsage({
                             <button
                               type="button"
                               className="text-left text-xl font-semibold tracking-tight text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
-                              onClick={onOpenUsage}
+                              onClick={() => onOpenUsage?.({ view: 'sources' })}
                               data-portal-billing="open-usage-from-credits-period"
                               aria-label={t(
                                 'portal.usage.period_used_inline',

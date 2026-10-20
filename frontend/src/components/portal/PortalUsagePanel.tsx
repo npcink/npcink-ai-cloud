@@ -363,6 +363,14 @@ export function PortalUsagePanel({
     }
   }, [searchParams, usageBasePath, inDrawer]);
 
+  // Drawer open uses history.replaceState (not Next router), so re-read view from the live URL
+  // when the drawer opens — e.g. credits tile → ?view=sources#usage.
+  useEffect(() => {
+    if (!inDrawer || !open) return;
+    const liveView = new URLSearchParams(window.location.search).get('view');
+    setActiveUsageView(resolvePortalUsageView(liveView));
+  }, [open, inDrawer]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       return;
