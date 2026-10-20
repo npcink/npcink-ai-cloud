@@ -912,8 +912,17 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         "operation_contract",
         "output",
         "generation_context",
+        "usage",
     }
     assert result["contract_version"] == "cloud_connector_result.v1"
+    assert result["usage"] == {
+        "tokens_in": 24,
+        "tokens_out": 8,
+        "total_tokens": 32,
+    }
+    # Envelope usage is provider-call evidence; raw output.usage (if present)
+    # is not the Addon mapping source.
+    assert result["usage"]["tokens_in"] == 24
     assert result["site_id"] == "site_alpha"
     assert result["site_url"] == CONNECTOR_SITE_URL
     assert result["platform_kind"] == "wordpress"
@@ -1793,6 +1802,11 @@ def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelo
     assert transient_result["output"]["output_text"] == (
         "Npcink Cloud Addon: WordPress AI scene helper"
     )
+    assert transient_result["usage"] == {
+        "tokens_in": 24,
+        "tokens_out": 8,
+        "total_tokens": 32,
+    }
 
     run_id = first.json()["data"]["run_id"]
     polled = _get_result(client, run_id)
@@ -1802,6 +1816,11 @@ def test_connector_runtime_no_store_uses_normalized_transient_and_durable_envelo
     assert durable_result["connector_version"] == "3.0.0-no-store"
     assert durable_result["operation_contract"]["task"] == "title_generation"
     assert durable_result["output"] == {"stored": False, "status": "omitted"}
+    assert durable_result["usage"] == {
+        "tokens_in": 24,
+        "tokens_out": 8,
+        "total_tokens": 32,
+    }
 
     replay = _execute(
         client,
@@ -2484,6 +2503,12 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
     assert data["status"] == "succeeded"
     assert data["result"]["output"]["output_text"] == "Blue ceramic mug on a white table"
     assert set(data["result"]["output"]) == {"output_text"}
+    assert data["result"]["usage"] == {
+        "tokens_in": 42,
+        "tokens_out": 7,
+        "total_tokens": 49,
+    }
+    assert "usage" not in data["result"]["output"]
     assert data["execution_context"]["ability_family"] == "vision"
     assert data["execution_context"]["data_classification"] == "internal"
     assert provider.requests[0].execution_kind == "vision"
@@ -2591,6 +2616,11 @@ def test_alt_text_provider_nested_success_echo_is_projected_to_text_only(
     data = response.json()["data"]
     assert data["status"] == "succeeded"
     assert data["result"]["output"] == {"output_text": "Blue ceramic mug on a white table"}
+    assert data["result"]["usage"] == {
+        "tokens_in": 42,
+        "tokens_out": 7,
+        "total_tokens": 49,
+    }
     assert ALT_TEXT_PROVIDER_ECHO_MARKER not in json.dumps(data, ensure_ascii=False)
     assert len(provider.requests) == 1
     with get_session(database_url) as session:

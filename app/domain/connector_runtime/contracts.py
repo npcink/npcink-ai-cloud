@@ -189,11 +189,49 @@ def validate_connector_site_binding(
         )
 
 
+def build_connector_result_usage(
+    *,
+    tokens_in: int,
+    tokens_out: int,
+) -> dict[str, int]:
+    """Project metered ints for cloud_connector_result.v1.usage (sibling of output).
+
+    Source of truth is provider-call evidence, not raw output.usage. Cost is
+    intentionally omitted so the WordPress suggestion envelope stays non-billing.
+    """
+    normalized_in = max(0, int(tokens_in or 0))
+    normalized_out = max(0, int(tokens_out or 0))
+    return {
+        "tokens_in": normalized_in,
+        "tokens_out": normalized_out,
+        "total_tokens": normalized_in + normalized_out,
+    }
+
+
+def sum_provider_call_usage_tokens(
+    provider_calls: list[Any],
+) -> dict[str, int] | None:
+    """Sum tokens_in/out across ALL provider calls for a run.
+
+    Returns None when there is no provider-call evidence yet. When any call
+    rows exist, returns a usage object even if both totals are zero.
+    """
+    if not provider_calls:
+        return None
+    tokens_in = 0
+    tokens_out = 0
+    for call in provider_calls:
+        tokens_in += max(0, int(getattr(call, "tokens_in", 0) or 0))
+        tokens_out += max(0, int(getattr(call, "tokens_out", 0) or 0))
+    return build_connector_result_usage(tokens_in=tokens_in, tokens_out=tokens_out)
+
+
 def build_connector_result_envelope(
     *,
     site_id: str,
     connector_envelope: dict[str, Any],
     output: dict[str, Any],
+    usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     operation_contract = connector_envelope.get("operation_contract")
     operation_contract = (
@@ -216,6 +254,13 @@ def build_connector_result_envelope(
     object_ref = connector_envelope.get("object_ref")
     if isinstance(object_ref, dict):
         result["object_ref"] = dict(object_ref)
+    if isinstance(usage, dict):
+        # Keep usage outside output so no_store omission of output cannot drop it.
+        result["usage"] = {
+            "tokens_in": max(0, int(usage.get("tokens_in") or 0)),
+            "tokens_out": max(0, int(usage.get("tokens_out") or 0)),
+            "total_tokens": max(0, int(usage.get("total_tokens") or 0)),
+        }
     return result
 
 
