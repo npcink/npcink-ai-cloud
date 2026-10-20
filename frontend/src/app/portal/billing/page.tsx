@@ -273,7 +273,7 @@ function PortalBillingContent() {
               <div className="flex flex-wrap items-start gap-2 px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
-                  <p className="mt-1 max-w-xl text-xs leading-5 text-amber-900/85 dark:text-amber-100/85">
+                  <p className="mt-1 max-w-md text-xs leading-5 text-amber-900/85 dark:text-amber-100/85">
                     {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
                   </p>
                 </div>
