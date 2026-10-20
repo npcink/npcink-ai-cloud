@@ -61,6 +61,7 @@ Start with:
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
 - [Internal New-User Readiness Gate](docs/internal-new-user-readiness-gate-v1.md)
+- [Portal UI Spec（客户门户布局 / IA）](docs/portal-ui-spec.md) — 含顶栏 56rem 对齐与套餐+用量合并目标；§10 待确认后再实现
 - [Internal Readiness Final Handoff — 2026-08-18](docs/history/engineering/2026/internal-readiness-final-handoff-2026-08-18.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
