@@ -35,6 +35,12 @@ type PortalEntitlementUsageProps = {
   attentionSurfaceActive?: boolean;
   /** Opens package usage drawer (period usage / site usage entry). */
   onOpenUsage?: () => void;
+  /** Current package display name (e.g. Free) — shown in the quota card header. */
+  packageLabel?: string;
+  /** Current billing period range label. */
+  periodLabel?: string;
+  /** Optional period end detail for the header meta. */
+  periodEndDetail?: string;
 };
 
 function formatQuotaValue(
@@ -91,6 +97,9 @@ export function PortalEntitlementUsage({
   locale,
   attentionSurfaceActive = false,
   onOpenUsage,
+  packageLabel,
+  periodLabel,
+  periodEndDetail,
 }: PortalEntitlementUsageProps) {
   const [siteKnowledgeUsage, setSiteKnowledgeUsage] = useState<PortalAccountSiteKnowledgeUsagePayload | null>(null);
   const [siteKnowledgeUsageOpen, setSiteKnowledgeUsageOpen] = useState(false);
@@ -116,21 +125,12 @@ export function PortalEntitlementUsage({
   }, [siteKnowledgeUsage, t]);
   const unlimitedLabel = t('common.unlimited', {}, 'Unlimited');
   const metrics = normalizeMetrics(quotaSummary);
-  const metricGroups = [
-    {
-      key: 'allowances',
-      title: '',
-      description: '',
-      metrics: metrics.filter((metric) => !KNOWLEDGE_RESOURCE_KEYS.includes(String(metric.key))),
-    },
-    {
-      key: 'knowledge',
-      title: t('portal.usage.knowledge_capacity_title', {}, 'Knowledge capacity'),
-      description: t('portal.usage.knowledge_capacity_detail', {}, 'Saved text and images have separate capacities that do not reset monthly. AI work uses execution allowances separately.'),
-      metrics: metrics.filter((metric) => KNOWLEDGE_RESOURCE_KEYS.includes(String(metric.key))),
-    },
-  ].filter((group) => group.metrics.length > 0);
-  const title = t('portal.billing.current_entitlements_title', {}, 'Current package rights');
+  const knowledgeCapacityDetail = t(
+    'portal.usage.knowledge_capacity_detail',
+    {},
+    'Saved text and images have separate capacities that do not reset monthly. AI work uses execution allowances separately.',
+  );
+  const title = t('portal.billing.quota_card_title', {}, 'Quota');
   const description = t(
     'portal.billing.current_entitlements_desc',
     {},
@@ -146,47 +146,48 @@ export function PortalEntitlementUsage({
     <>
       <span className="block">{description}</span>
       <span className="mt-1 block text-slate-500 dark:text-slate-400">{sharedQuotaNote}</span>
+      <span className="mt-1 block text-slate-500 dark:text-slate-400">{knowledgeCapacityDetail}</span>
     </>
   );
+  const headerMetaParts = [packageLabel, periodLabel].filter((part) => Boolean(part && String(part).trim()));
 
   return (
     <section className="space-y-3" data-portal-entitlement-usage="included">
-      <div>
-        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          {t('portal.billing.package_rights_label', {}, 'Package rights')}
-        </p>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {title}
-          </h2>
-          <PortalInfoHint
-            label={title}
-            aria-label={`${description} ${sharedQuotaNote}`}
-            data-portal-billing="entitlements-help"
-            detail={rightsHelpDetail}
-          />
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+              {title}
+            </h2>
+            <PortalInfoHint
+              label={title}
+              aria-label={`${description} ${sharedQuotaNote} ${knowledgeCapacityDetail}`}
+              data-portal-billing="entitlements-help"
+              detail={rightsHelpDetail}
+            />
+          </div>
         </div>
+        {headerMetaParts.length > 0 ? (
+          <div className="min-w-0 text-right" data-portal-billing="quota-card-meta">
+            {packageLabel ? (
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">{packageLabel}</p>
+            ) : null}
+            {periodLabel ? (
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <span className="sr-only">{t('portal.usage.period_label', {}, 'Period')}: </span>
+                {periodLabel}
+              </p>
+            ) : null}
+            {periodEndDetail ? (
+              <p className="mt-0.5 text-[0.7rem] text-slate-400 dark:text-slate-500">{periodEndDetail}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {metrics.length > 0 ? (
-        <div className="space-y-4">
-          {metricGroups.map((group) => (
-            <section key={group.key} data-portal-entitlement-group={group.key} aria-label={group.title || undefined}>
-              {group.title ? (
-                <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                  <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{group.title}</h3>
-                  {group.description ? (
-                    <PortalInfoHint
-                      label={group.title}
-                      aria-label={group.description}
-                      data-portal-billing="knowledge-capacity-help"
-                      detail={group.description}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {group.metrics.map((metric) => {
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-portal-entitlement-group="quota">
+                {metrics.map((metric) => {
                   const key = String(metric.key || '');
                   const used = Number(metric.used || 0);
                   const limit = Number(metric.limit || 0);
@@ -223,11 +224,14 @@ export function PortalEntitlementUsage({
                   const paidExpiryDate = metric.paid_next_expires_at
                     ? formatDateOnly(metric.paid_next_expires_at, locale)
                     : '';
-                  const resourceDetail = key === 'vector_documents'
+                  const baseResourceDetail = key === 'vector_documents'
                     ? t('portal.usage.resource_vector_documents_detail', {}, 'Indexed articles, pages, and comments; images count separately.')
                     : key === 'media_images'
                       ? t('portal.usage.resource_media_images_detail', {}, 'Indexed media-library images, whether or not used in an article. Reusing the same site attachment adds no capacity.')
                       : t('portal.billing.entitlement_included_line', {}, 'Included in this package');
+                  const resourceDetail = isKnowledge
+                    ? `${baseResourceDetail} ${knowledgeCapacityDetail}`
+                    : baseResourceDetail;
                   const overflowGuidance = isKnowledge && rowPresentation.tone === 'error' && !rowPresentation.suppressOverflowDetail
                     ? (key === 'media_images'
                       ? t('portal.usage.media_capacity_full_detail', {}, 'New image indexing is paused. Existing images remain usable and refreshable; AI work still needs execution allowances. Remove unneeded index entries or change the package.')
@@ -265,10 +269,7 @@ export function PortalEntitlementUsage({
                     <article
                       key={key}
                       data-portal-quota-resource={key}
-                      className={cn(
-                        'flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40',
-                        group.metrics.length === 1 && 'md:col-span-2',
-                      )}
+                      className="flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/40"
                     >
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <p className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -375,9 +376,6 @@ export function PortalEntitlementUsage({
                     </article>
                   );
                 })}
-              </div>
-            </section>
-          ))}
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">

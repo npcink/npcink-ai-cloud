@@ -223,20 +223,6 @@ function PortalBillingContent() {
       : t('common.ok', {}, 'OK');
   const pressureCta = resolveBillingPressureCta({ quotaSummary, t });
   const manageHref = pressureCta.href;
-  const packageSummaryMetrics = [
-    {
-      label: t('portal.current_subscription_label', {}, 'Current package'),
-      value: packageLabel,
-      size: 'compact' as const,
-    },
-    {
-      label: t('portal.usage.period_label', {}, 'Period'),
-      value: currentPeriodLabel,
-      detail: currentPeriodEndDetail || undefined,
-      size: 'compact' as const,
-    },
-  ];
-
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
@@ -268,9 +254,6 @@ function PortalBillingContent() {
             ) : null}
           </div>
         )}
-        metrics={packageSummaryMetrics}
-        metricsLayout="rail"
-        metricsPlacement="title-end"
       />
 
       <PortalPaymentReturnNotice
@@ -321,6 +304,9 @@ function PortalBillingContent() {
               locale={locale}
               attentionSurfaceActive={packageStatus === 'warning'}
               onOpenUsage={openUsageDrawer}
+              packageLabel={packageLabel}
+              periodLabel={currentPeriodLabel}
+              periodEndDetail={currentPeriodEndDetail || undefined}
             />
           </div>
         </PortalCard>
