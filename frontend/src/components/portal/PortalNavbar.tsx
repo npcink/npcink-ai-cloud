@@ -57,21 +57,15 @@ export function PortalNavbar() {
     <button
       type="button"
       data-portal-nav="logout"
-      aria-label={logoutLabel}
-      title={logoutLabel}
       className={cn(
-        'hidden h-11 w-11 items-center justify-center rounded-full text-slate-600 transition md:inline-flex',
-        'hover:bg-slate-100 hover:text-slate-950',
+        'hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition md:inline-flex',
+        'hover:bg-slate-100 hover:text-slate-900',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
         'dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
       )}
       onClick={() => void handleLogout()}
     >
-      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M10 7V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-1" />
-        <path d="M15 12H3" />
-        <path d="m6 9-3 3 3 3" />
-      </svg>
+      {logoutLabel}
     </button>
   ) : null;
 
