@@ -113,6 +113,12 @@ When reporting security / system findings, follow this to avoid overstating risk
    doc drift, missing non-secret keys.
 6. **Tone** — if tests/prod login were not run, write “未核实”. Do not say “沦陷” /
    “裸奔” unless production entry is internet-facing and unauthenticated.
+7. **Remediation scope** — by default land only **public-surface exposure** and
+   **local-dev / smoke footgun** fixes (e.g. real SSH targets out of Git, bind
+   loopback). Do **not** treat hardening (prod healthchecks, per-secret hash salts,
+   CSP enforce, rejecting `*_API_KEY` env, Next security headers, weak-default
+   startup guards, etc.) as the same default action; propose them separately and
+   implement only after explicit user approval.
 
 ## Local deploy target and loopback conventions
 
