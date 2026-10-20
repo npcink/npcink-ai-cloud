@@ -1,12 +1,13 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import {
@@ -225,13 +226,39 @@ function PortalBillingContent() {
   const manageHref = creditNeedsAttention
     ? '/portal/account#package-options'
     : '/portal/account#package-options';
+  const packageSummaryMetrics = [
+    {
+      label: t('portal.current_subscription_label', {}, 'Current package'),
+      value: packageLabel,
+      size: 'compact' as const,
+    },
+    {
+      label: t('portal.usage.period_label', {}, 'Period'),
+      value: currentPeriodLabel,
+      detail: currentPeriodEndDetail || undefined,
+      size: 'compact' as const,
+    },
+  ];
 
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
         title={t('portal.billing.customer_title', {}, 'Package')}
-        description={t('portal.billing.subtitle', {}, 'Review the account package, AI credits, and available account actions.')}
         currentPage="billing"
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.billing.breadcrumb', {}, 'Package location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.billing.customer_title', {}, 'Package'),
+              },
+            ]}
+          />
+        )}
         primaryAction={
           packageStatus !== 'warning' ? (
             <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
@@ -239,43 +266,9 @@ function PortalBillingContent() {
             </Link>
           ) : null
         }
-        metadata={(
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            <span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.current_subscription_label', {}, 'Current package')}:
-              </span>{' '}
-              {packageLabel}
-            </span>
-            <span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.usage.period_label', {}, 'Period')}:
-              </span>{' '}
-              {currentPeriodLabel}
-            </span>
-            {currentPeriodEndDetail ? <span>{currentPeriodEndDetail}</span> : null}
-          </div>
-        )}
-        contextPanel={packageStatus === 'warning' ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
-                <details className="mt-0.5 text-xs text-gray-600 dark:text-gray-300">
-                  <summary className="cursor-pointer select-none font-medium text-gray-700 dark:text-gray-200">
-                    {t('portal.home.attention_details', {}, 'Details')}
-                  </summary>
-                  <p className="mt-1 leading-5">{resolvePackageStatusDetail(quotaSummary, packageLabel, t)}</p>
-                </details>
-              </div>
-              <Link href={manageHref} className="btn btn-secondary btn-sm shrink-0">
-                {creditNeedsAttention
-                  ? t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')
-                  : t('portal.billing.upgrade_action', {}, 'Upgrade package')}
-              </Link>
-            </div>
-          </div>
-        ) : undefined}
+        metrics={packageSummaryMetrics}
+        metricsLayout="rail"
+        metricsPlacement="title-end"
       />
 
       <PortalPaymentReturnNotice
@@ -300,7 +293,27 @@ function PortalBillingContent() {
       ) : null}
 
       {!error && quotaSummary ? (
-        <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
+        <PortalCard variant="portal" className="bg-white dark:bg-slate-950" data-portal-billing="entitlements">
+          {packageStatus === 'warning' ? (
+            <div
+              className="mb-4 w-fit max-w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
+              data-portal-billing="attention"
+            >
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-amber-900/90 dark:text-amber-100/90">
+                    {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
+                  </p>
+                </div>
+                <Link href={manageHref} className="btn btn-secondary btn-sm shrink-0">
+                  {creditNeedsAttention
+                    ? t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')
+                    : t('portal.billing.upgrade_action', {}, 'Upgrade package')}
+                </Link>
+              </div>
+            </div>
+          ) : null}
           <PortalEntitlementUsage
             quotaSummary={quotaSummary}
             t={t}

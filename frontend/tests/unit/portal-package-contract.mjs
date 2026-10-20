@@ -281,13 +281,23 @@ assert.doesNotMatch(
 );
 assert.match(
   billingHeader,
-  /metadata=[\s\S]*currentPeriodLabel[\s\S]*contextPanel=\{packageStatus === 'warning'/,
-  'Portal package header must keep passive package metadata inline and place only actionable warnings in the right panel'
+  /PortalBreadcrumb[\s\S]*metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
+  'Portal package header must use breadcrumb plus a quiet title-end metrics rail for package and period'
+);
+assert.match(
+  billingPageSource,
+  /data-portal-billing="attention"[\s\S]*resolvePackageStatusDetail/,
+  'Portal package warnings must sit on the entitlements card with a visible detail line and CTA'
 );
 assert.doesNotMatch(
   billingHeader,
-  /eyebrow=|metrics=/,
-  'Portal package header must not repeat its title or render a second summary rail'
+  /contextPanel=|metadata=/,
+  'Portal package header must not use contextPanel or a second metadata band for package status'
+);
+assert.doesNotMatch(
+  billingHeader,
+  /eyebrow=/,
+  'Portal package header must not repeat its title as an eyebrow'
 );
 assert.match(
   billingPageSource,

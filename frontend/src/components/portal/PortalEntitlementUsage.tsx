@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import type { Entitlements } from '@/lib/portal-client';
 import { portalClient, type PortalAccountSiteKnowledgeUsagePayload } from '@/lib/portal-client';
 import type { Locale } from '@/lib/i18n';
+import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
 import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
@@ -135,26 +136,34 @@ export function PortalEntitlementUsage({
     'These are the main rights included in the current package.'
   );
 
+  const sharedQuotaNote = t(
+    'portal.billing.account_shared_quota_note',
+    {},
+    'Site and knowledge limits are shared by every site on this account.'
+  );
+  const rightsHelpDetail = (
+    <>
+      <span className="block">{description}</span>
+      <span className="mt-1 block text-slate-500 dark:text-slate-400">{sharedQuotaNote}</span>
+    </>
+  );
+
   return (
     <section className="space-y-4" data-portal-entitlement-usage="included">
       <div>
-        <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            {t('portal.billing.package_rights_label', {}, 'Package rights')}
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          {t('portal.billing.package_rights_label', {}, 'Package rights')}
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
             {title}
           </h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {description}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {t(
-              'portal.billing.account_shared_quota_note',
-              {},
-              'Site and knowledge limits are shared by every site on this account.'
-            )}
-          </p>
+          <PortalInfoHint
+            label={title}
+            aria-label={`${description} ${sharedQuotaNote}`}
+            data-portal-billing="entitlements-help"
+            detail={rightsHelpDetail}
+          />
         </div>
       </div>
 
@@ -163,11 +172,16 @@ export function PortalEntitlementUsage({
           {metricGroups.map((group) => (
             <section key={group.key} data-portal-entitlement-group={group.key} aria-label={group.title || undefined}>
               {group.title ? (
-                <div className="mb-2">
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{group.title}</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    {group.description}
-                  </p>
+                  {group.description ? (
+                    <PortalInfoHint
+                      label={group.title}
+                      aria-label={group.description}
+                      data-portal-billing="knowledge-capacity-help"
+                      detail={group.description}
+                    />
+                  ) : null}
                 </div>
               ) : null}
               <div className="divide-y divide-slate-200/80 overflow-hidden rounded-xl border border-slate-200/80 bg-white/70 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950/35">

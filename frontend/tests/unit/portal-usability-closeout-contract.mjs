@@ -157,6 +157,10 @@ for (const [name, source] of [
 assert.match(paymentOrderHistory, /role="tab"[\s\S]*min-h-11/);
 assert.match(billing, /resolvePackageStatusDetail/);
 assert.match(billing, /<PortalEntitlementUsage/);
+assert.match(billing, /PortalBreadcrumb/);
+assert.match(billing, /metricsPlacement="title-end"/);
+assert.match(billing, /data-portal-billing="attention"/);
+assert.doesNotMatch(billing, /contextPanel=/);
 assert.doesNotMatch(billing, /id="package-options"|const paymentOrdersCard =/);
 assert.match(accountCommerce, /id="package-options"[\s\S]*paymentOrdersCard/);
 assert.match(accountCommerce, /activeCommercialDialog === 'package'[\s\S]*\{packageOptions\}/);
