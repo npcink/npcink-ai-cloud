@@ -455,25 +455,9 @@ export function PortalUsagePanel({
     {},
     "Review this period's account AI credit usage, records, and trends."
   );
-  // Drawer omits "total available" — already on the package tiles. Keep deduction + optional paid expiry.
+  // Page overview only. Drawer skips this strip (available / period used live on package tiles).
   const usageOverviewMetrics = inDrawer
-    ? [
-        {
-          label: t('portal.usage.period_used_label', {}, 'AI credits deducted this period'),
-          value: formatQuotaValue(usedCredits),
-          detail: t('portal.usage.trend_points_detail', {}, 'Actual service deductions in the current package period.'),
-        },
-        ...(paidCredits > 0
-          ? [{
-              label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
-              value: formattedNextPaidCreditExpiry || t('common.not_available', {}, 'Not available'),
-              detail: formattedNextPaidCreditExpiry
-                ? t('portal.usage.paid_credit_expiry_hint', { date: formattedNextPaidCreditExpiry }, `The next paid credit grant expires on ${formattedNextPaidCreditExpiry}.`)
-                : t('portal.usage.overview_no_expiry_detail', {}, 'No paid-credit expiry is currently recorded.'),
-              size: 'compact' as const,
-            }]
-          : []),
-      ]
+    ? []
     : [
         {
           label: t('portal.usage.total_remaining_label', {}, 'Total available'),
@@ -596,7 +580,8 @@ export function PortalUsagePanel({
       ) : null}
       {siteContextError ? <PortalErrorState title={t('error.failed_load')} description={siteContextError} retryLabel={t('common.retry')} onRetry={() => void selectSite(siteFilterId).catch((err) => setSiteContextError(formatPortalErrorMessage(err, t, t('error.failed_load'))))} /> : null}
       {!siteFilterId ? <PortalEmptyState title={t('portal.usage.choose_site_title')} description={t('portal.usage.choose_site_desc')} /> : null}
-      {!bundleLoading && !bundleError && entitlements ? (
+      {/* Drawer: skip available/period summary — already on package tiles; keep site + trends/records. */}
+      {!inDrawer && !bundleLoading && !bundleError && entitlements ? (
         <PortalSection className="space-y-5" data-portal-usage="current-summary">
           <div>
             <h2 className="text-xl font-semibold text-gray-950 dark:text-white">

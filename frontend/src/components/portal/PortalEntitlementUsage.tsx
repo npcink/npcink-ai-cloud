@@ -301,6 +301,35 @@ export function PortalEntitlementUsage({
                           <p className="text-xs text-slate-500 dark:text-slate-400">{secondaryStat}</p>
                         ) : null}
                       </div>
+                      {isCredit ? (() => {
+                        const periodUsed = Number(
+                          quotaSummary?.ai_credit_ledger_summary?.consumed_ai_credits
+                          ?? metric.used
+                          ?? 0
+                        );
+                        const periodUsedLabel = t(
+                          'portal.usage.period_used_inline',
+                          { count: formatNumber(Math.round(periodUsed)) },
+                          'Deducted this period: {{count}}'
+                        );
+                        if (onOpenUsage) {
+                          return (
+                            <button
+                              type="button"
+                              className="mt-1.5 self-start text-xs font-medium text-slate-500 underline-offset-2 hover:text-blue-700 hover:underline dark:text-slate-400 dark:hover:text-blue-300"
+                              onClick={onOpenUsage}
+                              data-portal-billing="open-usage-from-credits-period"
+                            >
+                              {periodUsedLabel}
+                            </button>
+                          );
+                        }
+                        return (
+                          <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400" data-portal-billing="credits-period-used">
+                            {periodUsedLabel}
+                          </p>
+                        );
+                      })() : null}
 
                       {isCredit ? (() => {
                         const packageRemaining = Number(metric.package_remaining ?? 0);
