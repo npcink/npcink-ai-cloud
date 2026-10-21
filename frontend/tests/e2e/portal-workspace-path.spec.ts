@@ -467,7 +467,7 @@ async function installPortalMocks(
     }
 
     if (
-      (pathname === '/account/credit-trend' || pathname === '/account/credit-events')
+      (pathname === '/account/credit-trend' || pathname === '/account/credit-events' || pathname === '/account/credit-event-days')
       && url.searchParams.get('site_id')
       && url.searchParams.get('site_id') !== selectedSiteId
     ) {
@@ -591,6 +591,43 @@ async function installPortalMocks(
             { key: 'model_processing', ai_credits: 15 },
           ],
         }],
+      });
+      return;
+    }
+
+    if (pathname === '/account/credit-event-days') {
+      const dayWindow = url.searchParams.get('window') === '30d' ? 30 : 7;
+      const limit = Number(url.searchParams.get('limit') || 10);
+      const offset = Number(url.searchParams.get('offset') || 0);
+      const total = dayWindow + 1;
+      const base = Date.UTC(2026, 9, 21);
+      const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, index) => {
+        const dayIndex = offset + index;
+        const start = new Date(base - dayIndex * 86400000);
+        const used = dayIndex % 3 !== 2;
+        return {
+          day: start.toISOString().slice(0, 10),
+          start_at: start.toISOString(),
+          end_at: new Date(start.getTime() + 86400000).toISOString(),
+          event_count: used ? 3 : 0,
+          consumed_ai_credits: used ? 30 : 0,
+          feature_totals: used
+            ? [
+                { feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 },
+                { feature_key: 'web_search', consumed_ai_credits: 8, event_count: 1 },
+                { feature_key: 'site_knowledge', consumed_ai_credits: 4, event_count: 1 },
+              ]
+            : [],
+        };
+      });
+      await fulfillJson(route, {
+        contract_version: 'portal-credit-event-days-v1',
+        generated_at: '2026-10-21T02:00:00Z',
+        timezone: url.searchParams.get('tz') || 'UTC',
+        filters: { window: dayWindow === 30 ? '30d' : '7d', site_id: url.searchParams.get('site_id') || '', feature: url.searchParams.get('feature') || '' },
+        summary: { day_count: total, event_count: 3, consumed_ai_credits: 30 },
+        pagination: { limit, offset, total, has_more: offset + limit < total },
+        items,
       });
       return;
     }

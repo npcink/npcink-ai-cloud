@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
@@ -477,6 +478,155 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "has_more": normalized_offset + len(events) < total,
             },
             "items": events,
+        }
+
+    def get_portal_account_credit_event_days(
+        self,
+        account_id: str,
+        *,
+        window: str = "7d",
+        timezone: str = "UTC",
+        site_id: str | None = None,
+        feature: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Consumed AI credits per local calendar day (newest first), paginated by day.
+
+        Every calendar day touched by the window is listed (zero days included) so
+        pagination is stable; only the requested page is aggregated.
+        """
+        window_days = {"7d": 7, "30d": 30}
+        normalized_window = str(window or "7d").strip().lower()
+        if normalized_window not in window_days:
+            raise CommercialValidationError(
+                "service.portal_credit_event_days_window_invalid",
+                "credit event day window must be one of 7d or 30d",
+            )
+        timezone_name = str(timezone or "UTC").strip() or "UTC"
+        try:
+            zone = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise CommercialValidationError(
+                "service.portal_credit_event_days_timezone_invalid",
+                "credit event day timezone must be an IANA timezone name",
+            ) from error
+        normalized_feature = str(feature or "").strip().lower()
+        if normalized_feature not in {
+            "",
+            "content_generation",
+            "topic_research",
+            "web_search",
+            "site_knowledge",
+            "image_assistance",
+            "audio_generation",
+        }:
+            raise CommercialValidationError(
+                "service.portal_credit_event_days_feature_invalid",
+                "credit event day feature is not supported",
+            )
+        normalized_site_id = str(site_id or "").strip()
+        normalized_limit = min(31, max(1, int(limit or 10)))
+        normalized_offset = max(0, int(offset or 0))
+        now = self.now_factory()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        window_start = now - timedelta(days=window_days[normalized_window])
+
+        # Local midnights, newest first, clamped to [window_start, now].
+        days: list[tuple[str, datetime, datetime]] = []
+        local_day = now.astimezone(zone).date()
+        while True:
+            day_start = datetime.combine(
+                local_day, datetime.min.time(), tzinfo=zone
+            ).astimezone(UTC)
+            next_start = datetime.combine(
+                local_day + timedelta(days=1), datetime.min.time(), tzinfo=zone
+            ).astimezone(UTC)
+            if next_start <= window_start:
+                break
+            start_at = max(day_start, window_start)
+            end_at = min(next_start, now)
+            if start_at < end_at:
+                days.append((local_day.isoformat(), start_at, end_at))
+            local_day = local_day - timedelta(days=1)
+
+        page = days[normalized_offset : normalized_offset + normalized_limit]
+        service = cast(Any, self)
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            if repository.get_account(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found",
+                    f"account '{account_id}' was not found",
+                )
+            page_totals = repository.summarize_portal_credit_event_days(
+                account_id=account_id,
+                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+                day_ranges=[(start_at, end_at) for _, start_at, end_at in page],
+                site_id=normalized_site_id,
+                feature=normalized_feature,
+            )
+            window_totals = repository.summarize_portal_credit_event_days(
+                account_id=account_id,
+                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+                day_ranges=[(window_start, now)],
+                site_id=normalized_site_id,
+                feature=normalized_feature,
+            ).get(0, {})
+
+        items: list[dict[str, object]] = []
+        for index, (day_key, start_at, end_at) in enumerate(page):
+            row = page_totals.get(index, {})
+            feature_totals = [
+                {
+                    "feature_key": str(item.get("feature_key") or "content_generation"),
+                    "consumed_ai_credits": round(
+                        max(0.0, -float(item.get("net_ai_credit_delta") or 0.0)), 6
+                    ),
+                    "event_count": int(item.get("event_count") or 0),
+                }
+                for item in cast(list[dict[str, Any]], row.get("features") or [])
+            ]
+            feature_totals.sort(
+                key=lambda item: service._coerce_float(item.get("consumed_ai_credits")),
+                reverse=True,
+            )
+            items.append(
+                {
+                    "day": day_key,
+                    "start_at": self._serialize_datetime(start_at),
+                    "end_at": self._serialize_datetime(end_at),
+                    "event_count": int(row.get("event_count") or 0),
+                    "consumed_ai_credits": round(
+                        max(0.0, -float(row.get("net_ai_credit_delta") or 0.0)), 6
+                    ),
+                    "feature_totals": feature_totals,
+                }
+            )
+        return {
+            "contract_version": "portal-credit-event-days-v1",
+            "generated_at": self._serialize_datetime(now),
+            "timezone": timezone_name,
+            "filters": {
+                "window": normalized_window,
+                "site_id": normalized_site_id,
+                "feature": normalized_feature,
+            },
+            "summary": {
+                "day_count": len(days),
+                "event_count": int(window_totals.get("event_count") or 0),
+                "consumed_ai_credits": round(
+                    max(0.0, -float(window_totals.get("net_ai_credit_delta") or 0.0)), 6
+                ),
+            },
+            "pagination": {
+                "limit": normalized_limit,
+                "offset": normalized_offset,
+                "total": len(days),
+                "has_more": normalized_offset + normalized_limit < len(days),
+            },
+            "items": items,
         }
 
     def get_portal_account_credit_event_buckets(

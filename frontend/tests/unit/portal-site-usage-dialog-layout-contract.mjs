@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const dialog = readFileSync(resolve(root, 'src/components/portal/PortalSiteUsageDialog.tsx'), 'utf8');
 const trend = readFileSync(resolve(root, 'src/components/portal/PortalCreditTrendPanel.tsx'), 'utf8');
+const client = readFileSync(resolve(root, 'src/lib/portal-client.ts'), 'utf8');
 const summary = readFileSync(resolve(root, 'src/lib/portal-summary-text.ts'), 'utf8');
 const i18n = readFileSync(resolve(root, 'src/lib/i18n.ts'), 'utf8');
 const spec = readFileSync(resolve(root, '../docs/portal-ui-spec.md'), 'utf8');
@@ -67,10 +68,13 @@ assert.doesNotMatch(dialog, /bg-slate-100 p-1|bg-white text-blue-700 shadow-sm/,
 assert.match(dialog, /key: 'portal\.usage\.range_short_1h'[\s\S]*range_short_30d/);
 assert.match(i18n, /'portal\.usage\.range_short_1h': '1 小时'[\s\S]*'portal\.usage\.range_short_30d': '30 天'/);
 
-// B. 7d / 30d records grouped by local day via the existing credit-events endpoint (limit 1 per day).
+// B. 7d / 30d records grouped by local day: ONE aggregation request per page (credit-event-days, browser tz).
 assert.match(dialog, /const isDayMode = !bucketFilter && \(usageRange === '7d' \|\| usageRange === '30d'\)/);
-assert.match(dialog, /buildLocalDays\(usageRange, new Date\(\)\)[\s\S]*getAccountCreditEvents\(\{[\s\S]*startAt: day\.startAt,\s*endAt: day\.endAt,\s*limit: 1,/);
-assert.match(dialog, /count: Number\(responses\[index\]\.data\?\.pagination\?\.total[\s\S]*credits: Number\(responses\[index\]\.data\?\.summary\?\.consumed_ai_credits/);
+assert.match(dialog, /getAccountCreditEventDays\(\{[\s\S]*?timezone: browserTimeZone\(\),[\s\S]*?feature: creditEventFeature,[\s\S]*?limit: DAY_PAGE_SIZE,\s*offset: nextOffset,/);
+assert.doesNotMatch(dialog, /buildLocalDays|limit: 1,/, 'no per-day fan-out requests');
+assert.match(client, /`\/account\/credit-event-days\?\$\{params\.toString\(\)\}`/);
+assert.match(client, /new URLSearchParams\(\{ window: options\.window, tz: options\.timezone \}\)/);
+assert.match(dialog, /data-portal-usage="records-day-breakdown"/, 'day rows show a small per-service breakdown');
 assert.match(dialog, /data-portal-usage="records-day-row"[\s\S]*day_call_count[\s\S]*records-day-detail[\s\S]*renderEventTable\(expandedItems, 'time', true\)/);
 assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
 assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');

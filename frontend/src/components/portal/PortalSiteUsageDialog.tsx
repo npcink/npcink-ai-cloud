@@ -13,6 +13,7 @@ import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
   type PortalCreditEvent,
+  type PortalCreditEventDay,
   type PortalCreditEventFeature,
   type PortalCreditEventsPayload,
   type PortalCreditTrendPayload,
@@ -40,37 +41,24 @@ const SITE_USAGE_RANGES: Array<{ value: PortalCreditTrendWindow; key: string; fa
   { value: '30d', key: 'portal.usage.range_short_30d', fallback: '30d' },
 ];
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** Days shown per page when records are grouped by day (7d / 30d). */
 const DAY_PAGE_SIZE = 10;
 
-type SiteUsageDay = { key: string; dayStart: Date; startAt: string; endAt: string };
-type SiteUsageDayRow = SiteUsageDay & { count: number; credits: number };
+type SiteUsageDayRow = PortalCreditEventDay & { key: string; dayStart: Date };
 type SiteUsageBucketFilter = { startAt: string; endAt: string; label: string };
 
-/** Local calendar days (newest first) covering the last 7 / 30 days, clamped to [now - range, now]. */
-function buildLocalDays(range: '7d' | '30d', now: Date): SiteUsageDay[] {
-  const windowStart = now.getTime() - (range === '7d' ? 7 : 30) * DAY_MS;
-  const cursor = new Date(now);
-  cursor.setHours(0, 0, 0, 0);
-  const days: SiteUsageDay[] = [];
-  while (true) {
-    const next = new Date(cursor);
-    next.setDate(next.getDate() + 1);
-    if (next.getTime() <= windowStart) break;
-    const start = Math.max(cursor.getTime(), windowStart);
-    const end = Math.min(next.getTime(), now.getTime());
-    if (start < end) {
-      days.push({
-        key: cursor.toISOString(),
-        dayStart: new Date(cursor),
-        startAt: new Date(start).toISOString(),
-        endAt: new Date(end).toISOString(),
-      });
-    }
-    cursor.setDate(cursor.getDate() - 1);
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
   }
-  return days;
+}
+
+/** Server day key (YYYY-MM-DD, already in the requested timezone) → a local Date for labels. */
+function dayKeyToDate(day: string): Date {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, date || 1);
 }
 
 function formatDayLabel(day: Date, locale: Locale, t: (key: string, params?: Record<string, string>, fallback?: string) => string): string {
@@ -275,33 +263,27 @@ export function PortalSiteUsageDialog({
     }
   }, [bucketFilter, creditEventFeature, usageRange, t]);
 
-  /** One day row = credit-events for that local day with limit 1 (count + total come from pagination/summary). */
+  /** One aggregation request per page of days (portal credit-event-days, local timezone). */
   const loadDayPage = useCallback(async (nextOffset: number) => {
     const requestSiteId = siteIdRef.current;
     if (!requestSiteId || (usageRange !== '7d' && usageRange !== '30d')) return;
     const requestVersion = ++dayRequestVersionRef.current;
-    const days = buildLocalDays(usageRange, new Date());
     setDayLoading(true);
     setDayError('');
     setExpandedDayKey('');
     setExpandedItems(null);
     try {
-      const page = days.slice(nextOffset, nextOffset + DAY_PAGE_SIZE);
-      const responses = await Promise.all(page.map((day) => portalClient.getAccountCreditEvents({
+      const response = await portalClient.getAccountCreditEventDays({
         window: usageRange,
+        timezone: browserTimeZone(),
         feature: creditEventFeature,
         siteId: requestSiteId,
-        startAt: day.startAt,
-        endAt: day.endAt,
-        limit: 1,
-      })));
+        limit: DAY_PAGE_SIZE,
+        offset: nextOffset,
+      });
       if (requestVersion !== dayRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
-      setDayRows(page.map((day, index) => ({
-        ...day,
-        count: Number(responses[index].data?.pagination?.total ?? 0),
-        credits: Number(responses[index].data?.summary?.consumed_ai_credits ?? 0),
-      })));
-      setDayTotal(days.length);
+      setDayRows((response.data?.items || []).map((item) => ({ ...item, key: item.day, dayStart: dayKeyToDate(item.day) })));
+      setDayTotal(Number(response.data?.pagination?.total ?? 0));
       setDayOffset(nextOffset);
     } catch (err) {
       if (requestVersion !== dayRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
@@ -325,8 +307,8 @@ export function PortalSiteUsageDialog({
           window: usageRange,
           feature: creditEventFeature,
           siteId: requestSiteId,
-          startAt: day.startAt,
-          endAt: day.endAt,
+          startAt: day.start_at,
+          endAt: day.end_at,
           limit: 50,
           offset: collected.length,
         });
@@ -342,6 +324,15 @@ export function PortalSiteUsageDialog({
       setExpandedError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     }
   }, [creditEventFeature, usageRange, t]);
+
+  /** 「内容生成 12 · 联网搜索 4 · 其他 2」: top two services by AI credits, the rest folded. */
+  const formatDayBreakdown = (day: SiteUsageDayRow) => {
+    const label = (key: string) => t(`portal.usage.credit_ledger_feature_${key}_title`, {}, key);
+    const top = day.feature_totals.slice(0, 2).map((item) => `${label(item.feature_key)} ${formatNumber(Math.round(item.consumed_ai_credits))}`);
+    const rest = day.feature_totals.slice(2).reduce((sum, item) => sum + item.consumed_ai_credits, 0);
+    if (rest > 0) top.push(`${t('portal.usage.day_breakdown_other', {}, 'Other')} ${formatNumber(Math.round(rest))}`);
+    return top.join(' · ');
+  };
 
   const toggleDay = useCallback((day: SiteUsageDayRow) => {
     if (expandedDayKey === day.key) {
@@ -805,7 +796,8 @@ export function PortalSiteUsageDialog({
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {dayRows.map((day) => {
                                 const expanded = expandedDayKey === day.key;
-                                const hasCalls = day.count > 0;
+                                const hasCalls = day.event_count > 0;
+                                const breakdown = day.feature_totals.length > 0 ? formatDayBreakdown(day) : '';
                                 return (
                                   <Fragment key={day.key}>
                                     <tr
@@ -817,11 +809,21 @@ export function PortalSiteUsageDialog({
                                       <th scope="row" className="whitespace-nowrap px-2 py-3 font-medium">
                                         {formatDayLabel(day.dayStart, locale, t)}
                                       </th>
-                                      <td className="whitespace-nowrap px-2 py-3 tabular-nums">
-                                        {t('portal.usage.day_call_count', { count: formatNumber(day.count) }, '{{count}} calls')}
+                                      <td className="px-2 py-3">
+                                        <span className="tabular-nums">
+                                          {t('portal.usage.day_call_count', { count: formatNumber(day.event_count) }, '{{count}} calls')}
+                                        </span>
+                                        {breakdown ? (
+                                          <span
+                                            className="ml-3 break-words text-xs text-slate-500 dark:text-slate-400"
+                                            data-portal-usage="records-day-breakdown"
+                                          >
+                                            {breakdown}
+                                          </span>
+                                        ) : null}
                                       </td>
                                       <td className="whitespace-nowrap px-2 py-3 text-right font-semibold tabular-nums">
-                                        {formatCreditAmount(day.credits)}
+                                        {formatCreditAmount(day.consumed_ai_credits)}
                                       </td>
                                       <td className="px-0 py-3 text-right">
                                         {hasCalls ? (

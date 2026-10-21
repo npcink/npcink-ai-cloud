@@ -1634,6 +1634,26 @@ export interface PortalCreditEventBucketsPayload {
   items: PortalCreditEventBucket[];
 }
 
+export type PortalCreditEventDayWindow = '7d' | '30d';
+export interface PortalCreditEventDay {
+  /** Local calendar day (YYYY-MM-DD) in the requested timezone. */
+  day: string;
+  start_at: string;
+  end_at: string;
+  event_count: number;
+  consumed_ai_credits: number;
+  feature_totals: Array<{ feature_key: string; consumed_ai_credits: number; event_count: number }>;
+}
+export interface PortalCreditEventDaysPayload {
+  contract_version: 'portal-credit-event-days-v1';
+  generated_at: string;
+  timezone: string;
+  filters: { window: PortalCreditEventDayWindow; site_id: string; feature: string };
+  summary: { day_count: number; event_count: number; consumed_ai_credits: number };
+  pagination: { limit: number; offset: number; total: number; has_more: boolean };
+  items: PortalCreditEventDay[];
+}
+
 export interface PortalAuditBundle {
   summary: PortalAuditSummary;
   events: PortalAuditEvent[];
@@ -2150,6 +2170,22 @@ export class PortalClient {
     if (options.limit) params.set('limit', String(options.limit));
     if (options.offset) params.set('offset', String(options.offset));
     return this.request('GET', `/account/credit-event-buckets?${params.toString()}`, undefined);
+  }
+
+  async getAccountCreditEventDays(options: {
+    window: PortalCreditEventDayWindow;
+    timezone: string;
+    siteId?: string;
+    feature?: PortalCreditEventFeature;
+    limit?: number;
+    offset?: number;
+  }): Promise<PortalEnvelope<PortalCreditEventDaysPayload>> {
+    const params = new URLSearchParams({ window: options.window, tz: options.timezone });
+    if (options.siteId) params.set('site_id', options.siteId);
+    if (options.feature) params.set('feature', options.feature);
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.offset) params.set('offset', String(options.offset));
+    return this.request('GET', `/account/credit-event-days?${params.toString()}`, undefined);
   }
 
   async listCreditPacks(siteId: string): Promise<PortalEnvelope<PortalCreditPackCatalogPayload>> {
