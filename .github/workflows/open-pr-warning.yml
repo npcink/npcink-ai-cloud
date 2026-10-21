@@ -1,0 +1,33 @@
+name: Open PR Warning
+
+# Advisory only (AGENTS.md: at most 1 unmerged branch per repo).
+# Warns when other non-Dependabot PRs are still open. Never fails.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  open-pr-warning:
+    name: Open PR warning (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warn about other open PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SELF: ${{ github.event.pull_request.number }}
+        run: |
+          others=$(gh pr list -R "$REPO" --state open --limit 100 \
+            --json number,title,author \
+            -q ".[] | select(.number != $SELF) | select(.author.login != \"app/dependabot\") | \"#\(.number) \(.title)\"" || true)
+          if [ -n "$others" ]; then
+            n=$(printf '%s\n' "$others" | wc -l | tr -d ' ')
+            echo "::warning title=Other open PRs ($n)::AGENTS.md allows at most 1 unmerged branch per repo (zero file overlap excepted). Merge or close these first:%0A${others//$'\n'/%0A}"
+            printf '### Other open PRs (%s)\n%s\n' "$n" "$others" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No other open PRs."
+          fi
