@@ -7966,6 +7966,51 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "site_portal_reads"
     }
 
+    # Acquisition-only filter must not reuse the consume-heavy total (Sources tab bug).
+    # Account-level grants (site_id NULL), e.g. subscription_topup, must still appear
+    # while the portal request is scoped to the selected site.
+    with get_session(database_url) as session:
+        subscription = session.scalar(
+            select(AccountSubscription).where(
+                AccountSubscription.account_id == "acct_portal_reads"
+            )
+        )
+        assert subscription is not None
+        CommercialRepository(session).record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id=None,
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id=None,
+            provider_call_id=None,
+            event_type=CREDIT_LEDGER_EVENT_GRANT,
+            source_type="subscription_topup",
+            source_id="topup_portal_reads_001",
+            ai_credit_delta=10000,
+            quantity=10000,
+            unit="ai_credits",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="subscription_topup:topup_portal_reads_001",
+            created_at=datetime.now(UTC),
+        )
+        session.commit()
+
+    acquisition_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger"
+        "?limit=10&event_types=grant,adjustment,refund",
+        headers=portal_reads_headers(),
+    )
+    assert acquisition_ledger_response.status_code == 200
+    acquisition_ledger_data = acquisition_ledger_response.json()["data"]
+    assert acquisition_ledger_data["pagination"]["total"] == 1
+    assert len(acquisition_ledger_data["items"]) == 1
+    topup_item = acquisition_ledger_data["items"][0]
+    assert topup_item["source_type"] == "subscription_topup"
+    assert float(topup_item["ai_credit_delta"]) == 10000.0
+    assert not str(topup_item.get("site_id") or "").strip()
+
     with get_session(database_url) as session:
         CommercialRepository(session).record_credit_ledger_entry(
             account_id="acct_portal_reads",
@@ -8153,6 +8198,105 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert filtered_bucket_response.status_code == 200
     filtered_bucket_data = filtered_bucket_response.json()["data"]
     assert filtered_bucket_data["summary"]["consumed_ai_credits"] == 7.0
+
+    days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "limit": 3},
+        headers=portal_reads_headers(),
+    )
+    assert days_response.status_code == 200
+    days_data = days_response.json()["data"]
+    _assert_no_portal_commercial_internal_fields(days_data)
+    assert "account_id" not in days_data
+    assert days_data["contract_version"] == "portal-credit-event-days-v1"
+    assert days_data["timezone"] == "Asia/Shanghai"
+    assert days_data["pagination"]["limit"] == 3
+    assert days_data["pagination"]["total"] in {7, 8}
+    assert days_data["pagination"]["has_more"] is True
+    assert len(days_data["items"]) == 3
+    assert days_data["summary"]["consumed_ai_credits"] == 7.0
+    assert days_data["summary"]["event_count"] == 3
+    window_features = days_data["summary"]["feature_totals"]
+    assert sum(feature["consumed_ai_credits"] for feature in window_features) == 7.0
+    assert "topic_research" in {feature["feature_key"] for feature in window_features}
+    assert window_features == sorted(
+        window_features, key=lambda item: item["consumed_ai_credits"], reverse=True
+    )
+    assert [item["day"] for item in days_data["items"]] == sorted(
+        (item["day"] for item in days_data["items"]), reverse=True
+    )
+    for item in days_data["items"]:
+        assert item["start_at"] < item["end_at"]
+    # Day boundaries are local midnights (+08:00 => 16:00 UTC), except the clamped edges.
+    assert "T16:00:00" in days_data["items"][1]["start_at"]
+    today = days_data["items"][0]
+    assert today["event_count"] == 3
+    assert today["consumed_ai_credits"] == 7.0
+    assert sum(feature["consumed_ai_credits"] for feature in today["feature_totals"]) == 7.0
+    assert "topic_research" in {feature["feature_key"] for feature in today["feature_totals"]}
+    assert today["feature_totals"] == sorted(
+        today["feature_totals"], key=lambda item: item["consumed_ai_credits"], reverse=True
+    )
+
+    all_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "30d", "tz": "Asia/Shanghai", "limit": 31},
+        headers=portal_reads_headers(),
+    )
+    assert all_days_response.status_code == 200
+    all_days = all_days_response.json()["data"]
+    assert all_days["pagination"]["total"] in {30, 31}
+    assert sum(item["consumed_ai_credits"] for item in all_days["items"]) == 7.0
+    assert sum(1 for item in all_days["items"] if item["event_count"] > 0) == 1
+
+    second_page_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "30d", "tz": "Asia/Shanghai", "limit": 10, "offset": 10},
+        headers=portal_reads_headers(),
+    )
+    assert second_page_response.status_code == 200
+    second_page = second_page_response.json()["data"]
+    assert [item["day"] for item in second_page["items"]] == [
+        item["day"] for item in all_days["items"][10:20]
+    ]
+
+    topic_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "feature": "topic_research"},
+        headers=portal_reads_headers(),
+    )
+    assert topic_days_response.status_code == 200
+    topic_days = topic_days_response.json()["data"]
+    assert topic_days["summary"]["event_count"] == 1
+    topic_feature_keys = {
+        feature["feature_key"]
+        for item in topic_days["items"]
+        for feature in item["feature_totals"]
+    }
+    assert topic_feature_keys == {"topic_research"}
+
+    site_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "site_id": "site_portal_reads"},
+        headers=portal_reads_headers(),
+    )
+    assert site_days_response.status_code == 200
+    assert site_days_response.json()["data"]["summary"]["consumed_ai_credits"] == 7.0
+
+    other_site_days_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Asia/Shanghai", "site_id": "site_not_selected"},
+        headers=portal_reads_headers(),
+    )
+    assert other_site_days_response.status_code == 409
+    assert other_site_days_response.json()["error_code"] == "portal.site_selection_required"
+
+    bad_tz_response = client.get(
+        "/portal/v1/account/credit-event-days",
+        params={"window": "7d", "tz": "Mars/Olympus"},
+        headers=portal_reads_headers(),
+    )
+    assert bad_tz_response.status_code in {400, 422}
 
     # Keep the remainder of this long scenario focused on the payment grant it creates below.
     with get_session(database_url) as session:

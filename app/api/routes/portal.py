@@ -651,6 +651,33 @@ def _portal_payment_order_list_data(
     return data
 
 
+
+def _portal_credit_ledger_event_types(value: str) -> list[str] | None:
+    """Parse comma-separated event_types for credit-ledger filters.
+
+    Empty input keeps the default (all visible ledger event types).
+    Unknown tokens are dropped; an all-unknown list becomes an empty filter.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    allowed = {
+        "consume",
+        "grant",
+        "adjustment",
+        "refund",
+    }
+    parsed = [
+        part.strip().lower()
+        for part in raw.split(",")
+        if part.strip() and part.strip().lower() in allowed
+    ]
+    # Preserve caller intent: explicit filter that matched nothing → empty list
+    # (server returns zero rows) rather than falling back to all types.
+    if not parsed and raw:
+        return []
+    return parsed or None
+
 def _portal_credit_ledger_entry_data(value: object) -> dict[str, object]:
     entry = _dict_value(value)
     return {
@@ -876,6 +903,62 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
             }
             for item in _object_list(events.get("items"))
         ],
+    }
+
+
+def _portal_feature_totals_data(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        {
+            "feature_key": str(_dict_value(feature).get("feature_key") or ""),
+            "consumed_ai_credits": float(_dict_value(feature).get("consumed_ai_credits") or 0.0),
+            "event_count": int(_dict_value(feature).get("event_count") or 0),
+        }
+        for feature in value
+    ]
+
+
+def _portal_credit_event_days_data(value: object) -> dict[str, object]:
+    days = _dict_value(value)
+    filters = _dict_value(days.get("filters"))
+    summary = _dict_value(days.get("summary"))
+    pagination = _dict_value(days.get("pagination"))
+    items: list[dict[str, object]] = []
+    for raw_item in days.get("items") or []:
+        item = _dict_value(raw_item)
+        items.append(
+            {
+                "day": str(item.get("day") or ""),
+                "start_at": str(item.get("start_at") or ""),
+                "end_at": str(item.get("end_at") or ""),
+                "event_count": int(item.get("event_count") or 0),
+                "consumed_ai_credits": float(item.get("consumed_ai_credits") or 0.0),
+                "feature_totals": _portal_feature_totals_data(item.get("feature_totals")),
+            }
+        )
+    return {
+        "contract_version": str(days.get("contract_version") or ""),
+        "generated_at": str(days.get("generated_at") or ""),
+        "timezone": str(days.get("timezone") or ""),
+        "filters": {
+            "window": str(filters.get("window") or ""),
+            "site_id": str(filters.get("site_id") or ""),
+            "feature": str(filters.get("feature") or ""),
+        },
+        "summary": {
+            "day_count": int(summary.get("day_count") or 0),
+            "event_count": int(summary.get("event_count") or 0),
+            "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0.0),
+            "feature_totals": _portal_feature_totals_data(summary.get("feature_totals")),
+        },
+        "pagination": {
+            "limit": int(pagination.get("limit") or 0),
+            "offset": int(pagination.get("offset") or 0),
+            "total": int(pagination.get("total") or 0),
+            "has_more": bool(pagination.get("has_more")),
+        },
+        "items": items,
     }
 
 
@@ -3525,6 +3608,7 @@ async def get_portal_account_credit_ledger(
     limit: int = Query(default=25, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     site_id: str = Query(default="", max_length=191),  # noqa: B008
+    event_types: str = Query(default="", max_length=128),  # noqa: B008
 ) -> Any:
     auth = await resolve_portal_request_context(
         request,
@@ -3559,6 +3643,8 @@ async def get_portal_account_credit_ledger(
             limit=limit,
             offset=offset,
             site_id=resolved_site_id,
+            include_unscoped=True,
+            event_types=_portal_credit_ledger_event_types(event_types),
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3724,6 +3810,62 @@ async def get_portal_account_credit_event_buckets(
     return _portal_route_envelope(
         message="portal account credit event buckets loaded",
         data=_portal_credit_event_buckets_data(buckets),
+    )
+
+
+@router.get("/account/credit-event-days")
+async def get_portal_account_credit_event_days(
+    request: Request,
+    window: Literal["7d", "30d"] = Query(default="7d"),  # noqa: B008
+    tz: str = Query(default="UTC", max_length=64),  # noqa: B008
+    site_id: str = Query(default="", max_length=191),  # noqa: B008
+    feature: str = Query(default="", max_length=64),  # noqa: B008
+    limit: int = Query(default=10, ge=1, le=31),
+    offset: int = Query(default=0, ge=0),
+) -> Any:
+    """Per local calendar day call count + AI credits (with service split), paginated by day."""
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_access = _resolve_portal_account_access_without_site(
+        request,
+        principal_id=auth.principal_id,
+        selected_site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    resolved_site_id = _resolve_portal_selected_account_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        requested_site_id=site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+    )
+    if isinstance(resolved_site_id, JSONResponse):
+        return resolved_site_id
+    try:
+        days = await run_in_threadpool(
+            _get_commercial_service(request).get_portal_account_credit_event_days,
+            account_id,
+            window=window,
+            timezone=tz,
+            site_id=resolved_site_id,
+            feature=feature,
+            limit=limit,
+            offset=offset,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal account credit event days loaded",
+        data=_portal_credit_event_days_data(days),
     )
 
 
@@ -5113,6 +5255,7 @@ async def get_portal_site_credit_ledger(
     site_id: str,
     limit: int = Query(default=25, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
+    event_types: str = Query(default="", max_length=128),  # noqa: B008
 ) -> Any:
     auth = await resolve_portal_request_context(
         request,
@@ -5136,6 +5279,7 @@ async def get_portal_site_credit_ledger(
             limit=limit,
             offset=offset,
             site_id=site_id,
+            event_types=_portal_credit_ledger_event_types(event_types),
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

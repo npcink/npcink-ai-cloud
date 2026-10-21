@@ -1284,6 +1284,29 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             reason="subscription_order_activated",
             except_subscription_id=subscription_id,
         )
+        activation_metadata: dict[str, object] = {
+            **dict(subscription_order.metadata_json or {}),
+            "source": "subscription_order",
+            "subscription_order_id": subscription_order.subscription_order_id,
+            "payment_order_id": payment_order.order_id,
+            "monthly_price_cny": float(subscription_order.list_amount),
+            "billing_cycle": "monthly",
+        }
+        # Upgrade/renewal reuses the same subscription row; order metadata does not
+        # include operator top-ups, so carry same-period top-ups forward or they
+        # vanish from package_limit after activate.
+        carry_source = (
+            source
+            if source is not None and str(source.subscription_id) == str(subscription_id)
+            else None
+        )
+        activation_metadata.update(
+            service._carry_forward_operator_managed_topup_metadata(
+                source_subscription=carry_source,
+                period_start_at=period_start_at,
+                period_end_at=period_end_at,
+            )
+        )
         subscription, _snapshot = service._bind_subscription_in_session(
             repository=repository,
             subscription_id=subscription_id,
@@ -1293,14 +1316,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             status=SUBSCRIPTION_STATUS_ACTIVE,
             current_period_start_at=period_start_at,
             current_period_end_at=period_end_at,
-            metadata_json={
-                **dict(subscription_order.metadata_json or {}),
-                "source": "subscription_order",
-                "subscription_order_id": subscription_order.subscription_order_id,
-                "payment_order_id": payment_order.order_id,
-                "monthly_price_cny": float(subscription_order.list_amount),
-                "billing_cycle": "monthly",
-            },
+            metadata_json=activation_metadata,
         )
         payment_order.subscription_id = subscription.subscription_id
         subscription_order.status = SUBSCRIPTION_ORDER_STATUS_ACTIVATED

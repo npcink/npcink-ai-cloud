@@ -3,7 +3,7 @@
 
 :root {
   /* Portal density tokens (service center). Prefer these over page-level pixel literals. */
-  --portal-content-max-width: 80rem; /* 1280px */
+  --portal-content-max-width: 56rem; /* ~896px; match Overview / Spec service-center width */
   --portal-header-min-height: 5rem; /* 80px */
   --portal-header-target-height: 7.5rem; /* 120px soft ceiling for title zone */
   --portal-row-min-height: 4rem; /* 64px */

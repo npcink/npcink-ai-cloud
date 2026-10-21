@@ -1,46 +1,60 @@
 # Workspace Target
 
-This file records the current workspace-specific remote deploy target for
-Npcink AI Cloud so future AI sessions do not need to recover it from chat
-history.
+This file explains how this workstation points Cloud deploy helpers at a remote
+host **without putting real SSH targets in Git**.
 
-## Confirmed values
+Real host/user/domain values stay in a **local-only** secrets file under
+`.deploy-secrets/` (gitignored). The tracked loader
+`deploy/workspace-target.env.sh` prefers that file, then falls back to
+placeholders.
 
-- Remote host IP: read from `NPCINK_CLOUD_DEPLOY_SSH_HOST`
-- Current remote host IP: `120.24.237.214`
-- Remote domain: `cloud.npc.ink`
-- SSH user: `root`
-- SSH credential: operator-held production secret; do not store the password in
-  this repository. If key-based SSH is used, set
-  `NPCINK_CLOUD_DEPLOY_IDENTITY_FILE` outside Git or in a local-only env file.
-- Confirmed public base URL target: `https://cloud.npc.ink`
-- Remote deploy root exists: `/opt/npcink-ai-cloud`
-- Current domain status:
-  - `cloud.npc.ink` is the production public origin.
-  - `GET https://cloud.npc.ink/health/live` was verified reachable from this
-    workstation on 2026-07-06.
-  - `magick.sofile.cn` and host `114.132.150.46` are historical targets and
-    should not be used for new Cloud deployment or smoke commands.
-- Current remote provider mode: OpenAI provider is configured against
-  `https://api.deepseek.com/v1`
-- Current remote `.env.deploy` should remain server-side or in the deploy secret
-  store. Do not commit production tokens, provider keys, DB credentials, SSH
-  credentials, or `.env.deploy`.
+## One-time local setup (keeps `source deploy/workspace-target.env.sh` working)
 
-## Saved launcher file
+```bash
+mkdir -p .deploy-secrets
+chmod 700 .deploy-secrets
+cp deploy/workspace-target.env.example .deploy-secrets/workspace-target.env.sh
+chmod 600 .deploy-secrets/workspace-target.env.sh
+# Edit the secrets file: set real NPCINK_CLOUD_DEPLOY_SSH_HOST / _USER /
+# BASE_URL / DOMAIN_NAME. Do not commit it.
+```
 
-- Shell exports: `deploy/workspace-target.env.sh`
-- Deploy env template: `.env.deploy`
-- Host nginx bind helper: `deploy/bind-domain-to-ssh-host.sh`
-
-Load it with:
+After that, existing commands are unchanged:
 
 ```bash
 source deploy/workspace-target.env.sh
+pnpm run deploy:ssh -- --skip-bundle-build --skip-seed
 ```
 
-The launcher exports only non-secret target metadata. Password-based SSH must
-be supplied by the operator at connection time or managed outside Git.
+### Override without editing the secrets file
+
+Export the same variables in your shell first; the secrets file and placeholders
+use `${VAR:-…}` so pre-exported values win:
+
+```bash
+export NPCINK_CLOUD_DEPLOY_SSH_HOST='…'
+export NPCINK_CLOUD_DEPLOY_SSH_USER='…'
+source deploy/workspace-target.env.sh
+```
+
+### What must never land in Git
+
+- Production / staging SSH host IPs or hostnames used as deploy targets
+- SSH passwords, private keys, or identity file paths that contain secrets
+- Production `.env.deploy` / provider tokens / DB credentials
+
+SSH credentials remain operator-held (agent, password prompt, or
+`NPCINK_CLOUD_DEPLOY_IDENTITY_FILE` outside Git).
+
+## Saved launcher files
+
+| Path | Role |
+| --- | --- |
+| `deploy/workspace-target.env.sh` | Tracked loader (source this) |
+| `deploy/workspace-target.env.example` | Template to copy into `.deploy-secrets/` |
+| `.deploy-secrets/workspace-target.env.sh` | Local real target (gitignored) |
+| `.env.deploy` | Deploy env template / protected env (not for secrets in Git) |
+| `deploy/bind-domain-to-ssh-host.sh` | Host nginx bind helper |
 
 ## Current deploy loop
 
@@ -74,17 +88,15 @@ pnpm run deploy:ssh -- --env-file /absolute/path/to/protected.env.deploy
 
 ## Current release verification
 
-- `pnpm run check:e2e:deploy-bundle:smoke` -> passed
-- `pnpm run deploy:ssh` -> passed
-- `GET ${NPCINK_CLOUD_BASE_URL}/health/live` -> `200 OK`
-- `GET ${NPCINK_CLOUD_BASE_URL}/` -> buyer-facing home page present
-- `GET ${NPCINK_CLOUD_BASE_URL}/portal/login` -> portal login present
+- `pnpm run check:e2e:deploy-bundle:smoke`
+- `pnpm run deploy:ssh`
+- `GET ${NPCINK_CLOUD_BASE_URL}/health/live`
+- `GET ${NPCINK_CLOUD_BASE_URL}/`
+- `GET ${NPCINK_CLOUD_BASE_URL}/portal/login`
 
-Formal release gating now follows:
+Formal release gating follows `deploy/RELEASE_CHECKLIST.md`.
 
-- `deploy/RELEASE_CHECKLIST.md`
-
-Current remote portal verification commands:
+Portal verification:
 
 ```bash
 source deploy/workspace-target.env.sh
@@ -92,26 +104,23 @@ pnpm run portal:bind:ssh -- --site-id <site-id> --member-email <email>
 pnpm run portal:smoke:ssh -- --site-id <site-id> --member-email <email>
 ```
 
-Dev-only development-code verification now uses a separate helper under
-`deploy/dev/`:
+Dev-only development-code verification uses `deploy/dev/`:
 
 ```bash
 source deploy/workspace-target.env.sh
 bash deploy/dev/remote-portal-login-code-smoke.sh --site-id <site-id> --member-email <email>
 ```
 
-Preferred real-site portal verification commands:
-
-```bash
-source deploy/workspace-target.env.sh
-pnpm run portal:bind:ssh -- --site-id <site-id> --member-email <email>
-pnpm run portal:smoke:ssh -- --site-id <site-id> --member-email <email>
-```
-
-Short runbook:
+Short runbooks:
 
 - `docs/archive/plans/cloud-mvp-ops-runbook.md`
 - `docs/archive/plans/cloud-mvp-acceptance-receipt-2026-03-23.md`
 
 Portal verification should always use explicit real-site bootstrap and the
 portal smoke helper.
+
+## Historical note
+
+Older evidence docs may still mention retired hosts or domains. Do not copy
+those into `.deploy-secrets/` or new smoke commands; treat dated history as
+non-authoritative for the live target.

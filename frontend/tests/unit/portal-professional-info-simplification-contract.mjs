@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 
 const root = process.cwd();
 const billingSource = readFileSync(resolve(root, 'src/app/portal/billing/page.tsx'), 'utf8');
-const usageSource = readFileSync(resolve(root, 'src/app/portal/usage/page.tsx'), 'utf8');
+// Spec: customer usage = package page site list -> PortalSiteUsageDialog (trend / AI credit records).
+const usageSource = readFileSync(resolve(root, 'src/components/portal/PortalSiteUsageDialog.tsx'), 'utf8');
 const creditTrendSource = readFileSync(resolve(root, 'src/components/portal/PortalCreditTrendPanel.tsx'), 'utf8');
 const aiInsightsPagePath = resolve(root, 'src/app/portal/ai-insights/page.tsx');
 const monitoringPagePath = resolve(root, 'src/app/portal/monitoring/page.tsx');
@@ -38,8 +39,19 @@ assert.doesNotMatch(
 );
 assert.match(
   usageSource,
-  /overview_title[\s\S]*view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*credit_events_title/,
-  'Portal usage should lead with current-period totals and task tabs before their panels'
+  /credit_events_summary[\s\S]*site-dialog-range[\s\S]*view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*embedded/,
+  'Site usage Modal should lead with one summary + shared time range row, then trend / records tabs embedding the trend panel'
+);
+assert.doesNotMatch(usageSource, /overview_title|<h2\b/, 'Site usage Modal must not repeat a period summary or a heading the active tab already names');
+assert.match(
+  creditTrendSource,
+  /\{embedded \? null : \([\s\S]*?<h2/,
+  'embedded trend panel must drop its own heading'
+);
+assert.match(
+  usageSource,
+  /<PortalInfoHint[\s\S]*?label=\{t\('portal\.usage\.primary_trend_title'[\s\S]*?data-portal-usage="trend-help"/,
+  'embedded trend description must fold into the dialog summary info hint (quiet)'
 );
 assert.match(
   creditTrendSource,

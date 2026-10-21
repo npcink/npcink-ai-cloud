@@ -875,3 +875,100 @@ def test_partial_refunds_revoke_subscription_when_total_reaches_full_amount(
     assert second_succeeded["order"]["status"] == PAYMENT_ORDER_STATUS_REFUNDED
     assert second_succeeded["restored_subscription"]["plan_id"] == "free"
     dispose_engine(database_url)
+
+
+def test_upgrade_activation_preserves_same_period_operator_topups(tmp_path: Path) -> None:
+    """Upgrade must keep same-period operator top-ups in metadata and budgets.
+
+    ``_activate_subscription_order_in_session`` used to replace subscription
+    metadata from the order payload, dropping ``operator_managed_topups`` so
+    package_limit fell back to the new plan budgets only.
+    """
+
+    now = datetime(2026, 7, 10, 8, 0, tzinfo=UTC)
+    clock = [now]
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url, clock)
+    _account(service, "acct_topup_upgrade")
+
+    plus_paid = _pay(
+        service,
+        account_id="acct_topup_upgrade",
+        offer_id="plus_monthly_v1",
+        key="plus-topup-upgrade",
+    )
+    plus_subscription = plus_paid["subscription"]
+    subscription_id = str(plus_subscription["subscription_id"])
+    period_start = now - timedelta(days=10)
+    period_end = now + timedelta(days=20)
+
+    with get_session(database_url) as session:
+        current = session.get(AccountSubscription, subscription_id)
+        assert current is not None
+        current.current_period_start_at = period_start
+        current.current_period_end_at = period_end
+        session.commit()
+
+    topup = service.apply_operator_managed_subscription_topup(
+        subscription_id=subscription_id,
+        ai_credits_increment=10_000.0,
+        reason="operator_overage_buffer",
+        note="preserve-across-upgrade",
+        audit_context=_audit("topup-before-upgrade"),
+    )
+    topup_id = str(topup["topup"]["topup_id"])
+    assert topup["topup_summary"]["current_period_totals"]["ai_credits"] == 10_000.0
+    assert (
+        topup["entitlement_snapshot"]["budgets"]["max_ai_credits_per_period"] == 13_000.0
+    )
+
+    pro_created = service.create_account_subscription_payment_order(
+        account_id="acct_topup_upgrade",
+        offer_id="pro_monthly_v1",
+        audit_context=_audit("pro-upgrade-after-topup-create"),
+    )
+    assert pro_created["subscription_order"]["order_kind"] == "upgrade"
+    pro_paid = service.mark_payment_order_paid(
+        order_id=str(pro_created["order"]["order_id"]),
+        amount=float(pro_created["order"]["amount"]),
+        provider_event_id="pro-upgrade-after-topup-paid",
+        audit_context=_audit("pro-upgrade-after-topup-paid"),
+    )
+    assert pro_paid["subscription"]["plan_id"] == "pro"
+    assert str(pro_paid["subscription"]["subscription_id"]) == subscription_id
+
+    with get_session(database_url) as session:
+        upgraded = session.get(AccountSubscription, subscription_id)
+        assert upgraded is not None
+        metadata = dict(upgraded.metadata_json or {})
+        topups = metadata.get("operator_managed_topups")
+        assert isinstance(topups, list)
+        matching = [
+            item
+            for item in topups
+            if isinstance(item, dict) and str(item.get("topup_id") or "") == topup_id
+        ]
+        assert len(matching) == 1
+        assert matching[0]["increments"]["ai_credits"] == 10_000.0
+        assert metadata.get("current_period_topup_totals", {}).get("ai_credits") == 10_000.0
+
+        repository = CommercialRepository(session)
+        plan_version = repository.get_plan_version(upgraded.plan_version_id)
+        assert plan_version is not None
+        effective = service._resolve_effective_subscription_budgets(
+            plan_version=plan_version,
+            subscription=upgraded,
+        )
+        # Pro plan base 10_000 + preserved top-up 10_000.
+        assert effective["max_ai_credits_per_period"] == 20_000.0
+
+        ledger = repository.get_credit_ledger_entry_by_idempotency_key(
+            f"subscription_topup:{topup_id}"
+        )
+        assert ledger is not None
+        assert ledger.source_type == "subscription_topup"
+        assert float(ledger.ai_credit_delta) == 10_000.0
+
+    dispose_engine(database_url)
+
