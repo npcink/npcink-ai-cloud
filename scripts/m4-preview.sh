@@ -2930,6 +2930,67 @@ refresh_frontend_dependency_volume() {
 	echo '[m4-preview] frontend dependency volume is ready for image copy-up'
 }
 
+# BEGIN inline run drain before API recreate
+# Inline runs execute inside the API request. Recreating the API mid-call used to
+# orphan them in `running` with no provider evidence (2026-10-21: two orphans,
+# each holding a max_active_runs=1 slot until the 180 s admission lease).
+# Wait, capped, until no inline run started within the in-flight window is still
+# running, then keep the outgoing container's logs for later diagnosis.
+inline_drain_timeout_seconds="${NPCINK_CLOUD_M4_INLINE_DRAIN_TIMEOUT_SECONDS:-90}"
+inline_inflight_window_seconds="${NPCINK_CLOUD_M4_INLINE_INFLIGHT_WINDOW_SECONDS:-60}"
+api_log_archive_dir="${HOME}/.cache/npcink-ai-cloud-m4-api-logs/${project_name}"
+api_log_archive_keep="${NPCINK_CLOUD_M4_API_LOG_ARCHIVE_KEEP:-20}"
+
+count_inflight_inline_runs() {
+	"${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1' <<SQL 2>/dev/null
+select count(*) from run_records
+where status = 'running'
+  and execution_pattern = 'inline'
+  and processing_started_at > now() - interval '${inline_inflight_window_seconds} seconds';
+SQL
+}
+
+drain_inline_runs_before_api_recreate() {
+	local waited=0 inflight
+	while :; do
+		if ! inflight="$(count_inflight_inline_runs)" || ! [[ "${inflight}" =~ ^[0-9]+$ ]]; then
+			echo '[m4-preview] inline drain: run_records is not readable; recreating without drain' >&2
+			return 0
+		fi
+		if [ "${inflight}" = "0" ]; then
+			echo "[m4-preview] inline drain: no inline run in flight (waited ${waited}s)"
+			return 0
+		fi
+		if [ "${waited}" -ge "${inline_drain_timeout_seconds}" ]; then
+			echo "[m4-preview] inline drain: ${inflight} inline run(s) still in flight after ${waited}s; recreating anyway (graceful shutdown still applies)" >&2
+			return 0
+		fi
+		echo "[m4-preview] inline drain: waiting for ${inflight} in-flight inline run(s) (${waited}/${inline_drain_timeout_seconds}s)"
+		sleep 3
+		waited=$((waited + 3))
+	done
+}
+
+archive_api_logs_before_recreate() {
+	local container_id stamp
+	container_id="$("${compose[@]}" ps -q api 2>/dev/null || true)"
+	[ -n "${container_id}" ] || return 0
+	mkdir -p "${api_log_archive_dir}"
+	stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+	if docker logs --timestamps "${container_id}" >"${api_log_archive_dir}/api-${stamp}.log" 2>&1; then
+		gzip -f "${api_log_archive_dir}/api-${stamp}.log" || true
+		echo "[m4-preview] archived outgoing API logs: ${api_log_archive_dir}/api-${stamp}.log.gz"
+	fi
+	# shellcheck disable=SC2012
+	ls -1t "${api_log_archive_dir}"/api-*.log.gz 2>/dev/null | tail -n +"$((api_log_archive_keep + 1))" | xargs -r rm -f
+}
+
+prepare_api_recreate() {
+	drain_inline_runs_before_api_recreate
+	archive_api_logs_before_recreate || true
+}
+# END inline run drain before API recreate
+
 if [ "${mode}" = "prepare" ]; then
 	echo "[m4-preview] prepare complete: images and Compose config are ready; no containers were changed"
 	stack_touched=0
@@ -2943,6 +3004,7 @@ elif [ "${mode}" = "deploy" ]; then
 	else
 		echo '[m4-preview] migration source is unchanged; Alembic upgrade skipped'
 	fi
+	prepare_api_recreate
 	"${compose[@]}" up -d --no-build --pull never \
 		postgres redis api worker callback-worker ops-worker
 	if [ "${worker_restart_required}" = "1" ]; then
@@ -2972,6 +3034,7 @@ else
 	# environment values, so the API must be recreated even when its image is
 	# unchanged. Uvicorn source reload cannot refresh a container environment.
 	stack_touched=1
+	prepare_api_recreate
 	"${compose[@]}" up -d --no-build --pull never --force-recreate api
 	if [ "${frontend_recreate_required}" = "1" ]; then
 		stack_touched=1
