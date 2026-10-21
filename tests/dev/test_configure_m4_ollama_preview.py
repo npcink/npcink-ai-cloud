@@ -11,6 +11,7 @@ from scripts.configure_m4_ollama_preview import (
     CLASSIFICATION_TIMEOUT_MS,
     MODEL_ID,
     PROFILE_IDS,
+    VISION_MODEL_ID,
     _apply_classification_timeout,
     _connection_payload,
     _embedding_connection_payload,
@@ -27,8 +28,19 @@ def test_m4_ollama_preview_connection_is_secretless_and_non_reasoning() -> None:
     assert payload["provider_id"] == "ollama-m4"
     assert payload["secretless"] is True
     assert payload["runtime_profile_ids"] == list(PROFILE_IDS)
+    # Since #1037 the same secretless route also serves the bounded vision model.
+    assert payload["capability_ids"] == ["text_generation", "vision"]
+    assert VISION_MODEL_ID == "qwen3-vl:2b"
     assert payload["config"] == {
-        "model_ids": [MODEL_ID],
+        "model_ids": [MODEL_ID, VISION_MODEL_ID],
+        "model_metadata_overrides": {
+            VISION_MODEL_ID: {
+                "feature": "vision",
+                "context_window": 262144,
+                "source": "m4_preview_operator_config",
+                "revision": "qwen3-vl-2b-context-v1",
+            }
+        },
         "timeout_seconds": 60,
         "default_reasoning_effort": "none",
     }
@@ -110,10 +122,27 @@ def test_m4_ollama_preview_configuration_rejects_production() -> None:
         _validate_environment(SimpleNamespace(environment="production"))  # type: ignore[arg-type]
 
 
-def test_m4_ollama_preview_disables_embedding_connection_when_probe_fails(
+def test_m4_ollama_preview_embedding_probe_failure_does_not_block_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Since #1037 a failed optional embedding probe must not abort provider setup.
+
+    The embedding connection is saved disabled while probing, then re-saved with
+    its normal (enabled) payload so the failure stays observable; configuration
+    continues to the embedding catalog check instead of re-raising the probe error.
+    """
     saved_payloads: list[tuple[dict[str, object], str | None]] = []
+    tested_connections: list[str] = []
+
+    class Session:
+        def __enter__(self) -> Session:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, _model: object, _connection_id: str) -> object | None:
+            return None  # no legacy connection to disable
 
     class Service:
         def save_connection(
@@ -124,9 +153,15 @@ def test_m4_ollama_preview_disables_embedding_connection_when_probe_fails(
         ) -> None:
             saved_payloads.append((payload, connection_id))
 
-        def test_connection(self, _connection_id: str) -> dict[str, str]:
-            return {"status": "ready"}
+        def test_connection(self, connection_id: str) -> dict[str, str]:
+            tested_connections.append(connection_id)
+            # Stop right after the embedding catalog check so the test stays a unit test.
+            return {"status": "ready" if len(tested_connections) == 1 else "not_ready"}
 
+    monkeypatch.setattr(
+        "scripts.configure_m4_ollama_preview.get_session",
+        lambda _database_url: Session(),
+    )
     monkeypatch.setattr(
         "scripts.configure_m4_ollama_preview.ProviderConnectionAdminService",
         lambda _database_url, _settings: Service(),
@@ -140,7 +175,7 @@ def test_m4_ollama_preview_disables_embedding_connection_when_probe_fails(
         fail_probe,
     )
 
-    with pytest.raises(RuntimeError, match="probe failed"):
+    with pytest.raises(RuntimeError, match="embedding catalog test did not become ready"):
         configure(
             SimpleNamespace(
                 environment="development",
@@ -148,10 +183,14 @@ def test_m4_ollama_preview_disables_embedding_connection_when_probe_fails(
             )  # type: ignore[arg-type]
         )
 
-    disabled_payload, connection_id = saved_payloads[-1]
-    assert connection_id is None
-    assert disabled_payload["connection_id"] == "ollama_m4_embedding"
-    assert disabled_payload["enabled"] is False
+    embedding_saves = [
+        payload
+        for payload, _connection_id in saved_payloads
+        if payload["connection_id"] == "ollama_m4_embedding"
+    ]
+    assert [payload["enabled"] for payload in embedding_saves] == [False, True]
+    assert all(connection_id is None for _payload, connection_id in saved_payloads)
+    assert tested_connections[-1] == "ollama_m4_embedding"
 
 
 def test_m4_ollama_preview_classification_uses_provider_timeout_budget() -> None:
