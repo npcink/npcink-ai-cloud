@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { PortalCreditTrendPanel } from '@/components/portal/PortalCreditTrendPanel';
 import { PortalInfoHint } from '@/components/portal/PortalScaffold';
@@ -16,6 +16,7 @@ import {
   type PortalCreditEventFeature,
   type PortalCreditEventsPayload,
   type PortalCreditTrendPayload,
+  type PortalCreditTrendPoint,
   type PortalCreditTrendWindow,
   type Site,
 } from '@/lib/portal-client';
@@ -33,11 +34,72 @@ type SiteUsageView = 'trend' | 'records';
 const SITE_USAGE_VIEWS: SiteUsageView[] = ['trend', 'records'];
 /** One time range shared by the trend and the AI credit records tabs. */
 const SITE_USAGE_RANGES: Array<{ value: PortalCreditTrendWindow; key: string; fallback: string }> = [
-  { value: '1h', key: 'portal.usage.trend_window_1h', fallback: '1 hour' },
-  { value: '24h', key: 'portal.usage.trend_window_24h', fallback: '24 hours' },
-  { value: '7d', key: 'portal.usage.trend_window_7d', fallback: '7 days' },
-  { value: '30d', key: 'portal.usage.trend_window_30d', fallback: '30 days' },
+  { value: '1h', key: 'portal.usage.range_short_1h', fallback: '1h' },
+  { value: '24h', key: 'portal.usage.range_short_24h', fallback: '24h' },
+  { value: '7d', key: 'portal.usage.range_short_7d', fallback: '7d' },
+  { value: '30d', key: 'portal.usage.range_short_30d', fallback: '30d' },
 ];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Days shown per page when records are grouped by day (7d / 30d). */
+const DAY_PAGE_SIZE = 10;
+
+type SiteUsageDay = { key: string; dayStart: Date; startAt: string; endAt: string };
+type SiteUsageDayRow = SiteUsageDay & { count: number; credits: number };
+type SiteUsageBucketFilter = { startAt: string; endAt: string; label: string };
+
+/** Local calendar days (newest first) covering the last 7 / 30 days, clamped to [now - range, now]. */
+function buildLocalDays(range: '7d' | '30d', now: Date): SiteUsageDay[] {
+  const windowStart = now.getTime() - (range === '7d' ? 7 : 30) * DAY_MS;
+  const cursor = new Date(now);
+  cursor.setHours(0, 0, 0, 0);
+  const days: SiteUsageDay[] = [];
+  while (true) {
+    const next = new Date(cursor);
+    next.setDate(next.getDate() + 1);
+    if (next.getTime() <= windowStart) break;
+    const start = Math.max(cursor.getTime(), windowStart);
+    const end = Math.min(next.getTime(), now.getTime());
+    if (start < end) {
+      days.push({
+        key: cursor.toISOString(),
+        dayStart: new Date(cursor),
+        startAt: new Date(start).toISOString(),
+        endAt: new Date(end).toISOString(),
+      });
+    }
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return days;
+}
+
+function formatDayLabel(day: Date, locale: Locale, t: (key: string, params?: Record<string, string>, fallback?: string) => string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const date = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric' }).format(day);
+  const weekday = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', { weekday: 'short' }).format(day);
+  if (day.getTime() === today.getTime()) return `${date} ${t('portal.usage.day_today', {}, 'Today')}`;
+  return `${date} ${weekday}`;
+}
+
+function formatClockTime(value: string, locale: Locale): string {
+  const date = parseUsageDate(value);
+  if (!date) return '-';
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+/** 「10/20 18:00–19:00」, or both dates when the slot crosses midnight. */
+function formatBucketLabel(startAt: string, endAt: string, locale: Locale): string {
+  const start = parseUsageDate(startAt);
+  const end = parseUsageDate(endAt);
+  if (!start || !end) return '';
+  const tag = locale === 'en' ? 'en-US' : 'zh-CN';
+  const day = (d: Date) => new Intl.DateTimeFormat(tag, { month: 'numeric', day: 'numeric' }).format(d);
+  const clock = (d: Date) => new Intl.DateTimeFormat(tag, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
+  return start.toDateString() === end.toDateString()
+    ? `${day(start)} ${clock(start)}–${clock(end)}`
+    : `${day(start)} ${clock(start)}–${day(end)} ${clock(end)}`;
+}
 
 /** credit-events has no 1h window: ask for 24h clamped to an explicit last-hour range. */
 function creditEventRangeParams(range: PortalCreditTrendWindow) {
@@ -133,6 +195,18 @@ export function PortalSiteUsageDialog({
   const [creditEventLoading, setCreditEventLoading] = useState(false);
   const [creditEventError, setCreditEventError] = useState('');
   const [creditEventFeature, setCreditEventFeature] = useState<PortalCreditEventFeature>('');
+  const [bucketFilter, setBucketFilter] = useState<SiteUsageBucketFilter | null>(null);
+  const [dayRows, setDayRows] = useState<SiteUsageDayRow[] | null>(null);
+  const [dayTotal, setDayTotal] = useState(0);
+  const [dayOffset, setDayOffset] = useState(0);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [dayError, setDayError] = useState('');
+  const [expandedDayKey, setExpandedDayKey] = useState('');
+  const [expandedItems, setExpandedItems] = useState<PortalCreditEvent[] | null>(null);
+  const [expandedError, setExpandedError] = useState('');
+  const dayRequestVersionRef = useRef(0);
+  const expandRequestVersionRef = useRef(0);
+  const isDayMode = !bucketFilter && (usageRange === '7d' || usageRange === '30d');
   const [selectedCreditEvent, setSelectedCreditEvent] = useState<PortalCreditEvent | null>(null);
   const creditEventPageSize = 20;
   const siteIdRef = useRef(siteId);
@@ -180,7 +254,9 @@ export function PortalSiteUsageDialog({
     setCreditEvents(null);
     try {
       const response = await portalClient.getAccountCreditEvents({
-        ...creditEventRangeParams(usageRange),
+        ...(bucketFilter
+          ? { window: usageRange === '1h' ? '24h' as const : usageRange, startAt: bucketFilter.startAt, endAt: bucketFilter.endAt }
+          : creditEventRangeParams(usageRange)),
         feature: creditEventFeature,
         siteId: requestSiteId,
         limit: creditEventPageSize,
@@ -197,7 +273,92 @@ export function PortalSiteUsageDialog({
         setCreditEventLoading(false);
       }
     }
+  }, [bucketFilter, creditEventFeature, usageRange, t]);
+
+  /** One day row = credit-events for that local day with limit 1 (count + total come from pagination/summary). */
+  const loadDayPage = useCallback(async (nextOffset: number) => {
+    const requestSiteId = siteIdRef.current;
+    if (!requestSiteId || (usageRange !== '7d' && usageRange !== '30d')) return;
+    const requestVersion = ++dayRequestVersionRef.current;
+    const days = buildLocalDays(usageRange, new Date());
+    setDayLoading(true);
+    setDayError('');
+    setExpandedDayKey('');
+    setExpandedItems(null);
+    try {
+      const page = days.slice(nextOffset, nextOffset + DAY_PAGE_SIZE);
+      const responses = await Promise.all(page.map((day) => portalClient.getAccountCreditEvents({
+        window: usageRange,
+        feature: creditEventFeature,
+        siteId: requestSiteId,
+        startAt: day.startAt,
+        endAt: day.endAt,
+        limit: 1,
+      })));
+      if (requestVersion !== dayRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
+      setDayRows(page.map((day, index) => ({
+        ...day,
+        count: Number(responses[index].data?.pagination?.total ?? 0),
+        credits: Number(responses[index].data?.summary?.consumed_ai_credits ?? 0),
+      })));
+      setDayTotal(days.length);
+      setDayOffset(nextOffset);
+    } catch (err) {
+      if (requestVersion !== dayRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
+      setDayError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+    } finally {
+      if (requestVersion === dayRequestVersionRef.current) setDayLoading(false);
+    }
   }, [creditEventFeature, usageRange, t]);
+
+  /** Expanded day lists every call of that day (pages of 50 until the total is reached). */
+  const loadExpandedDay = useCallback(async (day: SiteUsageDayRow) => {
+    const requestSiteId = siteIdRef.current;
+    if (!requestSiteId || (usageRange !== '7d' && usageRange !== '30d')) return;
+    const requestVersion = ++expandRequestVersionRef.current;
+    setExpandedItems(null);
+    setExpandedError('');
+    try {
+      const collected: PortalCreditEvent[] = [];
+      for (let page = 0; page < 40; page += 1) {
+        const response = await portalClient.getAccountCreditEvents({
+          window: usageRange,
+          feature: creditEventFeature,
+          siteId: requestSiteId,
+          startAt: day.startAt,
+          endAt: day.endAt,
+          limit: 50,
+          offset: collected.length,
+        });
+        const items = response.data?.items || [];
+        collected.push(...items);
+        const total = Number(response.data?.pagination?.total ?? collected.length);
+        if (items.length === 0 || collected.length >= total) break;
+      }
+      if (requestVersion !== expandRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
+      setExpandedItems(collected);
+    } catch (err) {
+      if (requestVersion !== expandRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
+      setExpandedError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+    }
+  }, [creditEventFeature, usageRange, t]);
+
+  const toggleDay = useCallback((day: SiteUsageDayRow) => {
+    if (expandedDayKey === day.key) {
+      expandRequestVersionRef.current += 1;
+      setExpandedDayKey('');
+      setExpandedItems(null);
+      return;
+    }
+    setExpandedDayKey(day.key);
+    void loadExpandedDay(day);
+  }, [expandedDayKey, loadExpandedDay]);
+
+  const selectTrendBucket = useCallback((point: PortalCreditTrendPoint) => {
+    setBucketFilter({ startAt: point.start_at, endAt: point.end_at, label: formatBucketLabel(point.start_at, point.end_at, locale) });
+    setCreditEventOffset(0);
+    setActiveView('records');
+  }, [locale]);
 
   useEffect(() => {
     siteIdRef.current = siteId;
@@ -212,6 +373,9 @@ export function PortalSiteUsageDialog({
     setCreditEventError('');
     setSelectedCreditEvent(null);
     setActiveView('trend');
+    setBucketFilter(null);
+    setDayRows(null);
+    setExpandedDayKey('');
   }, [siteId]);
 
   useEffect(() => {
@@ -246,6 +410,17 @@ export function PortalSiteUsageDialog({
       eventRequestVersionRef.current += 1;
     };
   }, [activeView, creditEventFeature, usageRange, isOpen, loadCreditEventPage, siteId, siteContextReady]);
+
+  useEffect(() => {
+    if (!isOpen || !siteId || !siteContextReady) return;
+    if (activeView !== 'records' || !isDayMode) return;
+    setDayRows(null);
+    void loadDayPage(0);
+    return () => {
+      dayRequestVersionRef.current += 1;
+      expandRequestVersionRef.current += 1;
+    };
+  }, [activeView, isDayMode, isOpen, loadDayPage, siteId, siteContextReady]);
 
   const formatQuotaValue = (value: unknown) => formatNumber(Math.round(Number(value || 0)));
   const formatCreditAmount = (value: number) => formatNumber(Math.abs(Math.round(value)));
@@ -294,6 +469,58 @@ export function PortalSiteUsageDialog({
   const pageEnd = Math.min(creditEventOffset + creditEventPageSize, creditEventCount);
   const hasPreviousPage = creditEventOffset > 0;
   const hasNextPage = creditEventOffset + creditEventPageSize < creditEventCount;
+  const renderEventTable = (items: PortalCreditEvent[], timeMode: 'time' | 'datetime', nested: boolean) => (
+                        <div data-portal-usage={nested ? 'records-day-calls' : 'records-table'}>
+                          <table className="w-full table-fixed text-left text-sm">
+                            <caption className="sr-only">{t('portal.usage.credit_events_title')}</caption>
+                            <colgroup>
+                              <col className="w-40" />
+                              <col />
+                              <col className="w-36" />
+                              <col className="w-8" />
+                            </colgroup>
+                            <thead className={nested ? 'sr-only' : 'border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400'}>
+                              <tr>
+                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_ledger_time')}</th>
+                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_events_feature_label')}</th>
+                                <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.credit_events_points_column')}</th>
+                                <th scope="col" className="px-0 py-2"><span className="sr-only">{t('common.view_details')}</span></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {items.map((entry) => (
+                                <tr
+                                  key={entry.event_id}
+                                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                                  onClick={() => setSelectedCreditEvent(entry)}
+                                  data-portal-usage="records-row"
+                                >
+                                  <th scope="row" className={`whitespace-nowrap py-3 font-normal ${nested ? 'pl-6 pr-2' : 'px-2'} text-slate-600 dark:text-slate-300`}>
+                                    {timeMode === 'time' ? formatClockTime(entry.created_at, locale) : formatCreditEventTime(entry.created_at, locale)}
+                                  </th>
+                                  <td className="break-words px-2 py-3 text-slate-900 dark:text-slate-100">{eventFeatureText(entry, 'title')}</td>
+                                  <td className="whitespace-nowrap px-2 py-3 text-right font-semibold tabular-nums">
+                                    {formatCreditAmount(entry.consumed_ai_credits)}
+                                  </td>
+                                  <td className="px-0 py-3 text-right">
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-lg leading-none text-slate-400 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:text-slate-200"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setSelectedCreditEvent(entry);
+                                      }}
+                                      aria-label={`${eventFeatureText(entry, 'title')} · ${t('common.view_details')}`}
+                                    >
+                                      <span aria-hidden="true">›</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+  );
   const siteTitle = site ? getPortalSiteDisplayName(site) : t('common.site', {}, 'Site');
   const siteUrl = site ? getPortalSiteUrlDisplay(site) : '';
 
@@ -385,7 +612,7 @@ export function PortalSiteUsageDialog({
                 className="sticky -top-4 z-20 -mx-6 -mt-4 space-y-3 border-b border-slate-200 bg-white px-6 pt-4 dark:border-slate-800 dark:bg-gray-900"
                 data-portal-usage="site-dialog-header"
               >
-                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" data-portal-usage="site-dialog-summary">
+                <div className="flex items-center justify-between gap-4" data-portal-usage="site-dialog-summary">
                   <p className="min-w-0 flex-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
                     <span data-portal-usage="site-dialog-summary-text">
                       {summaryHead}
@@ -404,7 +631,7 @@ export function PortalSiteUsageDialog({
                   <div
                     role="radiogroup"
                     aria-label={t('portal.usage.credit_events_window_label', {}, 'Time range')}
-                    className="grid w-full grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800 sm:inline-flex sm:w-auto sm:shrink-0"
+                    className="flex shrink-0 items-center gap-1"
                     data-portal-usage="site-dialog-range"
                   >
                     {SITE_USAGE_RANGES.map((option) => (
@@ -413,14 +640,15 @@ export function PortalSiteUsageDialog({
                         type="button"
                         role="radio"
                         aria-checked={usageRange === option.value}
-                        className={`min-h-9 min-w-0 whitespace-nowrap rounded-lg px-1 py-1.5 text-xs font-medium sm:px-2.5 sm:text-sm transition-colors ${
+                        className={`whitespace-nowrap rounded-md px-2 py-1 text-sm transition-colors ${
                           usageRange === option.value
-                            ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-950 dark:text-blue-300'
-                            : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                            ? 'font-semibold text-slate-950 dark:text-white'
+                            : 'text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
                         }`}
                         onClick={() => {
                           setUsageRange(option.value);
                           setCreditEventOffset(0);
+                          setBucketFilter(null);
                         }}
                       >
                         {t(option.key, {}, option.fallback)}
@@ -486,6 +714,7 @@ export function PortalSiteUsageDialog({
                     isLoading={creditTrendLoading}
                     error={creditTrendError}
                     onRetry={() => void loadCreditTrend()}
+                    onBucketSelect={selectTrendBucket}
                     embedded
                   />
                 ) : null}
@@ -510,6 +739,7 @@ export function PortalSiteUsageDialog({
                         onChange={(event) => {
                           setCreditEventFeature(event.target.value as PortalCreditEventFeature);
                           setCreditEventOffset(0);
+                          setExpandedDayKey('');
                         }}
                         data-portal-usage="records-feature-filter"
                       >
@@ -521,7 +751,121 @@ export function PortalSiteUsageDialog({
                         ))}
                       </select>
                     </label>
-                    {creditEventError ? (
+                    {bucketFilter ? (
+                      <div className="flex items-center gap-2 text-sm" data-portal-usage="records-bucket-filter">
+                        <span className="text-slate-500 dark:text-slate-400">{t('portal.usage.bucket_filter_label', {}, 'Time slot')}</span>
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 py-0.5 pl-3 pr-1 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                          data-portal-usage="records-bucket-chip"
+                        >
+                          {bucketFilter.label}
+                          <button
+                            type="button"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full text-base leading-none hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                            aria-label={t('portal.usage.bucket_filter_clear', {}, 'Clear time slot filter')}
+                            onClick={() => setBucketFilter(null)}
+                          >
+                            <span aria-hidden="true">×</span>
+                          </button>
+                        </span>
+                      </div>
+                    ) : null}
+                    {isDayMode ? (
+                      dayError ? (
+                        <PortalErrorState
+                          title={t('error.failed_load')}
+                          description={dayError}
+                          retryLabel={t('common.retry')}
+                          onRetry={() => void loadDayPage(dayOffset)}
+                        />
+                      ) : !dayRows ? (
+                        <div className="space-y-2" aria-label={t('common.loading')}>
+                          {[0, 1, 2, 3].map((item) => (
+                            <div key={item} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />
+                          ))}
+                        </div>
+                      ) : (
+                        <div data-portal-usage="records-day-table">
+                          <table className="w-full table-fixed text-left text-sm">
+                            <caption className="sr-only">{t('portal.usage.credit_events_title')}</caption>
+                            <colgroup>
+                              <col className="w-40" />
+                              <col />
+                              <col className="w-36" />
+                              <col className="w-8" />
+                            </colgroup>
+                            <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                              <tr>
+                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.day_column', {}, 'Date')}</th>
+                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.day_calls_column', {}, 'Calls')}</th>
+                                <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.day_total_column', {}, 'Total AI credits')}</th>
+                                <th scope="col" className="px-0 py-2"><span className="sr-only">{t('portal.usage.day_expand', {}, 'Show calls')}</span></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {dayRows.map((day) => {
+                                const expanded = expandedDayKey === day.key;
+                                const hasCalls = day.count > 0;
+                                return (
+                                  <Fragment key={day.key}>
+                                    <tr
+                                      className={hasCalls ? 'cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60' : 'text-slate-400 dark:text-slate-500'}
+                                      onClick={hasCalls ? () => toggleDay(day) : undefined}
+                                      data-portal-usage="records-day-row"
+                                      data-expanded={expanded ? 'true' : 'false'}
+                                    >
+                                      <th scope="row" className="whitespace-nowrap px-2 py-3 font-medium">
+                                        {formatDayLabel(day.dayStart, locale, t)}
+                                      </th>
+                                      <td className="whitespace-nowrap px-2 py-3 tabular-nums">
+                                        {t('portal.usage.day_call_count', { count: formatNumber(day.count) }, '{{count}} calls')}
+                                      </td>
+                                      <td className="whitespace-nowrap px-2 py-3 text-right font-semibold tabular-nums">
+                                        {formatCreditAmount(day.credits)}
+                                      </td>
+                                      <td className="px-0 py-3 text-right">
+                                        {hasCalls ? (
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:text-slate-200"
+                                            aria-expanded={expanded}
+                                            aria-label={`${formatDayLabel(day.dayStart, locale, t)} · ${t('portal.usage.day_expand', {}, 'Show calls')}`}
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              toggleDay(day);
+                                            }}
+                                          >
+                                            <span aria-hidden="true" className={`inline-block text-lg leading-none transition-transform ${expanded ? 'rotate-90' : ''}`}>›</span>
+                                          </button>
+                                        ) : null}
+                                      </td>
+                                    </tr>
+                                    {expanded ? (
+                                      <tr data-portal-usage="records-day-detail">
+                                        <td colSpan={4} className="bg-slate-50/70 px-0 py-1 dark:bg-slate-900/40">
+                                          {expandedError ? (
+                                            <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                                              <span>{expandedError}</span>
+                                              <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadExpandedDay(day)}>
+                                                {t('common.retry', {}, 'Retry')}
+                                              </button>
+                                            </div>
+                                          ) : !expandedItems ? (
+                                            <p className="px-4 py-3 text-sm text-slate-500">{t('common.loading', {}, 'Loading...')}</p>
+                                          ) : (
+                                            renderEventTable(expandedItems, 'time', true)
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ) : null}
+                                  </Fragment>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    ) : creditEventError ? (
                       <PortalErrorState
                         title={t('error.failed_load')}
                         description={creditEventError}
@@ -535,78 +879,7 @@ export function PortalSiteUsageDialog({
                         ))}
                       </div>
                     ) : creditEventItems.length > 0 ? (
-                      <>
-                        <div className="hidden sm:block" data-portal-usage="records-table">
-                          <table className="w-full table-fixed text-left text-sm">
-                            <caption className="sr-only">{t('portal.usage.credit_events_title')}</caption>
-                            <colgroup>
-                              <col className="w-40" />
-                              <col />
-                              <col className="w-28" />
-                              <col className="w-8" />
-                            </colgroup>
-                            <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                              <tr>
-                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_ledger_time')}</th>
-                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_events_feature_label')}</th>
-                                <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.credit_events_points_column')}</th>
-                                <th scope="col" className="px-0 py-2"><span className="sr-only">{t('common.view_details')}</span></th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {creditEventItems.map((entry) => (
-                                <tr
-                                  key={entry.event_id}
-                                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                                  onClick={() => setSelectedCreditEvent(entry)}
-                                  data-portal-usage="records-row"
-                                >
-                                  <th scope="row" className="whitespace-nowrap px-2 py-3 font-normal text-slate-600 dark:text-slate-300">
-                                    {formatCreditEventTime(entry.created_at, locale)}
-                                  </th>
-                                  <td className="break-words px-2 py-3 text-slate-900 dark:text-slate-100">{eventFeatureText(entry, 'title')}</td>
-                                  <td className="whitespace-nowrap px-2 py-3 text-right font-semibold tabular-nums">
-                                    {formatCreditAmount(entry.consumed_ai_credits)}
-                                  </td>
-                                  <td className="px-0 py-3 text-right">
-                                    <button
-                                      type="button"
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-lg leading-none text-slate-400 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:text-slate-200"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        setSelectedCreditEvent(entry);
-                                      }}
-                                      aria-label={`${eventFeatureText(entry, 'title')} · ${t('common.view_details')}`}
-                                    >
-                                      <span aria-hidden="true">›</span>
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div className="divide-y divide-slate-100 dark:divide-slate-800 sm:hidden">
-                          {creditEventItems.map((entry) => (
-                            <button
-                              key={entry.event_id}
-                              type="button"
-                              className="flex w-full items-center gap-3 py-3 text-left"
-                              onClick={() => setSelectedCreditEvent(entry)}
-                              data-portal-usage="records-row"
-                            >
-                              <span className="min-w-0 flex-1">
-                                <span className="block break-words font-medium">{eventFeatureText(entry, 'title')}</span>
-                                <span className="mt-0.5 block text-xs text-slate-500">
-                                  {formatCreditEventTime(entry.created_at, locale)}
-                                </span>
-                              </span>
-                              <strong className="whitespace-nowrap tabular-nums">{formatCreditPoints(entry.consumed_ai_credits)}</strong>
-                              <span aria-hidden="true" className="text-lg leading-none text-slate-400">›</span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                      renderEventTable(creditEventItems, 'datetime', false)
                     ) : (
                       <p className="py-6 text-sm text-slate-500">{t('portal.usage.credit_events_empty')}</p>
                     )}
@@ -614,33 +887,43 @@ export function PortalSiteUsageDialog({
                 ) : null}
               </div>
 
-              {activeView === 'records' && !creditEventError && creditEvents && creditEventCount > 0 ? (
+              {activeView === 'records' && (isDayMode ? Boolean(dayRows && dayTotal > 0 && !dayError) : (!creditEventError && creditEvents && creditEventCount > 0)) ? (
                 <nav
                   className="sticky -bottom-4 z-20 -mx-6 -mb-4 mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-gray-900"
                   aria-label={t('common.pagination', {}, 'Pagination')}
                   data-portal-usage="records-pagination"
                 >
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t(
-                      'common.pagination_summary',
-                      { start: String(pageStart), end: String(pageEnd), total: String(creditEventCount) },
-                      `${pageStart}-${pageEnd} of ${creditEventCount}`,
-                    )}
+                    {isDayMode
+                      ? t(
+                          'portal.usage.day_pagination_summary',
+                          { start: String(dayOffset + 1), end: String(Math.min(dayOffset + DAY_PAGE_SIZE, dayTotal)), total: String(dayTotal) },
+                          'Days {{start}}-{{end}} of {{total}}',
+                        )
+                      : t(
+                          'common.pagination_summary',
+                          { start: String(pageStart), end: String(pageEnd), total: String(creditEventCount) },
+                          `${pageStart}-${pageEnd} of ${creditEventCount}`,
+                        )}
                   </p>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={!hasPreviousPage || creditEventLoading}
-                      onClick={() => void loadCreditEventPage(Math.max(0, creditEventOffset - creditEventPageSize))}
+                      disabled={isDayMode ? dayOffset === 0 || dayLoading : !hasPreviousPage || creditEventLoading}
+                      onClick={() => (isDayMode
+                        ? void loadDayPage(Math.max(0, dayOffset - DAY_PAGE_SIZE))
+                        : void loadCreditEventPage(Math.max(0, creditEventOffset - creditEventPageSize)))}
                     >
                       {t('common.previous', {}, 'Previous')}
                     </button>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={!hasNextPage || creditEventLoading}
-                      onClick={() => void loadCreditEventPage(creditEventOffset + creditEventPageSize)}
+                      disabled={isDayMode ? dayOffset + DAY_PAGE_SIZE >= dayTotal || dayLoading : !hasNextPage || creditEventLoading}
+                      onClick={() => (isDayMode
+                        ? void loadDayPage(dayOffset + DAY_PAGE_SIZE)
+                        : void loadCreditEventPage(creditEventOffset + creditEventPageSize))}
                     >
                       {t('common.next_page', {}, 'Next page')}
                     </button>

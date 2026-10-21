@@ -57,11 +57,32 @@ assert.match(dialog, /break-words px-2 py-3/);
 
 // 10. Pagination is always visible (sticky footer, even for one page).
 assert.match(dialog, /sticky -bottom-4[^"]*"\s*aria-label=\{t\('common\.pagination'[\s\S]*data-portal-usage="records-pagination"/);
-assert.match(dialog, /creditEventCount > 0 \? \(\s*<nav/);
+assert.match(dialog, /creditEventCount > 0\)\) \? \(\s*<nav/);
 assert.doesNotMatch(dialog, /ListPagination/, 'ListPagination hides single pages; the dialog renders its own footer');
 
-// Narrow screens: the range control is a 4-column grid so 30 天 never clips.
-assert.match(dialog, /className="grid w-full grid-cols-4[^"]*sm:inline-flex/);
+// A. Light range control: segmented text buttons, no grey block, short labels, centred with the summary.
+assert.match(dialog, /className="flex items-center justify-between gap-4" data-portal-usage="site-dialog-summary"/);
+assert.match(dialog, /className="flex shrink-0 items-center gap-1"\s*data-portal-usage="site-dialog-range"/);
+assert.doesNotMatch(dialog, /bg-slate-100 p-1|bg-white text-blue-700 shadow-sm/, 'range control has no grey block / pill');
+assert.match(dialog, /key: 'portal\.usage\.range_short_1h'[\s\S]*range_short_30d/);
+assert.match(i18n, /'portal\.usage\.range_short_1h': '1 小时'[\s\S]*'portal\.usage\.range_short_30d': '30 天'/);
+
+// B. 7d / 30d records grouped by local day via the existing credit-events endpoint (limit 1 per day).
+assert.match(dialog, /const isDayMode = !bucketFilter && \(usageRange === '7d' \|\| usageRange === '30d'\)/);
+assert.match(dialog, /buildLocalDays\(usageRange, new Date\(\)\)[\s\S]*getAccountCreditEvents\(\{[\s\S]*startAt: day\.startAt,\s*endAt: day\.endAt,\s*limit: 1,/);
+assert.match(dialog, /count: Number\(responses\[index\]\.data\?\.pagination\?\.total[\s\S]*credits: Number\(responses\[index\]\.data\?\.summary\?\.consumed_ai_credits/);
+assert.match(dialog, /data-portal-usage="records-day-row"[\s\S]*day_call_count[\s\S]*records-day-detail[\s\S]*renderEventTable\(expandedItems, 'time', true\)/);
+assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
+assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');
+assert.match(dialog, /records-feature-filter/, 'service filter stays');
+assert.match(i18n, /'portal\.usage\.day_calls_column': '调用次数'[\s\S]*'portal\.usage\.day_total_column': '合计 AI 积分'/);
+
+// C. Chart bars open records for that bucket with a removable chip.
+assert.match(trend, /onClick=\{onBucketSelect \? \(\) => onBucketSelect\(point\) : undefined\}/);
+assert.match(dialog, /onBucketSelect=\{selectTrendBucket\}/);
+assert.match(dialog, /setBucketFilter\(\{ startAt: point\.start_at, endAt: point\.end_at[\s\S]*?setActiveView\('records'\)/);
+assert.match(dialog, /data-portal-usage="records-bucket-chip"[\s\S]*?onClick=\{\(\) => setBucketFilter\(null\)\}/);
+assert.match(dialog, /bucketFilter\s*\? \{ window: usageRange === '1h' \? '24h' as const : usageRange, startAt: bucketFilter\.startAt, endAt: bucketFilter\.endAt \}/);
 
 // ⓘ glued to the last word of the summary.
 assert.match(dialog, /<span className="whitespace-nowrap" data-portal-usage="site-dialog-summary-tail">\s*\{summaryTail\}\s*<PortalInfoHint/);

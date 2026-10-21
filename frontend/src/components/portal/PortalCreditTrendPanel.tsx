@@ -18,6 +18,8 @@ type PortalCreditTrendPanelProps = {
   /** Omit when the host owns the time-range control (the site usage dialog shares one across tabs). */
   onWindowChange?: (window: PortalCreditTrendWindow) => void;
   onRetry: () => void;
+  /** Clicking a bar opens that bucket's records (site usage dialog). */
+  onBucketSelect?: (point: PortalCreditTrendPayload['points'][number]) => void;
   /**
    * Embedded inside a dialog tab: no H2, no window tabs, no summary line and no card border.
    * The host renders the shared time range and the summary row above the tabs.
@@ -39,6 +41,7 @@ export function PortalCreditTrendPanel({
   error,
   onWindowChange,
   onRetry,
+  onBucketSelect,
   embedded = false,
 }: PortalCreditTrendPanelProps) {
   const { locale, t } = useLocale();
@@ -179,9 +182,18 @@ export function PortalCreditTrendPanel({
                   return (
                     <div
                       key={point.start_at}
-                      className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
+                      className={`group relative flex h-full min-w-0 flex-1 flex-col justify-end ${onBucketSelect ? 'cursor-pointer' : ''}`}
                       data-portal-usage="trend-bucket"
                       data-credits={credits}
+                      role={onBucketSelect ? 'button' : undefined}
+                      tabIndex={onBucketSelect ? 0 : undefined}
+                      aria-label={onBucketSelect ? `${pointLabel} · ${valueLabel} · ${t('portal.usage.trend_bucket_open', {}, 'Show records')}` : undefined}
+                      onClick={onBucketSelect ? () => onBucketSelect(point) : undefined}
+                      onKeyDown={onBucketSelect ? (event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        onBucketSelect(point);
+                      } : undefined}
                     >
                       <div
                         className={`pointer-events-none absolute bottom-full z-10 mb-1 hidden whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-950 ${tooltipAlign}`}
