@@ -9,6 +9,7 @@ import {
   PortalErrorState,
 } from '@/components/portal/PortalPageState';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
   type PortalCreditEvent,
@@ -101,6 +102,12 @@ export function PortalSiteUsageDialog({
 }: PortalSiteUsageDialogProps) {
   const { locale, t } = useLocale();
   const siteId = site?.site_id || '';
+  const { session, selectSite } = useSession();
+  // Portal commercial history is scoped to the session-selected site (backend
+  // answers 409 portal.site_selection_required otherwise), so switch first.
+  const siteContextReady = Boolean(siteId && session?.selected_context?.site?.site_id === siteId);
+  const [siteContextError, setSiteContextError] = useState('');
+  const [siteContextAttempt, setSiteContextAttempt] = useState(0);
   const [activeView, setActiveView] = useState<SiteUsageView>('trend');
   const [creditTrendWindow, setCreditTrendWindow] = useState<PortalCreditTrendWindow>('24h');
   const [creditTrend, setCreditTrend] = useState<PortalCreditTrendPayload | null>(null);
@@ -194,22 +201,37 @@ export function PortalSiteUsageDialog({
   }, [siteId]);
 
   useEffect(() => {
-    if (!isOpen || !siteId) return;
+    if (!isOpen || !siteId || siteContextReady) {
+      setSiteContextError('');
+      return;
+    }
+    let cancelled = false;
+    setSiteContextError('');
+    void selectSite(siteId).catch((err) => {
+      if (!cancelled) setSiteContextError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, siteId, siteContextReady, selectSite, siteContextAttempt, t]);
+
+  useEffect(() => {
+    if (!isOpen || !siteId || !siteContextReady) return;
     if (activeView !== 'trend') return;
     void loadCreditTrend();
     return () => {
       trendRequestVersionRef.current += 1;
     };
-  }, [activeView, isOpen, loadCreditTrend, siteId]);
+  }, [activeView, isOpen, loadCreditTrend, siteId, siteContextReady]);
 
   useEffect(() => {
-    if (!isOpen || !siteId) return;
+    if (!isOpen || !siteId || !siteContextReady) return;
     if (activeView !== 'records') return;
     void loadCreditEventPage(0);
     return () => {
       eventRequestVersionRef.current += 1;
     };
-  }, [activeView, creditEventFeature, creditEventWindow, isOpen, loadCreditEventPage, siteId]);
+  }, [activeView, creditEventFeature, creditEventWindow, isOpen, loadCreditEventPage, siteId, siteContextReady]);
 
   const formatQuotaValue = (value: unknown) => formatNumber(Math.round(Number(value || 0)));
   const formatCreditPoints = (value: number) =>
@@ -251,6 +273,19 @@ export function PortalSiteUsageDialog({
             title={t('portal.usage.choose_site_title', {}, 'Choose a site to view its usage')}
             description={t('portal.billing.site_usage_pick_hint', {}, 'Pick a connected site to review its trend and AI credit records.')}
           />
+        ) : siteContextError ? (
+          <PortalErrorState
+            title={t('error.failed_load')}
+            description={siteContextError}
+            retryLabel={t('common.retry')}
+            onRetry={() => setSiteContextAttempt((value) => value + 1)}
+          />
+        ) : !siteContextReady ? (
+          <div className="space-y-2" aria-label={t('common.loading')} data-portal-usage="site-dialog-context-loading">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />
+            ))}
+          </div>
         ) : selectedCreditEvent ? (
           <div className="space-y-6" data-portal-usage="site-dialog-event-detail">
             <button

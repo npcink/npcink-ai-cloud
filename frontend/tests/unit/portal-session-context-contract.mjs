@@ -277,13 +277,30 @@ assert.match(
 );
 assert.doesNotMatch(
   siteUsageListSource + siteUsageDialogSource,
-  /selected_context|site_selection_required_title|Choose a current site before viewing/,
-  'site usage must not depend on or dead-end on a selected session site'
+  /site_selection_required_title|Choose a current site before viewing/,
+  'site usage must not dead-end on a selected session site'
+);
+assert.doesNotMatch(siteUsageListSource, /selected_context/, 'site usage list must not filter by the selected session site');
+// Backend scopes commercial history to the session-selected site (409 portal.site_selection_required otherwise).
+assert.match(
+  siteUsageDialogSource,
+  /const siteContextReady = Boolean\(siteId && session\?\.selected_context\?\.site\?\.site_id === siteId\)/,
+  'site usage Modal must know whether the chosen site is the session-selected site'
 );
 assert.match(
   siteUsageDialogSource,
-  /if \(!isOpen \|\| !siteId\) return;[\s\S]*loadCreditTrend\(\)/,
-  'site usage Modal must only load once it is open for a concrete site'
+  /if \(!isOpen \|\| !siteId \|\| siteContextReady\)[\s\S]*?selectSite\(siteId\)/,
+  'site usage Modal must switch the session site before requesting commercial history'
+);
+assert.match(
+  siteUsageDialogSource,
+  /if \(!isOpen \|\| !siteId \|\| !siteContextReady\) return;\s*if \(activeView !== 'trend'\) return;\s*void loadCreditTrend\(\)/,
+  'site usage trend must wait for the session site switch'
+);
+assert.match(
+  siteUsageDialogSource,
+  /if \(!isOpen \|\| !siteId \|\| !siteContextReady\) return;\s*if \(activeView !== 'records'\) return;\s*void loadCreditEventPage\(0\)/,
+  'site usage records must wait for the session site switch'
 );
 assert.match(
   siteUsageDialogSource,

@@ -466,6 +466,16 @@ async function installPortalMocks(
       return;
     }
 
+    if (
+      (pathname === '/account/credit-trend' || pathname === '/account/credit-events')
+      && url.searchParams.get('site_id')
+      && url.searchParams.get('site_id') !== selectedSiteId
+    ) {
+      // Mirror the backend: commercial history is scoped to the session-selected site.
+      await fulfillError(route, 'portal.site_selection_required', 409);
+      return;
+    }
+
     if (pathname === '/account/credit-trend') {
       const trendWindow = url.searchParams.get('window') || '24h';
       const trendSiteId = url.searchParams.get('site_id') || '';
@@ -2832,4 +2842,29 @@ test('portal simple home keeps WordPress and account settings reachable on mobil
   await nav.getByRole('link', { name: /Account settings|账号设置/i }).click();
   await expect(page).toHaveURL(/\/portal\/account$/);
   await expect(nav).not.toBeVisible();
+});
+
+test('site usage Modal switches the session site before loading trend and records', async ({ page }) => {
+  await installPortalMocks(page);
+  const selectRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/session\/site$/.test(new URL(request.url()).pathname)) {
+      selectRequests.push(request.postData() || '');
+    }
+  });
+
+  await page.goto('/portal/billing');
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(dialog).toBeVisible();
+  for (const label of [/1 小时|1 hour/, /24 小时|24 hours/, /7 天|7 days/, /30 天|30 days/]) {
+    await dialog.getByRole('tab', { name: label }).click();
+    await expect(dialog.locator('[data-portal-usage="primary-trend"] [role="img"]')).toBeVisible();
+  }
+  await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);
+  expect(selectRequests.some((body) => body.includes('site_clear'))).toBe(true);
+
+  await dialog.getByRole('tab', { name: /AI 积分记录|AI credit records/ }).click();
+  await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /查看详情|View details/ }).first()).toBeVisible();
 });
