@@ -63,11 +63,9 @@ def test_drain_is_capped_and_scoped_to_recent_inline_runs() -> None:
     assert not re.search(r"\b(update|delete|insert)\b", block, re.I)
 
 
-def test_outgoing_api_logs_are_archived_and_bounded() -> None:
-    block = _drain_block()
-    assert 'docker logs --timestamps "${container_id}"' in block
-    assert 'api_log_archive_keep="${NPCINK_CLOUD_M4_API_LOG_ARCHIVE_KEEP:-20}"' in block
-    assert "archive_api_logs_before_recreate || true" in block
+def test_drain_does_not_change_the_inline_admission_lease() -> None:
+    models = (ROOT / "app" / "domain" / "runtime" / "models.py").read_text()
+    assert "RUNTIME_INLINE_RUN_LEASE_SECONDS = 180" in models
 
 
 def test_m4_api_graceful_shutdown_outlasts_the_provider_timeout() -> None:

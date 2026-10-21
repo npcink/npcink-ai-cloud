@@ -2935,11 +2935,9 @@ refresh_frontend_dependency_volume() {
 # orphan them in `running` with no provider evidence (2026-10-21: two orphans,
 # each holding a max_active_runs=1 slot until the 180 s admission lease).
 # Wait, capped, until no inline run started within the in-flight window is still
-# running, then keep the outgoing container's logs for later diagnosis.
+# running.
 inline_drain_timeout_seconds="${NPCINK_CLOUD_M4_INLINE_DRAIN_TIMEOUT_SECONDS:-90}"
 inline_inflight_window_seconds="${NPCINK_CLOUD_M4_INLINE_INFLIGHT_WINDOW_SECONDS:-60}"
-api_log_archive_dir="${HOME}/.cache/npcink-ai-cloud-m4-api-logs/${project_name}"
-api_log_archive_keep="${NPCINK_CLOUD_M4_API_LOG_ARCHIVE_KEEP:-20}"
 
 count_inflight_inline_runs() {
 	"${compose[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1' <<SQL 2>/dev/null
@@ -2971,23 +2969,8 @@ drain_inline_runs_before_api_recreate() {
 	done
 }
 
-archive_api_logs_before_recreate() {
-	local container_id stamp
-	container_id="$("${compose[@]}" ps -q api 2>/dev/null || true)"
-	[ -n "${container_id}" ] || return 0
-	mkdir -p "${api_log_archive_dir}"
-	stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-	if docker logs --timestamps "${container_id}" >"${api_log_archive_dir}/api-${stamp}.log" 2>&1; then
-		gzip -f "${api_log_archive_dir}/api-${stamp}.log" || true
-		echo "[m4-preview] archived outgoing API logs: ${api_log_archive_dir}/api-${stamp}.log.gz"
-	fi
-	# shellcheck disable=SC2012
-	ls -1t "${api_log_archive_dir}"/api-*.log.gz 2>/dev/null | tail -n +"$((api_log_archive_keep + 1))" | xargs -r rm -f
-}
-
 prepare_api_recreate() {
 	drain_inline_runs_before_api_recreate
-	archive_api_logs_before_recreate || true
 }
 # END inline run drain before API recreate
 
