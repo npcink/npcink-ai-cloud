@@ -50,7 +50,7 @@ from app.core.secrets import (
     encrypt_runtime_terminal_callback_secret,
     encrypt_site_api_signing_secret,
 )
-from app.core.security import build_secret_hash
+from app.core.security import build_secret_hash, derive_stable_secret_digest
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.customer_api_keys import (
     DEFAULT_PORTAL_RUNTIME_SCOPES,
@@ -124,7 +124,7 @@ def _hash_addon_connection_value(value: str, *, prefix: str) -> str:
             "service.wordpress_addon_connection_value_required",
             "wordpress addon connection value is required",
         )
-    return build_secret_hash(f"{WORDPRESS_ADDON_CONNECTION_PROVIDER}:{prefix}:{normalized}")
+    return derive_stable_secret_digest(f"{WORDPRESS_ADDON_CONNECTION_PROVIDER}:{prefix}:{normalized}")
 
 
 def _normalize_addon_return_url(value: str) -> str:

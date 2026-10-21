@@ -228,14 +228,19 @@ production deploy path.
 Configure these repository or environment secrets:
 
 ```text
-PROD_SSH_HOST=120.24.237.214
-PROD_SSH_USER=root
+PROD_SSH_HOST=<production SSH host; set only in GitHub Secrets / env store>
+PROD_SSH_USER=<release SSH user; set only in GitHub Secrets / env store>
 PROD_SSH_PORT=22
-PROD_SSH_KEY=<private key for the root-managed release account>
+PROD_SSH_KEY=<private key for the release account>
 PROD_SSH_KNOWN_HOSTS=<pinned known_hosts line verified through an independent channel>
 PROD_REMOTE_DIR=/opt/npcink-ai-cloud
 PROD_BASE_URL=https://cloud.npc.ink
 ```
+
+Do not paste the live SSH host or user into this tracked document. Workstation
+deploy helpers load the same class of values from
+`.deploy-secrets/workspace-target.env.sh` (see `deploy/WORKSPACE_TARGET.md`);
+CI uses GitHub Secrets only.
 
 Protected formal release-smoke secrets used by either an explicitly selected
 deploy smoke or the separate `Release Smoke` workflow:
