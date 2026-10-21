@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { PortalCreditTrendPanel } from '@/components/portal/PortalCreditTrendPanel';
 import { PortalInfoHint } from '@/components/portal/PortalScaffold';
@@ -201,6 +201,7 @@ export function PortalSiteUsageDialog({
   const drillRequestVersionRef = useRef(0);
   const dialogBodyRef = useRef<HTMLDivElement>(null);
   const savedDayScrollRef = useRef(0);
+  const pendingDayScrollRestoreRef = useRef<number | null>(null);
   const isDayMode = !bucketFilter && (usageRange === '7d' || usageRange === '30d');
   const [selectedCreditEvent, setSelectedCreditEvent] = useState<PortalCreditEvent | null>(null);
   const creditEventPageSize = 20;
@@ -350,9 +351,27 @@ export function PortalSiteUsageDialog({
     setDrillDay(null);
     setDrillItems(null);
     setDrillHour(null);
-    const top = savedDayScrollRef.current;
-    requestAnimationFrame(() => scrollContainer()?.scrollTo({ top }));
+    pendingDayScrollRestoreRef.current = savedDayScrollRef.current;
   }, []);
+
+  /**
+   * Restore the day-table scroll only after the cached day rows are committed to the DOM
+   * (layout effect, before paint), then re-apply once on the next frame in case late layout
+   * (sticky footer / summary wrap) clamped it. Restoring from the click handler raced the
+   * re-render and got clamped to the drill view's shorter max scroll.
+   */
+  useLayoutEffect(() => {
+    const top = pendingDayScrollRestoreRef.current;
+    if (drillDay || top === null || !dayRows) return;
+    const el = scrollContainer();
+    if (!el) return;
+    el.scrollTop = top;
+    const frame = requestAnimationFrame(() => {
+      if (Math.abs(el.scrollTop - top) > 1) el.scrollTop = top;
+      pendingDayScrollRestoreRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [drillDay, dayRows]);
 
   /** Service columns: top 3 services of the whole window (stable across pages) + 其他. */
   const dayServiceColumns = dayFeatureTotals.slice(0, 3).map((item) => item.feature_key);

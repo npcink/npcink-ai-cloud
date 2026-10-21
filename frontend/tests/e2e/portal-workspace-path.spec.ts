@@ -625,7 +625,7 @@ async function installPortalMocks(
         generated_at: '2026-10-21T02:00:00Z',
         timezone: url.searchParams.get('tz') || 'UTC',
         filters: { window: dayWindow === 30 ? '30d' : '7d', site_id: url.searchParams.get('site_id') || '', feature: url.searchParams.get('feature') || '' },
-        summary: { day_count: total, event_count: 3, consumed_ai_credits: 30, feature_totals: [{ feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 }, { feature_key: 'web_search', consumed_ai_credits: 12, event_count: 2 }] },
+        summary: { day_count: total, event_count: 3, consumed_ai_credits: 30, feature_totals: [{ feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 }, { feature_key: 'web_search', consumed_ai_credits: 8, event_count: 1 }, { feature_key: 'site_knowledge', consumed_ai_credits: 4, event_count: 1 }, { feature_key: 'image_generation', consumed_ai_credits: 2, event_count: 1 }] },
         pagination: { limit, offset, total, has_more: offset + limit < total },
         items,
       });
@@ -2907,4 +2907,38 @@ test('site usage Modal switches the session site before loading trend and record
   await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: /24 小时|24h/ }).click();
   await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: /查看详情|View details/ }).first()).toBeVisible();
+});
+
+test('site usage day drill-down back restores the exact day-table scroll position', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 640 });
+  await installPortalMocks(page);
+  await page.goto('/portal/billing');
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  const scroller = dialog.locator('div.overflow-y-auto').first();
+  await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: '30 天' }).click();
+  await dialog.getByRole('tab', { name: /AI 积分记录/ }).click();
+  await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
+  for (const pageIndex of [0, 1]) {
+    if (pageIndex === 1) {
+      await dialog.getByRole('button', { name: /下一页/ }).click();
+      await expect(dialog.locator('[data-portal-usage="records-pagination"] p')).toContainText('11');
+    }
+    const maxScroll = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+    for (const fraction of [0, 0.4, 1]) {
+      const target = Math.round(maxScroll * fraction);
+      await scroller.evaluate((el, top) => { el.scrollTop = top; }, target);
+      const before = await scroller.evaluate((el) => el.scrollTop);
+      const row = dialog.locator('[data-portal-usage="records-day-row"]').filter({ hasNot: page.locator('text=/^0$/') });
+      const clickable = dialog.locator('[data-portal-usage="records-day-row"] button').first();
+      await clickable.click();
+      await expect(dialog.locator('[data-portal-usage="records-day-breadcrumb"]')).toBeVisible();
+      await dialog.locator('[data-portal-usage="records-day-breadcrumb"] button').click();
+      await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
+      await page.waitForTimeout(100);
+      const after = await scroller.evaluate((el) => el.scrollTop);
+      console.log(`SCROLL page=${pageIndex} target=${target} before=${before} after=${after}`);
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+    }
+  }
 });

@@ -83,6 +83,8 @@ assert.match(dialog, /day_calls_column[\s\S]*day_total_column/, 'calls + total c
 assert.match(dialog, /records-day-breadcrumb[\s\S]*onClick=\{closeDay\}/, 'breadcrumb back');
 assert.match(dialog, /records-day-drill[\s\S]*PortalCreditTrendPanel[\s\S]*window="24h"[\s\S]*onBucketSelect[\s\S]*records-bucket-chip/, 'drill reuses 24h bars + hour chip');
 assert.match(dialog, /savedDayScrollRef/, 'back restores scroll');
+assert.match(dialog, /useLayoutEffect\(\(\) => \{\s*const top = pendingDayScrollRestoreRef\.current;\s*if \(drillDay \|\| top === null \|\| !dayRows\) return;/, 'restore after cached day rows render, not from the click handler');
+assert.doesNotMatch(dialog, /requestAnimationFrame\(\(\) => scrollContainer\(\)\?\.scrollTo\(\{ top \}\)\)/, 'no racing rAF restore in closeDay');
 assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
 assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');
 assert.match(dialog, /records-feature-filter/, 'service filter stays');
