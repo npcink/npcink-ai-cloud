@@ -1728,10 +1728,11 @@ test('portal workspace interaction path: account overview to site detail and ser
   await page.goto('/portal');
 
   const portalPrimaryNav = page.locator('[data-ui="portal-primary-nav"]');
-  await expect(portalPrimaryNav.locator('> a')).toHaveCount(5);
+  // Usage merged into Package (site usage lives in the 站点用量 dialog): 4 primary links.
+  await expect(portalPrimaryNav.locator('> a')).toHaveCount(4);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Service$|^服务$|^服務$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Tickets$|^工单$|^工單$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Billing$|^账单$|^帳單$/i })).toHaveCount(0);
@@ -1798,53 +1799,25 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
 
+  // Usage merged into Package: site usage (trend + AI credit records) lives in the 站点用量 dialog.
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
-  await expect(page.getByText(/^612$|^612 点$/i).first()).toBeVisible();
-  const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
-  await expect(usageViewTabs.getByRole('tab')).toHaveCount(2);
-  await expect(usageViewTabs.getByRole('tab', { name: /Usage details|用量明细/i })).toHaveCount(0);
-  await expect(page.getByText(/^Generated At$|^生成时间$/i)).toHaveCount(0);
-  await expect(page.getByText(/Apr 1[^\n]*Apr 30|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)30日?/i).first()).toBeVisible();
-  await expect(page.getByText(/Ends .*2026.*Apr 30|截止 .*2026.*4(?:月|\/)30日?/i).first()).toBeVisible();
-  await expect(page.getByText(/Updated .*Apr 7|更新于 .*4(?:月|\/)7日?/i).first()).toBeVisible();
-  await expect(usageViewTabs.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
-  const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
-  await expect(trendPanel.getByRole('tab', { name: /24 hours|最近 24 小时/i })).toHaveAttribute('aria-selected', 'true');
-  await expect(trendPanel.locator('[data-trend-window="24h"]')).toHaveAttribute('data-trend-points', '24');
-  await expect(trendPanel.getByText(/24 AI credits used|共使用 24 AI 积分/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/portal\/billing(\?[^#]*)?#usage$/);
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_attention"]').click();
+  const usageDialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(usageDialog.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
+  await expect(usageDialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { checked: true })).toHaveText(/24h|24 小时/i);
+  await expect(usageDialog.locator('[data-portal-usage="trend-bucket"]').first()).toBeVisible();
   await testInfo.attach('p4-e03-portal-usage', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
-  for (const range of [
-    { name: /1 hour|最近 1 小时/i, value: '1h', points: '12' },
-    { name: /7 days|最近 7 天/i, value: '7d', points: '7' },
-    { name: /30 days|最近 30 天/i, value: '30d', points: '30' },
-  ]) {
-    await trendPanel.getByRole('tab', { name: range.name }).click();
-    await expect(trendPanel.locator(`[data-trend-window="${range.value}"]`)).toHaveAttribute('data-trend-points', range.points);
-  }
-  await usageViewTabs.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
-  await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
-  await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
-  await expect(page.locator('main').getByRole('combobox')).toHaveCount(3);
-  await expect(page.getByRole('combobox', { name: /Current site|当前站点/i })).toHaveValue('site_attention');
-  await page.locator('[data-portal-usage="records-table"]').getByRole('button', { name: /Content writing|内容生成/i }).click();
-  const creditEventDialog = page.getByRole('dialog', { name: /Content writing|内容生成/i });
-  await expect(creditEventDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
-  await creditEventDialog.getByText(/Support information|支持信息/i).click();
-  await expect(creditEventDialog.getByText(/run_portal_001/i)).toBeVisible();
-  await creditEventDialog.getByRole('button', { name: /Close|关闭/i }).click();
-  await page.reload();
-  const reloadedRecordsTab = page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i });
-  await expect(reloadedRecordsTab).toHaveAttribute('aria-selected', 'true');
-  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i }).click();
-  await expect(page).toHaveURL(/\/portal\/usage$/);
-  await expect(page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
-  await page.goto('/portal/usage?view=details');
-  await expect(page).toHaveURL(/\/portal\/usage$/);
+  await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  await usageDialog.getByRole('button', { name: /Content writing|内容生成/i }).first().click();
+  await expect(usageDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
+  await usageDialog.getByText(/Support information|支持信息/i).click();
+  await expect(usageDialog.getByText(/run_portal_001/i)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
 
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
@@ -2153,8 +2126,10 @@ test('account projections remain available without a selected site context', asy
 
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
+  // /portal/usage is a deep-link shim into the package page's usage section.
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/portal\/billing(\?[^#]*)?#usage$/);
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
   await page.goto('/portal/audit');
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
 

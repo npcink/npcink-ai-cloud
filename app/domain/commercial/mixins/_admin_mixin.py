@@ -3094,7 +3094,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         if category == "credit_pack_purchase":
             return f"Credit pack payment added {credits} AI credits after payment confirmation."
         if category == "subscription_topup":
-            return f"Operator top-up pack added {credits} AI credits to the package limit this period."
+            return (
+                f"Operator top-up pack added {credits} AI credits "
+                "to the package limit this period."
+            )
         if category == "ai_usage":
             label = AI_CREDIT_COMPONENT_LABELS.get(source_type, source_type or "AI capability")
             return f"{label} consumed {credits} AI credits."
