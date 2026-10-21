@@ -292,8 +292,13 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /const \[selectedAccountId, setSelectedAccountId\] = useState\(''\)[\s\S]*accounts\.some\([\s\S]*account\.account_id === selectedAccountId/,
-  'addon binding must require explicit selection of an eligible candidate'
+  /const \[manualAccountId, setSelectedAccountId\] = useState\(''\)[\s\S]*resolveDefaultAddonAccountId\(accounts, currentAccountId\)[\s\S]*accounts\.some\([\s\S]*account\.account_id === selectedAccountId/,
+  'addon binding must only submit an eligible candidate, defaulting via resolveDefaultAddonAccountId'
+);
+assert.match(
+  readFileSync(new URL('../../src/lib/portal-addon-account-default.ts', import.meta.url), 'utf8'),
+  /accounts\.length === 1[\s\S]*accounts\.some\(\(account\) => account\.account_id === current\)[\s\S]*return '';/,
+  'addon binding preselects only a sole account or a known eligible current account; otherwise selection stays explicit'
 );
 assert.equal(
   existsSync(resolve(root, 'src/hooks/usePortalSiteSelection.ts')),
