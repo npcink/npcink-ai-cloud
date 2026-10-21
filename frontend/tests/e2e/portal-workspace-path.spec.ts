@@ -2865,6 +2865,9 @@ test('site usage Modal switches the session site before loading trend and record
   expect(selectRequests.some((body) => body.includes('site_clear'))).toBe(true);
 
   await dialog.getByRole('tab', { name: /AI 积分记录|AI credit records/ }).click();
+  // 30d groups records by day; each day row is a scoped credit-events request too.
+  await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
+  await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: /24 小时|24h/ }).click();
   await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: /查看详情|View details/ }).first()).toBeVisible();
 });
