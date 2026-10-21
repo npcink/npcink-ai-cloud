@@ -209,7 +209,9 @@ export function PortalCreditTrendPanel({
               <div className="mt-2 flex gap-1" aria-hidden="true">
                 {points.map((point, index) => {
                   const pointLabel = formatPointLabel(point.start_at);
-                  const showLabel = index % labelEvery === 0 || index === points.length - 1;
+                  const lastIndex = points.length - 1;
+                  // Drop a regular label that sits closer than one interval to the right-aligned last label (they collide on narrow screens).
+                  const showLabel = index === lastIndex || (index % labelEvery === 0 && lastIndex - index >= labelEvery);
                   return (
                     <div
                       key={`label-${point.start_at}`}

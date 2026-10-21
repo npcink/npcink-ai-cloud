@@ -68,5 +68,8 @@ assert.match(dialog, /<span className="whitespace-nowrap" data-portal-usage="sit
 // Tab underline is derived from the active view only (no stale state).
 assert.match(dialog, /aria-selected=\{activeView === view\.value\}[\s\S]*?activeView === view\.value\s*\? 'border-slate-950/);
 
+// Axis: no regular label within one interval of the last label.
+assert.match(trend, /index === lastIndex \|\| \(index % labelEvery === 0 && lastIndex - index >= labelEvery\)/);
+
 assert.match(spec, /站点用量弹窗布局/, 'spec documents the site usage dialog layout');
 console.log('portal_site_usage_dialog_layout_contract: ok');
