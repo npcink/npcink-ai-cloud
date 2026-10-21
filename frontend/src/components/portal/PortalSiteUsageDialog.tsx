@@ -242,8 +242,8 @@ export function PortalSiteUsageDialog({
       closeLabel={t('common.close', {}, 'Close')}
       title={dialogTitle}
       description={dialogDescription}
-      size="xl"
-      className="max-h-[min(90vh,48rem)] max-w-4xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+      size="2xl"
+      className="max-h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
     >
       <div className="space-y-4 pb-2" data-portal-billing="site-usage-dialog">
         {!siteId ? (

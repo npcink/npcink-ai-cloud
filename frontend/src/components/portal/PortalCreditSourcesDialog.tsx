@@ -107,8 +107,8 @@ export function PortalCreditSourcesDialog({
         {},
         'See how package and paid credits were added this period.',
       )}
-      size="lg"
-      className="max-w-3xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+      size="2xl"
+      className="rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
     >
       <div className="space-y-0 pb-2" data-portal-billing="credit-sources-dialog">
         <PortalCreditSourcesContent

@@ -11,7 +11,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full';
   closeOnOverlay?: boolean;
   showCloseButton?: boolean;
   closeLabel?: string;
@@ -155,6 +155,8 @@ export function Modal({
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
+    '2xl': 'max-w-4xl',
+    '3xl': 'max-w-5xl',
     full: 'max-w-[calc(100vw-2rem)] h-[calc(100vh-2rem)]',
   };
 
