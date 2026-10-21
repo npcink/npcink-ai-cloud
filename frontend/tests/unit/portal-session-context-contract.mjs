@@ -9,7 +9,8 @@ const clientSource = read('src/lib/portal-client.ts');
 const sessionHookSource = read('src/hooks/useSession.ts');
 const homeSource = read('src/app/portal/page.tsx');
 const billingSource = read('src/app/portal/billing/page.tsx');
-const usageSource = read('src/app/portal/usage/page.tsx');
+const siteUsageListSource = read('src/components/portal/PortalBillingSiteUsageList.tsx');
+const siteUsageDialogSource = read('src/components/portal/PortalSiteUsageDialog.tsx');
 const auditSource = read('src/app/portal/audit/PortalAuditClient.tsx');
 const supportListSource = read('src/app/portal/support/page.tsx');
 const supportDetailSource = read('src/app/portal/support/[requestId]/page.tsx');
@@ -200,7 +201,6 @@ assert.doesNotMatch(
 );
 
 for (const [name, source] of [
-  ['usage', usageSource],
   ['audit', auditSource],
 ]) {
   assert.match(source, /siteFilterId/, `${name} must derive an optional site filter id`);
@@ -269,10 +269,31 @@ for (const [name, source] of [
   );
 }
 
+// Spec: usage = package page lists every account site (no selected site needed); a site opens its own Modal.
 assert.match(
-  usageSource,
-  /siteFilterId = searchParams\.get\('site'\)[\s\S]*siteId: requestSiteFilterId \|\| undefined/,
-  'account usage must default to all sites and pass a site query only when explicitly filtered'
+  billingSource,
+  /<PortalBillingSiteUsageList\s+sites=\{session\.sites\}/,
+  'package site usage list must come from account sites, not the selected site context'
+);
+assert.doesNotMatch(
+  siteUsageListSource + siteUsageDialogSource,
+  /selected_context|site_selection_required_title|Choose a current site before viewing/,
+  'site usage must not depend on or dead-end on a selected session site'
+);
+assert.match(
+  siteUsageDialogSource,
+  /if \(!isOpen \|\| !siteId\) return;[\s\S]*loadCreditTrend\(\)/,
+  'site usage Modal must only load once it is open for a concrete site'
+);
+assert.match(
+  siteUsageDialogSource,
+  /getAccountCreditTrend\(\{[\s\S]*siteId: requestSiteId[\s\S]*getAccountCreditEvents\(\{[\s\S]*siteId: requestSiteId/,
+  'site usage Modal must scope both trend and records to the chosen site'
+);
+assert.match(
+  siteUsageDialogSource,
+  /requestSiteId !== siteIdRef\.current\) return;/,
+  'site usage Modal must drop responses that arrive after the site changed'
 );
 
 assert.match(

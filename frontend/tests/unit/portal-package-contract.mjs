@@ -52,7 +52,6 @@ const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEnti
 const entitlementComponentSource = readFileSync(entitlementComponentPath, 'utf8');
 const billingStatusPath = resolve(root, 'src/lib/portal-billing-status.ts');
 const billingStatusSource = readFileSync(billingStatusPath, 'utf8');
-const usagePageSource = readFileSync(usagePagePath, 'utf8');
 const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
   packagePanelSource,
@@ -185,9 +184,9 @@ assert.doesNotMatch(
   'the entitlement summary must not fall back to the browser default locale'
 );
 assert.match(
-  usagePageSource,
-  /formatDateTime\(nextPaidCreditExpiry, locale\)/,
-  'the usage overview must preserve the paid-credit cutoff time with the current application locale'
+  entitlementComponentSource,
+  /paidExpiryDate \?[\s\S]*'portal\.usage\.paid_credit_expiry_hint',\s*\{ date: paidExpiryDate \}/,
+  'the package AI credit card must surface the paid-credit cutoff (usage lives on the package page, not a usage overview)'
 );
 assert.match(
   utilsSource,
@@ -333,13 +332,13 @@ assert.doesNotMatch(
 );
 assert.match(
   entitlementComponentSource,
-  /package_remaining_label[\s\S]*paid_remaining_label[\s\S]*total_remaining_label/,
-  'Shared entitlement summary must distinguish package, paid, and total available credits'
+  /remaining_ai_credits[\s\S]*package_remaining_label[\s\S]*paid_remaining_label/,
+  'Shared entitlement summary must show total remaining and split package vs paid credits'
 );
 assert.match(
   entitlementComponentSource,
-  /data-portal-entitlement-group=\{group\.key\}[\s\S]*?divide-y/,
-  'Shared entitlement summary must keep knowledge capacities in paired desktop columns'
+  /grid grid-cols-1 gap-3 md:grid-cols-2" data-portal-entitlement-group="quota"/,
+  'Shared entitlement summary must keep entitlement tiles (incl. knowledge capacity) in paired desktop columns'
 );
 assert.match(
   paymentOrderHistorySource,

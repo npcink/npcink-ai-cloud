@@ -21,9 +21,10 @@ assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'portal navbar must de
 const primaryHrefs = Array.from(primarySource.matchAll(/href:\s*'([^']+)'/g), (match) => match[1]);
 assert.deepEqual(
   primaryHrefs,
-  ['/portal', '/portal/billing', '/portal/usage', '/portal/support', '/portal/account'],
-  'portal primary nav must merge overview and sites into service while keeping package, usage, tickets, and account'
+  ['/portal', '/portal/billing', '/portal/support', '/portal/account'],
+  'portal primary nav must be service / package / tickets / account (usage lives under package)'
 );
+assert.doesNotMatch(primarySource, /\/portal\/usage/, 'usage must not be a separate primary navigation entry (Spec: package page site list)');
 assert.doesNotMatch(primarySource, /\/portal\/sites/, 'sites must not remain a separate primary navigation entry');
 
 assert.doesNotMatch(
@@ -72,26 +73,26 @@ assert.match(
 
 assert.match(i18nSource, /'portal\.nav_package': 'Package'/, 'English nav copy must expose package as its own entry');
 assert.match(i18nSource, /'portal\.nav_service': 'Service'/, 'English nav copy must identify the service workspace entry');
-assert.match(i18nSource, /'portal\.nav_usage': 'Usage'/, 'English nav copy must expose usage as its own entry');
+assert.match(i18nSource, /'portal\.nav_usage': 'Usage'/, 'legacy usage nav copy stays translated for the /portal/usage deep link');
 assert.match(i18nSource, /'portal\.workspace_label': 'Overview'/, 'English overview copy must name the user summary surface');
 assert.match(i18nSource, /'portal\.nav_support_requests': 'Tickets'/, 'English nav copy must expose support tickets as their own entry');
 assert.match(i18nSource, /'portal\.nav_account': 'Account'/, 'English nav copy must expose account and sign-in settings');
 assert.match(i18nSource, /'portal\.nav_package': '套餐'/, 'Chinese nav copy must expose package as its own entry');
 assert.match(i18nSource, /'portal\.nav_service': '服务'/, 'Chinese nav copy must identify the service workspace entry');
-assert.match(i18nSource, /'portal\.nav_usage': '用量'/, 'Chinese nav copy must expose usage as its own entry');
+assert.match(i18nSource, /'portal\.nav_usage': '用量'/, 'legacy usage nav copy stays translated for the /portal/usage deep link');
 assert.match(i18nSource, /'portal\.workspace_label': '概览'/, 'Chinese overview copy must name the user summary surface');
 assert.match(i18nSource, /'portal\.nav_support_requests': '工单'/, 'Chinese nav copy must expose support tickets as their own entry');
 assert.match(i18nSource, /'portal\.nav_account': '账号'/, 'Chinese nav copy must expose account and sign-in settings');
 
 assert.match(
   navbarSource,
-  /data-portal-nav="logout"[\s\S]*aria-label=\{logoutLabel\}[\s\S]*portal\.logout/,
-  'portal navbar desktop Logout must be an icon control labeled via aria-label (portal.logout)'
+  /const logoutLabel = t\('portal\.logout'/,
+  'portal navbar Logout copy must come from portal.logout'
 );
 assert.match(
   navbarSource,
-  /data-portal-nav="logout"[\s\S]*aria-hidden="true"/,
-  'portal navbar Logout icon must be aria-hidden with the accessible name on the button'
+  /<button[^>]*?\n?[\s\S]{0,200}data-portal-nav="logout"[\s\S]{0,600}?>\s*\{logoutLabel\}\s*<\/button>/,
+  'portal navbar desktop Logout must be a plain text button (Spec: 明文「退出」, no icon-only control)'
 );
 assert.doesNotMatch(
   navbarSource,

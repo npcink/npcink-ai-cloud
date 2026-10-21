@@ -146,11 +146,11 @@ export function PortalUsagePanel({
 }: PortalUsagePanelProps) {
   const inDrawer = variant === 'drawer';
   const usageBasePath = inDrawer ? '/portal/billing' : '/portal/usage';
-  const withUsageHash = (pathAndQuery: string) => (
+  const withUsageHash = useCallback((pathAndQuery: string) => (
     inDrawer
       ? `${pathAndQuery}${pathAndQuery.includes('#') ? '' : '#usage'}`
       : pathAndQuery
-  );
+  ), [inDrawer]);
 
   const { locale, t } = useLocale();
   const router = useRouter();
@@ -343,7 +343,7 @@ export function PortalUsagePanel({
         withUsageHash(`${usageBasePath}${query ? `?${query}` : ''}`),
       );
     }
-  }, [searchParams, usageBasePath, inDrawer]);
+  }, [searchParams, usageBasePath, withUsageHash]);
 
   // Drawer open uses history.replaceState (not Next router), so re-read view from the live URL
   // when the drawer opens (deep links like ?view=sources#usage).

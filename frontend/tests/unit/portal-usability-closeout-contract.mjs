@@ -24,6 +24,8 @@ const home = read('src/app/portal/page.tsx');
 const siteRecord = read('src/app/portal/sites/[siteId]/page.tsx');
 const support = read('src/app/portal/support/page.tsx');
 const usage = read('src/app/portal/usage/page.tsx');
+const siteUsageDialog = read('src/components/portal/PortalSiteUsageDialog.tsx');
+const modal = read('src/components/ui/Modal.tsx');
 
 assert.match(account, /href="\/portal\/audit"/);
 assert.doesNotMatch(account, /href="\/portal\/login"/);
@@ -49,7 +51,7 @@ assert.doesNotMatch(siteServiceStatus, /sm:justify-between/, 'Evidence rows must
 assert.match(siteServiceStatus, /data-portal-site="view-plan"/);
 assert.doesNotMatch(siteServiceStatus, /normal_summary|服务正常/);
 
-assert.match(siteRecord, /max-w-\[56rem\]/, 'Site detail must use the same compact content band as home');
+assert.doesNotMatch(siteRecord, /max-w-\[(?:56|65|80)rem\]/, 'Site detail must inherit the shared 56rem shell band like home (no page-local width)');
 assert.doesNotMatch(siteRecord, /data-portal-site="attention-focus"/, 'Site detail must not float attention between header and cards');
 assert.doesNotMatch(siteRecord, /contextPanel=/);
 assert.match(siteRecord, /titleAccessory=[\s\S]*metadata=/);
@@ -93,7 +95,7 @@ assert.match(globals, /\.portal-shell \.btn:active:not\(:disabled\)[\s\S]*scale\
 assert.match(globals, /\.portal-shell \.portal-commercial-dialog[\s\S]*border-radius: 18px/);
 assert.match(layout, /bg-\[#f5f5f7\][\s\S]*portal-content[\s\S]*--portal-content-max-width/);
 assert.match(layout, /import '\.\/portal\.css'/);
-assert.match(portalCss, /--portal-content-max-width:\s*80rem/);
+assert.match(portalCss, /--portal-content-max-width:\s*56rem/);
 assert.match(portalCss, /--portal-header-min-height:\s*5rem/);
 assert.match(portalCss, /--portal-row-min-height:\s*4rem/);
 assert.match(portalCss, /--portal-btn-height:\s*2\.75rem/);
@@ -149,7 +151,6 @@ for (const [name, source] of [
   ['home', home],
   ['account', account],
   ['billing', billing],
-  ['usage', usage],
   ['support', support],
 ]) {
   assert.match(source, /<PortalWorkspaceHeader/, `${name} must use the shared Portal workspace header`);
@@ -170,15 +171,19 @@ assert.match(account, /PortalAccountCommercePanels/);
 assert.match(packagePanel, /role="radiogroup"[\s\S]*aria-checked=\{selected\}[\s\S]*onConfirm/);
 assert.match(creditPackDialog, /selectedPackId === pack\.pack_id[\s\S]*onConfirm/);
 assert.match(packagePanel, /border-2 bg-white[\s\S]*focus-visible:ring-\[#0071e3\]/);
-assert.match(accountCommerce, /portal-commercial-dialog max-w-5xl/);
+assert.match(accountCommerce, /size="3xl"\s+className="portal-commercial-dialog /, 'package change dialog must use the Modal 3xl size');
+assert.doesNotMatch(accountCommerce + creditPackDialog + siteUsageDialog, /portal-commercial-dialog max-w-|size="xl"\s+className="[^"]*max-w-/, 'portal dialogs must not override Modal width with className');
+assert.match(modal, /'2xl': 'max-w-4xl'[\s\S]*'3xl': 'max-w-5xl'/, 'Modal must expose the formal 2xl/3xl portal sizes');
+assert.match(siteUsageDialog, /size="2xl"/, 'site usage dialog must use the Modal 2xl size');
 assert.match(paymentOrderHistory, /portal\.usage\.payment_order_credit_snapshot/);
 assert.match(paymentOrderHistory, /portal\.usage\.payment_order_purchase_amount/);
 assert.match(paymentOrderHistory, /<details[\s\S]*portal\.usage\.payment_orders_title[\s\S]*<\/details>/);
 assert.match(paymentOrderHistory, /open=\{Number\(counts\.pending \|\| 0\) > 0\}/);
 
 assert.match(support, /<h2[^>]*>[\s\S]*portal\.support_request_list_title[\s\S]*<\/h2>/);
-assert.match(usage, /const creditEventPageSize = 20/);
-assert.doesNotMatch(usage, /setCreditLedger\(bundle\.creditLedger\)/);
+assert.match(siteUsageDialog, /const creditEventPageSize = 20/);
+assert.doesNotMatch(siteUsageDialog, /setCreditLedger\(bundle\.creditLedger\)/);
+assert.match(usage, /router\.replace\(`\/portal\/billing/, 'legacy usage route must redirect into the package page');
 
 assert.match(
   workspaceHeader,
@@ -198,8 +203,8 @@ assert.match(
 );
 assert.match(
   portalCss,
-  /--portal-content-max-width:\s*80rem/,
-  'Portal content max-width stays 80rem in portal.css; home narrows via page-local max-w-[65rem]'
+  /--portal-content-max-width:\s*56rem/,
+  'Portal content max-width is the shared 56rem band (Spec §2); pages must not narrow or widen it locally'
 );
 
 console.log('portal_usability_closeout_contract: ok');

@@ -8,6 +8,8 @@ const sitesRedirectPath = resolve(root, 'src/app/portal/sites/page.tsx');
 const accountSource = readFileSync(resolve(root, 'src/app/portal/account/page.tsx'), 'utf8');
 const homeSource = readFileSync(resolve(root, 'src/app/portal/page.tsx'), 'utf8');
 const usageSource = readFileSync(resolve(root, 'src/app/portal/usage/page.tsx'), 'utf8');
+const siteUsageListSource = readFileSync(resolve(root, 'src/components/portal/PortalBillingSiteUsageList.tsx'), 'utf8');
+const siteUsageDialogSource = readFileSync(resolve(root, 'src/components/portal/PortalSiteUsageDialog.tsx'), 'utf8');
 const billingSource = readFileSync(resolve(root, 'src/app/portal/billing/page.tsx'), 'utf8');
 const accountCommerceSource = readFileSync(resolve(root, 'src/components/portal/PortalAccountCommercePanels.tsx'), 'utf8');
 const auditSource = readFileSync(resolve(root, 'src/app/portal/audit/PortalAuditClient.tsx'), 'utf8');
@@ -43,21 +45,32 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(homeSource, /role="button"[\s\S]{0,900}href=\{`\/portal\/sites\/\$\{site\.site_id\}`\}/);
 
+// Spec: usage = package page site list -> per-site Modal (trend / AI credit records).
 assert.match(
   usageSource,
-  /const siteFilterId = searchParams\.get\('site'\) \|\| session\?\.selected_context/,
-  'account usage must use the URL site filter or fall back to the selected session context'
-);
-assert.match(usageSource, /creditEventWindow[\s\S]*creditEventFeature/);
-assert.match(
-  usageSource,
-  /selectedSiteId=\{siteFilterId\}[\s\S]*siteSelectorMode="context"/,
-  'account usage must expose the shared all-sites or single-site filter'
+  /searchParams\.toString\(\)[\s\S]*router\.replace\(`\/portal\/billing\$\{query \? `\?\$\{query\}` : ''\}#usage`\)/,
+  'legacy /portal/usage must keep its query and land on the package page usage anchor'
 );
 assert.match(
-  usageSource,
-  /useLayoutEffect\([\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditTrend\(null\)/,
-  'usage must clear account projections immediately when the site filter changes'
+  siteUsageListSource,
+  /getVisiblePortalSites\(sites\)[\s\S]*onClick=\{\(\) => onSelectSite\(site\)\}/,
+  'package page must list visible sites and open usage for the chosen site'
+);
+assert.match(
+  billingSource,
+  /<PortalSiteUsageDialog[\s\S]*isOpen=\{Boolean\(siteUsageSite\)\}[\s\S]*site=\{siteUsageSite\}/,
+  'site usage Modal must be scoped to the site picked from the list'
+);
+assert.match(siteUsageDialogSource, /creditEventWindow[\s\S]*creditEventFeature/);
+assert.match(
+  siteUsageDialogSource,
+  /getAccountCreditEvents\(\{[\s\S]*siteId: requestSiteId/,
+  'site usage records must query only the selected site'
+);
+assert.match(
+  siteUsageDialogSource,
+  /useEffect\(\(\) => \{\s*siteIdRef\.current = siteId;[\s\S]*setCreditTrend\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setSelectedCreditEvent\(null\)/,
+  'site usage Modal must clear stale trend, records, and detail when the site changes'
 );
 assert.match(accountCommerceSource, /id="package-options"[\s\S]*setActiveCommercialDialog\('package'\)/);
 assert.doesNotMatch(billingSource, /id="package-options"/);
@@ -77,7 +90,7 @@ assert.match(
 );
 assert.doesNotMatch(homeSource, /⏳/, 'portal home must not use hourglass loading');
 assert.doesNotMatch(
-  sitesSource + accountSource + usageSource + billingSource + accountCommerceSource + auditSource,
+  sitesSource + accountSource + usageSource + siteUsageDialogSource + billingSource + accountCommerceSource + auditSource,
   /⏳/,
   'portal surfaces under contract must not use hourglass loading'
 );
