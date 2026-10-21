@@ -2577,7 +2577,11 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert 'PG18_PROOF_PROJECT_NAME="${PROJECT_NAME}-pg18"' in smoke
     assert 'COMPOSE_PROJECT_NAME="${PG18_PROOF_PROJECT_NAME}"' in smoke
     assert 'PG18_PROOF_OVERRIDE="${TMP_DIR}/docker-compose.pg18-proof.host-port.yml"' in smoke
-    assert "0.0.0.0:${PG18_PROOF_PORT}:5432" in smoke
+    # The PG18 smoke fixture publishes on loopback only and refuses non-loopback binds.
+    assert 'PG18_PROOF_BIND="${NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_BIND:-127.0.0.1}"' in smoke
+    assert "127.0.0.1|localhost|::1) ;;" in smoke
+    assert "${PG18_PROOF_BIND}:${PG18_PROOF_PORT}:5432" in smoke
+    assert "0.0.0.0:${PG18_PROOF_PORT}" not in smoke
     assert "local no-TLS fixture; not RDS evidence" in smoke
     assert "@host.docker.internal:%s/npcink_ai_cloud" in smoke
     assert "verify-transfer-archive" in ssh_deploy

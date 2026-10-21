@@ -1662,6 +1662,13 @@ def test_prod_env_files_use_canonical_admin_names_and_do_not_expose_ai_provider_
 
 def test_env_example_does_not_restore_first_install_runtime_secrets() -> None:
     env_text = (_cloud_root() / ".env.example").read_text()
+    # Compare exact keys: dev-stack-only names such as
+    # NPCINK_CLOUD_DEV_POSTGRES_PASSWORD (docker-compose.dev.yml, loopback) are allowed.
+    env_keys = {
+        line.split("=", 1)[0].strip() + "="
+        for line in env_text.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
 
     for retired_or_protected in (
         "NPCINK_CLOUD_DATABASE_URL=",
@@ -1676,7 +1683,10 @@ def test_env_example_does_not_restore_first_install_runtime_secrets() -> None:
         "NPCINK_CLOUD_PORTAL_JWT_SECRET=",
         "POSTGRES_PASSWORD=",
     ):
-        assert retired_or_protected not in env_text
+        assert retired_or_protected not in env_keys
+
+    dev_only_password_keys = {key for key in env_keys if key.endswith("POSTGRES_PASSWORD=")}
+    assert dev_only_password_keys <= {"NPCINK_CLOUD_DEV_POSTGRES_PASSWORD="}
 
     assert "NPCINK_CLOUD_ADMIN_PRINCIPAL_ID=platform:internal_root" in env_text
     assert "NPCINK_CLOUD_ADMIN_PLATFORM_ADMIN_ROLE" not in env_text
