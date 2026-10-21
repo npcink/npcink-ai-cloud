@@ -23,6 +23,8 @@ Current home / density layout Spec (incl. preview self-check gate):
   - 本地历史稿恢复；2026-10-17 补正部署最终状态，后续以三会话纪要为入口
 - [用户中心、生产交付与验证前移：三会话综合纪要 — 2026-10-17](portal-three-session-synthesis-and-next-stage-2026-10-17.md)
   - 三会话讨论与取舍、#1118 部署记录、尚未实现的关键验收命令、人工验证分工与下一步
+- [Portal 安静状态 UX、面包屑与骨架屏交付复盘 — 2026-10-20](portal-status-ux-quiet-delivery-retrospective-2026-10-20.md)
+  - PR `#1165`、同因不重复、ⓘ 收纳说明、骨架加载、§9 自检门禁与 e2e/合并教训
 - [10月18日生产部署与未完成验收交接](../../production/2026/frozen-cloud-release-closeout-and-retrospective-2026-10-18.md)
   - 后续关键回归已实现、冻结4a已部署；旧会话归档后仍由当前会话跟进正式smoke、Addon与真实写作
 
