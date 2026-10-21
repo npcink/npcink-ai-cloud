@@ -1,6 +1,7 @@
 'use client';
 
-import { PortalInfoHint, PortalSection } from '@/components/portal/PortalScaffold';
+import { PortalSection } from '@/components/portal/PortalScaffold';
+import { joinSummaryParts } from '@/lib/portal-summary-text';
 import { useLocale } from '@/contexts/LocaleContext';
 import type {
   PortalCreditTrendPayload,
@@ -14,9 +15,13 @@ type PortalCreditTrendPanelProps = {
   window: PortalCreditTrendWindow;
   isLoading: boolean;
   error: string;
-  onWindowChange: (window: PortalCreditTrendWindow) => void;
+  /** Omit when the host owns the time-range control (the site usage dialog shares one across tabs). */
+  onWindowChange?: (window: PortalCreditTrendWindow) => void;
   onRetry: () => void;
-  /** Hide the page-level H2 when the panel already sits under a matching tab/dialog title. */
+  /**
+   * Embedded inside a dialog tab: no H2, no window tabs, no summary line and no card border.
+   * The host renders the shared time range and the summary row above the tabs.
+   */
   embedded?: boolean;
 };
 
@@ -85,7 +90,7 @@ export function PortalCreditTrendPanel({
               ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300'
               : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
           }`}
-          onClick={() => onWindowChange(option.value)}
+          onClick={() => onWindowChange?.(option.value)}
         >
           {t(option.key, {}, option.fallback)}
         </button>
@@ -95,11 +100,7 @@ export function PortalCreditTrendPanel({
 
   return (
     <Frame className={frameClassName} data-portal-usage="primary-trend">
-      {embedded ? (
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          {windowTabs}
-        </div>
-      ) : (
+      {embedded ? null : (
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
@@ -109,12 +110,12 @@ export function PortalCreditTrendPanel({
               {trendDesc}
             </p>
           </div>
-          {windowTabs}
+          {onWindowChange ? windowTabs : null}
         </div>
       )}
 
       <div
-        role="tabpanel"
+        role={embedded ? undefined : 'tabpanel'}
         aria-live="polite"
         data-trend-window={window}
         data-trend-points={points.length}
@@ -132,62 +133,75 @@ export function PortalCreditTrendPanel({
           <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-6 text-center dark:border-slate-700 dark:bg-slate-900/35">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
               {t('portal.usage.trend_empty_title', {}, 'No AI credit usage in this range')}
-              {embedded ? (
-                <PortalInfoHint
-                  label={trendTitle}
-                  detail={trendDesc}
-                  className="ml-1 align-middle"
-                  data-portal-usage="trend-help"
-                />
-              ) : null}
             </p>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
               {t('portal.usage.trend_empty_desc', {}, 'AI credit consumption will appear here after Cloud services are used.')}
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {t(
-                'portal.usage.trend_total',
-                { count: formatNumber(totalCredits) },
-                `${formatNumber(totalCredits)} AI credits used in this range`,
-              )}
-              {updatedAt
-                ? ` · ${t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}`
-                : ''}
-              {embedded ? (
-                <PortalInfoHint
-                  label={trendTitle}
-                  detail={trendDesc}
-                  className="ml-1 align-middle"
-                  data-portal-usage="trend-help"
-                />
-              ) : null}
-            </p>
+          <div
+            className={embedded ? '' : 'rounded-xl border border-slate-200 p-4 dark:border-slate-800'}
+            data-portal-usage="trend-chart-frame"
+          >
+            {embedded ? null : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {joinSummaryParts([
+                  t('portal.usage.trend_total', { count: formatNumber(totalCredits) }, `${formatNumber(totalCredits)} AI credits used in this range`),
+                  updatedAt ? t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}') : '',
+                ])}
+              </p>
+            )}
             <div
               role="img"
               aria-label={t('portal.usage.trend_chart_label', {}, 'AI credit usage over time')}
-              className="mt-4"
+              className={embedded ? 'pt-6' : 'mt-4 pt-6'}
             >
-              <div className="flex h-44 items-end gap-1">
-                {points.map((point) => {
+              <div className="relative flex h-44 items-end gap-1 border-b border-slate-200 dark:border-slate-800">
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-300 dark:border-slate-700"
+                  data-portal-usage="trend-max-line"
+                  aria-hidden="true"
+                >
+                  <span className="absolute -top-5 right-0 whitespace-nowrap text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                    {t('portal.usage.trend_max_label', { count: formatNumber(maxCredits) }, 'Peak {{count}} AI credits')}
+                  </span>
+                </div>
+                {points.map((point, index) => {
                   const credits = Number(point.ai_credits || 0);
                   const height = credits > 0 ? Math.max(4, (credits / maxCredits) * 100) : 0;
                   const pointLabel = formatPointLabel(point.start_at);
+                  const valueLabel = t('portal.usage.credit_points_value', { count: formatNumber(credits) }, '{{count}} AI credits');
+                  const tooltipAlign = index < points.length / 4
+                    ? 'left-0'
+                    : index > (points.length * 3) / 4
+                      ? 'right-0'
+                      : 'left-1/2 -translate-x-1/2';
                   return (
                     <div
                       key={point.start_at}
                       className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
+                      data-portal-usage="trend-bucket"
+                      data-credits={credits}
                     >
-                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-950">
-                        {pointLabel} · {formatNumber(credits)}
-                      </div>
                       <div
-                        aria-label={`${pointLabel}: ${formatNumber(credits)}`}
-                        className="w-full rounded-t bg-blue-500 transition-colors group-hover:bg-blue-600 dark:bg-blue-400 dark:group-hover:bg-blue-300"
-                        style={{ height: `${height}%` }}
-                      />
+                        className={`pointer-events-none absolute bottom-full z-10 mb-1 hidden whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-950 ${tooltipAlign}`}
+                        data-portal-usage="trend-tooltip"
+                      >
+                        {pointLabel} · {valueLabel}
+                      </div>
+                      {credits > 0 ? (
+                        <div
+                          aria-label={`${pointLabel}: ${valueLabel}`}
+                          className="w-full rounded-t bg-blue-500 transition-colors group-hover:bg-blue-600 dark:bg-blue-400 dark:group-hover:bg-blue-300"
+                          style={{ height: `${height}%` }}
+                        />
+                      ) : (
+                        <div
+                          aria-label={`${pointLabel}: ${valueLabel}`}
+                          className="h-[3px] w-full rounded-t bg-slate-200 group-hover:bg-slate-300 dark:bg-slate-800 dark:group-hover:bg-slate-700"
+                          data-portal-usage="trend-zero-bucket"
+                        />
+                      )}
                     </div>
                   );
                 })}

@@ -61,7 +61,11 @@ assert.match(
   /<PortalSiteUsageDialog[\s\S]*isOpen=\{Boolean\(siteUsageSite\)\}[\s\S]*site=\{siteUsageSite\}/,
   'site usage Modal must be scoped to the site picked from the list'
 );
-assert.match(siteUsageDialogSource, /creditEventWindow[\s\S]*creditEventFeature/);
+assert.match(
+  siteUsageDialogSource,
+  /creditEventRangeParams\(usageRange\)[\s\S]*creditEventFeature/,
+  'site usage records must follow the shared time range and the service filter'
+);
 assert.match(
   siteUsageDialogSource,
   /getAccountCreditEvents\(\{[\s\S]*siteId: requestSiteId/,

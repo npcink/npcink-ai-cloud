@@ -2858,7 +2858,7 @@ test('site usage Modal switches the session site before loading trend and record
   const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
   await expect(dialog).toBeVisible();
   for (const label of [/1 小时|1 hour/, /24 小时|24 hours/, /7 天|7 days/, /30 天|30 days/]) {
-    await dialog.getByRole('tab', { name: label }).click();
+    await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: label }).click();
     await expect(dialog.locator('[data-portal-usage="primary-trend"] [role="img"]')).toBeVisible();
   }
   await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);

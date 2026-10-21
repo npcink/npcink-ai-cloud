@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ListPagination } from '@/components/ui/ListPagination';
 import { Modal } from '@/components/ui/Modal';
 import { PortalCreditTrendPanel } from '@/components/portal/PortalCreditTrendPanel';
+import { PortalInfoHint } from '@/components/portal/PortalScaffold';
 import {
   PortalEmptyState,
   PortalErrorState,
@@ -15,7 +15,6 @@ import {
   type PortalCreditEvent,
   type PortalCreditEventFeature,
   type PortalCreditEventsPayload,
-  type PortalCreditEventWindow,
   type PortalCreditTrendPayload,
   type PortalCreditTrendWindow,
   type Site,
@@ -24,6 +23,7 @@ import { PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES } from '@/lib/portal-usage-cr
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import type { Locale } from '@/lib/i18n';
 import { formatNumber } from '@/lib/utils';
+import { joinSummaryParts } from '@/lib/portal-summary-text';
 import {
   getPortalSiteDisplayName,
   getPortalSiteUrlDisplay,
@@ -31,6 +31,21 @@ import {
 
 type SiteUsageView = 'trend' | 'records';
 const SITE_USAGE_VIEWS: SiteUsageView[] = ['trend', 'records'];
+/** One time range shared by the trend and the AI credit records tabs. */
+const SITE_USAGE_RANGES: Array<{ value: PortalCreditTrendWindow; key: string; fallback: string }> = [
+  { value: '1h', key: 'portal.usage.trend_window_1h', fallback: '1 hour' },
+  { value: '24h', key: 'portal.usage.trend_window_24h', fallback: '24 hours' },
+  { value: '7d', key: 'portal.usage.trend_window_7d', fallback: '7 days' },
+  { value: '30d', key: 'portal.usage.trend_window_30d', fallback: '30 days' },
+];
+
+/** credit-events has no 1h window: ask for 24h clamped to an explicit last-hour range. */
+function creditEventRangeParams(range: PortalCreditTrendWindow) {
+  if (range !== '1h') return { window: range };
+  const endAt = new Date();
+  const startAt = new Date(endAt.getTime() - 60 * 60 * 1000);
+  return { window: '24h' as const, startAt: startAt.toISOString(), endAt: endAt.toISOString() };
+}
 
 function parseUsageDate(value: string): Date | null {
   const normalizedValue = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
@@ -109,7 +124,7 @@ export function PortalSiteUsageDialog({
   const [siteContextError, setSiteContextError] = useState('');
   const [siteContextAttempt, setSiteContextAttempt] = useState(0);
   const [activeView, setActiveView] = useState<SiteUsageView>('trend');
-  const [creditTrendWindow, setCreditTrendWindow] = useState<PortalCreditTrendWindow>('24h');
+  const [usageRange, setUsageRange] = useState<PortalCreditTrendWindow>('24h');
   const [creditTrend, setCreditTrend] = useState<PortalCreditTrendPayload | null>(null);
   const [creditTrendLoading, setCreditTrendLoading] = useState(false);
   const [creditTrendError, setCreditTrendError] = useState('');
@@ -117,7 +132,6 @@ export function PortalSiteUsageDialog({
   const [creditEventOffset, setCreditEventOffset] = useState(0);
   const [creditEventLoading, setCreditEventLoading] = useState(false);
   const [creditEventError, setCreditEventError] = useState('');
-  const [creditEventWindow, setCreditEventWindow] = useState<PortalCreditEventWindow>('7d');
   const [creditEventFeature, setCreditEventFeature] = useState<PortalCreditEventFeature>('');
   const [selectedCreditEvent, setSelectedCreditEvent] = useState<PortalCreditEvent | null>(null);
   const creditEventPageSize = 20;
@@ -142,7 +156,7 @@ export function PortalSiteUsageDialog({
     setCreditTrendError('');
     try {
       const response = await portalClient.getAccountCreditTrend({
-        window: creditTrendWindow,
+        window: usageRange,
         siteId: requestSiteId,
       });
       if (requestVersion !== trendRequestVersionRef.current || requestSiteId !== siteIdRef.current) return;
@@ -155,7 +169,7 @@ export function PortalSiteUsageDialog({
         setCreditTrendLoading(false);
       }
     }
-  }, [creditTrendWindow, t]);
+  }, [usageRange, t]);
 
   const loadCreditEventPage = useCallback(async (nextOffset: number) => {
     const requestSiteId = siteIdRef.current;
@@ -166,7 +180,7 @@ export function PortalSiteUsageDialog({
     setCreditEvents(null);
     try {
       const response = await portalClient.getAccountCreditEvents({
-        window: creditEventWindow,
+        ...creditEventRangeParams(usageRange),
         feature: creditEventFeature,
         siteId: requestSiteId,
         limit: creditEventPageSize,
@@ -183,7 +197,7 @@ export function PortalSiteUsageDialog({
         setCreditEventLoading(false);
       }
     }
-  }, [creditEventFeature, creditEventWindow, t]);
+  }, [creditEventFeature, usageRange, t]);
 
   useEffect(() => {
     siteIdRef.current = siteId;
@@ -231,9 +245,10 @@ export function PortalSiteUsageDialog({
     return () => {
       eventRequestVersionRef.current += 1;
     };
-  }, [activeView, creditEventFeature, creditEventWindow, isOpen, loadCreditEventPage, siteId, siteContextReady]);
+  }, [activeView, creditEventFeature, usageRange, isOpen, loadCreditEventPage, siteId, siteContextReady]);
 
   const formatQuotaValue = (value: unknown) => formatNumber(Math.round(Number(value || 0)));
+  const formatCreditAmount = (value: number) => formatNumber(Math.abs(Math.round(value)));
   const formatCreditPoints = (value: number) =>
     t('portal.usage.credit_points_value', { count: formatNumber(Math.abs(Math.round(value))) }, '{{count}} AI credits');
   const eventFeatureText = (entry: PortalCreditEvent, field: 'title' | 'detail') =>
@@ -249,6 +264,32 @@ export function PortalSiteUsageDialog({
   const creditRecordsUpdatedAt = creditEvents?.generated_at
     ? formatUsageUpdatedAt(creditEvents.generated_at, locale)
     : '';
+  const trendUpdatedAt = creditTrend?.generated_at
+    ? formatUsageUpdatedAt(creditTrend.generated_at, locale)
+    : '';
+  const trendTotal = Number(creditTrend?.total_ai_credits || 0);
+  const updatedText = (time: string) => (time ? t('portal.usage.updated_at_inline', { time }, 'Updated {{time}}') : '');
+  const summaryText = activeView === 'trend'
+    ? (!creditTrendLoading && !creditTrendError && creditTrend
+        ? joinSummaryParts([
+            t('portal.usage.trend_total', { count: formatNumber(trendTotal) }, '{{count}} AI credits used in this range'),
+            updatedText(trendUpdatedAt),
+          ])
+        : '')
+    : (!creditEventLoading && !creditEventError && creditEvents
+        ? joinSummaryParts([
+            t(
+              'portal.usage.credit_events_summary',
+              { credits: formatQuotaValue(filteredConsumedCredits), count: formatQuotaValue(creditEventCount) },
+              '{{credits}} AI credits used across {{count}} service events.',
+            ),
+            updatedText(creditRecordsUpdatedAt),
+          ])
+        : '');
+  const pageStart = creditEventCount > 0 ? creditEventOffset + 1 : 0;
+  const pageEnd = Math.min(creditEventOffset + creditEventPageSize, creditEventCount);
+  const hasPreviousPage = creditEventOffset > 0;
+  const hasNextPage = creditEventOffset + creditEventPageSize < creditEventCount;
   const siteTitle = site ? getPortalSiteDisplayName(site) : t('common.site', {}, 'Site');
   const siteUrl = site ? getPortalSiteUrlDisplay(site) : '';
 
@@ -265,9 +306,9 @@ export function PortalSiteUsageDialog({
       title={dialogTitle}
       description={dialogDescription}
       size="2xl"
-      className="max-h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+      className="h-[min(90vh,48rem)] rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
     >
-      <div className="space-y-4 pb-2" data-portal-billing="site-usage-dialog">
+      <div className="flex min-h-full flex-col gap-4" data-portal-billing="site-usage-dialog">
         {!siteId ? (
           <PortalEmptyState
             title={t('portal.usage.choose_site_title', {}, 'Choose a site to view its usage')}
@@ -336,11 +377,54 @@ export function PortalSiteUsageDialog({
           </div>
         ) : (
             <>
-              <div className="border-b border-slate-200 dark:border-slate-800" data-portal-usage="site-dialog-tabs">
+              <div
+                className="sticky -top-4 z-20 -mx-6 -mt-4 space-y-3 border-b border-slate-200 bg-white px-6 pt-4 dark:border-slate-800 dark:bg-gray-900"
+                data-portal-usage="site-dialog-header"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" data-portal-usage="site-dialog-summary">
+                  <p className="min-w-0 flex-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    <span data-portal-usage="site-dialog-summary-text">
+                      {summaryText || t('common.loading', {}, 'Loading...')}
+                    </span>
+                    <PortalInfoHint
+                      label={t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
+                      detail={t('portal.usage.credit_events_desc', {}, 'Service events that consumed AI credits.')}
+                      className="ml-1 align-middle"
+                      data-portal-usage="trend-help"
+                    />
+                  </p>
+                  <div
+                    role="radiogroup"
+                    aria-label={t('portal.usage.credit_events_window_label', {}, 'Time range')}
+                    className="inline-flex max-w-full shrink-0 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
+                    data-portal-usage="site-dialog-range"
+                  >
+                    {SITE_USAGE_RANGES.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={usageRange === option.value}
+                        className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                          usageRange === option.value
+                            ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-950 dark:text-blue-300'
+                            : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                        onClick={() => {
+                          setUsageRange(option.value);
+                          setCreditEventOffset(0);
+                        }}
+                      >
+                        {t(option.key, {}, option.fallback)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div data-portal-usage="site-dialog-tabs">
                 <div
                   role="tablist"
                   aria-label={t('portal.usage.view_tabs_label', {}, 'Usage views')}
-                  className="flex gap-2"
+                  className="-mb-px flex gap-1"
                 >
                   {([
                     { value: 'trend' as const, label: t('portal.usage.view_tab_trend', {}, 'Trend') },
@@ -354,10 +438,10 @@ export function PortalSiteUsageDialog({
                       aria-selected={activeView === view.value}
                       aria-controls={`portal-site-usage-panel-${view.value}`}
                       tabIndex={activeView === view.value ? 0 : -1}
-                      className={`min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+                      className={`min-h-11 border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
                         activeView === view.value
-                          ? 'bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                          ? 'border-slate-950 text-slate-950 dark:border-white dark:text-white'
+                          : 'border-transparent text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
                       }`}
                       onClick={() => setActiveView(view.value)}
                       onKeyDown={(event) => {
@@ -378,6 +462,7 @@ export function PortalSiteUsageDialog({
                     </button>
                   ))}
                 </div>
+                </div>
               </div>
 
               <div
@@ -389,10 +474,9 @@ export function PortalSiteUsageDialog({
                 {activeView === 'trend' ? (
                   <PortalCreditTrendPanel
                     payload={creditTrend}
-                    window={creditTrendWindow}
+                    window={usageRange}
                     isLoading={creditTrendLoading}
                     error={creditTrendError}
-                    onWindowChange={setCreditTrendWindow}
                     onRetry={() => void loadCreditTrend()}
                     embedded
                   />
@@ -408,60 +492,27 @@ export function PortalSiteUsageDialog({
                 data-portal-usage="site-dialog-records"
               >
                 {activeView === 'records' ? (
-                  <div className="space-y-5">
-                    <p className="text-sm leading-6 text-gray-600 dark:text-gray-400">
-                      {!creditEventLoading && !creditEventError && creditEvents
-                        ? t(
-                            'portal.usage.credit_events_summary',
-                            {
-                              credits: formatQuotaValue(filteredConsumedCredits),
-                              count: formatQuotaValue(creditEventCount),
-                            },
-                            '{{credits}} AI credits used across {{count}} services.',
-                          )
-                        : t('portal.usage.credit_events_desc', {}, 'Service events that consumed AI credits.')}
-                      {creditRecordsUpdatedAt
-                        ? ` · ${t('portal.usage.updated_at_inline', { time: creditRecordsUpdatedAt }, 'Updated {{time}}')}`
-                        : ''}
-                    </p>
-                    <div className="grid gap-3 sm:grid-cols-2" aria-label={t('portal.usage.credit_events_filters', {}, 'AI credit record filters')}>
-                      <label className="space-y-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        <span>{t('portal.usage.credit_events_window_label', {}, 'Time range')}</span>
-                        <select
-                          className="input"
-                          value={creditEventWindow}
-                          disabled={creditEventLoading}
-                          onChange={(event) => {
-                            setCreditEventWindow(event.target.value as PortalCreditEventWindow);
-                            setCreditEventOffset(0);
-                          }}
-                        >
-                          <option value="24h">{t('portal.usage.credit_events_window_24h', {}, 'Last 24 hours')}</option>
-                          <option value="7d">{t('portal.usage.credit_events_window_7d', {}, 'Last 7 days')}</option>
-                          <option value="30d">{t('portal.usage.credit_events_window_30d', {}, 'Last 30 days')}</option>
-                          <option value="period">{t('portal.usage.credit_events_window_period', {}, 'Current package period')}</option>
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        <span>{t('portal.usage.credit_events_feature_label', {}, 'Service')}</span>
-                        <select
-                          className="input"
-                          value={creditEventFeature}
-                          disabled={creditEventLoading}
-                          onChange={(event) => {
-                            setCreditEventFeature(event.target.value as PortalCreditEventFeature);
-                            setCreditEventOffset(0);
-                          }}
-                        >
-                          <option value="">{t('portal.usage.credit_events_feature_all', {}, 'All services')}</option>
-                          {PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES.map((feature) => (
-                            <option key={feature} value={feature}>
-                              {t(`portal.usage.credit_ledger_feature_${feature}_title`)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
+                  <div className="space-y-4">
+                    <label className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      <span>{t('portal.usage.credit_events_feature_label', {}, 'Service')}</span>
+                      <select
+                        className="input h-9 w-auto min-w-40 py-1"
+                        value={creditEventFeature}
+                        disabled={creditEventLoading}
+                        onChange={(event) => {
+                          setCreditEventFeature(event.target.value as PortalCreditEventFeature);
+                          setCreditEventOffset(0);
+                        }}
+                        data-portal-usage="records-feature-filter"
+                      >
+                        <option value="">{t('portal.usage.credit_events_feature_all', {}, 'All services')}</option>
+                        {PORTAL_USAGE_CREDIT_EVENT_FILTER_FEATURES.map((feature) => (
+                          <option key={feature} value={feature}>
+                            {t(`portal.usage.credit_ledger_feature_${feature}_title`)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     {creditEventError ? (
                       <PortalErrorState
                         title={t('error.failed_load')}
@@ -472,40 +523,54 @@ export function PortalSiteUsageDialog({
                     ) : creditEventLoading && !creditEvents ? (
                       <div className="space-y-2" aria-label={t('common.loading')}>
                         {[0, 1, 2, 3].map((item) => (
-                          <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />
+                          <div key={item} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />
                         ))}
                       </div>
                     ) : creditEventItems.length > 0 ? (
                       <>
-                        <div className="hidden overflow-x-auto lg:block" data-portal-usage="records-table">
-                          <table className="w-full min-w-[560px] text-left text-sm">
+                        <div className="hidden sm:block" data-portal-usage="records-table">
+                          <table className="w-full table-fixed text-left text-sm">
                             <caption className="sr-only">{t('portal.usage.credit_events_title')}</caption>
-                            <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-800">
+                            <colgroup>
+                              <col className="w-40" />
+                              <col />
+                              <col className="w-28" />
+                              <col className="w-8" />
+                            </colgroup>
+                            <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                               <tr>
-                                <th scope="col" className="px-3 py-3 font-medium">{t('portal.usage.credit_ledger_time')}</th>
-                                <th scope="col" className="px-3 py-3 font-medium">{t('portal.usage.credit_events_feature_label')}</th>
-                                <th scope="col" className="px-3 py-3 text-right font-medium">{t('portal.usage.credit_events_points_column')}</th>
-                                <th scope="col" className="px-3 py-3 text-right font-medium">{t('common.actions')}</th>
+                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_ledger_time')}</th>
+                                <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.credit_events_feature_label')}</th>
+                                <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.credit_events_points_column')}</th>
+                                <th scope="col" className="px-0 py-2"><span className="sr-only">{t('common.view_details')}</span></th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {creditEventItems.map((entry) => (
-                                <tr key={entry.event_id}>
-                                  <th scope="row" className="px-3 py-4 font-normal">
+                                <tr
+                                  key={entry.event_id}
+                                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                                  onClick={() => setSelectedCreditEvent(entry)}
+                                  data-portal-usage="records-row"
+                                >
+                                  <th scope="row" className="whitespace-nowrap px-2 py-3 font-normal text-slate-600 dark:text-slate-300">
                                     {formatCreditEventTime(entry.created_at, locale)}
                                   </th>
-                                  <td className="px-3 py-4">{eventFeatureText(entry, 'title')}</td>
-                                  <td className="px-3 py-4 text-right font-semibold">
-                                    {formatCreditPoints(entry.consumed_ai_credits)}
+                                  <td className="break-words px-2 py-3 text-slate-900 dark:text-slate-100">{eventFeatureText(entry, 'title')}</td>
+                                  <td className="whitespace-nowrap px-2 py-3 text-right font-semibold tabular-nums">
+                                    {formatCreditAmount(entry.consumed_ai_credits)}
                                   </td>
-                                  <td className="px-3 py-4 text-right">
+                                  <td className="px-0 py-3 text-right">
                                     <button
                                       type="button"
-                                      className="btn btn-secondary btn-sm"
-                                      onClick={() => setSelectedCreditEvent(entry)}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-lg leading-none text-slate-400 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:text-slate-200"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setSelectedCreditEvent(entry);
+                                      }}
                                       aria-label={`${eventFeatureText(entry, 'title')} · ${t('common.view_details')}`}
                                     >
-                                      {t('common.view_details')}
+                                      <span aria-hidden="true">›</span>
                                     </button>
                                   </td>
                                 </tr>
@@ -513,21 +578,23 @@ export function PortalSiteUsageDialog({
                             </tbody>
                           </table>
                         </div>
-                        <div className="divide-y divide-slate-200 dark:divide-slate-800 lg:hidden">
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800 sm:hidden">
                           {creditEventItems.map((entry) => (
                             <button
                               key={entry.event_id}
                               type="button"
-                              className="flex w-full items-center justify-between gap-4 py-4 text-left"
+                              className="flex w-full items-center gap-3 py-3 text-left"
                               onClick={() => setSelectedCreditEvent(entry)}
+                              data-portal-usage="records-row"
                             >
-                              <span>
-                                <strong>{eventFeatureText(entry, 'title')}</strong>
-                                <span className="mt-1 block text-xs text-slate-500">
+                              <span className="min-w-0 flex-1">
+                                <span className="block break-words font-medium">{eventFeatureText(entry, 'title')}</span>
+                                <span className="mt-0.5 block text-xs text-slate-500">
                                   {formatCreditEventTime(entry.created_at, locale)}
                                 </span>
                               </span>
-                              <strong>{formatCreditPoints(entry.consumed_ai_credits)}</strong>
+                              <strong className="whitespace-nowrap tabular-nums">{formatCreditPoints(entry.consumed_ai_credits)}</strong>
+                              <span aria-hidden="true" className="text-lg leading-none text-slate-400">›</span>
                             </button>
                           ))}
                         </div>
@@ -535,19 +602,43 @@ export function PortalSiteUsageDialog({
                     ) : (
                       <p className="py-6 text-sm text-slate-500">{t('portal.usage.credit_events_empty')}</p>
                     )}
-                    {!creditEventError && creditEvents ? (
-                      <ListPagination
-                        offset={creditEventOffset}
-                        limit={creditEventPageSize}
-                        total={creditEventCount}
-                        isLoading={creditEventLoading}
-                        onOffsetChange={(nextOffset) => void loadCreditEventPage(nextOffset)}
-                        className="px-0 pb-0"
-                      />
-                    ) : null}
                   </div>
                 ) : null}
               </div>
+
+              {activeView === 'records' && !creditEventError && creditEvents && creditEventCount > 0 ? (
+                <nav
+                  className="sticky -bottom-4 z-20 -mx-6 -mb-4 mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-gray-900"
+                  aria-label={t('common.pagination', {}, 'Pagination')}
+                  data-portal-usage="records-pagination"
+                >
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t(
+                      'common.pagination_summary',
+                      { start: String(pageStart), end: String(pageEnd), total: String(creditEventCount) },
+                      `${pageStart}-${pageEnd} of ${creditEventCount}`,
+                    )}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={!hasPreviousPage || creditEventLoading}
+                      onClick={() => void loadCreditEventPage(Math.max(0, creditEventOffset - creditEventPageSize))}
+                    >
+                      {t('common.previous', {}, 'Previous')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={!hasNextPage || creditEventLoading}
+                      onClick={() => void loadCreditEventPage(creditEventOffset + creditEventPageSize)}
+                    >
+                      {t('common.next_page', {}, 'Next page')}
+                    </button>
+                  </div>
+                </nav>
+              ) : null}
             </>
         )}
       </div>

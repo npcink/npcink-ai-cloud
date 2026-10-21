@@ -39,19 +39,19 @@ assert.doesNotMatch(
 );
 assert.match(
   usageSource,
-  /view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*embedded[\s\S]*credit_events_summary/,
-  'Site usage Modal should lead with trend / records tabs, embed the trend panel, and summarize records softly'
+  /credit_events_summary[\s\S]*site-dialog-range[\s\S]*view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*embedded/,
+  'Site usage Modal should lead with one summary + shared time range row, then trend / records tabs embedding the trend panel'
 );
 assert.doesNotMatch(usageSource, /overview_title|<h2\b/, 'Site usage Modal must not repeat a period summary or a heading the active tab already names');
 assert.match(
   creditTrendSource,
-  /embedded \? \([\s\S]*?windowTabs[\s\S]*?\) : \([\s\S]*?<h2/,
+  /\{embedded \? null : \([\s\S]*?<h2/,
   'embedded trend panel must drop its own heading'
 );
 assert.match(
-  creditTrendSource,
-  /embedded \? \(\s*<PortalInfoHint[\s\S]*?detail=\{trendDesc\}/,
-  'embedded trend description must fold into an info hint (quiet)'
+  usageSource,
+  /<PortalInfoHint[\s\S]*?label=\{t\('portal\.usage\.primary_trend_title'[\s\S]*?data-portal-usage="trend-help"/,
+  'embedded trend description must fold into the dialog summary info hint (quiet)'
 );
 assert.match(
   creditTrendSource,
