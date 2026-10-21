@@ -63,5 +63,10 @@ assert.doesNotMatch(dialog, /ListPagination/, 'ListPagination hides single pages
 // Narrow screens: the range control is a 4-column grid so 30 天 never clips.
 assert.match(dialog, /className="grid w-full grid-cols-4[^"]*sm:inline-flex/);
 
+// ⓘ glued to the last word of the summary.
+assert.match(dialog, /<span className="whitespace-nowrap" data-portal-usage="site-dialog-summary-tail">\s*\{summaryTail\}\s*<PortalInfoHint/);
+// Tab underline is derived from the active view only (no stale state).
+assert.match(dialog, /aria-selected=\{activeView === view\.value\}[\s\S]*?activeView === view\.value\s*\? 'border-slate-950/);
+
 assert.match(spec, /站点用量弹窗布局/, 'spec documents the site usage dialog layout');
 console.log('portal_site_usage_dialog_layout_contract: ok');

@@ -286,6 +286,10 @@ export function PortalSiteUsageDialog({
             updatedText(creditRecordsUpdatedAt),
           ])
         : '');
+  const summaryDisplay = summaryText || t('common.loading', {}, 'Loading...');
+  const summarySplitAt = summaryDisplay.lastIndexOf(' ') + 1;
+  const summaryHead = summaryDisplay.slice(0, summarySplitAt);
+  const summaryTail = summaryDisplay.slice(summarySplitAt);
   const pageStart = creditEventCount > 0 ? creditEventOffset + 1 : 0;
   const pageEnd = Math.min(creditEventOffset + creditEventPageSize, creditEventCount);
   const hasPreviousPage = creditEventOffset > 0;
@@ -384,14 +388,18 @@ export function PortalSiteUsageDialog({
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" data-portal-usage="site-dialog-summary">
                   <p className="min-w-0 flex-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
                     <span data-portal-usage="site-dialog-summary-text">
-                      {summaryText || t('common.loading', {}, 'Loading...')}
+                      {summaryHead}
+                      {/* Glue ⓘ to the last word so it never wraps onto a line by itself. */}
+                      <span className="whitespace-nowrap" data-portal-usage="site-dialog-summary-tail">
+                        {summaryTail}
+                        <PortalInfoHint
+                          label={t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
+                          detail={t('portal.usage.credit_events_desc', {}, 'Service events that consumed AI credits.')}
+                          className="ml-1 align-middle"
+                          data-portal-usage="trend-help"
+                        />
+                      </span>
                     </span>
-                    <PortalInfoHint
-                      label={t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
-                      detail={t('portal.usage.credit_events_desc', {}, 'Service events that consumed AI credits.')}
-                      className="ml-1 align-middle"
-                      data-portal-usage="trend-help"
-                    />
                   </p>
                   <div
                     role="radiogroup"
