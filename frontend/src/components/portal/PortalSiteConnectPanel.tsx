@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
 import { portalClient, type PortalAddonConnectionAccount } from '@/lib/portal-client';
+import { resolveDefaultAddonAccountId } from '@/lib/portal-addon-account-default';
 import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
 import {
   formatPortalErrorMessage,
@@ -21,6 +22,8 @@ interface PortalSiteConnectPanelProps {
   initialSiteName?: string;
   addonReturnUrl?: string;
   addonState?: string;
+  /** Current account, when known; used to preselect among several accounts. */
+  currentAccountId?: string;
 }
 
 export function PortalSiteConnectPanel({
@@ -34,9 +37,14 @@ export function PortalSiteConnectPanel({
   initialSiteName = '',
   addonReturnUrl = '',
   addonState = '',
+  currentAccountId = '',
 }: PortalSiteConnectPanelProps) {
   const { t } = useLocale();
-  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [manualAccountId, setSelectedAccountId] = useState('');
+  const defaultAccountId = resolveDefaultAddonAccountId(accounts, currentAccountId);
+  const selectedAccountId = accounts.some((account) => account.account_id === manualAccountId)
+    ? manualAccountId
+    : defaultAccountId;
   const [siteName, setSiteName] = useState(initialSiteName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
