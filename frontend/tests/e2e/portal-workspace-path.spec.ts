@@ -2935,7 +2935,7 @@ test('site usage day drill-down back restores the exact day-table scroll positio
       await expect(dialog.locator('[data-portal-usage="records-day-breadcrumb"]')).toBeVisible();
       await dialog.locator('[data-portal-usage="records-day-breadcrumb"] button').click();
       await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(300);
       const after = await scroller.evaluate((el) => el.scrollTop);
       console.log(`SCROLL page=${pageIndex} target=${target} before=${before} after=${after}`);
       expect(Math.abs(after - before)).toBeLessThanOrEqual(1);

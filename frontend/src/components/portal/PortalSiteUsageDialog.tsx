@@ -355,22 +355,42 @@ export function PortalSiteUsageDialog({
   }, []);
 
   /**
-   * Restore the day-table scroll only after the cached day rows are committed to the DOM
-   * (layout effect, before paint), then re-apply once on the next frame in case late layout
-   * (sticky footer / summary wrap) clamped it. Restoring from the click handler raced the
-   * re-render and got clamped to the drill view's shorter max scroll.
+   * Restore the day-table scroll once the cached day rows are back AND the scroll container is
+   * tall enough. Root cause of the old drift (134 → 102, 302 → 0): restoring right after the
+   * back click ran while the container still had the short drill view's height, so the browser
+   * clamped scrollTop to that smaller max scroll. We now re-apply on every content resize until
+   * the exact position sticks (or the user scrolls / 1.5 s passes).
    */
   useLayoutEffect(() => {
     const top = pendingDayScrollRestoreRef.current;
     if (drillDay || top === null || !dayRows) return;
     const el = scrollContainer();
     if (!el) return;
-    el.scrollTop = top;
-    const frame = requestAnimationFrame(() => {
-      if (Math.abs(el.scrollTop - top) > 1) el.scrollTop = top;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
       pendingDayScrollRestoreRef.current = null;
-    });
-    return () => cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.clearTimeout(timer);
+      el.removeEventListener('wheel', finish);
+      el.removeEventListener('touchmove', finish);
+      el.removeEventListener('keydown', finish);
+    };
+    const apply = () => {
+      if (done) return;
+      el.scrollTop = top;
+      if (Math.abs(el.scrollTop - top) <= 1) finish();
+    };
+    const observer = new ResizeObserver(apply);
+    Array.from(el.children).forEach((child) => observer.observe(child));
+    observer.observe(el);
+    const timer = window.setTimeout(finish, 1500);
+    el.addEventListener('wheel', finish, { passive: true });
+    el.addEventListener('touchmove', finish, { passive: true });
+    el.addEventListener('keydown', finish);
+    apply();
+    return finish;
   }, [drillDay, dayRows]);
 
   /** Service columns: top 3 services of the whole window (stable across pages) + 其他. */
