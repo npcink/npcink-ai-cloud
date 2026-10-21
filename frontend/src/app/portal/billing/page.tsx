@@ -1,13 +1,18 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PortalPageStack,
   PortalCard,
 } from '@/components/portal/PortalScaffold';
+import { PortalBreadcrumb } from '@/components/portal/PortalBreadcrumb';
 import { PortalEntitlementUsage } from '@/components/portal/PortalEntitlementUsage';
+import { PortalBillingSiteUsageList } from '@/components/portal/PortalBillingSiteUsageList';
+import { PortalSiteUsageDialog } from '@/components/portal/PortalSiteUsageDialog';
+import { PortalCreditSourcesDialog } from '@/components/portal/PortalCreditSourcesDialog';
+import type { Site } from '@/lib/portal-client';
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import {
   PortalErrorState,
@@ -22,6 +27,12 @@ import { usePortalPaymentOrders } from '@/hooks/usePortalPaymentOrders';
 import { useSession } from '@/hooks/useSession';
 import { type Entitlements } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
+import {
+  billingPackageNeedsAttention,
+  findLimitedBillingResources,
+  resolveBillingPackageStatusLabel,
+  resolveBillingPressureCta,
+} from '@/lib/portal-billing-status';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -44,13 +55,6 @@ function formatBillingPeriodRange(startValue: string, endValue: string, locale: 
   return `${formatter.format(start)} – ${formatter.format(end)}`;
 }
 
-function findLimitedResources(quotaSummary: QuotaSummary | null): QuotaResource[] {
-  return (quotaSummary?.resource_limits || []).filter((resource) => (
-    !resource.unlimited
-    && Number(resource.limit || 0) > 0
-    && (resource.status === 'limited' || Number(resource.used || 0) > Number(resource.limit || 0))
-  ));
-}
 
 function formatLimitedResourceDetail(resource: QuotaResource, packageLabel: string, t: TranslateFn): string {
   const used = formatNumber(Number(resource.used || 0));
@@ -90,7 +94,7 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
       'The package has no AI credits remaining. Buy AI credits or change the package to continue.'
     );
   }
-  const limitedResources = findLimitedResources(quotaSummary);
+  const limitedResources = findLimitedBillingResources(quotaSummary);
   if (limitedResources.length > 1) {
     return limitedResources.map((resource) => formatLimitedResourceDetail(resource, packageLabel, t)).join(' ');
   }
@@ -100,29 +104,6 @@ function resolvePackageStatusDetail(quotaSummary: QuotaSummary | null, packageLa
     : t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
 }
 
-function resolvePackageStatusLabel(quotaSummary: QuotaSummary | null, t: TranslateFn): string {
-  if (quotaSummary?.ai_credits?.status === 'limited') {
-    return t('portal.billing.package_status_credit_label', {}, 'AI credits unavailable');
-  }
-  const limitedResources = findLimitedResources(quotaSummary);
-  if (limitedResources.length > 1) {
-    return t('portal.billing.package_status_multiple_label', {}, 'Multiple capacities need attention');
-  }
-  const limitedResource = limitedResources[0];
-  if (limitedResource?.key === 'vector_documents') {
-    return t('portal.billing.package_status_knowledge_label', {}, 'Text capacity needs attention');
-  }
-  if (limitedResource?.key === 'media_images') {
-    return t('portal.billing.package_status_media_label', {}, 'Image capacity needs attention');
-  }
-  if (limitedResource?.key === 'active_sites' || limitedResource?.key === 'bound_sites') {
-    return t('portal.billing.package_status_site_label', {}, 'Site limit exceeded');
-  }
-  if (limitedResource) {
-    return t('portal.billing.package_status_capacity_label', {}, 'Package limit exceeded');
-  }
-  return t('common.ok', {}, 'OK');
-}
 
 function PortalBillingContent() {
   const searchParams = useSearchParams();
@@ -147,6 +128,46 @@ function PortalBillingContent() {
     isAuthenticated,
     t,
   });
+
+  const [creditSourcesOpen, setCreditSourcesOpen] = useState(false);
+  const [siteUsageSite, setSiteUsageSite] = useState<Site | null>(null);
+
+  const focusSiteUsageList = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.delete('view');
+    nextParams.delete('site');
+    const qs = nextParams.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/portal/billing${qs ? `?${qs}` : ''}#site-usage`,
+    );
+    requestAnimationFrame(() => {
+      document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
+  const openCreditSources = useCallback(() => {
+    setCreditSourcesOpen(true);
+  }, []);
+
+  const openSiteUsage = useCallback((site: Site) => {
+    setSiteUsageSite(site);
+  }, []);
+
+  const closeSiteUsage = useCallback(() => {
+    setSiteUsageSite(null);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash === '#usage' || window.location.hash === '#site-usage') {
+      requestAnimationFrame(() => {
+        document.getElementById('site-usage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [entitlements, isLoading, searchParams]);
 
   // Upgrade / manage intents now live on Account.
   useEffect(() => {
@@ -211,27 +232,48 @@ function PortalBillingContent() {
         `Ends ${formatDate(currentPeriodEnd)}`
       )
     : '';
-  const packageStatus =
-    !quotaSummary || error
-      ? 'unknown'
-      : String(quotaSummary.status) === 'limited'
-      ? 'warning'
-      : 'ok';
+  const packageStatus = billingPackageNeedsAttention(quotaSummary, error)
+    ? 'warning'
+    : (!quotaSummary || error ? 'unknown' : 'ok');
   const packageStatusLabel =
     packageStatus === 'warning'
-      ? resolvePackageStatusLabel(quotaSummary, t)
+      ? resolveBillingPackageStatusLabel(quotaSummary, t)
       : t('common.ok', {}, 'OK');
-  const creditNeedsAttention = quotaSummary?.ai_credits?.status === 'limited';
-  const manageHref = creditNeedsAttention
-    ? '/portal/account#package-options'
-    : '/portal/account#package-options';
+  const pressureCta = resolveBillingPressureCta({ quotaSummary, t });
+  const manageHref = pressureCta.href;
+  const packageSummaryMetrics = [
+    {
+      label: t('portal.current_subscription_label', {}, 'Current package'),
+      value: packageLabel,
+      size: 'compact' as const,
+    },
+    {
+      label: t('portal.usage.period_label', {}, 'Period'),
+      value: currentPeriodLabel,
+      detail: currentPeriodEndDetail || undefined,
+      size: 'compact' as const,
+    },
+  ];
 
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
         title={t('portal.billing.customer_title', {}, 'Package')}
-        description={t('portal.billing.subtitle', {}, 'Review the account package, AI credits, and available account actions.')}
         currentPage="billing"
+        breadcrumb={(
+          <PortalBreadcrumb
+            aria-label={t('portal.billing.breadcrumb', {}, 'Package location')}
+            items={[
+              {
+                label: t('portal.nav_service', {}, 'Service'),
+                href: '/portal',
+              },
+              {
+                label: t('portal.billing.customer_title', {}, 'Package'),
+              },
+            ]}
+          />
+        )}
         primaryAction={
           packageStatus !== 'warning' ? (
             <Link href="/portal/account#package-options" className="btn btn-secondary btn-sm">
@@ -239,43 +281,9 @@ function PortalBillingContent() {
             </Link>
           ) : null
         }
-        metadata={(
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            <span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.current_subscription_label', {}, 'Current package')}:
-              </span>{' '}
-              {packageLabel}
-            </span>
-            <span>
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {t('portal.usage.period_label', {}, 'Period')}:
-              </span>{' '}
-              {currentPeriodLabel}
-            </span>
-            {currentPeriodEndDetail ? <span>{currentPeriodEndDetail}</span> : null}
-          </div>
-        )}
-        contextPanel={packageStatus === 'warning' ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3.5 dark:border-amber-900/70 dark:bg-amber-950/25">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
-                <details className="mt-0.5 text-xs text-gray-600 dark:text-gray-300">
-                  <summary className="cursor-pointer select-none font-medium text-gray-700 dark:text-gray-200">
-                    {t('portal.home.attention_details', {}, 'Details')}
-                  </summary>
-                  <p className="mt-1 leading-5">{resolvePackageStatusDetail(quotaSummary, packageLabel, t)}</p>
-                </details>
-              </div>
-              <Link href={manageHref} className="btn btn-secondary btn-sm shrink-0">
-                {creditNeedsAttention
-                  ? t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')
-                  : t('portal.billing.upgrade_action', {}, 'Upgrade package')}
-              </Link>
-            </div>
-          </div>
-        ) : undefined}
+        metrics={packageSummaryMetrics}
+        metricsLayout="rail"
+        metricsPlacement="title-end"
       />
 
       <PortalPaymentReturnNotice
@@ -300,14 +308,59 @@ function PortalBillingContent() {
       ) : null}
 
       {!error && quotaSummary ? (
-        <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
-          <PortalEntitlementUsage
-            quotaSummary={quotaSummary}
+        <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950" data-portal-billing="entitlements">
+          {packageStatus === 'warning' ? (
+            <div
+              className="mb-3 w-full overflow-hidden rounded-xl border border-amber-200/90 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20"
+              data-portal-billing="attention"
+            >
+              <div className="flex flex-wrap items-start gap-2 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-gray-950 dark:text-white">{packageStatusLabel}</p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-amber-900/85 dark:text-amber-100/85">
+                    {resolvePackageStatusDetail(quotaSummary, packageLabel, t)}
+                  </p>
+                </div>
+                <Link href={manageHref} className="btn btn-secondary btn-sm shrink-0">
+                  {pressureCta.label}
+                </Link>
+              </div>
+            </div>
+          ) : null}
+          <div id="entitlements" className="scroll-mt-24">
+            <PortalEntitlementUsage
+              quotaSummary={quotaSummary}
+              t={t}
+              locale={locale}
+              attentionSurfaceActive={packageStatus === 'warning'}
+              onOpenUsage={focusSiteUsageList}
+              onOpenCreditSources={openCreditSources}
+            />
+          </div>
+        </PortalCard>
+      ) : null}
+
+      {!error ? (
+        <PortalCard variant="portal" className="bg-white px-3.5 py-3 dark:bg-slate-950">
+          <PortalBillingSiteUsageList
+            sites={session.sites}
             t={t}
-            locale={locale}
+            onSelectSite={openSiteUsage}
           />
         </PortalCard>
       ) : null}
+
+      <PortalSiteUsageDialog
+        isOpen={Boolean(siteUsageSite)}
+        onClose={closeSiteUsage}
+        site={siteUsageSite}
+      />
+
+      <PortalCreditSourcesDialog
+        isOpen={creditSourcesOpen}
+        onClose={() => setCreditSourcesOpen(false)}
+        quotaSummary={quotaSummary}
+      />
     </PortalPageStack>
   );
 }

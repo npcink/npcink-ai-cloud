@@ -50,7 +50,8 @@ const paymentOrdersHookSource = readFileSync(paymentOrdersHookPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEntitlementUsage.tsx');
 const entitlementComponentSource = readFileSync(entitlementComponentPath, 'utf8');
-const usagePageSource = readFileSync(usagePagePath, 'utf8');
+const billingStatusPath = resolve(root, 'src/lib/portal-billing-status.ts');
+const billingStatusSource = readFileSync(billingStatusPath, 'utf8');
 const utilsSource = readFileSync(utilsPath, 'utf8');
 assert.match(
   packagePanelSource,
@@ -88,19 +89,29 @@ assert.doesNotMatch(
   'Portal package page must not send users to a site record to understand the account package'
 );
 assert.match(
-  billingPageSource,
+  billingStatusSource,
   /portal\.billing\.upgrade_action/,
-  'Portal package page must own package upgrade entry points'
+  'Portal package pressure CTA must own package upgrade entry points'
 );
 assert.match(
   billingPageSource,
-  /resolvePackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
+  /resolveBillingPressureCta|resolveBillingPackageStatusLabel/,
+  'Portal package page must use the shared billing quiet-status helpers'
+);
+assert.match(
+  billingStatusSource,
+  /resolveBillingPackageStatusLabel[\s\S]*package_status_knowledge_label[\s\S]*package_status_site_label/,
   'Portal package status must name the customer-visible limit instead of showing a generic attention label'
 );
 assert.match(
   billingPageSource,
-  /active_sites[\s\S]*package_status_active_site_limited[\s\S]*package_status_site_label/,
-  'Portal package status must classify active-site capacity as a site limit and explain its usage'
+  /active_sites[\s\S]*package_status_active_site_limited/,
+  'Portal package status must explain active-site capacity usage on the package page'
+);
+assert.match(
+  billingStatusSource,
+  /active_sites[\s\S]*package_status_site_label/,
+  'Portal package status must classify active-site capacity as a site limit'
 );
 assert.match(
   accountCommerceSource,
@@ -173,9 +184,9 @@ assert.doesNotMatch(
   'the entitlement summary must not fall back to the browser default locale'
 );
 assert.match(
-  usagePageSource,
-  /formatDateTime\(nextPaidCreditExpiry, locale\)/,
-  'the usage overview must preserve the paid-credit cutoff time with the current application locale'
+  entitlementComponentSource,
+  /paidExpiryDate \?[\s\S]*'portal\.usage\.paid_credit_expiry_hint',\s*\{ date: paidExpiryDate \}/,
+  'the package AI credit card must surface the paid-credit cutoff (usage lives on the package page, not a usage overview)'
 );
 assert.match(
   utilsSource,
@@ -281,13 +292,23 @@ assert.doesNotMatch(
 );
 assert.match(
   billingHeader,
-  /metadata=[\s\S]*currentPeriodLabel[\s\S]*contextPanel=\{packageStatus === 'warning'/,
-  'Portal package header must keep passive package metadata inline and place only actionable warnings in the right panel'
+  /PortalBreadcrumb[\s\S]*metricsLayout="rail"[\s\S]*metricsPlacement="title-end"/,
+  'Portal package header must use breadcrumb plus a quiet title-end metrics rail for package and period'
+);
+assert.match(
+  billingPageSource,
+  /data-portal-billing="attention"[\s\S]*resolvePackageStatusDetail/,
+  'Portal package warnings must sit on the entitlements card with a visible detail line and CTA'
 );
 assert.doesNotMatch(
   billingHeader,
-  /eyebrow=|metrics=/,
-  'Portal package header must not repeat its title or render a second summary rail'
+  /contextPanel=|metadata=/,
+  'Portal package header must not use contextPanel or a second metadata band for package status'
+);
+assert.doesNotMatch(
+  billingHeader,
+  /eyebrow=/,
+  'Portal package header must not repeat its title as an eyebrow'
 );
 assert.match(
   billingPageSource,
@@ -311,13 +332,13 @@ assert.doesNotMatch(
 );
 assert.match(
   entitlementComponentSource,
-  /package_remaining_label[\s\S]*paid_remaining_label[\s\S]*total_remaining_label/,
-  'Shared entitlement summary must distinguish package, paid, and total available credits'
+  /remaining_ai_credits[\s\S]*package_remaining_label[\s\S]*paid_remaining_label/,
+  'Shared entitlement summary must show total remaining and split package vs paid credits'
 );
 assert.match(
   entitlementComponentSource,
-  /data-portal-entitlement-group=\{group\.key\}[\s\S]*?divide-y/,
-  'Shared entitlement summary must keep knowledge capacities in paired desktop columns'
+  /grid grid-cols-1 gap-3 md:grid-cols-2" data-portal-entitlement-group="quota"/,
+  'Shared entitlement summary must keep entitlement tiles (incl. knowledge capacity) in paired desktop columns'
 );
 assert.match(
   paymentOrderHistorySource,

@@ -54,9 +54,11 @@ def _sqlite_url(tmp_path: Path) -> str:
 
 
 def _settings(database_url: str) -> Settings:
+    # Use test env so optional env openai credentials remain available for
+    # dual-channel adapter tests; production-like Settings reject those keys.
     return Settings(
         _env_file=None,
-        environment="production",
+        environment="test",
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
         internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
@@ -329,8 +331,25 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
         }
     }
 
+    # Test env keeps optional env credentials for dual-channel adapter tests, so the
+    # env-only build still sees them; the Admin connection above is what wins.
     env_only_providers = build_provider_adapters(settings, include_enabled_connections=False)
-    assert "openai" not in env_only_providers
+    assert env_only_providers["openai"] is not openai
+    # Production can no longer fall back to env provider keys: config rejects them.
+    with pytest.raises(ValueError, match="openai_api_key must not be set outside development/test"):
+        Settings(
+            _env_file=None,
+            environment="production",
+            database_url=settings.database_url,
+            redis_url="redis://localhost:6379/0",
+            internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
+            admin_key_sha256="a" * 64,
+            admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+            portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
+            browser_origin_allowlist="https://cloud.example.com",
+            trusted_host_allowlist="cloud.example.com",
+            openai_api_key="env-openai-key",
+        )
 
     execution_providers = resolve_execution_provider_adapters(
         settings,

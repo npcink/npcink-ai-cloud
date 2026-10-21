@@ -237,11 +237,17 @@ assert.match(
   'Portal under-connect guide must sit between the title row and the desktop table'
 );
 
+// Spec §2: one shell-level ~896px band shared by every service-center page (home is the reference).
+const portalCssSource = readFileSync(resolve(root, 'src/app/portal/portal.css'), 'utf8');
+const portalLayoutSource = readFileSync(resolve(root, 'src/app/portal/layout.tsx'), 'utf8');
+assert.match(portalCssSource, /--portal-content-max-width:\s*56rem/, 'Portal shell content band must be 56rem (~896px)');
 assert.match(
-  source,
-  /max-w-\[56rem\][\s\S]*data-portal-home="page"|data-portal-home="page"[\s\S]*max-w-\[56rem\]/,
-  'Portal home must use a tighter centered ~896px content band without changing global billing width'
+  portalLayoutSource,
+  /portal-content[^"]*max-w-\[var\(--portal-content-max-width\)\]/,
+  'Portal layout must apply the shared content band'
 );
+assert.match(source, /data-portal-home="page"/);
+assert.doesNotMatch(source, /max-w-\[(?:56|65|80)rem\]/, 'Portal home must not re-narrow or widen the shared band locally');
 assert.match(
   source,
   /metricsLayout="rail"/,

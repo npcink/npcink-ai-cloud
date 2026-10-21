@@ -34,6 +34,18 @@ services:
       NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts
       NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT: ${NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT:-}
       NPCINK_CLOUD_OTEL_TRACE_QUERY_URL: ${NPCINK_CLOUD_OTEL_TRACE_QUERY_URL:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     depends_on:
       redis:
         condition: service_healthy
@@ -54,6 +66,18 @@ services:
       NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}
       NPCINK_CLOUD_DEPLOYMENT_RELEASE: ${NPCINK_CLOUD_DEPLOYMENT_RELEASE:-unknown}
       NODE_ENV: production
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     group_add:
       - "999"
     expose:
@@ -122,9 +146,19 @@ services:
     restart: unless-stopped
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       frontend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8080/health/live || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     ports:
       - "127.0.0.1:${NPCINK_CLOUD_PORT:-8010}:8080"
     volumes:
@@ -141,6 +175,8 @@ services:
     image: ${NPCINK_CLOUD_API_RELEASE_IMAGE:-npcink-ai-cloud-api:prod}
     pull_policy: never
     restart: "no"
+    healthcheck:
+      disable: true
     entrypoint: ["python"]
     command: ["-c", "import signal; signal.pause()"]
 
