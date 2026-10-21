@@ -396,7 +396,7 @@ export function PortalSiteUsageDialog({
                   <div
                     role="radiogroup"
                     aria-label={t('portal.usage.credit_events_window_label', {}, 'Time range')}
-                    className="inline-flex max-w-full shrink-0 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
+                    className="grid w-full grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800 sm:inline-flex sm:w-auto sm:shrink-0"
                     data-portal-usage="site-dialog-range"
                   >
                     {SITE_USAGE_RANGES.map((option) => (
@@ -405,7 +405,7 @@ export function PortalSiteUsageDialog({
                         type="button"
                         role="radio"
                         aria-checked={usageRange === option.value}
-                        className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                        className={`min-h-9 min-w-0 whitespace-nowrap rounded-lg px-1 py-1.5 text-xs font-medium sm:px-2.5 sm:text-sm transition-colors ${
                           usageRange === option.value
                             ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-950 dark:text-blue-300'
                             : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'

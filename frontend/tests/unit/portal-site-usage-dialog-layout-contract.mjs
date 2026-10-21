@@ -60,5 +60,8 @@ assert.match(dialog, /sticky -bottom-4[^"]*"\s*aria-label=\{t\('common\.paginati
 assert.match(dialog, /creditEventCount > 0 \? \(\s*<nav/);
 assert.doesNotMatch(dialog, /ListPagination/, 'ListPagination hides single pages; the dialog renders its own footer');
 
+// Narrow screens: the range control is a 4-column grid so 30 天 never clips.
+assert.match(dialog, /className="grid w-full grid-cols-4[^"]*sm:inline-flex/);
+
 assert.match(spec, /站点用量弹窗布局/, 'spec documents the site usage dialog layout');
 console.log('portal_site_usage_dialog_layout_contract: ok');
