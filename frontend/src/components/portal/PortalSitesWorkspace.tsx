@@ -8,6 +8,7 @@ import { PortalActionIcon, PortalRowActions, type PortalRowActionItem } from '@/
 import { PortalStatusBadge, PortalStatusInline } from '@/components/portal/PortalStatusBadge';
 import { PortalEmptyState, PortalLoadingState } from '@/components/portal/PortalPageState';
 import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
+import { resolveCurrentAddonAccountId } from '@/lib/portal-addon-account-default';
 import { Modal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
@@ -788,6 +789,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         <PortalSiteConnectPanel
           onSubmittingChange={setIsConnecting}
           accounts={addonAccounts}
+          currentAccountId={resolveCurrentAddonAccountId(addonAccounts)}
           accountsError={addonAccountsError}
           isLoadingAccounts={isLoadingAddonAccounts}
           onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}

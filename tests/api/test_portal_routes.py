@@ -610,7 +610,10 @@ def _verify_portal_registration_code(
     addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
     assert addon_accounts_response.status_code == 200, addon_accounts_response.text
     addon_accounts = addon_accounts_response.json()["data"]["items"]
-    assert all(set(item) == {"account_id", "name", "site_count"} for item in addon_accounts)
+    assert all(
+        set(item) == {"account_id", "name", "site_count", "is_current"}
+        for item in addon_accounts
+    )
     access = {
         **_ACCESS_BY_EMAIL.get(normalized_email, {}),
         **data,
@@ -3515,7 +3518,10 @@ def test_principal_cannot_hold_active_memberships_in_multiple_accounts(tmp_path:
     addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
     assert addon_accounts_response.status_code == 200
     addon_accounts = addon_accounts_response.json()["data"]["items"]
-    assert all(set(item) == {"account_id", "name", "site_count"} for item in addon_accounts)
+    assert all(
+        set(item) == {"account_id", "name", "site_count", "is_current"}
+        for item in addon_accounts
+    )
     assert {item["account_id"] for item in addon_accounts} == {
         "acct_multi_principal_alpha"
     }
@@ -8662,4 +8668,93 @@ def test_portal_public_login_options_expose_only_availability(
     assert "private" not in response.text
     monkeypatch.setattr(portal, "_portal_qq_config", lambda request: {})
     assert client.get("/portal/v1/auth/login-options").json()["data"] == {"qq_available": False}
+    dispose_engine(database_url)
+
+
+def test_portal_addon_connection_accounts_mark_current_account_from_selected_site(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    site_id = "site_portal_current_account"
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_current", "name": "Current Account"},
+        headers=build_internal_headers(idempotency_key="portal-current-account-001"),
+    )
+    site_response = client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": site_id,
+            "account_id": "acct_portal_current",
+            "name": "Current Account Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="portal-current-account-site-001"),
+    )
+    assert site_response.status_code == 200, site_response.text
+    grant = _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email="portal-current-account@example.com",
+        idempotency_key="portal-current-account-member-001",
+    )
+
+    original_list_portal_accounts = CommercialService.list_portal_accounts
+
+    def list_with_second_account(
+        self: CommercialService, *, principal_id: str, **kwargs: object
+    ) -> dict[str, object]:
+        result = original_list_portal_accounts(self, principal_id=principal_id, **kwargs)
+        items = list(result.get("items") or [])
+        assert items, "fixture account must be eligible"
+        items.append(
+            {
+                **dict(items[0]),
+                "account_id": "acct_portal_other",
+                "name": "Other Account",
+                "site_count": 0,
+            }
+        )
+        return {**result, "items": items}
+
+    monkeypatch.setattr(CommercialService, "list_portal_accounts", list_with_second_account)
+
+    _set_portal_cookie_session(
+        client,
+        principal_id=str(grant["principal_id"]),
+        site_id="",
+        session_version=int(grant.get("session_version") or 1),
+    )
+    unknown_response = client.get("/portal/v1/addon-connection-accounts")
+    assert unknown_response.status_code == 200, unknown_response.text
+    unknown_items = unknown_response.json()["data"]["items"]
+    assert {item["account_id"] for item in unknown_items} == {
+        "acct_portal_current",
+        "acct_portal_other",
+    }
+    assert all(item["is_current"] is False for item in unknown_items)
+
+    select_response = client.post("/portal/v1/session/site", json={"site_id": site_id})
+    assert select_response.status_code == 200, select_response.text
+    session_data = select_response.json()["data"]
+    _assert_strict_portal_session(session_data)
+
+    known_response = client.get("/portal/v1/addon-connection-accounts")
+    assert known_response.status_code == 200, known_response.text
+    known_items = {
+        item["account_id"]: item for item in known_response.json()["data"]["items"]
+    }
+    assert known_items["acct_portal_current"]["is_current"] is True
+    assert known_items["acct_portal_other"]["is_current"] is False
+    assert set(known_items["acct_portal_current"]) == {
+        "account_id",
+        "name",
+        "site_count",
+        "is_current",
+    }
+
     dispose_engine(database_url)
