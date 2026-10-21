@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useLayoutEffect, useRef, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
@@ -21,6 +21,7 @@ import {
 import { PortalPageStack } from '@/components/portal/PortalScaffold';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
+import { useSearchParams } from 'next/navigation';
 import { PortalSitesWorkspace } from '@/components/portal/PortalSitesWorkspace';
 import { PortalLoadingState } from '@/components/portal/PortalPageState';
 
@@ -75,8 +76,9 @@ function buildRestrictionItems({
   ].filter(Boolean) as RestrictionItem[];
 }
 
-export default function PortalPage() {
+function PortalHome() {
   const { t } = useLocale();
+  const isAddonBindPage = useSearchParams()?.get('connect') === 'wordpress-addon';
   const { session, isLoading, isAuthenticated } = useSession();
   const [accountEntitlements, setAccountEntitlements] = useState<Entitlements | null>(null);
   const [accountEntitlementsState, setAccountEntitlementsState] =
@@ -475,6 +477,9 @@ export default function PortalPage() {
   const shouldShowFollowUpSection =
     attentionFocusItems.length > 0 || shouldShowOnboardingChecklist;
 
+  // WordPress addon handoff: show only the minimal bind card, no home dashboard.
+  if (isAddonBindPage) return <PortalSitesWorkspace capacityAlerts={[]} />;
+
   return (
     <PortalPageStack className="space-y-3" data-portal-home="page">
       <section className="space-y-3" data-portal-home="operation-overview">
@@ -574,5 +579,13 @@ export default function PortalPage() {
 
       <PortalSitesWorkspace capacityAlerts={capacityAttentionItems} />
     </PortalPageStack>
+  );
+}
+
+export default function PortalPage() {
+  return (
+    <Suspense fallback={null}>
+      <PortalHome />
+    </Suspense>
   );
 }

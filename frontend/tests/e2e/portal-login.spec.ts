@@ -83,6 +83,7 @@ async function installLoginFlowMocks(
     initialRateLimitSeconds = 0,
     resendRateLimitSeconds = 0,
     remainingFreeCredits = 300,
+    addonAccounts = [{ account_id: 'acct_portal_login_e2e', name: 'Portal Login E2E', site_count: 0 }],
   }: {
     initiallyLoggedIn?: boolean;
     withSessionCookie?: boolean;
@@ -90,6 +91,7 @@ async function installLoginFlowMocks(
     initialRateLimitSeconds?: number;
     resendRateLimitSeconds?: number;
     remainingFreeCredits?: number;
+    addonAccounts?: Array<{ account_id: string; name: string; site_count: number }>;
   } = {}
 ) {
   let loggedIn = initiallyLoggedIn;
@@ -249,15 +251,7 @@ async function installLoginFlowMocks(
     }
 
     if (pathname === '/addon-connection-accounts') {
-      await fulfillJson(route, {
-        items: [
-          {
-            account_id: 'acct_portal_login_e2e',
-            name: 'Portal Login E2E',
-            site_count: 0,
-          },
-        ],
-      });
+      await fulfillJson(route, { items: addonAccounts });
       return;
     }
 
@@ -475,14 +469,13 @@ test('addon binding survives login and returns the complete payload to WordPress
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
   await expect(page).toHaveURL(`${BASE_URL}${bindingPath}`);
-  await expect(page.getByRole('heading', { name: /Finish WordPress connection|完成站点绑定/i }).first()).toBeVisible();
-  const accountChoice = page.getByRole('radio', { name: /Portal Login E2E/i });
+  await expect(page.getByRole('heading', { name: /Connect this site to your account|把这个站点绑定到你的账号/i })).toBeVisible();
+  await expect(page.locator('[data-portal-bind="account"]')).toContainText('Portal Login E2E');
+  await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
+  await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
+  await expect(page.getByText(/acct_/)).toHaveCount(0);
   const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
-  await expect(accountChoice).not.toBeChecked();
-  await expect(submitButton).toBeDisabled();
   expect(calls.addonConnectionPayload()).toBeNull();
-
-  await accountChoice.check();
   await expect(submitButton).toBeEnabled();
   await submitButton.click();
   await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-state-001/);
@@ -495,7 +488,7 @@ test('addon binding survives login and returns the complete payload to WordPress
   });
 });
 
-test('mobile email login preserves the WordPress binding and explicit ownership confirmation', async ({ page }) => {
+test('mobile email login preserves the WordPress binding and single confirmation', async ({ page }) => {
   const calls = await installLoginFlowMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
   const bindingPath = `/portal?${new URLSearchParams({
@@ -512,12 +505,9 @@ test('mobile email login preserves the WordPress binding and explicit ownership 
   await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
-  const connectionDialog = page.getByRole('dialog', { name: /Finish WordPress connection|完成站点绑定/i });
-  await expect(connectionDialog).toBeInViewport();
-  const accountChoice = connectionDialog.getByRole('radio', { name: /Portal Login E2E/i });
-  await expect(accountChoice).not.toBeChecked();
-  await accountChoice.check();
-  await connectionDialog.getByRole('button', { name: /Finish connection|完成绑定/i }).click();
+  const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
+  await expect(submitButton).toBeInViewport();
+  await submitButton.click();
 
   await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-mobile-001/);
   expect(calls.addonConnectionPayload()?.account_id).toBe('acct_portal_login_e2e');
@@ -573,3 +563,48 @@ test('public authentication entry keeps current desktop and mobile visual contra
     maxDiffPixelRatio: 0.02,
   });
 });
+
+for (const [variant, addonAccounts] of [
+  ['single', [{ account_id: 'acct_one', name: '', site_count: 2 }]],
+  ['multi', [
+    { account_id: 'acct_a', name: '个人账号', site_count: 1 },
+    { account_id: 'acct_b', name: '公司团队', site_count: 4 },
+  ]],
+] as const) {
+  test(`minimal addon bind page shows no IDs or dashboard chrome (${variant} account)`, async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('locale', 'zh-CN');
+      window.localStorage.setItem('theme', 'light');
+    });
+    await installLoginFlowMocks(page, { initiallyLoggedIn: true, addonAccounts: [...addonAccounts] });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/portal?${new URLSearchParams({
+      connect: 'wordpress-addon',
+      site_url: 'https://demo.example.com',
+      site_name: 'Demo Site',
+      return_url: 'https://demo.example.com/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth',
+      state: 'addon-state-001',
+    }).toString()}`);
+    const card = page.locator('[data-portal-bind="card"]');
+    await expect(card).toBeVisible();
+    await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
+    await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
+    await expect(page.getByText(/acct_/)).toHaveCount(0);
+    await expect(page.getByRole('button')).toHaveCount(1);
+    const submit = page.getByRole('button', { name: '完成绑定' });
+    if (variant === 'multi') {
+      await expect(page.getByRole('radio')).toHaveCount(2);
+      await expect(submit).toBeDisabled();
+      if (process.env.BIND_SHOT_DIR) {
+        await page.screenshot({ path: `${process.env.BIND_SHOT_DIR}/bind-multi-unselected-1280.png`, fullPage: true });
+      }
+      await page.getByRole('radio', { name: '公司团队' }).check();
+    } else {
+      await expect(card).toContainText(LOGIN_EMAIL);
+    }
+    await expect(submit).toBeEnabled();
+    if (process.env.BIND_SHOT_DIR) {
+      await page.screenshot({ path: `${process.env.BIND_SHOT_DIR}/bind-${variant}-1280.png`, fullPage: true });
+    }
+  });
+}

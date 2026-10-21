@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
@@ -11,6 +11,9 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 export function PortalNavbar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isAddonBindPage =
+    pathname.startsWith('/portal') && searchParams?.get('connect') === 'wordpress-addon';
   const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, logout } = useSession();
@@ -67,6 +70,9 @@ export function PortalNavbar() {
       {logoutLabel}
     </button>
   ) : null;
+
+  // The WordPress addon bind page stays free of dashboard chrome.
+  if (isAddonBindPage) return null;
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/78 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">

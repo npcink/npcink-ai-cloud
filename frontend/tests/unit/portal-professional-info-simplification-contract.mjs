@@ -200,7 +200,7 @@ assert.doesNotMatch(
 );
 assert.match(
   sitesSource,
-  /addonConnectMode && showConnectModal[\s\S]*PortalSiteConnectPanel/,
+  /if \(addonConnectMode\)[\s\S]*PortalSiteConnectPanel/,
   'Portal site connection panel should only open from the WordPress addon return flow'
 );
 assert.match(

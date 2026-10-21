@@ -87,8 +87,8 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /soleAccount[\s\S]*type="radio"[\s\S]*checked=\{selectedAccountId === soleAccount\.account_id\}/,
-  'a sole eligible account must still require one explicit ownership confirmation'
+  /soleAccount[\s\S]*data-portal-bind="account"[\s\S]*accountLabel\(soleAccount, 0\)[\s\S]*type="submit"[\s\S]*portal\.connect_site_authorize_addon/,
+  'a sole eligible account is named plainly and confirmed by the single Finish connection click'
 );
 assert.match(
   connectSource,
@@ -97,8 +97,8 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /portal\.connect_site_ownership_title[\s\S]*portal\.connect_site_ownership_desc/,
-  'addon binding must explain account-owned Free service and cross-account cooldown before submission'
+  /portal\.bind_desc/,
+  'addon binding must say in plain words that the site uses the account plan and credits'
 );
 assert.doesNotMatch(
   `${sitesSource}\n${connectSource}`,
@@ -107,3 +107,14 @@ assert.doesNotMatch(
 );
 
 console.log('portal_onboarding_ui_contract: ok');
+
+// Minimal bind page: no account IDs, no jargon, no dashboard chrome, one action.
+assert.doesNotMatch(connectSource, />\s*\{\s*account\.account_id\s*\}|account\.name \|\| account\.account_id|site_count|connect_site_ownership_|type="text"/,
+  'bind page must not show account IDs, site counts, ownership jargon, or extra inputs');
+assert.equal((connectSource.match(/type="submit"/g) || []).length, 1, 'bind page must have exactly one submit action');
+assert.doesNotMatch(connectSource, /common\.cancel/, 'bind page must not render a cancel action');
+assert.match(sitesSource, /if \(addonConnectMode\)[\s\S]*data-portal-bind="page"[\s\S]*PortalSiteConnectPanel/,
+  'addon bind mode must render only the bind card, not the sites workspace');
+const navbarSource = readFileSync(resolve(process.cwd(), 'src/components/portal/PortalNavbar.tsx'), 'utf8');
+assert.match(navbarSource, /connect'\) === 'wordpress-addon'[\s\S]*if \(isAddonBindPage\) return null;/,
+  'portal navbar must stay hidden on the addon bind page');

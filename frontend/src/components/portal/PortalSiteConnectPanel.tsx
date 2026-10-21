@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useSession } from '@/hooks/useSession';
 import { portalClient, type PortalAddonConnectionAccount } from '@/lib/portal-client';
 import { resolveDefaultAddonAccountId } from '@/lib/portal-addon-account-default';
 import { recordPortalJourneyBestEffort } from '@/lib/portal-customer-journey';
@@ -31,7 +32,7 @@ export function PortalSiteConnectPanel({
   accountsError = '',
   isLoadingAccounts = false,
   onRetryAccounts,
-  onClose,
+
   onSubmittingChange,
   initialSiteUrl = '',
   initialSiteName = '',
@@ -40,12 +41,14 @@ export function PortalSiteConnectPanel({
   currentAccountId = '',
 }: PortalSiteConnectPanelProps) {
   const { t } = useLocale();
+  const { session } = useSession();
+  const signedInEmail = session?.email || '';
   const [manualAccountId, setSelectedAccountId] = useState('');
   const defaultAccountId = resolveDefaultAddonAccountId(accounts, currentAccountId);
   const selectedAccountId = accounts.some((account) => account.account_id === manualAccountId)
     ? manualAccountId
     : defaultAccountId;
-  const [siteName, setSiteName] = useState(initialSiteName);
+  const siteName = initialSiteName;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [errorReference, setErrorReference] = useState('');
@@ -118,119 +121,81 @@ export function PortalSiteConnectPanel({
     }
   };
 
+  /** Plain account label for site owners: name, else the signed-in email, never an account ID. */
+  const accountLabel = (account: PortalAddonConnectionAccount, index: number) =>
+    account.name.trim()
+    || (accounts.length === 1 ? signedInEmail : '')
+    || t('portal.bind_account_fallback', { index: String(index + 1) }, `Account ${index + 1}`);
+  const isBlocked = !hasAddonConnectionContext || (!isLoadingAccounts && !accountsError && accounts.length === 0);
+
   return (
-    <PortalCard className="space-y-4">
+    <PortalCard className="space-y-6 p-6 sm:p-8" data-portal-bind="card">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-          {t('portal.connect_site_title', undefined, 'Site connection')}
-        </p>
-        <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-          {t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+        <h1 className="text-xl font-semibold text-slate-950 dark:text-white">
+          {t('portal.bind_title', undefined, 'Connect this site to your account')}
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
           {t(
-            'portal.connect_site_addon_desc',
+            'portal.bind_desc',
             undefined,
-            'Confirm this site, then return to WordPress to finish setup.'
+            'After connecting, this site uses the plan and AI credits of your account.'
           )}
         </p>
       </div>
 
-      <div className="rounded-[1rem] border border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-950">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {t('common.site', undefined, 'Site')}
-        </p>
-        <p className="mt-1 text-sm font-semibold text-gray-950 dark:text-white">
-          {addonSiteLabel}
-        </p>
-        <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-          {siteUrl || t('portal.site_url_missing_short', undefined, 'Site URL not configured')}
-        </p>
-      </div>
+      <dl className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+        <div className="px-4 py-3" data-portal-bind="site">
+          <dt className="text-xs text-slate-500 dark:text-slate-400">{t('portal.bind_site_label', undefined, 'Site')}</dt>
+          <dd className="mt-1 break-words text-sm font-semibold text-slate-950 dark:text-white">{addonSiteLabel}</dd>
+          {siteUrl && siteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') !== addonSiteLabel ? (
+            <dd className="mt-0.5 break-all text-xs text-slate-500 dark:text-slate-400">{siteUrl}</dd>
+          ) : null}
+        </div>
+        {soleAccount ? (
+          <div className="px-4 py-3" data-portal-bind="account">
+            <dt className="text-xs text-slate-500 dark:text-slate-400">{t('portal.bind_account_label', undefined, 'Your account')}</dt>
+            <dd className="mt-1 break-words text-sm font-semibold text-slate-950 dark:text-white">
+              {accountLabel(soleAccount, 0)}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
 
-      <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-        <p className="font-semibold">
-          {t('portal.connect_site_ownership_title', undefined, 'Account and site ownership')}
-        </p>
-        <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
-          {t(
-            'portal.connect_site_ownership_desc',
-            undefined,
-            'Free service and credits belong to the selected account, not this site. The same account may reconnect at any time; a different account requires the previous account to remove the site and wait for the Cloud cooldown to end.'
-          )}
-        </p>
-      </div>
-
-      <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-        <fieldset className="block">
-          <legend className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            {t('portal.connect_site_account_label', undefined, 'Customer account')}
-          </legend>
-          {soleAccount ? (
-            <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700">
-              <input
-                type="radio"
-                name="portal-addon-account"
-                value={soleAccount.account_id}
-                checked={selectedAccountId === soleAccount.account_id}
-                onChange={(event) => {
-                  setSelectedAccountId(event.target.value);
-                  setErrorMessage('');
-                }}
-                className="mt-1"
-                required
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-slate-950 dark:text-white">
-                  {soleAccount.name || t('portal.connect_site_current_customer', {}, 'Current account')}
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {t(
-                    'portal.connect_site_confirm_ownership',
-                    { count: String(soleAccount.site_count) },
-                    `Confirm that this site belongs to this account. ${soleAccount.site_count} sites are currently connected.`
-                  )}
-                </span>
-              </span>
-            </label>
-          ) : (
-            <select
-              value={selectedAccountId}
-              onChange={(event) => {
-                setSelectedAccountId(event.target.value);
-                setErrorMessage('');
-              }}
-              className="input mt-1 w-full"
-              disabled={isLoadingAccounts || accounts.length === 0}
-              required
-            >
-              <option value="">
-                {isLoadingAccounts
-                  ? t('common.loading', {}, 'Loading...')
-                  : accounts.length
-                    ? t('portal.connect_site_account_placeholder', undefined, 'Select an account')
-                    : t('portal.connect_site_account_empty', undefined, 'No eligible account')}
-              </option>
-              {accounts.map((account) => (
-                <option key={account.account_id} value={account.account_id}>
-                  {account.name || account.account_id} · {account.site_count} {t('common.site')}
-                </option>
+      <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
+        {!soleAccount && accounts.length > 1 ? (
+          <fieldset data-portal-bind="account-picker">
+            <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t('portal.bind_choose_account', undefined, 'Which account should this site use?')}
+            </legend>
+            <div className="mt-2 space-y-2">
+              {accounts.map((account, index) => (
+                <label
+                  key={account.account_id}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/60 dark:border-slate-700 dark:has-[:checked]:bg-blue-950/30"
+                >
+                  <input
+                    type="radio"
+                    name="portal-addon-account"
+                    value={account.account_id}
+                    checked={selectedAccountId === account.account_id}
+                    onChange={(event) => {
+                      setSelectedAccountId(event.target.value);
+                      setErrorMessage('');
+                    }}
+                    required
+                  />
+                  <span className="min-w-0 break-words font-medium text-slate-950 dark:text-white">
+                    {accountLabel(account, index)}
+                  </span>
+                </label>
               ))}
-            </select>
-          )}
-        </fieldset>
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            {t('portal.connect_site_name_label', undefined, 'Display name')}
-          </span>
-          <input
-            type="text"
-            value={siteName}
-            onChange={(event) => setSiteName(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
-            placeholder={t('portal.connect_site_name_placeholder', undefined, 'Customer Production')}
-          />
-        </label>
+            </div>
+          </fieldset>
+        ) : null}
+
+        {isLoadingAccounts ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">{t('common.loading', {}, 'Loading...')}</p>
+        ) : null}
         {accountsError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
             <p>{accountsError}</p>
@@ -243,10 +208,7 @@ export function PortalSiteConnectPanel({
         ) : null}
         {!isLoadingAccounts && !accountsError && accounts.length === 0 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-            <p className="font-semibold">
-              {t('portal.connect_site_account_required_title', {}, 'Customer account missing')}
-            </p>
-            <p className="mt-1 leading-6">
+            <p>
               {t(
                 'portal.connect_site_account_recovery_desc',
                 {},
@@ -262,10 +224,7 @@ export function PortalSiteConnectPanel({
         ) : null}
         {!hasAddonConnectionContext ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-            <p className="font-semibold">
-              {t('portal.connect_site_context_expired_title', {}, 'Restart the WordPress connection')}
-            </p>
-            <p className="mt-1 leading-6">
+            <p>
               {t(
                 'portal.connect_site_context_expired_desc',
                 {},
@@ -289,32 +248,17 @@ export function PortalSiteConnectPanel({
             ) : null}
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={
-              isSubmitting
-              || isLoadingAccounts
-              || !hasAddonConnectionContext
-              || !hasSelectedEligibleAccount
-            }
-          >
-            {isSubmitting
-              ? t('common.saving')
-              : t('portal.connect_site_authorize_addon', undefined, 'Finish connection')}
-          </button>
-          {onClose ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              disabled={isSubmitting}
-            >
-              {t('common.cancel')}
-            </button>
-          ) : null}
-        </div>
+
+        <button
+          type="submit"
+          className="btn btn-primary w-full justify-center"
+          data-portal-bind="submit"
+          disabled={isSubmitting || isLoadingAccounts || isBlocked || !hasSelectedEligibleAccount}
+        >
+          {isSubmitting
+            ? t('portal.bind_submitting', undefined, 'Connecting…')
+            : t('portal.connect_site_authorize_addon', undefined, 'Finish connection')}
+        </button>
       </form>
     </PortalCard>
   );
