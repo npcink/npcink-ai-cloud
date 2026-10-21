@@ -76,9 +76,16 @@ assert.match(client, /`\/account\/credit-event-days\?\$\{params\.toString\(\)\}`
 assert.match(client, /new URLSearchParams\(\{ window: options\.window, tz: options\.timezone \}\)/);
 assert.match(dialog, /data-portal-usage="records-day-row"[\s\S]*openDay\(day\)/, 'clicking a day drills down');
 assert.doesNotMatch(dialog, /records-day-detail|expandedDayKey|formatDayBreakdown/, 'no inline expand / breakdown text');
-assert.match(dialog, /dayFeatureTotals\.slice\(0, 3\)/, 'max 3 window-level service columns');
-assert.match(dialog, /dayHasOtherColumn/, '其他 column');
-assert.match(dialog, /records-day-service-cell[\s\S]*· \{Math\.round\(share \* 100\)\}%[\s\S]*–/, 'cell N · P% with dash for zero');
+assert.match(dialog, /dayFeatureTotals\.slice\(0, 3\)/, 'max 3 window-level services in the 服务构成 bar');
+// 服务构成: ONE stacked-bar column replaces per-service columns; fixed colours per window slot + grey 其他.
+assert.match(dialog, /const DAY_MIX_COLORS = \['bg-blue-600[^']*', 'bg-teal-600[^']*', 'bg-amber-500[^']*'\];/);
+assert.match(dialog, /const DAY_MIX_OTHER_COLOR = 'bg-slate-400/);
+assert.doesNotMatch(dialog, /records-day-service-(column|cell)/, 'no per-service columns');
+assert.match(dialog, /day_calls_column[\s\S]*records-day-mix-column[\s\S]*records-day-mix-legend[\s\S]*day_total_column/, '日期 | 调用次数 | 服务构成 (legend) | 合计');
+assert.match(dialog, /<col className="w-28" \/>\s*<col className="w-20" \/>\s*<col \/>\s*<col className="w-28" \/>/, '服务构成 takes the remaining (widest) width');
+assert.match(dialog, /records-day-mix-segment[\s\S]*style=\{\{ width: `\$\{share \* 100\}%` \}\}|style=\{\{ width: `\$\{share \* 100\}%` \}\}[\s\S]*records-day-mix-segment/, 'segments sized by share of the day');
+assert.match(dialog, /records-day-mix-tooltip/, 'segment hover tooltip');
+assert.match(dialog, /bg-slate-100 dark:bg-slate-800"\s*data-portal-usage="records-day-mix-bar"/, 'zero day = faint empty bar');
 assert.match(dialog, /day_calls_column[\s\S]*day_total_column/, 'calls + total columns');
 assert.match(dialog, /records-day-breadcrumb[\s\S]*onClick=\{closeDay\}/, 'breadcrumb back');
 assert.match(dialog, /records-day-drill[\s\S]*PortalCreditTrendPanel[\s\S]*window="24h"[\s\S]*onBucketSelect[\s\S]*records-bucket-chip/, 'drill reuses 24h bars + hour chip');

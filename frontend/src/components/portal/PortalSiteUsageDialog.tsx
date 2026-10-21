@@ -44,6 +44,11 @@ const SITE_USAGE_RANGES: Array<{ value: PortalCreditTrendWindow; key: string; fa
 /** Days shown per page when records are grouped by day (7d / 30d). */
 const DAY_PAGE_SIZE = 10;
 
+/** 服务构成 colours: top-3 window services (blue / teal / amber) + grey 其他. */
+const DAY_MIX_COLORS = ['bg-blue-600 dark:bg-blue-400', 'bg-teal-600 dark:bg-teal-400', 'bg-amber-500 dark:bg-amber-400'];
+const DAY_MIX_OTHER_COLOR = 'bg-slate-400 dark:bg-slate-500';
+const DAY_MIX_OTHER_KEY = '__other';
+
 type SiteUsageDayRow = PortalCreditEventDay & { key: string; dayStart: Date };
 type SiteUsageBucketFilter = { startAt: string; endAt: string; label: string };
 
@@ -396,6 +401,17 @@ export function PortalSiteUsageDialog({
   /** Service columns: top 3 services of the whole window (stable across pages) + 其他. */
   const dayServiceColumns = dayFeatureTotals.slice(0, 3).map((item) => item.feature_key);
   const dayHasOtherColumn = dayFeatureTotals.length > 3;
+  /** Fixed colour per window-level slot so a service keeps its colour on every day row. */
+  const dayMixSegments = [
+    ...dayServiceColumns.map((key, index) => ({
+      key,
+      label: t(`portal.usage.credit_ledger_feature_${key}_title`, {}, key),
+      color: DAY_MIX_COLORS[index],
+    })),
+    ...(dayHasOtherColumn
+      ? [{ key: DAY_MIX_OTHER_KEY, label: t('portal.usage.day_breakdown_other', {}, 'Other'), color: DAY_MIX_OTHER_COLOR }]
+      : []),
+  ];
 
   /** Hourly bars for the drilled day, built from its calls (local hours, up to now). */
   const drillTrend = useMemo<PortalCreditTrendPayload | null>(() => {
@@ -953,8 +969,7 @@ export function PortalSiteUsageDialog({
                             <colgroup>
                               <col className="w-28" />
                               <col className="w-20" />
-                              {dayServiceColumns.map((key) => <col key={key} />)}
-                              {dayHasOtherColumn ? <col /> : null}
+                              <col />
                               <col className="w-28" />
                               <col className="w-8" />
                             </colgroup>
@@ -962,16 +977,19 @@ export function PortalSiteUsageDialog({
                               <tr>
                                 <th scope="col" className="px-2 py-2 font-medium">{t('portal.usage.day_column', {}, 'Date')}</th>
                                 <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.day_calls_column', {}, 'Calls')}</th>
-                                {dayServiceColumns.map((key) => (
-                                  <th key={key} scope="col" className="break-words px-2 py-2 text-right font-medium" data-portal-usage="records-day-service-column">
-                                    {t(`portal.usage.credit_ledger_feature_${key}_title`, {}, key)}
-                                  </th>
-                                ))}
-                                {dayHasOtherColumn ? (
-                                  <th scope="col" className="px-2 py-2 text-right font-medium" data-portal-usage="records-day-service-column">
-                                    {t('portal.usage.day_breakdown_other', {}, 'Other')}
-                                  </th>
-                                ) : null}
+                                <th scope="col" className="px-2 py-2 font-medium" data-portal-usage="records-day-mix-column">
+                                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <span className="text-slate-500 dark:text-slate-400">{t('portal.usage.day_mix_column', {}, 'Service mix')}</span>
+                                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-normal" data-portal-usage="records-day-mix-legend">
+                                      {dayMixSegments.map((segment) => (
+                                        <span key={segment.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+                                          <span aria-hidden="true" className={`h-2 w-2 rounded-full ${segment.color}`} />
+                                          {segment.label}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </span>
+                                </th>
                                 <th scope="col" className="px-2 py-2 text-right font-medium">{t('portal.usage.day_total_column', {}, 'Total AI credits')}</th>
                                 <th scope="col" className="px-0 py-2"><span className="sr-only">{t('portal.usage.day_expand', {}, 'Show calls')}</span></th>
                               </tr>
@@ -979,27 +997,14 @@ export function PortalSiteUsageDialog({
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {dayRows.map((day) => {
                                 const hasCalls = day.event_count > 0;
-                                const creditsFor = (key: string) => day.feature_totals.find((item) => item.feature_key === key)?.consumed_ai_credits || 0;
-                                const otherCredits = day.feature_totals
-                                  .filter((item) => !dayServiceColumns.includes(item.feature_key))
-                                  .reduce((sum, item) => sum + item.consumed_ai_credits, 0);
-                                const serviceCell = (credits: number, key: string) => {
-                                  const share = day.consumed_ai_credits > 0 ? credits / day.consumed_ai_credits : 0;
-                                  return (
-                                    <td key={key} className="px-2 py-3 text-right tabular-nums" data-portal-usage="records-day-service-cell">
-                                      {credits > 0 ? (
-                                        <>
-                                          <span className="whitespace-nowrap">{formatCreditAmount(credits)}<span className="text-slate-400 dark:text-slate-500"> · {Math.round(share * 100)}%</span></span>
-                                          <span className="mt-1 block h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-hidden="true">
-                                            <span className="block h-full rounded-full bg-blue-200 dark:bg-blue-900" style={{ width: `${Math.max(2, share * 100)}%` }} />
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="text-slate-300 dark:text-slate-600">–</span>
-                                      )}
-                                    </td>
-                                  );
-                                };
+                                const creditsFor = (key: string) => key === DAY_MIX_OTHER_KEY
+                                  ? day.feature_totals
+                                    .filter((item) => !dayServiceColumns.includes(item.feature_key))
+                                    .reduce((sum, item) => sum + item.consumed_ai_credits, 0)
+                                  : day.feature_totals.find((item) => item.feature_key === key)?.consumed_ai_credits || 0;
+                                const segments = dayMixSegments
+                                  .map((segment) => ({ ...segment, credits: creditsFor(segment.key) }))
+                                  .filter((segment) => segment.credits > 0);
                                 return (
                                   <tr
                                     key={day.key}
@@ -1011,8 +1016,39 @@ export function PortalSiteUsageDialog({
                                       {formatDayLabel(day.dayStart, locale, t)}
                                     </th>
                                     <td className="whitespace-nowrap px-2 py-3 text-right tabular-nums">{formatNumber(day.event_count)}</td>
-                                    {dayServiceColumns.map((key) => serviceCell(creditsFor(key), key))}
-                                    {dayHasOtherColumn ? serviceCell(otherCredits, '__other') : null}
+                                    <td className="px-2 py-3" data-portal-usage="records-day-mix-cell">
+                                      <span
+                                        className="flex h-2.5 w-full rounded-full bg-slate-100 dark:bg-slate-800"
+                                        data-portal-usage="records-day-mix-bar"
+                                      >
+                                        {day.consumed_ai_credits > 0 ? segments.map((segment, index) => {
+                                          const share = segment.credits / day.consumed_ai_credits;
+                                          const tip = t(
+                                            'portal.usage.day_mix_segment',
+                                            { name: segment.label, credits: formatCreditAmount(segment.credits), percent: String(Math.round(share * 100)) },
+                                            '{{name}} {{credits}} AI credits · {{percent}}%',
+                                          );
+                                          return (
+                                            <span
+                                              key={segment.key}
+                                              tabIndex={0}
+                                              aria-label={tip}
+                                              className={`group/segment relative block h-full outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${segment.color} ${index === 0 ? 'rounded-l-full' : ''} ${index === segments.length - 1 ? 'rounded-r-full' : ''}`}
+                                              style={{ width: `${share * 100}%` }}
+                                              data-portal-usage="records-day-mix-segment"
+                                            >
+                                              <span
+                                                role="tooltip"
+                                                className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-xs font-normal text-white shadow-lg group-hover/segment:block group-focus-visible/segment:block dark:bg-white dark:text-slate-950"
+                                                data-portal-usage="records-day-mix-tooltip"
+                                              >
+                                                {tip}
+                                              </span>
+                                            </span>
+                                          );
+                                        }) : null}
+                                      </span>
+                                    </td>
                                     <td className="whitespace-nowrap px-2 py-3 text-right font-semibold tabular-nums">
                                       {formatCreditAmount(day.consumed_ai_credits)}
                                     </td>
