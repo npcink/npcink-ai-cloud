@@ -66,7 +66,7 @@
 
 ### 5.x 站点绑定页（WordPress 插件跳转）
 
-入口保持插件契约：`/portal/sites?connect=wordpress-addon&site_url&site_name&return_url&state`。面向普通站长，必须极简：
+入口保持插件契约：`/portal?connect=wordpress-addon&site_url&site_name&return_url&state`（登录后原样回跳）。面向普通站长，必须极简：
 
 - 只显示：标题「把这个站点绑定到你的账号」、一句白话说明（绑定后使用账号的套餐和 AI 积分）、站点名称/网址、账号名称（无名称时用登录邮箱，多账号时用「账号 N」）、唯一按钮「完成绑定」。
 - 不显示：账号 ID（`acct_…`）、站点数量、归属/冷却等术语段落、显示名输入框、取消按钮、顶部导航和站点工作台（无 dashboard chrome）。

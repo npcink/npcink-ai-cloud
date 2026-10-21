@@ -13,7 +13,7 @@ export function PortalNavbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isAddonBindPage =
-    pathname === '/portal/sites' && searchParams?.get('connect') === 'wordpress-addon';
+    pathname.startsWith('/portal') && searchParams?.get('connect') === 'wordpress-addon';
   const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, logout } = useSession();

@@ -482,7 +482,7 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
-  if (addonConnectMode && showConnectModal) {
+  if (addonConnectMode) {
     // Minimal bind page for ordinary site owners: no workspace, no dashboard chrome.
     return (
       <section className="mx-auto w-full max-w-md py-10" data-portal-bind="page">

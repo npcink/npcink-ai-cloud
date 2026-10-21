@@ -578,7 +578,7 @@ for (const [variant, addonAccounts] of [
     });
     await installLoginFlowMocks(page, { initiallyLoggedIn: true, addonAccounts: [...addonAccounts] });
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(`/portal/sites?${new URLSearchParams({
+    await page.goto(`/portal?${new URLSearchParams({
       connect: 'wordpress-addon',
       site_url: 'https://demo.example.com',
       site_name: 'Demo Site',
@@ -591,7 +591,18 @@ for (const [variant, addonAccounts] of [
     await expect(page.locator('[data-portal-home="sites-workspace"]')).toHaveCount(0);
     await expect(page.getByText(/acct_/)).toHaveCount(0);
     await expect(page.getByRole('button')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: '完成绑定' })).toBeEnabled();
+    const submit = page.getByRole('button', { name: '完成绑定' });
+    if (variant === 'multi') {
+      await expect(page.getByRole('radio')).toHaveCount(2);
+      await expect(submit).toBeDisabled();
+      if (process.env.BIND_SHOT_DIR) {
+        await page.screenshot({ path: `${process.env.BIND_SHOT_DIR}/bind-multi-unselected-1280.png`, fullPage: true });
+      }
+      await page.getByRole('radio', { name: '公司团队' }).check();
+    } else {
+      await expect(card).toContainText(LOGIN_EMAIL);
+    }
+    await expect(submit).toBeEnabled();
     if (process.env.BIND_SHOT_DIR) {
       await page.screenshot({ path: `${process.env.BIND_SHOT_DIR}/bind-${variant}-1280.png`, fullPage: true });
     }

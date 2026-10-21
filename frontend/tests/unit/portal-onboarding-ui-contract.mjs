@@ -113,7 +113,7 @@ assert.doesNotMatch(connectSource, />\s*\{\s*account\.account_id\s*\}|account\.n
   'bind page must not show account IDs, site counts, ownership jargon, or extra inputs');
 assert.equal((connectSource.match(/type="submit"/g) || []).length, 1, 'bind page must have exactly one submit action');
 assert.doesNotMatch(connectSource, /common\.cancel/, 'bind page must not render a cancel action');
-assert.match(sitesSource, /if \(addonConnectMode && showConnectModal\)[\s\S]*data-portal-bind="page"[\s\S]*PortalSiteConnectPanel/,
+assert.match(sitesSource, /if \(addonConnectMode\)[\s\S]*data-portal-bind="page"[\s\S]*PortalSiteConnectPanel/,
   'addon bind mode must render only the bind card, not the sites workspace');
 const navbarSource = readFileSync(resolve(process.cwd(), 'src/components/portal/PortalNavbar.tsx'), 'utf8');
 assert.match(navbarSource, /connect'\) === 'wordpress-addon'[\s\S]*if \(isAddonBindPage\) return null;/,
