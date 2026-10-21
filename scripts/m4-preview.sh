@@ -2614,10 +2614,33 @@ base_cache_dir="${cache_dir}/base-images"
 mkdir -p "${base_cache_dir}/layers"
 package_proxy_url=""
 
+# Upstream registries are slow/unreachable from M4 without the VPN. Route the
+# package proxy's upstream fetches through the VPN HTTP proxy when it is up;
+# fall back to direct fetches otherwise. Set to "off" to force direct.
+m4_upstream_proxy_setting="${NPCINK_CLOUD_M4_UPSTREAM_PROXY:-auto}"
+m4_upstream_proxy_default="http://127.0.0.1:7890"
+
+resolve_upstream_proxy() {
+	local candidate="${m4_upstream_proxy_setting}"
+	case "${candidate}" in
+		off|none|direct|"") return 0 ;;
+		auto) candidate="${m4_upstream_proxy_default}" ;;
+	esac
+	if curl -fsS -o /dev/null --max-time 5 -x "${candidate}" https://pypi.org/simple/ >/dev/null 2>&1; then
+		printf '%s\n' "${candidate}"
+	else
+		echo "[m4-preview] upstream proxy ${candidate} unreachable; package proxy fetches upstream directly" >&2
+	fi
+}
+
 start_package_proxy() {
 	package_proxy_ready="${cache_dir}/package-proxy-${run_id}.port"
 	rm -f "${package_proxy_ready}"
+	local upstream_proxy
+	upstream_proxy="$(resolve_upstream_proxy)"
+	[ -z "${upstream_proxy}" ] || echo "[m4-preview] package proxy upstream via ${upstream_proxy}"
 	python3 scripts/m4-package-proxy.py \
+		--upstream-proxy "${upstream_proxy}" \
 		--bind 127.0.0.1 \
 		--port "${package_proxy_port}" \
 		--cache-dir "${package_proxy_cache_dir}" \
