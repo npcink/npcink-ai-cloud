@@ -93,6 +93,9 @@ and [agents-session-protocol-detail.md](docs/engineering/agents-session-protocol
 
 - Production source branch is `production`; development integration branch is
   `master`.
+- New work branches must start from the latest `master`; never branch off an
+  unmerged branch. Keep at most 1 unmerged branch per repo (exception: changes
+  with zero file overlap may each branch from `master`).
 - Do not directly edit production application code on the server.
 - Any emergency server fix must be backported to Git before the next deploy.
 - Do not commit SMTP passwords, provider keys, database credentials, internal
