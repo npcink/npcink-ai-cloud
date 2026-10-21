@@ -64,10 +64,15 @@ from app.domain.runtime.errors import (
     RuntimeSiteNotProvisionedError,
     RuntimeSubscriptionInactiveError,
 )
+from app.domain.runtime.models import RUNTIME_INLINE_RUN_LEASE_SECONDS
 from app.domain.site_knowledge.contracts import SITE_KNOWLEDGE_SYNC_ABILITY
 
 
 class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
+    @staticmethod
+    def _inline_active_run_lease_cutoff(now: datetime) -> datetime:
+        return now - timedelta(seconds=RUNTIME_INLINE_RUN_LEASE_SECONDS)
+
     def provision_runtime_baseline(
         self,
         *,
@@ -443,6 +448,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         active_runs = repository.count_active_runs(
             site_id,
             execution_patterns=concurrency_patterns,
+            active_lease_cutoff=(
+                self._inline_active_run_lease_cutoff(now)
+                if "inline" in concurrency_patterns
+                else None
+            ),
         )
         concurrency = service._normalize_concurrency(
             getattr(entitlement_source, "concurrency_json", None)
@@ -471,6 +481,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                     "active_runs": active_runs,
                     "execution_pattern": execution_pattern,
                     "max_active_runs": max_active_runs,
+                    "active_run_lease_seconds": (
+                        RUNTIME_INLINE_RUN_LEASE_SECONDS
+                        if "inline" in concurrency_patterns
+                        else 0
+                    ),
                 },
             )
             session.commit()

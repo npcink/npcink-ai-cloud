@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.models import (
@@ -24,7 +24,15 @@ class CommercialRuntimeKnowledgeQueries:
         site_id: str,
         *,
         execution_patterns: tuple[str, ...] | None = None,
+        active_lease_cutoff: datetime | None = None,
     ) -> int:
+        """Count runs that still hold an admission slot.
+
+        `active_lease_cutoff` releases slots held by `running` rows that started
+        processing before the cutoff. Those rows keep their `running` status: the
+        provider outcome is unknown, so this is an admission decision only and
+        never a terminal transition.
+        """
         statement = (
             select(func.count())
             .select_from(RunRecord)
@@ -35,6 +43,14 @@ class CommercialRuntimeKnowledgeQueries:
         )
         if execution_patterns is not None:
             statement = statement.where(RunRecord.execution_pattern.in_(execution_patterns))
+        if active_lease_cutoff is not None:
+            statement = statement.where(
+                or_(
+                    RunRecord.status != "running",
+                    RunRecord.processing_started_at.is_(None),
+                    RunRecord.processing_started_at >= active_lease_cutoff,
+                )
+            )
         return int(self.session.scalar(statement) or 0)
 
     def count_active_runs_by_site(
