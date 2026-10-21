@@ -96,12 +96,7 @@ export function PortalCreditTrendPanel({
   return (
     <Frame className={frameClassName} data-portal-usage="primary-trend">
       {embedded ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <PortalInfoHint
-            label={trendTitle}
-            detail={trendDesc}
-            data-portal-usage="trend-help"
-          />
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {windowTabs}
         </div>
       ) : (
@@ -137,6 +132,14 @@ export function PortalCreditTrendPanel({
           <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-6 text-center dark:border-slate-700 dark:bg-slate-900/35">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
               {t('portal.usage.trend_empty_title', {}, 'No AI credit usage in this range')}
+              {embedded ? (
+                <PortalInfoHint
+                  label={trendTitle}
+                  detail={trendDesc}
+                  className="ml-1 align-middle"
+                  data-portal-usage="trend-help"
+                />
+              ) : null}
             </p>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
               {t('portal.usage.trend_empty_desc', {}, 'AI credit consumption will appear here after Cloud services are used.')}
@@ -153,6 +156,14 @@ export function PortalCreditTrendPanel({
               {updatedAt
                 ? ` · ${t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}`
                 : ''}
+              {embedded ? (
+                <PortalInfoHint
+                  label={trendTitle}
+                  detail={trendDesc}
+                  className="ml-1 align-middle"
+                  data-portal-usage="trend-help"
+                />
+              ) : null}
             </p>
             <div
               role="img"
@@ -188,15 +199,22 @@ export function PortalCreditTrendPanel({
                   return (
                     <div
                       key={`label-${point.start_at}`}
-                      className="min-w-0 flex-1 text-center text-[11px] leading-4 text-slate-500 dark:text-slate-400"
+                      className="relative h-4 min-w-0 flex-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400"
                     >
                       {showLabel ? (
-                        <span className="block truncate" title={pointLabel}>
+                        <span
+                          className={`absolute top-0 whitespace-nowrap ${
+                            index === 0
+                              ? 'left-0'
+                              : index === points.length - 1
+                                ? 'right-0'
+                                : 'left-1/2 -translate-x-1/2'
+                          }`}
+                          data-portal-usage="trend-axis-label"
+                        >
                           {pointLabel}
                         </span>
-                      ) : (
-                        <span className="block">&nbsp;</span>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
