@@ -1649,7 +1649,13 @@ export interface PortalCreditEventDaysPayload {
   generated_at: string;
   timezone: string;
   filters: { window: PortalCreditEventDayWindow; site_id: string; feature: string };
-  summary: { day_count: number; event_count: number; consumed_ai_credits: number };
+  summary: {
+    day_count: number;
+    event_count: number;
+    consumed_ai_credits: number;
+    /** Window-level service split (sorted by AI credits) used to pick day-table service columns. */
+    feature_totals: Array<{ feature_key: string; consumed_ai_credits: number; event_count: number }>;
+  };
   pagination: { limit: number; offset: number; total: number; has_more: boolean };
   items: PortalCreditEventDay[];
 }

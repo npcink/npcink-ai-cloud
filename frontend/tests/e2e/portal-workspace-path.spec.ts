@@ -625,7 +625,7 @@ async function installPortalMocks(
         generated_at: '2026-10-21T02:00:00Z',
         timezone: url.searchParams.get('tz') || 'UTC',
         filters: { window: dayWindow === 30 ? '30d' : '7d', site_id: url.searchParams.get('site_id') || '', feature: url.searchParams.get('feature') || '' },
-        summary: { day_count: total, event_count: 3, consumed_ai_credits: 30 },
+        summary: { day_count: total, event_count: 3, consumed_ai_credits: 30, feature_totals: [{ feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 }, { feature_key: 'web_search', consumed_ai_credits: 12, event_count: 2 }] },
         pagination: { limit, offset, total, has_more: offset + limit < total },
         items,
       });

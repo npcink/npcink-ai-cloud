@@ -575,6 +575,20 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 feature=normalized_feature,
             ).get(0, {})
 
+        window_feature_totals = [
+            {
+                "feature_key": str(item.get("feature_key") or "content_generation"),
+                "consumed_ai_credits": round(
+                    max(0.0, -float(item.get("net_ai_credit_delta") or 0.0)), 6
+                ),
+                "event_count": int(item.get("event_count") or 0),
+            }
+            for item in cast(list[dict[str, Any]], window_totals.get("features") or [])
+        ]
+        window_feature_totals.sort(
+            key=lambda item: service._coerce_float(item.get("consumed_ai_credits")),
+            reverse=True,
+        )
         items: list[dict[str, object]] = []
         for index, (day_key, start_at, end_at) in enumerate(page):
             row = page_totals.get(index, {})
@@ -615,6 +629,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             },
             "summary": {
                 "day_count": len(days),
+                # Window-level service split so the UI can pick stable service columns.
+                "feature_totals": window_feature_totals,
                 "event_count": int(window_totals.get("event_count") or 0),
                 "consumed_ai_credits": round(
                     max(0.0, -float(window_totals.get("net_ai_credit_delta") or 0.0)), 6

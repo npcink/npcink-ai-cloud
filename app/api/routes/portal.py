@@ -906,6 +906,19 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
     }
 
 
+def _portal_feature_totals_data(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        {
+            "feature_key": str(_dict_value(feature).get("feature_key") or ""),
+            "consumed_ai_credits": float(_dict_value(feature).get("consumed_ai_credits") or 0.0),
+            "event_count": int(_dict_value(feature).get("event_count") or 0),
+        }
+        for feature in value
+    ]
+
+
 def _portal_credit_event_days_data(value: object) -> dict[str, object]:
     days = _dict_value(value)
     filters = _dict_value(days.get("filters"))
@@ -921,16 +934,7 @@ def _portal_credit_event_days_data(value: object) -> dict[str, object]:
                 "end_at": str(item.get("end_at") or ""),
                 "event_count": int(item.get("event_count") or 0),
                 "consumed_ai_credits": float(item.get("consumed_ai_credits") or 0.0),
-                "feature_totals": [
-                    {
-                        "feature_key": str(_dict_value(feature).get("feature_key") or ""),
-                        "consumed_ai_credits": float(
-                            _dict_value(feature).get("consumed_ai_credits") or 0.0
-                        ),
-                        "event_count": int(_dict_value(feature).get("event_count") or 0),
-                    }
-                    for feature in item.get("feature_totals") or []
-                ],
+                "feature_totals": _portal_feature_totals_data(item.get("feature_totals")),
             }
         )
     return {
@@ -946,6 +950,7 @@ def _portal_credit_event_days_data(value: object) -> dict[str, object]:
             "day_count": int(summary.get("day_count") or 0),
             "event_count": int(summary.get("event_count") or 0),
             "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0.0),
+            "feature_totals": _portal_feature_totals_data(summary.get("feature_totals")),
         },
         "pagination": {
             "limit": int(pagination.get("limit") or 0),

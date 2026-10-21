@@ -74,8 +74,15 @@ assert.match(dialog, /getAccountCreditEventDays\(\{[\s\S]*?timezone: browserTime
 assert.doesNotMatch(dialog, /buildLocalDays|limit: 1,/, 'no per-day fan-out requests');
 assert.match(client, /`\/account\/credit-event-days\?\$\{params\.toString\(\)\}`/);
 assert.match(client, /new URLSearchParams\(\{ window: options\.window, tz: options\.timezone \}\)/);
-assert.match(dialog, /data-portal-usage="records-day-breakdown"/, 'day rows show a small per-service breakdown');
-assert.match(dialog, /data-portal-usage="records-day-row"[\s\S]*day_call_count[\s\S]*records-day-detail[\s\S]*renderEventTable\(expandedItems, 'time', true\)/);
+assert.match(dialog, /data-portal-usage="records-day-row"[\s\S]*openDay\(day\)/, 'clicking a day drills down');
+assert.doesNotMatch(dialog, /records-day-detail|expandedDayKey|formatDayBreakdown/, 'no inline expand / breakdown text');
+assert.match(dialog, /dayFeatureTotals\.slice\(0, 3\)/, 'max 3 window-level service columns');
+assert.match(dialog, /dayHasOtherColumn/, '其他 column');
+assert.match(dialog, /records-day-service-cell[\s\S]*· \{Math\.round\(share \* 100\)\}%[\s\S]*–/, 'cell N · P% with dash for zero');
+assert.match(dialog, /day_calls_column[\s\S]*day_total_column/, 'calls + total columns');
+assert.match(dialog, /records-day-breadcrumb[\s\S]*onClick=\{closeDay\}/, 'breadcrumb back');
+assert.match(dialog, /records-day-drill[\s\S]*PortalCreditTrendPanel[\s\S]*window="24h"[\s\S]*onBucketSelect[\s\S]*records-bucket-chip/, 'drill reuses 24h bars + hour chip');
+assert.match(dialog, /savedDayScrollRef/, 'back restores scroll');
 assert.match(dialog, /limit: 50,\s*offset: collected\.length/, 'expanded day loads every call of the day');
 assert.match(dialog, /day_pagination_summary[\s\S]*loadDayPage\(dayOffset \+ DAY_PAGE_SIZE\)/, 'pagination is by day');
 assert.match(dialog, /records-feature-filter/, 'service filter stays');

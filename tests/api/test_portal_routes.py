@@ -8216,6 +8216,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert len(days_data["items"]) == 3
     assert days_data["summary"]["consumed_ai_credits"] == 7.0
     assert days_data["summary"]["event_count"] == 3
+    window_features = days_data["summary"]["feature_totals"]
+    assert sum(feature["consumed_ai_credits"] for feature in window_features) == 7.0
+    assert "topic_research" in {feature["feature_key"] for feature in window_features}
+    assert window_features == sorted(
+        window_features, key=lambda item: item["consumed_ai_credits"], reverse=True
+    )
     assert [item["day"] for item in days_data["items"]] == sorted(
         (item["day"] for item in days_data["items"]), reverse=True
     )
