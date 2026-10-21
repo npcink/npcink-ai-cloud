@@ -100,9 +100,16 @@ AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
     CREDIT_LEDGER_EVENT_REFUND,
 ]
 
+AI_CREDIT_ACQUISITION_LEDGER_EVENT_TYPES = [
+    CREDIT_LEDGER_EVENT_GRANT,
+    CREDIT_LEDGER_EVENT_ADJUSTMENT,
+    CREDIT_LEDGER_EVENT_REFUND,
+]
+
 AI_CREDIT_LEDGER_CATEGORY_LABELS = {
     "monthly_plan_grant": "Monthly plan grant",
     "credit_pack_purchase": "Credit pack purchase",
+    "subscription_topup": "Top-up pack",
     "ai_usage": "AI usage",
     "refund_adjustment": "Refund adjustment",
     "operator_adjustment": "Operator adjustment",
@@ -2646,12 +2653,23 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         offset: int = 0,
         source_type: str | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
+        event_types: list[str] | None = None,
     ) -> dict[str, object]:
         now = self.now_factory()
         normalized_limit = min(100, max(1, int(limit or 50)))
         normalized_offset = max(0, int(offset or 0))
         normalized_source_type = str(source_type or "").strip()
         source_types = [normalized_source_type] if normalized_source_type else None
+        visible_event_types = set(AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES)
+        if event_types is None:
+            resolved_event_types = list(AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES)
+        else:
+            resolved_event_types = [
+                str(item or "").strip().lower()
+                for item in event_types
+                if str(item or "").strip().lower() in visible_event_types
+            ]
         with get_session(self.database_url) as session:
             account_site_repository = CommercialAccountSiteRepository(session)
             subscription_repository = CommercialSubscriptionRepository(session)
@@ -2675,11 +2693,22 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             subscription_id = (
                 primary_subscription.subscription_id if primary_subscription is not None else None
             )
+            if primary_subscription is not None:
+                # Backfill visibility grants for historical operator top-ups that
+                # only raised package_limit (no ledger row at apply time).
+                cast(Any, self)._ensure_subscription_topup_ledger_entries_in_session(
+                    repository=cast(Any, credit_repository),
+                    subscription=primary_subscription,
+                    period_start_at=period_start_at,
+                    period_end_at=period_end_at,
+                )
+                session.commit()
             entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2689,8 +2718,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             total = credit_repository.count_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2698,8 +2728,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             summary_entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
+                include_unscoped=include_unscoped,
                 subscription_id=subscription_id,
-                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                event_types=resolved_event_types,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -2838,6 +2869,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 25,
         offset: int = 0,
         site_id: str | None = None,
+        include_unscoped: bool = False,
+        event_types: list[str] | None = None,
     ) -> dict[str, object]:
         normalized_site_id = str(site_id or "").strip()
         ledger = self.get_admin_account_credit_ledger(
@@ -2845,6 +2878,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             limit=min(50, max(1, int(limit or 25))),
             offset=max(0, int(offset or 0)),
             site_ids=[normalized_site_id] if normalized_site_id else None,
+            # Account Sources keeps site_id NULL grants (subscription_topup).
+            # Site-scoped ledger stays strict so site summaries are not inflated.
+            include_unscoped=include_unscoped,
+            event_types=event_types,
         )
         raw_summary = ledger.get("summary")
         summary: dict[str, object] = (
@@ -3023,6 +3060,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         if event_type == CREDIT_LEDGER_EVENT_GRANT:
             if source_type == "credit_pack_purchase":
                 return "credit_pack_purchase"
+            if source_type == "subscription_topup":
+                return "subscription_topup"
             if source_type == "operator_credit_adjustment":
                 return "operator_adjustment"
             return "monthly_plan_grant"
@@ -3054,6 +3093,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             return f"Monthly package grant added {credits} AI credits to the current period."
         if category == "credit_pack_purchase":
             return f"Credit pack payment added {credits} AI credits after payment confirmation."
+        if category == "subscription_topup":
+            return (
+                f"Operator top-up pack added {credits} AI credits "
+                "to the package limit this period."
+            )
         if category == "ai_usage":
             label = AI_CREDIT_COMPONENT_LABELS.get(source_type, source_type or "AI capability")
             return f"{label} consumed {credits} AI credits."

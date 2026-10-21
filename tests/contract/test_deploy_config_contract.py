@@ -1662,6 +1662,13 @@ def test_prod_env_files_use_canonical_admin_names_and_do_not_expose_ai_provider_
 
 def test_env_example_does_not_restore_first_install_runtime_secrets() -> None:
     env_text = (_cloud_root() / ".env.example").read_text()
+    # Compare exact keys: dev-stack-only names such as
+    # NPCINK_CLOUD_DEV_POSTGRES_PASSWORD (docker-compose.dev.yml, loopback) are allowed.
+    env_keys = {
+        line.split("=", 1)[0].strip() + "="
+        for line in env_text.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
 
     for retired_or_protected in (
         "NPCINK_CLOUD_DATABASE_URL=",
@@ -1676,7 +1683,10 @@ def test_env_example_does_not_restore_first_install_runtime_secrets() -> None:
         "NPCINK_CLOUD_PORTAL_JWT_SECRET=",
         "POSTGRES_PASSWORD=",
     ):
-        assert retired_or_protected not in env_text
+        assert retired_or_protected not in env_keys
+
+    dev_only_password_keys = {key for key in env_keys if key.endswith("POSTGRES_PASSWORD=")}
+    assert dev_only_password_keys <= {"NPCINK_CLOUD_DEV_POSTGRES_PASSWORD="}
 
     assert "NPCINK_CLOUD_ADMIN_PRINCIPAL_ID=platform:internal_root" in env_text
     assert "NPCINK_CLOUD_ADMIN_PLATFORM_ADMIN_ROLE" not in env_text
@@ -3111,3 +3121,45 @@ def test_runtime_image_prepares_writable_shared_artifact_volume() -> None:
         compose = (cloud_root / compose_name).read_text()
         assert "NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts" in compose
         assert "cloud-artifacts-" in compose
+
+def test_prod_and_runtime_compose_require_service_healthchecks() -> None:
+    cloud_root = _cloud_root()
+    for compose_name in ("docker-compose.prod.yml", "docker-compose.runtime.yml"):
+        compose = (cloud_root / compose_name).read_text()
+        proxy = _compose_service_block(compose, "proxy")
+        api = _compose_service_block(compose, "api")
+        frontend = _compose_service_block(compose, "frontend")
+
+        assert "healthcheck:" in api
+        assert "/health/live" in api
+        assert "healthcheck:" in frontend
+        assert "/api/health" in frontend
+        assert "healthcheck:" in proxy
+        assert "/health/live" in proxy
+        assert "condition: service_healthy" in proxy
+        assert "condition: service_started" not in proxy
+        assert "127.0.0.1:${NPCINK_CLOUD_PORT:-8010}:8080" in proxy
+        release_one_off = _compose_service_block(compose, "release-one-off")
+        assert "healthcheck:" in release_one_off
+        assert "disable: true" in release_one_off
+
+
+def test_prod_compose_does_not_passthrough_provider_api_key_env() -> None:
+    compose = (_cloud_root() / "docker-compose.prod.yml").read_text()
+    forbidden = (
+        "NPCINK_CLOUD_OPENAI_API_KEY",
+        "NPCINK_CLOUD_ANTHROPIC_API_KEY",
+        "NPCINK_CLOUD_LITELLM_API_KEY",
+        "NPCINK_CLOUD_VLLM_API_KEY",
+        "NPCINK_CLOUD_TEI_API_KEY",
+        "NPCINK_CLOUD_OPENROUTER_API_KEY",
+        "NPCINK_CLOUD_SILICONFLOW_API_KEY",
+        "NPCINK_CLOUD_SITE_KNOWLEDGE_JINA_API_KEY",
+        "NPCINK_CLOUD_HUGGINGFACE_API_TOKEN",
+        "NPCINK_CLOUD_SITE_KNOWLEDGE_ZILLIZ_TOKEN",
+    )
+    for key in forbidden:
+        assert key not in compose
+
+    env_example = (_cloud_root() / ".env.example").read_text()
+    assert "/admin/ai-resources" in env_example

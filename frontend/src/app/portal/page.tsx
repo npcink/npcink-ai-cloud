@@ -393,7 +393,7 @@ function PortalHome() {
             {},
             'The current package has no AI credits available. Buy AI credits or change the package before continuing.'
           ),
-          href: isFreePackage ? '/portal/usage' : '/portal/account#package-options',
+          href: isFreePackage ? '/portal/billing#usage' : '/portal/account#package-options',
           action: isFreePackage
             ? t('portal.home.usage_action', {}, 'View usage')
             : t('portal.home.billing_action', {}, 'Review package'),
@@ -457,7 +457,7 @@ function PortalHome() {
               'Package usage could not be loaded. Retry before relying on the service status.'
             ),
           href: accountEntitlementsError?.code === 'commercial.quota_exceeded'
-            ? '/portal/usage'
+            ? '/portal/billing#usage'
             : accountEntitlementsError?.code === 'service.entitlements_temporarily_unavailable'
               ? '/portal/support?new=1&topic=account'
               : undefined,
@@ -481,7 +481,7 @@ function PortalHome() {
   if (isAddonBindPage) return <PortalSitesWorkspace capacityAlerts={[]} />;
 
   return (
-    <PortalPageStack className="mx-auto w-full max-w-[56rem] space-y-3" data-portal-home="page">
+    <PortalPageStack className="space-y-3" data-portal-home="page">
       <section className="space-y-3" data-portal-home="operation-overview">
         <PortalWorkspaceHeader
           title={t('portal.home.title', {}, 'My service')}

@@ -11,7 +11,7 @@ const siteDrawerSource = readFileSync(
   fromFrontendRoot('src/components/portal/PortalSiteInspectorDrawer.tsx'),
   'utf8'
 );
-const usageSource = readFileSync(fromFrontendRoot('src/app/portal/usage/page.tsx'), 'utf8');
+const siteUsageDialogSource = readFileSync(fromFrontendRoot('src/components/portal/PortalSiteUsageDialog.tsx'), 'utf8');
 
 assert.match(source, /previousActiveElementRef/, 'modal must remember the trigger that held focus');
 assert.match(
@@ -29,6 +29,10 @@ assert.match(source, /previousOverflow[\s\S]*document\.body\.style\.overflow = p
 assert.match(dialogHookSource, /previousFocus\?\.focus\(\)/, 'custom dialogs must restore trigger focus');
 assert.match(dialogHookSource, /event\.key !== 'Tab'/, 'custom dialogs must contain Tab focus');
 assert.match(siteDrawerSource, /useDialogFocusManagement/, 'site inspector must use shared focus management');
-assert.match(usageSource, /useDialogFocusManagement[\s\S]*creditEventDrawerRef/, 'usage detail drawers must use shared focus management');
+// Site usage lives in the shared Modal (focus trap + Escape + focus return); event detail stays inside it.
+assert.match(siteUsageDialogSource, /<Modal[\s\S]*onClose=\{handleModalClose\}/, 'site usage dialog must use the shared Modal focus management');
+assert.match(siteUsageDialogSource, /if \(selectedCreditEvent\) \{\s*setSelectedCreditEvent\(null\);\s*return;\s*\}\s*onClose\(\);/, 'Escape/close must leave event detail before closing the site usage dialog');
+assert.match(siteUsageDialogSource, /data-portal-usage="site-dialog-event-detail"[\s\S]*onClick=\{closeCreditEvent\}/, 'event detail must render inside the dialog with a back action');
+assert.doesNotMatch(siteUsageDialogSource, /<aside[^>]*role="dialog"|z-\[60\]/, 'site usage event detail must not stack a second drawer over the Modal');
 
 console.log('modal_keyboard_accessibility_contract: ok');

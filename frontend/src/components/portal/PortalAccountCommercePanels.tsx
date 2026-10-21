@@ -487,8 +487,8 @@ export function PortalAccountCommercePanels() {
           {},
           'Compare available packages and choose the change you want to make.'
         )}
-        size="xl"
-        className="portal-commercial-dialog max-w-5xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
+        size="3xl"
+        className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
       >
         {packageOptions}
       </Modal>

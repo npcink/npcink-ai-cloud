@@ -246,3 +246,37 @@ def test_settings_reject_illegal_encryption_key_ids(field_name: str) -> None:
         Settings(**_production_settings_payload(**{field_name: "invalid.key"}))
 
     assert f"{field_name} must contain only letters" in str(error.value)
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "openai_api_key",
+        "anthropic_api_key",
+        "litellm_api_key",
+        "vllm_api_key",
+        "tei_api_key",
+        "openrouter_api_key",
+        "siliconflow_api_key",
+        "huggingface_api_token",
+        "site_knowledge_jina_api_key",
+        "site_knowledge_zilliz_token",
+    ],
+)
+def test_production_rejects_provider_credential_env(field_name: str) -> None:
+    with pytest.raises(ValidationError) as error:
+        Settings(**_production_settings_payload(**{field_name: "env-injected-provider-secret"}))
+
+    message = str(error.value)
+    assert field_name in message
+    assert "Admin /admin/ai-resources" in message
+
+
+def test_production_allows_empty_provider_credential_env() -> None:
+    settings = Settings(
+        **_production_settings_payload(
+            openai_api_key="",
+            anthropic_api_key=None,
+        )
+    )
+    assert settings.openai_api_key in {None, ""}
+    assert settings.anthropic_api_key in {None, ""}
