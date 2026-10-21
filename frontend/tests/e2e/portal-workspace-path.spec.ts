@@ -2930,8 +2930,18 @@ test('site usage day drill-down back restores the exact day-table scroll positio
       await scroller.evaluate((el, top) => { el.scrollTop = top; }, target);
       const before = await scroller.evaluate((el) => el.scrollTop);
       const row = dialog.locator('[data-portal-usage="records-day-row"]').filter({ hasNot: page.locator('text=/^0$/') });
-      const clickable = dialog.locator('[data-portal-usage="records-day-row"] button').first();
-      await clickable.click();
+      // Click a day that is already fully in view so the click itself does not auto-scroll.
+      const visibleIndex = await scroller.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const footer = el.querySelector('[data-portal-usage="records-pagination"]')?.getBoundingClientRect();
+        const bottom = footer ? Math.min(box.bottom, footer.top) : box.bottom;
+        return Array.from(el.querySelectorAll('[data-portal-usage="records-day-row"] button')).findIndex((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.top >= box.top + 140 && rect.bottom <= bottom;
+        });
+      });
+      expect(visibleIndex).toBeGreaterThanOrEqual(0);
+      await dialog.locator('[data-portal-usage="records-day-row"] button').nth(visibleIndex).click();
       await expect(dialog.locator('[data-portal-usage="records-day-breadcrumb"]')).toBeVisible();
       await dialog.locator('[data-portal-usage="records-day-breadcrumb"] button').click();
       await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
