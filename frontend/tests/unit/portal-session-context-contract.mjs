@@ -345,3 +345,15 @@ assert.equal(
 );
 
 console.log('portal_session_context_contract: ok');
+
+// #1174: API-marked current account preselects among several candidates.
+assert.match(
+  sitesSource,
+  /accounts=\{addonAccounts\}\s*currentAccountId=\{resolveCurrentAddonAccountId\(addonAccounts\)\}/,
+  'addon binding must pass the API-marked current account into the connect panel'
+);
+assert.match(
+  readFileSync(new URL('../../src/lib/portal-addon-account-default.ts', import.meta.url), 'utf8'),
+  /export function resolveCurrentAddonAccountId[\s\S]*is_current === true[\s\S]*current\.length === 1/,
+  'current account must come only from an unambiguous is_current marker'
+);

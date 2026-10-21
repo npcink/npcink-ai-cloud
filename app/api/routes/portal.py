@@ -45,7 +45,7 @@ from app.api.routes.service import (
     _get_commercial_service,
     _service_error_response,
 )
-from app.core.models import PLATFORM_KIND_WORDPRESS
+from app.core.models import PLATFORM_KIND_WORDPRESS, SITE_STATUS_ARCHIVED
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
     MEDIA_DERIVATIVE_WORKFLOW_ID,
@@ -4485,6 +4485,33 @@ async def get_portal_site_relink_policy(request: Request) -> Any:
     )
 
 
+def _resolve_portal_current_account_id(
+    request: Request,
+    *,
+    principal_id: str,
+    site_id: str,
+) -> str:
+    """Account owning the session's currently selected site, or "" when unknown.
+
+    "Current account" is defined only through the Portal session's selected
+    site (the same source as ``selected_context``). No selected site, an
+    inaccessible site, or an archived site yields "" so callers must not guess.
+    """
+    if not site_id:
+        return ""
+    try:
+        access = _get_commercial_service(request).resolve_portal_site_access(
+            site_id=site_id,
+            principal_id=principal_id,
+        )
+    except CommercialServiceError:
+        return ""
+    site = _dict_value(access.get("site"))
+    if str(site.get("status") or "").strip() == SITE_STATUS_ARCHIVED:
+        return ""
+    return str(access.get("account_id") or "").strip()
+
+
 @router.get("/addon-connection-accounts")
 async def list_portal_addon_connection_accounts(request: Request) -> Any:
     auth = await resolve_portal_request_context(
@@ -4501,6 +4528,12 @@ async def list_portal_addon_connection_accounts(request: Request) -> Any:
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
+    current_account_id = await run_in_threadpool(
+        _resolve_portal_current_account_id,
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+    )
     items = []
     for raw_item in _object_list(result.get("items")):
         item = _dict_value(raw_item)
@@ -4520,6 +4553,8 @@ async def list_portal_addon_connection_accounts(request: Request) -> Any:
                 "account_id": str(item.get("account_id") or ""),
                 "name": str(item.get("name") or ""),
                 "site_count": int(item.get("site_count") or 0),
+                "is_current": bool(current_account_id)
+                and str(item.get("account_id") or "") == current_account_id,
             }
         )
     return _portal_route_envelope(

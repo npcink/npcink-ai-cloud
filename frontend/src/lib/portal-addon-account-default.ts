@@ -20,3 +20,11 @@ export function resolveDefaultAddonAccountId(
   }
   return '';
 }
+
+/** Current account id from the addon candidates, or "" when the API could not determine one. */
+export function resolveCurrentAddonAccountId(
+  accounts: readonly PortalAddonConnectionAccount[]
+): string {
+  const current = accounts.filter((account) => account.is_current === true);
+  return current.length === 1 ? (current[0]?.account_id ?? '') : '';
+}
