@@ -4,8 +4,10 @@ Status: active planning record. This document records the 2026-09-18 review of
 three previously proposed architecture directions plus two same-day findings (a
 measured request-log identity deviation and a cross-repo profile literal to
 retire), one 2026-09-19 operational finding from the M4 preview deployment
-flow, and one 2026-09-20 release-state finding (a paused production promotion
-whose resume trigger was not recorded), their current implementation state and
+flow, one 2026-09-20 release-state finding (a paused production promotion
+whose resume trigger was not recorded), and one 2026-10-21 runtime finding (an
+inline run that stayed in `running` with no provider evidence, whose root cause
+was never proved), their current implementation state and
 pre-declared trigger for each. Item 7 also records the operator decision that the production pause continues
 indefinitely until a new resume decision. It is not runtime authority and it
 does not authorize early work: every item here is deferred **by trigger
@@ -14,7 +16,7 @@ condition, not by date**, and no implementation trigger has fired.
 ## Date
 
 2026-09-18 (items 1-5); item 6 recorded 2026-09-19; item 7 and the
-pause decision recorded 2026-09-20.
+pause decision recorded 2026-09-20; item 8 recorded 2026-10-21.
 
 ## Purpose
 
@@ -24,6 +26,8 @@ review method was read-only code inspection; every claim below carries its
 evidence path. Items 4 and 5 record findings from that inspection, item 6
 records an operational finding from the M4 preview deployment flow, and item 7
 records a release-state finding and the operator's indefinite-pause decision,
+and item 8 records a runtime finding whose cause was never proved and whose
+user-visible symptom is already mitigated,
 all using the same evidence and trigger format. The
 companion deferral for contract-version compatibility is
 ADR-053 (`decisions/053-defer-bounded-contract-compatibility-until-public-ecosystem-distribution.md`),
@@ -237,6 +241,71 @@ current `master`, and execute the complete section 7 resume sequence. Until
 that decision is made, `production` is expected to keep diverging; divergence is
 not by itself evidence that the pause was forgotten or that a release should
 start.
+
+## Reviewed Item 8: Inline Run Orphan Root Cause (Unproven; Symptom Already Mitigated)
+
+**Current state.** An inline `npcink-toolbox/ai-content-support` run on site
+`site_magick-ai-local` (`run_00d38b9e39594a29b7e3d63beb333d1d`, provider
+`openai/gpt-5.5`, policy `timeout_ms=45000`, `max_retries=0`,
+`allow_fallback=false`) stayed in `running` from 09:04 to 09:45 UTC on
+2026-10-20 — 41 minutes — until an operator ran `mark_stale_running_failed`.
+Nine requests during that window were rejected with
+`commercial.concurrency_exceeded`, because the site's plan allows
+`max_active_runs=1`. The run produced **zero** `provider_call_records` rows: no
+success, no error, and the 45 s provider timeout never fired. Those are dated
+M4 dev-database readings taken during this review, not a future current-state
+claim.
+
+Two explanations fit that evidence and could not be separated:
+
+1. an exception other than `ProviderExecutionError` escaping
+   `app/domain/runtime/provider_execution.py` — the OpenAI adapter raises
+   `ValueError` from `response.json()` on the non-image path — past
+   `RuntimeService.execute`, which has no `try/finally`, and past the route
+   handler, which catches only `RoutingError` / `RuntimeErrorBase`;
+2. process loss: the dev api runs
+   `uvicorn app.api.main:app ... --reload --reload-dir app --timeout-graceful-shutdown 5`
+   in `docker-compose.dev.yml`, so any source write or restart kills an
+   in-flight inline request after `RunRecord.status` is already committed as
+   `running`.
+
+The api container was recreated at 09:54 the same day and its logs from the
+incident window were discarded, so neither explanation could be confirmed.
+
+**Why it is not resolved now.** The user-visible failure — one orphan locking
+the whole site out — is already fixed. PR #1171 (merged as `1cec47c1`) makes
+`count_active_runs` stop counting `running` rows older than
+`RUNTIME_INLINE_RUN_LEASE_SECONDS` (180 s) and was deployed to M4 on
+2026-10-21. Investigating the cause would not change that behaviour, and the
+two changes that *would* remove the cause were both rejected by existing
+contracts:
+
+- `tests/domain/test_runtime_provider_transactions.py::test_unknown_dispatch_failure_preserves_evidence_and_never_automatically_replays`
+  asserts an unknown dispatch failure leaves the run in `running`; terminating it
+  automatically is exactly the transition
+  `docs/runtime-provider-transaction-boundary-v1.md` forbids;
+- `tests/contract/test_dev_frontend_dependency_guard.py` asserts `--reload-dir app`
+  is present, so removing dev `--reload` deletes the behaviour that test guards.
+
+A root-cause fix therefore means changing an accepted standard rather than
+writing code, and one unproven sample does not justify that.
+
+**Trigger to act.** Any of:
+
+- two or more orphaned inline runs on one site within a 7-day window after the
+  lease is live, where "orphaned" means a `running` row with no provider
+  evidence that outlives the 180 s lease;
+- an orphan that still needs operator `mark_stale_running_failed` more than once
+  a week, i.e. the lease prevents the lockout but the site keeps producing
+  orphans;
+- any run where the provider timeout demonstrably fails to fire, since that is
+  the mechanism both hypotheses bypass.
+
+Before investigating, make the evidence survive: retain api container logs
+across deploys (today `m4:preview.sh sync`/`deploy` force-recreate the api
+container, which discards them) and record the escaping exception type at the
+route boundary. Without those, the next sample will be as unprovable as this
+one.
 
 ## Current Highest Priority
 
