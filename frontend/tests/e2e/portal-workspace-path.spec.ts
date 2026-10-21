@@ -2128,10 +2128,14 @@ test('portal support owns customer feedback and status expectations', async ({ p
 test('portal AI credit trend shows an explicit empty state instead of a blank chart', async ({ page }) => {
   await installPortalMocks(page, { emptyCreditTrend: true });
 
-  await page.goto('/portal/usage');
-  const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
+  // Usage merged into the package page: the trend lives in the 站点用量 dialog of the site list.
+  await page.goto('/portal/billing#usage');
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  const trendPanel = dialog.locator('[data-portal-usage="primary-trend"]');
   await expect(trendPanel.getByText(/No AI credit usage in this range|该时间范围内暂无 AI 积分使用/i)).toBeVisible();
   await expect(trendPanel.getByRole('img')).toHaveCount(0);
+  await expect(trendPanel.locator('[data-portal-usage="trend-bucket"]')).toHaveCount(0);
 });
 
 test('account projections remain available without a selected site context', async ({ page }) => {
