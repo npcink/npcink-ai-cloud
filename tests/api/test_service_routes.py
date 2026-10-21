@@ -558,6 +558,23 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_tokens_per_period"] == 2005000.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_cny_per_period"] == 99.0
     assert topup_payload["topup_summary"]["current_period_count"] == 1
+    assert topup_payload["topup"]["increments"]["ai_credits"] == 10000.0
+    ledger_response = client.get(
+        "/internal/service/admin/accounts/acct_billing/credit-ledger",
+        headers=build_internal_headers(),
+        params={"source_type": "subscription_topup"},
+    )
+    assert ledger_response.status_code == 200
+    ledger_items = ledger_response.json()["data"]["items"]
+    topup_entries = [
+        item
+        for item in ledger_items
+        if item.get("source_type") == "subscription_topup"
+        and item.get("event_type") == "grant"
+    ]
+    assert len(topup_entries) == 1
+    assert float(topup_entries[0]["ai_credit_delta"]) == 10000.0
+    assert topup_entries[0]["source_id"] == topup_payload["topup"]["topup_id"]
     assert topup_payload["topup_summary"]["current_period_totals"]["ai_credits"] == 10000.0
     assert topup_payload["topup_summary"]["current_period_totals"]["runs"] == 10000.0
     assert topup_payload["topup_summary"]["current_period_totals"]["tokens"] == 2000000.0

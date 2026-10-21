@@ -1,0 +1,109 @@
+'use client';
+
+import type { Site } from '@/lib/portal-client';
+import {
+  getPortalSiteDisplayName,
+  getPortalSiteUrlDisplay,
+  getVisiblePortalSites,
+} from '@/lib/portal-site-display';
+import { PortalStatusBadge, PortalStatusInline } from '@/components/portal/PortalStatusBadge';
+
+type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
+
+function siteConnectionLabel(site: Site, t: TranslateFn): string {
+  if (site.status === 'active') {
+    return t('portal.sites.table_ready', {}, 'Connected');
+  }
+  if (site.status === 'inactive') {
+    return t('portal.site_status_inactive', {}, 'Inactive');
+  }
+  if (site.status === 'provisioning') {
+    return t('portal.site_status_provisioning', {}, 'Provisioning');
+  }
+  return t('portal.site_status_unknown', {}, 'Unknown');
+}
+
+export type PortalBillingSiteUsageListProps = {
+  sites: readonly Site[] | null | undefined;
+  t: TranslateFn;
+  onSelectSite: (site: Site) => void;
+};
+
+export function PortalBillingSiteUsageList({
+  sites,
+  t,
+  onSelectSite,
+}: PortalBillingSiteUsageListProps) {
+  const visibleSites = getVisiblePortalSites(sites);
+
+  return (
+    <section
+      id="site-usage"
+      className="scroll-mt-24 space-y-3"
+      data-portal-billing="site-usage-list"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-950 dark:text-white">
+            {t('portal.billing.site_usage_list_title', {}, 'Site usage')}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t(
+              'portal.billing.site_usage_list_desc',
+              {},
+              'Choose a site to review its trend and AI credit records.',
+            )}
+          </p>
+        </div>
+      </div>
+
+      {visibleSites.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          {t('portal.no_sites', {}, 'No Connected Sites')}
+        </div>
+      ) : (
+        <div
+          role="list"
+          className="grid gap-2 sm:grid-cols-2"
+          aria-label={t('portal.billing.site_usage_list_title', {}, 'Site usage')}
+        >
+          {visibleSites.map((site) => {
+            const label = siteConnectionLabel(site, t);
+            const urlDisplay = getPortalSiteUrlDisplay(site);
+            return (
+              <button
+                key={site.site_id}
+                type="button"
+                role="listitem"
+                className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-3 text-left transition hover:border-blue-300/80 hover:bg-blue-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:border-blue-700/60 dark:hover:bg-blue-950/20"
+                onClick={() => onSelectSite(site)}
+                data-portal-billing="site-usage-item"
+                data-site-id={site.site_id}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">
+                    {getPortalSiteDisplayName(site)}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400">
+                    {urlDisplay || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
+                  </span>
+                </span>
+                <span className="shrink-0">
+                  {site.status === 'active' ? (
+                    <PortalStatusInline label={label} />
+                  ) : (
+                    <PortalStatusBadge
+                      status={site.status === 'inactive' || site.status === 'provisioning' ? 'warning' : 'error'}
+                      label={label}
+                      className="normal-case tracking-normal"
+                    />
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}

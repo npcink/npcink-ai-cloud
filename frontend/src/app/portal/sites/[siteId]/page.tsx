@@ -65,7 +65,7 @@ function getPortalSiteRecovery(
     case 'commercial.quota_exceeded':
       return {
         label: t('error.portal_recovery_review_account_quota', {}, 'Review account usage'),
-        href: '/portal/usage',
+        href: '/portal/billing#usage',
       };
     case 'auth.site_not_found':
       return {
@@ -455,7 +455,7 @@ function PortalSiteRecordContent() {
   const displayName = getPortalSiteDisplayName(site);
 
   return (
-    <PortalPageStack className="mx-auto w-full max-w-[56rem] space-y-3" data-portal-site-record="page">
+    <PortalPageStack className="space-y-3" data-portal-site-record="page">
       <PortalWorkspaceHeader
         title={displayName}
         currentPage="record"

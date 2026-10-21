@@ -1,6 +1,7 @@
 'use client';
 
 import { PortalSection } from '@/components/portal/PortalScaffold';
+import { joinSummaryParts } from '@/lib/portal-summary-text';
 import { useLocale } from '@/contexts/LocaleContext';
 import type {
   PortalCreditTrendPayload,
@@ -14,8 +15,16 @@ type PortalCreditTrendPanelProps = {
   window: PortalCreditTrendWindow;
   isLoading: boolean;
   error: string;
-  onWindowChange: (window: PortalCreditTrendWindow) => void;
+  /** Omit when the host owns the time-range control (the site usage dialog shares one across tabs). */
+  onWindowChange?: (window: PortalCreditTrendWindow) => void;
   onRetry: () => void;
+  /** Clicking a bar opens that bucket's records (site usage dialog). */
+  onBucketSelect?: (point: PortalCreditTrendPayload['points'][number]) => void;
+  /**
+   * Embedded inside a dialog tab: no H2, no window tabs, no summary line and no card border.
+   * The host renders the shared time range and the summary row above the tabs.
+   */
+  embedded?: boolean;
 };
 
 const WINDOW_OPTIONS: Array<{ value: PortalCreditTrendWindow; key: string; fallback: string }> = [
@@ -32,6 +41,8 @@ export function PortalCreditTrendPanel({
   error,
   onWindowChange,
   onRetry,
+  onBucketSelect,
+  embedded = false,
 }: PortalCreditTrendPanelProps) {
   const { locale, t } = useLocale();
   const points = payload?.points || [];
@@ -55,43 +66,59 @@ export function PortalCreditTrendPanel({
       : { month: 'numeric', day: 'numeric' },
   ).format(new Date(value));
 
-  return (
-    <PortalSection className="space-y-5" data-portal-usage="primary-trend">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-            {t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
-            {t('portal.usage.primary_trend_desc', {}, 'Review actual AI credit consumption over time before opening individual usage records.')}
-          </p>
-        </div>
-        <div
-          role="tablist"
-          aria-label={t('portal.usage.trend_window_label', {}, 'Trend range')}
-          className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 dark:bg-slate-900"
+  const trendTitle = t('portal.usage.primary_trend_title', {}, 'AI credit usage trend');
+  const trendDesc = t(
+    'portal.usage.primary_trend_desc',
+    {},
+    'Review actual AI credit consumption over time before opening individual usage records.',
+  );
+
+  const Frame = embedded ? 'div' : PortalSection;
+  const frameClassName = embedded ? 'space-y-4' : 'space-y-5';
+
+  const windowTabs = (
+    <div
+      role="tablist"
+      aria-label={t('portal.usage.trend_window_label', {}, 'Trend range')}
+      className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900"
+    >
+      {WINDOW_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={window === option.value}
+          className={`min-h-10 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            window === option.value
+              ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300'
+              : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+          }`}
+          onClick={() => onWindowChange?.(option.value)}
         >
-          {WINDOW_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="tab"
-              aria-selected={window === option.value}
-              className={`min-h-10 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                window === option.value
-                  ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300'
-                  : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-              }`}
-              onClick={() => onWindowChange(option.value)}
-            >
-              {t(option.key, {}, option.fallback)}
-            </button>
-          ))}
+          {t(option.key, {}, option.fallback)}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <Frame className={frameClassName} data-portal-usage="primary-trend">
+      {embedded ? null : (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
+              {trendTitle}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {trendDesc}
+            </p>
+          </div>
+          {onWindowChange ? windowTabs : null}
         </div>
-      </div>
+      )}
 
       <div
-        role="tabpanel"
+        role={embedded ? undefined : 'tabpanel'}
         aria-live="polite"
         data-trend-window={window}
         data-trend-points={points.length}
@@ -115,48 +142,115 @@ export function PortalCreditTrendPanel({
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {t(
-                'portal.usage.trend_total',
-                { count: formatNumber(totalCredits) },
-                `${formatNumber(totalCredits)} AI credits used in this range`,
-              )}
-              {updatedAt
-                ? ` · ${t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}`
-                : ''}
-            </p>
+          <div
+            className={embedded ? '' : 'rounded-xl border border-slate-200 p-4 dark:border-slate-800'}
+            data-portal-usage="trend-chart-frame"
+          >
+            {embedded ? null : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {joinSummaryParts([
+                  t('portal.usage.trend_total', { count: formatNumber(totalCredits) }, `${formatNumber(totalCredits)} AI credits used in this range`),
+                  updatedAt ? t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}') : '',
+                ])}
+              </p>
+            )}
             <div
               role="img"
               aria-label={t('portal.usage.trend_chart_label', {}, 'AI credit usage over time')}
-              className="mt-4 flex h-44 items-end gap-1"
+              className={embedded ? 'pt-6' : 'mt-4 pt-6'}
             >
-              {points.map((point, index) => {
-                const credits = Number(point.ai_credits || 0);
-                const height = credits > 0 ? Math.max(4, (credits / maxCredits) * 100) : 0;
-                const pointLabel = formatPointLabel(point.start_at);
-                const showLabel = index % labelEvery === 0 || index === points.length - 1;
-                return (
-                  <div key={point.start_at} className="group relative flex h-full min-w-0 flex-1 flex-col justify-end">
-                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-950">
-                      {pointLabel} · {formatNumber(credits)}
-                    </div>
+              <div className="relative flex h-44 items-end gap-1 border-b border-slate-200 dark:border-slate-800">
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-300 dark:border-slate-700"
+                  data-portal-usage="trend-max-line"
+                  aria-hidden="true"
+                >
+                  <span className="absolute -top-5 right-0 whitespace-nowrap text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                    {t('portal.usage.trend_max_label', { count: formatNumber(maxCredits) }, 'Peak {{count}} AI credits')}
+                  </span>
+                </div>
+                {points.map((point, index) => {
+                  const credits = Number(point.ai_credits || 0);
+                  const height = credits > 0 ? Math.max(4, (credits / maxCredits) * 100) : 0;
+                  const pointLabel = formatPointLabel(point.start_at);
+                  const valueLabel = t('portal.usage.credit_points_value', { count: formatNumber(credits) }, '{{count}} AI credits');
+                  const tooltipAlign = index < points.length / 4
+                    ? 'left-0'
+                    : index > (points.length * 3) / 4
+                      ? 'right-0'
+                      : 'left-1/2 -translate-x-1/2';
+                  return (
                     <div
-                      aria-label={`${pointLabel}: ${formatNumber(credits)}`}
-                      className="w-full rounded-t bg-blue-500 transition-colors group-hover:bg-blue-600 dark:bg-blue-400 dark:group-hover:bg-blue-300"
-                      style={{ height: `${height}%` }}
-                    />
-                    <span className="absolute top-full mt-2 w-max max-w-14 -translate-x-1/4 text-[11px] text-slate-500 dark:text-slate-400">
-                      {showLabel ? pointLabel : ''}
-                    </span>
-                  </div>
-                );
-              })}
+                      key={point.start_at}
+                      className={`group relative flex h-full min-w-0 flex-1 flex-col justify-end ${onBucketSelect ? 'cursor-pointer' : ''}`}
+                      data-portal-usage="trend-bucket"
+                      data-credits={credits}
+                      role={onBucketSelect ? 'button' : undefined}
+                      tabIndex={onBucketSelect ? 0 : undefined}
+                      aria-label={onBucketSelect ? `${pointLabel} · ${valueLabel} · ${t('portal.usage.trend_bucket_open', {}, 'Show records')}` : undefined}
+                      onClick={onBucketSelect ? () => onBucketSelect(point) : undefined}
+                      onKeyDown={onBucketSelect ? (event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        onBucketSelect(point);
+                      } : undefined}
+                    >
+                      <div
+                        className={`pointer-events-none absolute bottom-full z-10 mb-1 hidden whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-950 ${tooltipAlign}`}
+                        data-portal-usage="trend-tooltip"
+                      >
+                        {pointLabel} · {valueLabel}
+                      </div>
+                      {credits > 0 ? (
+                        <div
+                          aria-label={`${pointLabel}: ${valueLabel}`}
+                          className="w-full rounded-t bg-blue-500 transition-colors group-hover:bg-blue-600 dark:bg-blue-400 dark:group-hover:bg-blue-300"
+                          style={{ height: `${height}%` }}
+                        />
+                      ) : (
+                        <div
+                          aria-label={`${pointLabel}: ${valueLabel}`}
+                          className="h-[3px] w-full rounded-t bg-slate-200 group-hover:bg-slate-300 dark:bg-slate-800 dark:group-hover:bg-slate-700"
+                          data-portal-usage="trend-zero-bucket"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 flex gap-1" aria-hidden="true">
+                {points.map((point, index) => {
+                  const pointLabel = formatPointLabel(point.start_at);
+                  const lastIndex = points.length - 1;
+                  // Drop a regular label that sits closer than one interval to the right-aligned last label (they collide on narrow screens).
+                  const showLabel = index === lastIndex || (index % labelEvery === 0 && lastIndex - index >= labelEvery);
+                  return (
+                    <div
+                      key={`label-${point.start_at}`}
+                      className="relative h-4 min-w-0 flex-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400"
+                    >
+                      {showLabel ? (
+                        <span
+                          className={`absolute top-0 whitespace-nowrap ${
+                            index === 0
+                              ? 'left-0'
+                              : index === points.length - 1
+                                ? 'right-0'
+                                : 'left-1/2 -translate-x-1/2'
+                          }`}
+                          data-portal-usage="trend-axis-label"
+                        >
+                          {pointLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="h-7" aria-hidden="true" />
           </div>
         )}
       </div>
-    </PortalSection>
+    </Frame>
   );
 }

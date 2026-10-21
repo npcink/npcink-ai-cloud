@@ -466,6 +466,16 @@ async function installPortalMocks(
       return;
     }
 
+    if (
+      (pathname === '/account/credit-trend' || pathname === '/account/credit-events' || pathname === '/account/credit-event-days')
+      && url.searchParams.get('site_id')
+      && url.searchParams.get('site_id') !== selectedSiteId
+    ) {
+      // Mirror the backend: commercial history is scoped to the session-selected site.
+      await fulfillError(route, 'portal.site_selection_required', 409);
+      return;
+    }
+
     if (pathname === '/account/credit-trend') {
       const trendWindow = url.searchParams.get('window') || '24h';
       const trendSiteId = url.searchParams.get('site_id') || '';
@@ -581,6 +591,43 @@ async function installPortalMocks(
             { key: 'model_processing', ai_credits: 15 },
           ],
         }],
+      });
+      return;
+    }
+
+    if (pathname === '/account/credit-event-days') {
+      const dayWindow = url.searchParams.get('window') === '30d' ? 30 : 7;
+      const limit = Number(url.searchParams.get('limit') || 10);
+      const offset = Number(url.searchParams.get('offset') || 0);
+      const total = dayWindow + 1;
+      const base = Date.UTC(2026, 9, 21);
+      const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, index) => {
+        const dayIndex = offset + index;
+        const start = new Date(base - dayIndex * 86400000);
+        const used = dayIndex % 3 !== 2;
+        return {
+          day: start.toISOString().slice(0, 10),
+          start_at: start.toISOString(),
+          end_at: new Date(start.getTime() + 86400000).toISOString(),
+          event_count: used ? 3 : 0,
+          consumed_ai_credits: used ? 30 : 0,
+          feature_totals: used
+            ? [
+                { feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 },
+                { feature_key: 'web_search', consumed_ai_credits: 8, event_count: 1 },
+                { feature_key: 'site_knowledge', consumed_ai_credits: 4, event_count: 1 },
+              ]
+            : [],
+        };
+      });
+      await fulfillJson(route, {
+        contract_version: 'portal-credit-event-days-v1',
+        generated_at: '2026-10-21T02:00:00Z',
+        timezone: url.searchParams.get('tz') || 'UTC',
+        filters: { window: dayWindow === 30 ? '30d' : '7d', site_id: url.searchParams.get('site_id') || '', feature: url.searchParams.get('feature') || '' },
+        summary: { day_count: total, event_count: 3, consumed_ai_credits: 30, feature_totals: [{ feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 }, { feature_key: 'web_search', consumed_ai_credits: 8, event_count: 1 }, { feature_key: 'site_knowledge', consumed_ai_credits: 4, event_count: 1 }, { feature_key: 'image_generation', consumed_ai_credits: 2, event_count: 1 }] },
+        pagination: { limit, offset, total, has_more: offset + limit < total },
+        items,
       });
       return;
     }
@@ -1681,10 +1728,11 @@ test('portal workspace interaction path: account overview to site detail and ser
   await page.goto('/portal');
 
   const portalPrimaryNav = page.locator('[data-ui="portal-primary-nav"]');
-  await expect(portalPrimaryNav.locator('> a')).toHaveCount(5);
+  // Usage merged into Package (site usage lives in the 站点用量 dialog): 4 primary links.
+  await expect(portalPrimaryNav.locator('> a')).toHaveCount(4);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Service$|^服务$|^服務$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
-  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(portalPrimaryNav.getByRole('link', { name: /^Usage$|^用量$/i })).toHaveCount(0);
   await expect(portalPrimaryNav.getByRole('link', { name: /^Tickets$|^工单$|^工單$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Account$|^账号$|^帳號$/i })).toBeVisible();
   await expect(portalPrimaryNav.getByRole('link', { name: /^Billing$|^账单$|^帳單$/i })).toHaveCount(0);
@@ -1751,53 +1799,25 @@ test('portal workspace interaction path: account overview to site detail and ser
     contentType: 'image/png',
   });
 
+  // Usage merged into Package: site usage (trend + AI credit records) lives in the 站点用量 dialog.
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
-  await expect(page.getByText(/^612$|^612 点$/i).first()).toBeVisible();
-  const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
-  await expect(usageViewTabs.getByRole('tab')).toHaveCount(2);
-  await expect(usageViewTabs.getByRole('tab', { name: /Usage details|用量明细/i })).toHaveCount(0);
-  await expect(page.getByText(/^Generated At$|^生成时间$/i)).toHaveCount(0);
-  await expect(page.getByText(/Apr 1[^\n]*Apr 30|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)30日?/i).first()).toBeVisible();
-  await expect(page.getByText(/Ends .*2026.*Apr 30|截止 .*2026.*4(?:月|\/)30日?/i).first()).toBeVisible();
-  await expect(page.getByText(/Updated .*Apr 7|更新于 .*4(?:月|\/)7日?/i).first()).toBeVisible();
-  await expect(usageViewTabs.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
-  const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
-  await expect(trendPanel.getByRole('tab', { name: /24 hours|最近 24 小时/i })).toHaveAttribute('aria-selected', 'true');
-  await expect(trendPanel.locator('[data-trend-window="24h"]')).toHaveAttribute('data-trend-points', '24');
-  await expect(trendPanel.getByText(/24 AI credits used|共使用 24 AI 积分/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/portal\/billing(\?[^#]*)?#usage$/);
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_attention"]').click();
+  const usageDialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(usageDialog.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
+  await expect(usageDialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { checked: true })).toHaveText(/24h|24 小时/i);
+  await expect(usageDialog.locator('[data-portal-usage="trend-bucket"]').first()).toBeVisible();
   await testInfo.attach('p4-e03-portal-usage', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
-  for (const range of [
-    { name: /1 hour|最近 1 小时/i, value: '1h', points: '12' },
-    { name: /7 days|最近 7 天/i, value: '7d', points: '7' },
-    { name: /30 days|最近 30 天/i, value: '30d', points: '30' },
-  ]) {
-    await trendPanel.getByRole('tab', { name: range.name }).click();
-    await expect(trendPanel.locator(`[data-trend-window="${range.value}"]`)).toHaveAttribute('data-trend-points', range.points);
-  }
-  await usageViewTabs.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
-  await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
-  await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
-  await expect(page.locator('main').getByRole('combobox')).toHaveCount(3);
-  await expect(page.getByRole('combobox', { name: /Current site|当前站点/i })).toHaveValue('site_attention');
-  await page.locator('[data-portal-usage="records-table"]').getByRole('button', { name: /Content writing|内容生成/i }).click();
-  const creditEventDialog = page.getByRole('dialog', { name: /Content writing|内容生成/i });
-  await expect(creditEventDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
-  await creditEventDialog.getByText(/Support information|支持信息/i).click();
-  await expect(creditEventDialog.getByText(/run_portal_001/i)).toBeVisible();
-  await creditEventDialog.getByRole('button', { name: /Close|关闭/i }).click();
-  await page.reload();
-  const reloadedRecordsTab = page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i });
-  await expect(reloadedRecordsTab).toHaveAttribute('aria-selected', 'true');
-  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i }).click();
-  await expect(page).toHaveURL(/\/portal\/usage$/);
-  await expect(page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
-  await page.goto('/portal/usage?view=details');
-  await expect(page).toHaveURL(/\/portal\/usage$/);
+  await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  await usageDialog.getByRole('button', { name: /Content writing|内容生成/i }).first().click();
+  await expect(usageDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
+  await usageDialog.getByText(/Support information|支持信息/i).click();
+  await expect(usageDialog.getByText(/run_portal_001/i)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
 
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
@@ -1808,7 +1828,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-  await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+  await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
   const packageConfirmButton = packageDialog.getByRole('button', { name: /^Select package$|^选择套餐$/i });
@@ -2081,10 +2101,14 @@ test('portal support owns customer feedback and status expectations', async ({ p
 test('portal AI credit trend shows an explicit empty state instead of a blank chart', async ({ page }) => {
   await installPortalMocks(page, { emptyCreditTrend: true });
 
-  await page.goto('/portal/usage');
-  const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
+  // Usage merged into the package page: the trend lives in the 站点用量 dialog of the site list.
+  await page.goto('/portal/billing#usage');
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  const trendPanel = dialog.locator('[data-portal-usage="primary-trend"]');
   await expect(trendPanel.getByText(/No AI credit usage in this range|该时间范围内暂无 AI 积分使用/i)).toBeVisible();
   await expect(trendPanel.getByRole('img')).toHaveCount(0);
+  await expect(trendPanel.locator('[data-portal-usage="trend-bucket"]')).toHaveCount(0);
 });
 
 test('account projections remain available without a selected site context', async ({ page }) => {
@@ -2102,8 +2126,10 @@ test('account projections remain available without a selected site context', asy
 
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
+  // /portal/usage is a deep-link shim into the package page's usage section.
   await page.goto('/portal/usage');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/portal\/billing(\?[^#]*)?#usage$/);
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$|^Plan & credits$|^套餐与积分$/i })).toBeVisible();
   await page.goto('/portal/audit');
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
 
@@ -2464,7 +2490,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
     await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
     await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
-    await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+    await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
     await expect(page.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
     await expectNoPageOverflow();
     await page.keyboard.press('Escape');
@@ -2540,7 +2566,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await page.goto('/portal/billing');
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-  await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+  await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
@@ -2832,4 +2858,76 @@ test('portal simple home keeps WordPress and account settings reachable on mobil
   await nav.getByRole('link', { name: /Account settings|账号设置/i }).click();
   await expect(page).toHaveURL(/\/portal\/account$/);
   await expect(nav).not.toBeVisible();
+});
+
+test('site usage Modal switches the session site before loading trend and records', async ({ page }) => {
+  await installPortalMocks(page);
+  const selectRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/session\/site$/.test(new URL(request.url()).pathname)) {
+      selectRequests.push(request.postData() || '');
+    }
+  });
+
+  await page.goto('/portal/billing');
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(dialog).toBeVisible();
+  for (const label of [/1 小时|1 hour/, /24 小时|24 hours/, /7 天|7 days/, /30 天|30 days/]) {
+    await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: label }).click();
+    await expect(dialog.locator('[data-portal-usage="primary-trend"] [role="img"]')).toBeVisible();
+  }
+  await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);
+  expect(selectRequests.some((body) => body.includes('site_clear'))).toBe(true);
+
+  await dialog.getByRole('tab', { name: /AI 积分记录|AI credit records/ }).click();
+  // 30d groups records by day; each day row is a scoped credit-events request too.
+  await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
+  await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: /24 小时|24h/ }).click();
+  await expect(dialog.getByText(/加载数据失败|Failed to load/i)).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /查看详情|View details/ }).first()).toBeVisible();
+});
+
+test('site usage day drill-down back restores the exact day-table scroll position', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 640 });
+  await installPortalMocks(page);
+  await page.goto('/portal/billing');
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  const scroller = dialog.locator('div.overflow-y-auto').first();
+  await dialog.locator('[data-portal-usage="site-dialog-range"]').getByRole('radio', { name: '30 天' }).click();
+  await dialog.getByRole('tab', { name: /AI 积分记录/ }).click();
+  await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
+  for (const pageIndex of [0, 1]) {
+    if (pageIndex === 1) {
+      await dialog.getByRole('button', { name: /下一页/ }).click();
+      await expect(dialog.locator('[data-portal-usage="records-pagination"] p')).toContainText('11');
+    }
+    const maxScroll = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+    for (const fraction of [0, 0.4, 1]) {
+      const target = Math.round(maxScroll * fraction);
+      await scroller.evaluate((el, top) => { el.scrollTop = top; }, target);
+      const before = await scroller.evaluate((el) => el.scrollTop);
+      const row = dialog.locator('[data-portal-usage="records-day-row"]').filter({ hasNot: page.locator('text=/^0$/') });
+      // Click a day that is already fully in view so the click itself does not auto-scroll.
+      const visibleIndex = await scroller.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const footer = el.querySelector('[data-portal-usage="records-pagination"]')?.getBoundingClientRect();
+        const bottom = footer ? Math.min(box.bottom, footer.top) : box.bottom;
+        return Array.from(el.querySelectorAll('[data-portal-usage="records-day-row"] button')).findIndex((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.top >= box.top + 140 && rect.bottom <= bottom;
+        });
+      });
+      expect(visibleIndex).toBeGreaterThanOrEqual(0);
+      await dialog.locator('[data-portal-usage="records-day-row"] button').nth(visibleIndex).click();
+      await expect(dialog.locator('[data-portal-usage="records-day-breadcrumb"]')).toBeVisible();
+      await dialog.locator('[data-portal-usage="records-day-breadcrumb"] button').click();
+      await expect(dialog.locator('[data-portal-usage="records-day-row"]').first()).toBeVisible();
+      await page.waitForTimeout(300);
+      const after = await scroller.evaluate((el) => el.scrollTop);
+      console.log(`SCROLL page=${pageIndex} target=${target} before=${before} after=${after}`);
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+    }
+  }
 });
