@@ -1828,7 +1828,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-  await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+  await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
   const packageConfirmButton = packageDialog.getByRole('button', { name: /^Select package$|^选择套餐$/i });
@@ -2490,7 +2490,7 @@ test('portal PC tables stay readable across supported desktop widths, themes, an
     await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
     await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
     await expect(page.locator('[data-portal-billing="payment-orders-table"]')).toBeVisible();
-    await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+    await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
     await expect(page.locator('[data-portal-billing="package-comparison-table"]')).toBeVisible();
     await expectNoPageOverflow();
     await page.keyboard.press('Escape');
@@ -2566,7 +2566,7 @@ test('portal purchase and support tasks stay usable on a 390px viewport', async 
   await page.goto('/portal/billing');
   await page.getByRole('link', { name: /^Manage package$|^管理套餐$/i }).click();
   await expect(page).toHaveURL(/\/portal\/account(?:\?[^#]*)?#package-options/);
-  await page.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+  await page.getByRole('button', { name: /^Upgrade package$|^升级套餐$/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
   await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();

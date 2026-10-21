@@ -62,7 +62,7 @@ class CommercialCreditLedgerQueries:
             return None
         if not site_ids:
             return None
-        site_scope = CreditLedgerEntry.site_id.in_(site_ids)
+        site_scope: ColumnElement[bool] = CreditLedgerEntry.site_id.in_(site_ids)
         if include_unscoped:
             site_scope = or_(site_scope, CreditLedgerEntry.site_id.is_(None))
         return site_scope
