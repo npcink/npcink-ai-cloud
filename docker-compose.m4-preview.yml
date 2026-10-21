@@ -24,6 +24,20 @@ services:
 
   api:
     image: npcink-ai-cloud-runtime:m4-dev
+    # Inline provider calls run up to the 45 s provider timeout inside the request.
+    # A recreate (every m4:preview sync) or source reload must let them finish:
+    # graceful shutdown 60 s > provider timeout, and Docker waits longer than that
+    # before SIGKILL. The dev compose keeps 5 s for fast local reloads.
+    command: >-
+      uvicorn app.api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir app
+      --reload-dir migrations
+      --reload-exclude app/workers/*
+      --timeout-graceful-shutdown 60
+    stop_grace_period: 75s
     environment:
       NPCINK_CLOUD_BASE_URL: ${NPCINK_CLOUD_M4_PUBLIC_BASE_URL:-https://cloud.mqzjmax.top}
       NPCINK_CLOUD_DEPLOYMENT_RELEASE: ${NPCINK_CLOUD_DEPLOYMENT_RELEASE:-m4-preview}
