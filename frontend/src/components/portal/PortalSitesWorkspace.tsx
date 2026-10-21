@@ -482,6 +482,25 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
       );
 
+  if (addonConnectMode && showConnectModal) {
+    // Minimal bind page for ordinary site owners: no workspace, no dashboard chrome.
+    return (
+      <section className="mx-auto w-full max-w-md py-10" data-portal-bind="page">
+        <PortalSiteConnectPanel
+          onSubmittingChange={setIsConnecting}
+          accounts={addonAccounts}
+          accountsError={addonAccountsError}
+          isLoadingAccounts={isLoadingAddonAccounts}
+          onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}
+          initialSiteUrl={addonSiteUrl}
+          initialSiteName={addonSiteName}
+          addonReturnUrl={addonReturnUrl}
+          addonState={addonState}
+        />
+      </section>
+    );
+  }
+
   return (
     <section id="sites" className="scroll-mt-24" data-portal-home="sites-workspace">
       <PortalSection className="space-y-2 p-3 md:px-4 md:py-3" variant="portal" data-portal-sites="section">
@@ -776,28 +795,6 @@ function PortalSitesWorkspaceContent({ capacityAlerts = [] }: { capacityAlerts?:
         ) : null}
       </PortalSection>
 
-      <Modal
-        isOpen={addonConnectMode && showConnectModal}
-        onClose={() => { if (!isConnecting) setShowConnectModal(false); }}
-        closeLabel={t('common.close', {}, 'Close')}
-        title={t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')}
-        description={t('portal.connect_site_addon_desc', undefined, 'Confirm this site connection, then return to WordPress to finish setup.')}
-        size="lg"
-        className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
-      >
-        <PortalSiteConnectPanel
-          onSubmittingChange={setIsConnecting}
-          accounts={addonAccounts}
-          accountsError={addonAccountsError}
-          isLoadingAccounts={isLoadingAddonAccounts}
-          onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}
-          onClose={() => { if (!isConnecting) setShowConnectModal(false); }}
-          initialSiteUrl={addonSiteUrl}
-          initialSiteName={addonSiteName}
-          addonReturnUrl={addonReturnUrl}
-          addonState={addonState}
-        />
-      </Modal>
 
       <Modal
         isOpen={Boolean(pendingLifecycleSite)}
