@@ -300,6 +300,16 @@ assert.match(
   /accounts\.length === 1[\s\S]*accounts\.some\(\(account\) => account\.account_id === current\)[\s\S]*return '';/,
   'addon binding preselects only a sole account or a known eligible current account; otherwise selection stays explicit'
 );
+assert.match(
+  sitesSource,
+  /accounts=\{addonAccounts\}\s*currentAccountId=\{resolveCurrentAddonAccountId\(addonAccounts\)\}/,
+  'addon binding must pass the API-marked current account into the connect panel'
+);
+assert.match(
+  readFileSync(new URL('../../src/lib/portal-addon-account-default.ts', import.meta.url), 'utf8'),
+  /export function resolveCurrentAddonAccountId[\s\S]*is_current === true[\s\S]*current\.length === 1/,
+  'current account must come only from an unambiguous is_current marker'
+);
 assert.equal(
   existsSync(resolve(root, 'src/hooks/usePortalSiteSelection.ts')),
   false,

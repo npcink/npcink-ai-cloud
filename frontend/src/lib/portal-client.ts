@@ -232,6 +232,8 @@ export interface PortalAddonConnectionAccount {
   account_id: string;
   name: string;
   site_count: number;
+  /** True only for the account that owns the session's selected site. Absent on older APIs. */
+  is_current?: boolean;
 }
 
 export interface PortalAddonConnectionAccountsPayload {
