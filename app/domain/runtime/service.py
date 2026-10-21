@@ -62,6 +62,7 @@ from app.domain.commercial.credits import (
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
+    sum_provider_call_usage_tokens,
 )
 from app.domain.content_formatting.runtime import ABILITY as CONTENT_FORMAT_ABILITY
 from app.domain.content_formatting.runtime import execute_formatting
@@ -3016,6 +3017,13 @@ class RuntimeService:
         connector_envelope = (
             finalization_context if isinstance(finalization_context, dict) else None
         )
+        connector_usage = None
+        if connector_envelope is not None:
+            # Sum ALL provider-call evidence rows (primary + side calls). Do not
+            # read raw output.usage; keep cost off the WP suggestion envelope.
+            connector_usage = sum_provider_call_usage_tokens(
+                repository.list_provider_calls(run.run_id)
+            )
         normalized_result = self.result_normalization_service.normalize(
             RuntimeResultNormalizationCommand(
                 site_id=run.site_id,
@@ -3028,6 +3036,7 @@ class RuntimeService:
                 automatic_web_search=(
                     automatic_web_search if isinstance(automatic_web_search, dict) else None
                 ),
+                usage=connector_usage,
             )
         )
         evidence = getattr(run, "_wordpress_generation_context_evidence", None)

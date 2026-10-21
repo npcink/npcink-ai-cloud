@@ -44,6 +44,16 @@ export NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}"
 PROJECT_NAME="npcink-ai-cloud-deploy-smoke-$(date +%s)"
 PG18_PROOF_PROJECT_NAME="${PROJECT_NAME}-pg18"
 PG18_PROOF_PORT="${NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_PORT:-55432}"
+# Postgres publish bind: loopback only. Non-loopback is refused so a cloud/jump
+# host cannot accidentally expose the smoke fixture. Local default password is
+# fine because the port is not on all interfaces.
+PG18_PROOF_BIND="${NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_BIND:-127.0.0.1}"
+case "${PG18_PROOF_BIND}" in
+	127.0.0.1|localhost|::1) ;;
+	*)
+		fail "NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_BIND must be loopback (127.0.0.1/localhost/::1); got '${PG18_PROOF_BIND}'"
+		;;
+esac
 PORT="${NPCINK_CLOUD_DEPLOY_SMOKE_PORT:-8110}"
 BASE_URL="${NPCINK_CLOUD_DEPLOY_SMOKE_BASE_URL:-http://127.0.0.1:${PORT}}"
 BASE_HOST="$(python3 - "${BASE_URL}" <<'PY'
@@ -57,6 +67,7 @@ SITE_ID="${NPCINK_CLOUD_SITE_ID:-site_deploy_smoke}"
 KEY_ID="${NPCINK_CLOUD_KEY_ID:-key_deploy_smoke}"
 SECRET="${NPCINK_CLOUD_SECRET:-npcink-cloud-deploy-secret}"
 unset NPCINK_CLOUD_SECRET
+# Local smoke default only; safe because Postgres publishes on loopback (see bind check above).
 DEPLOY_SMOKE_POSTGRES_PASSWORD="${NPCINK_CLOUD_DEPLOY_SMOKE_POSTGRES_PASSWORD:-npcink-cloud-deploy-postgres-secret}"
 DEPLOY_SMOKE_INTERNAL_TOKEN="${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN:-npcink-cloud-deploy-internal-token-32b}"
 if [[ ! "${DEPLOY_SMOKE_POSTGRES_PASSWORD}" =~ ^[A-Za-z0-9._-]{16,128}$ ]]; then
@@ -74,7 +85,7 @@ printf '%s\n' \
 	'services:' \
 	'  postgres18-proof:' \
 	'    ports:' \
-	"      - \"0.0.0.0:${PG18_PROOF_PORT}:5432\"" \
+	"      - \"${PG18_PROOF_BIND}:${PG18_PROOF_PORT}:5432\"" \
 	>"${PG18_PROOF_OVERRIDE}"
 
 export NPCINK_CLOUD_PG18_PROOF_PASSWORD="${DEPLOY_SMOKE_POSTGRES_PASSWORD}"

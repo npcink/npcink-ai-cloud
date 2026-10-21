@@ -9,7 +9,8 @@ const clientSource = read('src/lib/portal-client.ts');
 const sessionHookSource = read('src/hooks/useSession.ts');
 const homeSource = read('src/app/portal/page.tsx');
 const billingSource = read('src/app/portal/billing/page.tsx');
-const usageSource = read('src/app/portal/usage/page.tsx');
+const siteUsageListSource = read('src/components/portal/PortalBillingSiteUsageList.tsx');
+const siteUsageDialogSource = read('src/components/portal/PortalSiteUsageDialog.tsx');
 const auditSource = read('src/app/portal/audit/PortalAuditClient.tsx');
 const supportListSource = read('src/app/portal/support/page.tsx');
 const supportDetailSource = read('src/app/portal/support/[requestId]/page.tsx');
@@ -200,7 +201,6 @@ assert.doesNotMatch(
 );
 
 for (const [name, source] of [
-  ['usage', usageSource],
   ['audit', auditSource],
 ]) {
   assert.match(source, /siteFilterId/, `${name} must derive an optional site filter id`);
@@ -269,10 +269,48 @@ for (const [name, source] of [
   );
 }
 
+// Spec: usage = package page lists every account site (no selected site needed); a site opens its own Modal.
 assert.match(
-  usageSource,
-  /siteFilterId = searchParams\.get\('site'\)[\s\S]*siteId: requestSiteFilterId \|\| undefined/,
-  'account usage must default to all sites and pass a site query only when explicitly filtered'
+  billingSource,
+  /<PortalBillingSiteUsageList\s+sites=\{session\.sites\}/,
+  'package site usage list must come from account sites, not the selected site context'
+);
+assert.doesNotMatch(
+  siteUsageListSource + siteUsageDialogSource,
+  /site_selection_required_title|Choose a current site before viewing/,
+  'site usage must not dead-end on a selected session site'
+);
+assert.doesNotMatch(siteUsageListSource, /selected_context/, 'site usage list must not filter by the selected session site');
+// Backend scopes commercial history to the session-selected site (409 portal.site_selection_required otherwise).
+assert.match(
+  siteUsageDialogSource,
+  /const siteContextReady = Boolean\(siteId && session\?\.selected_context\?\.site\?\.site_id === siteId\)/,
+  'site usage Modal must know whether the chosen site is the session-selected site'
+);
+assert.match(
+  siteUsageDialogSource,
+  /if \(!isOpen \|\| !siteId \|\| siteContextReady\)[\s\S]*?selectSite\(siteId\)/,
+  'site usage Modal must switch the session site before requesting commercial history'
+);
+assert.match(
+  siteUsageDialogSource,
+  /if \(!isOpen \|\| !siteId \|\| !siteContextReady\) return;\s*if \(activeView !== 'trend'\) return;\s*void loadCreditTrend\(\)/,
+  'site usage trend must wait for the session site switch'
+);
+assert.match(
+  siteUsageDialogSource,
+  /if \(!isOpen \|\| !siteId \|\| !siteContextReady\) return;\s*if \(activeView !== 'records'\) return;\s*void loadCreditEventPage\(0\)/,
+  'site usage records must wait for the session site switch'
+);
+assert.match(
+  siteUsageDialogSource,
+  /getAccountCreditTrend\(\{[\s\S]*siteId: requestSiteId[\s\S]*getAccountCreditEvents\(\{[\s\S]*siteId: requestSiteId/,
+  'site usage Modal must scope both trend and records to the chosen site'
+);
+assert.match(
+  siteUsageDialogSource,
+  /requestSiteId !== siteIdRef\.current\) return;/,
+  'site usage Modal must drop responses that arrive after the site changed'
 );
 
 assert.match(
@@ -292,8 +330,13 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /const \[selectedAccountId, setSelectedAccountId\] = useState\(''\)[\s\S]*accounts\.some\([\s\S]*account\.account_id === selectedAccountId/,
-  'addon binding must require explicit selection of an eligible candidate'
+  /const \[manualAccountId, setSelectedAccountId\] = useState\(''\)[\s\S]*resolveDefaultAddonAccountId\(accounts, currentAccountId\)[\s\S]*accounts\.some\([\s\S]*account\.account_id === selectedAccountId/,
+  'addon binding must only submit an eligible candidate, defaulting via resolveDefaultAddonAccountId'
+);
+assert.match(
+  readFileSync(new URL('../../src/lib/portal-addon-account-default.ts', import.meta.url), 'utf8'),
+  /accounts\.length === 1[\s\S]*accounts\.some\(\(account\) => account\.account_id === current\)[\s\S]*return '';/,
+  'addon binding preselects only a sole account or a known eligible current account; otherwise selection stays explicit'
 );
 assert.equal(
   existsSync(resolve(root, 'src/hooks/usePortalSiteSelection.ts')),

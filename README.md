@@ -61,6 +61,7 @@ Start with:
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
 - [Internal New-User Readiness Gate](docs/internal-new-user-readiness-gate-v1.md)
+- [Portal UI Spec（客户门户布局 / IA）](docs/portal-ui-spec.md) — 含顶栏 56rem 对齐与套餐页+用量抽屉（§10）
 - [Internal Readiness Final Handoff — 2026-08-18](docs/history/engineering/2026/internal-readiness-final-handoff-2026-08-18.md)
 - [Refactor Master Plan](docs/refactor-master-plan-v1.md)
 - [Refactor Deletion Inventory](docs/refactor-deletion-inventory-v1.md)
@@ -153,6 +154,11 @@ Useful local endpoints:
 - `http://127.0.0.1:8010/health/live`
 - `http://127.0.0.1:8010/admin/login`
 - `http://127.0.0.1:8010/portal/login`
+
+`docker-compose.dev.yml` publishes Postgres/Redis/proxy on `127.0.0.1` only
+(localhost UX unchanged). Override `NPCINK_CLOUD_DEV_POSTGRES_PASSWORD` in
+`.env` if you want a non-default local DB password; do not run this stack
+bound to shared/public networks.
 
 For setup, service settings, PostgreSQL 18, and production-style configuration,
 follow the [first-install runbook](docs/cloud-first-install-rds-pg18-runbook.md)
@@ -334,7 +340,8 @@ passwords, SSH keys, or encryption roots.
 - Keep development-only values in ignored `.env.local` when local Docker needs
   them.
 - Configure provider connections and service settings through their current
-  Admin surfaces; retired provider/service `.env` fallbacks must not return.
+  Admin surfaces (`/admin/ai-resources`); production rejects provider `*_API_KEY`
+  env fallbacks so compose cannot dual-channel override Admin-managed secrets.
 - Runtime-data encryption key rotation follows `deploy/OPS_PLAYBOOK.md`; it is
   not an ordinary environment edit.
 - Test fixtures belong under `tests/fixtures/`; runtime output belongs under

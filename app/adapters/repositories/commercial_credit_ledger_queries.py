@@ -47,11 +47,32 @@ class CommercialCreditLedgerQueries:
         )
         return list(self.session.scalars(statement))
 
+    def _credit_ledger_site_scope(
+        self,
+        site_ids: list[str] | None,
+        *,
+        include_unscoped: bool = False,
+    ) -> ColumnElement[bool] | None:
+        """Build site filter; optionally keep account-level rows (site_id IS NULL).
+
+        Portal Sources needs account-level grants such as subscription_topup, which
+        are written with site_id=NULL while the portal always scopes by selected site.
+        """
+        if site_ids is None:
+            return None
+        if not site_ids:
+            return None
+        site_scope: ColumnElement[bool] = CreditLedgerEntry.site_id.in_(site_ids)
+        if include_unscoped:
+            site_scope = or_(site_scope, CreditLedgerEntry.site_id.is_(None))
+        return site_scope
+
     def list_credit_ledger_entries(
         self,
         *,
         account_ids: list[str] | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
         subscription_id: str | None = None,
         event_types: list[str] | None = None,
         source_types: list[str] | None = None,
@@ -68,7 +89,12 @@ class CommercialCreditLedgerQueries:
         if site_ids is not None:
             if not site_ids:
                 return []
-            statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
+            site_scope = self._credit_ledger_site_scope(
+                site_ids, include_unscoped=include_unscoped
+            )
+            if site_scope is None:
+                return []
+            statement = statement.where(site_scope)
         if subscription_id is not None:
             statement = statement.where(CreditLedgerEntry.subscription_id == subscription_id)
         if event_types is not None:
@@ -389,11 +415,134 @@ class CommercialCreditLedgerQueries:
             )
         return list(totals.values())
 
+    def summarize_portal_credit_event_days(
+        self,
+        *,
+        account_id: str,
+        event_types: list[str],
+        day_ranges: list[tuple[datetime, datetime]],
+        site_id: str = "",
+        feature: str = "",
+    ) -> dict[int, dict[str, Any]]:
+        """Totals per caller-supplied [start, end) range (local days), split by feature.
+
+        Ranges come from the service (timezone-aware day boundaries, DST-safe); the
+        query maps each entry to its range with a CASE so it stays portable across
+        SQLite and PostgreSQL. Event counts use the same run grouping as credit-events.
+        """
+        if not day_ranges:
+            return {}
+        source = func.lower(CreditLedgerEntry.source_type)
+        ability_name = func.lower(func.coalesce(RunRecord.ability_name, ""))
+        ability_family = func.lower(func.coalesce(RunRecord.ability_family, ""))
+        execution_kind = func.lower(func.coalesce(RunRecord.execution_kind, ""))
+        feature_expression = case(
+            (or_(source.like("zhihu%"), ability_name.like("%zhihu%")), "topic_research"),
+            (or_(source == "web_search", ability_name.like("%web-search%")), "web_search"),
+            (
+                or_(
+                    source.in_(["vector_documents", "vector_chunks"]),
+                    ability_name.like("%site-knowledge%"),
+                    ability_name.like("%site_knowledge%"),
+                    ability_family == "knowledge",
+                    execution_kind.in_(["embedding", "site_knowledge", "knowledge"]),
+                ),
+                "site_knowledge",
+            ),
+            (
+                or_(
+                    source.like("%image%"),
+                    ability_name.like("%image%"),
+                    ability_family == "vision",
+                ),
+                "image_assistance",
+            ),
+            (or_(source.like("%audio%"), ability_name.like("%audio%")), "audio_generation"),
+            else_="content_generation",
+        ).label("feature_key")
+        group_id = func.coalesce(
+            func.nullif(CreditLedgerEntry.run_id, ""),
+            CreditLedgerEntry.ledger_entry_id,
+        )
+        day_index = case(
+            *[
+                (
+                    and_(
+                        CreditLedgerEntry.created_at >= start_at,
+                        CreditLedgerEntry.created_at < end_at,
+                    ),
+                    index,
+                )
+                for index, (start_at, end_at) in enumerate(day_ranges)
+            ],
+            else_=-1,
+        ).label("day_index")
+        overall_start = min(start_at for start_at, _ in day_ranges)
+        overall_end = max(end_at for _, end_at in day_ranges)
+
+        def scoped(statement: Any) -> Any:
+            statement = (
+                statement.select_from(CreditLedgerEntry)
+                .outerjoin(RunRecord, RunRecord.run_id == CreditLedgerEntry.run_id)
+            )
+            statement = statement.where(
+                CreditLedgerEntry.account_id == account_id,
+                CreditLedgerEntry.event_type.in_(event_types),
+                CreditLedgerEntry.created_at >= overall_start,
+                CreditLedgerEntry.created_at < overall_end,
+            )
+            if site_id:
+                statement = statement.where(CreditLedgerEntry.site_id == site_id)
+            if feature:
+                statement = statement.where(feature_expression == feature)
+            return statement
+
+        totals: dict[int, dict[str, Any]] = {}
+        for row in self.session.execute(
+            scoped(
+                select(
+                    day_index,
+                    func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
+                    func.count(func.distinct(group_id)).label("event_count"),
+                )
+            ).group_by(day_index)
+        ).mappings():
+            index = int(row["day_index"])
+            if index < 0:
+                continue
+            totals[index] = {
+                "net_ai_credit_delta": float(row["net_ai_credit_delta"] or 0.0),
+                "event_count": int(row["event_count"] or 0),
+                "features": [],
+            }
+        for row in self.session.execute(
+            scoped(
+                select(
+                    day_index,
+                    feature_expression,
+                    func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
+                    func.count(func.distinct(group_id)).label("event_count"),
+                )
+            ).group_by(day_index, feature_expression)
+        ).mappings():
+            day = totals.get(int(row["day_index"]))
+            if day is None:
+                continue
+            cast(list[dict[str, Any]], day["features"]).append(
+                {
+                    "feature_key": str(row["feature_key"] or "content_generation"),
+                    "net_ai_credit_delta": float(row["net_ai_credit_delta"] or 0.0),
+                    "event_count": int(row["event_count"] or 0),
+                }
+            )
+        return totals
+
     def count_credit_ledger_entries(
         self,
         *,
         account_ids: list[str] | None = None,
         site_ids: list[str] | None = None,
+        include_unscoped: bool = False,
         subscription_id: str | None = None,
         event_types: list[str] | None = None,
         source_types: list[str] | None = None,
@@ -408,7 +557,12 @@ class CommercialCreditLedgerQueries:
         if site_ids is not None:
             if not site_ids:
                 return 0
-            statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
+            site_scope = self._credit_ledger_site_scope(
+                site_ids, include_unscoped=include_unscoped
+            )
+            if site_scope is None:
+                return 0
+            statement = statement.where(site_scope)
         if subscription_id is not None:
             statement = statement.where(CreditLedgerEntry.subscription_id == subscription_id)
         if event_types is not None:

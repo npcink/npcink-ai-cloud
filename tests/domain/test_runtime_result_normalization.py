@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.core.models import RunRecord
+from app.domain.connector_runtime.contracts import (
+    build_connector_result_usage,
+    sum_provider_call_usage_tokens,
+)
 from app.domain.runtime.models import (
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
     RUNTIME_STORAGE_MODE_NO_STORE,
@@ -29,6 +34,7 @@ def normalize(
     input_payload: dict[str, object] | None = None,
     connector_envelope: dict[str, object] | None = None,
     automatic_web_search: dict[str, object] | None = None,
+    usage: dict[str, object] | None = None,
 ) -> RuntimeNormalizedResult:
     return RuntimeResultNormalizationService().normalize(
         RuntimeResultNormalizationCommand(
@@ -40,6 +46,7 @@ def normalize(
             input_payload=input_payload or {},
             connector_envelope=connector_envelope,
             automatic_web_search=automatic_web_search,
+            usage=usage,
         )
     )
 
@@ -187,6 +194,68 @@ def test_transient_result_helpers_store_only_runtime_memory_projection() -> None
     set_transient_runtime_result(run, transient_result)
 
     assert get_transient_runtime_result(run) is transient_result
+
+
+def test_sum_provider_call_usage_tokens_sums_all_calls_and_omits_when_empty() -> None:
+    assert sum_provider_call_usage_tokens([]) is None
+    assert sum_provider_call_usage_tokens(
+        [
+            SimpleNamespace(tokens_in=10, tokens_out=2),
+            SimpleNamespace(tokens_in=5, tokens_out=3),
+            SimpleNamespace(tokens_in=None, tokens_out=-1),
+        ]
+    ) == {"tokens_in": 15, "tokens_out": 5, "total_tokens": 20}
+    assert build_connector_result_usage(tokens_in=0, tokens_out=0) == {
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "total_tokens": 0,
+    }
+    assert sum_provider_call_usage_tokens(
+        [SimpleNamespace(tokens_in=0, tokens_out=0)]
+    ) == {"tokens_in": 0, "tokens_out": 0, "total_tokens": 0}
+
+
+def test_connector_envelope_projects_usage_sibling_of_output() -> None:
+    usage = {"tokens_in": 24, "tokens_out": 8, "total_tokens": 32}
+
+    result = normalize(
+        provider_output={"output_text": "connector suggestion", "usage": {"prompt_tokens": 99}},
+        connector_envelope=connector_envelope(),
+        usage=usage,
+    )
+
+    assert result.durable_result["usage"] == usage
+    # Raw provider usage may still sit under output for text tasks; envelope
+    # usage is the Addon-facing source of truth and must not copy that blob.
+    assert result.durable_result["output"]["usage"] == {"prompt_tokens": 99}
+    assert result.durable_result["usage"] != result.durable_result["output"]["usage"]
+
+
+def test_connector_no_store_keeps_usage_when_output_is_omitted() -> None:
+    usage = {"tokens_in": 42, "tokens_out": 7, "total_tokens": 49}
+
+    result = normalize(
+        provider_output={"output_text": "sensitive suggestion"},
+        storage_mode=RUNTIME_STORAGE_MODE_NO_STORE,
+        connector_envelope=connector_envelope(),
+        usage=usage,
+    )
+
+    assert result.transient_result is not None
+    assert result.transient_result["usage"] == usage
+    assert result.transient_result["output"]["output_text"] == "sensitive suggestion"
+    assert result.durable_result["usage"] == usage
+    assert result.durable_result["output"] == {"stored": False, "status": "omitted"}
+
+
+def test_connector_omits_usage_when_no_provider_call_evidence() -> None:
+    result = normalize(
+        provider_output={"output_text": "connector suggestion"},
+        connector_envelope=connector_envelope(),
+        usage=None,
+    )
+
+    assert "usage" not in result.durable_result
 
 
 def test_result_normalization_module_and_runtime_service_keep_boundaries() -> None:

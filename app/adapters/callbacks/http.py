@@ -21,7 +21,7 @@ from app.core.callback_security import (
     RuntimeCallbackTargetValidationError,
     resolve_runtime_callback_target,
 )
-from app.core.security import build_hmac_signature, build_secret_hash
+from app.core.security import build_hmac_signature, derive_stable_secret_digest
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -58,7 +58,7 @@ class HttpRuntimeCallbackDispatcher:
     def _get_signing_key(self, request: RuntimeCallbackDispatchRequest) -> str:
         cached = self._batch_signing_key.get()
         if cached is None:
-            return build_secret_hash(request.secret)
+            return derive_stable_secret_digest(request.secret)
         # Registration is still read per attempt; rotation invalidates this entry
         # even when the operator retains the same site and key ID.
         identity = (
@@ -68,7 +68,7 @@ class HttpRuntimeCallbackDispatcher:
         )
         if cached.identity == identity:
             return cached.key
-        key = build_secret_hash(request.secret)
+        key = derive_stable_secret_digest(request.secret)
         self._batch_signing_key.set(_BatchSigningKey(identity, key))
         return key
 

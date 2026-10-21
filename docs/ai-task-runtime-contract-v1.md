@@ -1,7 +1,7 @@
 # AI Task Runtime Contract v1
 
 Status: active; aligned with the P1 connector reset.
-Updated: 2026-07-14.
+Updated: 2026-10-20.
 
 ## Decision
 
@@ -96,6 +96,39 @@ write controls.
 
 Cloud returns `cloud_connector_result.v1` suggestion evidence. It never treats
 runtime success as approval or applies the result to WordPress.
+
+## Result Usage Projection
+
+`cloud_connector_result.v1` may carry a top-level `usage` object that is a
+**sibling of `output`** (never nested under `output`):
+
+```json
+{
+  "contract_version": "cloud_connector_result.v1",
+  "output": { "output_text": "…" },
+  "usage": {
+    "tokens_in": 24,
+    "tokens_out": 8,
+    "total_tokens": 32
+  }
+}
+```
+
+Rules:
+
+- Source of truth is provider-call evidence (`tokens_in` / `tokens_out` on
+  recorded provider calls), not raw provider `output.usage`.
+- Aggregation sums **all** provider calls for the run (primary text/vision plus
+  any side calls that recorded evidence), not the primary call alone.
+- When at least one provider-call row exists, Cloud includes `usage` with
+  nonnegative integers even if both totals are zero. When no provider-call
+  evidence exists, `usage` is omitted.
+- `usage` stays outside `output` so `no_store` omission of durable `output`
+  content does not drop loggable token totals on the execute response or on the
+  durable envelope.
+- `cost` is not projected onto the WordPress suggestion envelope.
+- Addon mapping for AI request logs: `usage.tokens_in` → `tokens_input`,
+  `usage.tokens_out` → `tokens_output`.
 
 ## Title Generation Quality Floor
 
