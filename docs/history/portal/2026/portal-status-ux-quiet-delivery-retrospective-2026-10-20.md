@@ -7,8 +7,8 @@ Current authority:
 - 布局与验收：[Portal UI Spec](../../../portal-ui-spec.md)（含 §7 验收清单、**§9 交付门禁 / 自检**）
 - 客户工作区标准：[Cloud Portal Customer Workspace UI Standard](../../../cloud-portal-customer-workspace-ui-standard-v1.md)
 
-Protected PR: [#1165](https://github.com/npcink/npcink-ai-cloud/pull/1165)  
-Squash on `master`: `a18b71b293dec0ef4d3c8efd2f642a9206eb0f48`  
+Protected PR: [#1165](https://github.com/npcink/npcink-ai-cloud/pull/1165)
+Squash on `master`: `a18b71b293dec0ef4d3c8efd2f642a9206eb0f48`
 Merged: 2026-10-20（Asia/Shanghai 约 13:17）
 
 ## 1. 本轮做了什么
@@ -37,13 +37,13 @@ Merged: 2026-10-20（Asia/Shanghai 约 13:17）
 
 ## 3. 工程与合并教训
 
-1. **从 `origin/master` 开题分支**  
+1. **从 `origin/master` 开题分支**
    勿在暂停/旁路分支上直接 commit 再硬合并；应 stash → 从 `origin/master` 拉分支 → 只回收本切片冲突。
 
-2. **UI 交付门禁（已写入 Spec §9）**  
+2. **UI 交付门禁（已写入 Spec §9）**
    m4 sync 后打开预览，对照 §7 目视自检并先修残留；contracts / type-check 绿 ≠ 可向用户宣称完成。
 
-3. **Playwright 跟产品语义，不跟旧文案**  
+3. **Playwright 跟产品语义，不跟旧文案**
    本轮 CI 连续失败点与修复：
    - 页标题 / 面包屑：`Service|服务`
    - 容量告警断言落在站点卡，而非仅 Header
@@ -52,7 +52,7 @@ Merged: 2026-10-20（Asia/Shanghai 约 13:17）
    - 同行多控件同 href → 用 `data-portal-sites="site-name"` 收窄，避免 strict mode
    - Billing「Manage package」已是 Link 到 account hash，再在 account 上点 button 打开对话框
 
-4. **合并车道**  
+4. **合并车道**
    保护分支要求 checks 绿 + 会话解决；e2e 失败时优先改测试选择器与步骤顺序，避免为过 CI 回退已验收 UX。
 
 ## 4. 收尾检查清单（本 PR 相关）
@@ -69,4 +69,3 @@ Merged: 2026-10-20（Asia/Shanghai 约 13:17）
 | 验收与反模式 | `docs/portal-ui-spec.md` §7 |
 | 交付门禁 / 自检 | `docs/portal-ui-spec.md` §9 |
 | 本轮过程与教训 | 本文 |
-
