@@ -13,6 +13,7 @@ Status: active documentation sole source of truth for recommended Cloud ↔ Addo
 - **联调环境（Addon / Toolbox）**：不进 M4；本机 Local `magick-ai` 插件目录 symlink → gitee 仓。
 - **联调方式**：开隧道 + magick-ai Base URL 指本机隧道；纯 PHP 改动默认不同步 M4。
 - **完善时机**：有真实痛再补；避免提前设计。
+- **Phase 2–3 backlog（Cloud）**：master e2e 债 / orphan running 清理 / Portal 502·busy 文案；生产仍需人类授权。见 [phase-2-3-follow-on-v1.md](engineering/phase-2-3-follow-on-v1.md)。
 
 ## 规则（必读）
 
