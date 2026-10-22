@@ -823,6 +823,7 @@ def test_execute_route_success_log_includes_run_id(
     ]
     assert success_records, "expected a success-path execute log"
     assert getattr(success_records[-1], "run_id", None) == SAMPLE_EXECUTE_RUN_ID
+    assert f"run_id={SAMPLE_EXECUTE_RUN_ID}" in success_records[-1].getMessage()
 
     dispose_engine(database_url)
 
@@ -890,6 +891,7 @@ def test_execute_route_failure_log_includes_run_id(
     ]
     assert failure_records, "expected a failure-path execute log"
     assert getattr(failure_records[-1], "run_id", None) == SAMPLE_EXECUTE_RUN_ID
+    assert f"run_id={SAMPLE_EXECUTE_RUN_ID}" in failure_records[-1].getMessage()
 
     dispose_engine(database_url)
 

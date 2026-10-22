@@ -781,15 +781,19 @@ async def execute_runtime(
     error_code = "" if result.status in success_statuses else result.error_code
     if result.status in success_statuses:
         logger.info(
-            "runtime execute completed status=%s",
+            "runtime execute completed status=%s run_id=%s trace_id=%s",
             result.status,
+            result.run_id,
+            result.trace_id,
             extra={"run_id": result.run_id, "trace_id": result.trace_id},
         )
     else:
         logger.warning(
-            "runtime execute failed status=%s error_code=%s",
+            "runtime execute failed status=%s error_code=%s run_id=%s trace_id=%s",
             result.status,
             result.error_code or "",
+            result.run_id,
+            result.trace_id,
             extra={"run_id": result.run_id, "trace_id": result.trace_id},
         )
     return JSONResponse(
