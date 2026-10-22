@@ -20,6 +20,11 @@ Paused product entrypoints (retain code; do not re-enable via settings):
 [reversible-feature-pauses-v1.md](docs/reversible-feature-pauses-v1.md),
 [seo-specialist-pause-v1.md](docs/seo-specialist-pause-v1.md).
 
+Commercial freeze (Phase 1): plans / credit-packs / subscriptions / orders / payments are
+**frozen for new development** — do not start new commercial features, and do not delete or
+disable the existing code. This is a development freeze, **not** a runtime pause: existing
+commercial reads and credit/entitlement paths stay operational. Reversal is a human decision.
+
 ## Follow-on (Phase 2–3)
 
 After Phase 1 loop evidence: triage ~50 master Portal e2e failures, clean up
