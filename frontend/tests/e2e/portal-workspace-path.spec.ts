@@ -2285,16 +2285,18 @@ test('[readiness:session_expired_recovery] expired session restores the requeste
   await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
-  await expect(page).toHaveURL(/\/portal\/usage\?/);
+  // Usage shim lands on Package with the requested site/view query preserved.
+  await expect(page).toHaveURL(/\/portal\/billing/);
   const restoredUrl = new URL(page.url());
-  expect(restoredUrl.pathname).toBe('/portal/usage');
+  expect(restoredUrl.pathname).toBe('/portal/billing');
   expect(restoredUrl.searchParams.get('view')).toBe('records');
   expect(restoredUrl.searchParams.get('site')).toBe('site_clear');
-  await expect(page.getByRole('combobox', { name: /Current site|当前站点/i })).toHaveValue('site_clear');
-  await expect(
-    page.locator('[data-portal-usage="view-tabs"]')
-      .getByRole('tab', { name: /AI credit records|AI 积分记录/i })
-  ).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const dialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  await expect(dialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i })).toHaveAttribute('aria-selected', 'true');
   expect(calls.loginVerified()).toBe(true);
 });
 
@@ -2587,13 +2589,20 @@ test('portal read failures retain context and retry without showing empty result
     if (failRecords) await fulfillError(route, 'proxy.portal_backend_timeout', 504);
     else await route.fallback();
   });
-  await page.goto('/portal/usage?view=records');
-  await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
-  await expect(page.getByText(/0 service events|共 0 次服务|暂无服务记录/i)).toHaveCount(0);
+  // Usage records live in the Package site-usage dialog.
+  await page.goto('/portal/billing');
+  await expect(page.getByRole('heading', { level: 1, name: /^Package$|^套餐$/i })).toBeVisible();
+  await page.locator('[data-portal-billing="site-usage-item"][data-site-id="site_clear"]').click();
+  const usageDialog = page.locator('[role="dialog"]:has([data-portal-billing="site-usage-dialog"])');
+  await expect(usageDialog).toBeVisible();
+  await usageDialog.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  await expect(usageDialog.getByRole('button', { name: /Retry|重试/i })).toBeVisible();
+  await expect(usageDialog.getByText(/0 service events|共 0 次服务|暂无服务记录/i)).toHaveCount(0);
   failRecords = false;
-  await page.getByRole('button', { name: /Retry|重试/i }).click();
-  await expect(page.locator('[data-portal-usage="records-table"]')).toBeVisible();
+  await usageDialog.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(usageDialog.locator('[data-portal-usage="records-table"]')).toBeVisible();
+  await usageDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+
   await page.route('**/api/portal/account/audit-summary**', (route) => fulfillError(route, 'proxy.portal_backend_timeout', 504));
   await page.goto('/portal/audit?site=unavailable_site');
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动/i })).toBeVisible();
@@ -2656,8 +2665,8 @@ for (const endpoint of ['audit-summary', 'audit-events'] as const) {
       await filter.selectOption('');
       await expect(page).toHaveURL(/\/portal\/audit$/);
       await expect(page.locator('[data-portal-audit="records-table"] tbody tr')).toHaveCount(10);
-      await page.locator('[data-ui="portal-account-menu"] summary').click();
-      await page.locator('[data-ui="portal-account-menu"] a[href="/portal/account"]').click();
+      // Account menu chrome removed; Account is a primary-nav destination.
+      await page.locator('[data-ui="portal-primary-nav"] a[href="/portal/account"]').click();
       await expect(page).toHaveURL(/\/portal\/account$/);
     });
   }
