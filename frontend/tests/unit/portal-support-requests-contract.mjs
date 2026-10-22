@@ -108,12 +108,12 @@ assert.doesNotMatch(
 
 assert.match(
   portalSupportPageSource,
-  /data-portal-support="list-toolbar"[\s\S]*lg:justify-start/,
+  /lg:justify-start[\s\S]*data-portal-support="list-toolbar"/,
   'Portal support list toolbar must left-align account scope with status filters'
 );
 assert.doesNotMatch(
   portalSupportPageSource,
-  /data-portal-support="list-toolbar"[\s\S]*lg:justify-between/,
+  /lg:justify-between[\s\S]*data-portal-support="list-toolbar"/,
   'Portal support list toolbar must not push status filters across a wide spacer'
 );
 assert.match(
