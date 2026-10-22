@@ -1,33 +1,101 @@
 name: Open PR Warning
 
-# Advisory only (AGENTS.md: at most 1 unmerged branch per repo).
-# Warns when other non-Dependabot PRs are still open. Never fails.
+# Advisory only (AGENTS.md: at most 1 unmerged branch per repo;
+# exception: zero file overlap may each branch from master).
+# Warns only when other non-Dependabot open PRs share changed files with this PR.
+# Never fails.
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
 
 permissions:
   pull-requests: read
+  contents: read
 
 jobs:
   open-pr-warning:
     name: Open PR warning (advisory)
     runs-on: ubuntu-latest
     steps:
-      - name: Warn about other open PRs
+      - name: Warn about overlapping open PRs
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SELF: ${{ github.event.pull_request.number }}
         run: |
-          others=$(gh pr list -R "$REPO" --state open --limit 100 \
+          set -eu
+
+          self_files=$(gh pr diff -R "$REPO" "$SELF" --name-only 2>/dev/null | sort -u || true)
+          if [ -z "$self_files" ]; then
+            echo "Current PR has no changed files listed; skip overlap check."
+            echo "Current PR has no changed files listed; skip overlap check." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          tmp=$(mktemp -d)
+          printf '%s\n' "$self_files" > "$tmp/self.txt"
+          grep -v '^$' "$tmp/self.txt" > "$tmp/self.clean" || true
+
+          gh pr list -R "$REPO" --state open --limit 100 \
             --json number,title,author \
-            -q ".[] | select(.number != $SELF) | select(.author.login != \"app/dependabot\") | \"#\(.number) \(.title)\"" || true)
-          if [ -n "$others" ]; then
-            n=$(printf '%s\n' "$others" | wc -l | tr -d ' ')
-            echo "::warning title=Other open PRs ($n)::AGENTS.md allows at most 1 unmerged branch per repo (zero file overlap excepted). Merge or close these first:%0A${others//$'\n'/%0A}"
-            printf '### Other open PRs (%s)\n%s\n' "$n" "$others" >> "$GITHUB_STEP_SUMMARY"
-          else
+            -q ".[] | select(.number != ($SELF|tonumber)) | select(.author.login != \"app/dependabot\") | \"\(.number)\t\(.title)\"" \
+            > "$tmp/others.tsv" || true
+
+          if [ ! -s "$tmp/others.tsv" ]; then
             echo "No other open PRs."
+            echo "No other open PRs." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          : > "$tmp/conflicting.txt"
+          : > "$tmp/zero.txt"
+          conf_n=0
+          zero_n=0
+
+          while IFS="$(printf '\t')" read -r num title; do
+            [ -z "${num:-}" ] && continue
+            other_files=$(gh pr diff -R "$REPO" "$num" --name-only 2>/dev/null | sort -u || true)
+            printf '%s\n' "$other_files" > "$tmp/other.txt"
+            grep -v '^$' "$tmp/other.txt" > "$tmp/other.clean" || true
+            overlap=$(comm -12 "$tmp/self.clean" "$tmp/other.clean" || true)
+            if [ -n "$overlap" ]; then
+              ov_preview=$(printf '%s\n' "$overlap" | head -5 | tr '\n' ',' | sed 's/,$//')
+              ov_count=$(printf '%s\n' "$overlap" | grep -c . || true)
+              printf '#%s %s (overlap %s: %s)\n' "$num" "$title" "$ov_count" "$ov_preview" >> "$tmp/conflicting.txt"
+              conf_n=$((conf_n + 1))
+            else
+              printf '#%s %s\n' "$num" "$title" >> "$tmp/zero.txt"
+              zero_n=$((zero_n + 1))
+            fi
+          done < "$tmp/others.tsv"
+
+          {
+            echo "### Open PR overlap check"
+            echo
+            echo "- Self PR: #${SELF}"
+            echo "- Self changed files: $(grep -c . "$tmp/self.clean" 2>/dev/null || echo 0)"
+            echo "- Other open non-Dependabot PRs: $((conf_n + zero_n))"
+            echo "- Overlapping (count against max-1): ${conf_n}"
+            echo "- Zero-overlap (AGENTS exception): ${zero_n}"
+            echo
+            if [ "$conf_n" -gt 0 ]; then
+              echo "#### Overlapping PRs"
+              cat "$tmp/conflicting.txt"
+              echo
+            fi
+            if [ "$zero_n" -gt 0 ]; then
+              echo "#### Zero-overlap PRs (do not count against max-1)"
+              cat "$tmp/zero.txt"
+              echo
+              echo "Per AGENTS.md: zero file overlap may each branch from \`master\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$conf_n" -gt 0 ]; then
+            warn_body=$(awk '{printf "%s%s", (NR>1?"%0A":""), $0}' "$tmp/conflicting.txt")
+            echo "::warning title=Overlapping open PRs ($conf_n)::AGENTS.md allows at most 1 unmerged branch per repo unless file sets have zero overlap. Merge or close these first (or drop overlapping files):%0A${warn_body}"
+            echo "Warned about ${conf_n} overlapping open PR(s)."
+          else
+            echo "No overlapping open PRs (${zero_n} other PR(s) have zero file overlap — AGENTS exception)."
           fi
